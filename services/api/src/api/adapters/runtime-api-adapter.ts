@@ -105,6 +105,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
 		this.dice = new DiceAdapter(diceService);
-		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService);
+		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService, providerProfileService);
 	}
 }

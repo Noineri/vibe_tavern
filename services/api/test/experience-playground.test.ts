@@ -36,6 +36,10 @@ import { createProviderProfileService } from "../src/domain/providers/provider-p
 import {
   startExperiencePlayground,
   advanceExperiencePlayground,
+  executeModelTurnExperiencePlayground,
+  type PlaygroundModelDeps,
+  type PlaygroundModelResolveInput,
+  type PlaygroundModelResolveResult,
 } from "../src/domain/interactive/experience-playground.js";
 import { runExperienceTest } from "../src/domain/interactive/experience-tester.js";
 
@@ -388,6 +392,315 @@ describe("model-seat stub — boundary reported, no provider/model invoked", () 
     // No reduce happened (the model seat did not act) — revision stays at 0.
     expect(res.data.revision).toBe(0);
   });
+});
+
+// ─── 3b. Ephemeral model continuation — IR-90E ────────────────────────────
+
+/** A simplified model-conversation rules body (mirrors the shipped starter):
+ *  human reply → user message + model effect; model reply (participantId =
+ *  model seat) → model message + no new effect; finish → completed. */
+const MODEL_CONV_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "mc", name: "MC" },
+  capabilities: [{ capability: 'participants' }, { capability: 'model' }],
+  create() { return { messages: [], turn: 0 }; },
+  project(c) { return { messages: c.state.messages.slice(), turn: c.state.turn }; },
+  actions() { return [{ type: 'reply', allowsText: true }, { type: 'finish' }]; },
+  reduce(c, a) {
+    if (a.type === 'finish') return { state: c.state, status: 'completed', events: [{ visibility: 'public', type: 'finished' }] };
+    if (a.type !== 'reply') return { state: c.state, status: 'active', events: [] };
+    var text = (a.payload && a.payload.text) || '';
+    var ps = c.participants || [];
+    var modelSeat = null;
+    for (var i = 0; i < ps.length; i++) { if (ps[i].controller === 'model') { modelSeat = ps[i]; break; } }
+    var msgs = c.state.messages.slice();
+    var turn = c.state.turn + 1;
+    if (modelSeat && a.participantId === modelSeat.id) {
+      msgs.push({ from: 'them', text: text });
+      return { state: { messages: msgs, turn: turn }, status: 'active', events: [{ visibility: 'public', type: 'model_replied' }] };
+    }
+    msgs.push({ from: 'you', text: text });
+    var t = { state: { messages: msgs, turn: turn }, status: 'active', events: [{ visibility: 'public', type: 'user_replied' }] };
+    if (modelSeat) t.effects = [{ kind: 'model', request: { viewer: modelSeat.id, mode: 'text', actionType: 'reply', instruction: 'Reply in character.' } }];
+    return t;
+  }
+});
+`;
+
+const mcHuman = { id: "you", label: "You", controller: "human" as const };
+const mcModel = { id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp_test", modelId: "gpt-test" };
+
+/** A deterministic mock model seam: always returns a fixed reply text. */
+function mockModelDeps(replyText: string): PlaygroundModelDeps {
+  return {
+    async resolveModelReply(): Promise<PlaygroundModelResolveResult> {
+      return { ok: true, mode: "text", text: replyText };
+    },
+  };
+}
+
+describe("executeModelTurnExperiencePlayground — ephemeral model continuation (IR-90E)", () => {
+  test("a human reply → model continuation produces both messages with no store writes", async () => {
+    const started = startExperiencePlayground({
+      rulesCode: MODEL_CONV_SOURCE,
+      participants: [mcHuman, mcModel],
+      capabilityGrants: ["participants", "model"],
+      humanSeatId: "you",
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    // The human replies.
+    const advanced = advanceExperiencePlayground({
+      playgroundSessionId: started.data.playgroundSessionId,
+      humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hello!" } },
+    });
+    expect(advanced.ok).toBe(true);
+    if (!advanced.ok) return;
+    // The stop reason is awaiting_human (both seats have reply+finish) but the
+    // turn's effects include a pending model effect for the model seat.
+    const s1 = advanced.data.state as { messages: Array<{ from: string; text: string }>; turn: number };
+    expect(s1.messages).toEqual([{ from: "you", text: "Hello!" }]);
+    expect(advanced.data.effects.some((e) => e.kind === "model")).toBe(true);
+
+    // Execute the ephemeral model continuation through the mock seam.
+    const modelTurn = await executeModelTurnExperiencePlayground(
+      { playgroundSessionId: started.data.playgroundSessionId },
+      mockModelDeps("Hi there!"),
+    );
+    expect(modelTurn.ok).toBe(true);
+    if (!modelTurn.ok) return;
+    expect(modelTurn.data.stopReason).toBe("awaiting_human");
+    expect(modelTurn.data.revision).toBe(2);
+    const s2 = modelTurn.data.state as { messages: Array<{ from: string; text: string }>; turn: number };
+    expect(s2.messages).toEqual([
+      { from: "you", text: "Hello!" },
+      { from: "them", text: "Hi there!" },
+    ]);
+    // The projection for the human viewer shows both messages + reply/finish.
+    const proj = modelTurn.data.projection.state as { messages: unknown[] };
+    expect(proj.messages).toHaveLength(2);
+    expect(modelTurn.data.projection.actions.map((a) => a.type)).toContain("reply");
+    expect(modelTurn.data.projection.actions.map((a) => a.type)).toContain("finish");
+  });
+
+  test("a model seat without a pinned provider/model returns a typed no_model error", async () => {
+    const started = startExperiencePlayground({
+      rulesCode: MODEL_CONV_SOURCE,
+      participants: [mcHuman, { id: "ai", label: "AI", controller: "model" }],
+      capabilityGrants: ["participants", "model"],
+      humanSeatId: "you",
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    advanceExperiencePlayground({
+      playgroundSessionId: started.data.playgroundSessionId,
+      humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hi" } },
+    });
+
+    const modelTurn = await executeModelTurnExperiencePlayground(
+      { playgroundSessionId: started.data.playgroundSessionId },
+      mockModelDeps("reply"),
+    );
+    expect(modelTurn.ok).toBe(false);
+    if (modelTurn.ok) return;
+    expect(modelTurn.error.code).toBe("no_model");
+  });
+
+  test("a model seam failure surfaces as a typed error without advancing the revision", async () => {
+    const started = startExperiencePlayground({
+      rulesCode: MODEL_CONV_SOURCE,
+      participants: [mcHuman, mcModel],
+      capabilityGrants: ["participants", "model"],
+      humanSeatId: "you",
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    advanceExperiencePlayground({
+      playgroundSessionId: started.data.playgroundSessionId,
+      humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hi" } },
+    });
+
+    const failingDeps: PlaygroundModelDeps = {
+      async resolveModelReply() { return { ok: false, code: "no_api_key", message: "API key required" }; },
+    };
+    const modelTurn = await executeModelTurnExperiencePlayground(
+      { playgroundSessionId: started.data.playgroundSessionId },
+      failingDeps,
+    );
+    expect(modelTurn.ok).toBe(false);
+    if (modelTurn.ok) return;
+    expect(modelTurn.error.code).toBe("no_api_key");
+  });
+
+  test("finish works after a model turn — the conversation completes", async () => {
+    const started = startExperiencePlayground({
+      rulesCode: MODEL_CONV_SOURCE,
+      participants: [mcHuman, mcModel],
+      capabilityGrants: ["participants", "model"],
+      humanSeatId: "you",
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const id = started.data.playgroundSessionId;
+
+    // Human reply → model continuation.
+    advanceExperiencePlayground({ playgroundSessionId: id, humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hello" } } });
+    await executeModelTurnExperiencePlayground({ playgroundSessionId: id }, mockModelDeps("Hi!"));
+
+    // Finish.
+    const finish = advanceExperiencePlayground({ playgroundSessionId: id, humanAction: { type: "finish", requestId: "h2", expectedRevision: 2 } });
+    expect(finish.ok).toBe(true);
+    if (!finish.ok) return;
+    expect(finish.data.status).toBe("completed");
+    expect(finish.data.stopReason).toBe("completed");
+  });
+});
+
+// ─── 3c. ExperienceAdapter — injected PlaygroundModelDeps (IR-90E1) ──────────
+
+/** Build an adapter with all real services but inject explicit playground model
+ *  deps (no providerProfiles derivation). The driver-under-test (start/advance
+ *  playground) is never mocked — only the model seam is injected. */
+function buildAdapterWithModelDeps(stores: StoreContainer, deps: PlaygroundModelDeps): ExperienceAdapter {
+	const resources = new ExperienceResourceService(stores);
+	const lifecycle = new ExperienceService(stores, resources, { generateSeed: () => "seed1" });
+	const replay = new ExperienceReplayService(stores, resources);
+	const providerProfiles = createProviderProfileService(stores.providers, stores.proxies);
+	const chatLifecycle: ExperienceChatLifecycleSeam = {
+		assembleSummaryPrompt: async () => {
+			throw new Error("Compact-summary execution is outside this playground fixture.");
+		},
+	};
+	const contextService = new ExperienceContextService({ stores, providerProfiles, chatLifecycle });
+	const modelEffect = new ExperienceModelEffectService({
+		stores,
+		experienceService: lifecycle,
+		contextService,
+		providerProfiles,
+	});
+	// IR-90E1: inject explicit playground model deps; undefined providerProfiles
+	// means the adapter would have no model deps via the derivation path — the
+	// injected deps are the only seam.
+	return new ExperienceAdapter(
+		lifecycle, resources, replay, modelEffect, contextService,
+		undefined, // providerProfiles — not derived; deps injected explicitly
+		deps,
+	);
+}
+
+describe("ExperienceAdapter — injected PlaygroundModelDeps (IR-90E1)", () => {
+	test("adapter transparently chains model continuation after a human advance", async () => {
+		// A spy seam: records every call and returns a fixed reply.
+		const spyCalls: PlaygroundModelResolveInput[] = [];
+		const modelDeps: PlaygroundModelDeps = {
+			async resolveModelReply(input) {
+				spyCalls.push(input);
+				return { ok: true, mode: "text", text: "Hi from model!" };
+			},
+		};
+
+		const dataRoot = await mkdtemp(join(tmpdir(), "vt-xp-adapter-model-"));
+		const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
+		const adapter = buildAdapterWithModelDeps(stores, modelDeps);
+
+		// Start a playground session with model-conversation rules.
+		const started = await adapter.startExperiencePlayground({
+			rulesCode: MODEL_CONV_SOURCE,
+			participants: [mcHuman, mcModel],
+			capabilityGrants: ["participants", "model"],
+			humanSeatId: "you",
+		});
+		expect(started.stopReason).toBe("awaiting_human");
+		expect(started.revision).toBe(0);
+
+		// Advance with a human reply — the adapter should auto-chain the
+		// model continuation via the injected deps and return both messages.
+		const advanced = await adapter.advanceExperiencePlayground({
+			playgroundSessionId: started.playgroundSessionId,
+			humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hello!" } },
+		});
+
+		// The adapter transparently continued the model turn.
+		expect(advanced.stopReason).toBe("awaiting_human");
+		expect(advanced.revision).toBe(2); // human reduce + model reduce = 2
+		const state = advanced.state as { messages: Array<{ from: string; text: string }>; turn: number };
+		expect(state.messages).toEqual([
+			{ from: "you", text: "Hello!" },
+			{ from: "them", text: "Hi from model!" },
+		]);
+
+		// The injected seam received the pinned provider/model from the model seat.
+		expect(spyCalls).toHaveLength(1);
+		expect(spyCalls[0]!.providerProfileId).toBe("pp_test");
+		expect(spyCalls[0]!.modelId).toBe("gpt-test");
+		// The pending effect request was forwarded to the seam verbatim.
+		const req = spyCalls[0]!.request as { viewer: string; mode: string; instruction: string };
+		expect(req.viewer).toBe("ai");
+		expect(req.mode).toBe("text");
+		expect(req.instruction).toBe("Reply in character.");
+	});
+
+	test("adapter with no pending model effect does NOT invoke the injected seam", async () => {
+		let callCount = 0;
+		const modelDeps: PlaygroundModelDeps = {
+			async resolveModelReply() {
+				callCount += 1;
+				return { ok: true, mode: "text", text: "unexpected" };
+			},
+		};
+
+		const dataRoot = await mkdtemp(join(tmpdir(), "vt-xp-adapter-nomodel-"));
+		const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
+		const adapter = buildAdapterWithModelDeps(stores, modelDeps);
+
+		// Start a counter game — no model effects.
+		const started = await adapter.startExperiencePlayground({
+			rulesCode: COUNTER_SOURCE,
+			participants: [youHuman],
+			capabilityGrants: [],
+		});
+		expect(started.stopReason).toBe("awaiting_human");
+
+		const advanced = await adapter.advanceExperiencePlayground({
+			playgroundSessionId: started.playgroundSessionId,
+			humanAction: { type: "inc", requestId: "r1", expectedRevision: 0 },
+		});
+		expect(advanced.revision).toBe(1);
+		expect(advanced.state).toEqual({ count: 1 });
+		// The injected seam was NOT called — there was no pending model effect.
+		expect(callCount).toBe(0);
+	});
+
+	test("adapter with NO injected deps preserves the model-stub behavior (no continuation)", async () => {
+		// This adapter is built WITHOUT explicit deps and WITHOUT providerProfiles —
+		// the production path that routes through buildAdapter() in the existing
+		// HTTP integration tests (section 6).
+		const dataRoot = await mkdtemp(join(tmpdir(), "vt-xp-adapter-stub-"));
+		const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
+		const adapter = buildAdapter(stores); // existing helper — no providerProfiles, no injected deps
+
+		const started = await adapter.startExperiencePlayground({
+			rulesCode: MODEL_CONV_SOURCE,
+			participants: [mcHuman, mcModel],
+			capabilityGrants: ["participants", "model"],
+			humanSeatId: "you",
+		});
+		expect(started.stopReason).toBe("awaiting_human");
+
+		// Advance with a human reply. No model deps → no continuation.
+		const advanced = await adapter.advanceExperiencePlayground({
+			playgroundSessionId: started.playgroundSessionId,
+			humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hello!" } },
+		});
+		// The adapter returned the human-only state; the pending model effect is
+		// reported but NOT executed.
+		expect(advanced.revision).toBe(1); // only the human action applied
+		const s = advanced.state as { messages: Array<{ from: string; text: string }> };
+		expect(s.messages).toEqual([{ from: "you", text: "Hello!" }]);
+	});
 });
 
 // ─── 4. No-write invariant — structural + behavioral ─────────────────────────

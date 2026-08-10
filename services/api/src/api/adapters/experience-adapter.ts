@@ -41,9 +41,14 @@ import {
 import {
 	startExperiencePlayground,
 	advanceExperiencePlayground,
+	executeModelTurnExperiencePlayground,
 	type ExperiencePlaygroundAdvanceInput,
+	type ExperiencePlaygroundData,
 	type ExperiencePlaygroundStartInput,
+	type PlaygroundModelDeps,
 } from "../../domain/interactive/experience-playground.js";
+import { createPlaygroundModelDeps } from "../../domain/interactive/experience-playground-model.js";
+import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { DomainError } from "../../shared/errors.js";
 
 export class ExperienceAdapter implements ExperienceRuntimeApi {
@@ -53,7 +58,25 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		private readonly replay: ExperienceReplayService,
 		private readonly modelEffect: ExperienceModelEffectService,
 		private readonly contextService: ExperienceContextService,
-	) {}
+		private readonly providerProfiles?: ProviderProfileService,
+		/**
+		 * IR-90E1: explicit test-injection seam for {@link PlaygroundModelDeps}.
+		 * When supplied, this value is used directly — bypassing the provider-profile
+		 * derivation path — so tests can supply a deterministic mock model seam
+		 * without constructing a real ProviderProfileService. When omitted, the
+		 * constructor derives `playgroundModelDeps` from `providerProfiles` exactly
+		 * as before.
+		 */
+		explicitPlaygroundModelDeps?: PlaygroundModelDeps,
+	) {
+		this.playgroundModelDeps = explicitPlaygroundModelDeps !== undefined
+			? explicitPlaygroundModelDeps
+			: providerProfiles !== undefined
+				? createPlaygroundModelDeps({ providerProfiles })
+				: undefined;
+	}
+
+	private readonly playgroundModelDeps?: PlaygroundModelDeps;
 
 	// ─── Response shaping ────────────────────────────────────────────────────
 
@@ -365,14 +388,35 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 	startExperiencePlayground = async (body: ExperiencePlaygroundStartInput) => {
 		const result = startExperiencePlayground(body);
 		if (!result.ok) throw mapTestError(result.error);
-		return result.data;
+		// IR-90E: if a model boundary was hit and a model seam is available,
+		// execute the ephemeral model continuation before returning.
+		return this.continueModelTurn(result.data);
 	};
 
 	advanceExperiencePlayground = async (body: ExperiencePlaygroundAdvanceInput) => {
 		const result = advanceExperiencePlayground(body);
 		if (!result.ok) throw mapTestError(result.error);
-		return result.data;
+		return this.continueModelTurn(result.data);
 	};
+
+	/** IR-90E: chain the ephemeral model turn when a start/advance returns a
+	 *  pending model effect. The model turn executes the pending model effect
+	 *  through the REAL provider executor (injected) with ZERO store writes,
+	 *  feeding the result back via the real projected action/effect contract.
+	 *  The Model Conversation rules give every seat the same legal actions, so
+	 *  the boundary can be `awaiting_human` even when a model effect is pending —
+	 *  the trigger is the presence of a model effect in this turn's delta, not
+	 *  the stop reason. */
+	private async continueModelTurn(data: ExperiencePlaygroundData): Promise<ExperiencePlaygroundData> {
+		const hasPendingModelEffect = data.effects.some((e) => e.kind === "model");
+		if (!hasPendingModelEffect || this.playgroundModelDeps === undefined) return data;
+		const modelResult = await executeModelTurnExperiencePlayground(
+			{ playgroundSessionId: data.playgroundSessionId },
+			this.playgroundModelDeps,
+		);
+		if (!modelResult.ok) throw mapTestError(modelResult.error);
+		return modelResult.data;
+	}
 }
 
 /**

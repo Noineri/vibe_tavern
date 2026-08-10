@@ -77,6 +77,7 @@ import type {
 } from "./experience-tester.js";
 import {
   EXPERIENCE_CONTROLLER,
+  EXPERIENCE_EFFECT_KIND,
   EXPERIENCE_SESSION_STATUS,
   EXPERIENCE_VIEWER_KIND,
   type ExperienceAction,
@@ -100,6 +101,48 @@ const DEFAULT_SEED = "vt-experience-playground";
  * kept distinct so the playground bound is visible and tunable independently).
  */
 const DEFAULT_MAX_ITERATIONS = 200;
+
+// ─── Ephemeral model continuation seam (IR-90E) ─────────────────────────────
+//
+// At an `awaiting_model` boundary the driver can optionally execute the pending
+// model effect through a REAL non-streaming provider executor injected via this
+// seam — ZERO store writes (provider resolution is read-only). The driver module
+// still imports only kernel/sandbox/shared/domain/contracts; the seam implementation
+// (provider profile resolution + prompt building + executor call) lives in a
+// separate module (`experience-playground-model.ts`) that CAN import provider /
+// prompt-pipeline code.
+
+/** Input the driver hands to the model seam at an `awaiting_model` boundary. */
+export interface PlaygroundModelResolveInput {
+  /** The model seat's pinned provider profile id. */
+  readonly providerProfileId: string;
+  /** The model seat's pinned model id. */
+  readonly modelId: string;
+  /** The raw effect request from the reduce transition (domain `unknown`). */
+  readonly request: unknown;
+  /** The model seat's projected view (the private view only it sees). */
+  readonly projectedView: unknown;
+  /** The legal actions for the model seat's viewer. */
+  readonly legalActions: readonly ExperienceActionDescriptor[];
+}
+
+/** The seam's validated result — mirrors the durable service's
+ *  ModelEffectResultPayload. Text mode carries the generated text; action mode
+ *  carries a validated legal-action id + optional args. */
+export type PlaygroundModelResolveResult =
+  | { readonly ok: true; readonly mode: "text"; readonly text: string }
+  | { readonly ok: true; readonly mode: "action"; readonly actionId: string; readonly args?: unknown }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+/** The abstract model continuation seam the driver calls at `awaiting_model`. */
+export interface PlaygroundModelDeps {
+  /** Resolve one ephemeral model continuation for a model-controlled seat.
+   *  Resolves the pinned provider/model (read-only — no store writes), builds
+   *  a minimal prompt (host protocol + package instruction + the seat's
+   *  projected private view), calls the REAL non-streaming executor, and
+   *  returns the validated result text. */
+  resolveModelReply(input: PlaygroundModelResolveInput): Promise<PlaygroundModelResolveResult>;
+}
 
 // ─── Inputs / outputs ────────────────────────────────────────────────────────
 
@@ -667,6 +710,222 @@ export function advanceExperiencePlayground(input: ExperiencePlaygroundAdvanceIn
   session.stopReason = advanced.stopReason;
 
   // 6. Project for the human seat at the post-advancement state.
+  const projection = projectForResponse(session, session.state, session.projectionViewer);
+
+  return {
+    ok: true,
+    data: {
+      playgroundSessionId: session.playgroundSessionId,
+      initialState: session.initialState,
+      state: session.state,
+      projection,
+      events: turnEvents,
+      effects: turnEffects,
+      console: session.consoleBuf.slice(consoleStart),
+      revision: session.revision,
+      status: session.status,
+      stopReason: session.stopReason,
+    },
+  };
+}
+
+// ─── executeModelTurn — ephemeral model continuation (IR-90E) ────────────────
+
+/** Find the most recent pending model effect and resolve its target seat.
+ *  IR-90E: the actor is selected by the effect's `request.viewer`, NOT by
+ *  iterating model participants — with multiple model seats the correct one is
+ *  the one the pending effect targets. */
+function findPendingModelEffect(
+  session: EphemeralPlaygroundSession,
+): { effect: ExperienceEffectRequest; participantId: string } | null {
+  for (let i = session.effects.length - 1; i >= 0; i -= 1) {
+    const effect = session.effects[i]!;
+    if (effect.kind !== EXPERIENCE_EFFECT_KIND.model) continue;
+    const req = effect.request as { viewer?: unknown };
+    if (typeof req.viewer === "string") {
+      return { effect, participantId: req.viewer };
+    }
+  }
+  return null;
+}
+
+/** Extract the actionType from a raw model effect request (defaults to "reply"). */
+function modelEffectActionType(request: unknown): string {
+  if (request !== null && typeof request === "object") {
+    const actionType = (request as { actionType?: unknown }).actionType;
+    if (typeof actionType === "string" && actionType.length > 0) return actionType;
+  }
+  return "reply";
+}
+
+/**
+ * Execute ONE ephemeral model continuation at an `awaiting_model` boundary,
+ * feeding the validated model result back into the reducer through the REAL
+ * projected action/effect contract. ZERO ExperienceStore/chat/DB writes — the
+ * injected seam resolves the pinned provider/model read-only, builds a minimal
+ * prompt, and calls the REAL non-streaming executor.
+ *
+ * The caller (adapter) invokes this after a start/advance returns
+ * `stopReason: "awaiting_model"` when a model seam is available. The function
+ * resolves the model seat with legal actions, projects its private view,
+ * invokes the seam, maps the result to a `reply` action (type = effect's
+ * `actionType`, participantId = model seat), reduces it via the real kernel,
+ * then advances script seats to the next boundary.
+ */
+export async function executeModelTurnExperiencePlayground(
+  input: { readonly playgroundSessionId: string },
+  deps: PlaygroundModelDeps,
+): Promise<ExperiencePlaygroundAdvanceResult> {
+  const session = playgroundSessions.get(input.playgroundSessionId);
+  if (session === undefined) {
+    return {
+      ok: false,
+      error: testError(
+        422,
+        "session_not_found",
+        `Playground session '${input.playgroundSessionId}' not found`,
+        [],
+      ),
+    };
+  }
+
+  const consoleStart = session.consoleBuf.length;
+
+  // 1. Find the most recent pending model effect and its target seat (IR-90E:
+  //    actor selection by request.viewer, not by iterating model participants).
+  const pending = findPendingModelEffect(session);
+  if (pending === null) {
+    // No pending model effect — there is nothing to continue.
+    const projection = projectForResponse(session, session.state, session.projectionViewer);
+    return {
+      ok: true,
+      data: {
+        playgroundSessionId: session.playgroundSessionId,
+        initialState: session.initialState,
+        state: session.state,
+        projection,
+        events: [],
+        effects: [],
+        console: session.consoleBuf.slice(consoleStart),
+        revision: session.revision,
+        status: session.status,
+        stopReason: session.stopReason,
+      },
+    };
+  }
+
+  // 2. Resolve the target participant from the effect's viewer.
+  const participant = session.participants.find((p) => p.id === pending.participantId);
+  if (participant === undefined || participant.controller !== EXPERIENCE_CONTROLLER.model) {
+    return {
+      ok: false,
+      error: testError(
+        422,
+        "no_model_effect",
+        `Model effect targets '${pending.participantId}' which is not a model seat`,
+        session.consoleBuf,
+        { participantId: pending.participantId },
+      ),
+    };
+  }
+
+  // 3. Resolve the pinned provider/model from the seat.
+  const providerProfileId = participant.providerProfileId?.trim();
+  const modelId = participant.modelId?.trim();
+  if (!providerProfileId || !modelId) {
+    return {
+      ok: false,
+      error: testError(
+        422,
+        "no_model",
+        `Model seat '${participant.id}' has no pinned provider/model`,
+        session.consoleBuf,
+        { participantId: participant.id },
+      ),
+    };
+  }
+
+  // 4. Get the legal actions for the model seat's viewer (real VM actions()).
+  const viewer: ExperienceViewer = { kind: EXPERIENCE_VIEWER_KIND.model, participantId: participant.id };
+  const caps = buildCapabilityContext(session.grants, session.participants);
+  const legal = runActions(session.code, session.scriptName, session.state, viewer, caps);
+  if (!legal.ok) return { ok: false, error: fromKernel(legal, session.consoleBuf) };
+  session.consoleBuf.push(...legal.console);
+
+  // 5. Project the private view for the model seat (real VM project).
+  const projected = projectForResponse(session, session.state, viewer);
+
+  // 6. Invoke the model seam (provider resolution + prompt + executor).
+  const resolved = await deps.resolveModelReply({
+    providerProfileId,
+    modelId,
+    request: pending.effect.request,
+    projectedView: projected.state,
+    legalActions: legal.value,
+  });
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      error: testError(
+        422,
+        resolved.code,
+        resolved.message,
+        session.consoleBuf,
+        { participantId: participant.id },
+      ),
+    };
+  }
+
+  // 7. Map the validated result to an action for the model seat, mirroring
+  //    the model-effect-service's mapResultToAction: text mode → actionType +
+  //    {text}; action mode → actionId + optional args.
+  const actionType = modelEffectActionType(pending.effect.request);
+  const modelAction: ExperienceAction = resolved.mode === "action"
+    ? {
+        type: resolved.actionId,
+        requestId: `model:pg:${session.playgroundSessionId}:${session.revision + 1}`,
+        expectedRevision: session.revision,
+        participantId: participant.id,
+        ...(resolved.args !== undefined ? { payload: resolved.args } : {}),
+      }
+    : {
+        type: actionType,
+        requestId: `model:pg:${session.playgroundSessionId}:${session.revision + 1}`,
+        expectedRevision: session.revision,
+        participantId: participant.id,
+        payload: { text: resolved.text },
+      };
+
+  // 8. Validate the action against the model seat's legal actions.
+  const valid = validateSubmittedAction(modelAction, legal.value);
+  if (!valid.ok) {
+    return { ok: false, error: fromKernel(valid, session.consoleBuf) };
+  }
+
+  // 8. Reduce under the real VM (random injected if granted; cursor advances).
+  const reduceCaps = buildCapabilityContext(session.grants, session.participants, session.rng);
+  const reduced = runReduce(session.code, session.scriptName, session.state, modelAction, reduceCaps);
+  if (!reduced.ok) return { ok: false, error: fromKernel(reduced, session.consoleBuf) };
+  session.consoleBuf.push(...reduced.console);
+  const transition = reduced.value;
+
+  const turnEvents: ExperienceEvent[] = [...transition.events];
+  const turnEffects: ExperienceEffectRequest[] = [...(transition.effects ?? [])];
+
+  session.revision += 1;
+  session.state = transition.state;
+  session.status = transition.status;
+  for (const ev of transition.events) session.events.push(ev);
+  if (transition.effects !== undefined) {
+    for (const ef of transition.effects) session.effects.push(ef);
+  }
+
+  // 9. Advance script-controlled seats until the next boundary.
+  const advanced = advanceScriptSeats(session, turnEvents, turnEffects);
+  if (!advanced.ok) return { ok: false, error: advanced.error };
+  session.stopReason = advanced.stopReason;
+
+  // 10. Project for the human seat at the post-advancement state.
   const projection = projectForResponse(session, session.state, session.projectionViewer);
 
   return {
