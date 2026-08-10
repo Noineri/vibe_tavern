@@ -29,6 +29,9 @@ import type {
   ExperienceEffectRunResponse,
   ExperienceFinishRequest,
   ExperienceProjection,
+  ExperiencePlaygroundAdvanceRequest,
+  ExperiencePlaygroundData,
+  ExperiencePlaygroundStartRequest,
   ExperiencePromptOverrideContentRequest,
   ExperiencePromptOverridesResponse,
   ExperienceQueuedAttachmentResponse,
@@ -390,4 +393,29 @@ export async function runExperienceTest(body: ExperienceTestRunRequest): Promise
 export async function simulateExperienceTest(body: ExperienceTestSimulateRequest): Promise<ExperienceTestSimulateData> {
   const response = await client.api.experience.test.simulate.$post({ json: body });
   return unwrapExperience<ExperienceTestSimulateData>(response);
+}
+
+// ─── Interactive playground session driver (Wave 8 / IR-84A backend, IR-84B client) ─
+
+/** POST /api/experience/playground/start — create an ephemeral in-memory play
+ *  session from UNSAVED-or-saved rules source: discover + create + project +
+ *  advance leading script seats until the first human/model/idle boundary.
+ *  Zero persistence; the caller holds the returned `playgroundSessionId`
+ *  across turns. Typed failures surface as {@link ExperienceApiError} with
+ *  `details.code` (same envelope as the tester: capability_denied, vm_error +
+ *  kind, …) and the captured console in `details.console`. */
+export async function startExperiencePlayground(body: ExperiencePlaygroundStartRequest): Promise<ExperiencePlaygroundData> {
+  const response = await client.api.experience.playground.start.$post({ json: body });
+  return unwrapExperience<ExperiencePlaygroundData>(response);
+}
+
+/** POST /api/experience/playground/advance — apply ONE human action to the
+ *  ephemeral session (requestId idempotency + expectedRevision CAS), then
+ *  advance script-controlled seats via the real `choose` until the next
+ *  boundary. Returns this turn's state/projection/events/effects/console +
+ *  bumped revision/status/stop-reason. Typed failures: illegal_action,
+ *  stale_revision + currentRevision, session_not_found, vm_error + kind. */
+export async function advanceExperiencePlayground(body: ExperiencePlaygroundAdvanceRequest): Promise<ExperiencePlaygroundData> {
+  const response = await client.api.experience.playground.advance.$post({ json: body });
+  return unwrapExperience<ExperiencePlaygroundData>(response);
 }

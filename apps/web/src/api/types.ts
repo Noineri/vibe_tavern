@@ -51,6 +51,8 @@ import type {
 import type {
 	experienceConfigUpdateSchema,
 	experienceContextCaptureRequestSchema,
+	experiencePlaygroundAdvanceRequestSchema,
+	experiencePlaygroundStartRequestSchema,
 	experiencePromptOverrideContentSchema,
 	experienceRecalculateRequestSchema,
 	experienceReportQueueRequestSchema,
@@ -812,6 +814,12 @@ export type ExperienceTestRunRequest = z.input<typeof experienceTestRunRequestSc
 /** POST /experience/test/simulate body. `maxIterations`/`maxEffects` default
  *  server-side when omitted. */
 export type ExperienceTestSimulateRequest = z.input<typeof experienceTestSimulateRequestSchema>;
+/** POST /experience/playground/start body. `settings`/`participants`/
+ *  `capabilityGrants` are optional on input (the schema defaults them). */
+export type ExperiencePlaygroundStartRequest = z.input<typeof experiencePlaygroundStartRequestSchema>;
+/** POST /experience/playground/advance body (`playgroundSessionId` + the ONE
+ *  human action carrying the requestId/expectedRevision CAS pair). */
+export type ExperiencePlaygroundAdvanceRequest = z.input<typeof experiencePlaygroundAdvanceRequestSchema>;
 
 /** One captured VM console line. Mirrors `ExperienceConsoleEntry` in
  *  services/api `domain/interactive/experience-sandbox.ts` (backend-only
@@ -888,6 +896,27 @@ export interface ExperienceTestSimulateData {
   stopReason: ExperienceTestStopReason;
   iterations: number;
   stopDetail?: { participantId?: string };
+}
+
+// ── Interactive playground session driver (Wave 8 / IR-84A backend, IR-84B client) ─
+
+/** The playground turn envelope: start returns the full envelope (including
+ *  the validated definition); advance returns the same shape with `definition`
+ *  OMITTED. Mirrors `ExperiencePlaygroundData` in services/api
+ *  `domain/interactive/experience-playground.ts` (backend-only module),
+ *  reusing the IR-81D tester wire mirrors where the shapes coincide. */
+export interface ExperiencePlaygroundData {
+  playgroundSessionId: string;
+  definition?: ExperienceTestDefinition;
+  initialState: unknown;
+  state: unknown;
+  projection: { state: unknown; actions: ExperienceActionDescriptor[] };
+  events: ExperienceEvent[];
+  effects: ExperienceEffectRequest[];
+  console: ExperienceTestConsoleEntry[];
+  revision: number;
+  status: ExperienceSessionStatus;
+  stopReason: ExperienceTestStopReason;
 }
 
 // ─── Import ────────────────────────────────────────────────────────────

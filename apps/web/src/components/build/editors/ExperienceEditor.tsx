@@ -74,6 +74,7 @@ import {
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { InteractiveApiReference } from "./interactive-api-reference.js";
 import { InteractiveTester } from "./InteractiveTester.js";
+import { ExperiencePlayground } from "./ExperiencePlayground.js";
 
 // ── Local (unsaved) record ids ─────────────────────────────────────────────
 // A draft created from a starter/duplicate has no server row until its first
@@ -713,6 +714,20 @@ export function ExperienceEditor() {
             {t("experience_editor_visual_none")}
           </div>
         )}
+      </div>
+
+      {/*
+       * IR-84B: the interactive playground. A peer of the IR-81D tester with
+       * access to BOTH unsaved buffers — it PLAYS the CURRENT UNSAVED rules
+       * (`activeScript.code`) through the IR-84A in-memory playground driver
+       * (POST /api/experience/playground/start|advance) turn by turn, and
+       * renders the CURRENT UNSAVED visual (`activeVisual.source`, when one is
+       * selected) inside the isolated ExperienceFrame against the live
+       * playground state. Read-only: it never mutates these drafts, never
+       * touches a store, and never forwards an action to any chat/session.
+       */}
+      <div className="mt-3">
+        <ExperiencePlayground code={activeScript.code} visualSource={activeVisual?.source ?? null} />
       </div>
     </div>
   );
