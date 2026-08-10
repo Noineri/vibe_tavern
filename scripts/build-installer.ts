@@ -6,7 +6,7 @@
  *   2. Invoke ISCC (Inno Setup Compiler) to produce the installer
  *
  * Usage:
- *   bun scripts/build-installer.ts
+ *   bun scripts/build-installer.ts [--fast-compression]
  *
  * Prerequisites:
  *   - Bun runtime
@@ -19,6 +19,8 @@
 
 import { join, resolve } from "node:path";
 import { VERSION } from "./_version.js";
+
+export const FAST_COMPRESSION_FLAG = "--fast-compression";
 
 const ROOT = resolve(import.meta.dir, "..");
 const STANDALONE_OUT = join(ROOT, "out", "standalone");
@@ -52,6 +54,34 @@ async function findIscc(): Promise<string> {
 	}
 
 	return "ISCC";
+}
+
+/**
+ * ISCC command line. `fastCompression` is for callers that only need to know the
+ * installer compiles — CI throws the artifact away, and lzma2/ultra64 over a
+ * solid block costs ~95s of a ~108s step there. The compile still verifies what
+ * it always did: the script parses, every [Files] entry resolves, [Code]
+ * compiles. What it stops exercising is the LZMA pass itself, which release.yml
+ * runs on every tag. Release builds must never pass it.
+ *
+ * `none` rather than a level like `lzma2/fast` on purpose: ISPP evaluates `/D`
+ * values as expressions, so a `/` in the value is a division operator waiting to
+ * happen. Every value here must stay a bare identifier.
+ */
+export function isccArgs(
+	isccPath: string,
+	root: string,
+	version: string,
+	issFile: string,
+	fastCompression: boolean,
+): readonly string[] {
+	return [
+		isccPath,
+		`/DProjectRoot=${root}`,
+		`/DAppVersion=${version}`,
+		...(fastCompression ? ["/DCompression=none", "/DSolidCompression=no"] : []),
+		issFile,
+	];
 }
 
 async function main() {
@@ -89,11 +119,16 @@ async function main() {
 
 	console.log(`   Version: ${VERSION}`);
 
+	const fastCompression = process.argv.slice(2).includes(FAST_COMPRESSION_FLAG);
+	if (fastCompression) {
+		console.log("   Compression: lzma2/fast, non-solid (verification build — do not ship)");
+	}
+
 	const isccPath = await findIscc();
 	console.log(`   ISCC: ${isccPath}`);
 
 	const isccProc = Bun.spawn(
-		[isccPath, `/DProjectRoot=${ROOT}`, `/DAppVersion=${VERSION}`, ISS_FILE],
+		[...isccArgs(isccPath, ROOT, VERSION, ISS_FILE, fastCompression)],
 		{ cwd: ROOT, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
 	);
 
@@ -115,4 +150,7 @@ async function main() {
 	console.log(`   ${EXPECTED_SETUP}`);
 }
 
-main();
+// Guarded so `isccArgs` can be imported without running an installer build.
+if (import.meta.main) {
+	await main();
+}

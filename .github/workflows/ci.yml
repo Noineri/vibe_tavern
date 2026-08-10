@@ -84,21 +84,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      # `bun install` writes 26.5k files / 764 MB, and Defender scans every one:
-      # the same install costs 3.7s on Linux and 43-101s here. Throwaway VM,
-      # destroyed at the end of the job.
-      #
-      # The status line is not decoration. This runner image reports
-      # IsTamperProtected=False and the preference does apply, but the effect on
-      # install is inside the noise: 43-101s across 10 runs without it against
-      # 44-61s across 4 with it. Anyone re-measuring needs to know the lever was
-      # actually pulled before blaming the numbers on it — and if a future image
-      # turns Tamper Protection on, `Set-MpPreference` will keep exiting 0 while
-      # silently doing nothing, and only this line will say so.
-      - name: Disable Defender real-time scanning
-        run: |
-          Set-MpPreference -DisableRealtimeMonitoring $true
-          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, IsTamperProtected | Format-List
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -145,18 +130,18 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      # See test-windows for what the status line is for.
-      - name: Disable Defender real-time scanning
-        run: |
-          Set-MpPreference -DisableRealtimeMonitoring $true
-          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, IsTamperProtected | Format-List
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
       - name: Install Inno Setup
         run: choco install innosetup --no-progress --yes
-      - run: bun scripts/build-installer.ts
+      # --fast-compression: this installer is never uploaded (see the note at the
+      # top of the file), so the compile is the whole point and lzma2/ultra64
+      # over a solid block was spending ~95s of a ~108s step on a ~100 MB binary
+      # that gets deleted with the runner. release.yml builds the shipped one at
+      # full compression. Never add this flag there.
+      - run: bun scripts/build-installer.ts --fast-compression
         env:
           ISCC_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
       - run: bun scripts/build-windows-dist.ts
