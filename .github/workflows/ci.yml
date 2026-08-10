@@ -29,9 +29,13 @@ concurrency:
 # ever cut. This replaces the old separate dry-run.yml (deleted).
 #
 # Gating model:
-#   - typecheck, test-linux, and test-windows are all blocking. The full
-#     `bun run test` suite runs on both platforms because the repo ships a
-#     Windows installer and the filesystem/Glob semantics are platform-sensitive.
+#   - typecheck, test-linux, and test-windows are all blocking. Linux runs the
+#     full `bun run test` suite; Windows runs everything with platform-sensitive
+#     behaviour to pin, because the repo ships a Windows installer and the
+#     filesystem/Glob semantics differ there. What Windows skips, and why, is
+#     declared in scripts/test.ts (`skipOnWindows`) and in the two
+#     `skipIf(process.platform === "win32")` gates in scripts/*.test.ts —
+#     not here, so a dev running `bun run test` locally sees the same thing CI does.
 #   - The 4 platform builds fan out after typecheck passes.
 # Nothing is published; the docker job only loads locally to prove the image builds.
 # Build artifacts are intentionally NOT uploaded — CI verifies compilation only,
@@ -80,6 +84,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      # `bun install` writes 26.5k files / 764 MB, and Defender scans every one:
+      # the same install costs 3.7s on Linux and 55-92s here. The runner account
+      # is a local admin, so the preference applies without Tamper Protection
+      # getting in the way. Throwaway VM, destroyed at the end of the job.
+      - name: Disable Defender real-time scanning
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -126,6 +136,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      # See test-windows: `bun install` alone costs 74s here against 3.7s on Linux.
+      - name: Disable Defender real-time scanning
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
