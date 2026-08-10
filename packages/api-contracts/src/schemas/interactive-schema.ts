@@ -784,6 +784,41 @@ export const experienceTestSimulateRequestSchema = z.object({
   maxEffects: z.number().int().min(1).max(1000).default(256),
 });
 
+// ─── Interactive playground requests (Wave 8 / IR-84A) ───────────────────────
+//
+// The interactive play loop: start creates an in-memory session (discover +
+// create + project + advance leading script seats); advance applies ONE human
+// action then advances script seats until the next human/model/idle boundary.
+// Both reuse the real sandbox/kernel with ZERO persistence and ZERO chat/session/
+// DB binding — the session lives in process memory keyed by the returned
+// playground session id. Mirrors the tester request shapes (same bounds) plus a
+// `humanSeatId` so the author picks the seat to drive.
+
+/** Start an interactive playground session from unsaved-or-saved rules source.
+ *  Discover + create + project the initial viewer state, then advance any
+ *  leading script-controlled seats via the real `choose` until the first
+ *  human/model/idle boundary. Returns the validated definition, initial state,
+ *  projection, accumulated events/effects/console, revision, status, and the
+ *  boundary stop-reason, plus the opaque playground session id. */
+export const experiencePlaygroundStartRequestSchema = z.object({
+  rulesCode: z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_STATE_BYTES),
+  scriptName: boundedString.optional(),
+  settings: boundedState.default({}),
+  participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS).default([]),
+  capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES).default([]),
+  seed: boundedString.optional(),
+  humanSeatId: boundedId.optional(),
+});
+
+/** Advance an interactive playground session by ONE human action, then advance
+ *  script-controlled seats via the real `choose` until the next boundary.
+ *  `playgroundSessionId` is the opaque handle returned by start; `humanAction`
+ *  carries the requestId + expectedRevision CAS pair (idempotency precedes CAS). */
+export const experiencePlaygroundAdvanceRequestSchema = z.object({
+  playgroundSessionId: boundedId,
+  humanAction: experienceActionSchema,
+});
+
 // ─── DTO types (wire-only shapes; canonical envelopes come from Domain) ──────
 
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
@@ -802,6 +837,8 @@ export type ExperienceContextCaptureRequestDto = z.infer<typeof experienceContex
 export type ExperiencePromptOverrideContentDto = z.infer<typeof experiencePromptOverrideContentSchema>;
 export type ExperienceTestRunRequestDto = z.infer<typeof experienceTestRunRequestSchema>;
 export type ExperienceTestSimulateRequestDto = z.infer<typeof experienceTestSimulateRequestSchema>;
+export type ExperiencePlaygroundStartRequestDto = z.infer<typeof experiencePlaygroundStartRequestSchema>;
+export type ExperiencePlaygroundAdvanceRequestDto = z.infer<typeof experiencePlaygroundAdvanceRequestSchema>;
 export type ExperienceSetupFieldOptionDto = z.infer<typeof experienceSetupFieldOptionSchema>;
 export type ExperienceSetupFieldDto = z.infer<typeof experienceSetupFieldSchema>;
 export type ExperienceSetupDefinitionDto = z.infer<typeof experienceSetupDefinitionSchema>;

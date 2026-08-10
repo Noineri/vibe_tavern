@@ -530,6 +530,11 @@ import type {
 	ExperienceTestSimulateInput,
 } from "../../domain/interactive/experience-tester.js";
 import type {
+	ExperiencePlaygroundAdvanceInput,
+	ExperiencePlaygroundData,
+	ExperiencePlaygroundStartInput,
+} from "../../domain/interactive/experience-playground.js";
+import type {
 	ExperienceChatConfigRow,
 	ExperienceVisualRow,
 	ExperienceEffectRow,
@@ -709,6 +714,19 @@ export interface ExperienceRuntimeApi {
 	 *  a terminal status, no legal action, or a host bound is reached. Returns a
 	 *  typed stop-reason diagnostic per case. */
 	simulateExperienceTest: (body: ExperienceTestSimulateInput) => Promise<ExperienceTestSimulateData>;
+
+	// ── Interactive playground session driver (Wave 8 / IR-84A) ──
+	/** Start an in-memory interactive play session: discover + create + project
+	 *  + advance leading script seats until the first human/model/idle boundary.
+	 *  ZERO durable writes — the session lives in process memory keyed by the
+	 *  returned playground session id. Authoritative only over its own ephemeral
+	 *  state. Model seats are reported as `awaiting_model` and never invoked. */
+	startExperiencePlayground: (body: ExperiencePlaygroundStartInput) => Promise<ExperiencePlaygroundData>;
+	/** Apply ONE human action via the real reduce, then advance script seats via
+	 *  the real `choose` until the next human/model/idle boundary. Returns this
+	 *  turn's state/projection/events/effects/console + bumped revision/status/
+	 *  stop-reason. requestId idempotency precedes expectedRevision CAS. */
+	advanceExperiencePlayground: (body: ExperiencePlaygroundAdvanceInput) => Promise<ExperiencePlaygroundData>;
 }
 
 export interface RuntimeApi {

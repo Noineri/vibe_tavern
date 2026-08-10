@@ -241,6 +241,9 @@ export {
   // Stateless unsaved-source tester requests (Wave 8 / IR-81B)
   experienceTestRunRequestSchema,
   experienceTestSimulateRequestSchema,
+  // Interactive playground requests (Wave 8 / IR-84A)
+  experiencePlaygroundStartRequestSchema,
+  experiencePlaygroundAdvanceRequestSchema,
   // Bounded-JSON guard + bounds
   jsonBoundsError,
   boundedJsonValue,
@@ -271,6 +274,8 @@ export {
   type ExperienceStarterManifestDto,
   type ExperienceTestRunRequestDto,
   type ExperienceTestSimulateRequestDto,
+  type ExperiencePlaygroundStartRequestDto,
+  type ExperiencePlaygroundAdvanceRequestDto,
   type ExperienceSetupFieldOptionDto,
   type ExperienceSetupFieldDto,
   type ExperienceSetupDefinitionDto,

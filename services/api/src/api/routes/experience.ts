@@ -201,5 +201,21 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     })
     .post("/api/experience/test/simulate", zValidator("json", schemas.experienceTestSimulateRequestSchema), async (c) => {
       return c.json(await runtime.simulateExperienceTest(c.req.valid("json")));
+    })
+
+    // ── Interactive playground session driver (Wave 8 / IR-84A) ──────────────
+    // Drive UNSAVED-or-saved rules through the real kernel as an interactive
+    // play loop (start → advance → advance ...) with ZERO persistence and ZERO
+    // chat/session/DB binding. start creates the in-memory session and advances
+    // leading script seats; advance applies one human action then advances
+    // script seats. Typed failures surface as thrown DomainErrors (409
+    // stale_revision / 422 authoring, validation, capability, or VM faults) via
+    // the adapter's mapTestError, preserving the captured console on the error
+    // path.
+    .post("/api/experience/playground/start", zValidator("json", schemas.experiencePlaygroundStartRequestSchema), async (c) => {
+      return c.json(await runtime.startExperiencePlayground(c.req.valid("json")));
+    })
+    .post("/api/experience/playground/advance", zValidator("json", schemas.experiencePlaygroundAdvanceRequestSchema), async (c) => {
+      return c.json(await runtime.advanceExperiencePlayground(c.req.valid("json")));
     });
 }

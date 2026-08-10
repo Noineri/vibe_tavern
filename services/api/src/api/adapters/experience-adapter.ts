@@ -38,6 +38,12 @@ import {
 	type ExperienceTestRunInput,
 	type ExperienceTestSimulateInput,
 } from "../../domain/interactive/experience-tester.js";
+import {
+	startExperiencePlayground,
+	advanceExperiencePlayground,
+	type ExperiencePlaygroundAdvanceInput,
+	type ExperiencePlaygroundStartInput,
+} from "../../domain/interactive/experience-playground.js";
 import { DomainError } from "../../shared/errors.js";
 
 export class ExperienceAdapter implements ExperienceRuntimeApi {
@@ -343,6 +349,27 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 
 	simulateExperienceTest = async (body: ExperienceTestSimulateInput) => {
 		const result = simulateExperienceTest(body);
+		if (!result.ok) throw mapTestError(result.error);
+		return result.data;
+	};
+
+	// ── Interactive playground session driver (Wave 8 / IR-84A) ───────────────
+	// The driver is an in-memory session driver: start creates the session and
+	// advances leading script seats; advance applies one human action then
+	// advances script seats. Both reuse the real kernel with ZERO persistence
+	// and ZERO chat/session/DB binding. The typed error envelope is the same
+	// shape the tester uses (409 stale_revision / 422 every authoring, validation,
+	// capability, or VM fault, with captured console on the error path), so the
+	// same mapTestError renders it.
+
+	startExperiencePlayground = async (body: ExperiencePlaygroundStartInput) => {
+		const result = startExperiencePlayground(body);
+		if (!result.ok) throw mapTestError(result.error);
+		return result.data;
+	};
+
+	advanceExperiencePlayground = async (body: ExperiencePlaygroundAdvanceInput) => {
+		const result = advanceExperiencePlayground(body);
 		if (!result.ok) throw mapTestError(result.error);
 		return result.data;
 	};
