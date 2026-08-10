@@ -12,9 +12,11 @@ import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRol
 import type {
 	ExperienceActionDescriptor,
 	ExperienceContextMode,
+	ExperienceEffectRequest,
 	ExperienceEvent,
 	ExperienceParticipant,
 	ExperiencePublicReport,
+	ExperienceSessionStatus,
 } from "@vibe-tavern/domain";
 import type {
 	ExperienceChatConfigRow,
@@ -38,6 +40,7 @@ import type {
 	PersonaRecord,
 	ChatListItem,
 	ExperienceActionDto,
+	ExperienceDefinitionDto,
 	ExperienceFinishRequestDto,
 	ExperienceSessionResponseDto,
 } from "@vibe-tavern/api-contracts";
@@ -52,6 +55,8 @@ import type {
 	experienceRecalculateRequestSchema,
 	experienceReportQueueRequestSchema,
 	experienceStartRequestSchema,
+	experienceTestRunRequestSchema,
+	experienceTestSimulateRequestSchema,
 	experienceUndoRequestSchema,
 	experienceVisualCreateSchema,
 	experienceVisualUpdateSchema,
@@ -797,6 +802,92 @@ export interface ExperiencePromptOverrideDto {
 export interface ExperiencePromptOverridesResponse {
   global: ExperiencePromptOverrideDto | null;
   character: ExperiencePromptOverrideDto | null;
+}
+
+// ── Stateless unsaved-source tester (Wave 8 / IR-81B backend, IR-81D client) ─
+
+/** POST /experience/test/run body. `settings`/`participants`/`capabilityGrants`/
+ *  `actions` are optional on input (the schema defaults them). */
+export type ExperienceTestRunRequest = z.input<typeof experienceTestRunRequestSchema>;
+/** POST /experience/test/simulate body. `maxIterations`/`maxEffects` default
+ *  server-side when omitted. */
+export type ExperienceTestSimulateRequest = z.input<typeof experienceTestSimulateRequestSchema>;
+
+/** One captured VM console line. Mirrors `ExperienceConsoleEntry` in
+ *  services/api `domain/interactive/experience-sandbox.ts` (backend-only
+ *  module). */
+export interface ExperienceTestConsoleEntry {
+  level: "log" | "warn" | "error";
+  args: string[];
+}
+
+/** The discovered definition over the wire: the schema-normalized DTO plus the
+ *  kernel's method-presence flags. Mirrors `ExperienceDefinition` in
+ *  services/api `domain/interactive/experience-kernel.ts` (backend-only). */
+export interface ExperienceTestDefinition extends ExperienceDefinitionDto {
+  hasChoose: boolean;
+  hasFlavor: boolean;
+}
+
+/** One replayed action's outcome inside a test run / simulation trace. Mirrors
+ *  `ExperienceTestStepTrace` in services/api
+ *  `domain/interactive/experience-tester.ts` (backend-only). */
+export interface ExperienceTestStepTrace {
+  requestId: string;
+  actionType: string;
+  participantId?: string;
+  replayed: boolean;
+  revision: number;
+  status: ExperienceSessionStatus;
+  events: ExperienceEvent[];
+  effects: ExperienceEffectRequest[];
+  console: ExperienceTestConsoleEntry[];
+}
+
+/** POST /experience/test/run success body. Mirrors `ExperienceTestRunData` in
+ *  services/api `domain/interactive/experience-tester.ts` (backend-only). */
+export interface ExperienceTestRunData {
+  definition: ExperienceTestDefinition;
+  sourceHash: string;
+  initialState: unknown;
+  finalState: unknown;
+  revision: number;
+  status: ExperienceSessionStatus;
+  projection: { state: unknown; actions: ExperienceActionDescriptor[] };
+  events: ExperienceEvent[];
+  effects: ExperienceEffectRequest[];
+  console: ExperienceTestConsoleEntry[];
+  steps: ExperienceTestStepTrace[];
+}
+
+/** Why a bounded simulation stopped. Mirrors `ExperienceTestStopReason` in
+ *  services/api `domain/interactive/experience-tester.ts` (backend-only). */
+export type ExperienceTestStopReason =
+  | "completed"
+  | "awaiting_human"
+  | "awaiting_model"
+  | "no_legal_action"
+  | "no_choose_method"
+  | "bounded_non_termination"
+  | "effects_bound";
+
+/** POST /experience/test/simulate success body. Mirrors
+ *  `ExperienceTestSimulateData` in services/api
+ *  `domain/interactive/experience-tester.ts` (backend-only). */
+export interface ExperienceTestSimulateData {
+  definition: ExperienceTestDefinition;
+  sourceHash: string;
+  initialState: unknown;
+  finalState: unknown;
+  revision: number;
+  status: ExperienceSessionStatus;
+  events: ExperienceEvent[];
+  effects: ExperienceEffectRequest[];
+  console: ExperienceTestConsoleEntry[];
+  steps: ExperienceTestStepTrace[];
+  stopReason: ExperienceTestStopReason;
+  iterations: number;
+  stopDetail?: { participantId?: string };
 }
 
 // ─── Import ────────────────────────────────────────────────────────────

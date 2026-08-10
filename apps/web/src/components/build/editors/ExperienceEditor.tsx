@@ -31,10 +31,10 @@
  *    — always a fresh, explicitly untrusted copy; the source is never mutated.
  *  - The package contract at hand via `InteractiveApiReference`.
  *
- * IR-81D MOUNT SEAM: the stateless InteractiveTester (driving the unsaved
- * rules buffer through POST /api/experience/test/run|simulate) plugs in below
- * the rules CodeEditor — see the marked JSX comment. It is NOT implemented
- * here: no client call, no stubbed behavior.
+ * IR-81D: the stateless InteractiveTester mounts below the rules CodeEditor
+ * and drives the unsaved rules buffer through POST
+ * /api/experience/test/run|simulate as a read-only diagnostic (it never
+ * mutates these drafts or any store).
  */
 import { useCallback, useEffect, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
@@ -73,6 +73,7 @@ import {
 } from "../../../api/experience-api.js";
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { InteractiveApiReference } from "./interactive-api-reference.js";
+import { InteractiveTester } from "./InteractiveTester.js";
 
 // ── Local (unsaved) record ids ─────────────────────────────────────────────
 // A draft created from a starter/duplicate has no server row until its first
@@ -603,20 +604,13 @@ export function ExperienceEditor() {
       </div>
 
       {/*
-       * ─── IR-81D MOUNT SEAM ───────────────────────────────────────────────
-       * <InteractiveTester code={activeScript.code} /> lands HERE.
-       *
-       * The stateless unsaved-source tester (Wave 8 / IR-81D) calls the two
-       * client functions that will be added to api/experience-api.ts
-       * (POST /api/experience/test/run + /api/experience/test/simulate,
-       * backend already live from IR-81B) with the CURRENT UNSAVED rules
-       * buffer, and renders the discovered definition / projected state /
-       * legal actions / one-action reduce traces / typed errors
-       * (illegal_action, stale_revision, capability_denied, vm_error) as a
-       * read-only diagnostic. It must NOT mutate these drafts, must NOT
-       * forward actions to any chat/store, and is NOT the IR-84 play loop.
-       * Deliberately unimplemented in IR-81C — no client call, no stub.
+       * IR-81D: the stateless unsaved-source tester. It drives the CURRENT
+       * UNSAVED rules buffer through the IR-81B backend tester
+       * (POST /api/experience/test/run|simulate) as a read-only diagnostic —
+       * it never mutates these drafts, never touches a store, and never
+       * forwards an action to any chat/session.
        */}
+      <InteractiveTester code={activeScript.code} />
 
       {/* Visual: independent buffer with its own explicit save */}
       <div className="mt-8 border-t border-border pt-4">

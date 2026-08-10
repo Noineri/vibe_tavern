@@ -39,6 +39,10 @@ import type {
   ExperienceReportStatus,
   ExperienceSessionResponse,
   ExperienceStartRequest,
+  ExperienceTestRunData,
+  ExperienceTestRunRequest,
+  ExperienceTestSimulateData,
+  ExperienceTestSimulateRequest,
   ExperienceUndoRequest,
   ExperienceVisualCreateRequest,
   ExperienceVisualRow,
@@ -363,4 +367,27 @@ export async function updateExperienceCharacterOverride(
     json: body,
   });
   return unwrapExperience<ExperiencePromptOverridesResponse>(response);
+}
+
+// ─── Stateless unsaved-source tester (Wave 8 / IR-81B backend, IR-81D client) ─
+
+/** POST /api/experience/test/run — drive UNSAVED rules source through the real
+ *  sandbox/kernel with zero persistence: discover + create + project + legal
+ *  actions, then replay the ordered `actions` list (host-managed revision,
+ *  requestId idempotency, expectedRevision CAS). Typed tester failures surface
+ *  as {@link ExperienceApiError} with `details.code` (illegal_action,
+ *  stale_revision + currentRevision, capability_denied + granted/needs,
+ *  vm_error + kind) and the captured console in `details.console`. */
+export async function runExperienceTest(body: ExperienceTestRunRequest): Promise<ExperienceTestRunData> {
+  const response = await client.api.experience.test.run.$post({ json: body });
+  return unwrapExperience<ExperienceTestRunData>(response);
+}
+
+/** POST /api/experience/test/simulate — discover + create, then run a bounded
+ *  automated simulation advancing script-controlled seats via the real
+ *  `choose` until a human/model boundary, a terminal status, no legal action,
+ *  or a host bound; the typed stop reason is returned as data. */
+export async function simulateExperienceTest(body: ExperienceTestSimulateRequest): Promise<ExperienceTestSimulateData> {
+  const response = await client.api.experience.test.simulate.$post({ json: body });
+  return unwrapExperience<ExperienceTestSimulateData>(response);
 }
