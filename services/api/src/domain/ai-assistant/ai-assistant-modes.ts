@@ -80,6 +80,29 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "text",
     jsonSchemaHint: null,
   },
+  interactive_visual: {
+    mode: "interactive_visual",
+    presetKey: "interactive_visual",
+    defaultPromptFile: "interactive-visual.md",
+    stripReasoning: true,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
+  // interactive_visual generates OR repairs the INDEPENDENT visual source —
+  // the isolated-iframe HTML/CSS/JS that renders an experience via the host
+  // bridge (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 8 / IR-83A). It is a
+  // SIBLING of interactive_rules but DISTINCT: it takes the rules source ONLY
+  // to DISCOVER the validated game contract (the manifest + declared
+  // capabilities + setup descriptor, obtained by running the rules through the
+  // real sandbox via `discoverExperienceDefinition`), and feeds ONLY those
+  // validated shapes — NOT the raw rules logic — into the prompt together with
+  // the static host-bridge reference, the existing visual source, and the
+  // user's direction. Its OUTPUT is visual source only; it can never modify
+  // rules in the same generation (rules are a discovery INPUT, never the
+  // mutable output). It is code-generating, so stripReasoning is true and the
+  // accumulated output is cleaned (markdown fences stripped) before yielding
+  // one final visual-source block; it has NO legacyColumn (the generic `script`
+  // preset/legacy override stays prompt-only).
   lore_entry: {
     mode: "lore_entry",
     presetKey: "lore_entry",
