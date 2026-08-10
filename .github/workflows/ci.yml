@@ -85,9 +85,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       # `bun install` writes 26.5k files / 764 MB, and Defender scans every one:
-      # the same install costs 3.7s on Linux and 55-92s here. The runner account
-      # is a local admin, so the preference applies without Tamper Protection
-      # getting in the way. Throwaway VM, destroyed at the end of the job.
+      # the same install costs 3.7s on Linux and 43-101s here. Throwaway VM,
+      # destroyed at the end of the job.
+      #
+      # The status line is not decoration. This runner image reports
+      # IsTamperProtected=False and the preference does apply, but the effect on
+      # install is inside the noise: 43-101s across 10 runs without it against
+      # 44-61s across 4 with it. Anyone re-measuring needs to know the lever was
+      # actually pulled before blaming the numbers on it — and if a future image
+      # turns Tamper Protection on, `Set-MpPreference` will keep exiting 0 while
+      # silently doing nothing, and only this line will say so.
       - name: Disable Defender real-time scanning
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true
@@ -138,7 +145,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      # See test-windows: `bun install` alone costs 74s here against 3.7s on Linux.
+      # See test-windows for what the status line is for.
       - name: Disable Defender real-time scanning
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true
