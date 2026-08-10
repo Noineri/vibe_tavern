@@ -120,17 +120,18 @@ async function main() {
 	console.log(`   Version: ${VERSION}`);
 
 	const fastCompression = process.argv.slice(2).includes(FAST_COMPRESSION_FLAG);
-	if (fastCompression) {
-		console.log("   Compression: lzma2/fast, non-solid (verification build — do not ship)");
-	}
-
 	const isccPath = await findIscc();
 	console.log(`   ISCC: ${isccPath}`);
 
-	const isccProc = Bun.spawn(
-		[...isccArgs(isccPath, ROOT, VERSION, ISS_FILE, fastCompression)],
-		{ cwd: ROOT, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
-	);
+	const args = isccArgs(isccPath, ROOT, VERSION, ISS_FILE, fastCompression);
+	// Echoed from the args rather than restated, so the line cannot claim one
+	// compression while ISCC is handed another.
+	const overrides = args.filter((arg) => arg.startsWith("/DCompression=") || arg.startsWith("/DSolidCompression="));
+	if (overrides.length > 0) {
+		console.log(`   Verification build — do not ship: ${overrides.join(" ")}`);
+	}
+
+	const isccProc = Bun.spawn([...args], { cwd: ROOT, stdout: "inherit", stderr: "inherit", stdin: "inherit" });
 
 	const isccExit = await isccProc.exited;
 	if (isccExit !== 0) {
