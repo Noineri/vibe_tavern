@@ -71,6 +71,12 @@
   --spacing: 0.25rem;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  /* `--s1` is a global alias of the base `--surface` tier (see the :root rule
+     below). Closes the surface/s2/s3 numbering hole so `bg-s1` resolves to the
+     base surface instead of rendering transparent — Tailwind 4 silently drops
+     unknown tokens, which made `bg-s1` a recurring fatal landmine (the prior
+     cleanup 9da62111 deleted 21 occurrences but the naming hole remained). */
+  --color-s1: var(--s1);
   --color-s2: var(--s2);
   --color-s3: var(--s3);
   --color-border: var(--border);
@@ -136,6 +142,12 @@
    Never a tinted near-black/near-white (slate/zinc) — tinted outlines pick up the
    surface underneath and read as dirt on the edge. `outline-offset: -1px` keeps
    it inset so it adds no layout. See surfaces.md "Image Outlines". */
+/* `--s1` aliases the base `--surface` tier so the surface hierarchy reads
+   s1/surface → s2 → s3 with no numbering hole. Defined once globally (not per
+   theme) because it is a derived reference: it resolves `var(--surface)` under
+   whichever theme class is active. Makes `bg-s1` and raw `var(--s1)` resolve to
+   the base surface instead of rendering transparent. */
+:root { --s1: var(--surface); }
 :root,
 :root.mystic-night,
 :root.dark-lava { --img-outline: rgba(255, 255, 255, 0.1); }

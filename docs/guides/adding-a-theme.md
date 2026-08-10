@@ -34,7 +34,7 @@ Everything below `registry.ts` in that tree adapts automatically. **Do not touch
 
 ### 1. Create the theme CSS file
 
-Add `apps/web/src/themes/<name>.css`. The selector is `:root.<name>`. Mirror the token set of `coffee.css` / `milk-coffee.css` — every `--*` custom property the UI uses must be defined (copy the full block from an existing theme and adjust values). The relevant groups: backgrounds (`--bg`, `--surface`, `--s2`, `--s3`; optionally `--page-bg` for a page gradient — see [§ Page-background gradients and transparency](#page-background-gradients-and-transparency)), borders (`--border`, `--border2`), text (`--t1`–`--t4`, `--msg-t1/2`), accent (`--accent`, `--accent-t`, `--accent-dim`, `--accent-hover`), danger/success/info/warning, shadows, markdown colors, syntax-highlight colors.
+Add `apps/web/src/themes/<name>.css`. The selector is `:root.<name>`. Mirror the token set of `coffee.css` / `milk-coffee.css` — every `--*` custom property the UI uses must be defined (copy the full block from an existing theme and adjust values). The relevant groups: backgrounds (`--bg`, `--surface`, `--s2`, `--s3` — note `--s1` is NOT a per-theme token: it is a global alias of `--surface` defined once in `styles.css`, so the surface hierarchy reads s1/surface → s2 → s3 with no numbering hole; do not set `--s1` in a theme file; optionally `--page-bg` for a page gradient — see [§ Page-background gradients and transparency](#page-background-gradients-and-transparency)), borders (`--border`, `--border2`), text (`--t1`–`--t4`, `--msg-t1/2`), accent (`--accent`, `--accent-t`, `--accent-dim`, `--accent-hover`), danger/success/info/warning, shadows, markdown colors, syntax-highlight colors.
 
 ```css
 :root.my-theme {
