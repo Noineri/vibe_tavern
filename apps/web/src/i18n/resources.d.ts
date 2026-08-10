@@ -623,6 +623,8 @@ export default interface Resources {
     "experience_editor_unsaved_badge": "unsaved",
     "experience_editor_untitled_rules": "Untitled experience",
     "experience_editor_untrusted": "Not trusted",
+    "experience_editor_visual_ai_helper": "AI Visual",
+    "experience_editor_visual_ai_helper_no_rules": "Add interactive rules first so the visual assistant has a contract to target.",
     "experience_editor_visual_api_version": "Bridge API version",
     "experience_editor_visual_hash": "Source hash",
     "experience_editor_visual_hash_unsaved": "not saved yet",

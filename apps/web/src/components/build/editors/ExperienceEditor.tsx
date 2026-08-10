@@ -172,6 +172,7 @@ export function ExperienceEditor() {
   const [activeVisualId, setActiveVisualId] = useState<string | null>(null);
   const [apiRefOpen, setApiRefOpen] = useState(false);
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
+  const [visualAiHelperOpen, setVisualAiHelperOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -707,6 +708,25 @@ export function ExperienceEditor() {
               </span>
             </div>
             <div style={{ marginBottom: 20 }}>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {/*
+                 * IR-83B: launch the VISUAL AI assistant. It discovers the validated
+                 * contract from the ACTIVE RULES source (interactiveRulesSource) and
+                 * emits visual source only — it never touches the rules draft. It is
+                 * disabled when there is no rules source to discover a contract from.
+                 */}
+                <button
+                  type="button"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                  disabled={!activeScript?.code?.trim()}
+                  onClick={() => setVisualAiHelperOpen(true)}
+                >
+                  <Ic.brain /> {t("experience_editor_visual_ai_helper")}
+                </button>
+                {!activeScript?.code?.trim() && (
+                  <span className="font-ui text-[11px] italic text-t3">{t("experience_editor_visual_ai_helper_no_rules")}</span>
+                )}
+              </div>
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("experience_editor_visual_source_label")}</label>
               <div className="relative rounded-md border border-border bg-bg">
                 <CodeEditor
@@ -759,6 +779,30 @@ export function ExperienceEditor() {
         existingContent={activeScript.code}
         onInsert={(text) => updateScriptDraft({ code: text })}
         onReplace={(text) => updateScriptDraft({ code: text })}
+      />
+
+      {/*
+       * IR-83B: the universal AI assistant, thin-wired exactly like the IR-82
+       * interactive_rules integration but targeting the active VISUAL draft. It
+       * generates OR repairs raw reviewable VISUAL source from the validated game
+       * contract (discovered server-side from the active rules source via the new
+       * interactiveRulesSource channel), the current visual source, and the author's
+       * design direction. Output lands back in the VISUAL draft via the normal
+       * updateVisualDraft({ source }) action — it NEVER touches the rules draft
+       * (rules immutability). Visuals have no trusted/enabled gate (they run inside
+       * a sandboxed iframe), so the write-back is a plain source edit; on a dirty
+       * buffer the modal's own diff/replace review governs acceptance (no silent
+       * blind overwrite, no auto-persist).
+       */}
+      <AiAssistantModal
+        mode="full"
+        apiMode="interactive_visual"
+        isOpen={visualAiHelperOpen}
+        onClose={() => setVisualAiHelperOpen(false)}
+        existingContent={activeVisual?.source ?? ""}
+        interactiveRulesSource={activeScript?.code ?? ""}
+        onInsert={(text) => updateVisualDraft({ source: text })}
+        onReplace={(text) => updateVisualDraft({ source: text })}
       />
     </div>
   );

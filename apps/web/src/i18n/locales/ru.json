@@ -1868,6 +1868,8 @@
   "experience_editor_no_scripts": "Интерактивных правил пока нет — выберите заготовку выше.",
   "experience_editor_back": "Все опыты",
   "experience_editor_ai_helper": "ИИ Помощник",
+  "experience_editor_visual_ai_helper": "ИИ-визуал",
+  "experience_editor_visual_ai_helper_no_rules": "Сначала добавьте интерактивные правила — ассистенту нужен контракт для визуала.",
   "experience_editor_unsaved_badge": "не сохранено",
   "experience_editor_untitled_rules": "Опыт без названия",
   "experience_editor_load_error": "Не удалось загрузить интерактивные ресурсы.",

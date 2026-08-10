@@ -37,8 +37,11 @@ export interface AiAssistantModalProps {
   onClose: () => void;
 
   // --- Full Mode Props ---
-  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema" | "scene_rules" | "dice_script" | "interactive_rules";
+  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema" | "scene_rules" | "dice_script" | "interactive_rules" | "interactive_visual";
   existingContent?: string;
+  /** interactive_visual: the rules source used ONLY to discover the validated
+   *  game contract server-side (the visual assistant emits visual source). */
+  interactiveRulesSource?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;
   /** md_import: callback with checked fields once user clicks Apply. */
@@ -64,6 +67,7 @@ export function AiAssistantModal({
   onClose,
   apiMode,
   existingContent,
+  interactiveRulesSource,
   onInsert,
   onReplace,
   onMdImportApply,
@@ -269,6 +273,7 @@ export function AiAssistantModal({
       mode: apiMode,
       instruction: prompt,
       existingContent: existingContent || undefined,
+      interactiveRulesSource: interactiveRulesSource || undefined,
       providerProfileId: providerId,
       model: modelName || undefined,
       enabledLayers: [
@@ -283,7 +288,7 @@ export function AiAssistantModal({
       temperature: aiTemperature ?? undefined,
       promptFormat: apiMode === "scene_schema" ? promptFormat : undefined,
     };
-  }, [apiMode, existingContent, includeCharacter, includePersona, modelName, prompt, providerId, scopeContext?.characterId, scopeContext?.personaId, selectedLorebookIds.join("\u0000"), promptFormat]);
+  }, [apiMode, existingContent, interactiveRulesSource, includeCharacter, includePersona, modelName, prompt, providerId, scopeContext?.characterId, scopeContext?.personaId, selectedLorebookIds.join("\u0000"), promptFormat]);
 
   // --- Token Count Calculation (debounced over the live request body) ---
   const tokenCount = useDebouncedTokenCount(isOpen && mode === "full" ? buildAiRequest() : null);

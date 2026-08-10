@@ -27,6 +27,8 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
+import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
+import { getVisualStarter } from "../../experience/starters/index.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -84,10 +86,15 @@ interface CapturedAiProps {
   apiMode?: string;
   isOpen?: boolean;
   existingContent?: string;
+  interactiveRulesSource?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;
 }
 let lastAiProps: CapturedAiProps | null = null;
+/** Captured props from the last VISUAL AiAssistantModal render (IR-83B). The
+ *  editor mounts TWO modal instances (rules + visual); the double routes by
+ *  apiMode so the existing IR-82 assertions on lastAiProps stay untouched. */
+let lastVisualAiProps: CapturedAiProps | null = null;
 
 mock.module("../../../api/script-api.js", () => ({
   ...realScriptApi,
@@ -123,7 +130,11 @@ mock.module("../../shared/Tooltip.js", () => ({
 mock.module("../../shared/AiAssistantModal.js", () => ({
   ...realAiAssistantModal,
   AiAssistantModal: (props: CapturedAiProps) => {
-    lastAiProps = props;
+    if (props.apiMode === "interactive_visual") {
+      lastVisualAiProps = props;
+    } else {
+      lastAiProps = props;
+    }
     return null;
   },
 }));
@@ -148,7 +159,9 @@ beforeEach(() => {
   createExperienceVisual.mockClear();
   updateExperienceVisual.mockClear();
   useScriptDraftStore.getState().resetAll();
+  useExperienceVisualDraftStore.getState().resetAll();
   lastAiProps = null;
+  lastVisualAiProps = null;
   serverScripts = [];
   listAllScripts.mockImplementation(async () => serverScripts.map((s) => ({ ...s })));
   listExperienceVisuals.mockImplementation(async () => []);
@@ -236,5 +249,91 @@ describe("ExperienceEditor AI helper (IR-82)", () => {
     expect(draft?.values.enabled).toBe(false);
     const toggle = getByRole("switch") as HTMLButtonElement;
     expect(toggle.disabled).toBe(true);
+  });
+});
+
+describe("ExperienceEditor visual AI helper (IR-83B)", () => {
+  const choiceStarter = getVisualStarter("choice");
+  if (!choiceStarter) throw new Error("choice starter missing");
+  const CHOICE_SOURCE = choiceStarter.source;
+  const AI_GENERATED_VISUAL = "<!doctype html><html><body>ai-generated visual</body></html>";
+
+  /** The single visual draft entry (the starter-created active visual). */
+  function activeVisualDraft() {
+    const entries = Object.values(useExperienceVisualDraftStore.getState().drafts);
+    if (entries.length !== 1) throw new Error(`expected exactly one visual draft, got ${entries.length}`);
+    return entries[0];
+  }
+
+  /** Render the detail view with an active rules record (provides the
+   *  interactiveRulesSource channel) AND an active visual (from the Choice
+   *  starter — avoids the DropdownSelect, the established starter-click pattern). */
+  async function renderWithRulesAndVisual() {
+    serverScripts = [{ ...baseScript, enabled: true }];
+    const utils = render(<ExperienceEditor />);
+    // Activate the rules so the detail view renders and interactiveRulesSource
+    // is the current rules code.
+    fireEvent.click(await utils.findByText("Existing Rules"));
+    // Create + activate a visual from the Choice starter.
+    fireEvent.click(await utils.findByText("Choice"));
+    return utils;
+  }
+
+  it("launches in interactive_visual mode with the current visual source and the active rules source", async () => {
+    const { getByRole } = await renderWithRulesAndVisual();
+    fireEvent.click(getByRole("button", { name: "experience_editor_visual_ai_helper" }));
+    expect(lastVisualAiProps).not.toBeNull();
+    expect(lastVisualAiProps!.apiMode).toBe("interactive_visual");
+    expect(lastVisualAiProps!.existingContent).toBe(CHOICE_SOURCE);
+    expect(lastVisualAiProps!.interactiveRulesSource).toBe(EXISTING_CODE);
+  });
+
+  it("onReplace writes AI output into the visual draft without touching the base, the rules, or the server", async () => {
+    const { getByRole } = await renderWithRulesAndVisual();
+    fireEvent.click(getByRole("button", { name: "experience_editor_visual_ai_helper" }));
+    const props = lastVisualAiProps;
+    if (!props?.onReplace) throw new Error("visual onReplace not wired");
+
+    const baseSourceBefore = activeVisualDraft()?.base.source;
+
+    act(() => { props.onReplace!(AI_GENERATED_VISUAL); });
+
+    const draft = activeVisualDraft();
+    // AI output landed in the visual buffer via the normal draft action…
+    expect(draft?.values.source).toBe(AI_GENERATED_VISUAL);
+    // …the base is UNTOUCHED (no silent blind overwrite)…
+    expect(draft?.base.source).toBe(baseSourceBefore);
+    // …the RULES draft/code is UNCHANGED (rules immutability)…
+    expect(useScriptDraftStore.getState().drafts["srv_1"]?.values.code).toBe(EXISTING_CODE);
+    // …and nothing was silently persisted anywhere.
+    expect(updateExperienceVisual).not.toHaveBeenCalled();
+    expect(createExperienceVisual).not.toHaveBeenCalled();
+    expect(updateScript).not.toHaveBeenCalled();
+    expect(createScript).not.toHaveBeenCalled();
+  });
+
+  it("onInsert writes the accepted visual source through the same draft action (insert path)", async () => {
+    const { getByRole } = await renderWithRulesAndVisual();
+    fireEvent.click(getByRole("button", { name: "experience_editor_visual_ai_helper" }));
+    const props = lastVisualAiProps;
+    if (!props?.onInsert) throw new Error("visual onInsert not wired");
+
+    act(() => { props.onInsert!(AI_GENERATED_VISUAL); });
+
+    expect(activeVisualDraft()?.values.source).toBe(AI_GENERATED_VISUAL);
+    expect(useScriptDraftStore.getState().drafts["srv_1"]?.values.code).toBe(EXISTING_CODE);
+    expect(updateExperienceVisual).not.toHaveBeenCalled();
+    expect(createExperienceVisual).not.toHaveBeenCalled();
+  });
+
+  it("disables the visual assistant when there is no rules source to discover a contract from", async () => {
+    serverScripts = [{ ...baseScript, code: "", enabled: false }];
+    const { findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules")); // empty rules code
+    fireEvent.click(await findByText("Choice")); // a visual is active
+
+    const button = getByRole("button", { name: "experience_editor_visual_ai_helper" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(await findByText("experience_editor_visual_ai_helper_no_rules")).toBeTruthy();
   });
 });

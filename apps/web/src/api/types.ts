@@ -955,12 +955,14 @@ export interface AiAssistantChunk {
   finishReason?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "dice_script" | "interactive_rules";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "dice_script" | "interactive_rules" | "interactive_visual";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;
   instruction: string;
   existingContent?: string;
+  /** For `interactive_visual`: the rules source used ONLY to discover the validated game contract server-side. */
+  interactiveRulesSource?: string;
   providerProfileId: string;
   model?: string;
   enabledLayers: string[];
