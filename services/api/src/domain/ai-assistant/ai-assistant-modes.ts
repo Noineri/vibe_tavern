@@ -61,6 +61,25 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "text",
     jsonSchemaHint: null,
   },
+  // interactive_rules generates interactive-experience rules source — a single
+  // `context.experience.register({ apiVersion, manifest, capabilities, create,
+  // project, actions, reduce, choose?, flavor?, setup? })` body targeting the
+  // dedicated Interactive-experience VM (INTERACTIVE_RUNTIME_FOUNDATION_PLAN,
+  // Wave 8 / IR-82). It is a REAL code-generating mode, a sibling of
+  // dice_script: stripReasoning is true so the accumulated output is cleaned
+  // (markdown fences stripped) before yielding one final code block, and it has
+  // NO legacyColumn (the generic `script` preset/legacy override stays
+  // prompt-only). Its static API reference + canonical starter examples are
+  // baked into the `interactive-rules.md` asset, so no runtime context
+  // attachment is needed beyond existingContent + the user's instruction.
+  interactive_rules: {
+    mode: "interactive_rules",
+    presetKey: "interactive_rules",
+    defaultPromptFile: "interactive-rules.md",
+    stripReasoning: true,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
   lore_entry: {
     mode: "lore_entry",
     presetKey: "lore_entry",

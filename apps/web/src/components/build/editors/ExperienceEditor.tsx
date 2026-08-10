@@ -75,6 +75,7 @@ import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { InteractiveApiReference } from "./interactive-api-reference.js";
 import { InteractiveTester } from "./InteractiveTester.js";
 import { ExperiencePlayground } from "./ExperiencePlayground.js";
+import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 
 // ── Local (unsaved) record ids ─────────────────────────────────────────────
 // A draft created from a starter/duplicate has no server row until its first
@@ -170,6 +171,7 @@ export function ExperienceEditor() {
   const [activeScriptId, setActiveScriptId] = useState<string | null>(null);
   const [activeVisualId, setActiveVisualId] = useState<string | null>(null);
   const [apiRefOpen, setApiRefOpen] = useState(false);
+  const [aiHelperOpen, setAiHelperOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -579,7 +581,7 @@ export function ExperienceEditor() {
         />
       </div>
 
-      {/* Toolbar: API reference */}
+      {/* Toolbar: API reference + AI helper */}
       <div className="mb-2 flex flex-wrap gap-2">
         <button
           type="button"
@@ -587,6 +589,13 @@ export function ExperienceEditor() {
           onClick={() => setApiRefOpen((v) => !v)}
         >
           <Ic.book /> {t("script_api_reference")}
+        </button>
+        <button
+          type="button"
+          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+          onClick={() => setAiHelperOpen(true)}
+        >
+          <Ic.brain /> {t("experience_editor_ai_helper")}
         </button>
       </div>
       {apiRefOpen && <InteractiveApiReference />}
@@ -729,6 +738,28 @@ export function ExperienceEditor() {
       <div className="mt-3">
         <ExperiencePlayground code={activeScript.code} visualSource={activeVisual?.source ?? null} />
       </div>
+
+      {/*
+       * IR-82: the universal AI assistant, thin-wired exactly like the
+       * ScriptEditor→AiAssistantModal integration. It generates OR repairs
+       * raw reviewable rules source from the selected starter, the package
+       * API reference (baked into the interactive_rules prompt asset), the
+       * current source, and the author's design direction. Output lands back
+       * in the rules draft via the normal updateScriptDraft({ code }) action —
+       * the IR-81A store invariant then keeps it UNTRUSTED (any code change
+       * drops enabled=false), so AI-generated source is NEVER auto-enabled;
+       * on a dirty buffer the modal's own diff/replace review governs
+       * acceptance (no silent blind overwrite).
+       */}
+      <AiAssistantModal
+        mode="full"
+        apiMode="interactive_rules"
+        isOpen={aiHelperOpen}
+        onClose={() => setAiHelperOpen(false)}
+        existingContent={activeScript.code}
+        onInsert={(text) => updateScriptDraft({ code: text })}
+        onReplace={(text) => updateScriptDraft({ code: text })}
+      />
     </div>
   );
 }

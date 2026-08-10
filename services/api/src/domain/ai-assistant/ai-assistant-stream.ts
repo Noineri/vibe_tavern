@@ -535,10 +535,11 @@ export async function* streamAiAssistant(
         }
       }
 
-      // Emit the cleaned text result. For code-generating modes (dice_script),
-      // strip any stray markdown fences the model added despite instructions.
+      // Emit the cleaned text result. For code-generating modes (dice_script,
+      // interactive_rules), strip any stray markdown fences the model added
+      // despite instructions so the user receives raw executable source.
       if (fullText.trim()) {
-        const finalText = request.mode === "dice_script"
+        const finalText = request.mode === "dice_script" || request.mode === "interactive_rules"
           ? cleanGeneratedCode(fullText)
           : fullText;
         yield { type: "text", text: finalText };
@@ -1009,6 +1010,13 @@ function buildUserMessage(
         return `Here is my current Dice script:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated JavaScript Dice script only. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible.`;
       }
       return `${request.instruction}\n\nReturn the complete JavaScript Dice script only. Do not return markdown, explanation, or anything other than the script code.`;
+    }
+
+    case "interactive_rules": {
+      if (request.existingContent) {
+        return `Here is my current interactive rules script:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated interactive rules script only — the full single context.experience.register({ ... }) body. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible.`;
+      }
+      return `${request.instruction}\n\nReturn the complete interactive rules script only — a single context.experience.register({ ... }) body. Do not return markdown, explanation, or anything other than the script code.`;
     }
 
     case "lore_entry": {

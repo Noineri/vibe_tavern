@@ -608,6 +608,7 @@ export default interface Resources {
     "experience_detach_title": "Open in separate window",
     "experience_detach_unavailable": "This experience window is no longer connected.",
     "experience_detached_badge": "detached",
+    "experience_editor_ai_helper": "AI Helper",
     "experience_editor_back": "All experiences",
     "experience_editor_duplicate": "Duplicate as a new experience",
     "experience_editor_existing_label": "Your interactive rules",
