@@ -19,7 +19,7 @@ export async function createScript(body: { name: string; description?: string; c
   return unwrapRpc<ScriptRecord>(response);
 }
 
-export async function updateScript(scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
+export async function updateScript(scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null }): Promise<ScriptRecord> {
   const response = await client.api.scripts[":scriptId"].$patch({ param: { scriptId }, json: body });
   return unwrapRpc<ScriptRecord>(response);
 }

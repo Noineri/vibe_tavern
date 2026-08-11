@@ -239,6 +239,13 @@
       "when": 1786371753458,
       "tag": "0033_volatile_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1786446928793,
+      "tag": "0034_condemned_nightcrawler",
+      "breakpoints": true
     }
   ]
 }

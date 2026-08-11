@@ -25,6 +25,9 @@ export interface CreateScriptData {
   characterId?: string | null;
   personaId?: string | null;
   chatId?: string | null;
+  /** Default visual paired with this experience (interactive scripts only).
+   *  Set by the creation wizard; null for non-interactive and legacy rows. */
+  defaultVisualId?: string | null;
   extensions?: Record<string, unknown>;
 }
 
@@ -49,6 +52,7 @@ export interface Script {
   characterId: string | null;
   personaId: string | null;
   chatId: string | null;
+  defaultVisualId: string | null;
   extensions: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -195,6 +199,7 @@ export class ScriptStore {
         characterId: data.characterId ?? null,
         personaId: data.personaId ?? null,
         chatId: data.chatId ?? null,
+        defaultVisualId: data.defaultVisualId ?? null,
         extensionsJson: JSON.stringify(data.extensions ?? {}),
         createdAt: now,
         updatedAt: now,
@@ -226,6 +231,7 @@ export class ScriptStore {
     if (data.characterId !== undefined) values.characterId = data.characterId;
     if (data.personaId !== undefined) values.personaId = data.personaId;
     if (data.chatId !== undefined) values.chatId = data.chatId;
+    if (data.defaultVisualId !== undefined) values.defaultVisualId = data.defaultVisualId;
     if (data.extensions !== undefined) values.extensionsJson = JSON.stringify(data.extensions);
 
     const [row] = await this.db
@@ -544,6 +550,7 @@ export class ScriptStore {
       characterId: row.characterId,
       personaId: row.personaId,
       chatId: row.chatId,
+      defaultVisualId: row.defaultVisualId,
       extensions: JSON.parse(row.extensionsJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

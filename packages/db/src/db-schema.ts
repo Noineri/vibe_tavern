@@ -347,6 +347,18 @@ export const scripts = sqliteTable('scripts', {
   characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
   personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  // Default visual paired with this experience (interactive scripts only). Set
+  // by the creation wizard so the script↔visual pairing persists across chats;
+  // ExperienceAssignment auto-applies it while keeping per-chat overrides.
+  // Null for non-interactive scripts and pre-existing rows. DB-only metadata:
+  // intentionally absent from the file payload/content hash (changing the
+  // default visual is not a source revision). Soft link — a plain stored id
+  // with NO database FK: deleting the visual leaves a stale id here, which is
+  // harmless because ExperienceAssignment only applies the default when the
+  // visual still exists in the loaded list (and an ALTER TABLE FK could not
+  // carry ON DELETE SET NULL, which would otherwise have blocked visual
+  // deletion).
+  defaultVisualId: text('default_visual_id'),
   extensionsJson: text('extensions_json').notNull().default('{}'),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),

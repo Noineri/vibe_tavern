@@ -22,6 +22,7 @@ const script: ScriptRecord = {
   chatId: null,
   enabled: true,
   sortOrder: 0,
+  defaultVisualId: null,
 };
 
 describe("script draft store", () => {

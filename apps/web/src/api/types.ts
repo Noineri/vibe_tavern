@@ -530,6 +530,9 @@ export interface ScriptRecord {
   chatId: string | null;
   enabled: boolean;
   sortOrder: number;
+  /** Default visual paired with this experience (interactive scripts only).
+   *  Null for non-interactive and pre-existing rows. */
+  defaultVisualId: string | null;
 }
 
 export interface ScriptLinkRecord {

@@ -25,6 +25,10 @@ export const updateScriptSchema = z.object({
   code: z.string().optional(),
   enabled: z.boolean().optional(),
   sortOrder: z.number().optional(),
+  /** Default visual paired with an interactive experience. Set by the creation
+   *  wizard after both assets exist; null clears it. Not a source revision —
+   *  does not affect trust/enabled state. */
+  defaultVisualId: z.string().nullable().optional(),
 });
 
 /** Reassign a script's scope atomically (PR-6 binding). Clears stale FKs.

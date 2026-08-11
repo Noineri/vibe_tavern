@@ -57,6 +57,7 @@ const baseScript: ScriptRecord = {
   chatId: null,
   enabled: false,
   sortOrder: 0,
+  defaultVisualId: null,
 };
 
 const baseVisual: ExperienceVisualRow = {
@@ -424,6 +425,10 @@ describe("ExperienceCreationWizard", () => {
       compatibleManifestIds: ["board"],
       scopeType: "global",
     });
+    // The script↔visual pairing is persisted as the experience's default visual
+    // so ExperienceAssignment auto-applies it (no per-chat re-binding).
+    expect(updateScript).toHaveBeenCalledTimes(1);
+    expect(updateScript).toHaveBeenCalledWith("srv_1", { defaultVisualId: "vis_1" });
     // The created records were handed to onFinish.
     expect(finishScript?.id).toBe("srv_1");
     expect(finishVisual?.id).toBe("vis_1");

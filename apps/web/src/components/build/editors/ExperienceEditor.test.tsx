@@ -75,6 +75,7 @@ const baseScript: ScriptRecord = {
   chatId: null,
   enabled: false,
   sortOrder: 0,
+  defaultVisualId: null,
 };
 
 const baseVisual: ExperienceVisualRow = {

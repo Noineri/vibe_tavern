@@ -21,7 +21,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 			enabled: body.scriptKind === "interactive" ? false : body.enabled,
 		});
 
-	updateScript = async (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => {
+	updateScript = async (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null }) => {
 		const existing = await this.stores.scripts.getById(scriptId);
 		if (existing?.scriptKind !== "interactive") return this.stores.scripts.update(scriptId, body);
 

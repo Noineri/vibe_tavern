@@ -61,7 +61,7 @@ import {
 } from "../../experience/starters/index.js";
 import { ExperiencePreview } from "../../experience/ExperiencePreview.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
-import { createScript, deleteScript } from "../../../api/script-api.js";
+import { createScript, deleteScript, updateScript } from "../../../api/script-api.js";
 import { createExperienceVisual, runExperienceTest } from "../../../api/experience-api.js";
 import {
   nextLocalId,
@@ -293,15 +293,26 @@ export function ExperienceCreationWizard(props: ExperienceCreationWizardProps) {
       return;
     }
 
-    // Both succeeded: migrate the local drafts to the real server rows and hand
-    // back to the editor. The drafts are replaced (not just removed) so the
-    // editor's ensure-draft effect sees clean bases for the new ids.
+    // Persist the script↔visual pairing as the experience's default visual so
+    // ExperienceAssignment auto-applies it (no re-binding per chat). Best-effort:
+    // both assets already exist and are usable, so a link failure only means the
+    // pairing isn't remembered — the editor still works.
+    let linkedScript = createdScript;
+    try {
+      linkedScript = await updateScript(createdScript.id, { defaultVisualId: createdVisual.id });
+    } catch (linkError) {
+      console.warn("experience: default-visual link failed", linkError);
+    }
+
+    // Migrate the local drafts to the real server rows and hand back to the
+    // editor. The drafts are replaced (not just removed) so the editor's
+    // ensure-draft effect sees clean bases for the new ids.
     if (rulesLocalId) removeScriptDraft(rulesLocalId);
     if (visualLocalId) removeVisualDraft(visualLocalId);
-    ensureScriptDraft(createdScript);
+    ensureScriptDraft(linkedScript);
     ensureVisualDraft(createdVisual);
     setFinishing(false);
-    onFinish(createdScript, createdVisual);
+    onFinish(linkedScript, createdVisual);
   }, [rulesValues, visualValues, rulesLocalId, visualLocalId, removeScriptDraft, removeVisualDraft, ensureScriptDraft, ensureVisualDraft, onFinish]);
 
   // ── Visual preview starter (edited source + selected starter's fixtures) ──

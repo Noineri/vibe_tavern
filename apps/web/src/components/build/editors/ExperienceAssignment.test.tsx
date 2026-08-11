@@ -89,8 +89,8 @@ const { ExperienceAssignment } = await import("./ExperienceAssignment.js");
 
 const CHAT_ID = brandId<ChatId>("chat_1");
 
-/** Minimal script row; the component only reads id/name/scriptKind. */
-function scriptRec(id: string, name: string, scriptKind: string) {
+/** Minimal script row; the component only reads id/name/scriptKind/defaultVisualId. */
+function scriptRec(id: string, name: string, scriptKind: string, defaultVisualId: string | null = null) {
   return {
     id,
     name,
@@ -103,6 +103,7 @@ function scriptRec(id: string, name: string, scriptKind: string) {
     chatId: null,
     enabled: true,
     sortOrder: 0,
+    defaultVisualId,
   };
 }
 
@@ -233,6 +234,47 @@ describe("ExperienceAssignment (IR-72A)", () => {
     expect(visualTexts).toContain("experience_assign_no_visual_option");
     fireEvent.click(visualItems.find((i) => i.textContent === "Grid Board")!);
     expect(mocks.onPatch).toHaveBeenCalledWith({ visualId: "v1" });
+  });
+
+  it("auto-applies the script's default visual when it still exists (no per-chat re-binding)", async () => {
+    mocks.listAllScripts.mockResolvedValue([
+      scriptRec("s1", "Tic-Tac-Toe", "interactive", "v_default"),
+    ]);
+    mocks.listExperienceVisuals.mockResolvedValue([visualRec("v_default", "Grid Board")]);
+
+    const view = renderAssignment();
+    const scriptItems = await openDropdown(view, "experience_assign_script_placeholder");
+    fireEvent.click(scriptItems.find((i) => i.textContent === "Tic-Tac-Toe")!);
+
+    // The default visual is seeded alongside the script selection so the user
+    // never re-binds a visual per chat for a paired experience.
+    expect(mocks.onPatch).toHaveBeenCalledWith({
+      scriptId: "s1",
+      capabilityGrants: [],
+      contextMode: "none",
+      visualId: "v_default",
+    });
+  });
+
+  it("does not seed a stale default visual; the existing per-chat visual is left untouched", async () => {
+    mocks.listAllScripts.mockResolvedValue([
+      scriptRec("s1", "Tic-Tac-Toe", "interactive", "v_gone"),
+    ]);
+    // The default visual is absent from the loaded list (e.g. deleted); another
+    // visual the user previously picked is the current per-chat value.
+    mocks.listExperienceVisuals.mockResolvedValue([visualRec("v_other", "Other")]);
+
+    const view = renderAssignment({ visualId: "v_user_picked" });
+    const scriptItems = await openDropdown(view, "experience_assign_script_placeholder");
+    fireEvent.click(scriptItems.find((i) => i.textContent === "Tic-Tac-Toe")!);
+
+    // No visualId in the patch — the stale default is not applied and the
+    // user's existing per-chat visual is preserved (not surprise-cleared).
+    expect(mocks.onPatch).toHaveBeenCalledWith({
+      scriptId: "s1",
+      capabilityGrants: [],
+      contextMode: "none",
+    });
   });
 
   it("clears the selection through the none option with an immediate grants/context reset", async () => {

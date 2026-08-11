@@ -72,6 +72,7 @@ const seamScript: ScriptRecord = {
   chatId: null,
   enabled: false,
   sortOrder: 0,
+  defaultVisualId: null,
 };
 
 const seamVisual: ExperienceVisualRow = {

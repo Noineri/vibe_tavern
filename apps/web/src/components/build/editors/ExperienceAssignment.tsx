@@ -260,11 +260,31 @@ export function ExperienceAssignment({
   /** Selecting a script clears grants + context BEFORE discovery — grants are
    *  per-package, so a new package always starts from the empty set. */
   function selectScript(id: string) {
-    onPatch({
-      scriptId: id === "" ? null : id,
+    if (id === "") {
+      onPatch({
+        scriptId: null,
+        capabilityGrants: [],
+        contextMode: EXPERIENCE_CONTEXT_MODE.none,
+      });
+      return;
+    }
+    // Auto-apply the experience's default visual (paired at creation) so the
+    // user doesn't re-bind a visual per chat. Only seeds when the script
+    // declares a default AND that visual still exists in the loaded list
+    // (stale-link guard). When the script has no default, the existing per-chat
+    // visual is left untouched — the user can still pick one manually, and an
+    // explicit dropdown choice always wins on subsequent edits.
+    const patch: ExperienceConfigUpdateRequest = {
+      scriptId: id,
       capabilityGrants: [],
       contextMode: EXPERIENCE_CONTEXT_MODE.none,
-    });
+    };
+    const script = scriptsLoad.status === "ok" ? scriptsLoad.items.find((s) => s.id === id) : undefined;
+    const visuals = visualsLoad.status === "ok" ? visualsLoad.items : [];
+    if (script?.defaultVisualId && visuals.some((v) => v.id === script.defaultVisualId)) {
+      patch.visualId = script.defaultVisualId;
+    }
+    onPatch(patch);
   }
 
   /** Grant/revoke one capability. The emitted array is rebuilt from the

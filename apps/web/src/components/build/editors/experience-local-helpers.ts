@@ -60,6 +60,7 @@ export function pendingScriptRecord(id: string, values: InteractiveRulesDraftVal
     characterId: null,
     personaId: null,
     chatId: null,
+    defaultVisualId: null,
     sortOrder: 0,
   };
 }
