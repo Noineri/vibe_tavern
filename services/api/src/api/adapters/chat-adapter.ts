@@ -373,7 +373,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	generateChatSummary = (
 		chatId: string,
-		body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean },
+		body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean; temperature?: number; maxOutputTokens?: number; contextBudget?: number },
 		signal?: AbortSignal,
 	) => this.chatSummaryService.generateChatSummary({ chatId, ...body, signal });
 

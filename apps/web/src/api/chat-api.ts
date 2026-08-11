@@ -400,6 +400,12 @@ export async function generateChatSummary(
     includePriorSummaries?: boolean;
     /** SUMMARY_PRIOR_CONTEXT_PLAN: cap on how many preceding summaries to include. */
     maxPriorSummaries?: number;
+    /** SUM-2: per-call sampler overrides. Absent = inherit from the provider profile (so summaries can be cooled below RP temperature). */
+    temperature?: number;
+    /** SUM-2: per-call output-token limit. Absent = inherit from the provider profile. */
+    maxOutputTokens?: number;
+    /** SUM-2: per-call assembler history budget. Absent = inherit from the provider profile. */
+    contextBudget?: number;
   },
   options?: { signal?: AbortSignal },
 ): Promise<{ summary: string; chatSummary: ChatSummaryRecord; snapshot: AppSnapshot }> {

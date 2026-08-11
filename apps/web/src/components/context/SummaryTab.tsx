@@ -9,6 +9,7 @@ import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Toggle } from "../shared/Toggle.js";
 import { NumberInput } from "../shared/NumberInput.js";
+import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -36,6 +37,14 @@ const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
   includePriorSummaries: true,
   maxPriorSummaries: 10,
 };
+
+// SUM-2: sane defaults for the summary sampler, distinct from the RP profile.
+// Summaries are an analytical task — cool the sampler (0.3, mirroring
+// AiAssistantModal) so a thinking model at RP temperature (e.g. 1.1) does not
+// drift on the long structured summary prompt. maxOutputTokens 8192 keeps a
+// full session summary intact. Both are overridable per-call from the UI.
+const SUMMARY_DEFAULT_TEMPERATURE = 0.3;
+const SUMMARY_DEFAULT_MAX_TOKENS = 8192;
 
 export interface ContextMemoryModalProps {
   isOpen: boolean;
@@ -110,6 +119,11 @@ export function useSummaryTab({
   // (default true/10, mirroring the auto config; passed into generateChatSummary).
   const [rangedIncludePrior, setRangedIncludePrior] = useState(true);
   const [rangedMaxPrior, setRangedMaxPrior] = useState(10);
+  // SUM-2: per-summary sampler overrides for ranged generation. Null = send the
+  // SUMMARY_DEFAULT_* constants below; user input overrides them. Mirrors the
+  // ephemeral aiTemperature/aiMaxTokens pattern in AiAssistantModal.
+  const [summaryTemperature, setSummaryTemperature] = useState<number | null>(null);
+  const [summaryMaxTokens, setSummaryMaxTokens] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -363,6 +377,8 @@ export function useSummaryTab({
         excludeSummarized,
         includePriorSummaries: rangedIncludePrior,
         maxPriorSummaries: rangedIncludePrior ? rangedMaxPrior : 0,
+        temperature: summaryTemperature ?? SUMMARY_DEFAULT_TEMPERATURE,
+        maxOutputTokens: summaryMaxTokens ?? SUMMARY_DEFAULT_MAX_TOKENS,
       }, abort.signal);
       setSummaries((prev) => upsertSummary(prev, generated));
       selectSummary(generated);
@@ -507,6 +523,16 @@ export function useSummaryTab({
           />
         </div>
       )}
+
+      {/* ── Sampler overrides (SUM-2) ── cool the sampler below RP temperature. */}
+      <div className="mt-2">
+        <AiGenParamsRow
+          temperature={summaryTemperature ?? SUMMARY_DEFAULT_TEMPERATURE}
+          onTemperatureChange={setSummaryTemperature}
+          maxTokens={summaryMaxTokens ?? SUMMARY_DEFAULT_MAX_TOKENS}
+          onMaxTokensChange={setSummaryMaxTokens}
+        />
+      </div>
 
       {/* ── Summary text ── */}
       <section className="mt-4">

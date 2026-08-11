@@ -10,6 +10,10 @@ import { ChatSummaryService, withSummaryPromptAsFinalUserMessage } from "../src/
 import { resolveSummaryPrompt } from "../src/domain/prompt/summary-prompt.js";
 
 let capturedPrompt: AssemblePromptResponse | null = null;
+// SUM-2: capture execute sampler overrides + ranged-assemble contextBudget
+// so the override-threading boundary can be asserted directly.
+let capturedExecuteArgs: { overrideMaxTokens?: number; overrideTemperature?: number } | null = null;
+let capturedAssembleRangedArgs: { contextBudget?: number | null } | null = null;
 
 const chat = {
   id: "chat_1",
@@ -318,7 +322,10 @@ describe("SessionRuntime summary assembly", () => {
 function makeSummaryService() {
   const lifecycle = {
     assembleSummaryPrompt: async () => assembled(summaryPrompt),
-    assembleRangedSummaryPrompt: async () => assembled(summaryPrompt),
+    assembleRangedSummaryPrompt: async (input: { contextBudget?: number | null }) => {
+      capturedAssembleRangedArgs = { contextBudget: input.contextBudget };
+      return assembled(summaryPrompt);
+    },
     updateChatSummary: async () => ({}),
   };
   const stores = {
@@ -342,8 +349,9 @@ function makeSummaryService() {
     chatLifecycle: lifecycle,
     buildSummaryResponse: async () => ({}),
   } as unknown as SessionRuntime;
-  const execute: typeof nonstreamingProviderExecute = async ({ prompt }) => {
+  const execute: typeof nonstreamingProviderExecute = async ({ prompt, overrideMaxTokens, overrideTemperature }) => {
     capturedPrompt = prompt;
+    capturedExecuteArgs = { overrideMaxTokens, overrideTemperature };
     return { text: "A concise summary." } as Awaited<ReturnType<typeof nonstreamingProviderExecute>>;
   };
   return new ChatSummaryService(stores, runtime, profiles as never, null, execute);
@@ -483,5 +491,69 @@ describe("Summary prompt fallback (SPC-4)", () => {
     // read-only continuity framing, no re-summarize, language-neutral.
     expect(out).toContain("Prior summaries");
     expect(out.toLowerCase()).toContain("do not repeat");
+  });
+});
+
+// ─── SUM-2: per-call sampler overrides thread to the executor, and the
+// hardcoded maxOutputTokens=16384 is gone (absent override = inherit profile).
+// Pins the service → nonstreamingProviderExecute boundary for sampler args
+// and the service → assembler boundary for contextBudget. ─────────────────
+describe("ChatSummaryService sampler override threading (SUM-2)", () => {
+  it("inherits the profile sampler when no override is given (no hardcoded 16384)", async () => {
+    capturedExecuteArgs = null;
+    const service = makeSummaryService();
+
+    await service.generateChatSummary({
+      chatId: "chat_1",
+      providerProfileId: "profile_1",
+      summarizedFrom: 2,
+      summarizedTo: 4,
+    });
+
+    expect(capturedExecuteArgs).toEqual({ overrideMaxTokens: undefined, overrideTemperature: undefined });
+  });
+
+  it("forwards temperature + maxOutputTokens overrides to the executor", async () => {
+    capturedExecuteArgs = null;
+    const service = makeSummaryService();
+
+    await service.generateChatSummary({
+      chatId: "chat_1",
+      providerProfileId: "profile_1",
+      summarizedFrom: 2,
+      summarizedTo: 4,
+      temperature: 0.3,
+      maxOutputTokens: 8192,
+    });
+
+    expect(capturedExecuteArgs).toEqual({ overrideMaxTokens: 8192, overrideTemperature: 0.3 });
+  });
+
+  it("forwards a contextBudget override to the ranged assembler", async () => {
+    capturedAssembleRangedArgs = null;
+    const service = makeSummaryService();
+
+    await service.generateChatSummary({
+      chatId: "chat_1",
+      providerProfileId: "profile_1",
+      summarizedFrom: 2,
+      summarizedTo: 4,
+      contextBudget: 32768,
+    });
+
+    expect(capturedAssembleRangedArgs).toEqual({ contextBudget: 32768 });
+  });
+
+  it("drops the hardcoded 16384 from the legacy full-summary path too", async () => {
+    capturedExecuteArgs = null;
+    const service = makeSummaryService();
+
+    await service.summarizeChat({
+      chatId: "chat_1",
+      providerProfileId: "profile_1",
+      maxMessages: 20,
+    });
+
+    expect(capturedExecuteArgs).toEqual({ overrideMaxTokens: undefined, overrideTemperature: undefined });
   });
 });

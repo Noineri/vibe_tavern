@@ -18,6 +18,8 @@ export interface SummarizeChatInput {
   providerProfileId: string;
   model?: string;
   maxMessages: number;
+  // SUM-2: per-call override. Absent = inherit from profile (legacy full path).
+  maxOutputTokens?: number;
   signal?: AbortSignal;
 }
 
@@ -37,6 +39,12 @@ export interface GenerateChatSummaryInput {
   // manual ranged omits maxPriorSummaries → lifecycle defaults to 10.
   includePriorSummaries?: boolean;
   maxPriorSummaries?: number;
+  // SUM-2: per-call sampler overrides. Absent = inherit from the effective
+  // provider profile. temperature/maxOutputTokens reach the executor as
+  // overrides; contextBudget caps the assembler's history budget.
+  temperature?: number;
+  maxOutputTokens?: number;
+  contextBudget?: number;
   signal?: AbortSignal;
 }
 
@@ -107,7 +115,7 @@ export class ChatSummaryService {
       model,
       prompt,
       signal: input.signal,
-      overrideMaxTokens: 16384,
+      overrideMaxTokens: input.maxOutputTokens,
     });
     const summary = result.text.trim();
     if (!summary) {
@@ -155,7 +163,7 @@ export class ChatSummaryService {
       model,
       summarizedFrom: from,
       summarizedTo: to,
-      contextBudget: effectiveProfile.contextBudget ?? null,
+      contextBudget: input.contextBudget ?? effectiveProfile.contextBudget ?? null,
       includePriorSummaries: input.includePriorSummaries,
       maxPriorSummaries: input.maxPriorSummaries,
     });
@@ -166,7 +174,8 @@ export class ChatSummaryService {
       model,
       prompt,
       signal: input.signal,
-      overrideMaxTokens: 16384,
+      overrideMaxTokens: input.maxOutputTokens,
+      overrideTemperature: input.temperature,
     });
     const summary = result.text.trim();
     if (!summary) {

@@ -52,6 +52,15 @@ export const generateChatSummarySchema = z.object({
   // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): per-call override of the auto-summary
   // toggle for manual ranged summaries. Default ON (mirrors autoSummaryConfig).
   includePriorSummaries: z.boolean().optional().default(true),
+  // SUM-2: per-call sampler overrides for ranged-summary generation. Absent =
+  // inherit from the provider profile, so summaries match RP temperature by
+  // default but can be cooled down (thinking models at high temperature drift
+  // on long structured summary prompts). temperature/maxOutputTokens reach the
+  // executor as overrides; contextBudget caps how much chat history the
+  // assembler admits (replaces effectiveProfile.contextBudget when set).
+  temperature: z.number().min(0).max(2).optional(),
+  maxOutputTokens: z.number().int().min(1).optional(),
+  contextBudget: z.number().int().min(1).optional(),
 });
 
 export const updateMemorySettingsSchema = z.object({
