@@ -36,6 +36,7 @@ import { ExperienceService } from "../domain/interactive/experience-service.js";
 import { ExperienceReplayService } from "../domain/interactive/experience-replay-service.js";
 import { ExperienceContextService } from "../domain/interactive/experience-context-service.js";
 import { ExperienceModelEffectService } from "../domain/interactive/experience-model-effect-service.js";
+import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
@@ -118,6 +119,18 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		stores.uiSettings.ensureDefaults(),
 	]);
 	console.log(`${tag} Seed data ensured.`);
+
+	// Built-in experiences (BE-4): ensure app-owned interactive experiences
+	// (Conversation messenger first) exist exactly once. Idempotent — a single
+	// entry failing is collected into `skipped` and logged, never crashing init.
+	const builtinSeed = await seedBuiltinExperiences(stores);
+	if (builtinSeed.skipped.length > 0) {
+		console.warn(
+			`${tag} Built-in experiences: ${builtinSeed.skipped.length} skipped —`,
+			builtinSeed.skipped,
+		);
+	}
+	console.log(`${tag} Built-in experiences ensured: [${builtinSeed.seeded.join(", ")}].`);
 
 	// Tokenizers
 	await warmupTokenizers();
