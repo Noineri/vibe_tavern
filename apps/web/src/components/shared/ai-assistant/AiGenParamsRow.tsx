@@ -15,6 +15,10 @@ export interface AiGenParamsRowProps {
   onMaxTokensChange: (value: number) => void;
   /** Optional recent-messages control (chat message editor only). Keeps its steppers. */
   recentMessages?: { value: number; onChange: (value: number) => void };
+  /** Optional context-length control (summary generation). Distinct from maxOutputTokens:
+   * contextBudget caps the assembled prompt's token budget (input side), whereas
+   * maxTokens caps the model's reply length (output side). */
+  contextBudget?: { value: number; onChange: (value: number) => void };
 }
 
 /**
@@ -39,6 +43,7 @@ export function AiGenParamsRow({
   maxTokens,
   onMaxTokensChange,
   recentMessages,
+  contextBudget,
 }: AiGenParamsRowProps) {
   const { t } = useT();
   const [isOpen, setIsOpen] = usePersistedBoolean("ai:gen-params:open", false);
@@ -90,6 +95,12 @@ export function AiGenParamsRow({
               <div>
                 <label className={lblCls}>{t("ai_quickpill_recent_messages")}</label>
                 <NumberInput min={1} max={100} value={recentMessages.value} onChange={recentMessages.onChange} className="w-full" />
+              </div>
+            )}
+            {contextBudget && (
+              <div>
+                <label className={lblCls}>{t("ai_param_context_budget")}</label>
+                <NumberInput min={1000} max={1000000} hideControls value={contextBudget.value} onChange={contextBudget.onChange} className="w-full" />
               </div>
             )}
           </div>

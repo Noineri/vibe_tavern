@@ -1257,6 +1257,7 @@
   "ai_advanced_settings": "Advanced settings",
   "ai_param_temperature": "Temperature",
   "ai_param_max_tokens": "Max Tokens",
+  "ai_param_context_budget": "Context Length",
   "placeholder_create_character": "Create Character",
   "placeholder_import_character": "Import Character",
   "api_key_saved": "API key saved",

@@ -163,7 +163,7 @@ export class ChatSummaryService {
       model,
       summarizedFrom: from,
       summarizedTo: to,
-      contextBudget: input.contextBudget ?? effectiveProfile.contextBudget ?? null,
+      contextBudget: input.contextBudget ?? null,
       includePriorSummaries: input.includePriorSummaries,
       maxPriorSummaries: input.maxPriorSummaries,
     });

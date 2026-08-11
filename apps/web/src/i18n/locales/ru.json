@@ -1259,6 +1259,7 @@
   "ai_advanced_settings": "Расширенные настройки",
   "ai_param_temperature": "Температура",
   "ai_param_max_tokens": "Макс. токенов",
+  "ai_param_context_budget": "Длина контекста",
   "placeholder_create_character": "Создать персонажа",
   "placeholder_import_character": "Импортировать персонажа",
   "api_key_saved": "API ключ сохранён",

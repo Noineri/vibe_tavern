@@ -342,6 +342,8 @@ function makeSummaryService() {
       apiKey: "test-key",
       defaultModel: "summary-model",
       bindPerModel: false,
+      // SUM-2: profile carries a contextBudget that ranged summary must NOT inherit.
+      contextBudget: 1048576,
     }),
     getProviderModelSettings: async () => null,
   };
@@ -542,6 +544,22 @@ describe("ChatSummaryService sampler override threading (SUM-2)", () => {
     });
 
     expect(capturedAssembleRangedArgs).toEqual({ contextBudget: 32768 });
+  });
+
+  it("does not inherit the profile contextBudget when no override is given", async () => {
+    capturedAssembleRangedArgs = null;
+    const service = makeSummaryService();
+
+    await service.generateChatSummary({
+      chatId: "chat_1",
+      providerProfileId: "profile_1",
+      summarizedFrom: 2,
+      summarizedTo: 4,
+    });
+
+    // The profile carries contextBudget 1048576, but ranged summary must use its
+    // own budget (null = unlimited assembler budget), never the profile's.
+    expect(capturedAssembleRangedArgs).toEqual({ contextBudget: null });
   });
 
   it("drops the hardcoded 16384 from the legacy full-summary path too", async () => {

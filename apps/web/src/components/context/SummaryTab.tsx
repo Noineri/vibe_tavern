@@ -45,6 +45,10 @@ const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
 // full session summary intact. Both are overridable per-call from the UI.
 const SUMMARY_DEFAULT_TEMPERATURE = 0.3;
 const SUMMARY_DEFAULT_MAX_TOKENS = 8192;
+// Context-length budget for the assembled summary prompt (input side). Distinct
+// from maxOutputTokens (output side). 128k is a safe default that fits a full
+// ranged chunk plus prior summaries without inheriting the RP profile's window.
+const SUMMARY_DEFAULT_CONTEXT_BUDGET = 128000;
 
 export interface ContextMemoryModalProps {
   isOpen: boolean;
@@ -124,6 +128,7 @@ export function useSummaryTab({
   // ephemeral aiTemperature/aiMaxTokens pattern in AiAssistantModal.
   const [summaryTemperature, setSummaryTemperature] = useState<number | null>(null);
   const [summaryMaxTokens, setSummaryMaxTokens] = useState<number | null>(null);
+  const [summaryContextBudget, setSummaryContextBudget] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -379,6 +384,7 @@ export function useSummaryTab({
         maxPriorSummaries: rangedIncludePrior ? rangedMaxPrior : 0,
         temperature: summaryTemperature ?? SUMMARY_DEFAULT_TEMPERATURE,
         maxOutputTokens: summaryMaxTokens ?? SUMMARY_DEFAULT_MAX_TOKENS,
+        contextBudget: summaryContextBudget ?? SUMMARY_DEFAULT_CONTEXT_BUDGET,
       }, abort.signal);
       setSummaries((prev) => upsertSummary(prev, generated));
       selectSummary(generated);
@@ -531,6 +537,7 @@ export function useSummaryTab({
           onTemperatureChange={setSummaryTemperature}
           maxTokens={summaryMaxTokens ?? SUMMARY_DEFAULT_MAX_TOKENS}
           onMaxTokensChange={setSummaryMaxTokens}
+          contextBudget={{ value: summaryContextBudget ?? SUMMARY_DEFAULT_CONTEXT_BUDGET, onChange: setSummaryContextBudget }}
         />
       </div>
 
