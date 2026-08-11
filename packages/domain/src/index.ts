@@ -1,5 +1,6 @@
 export * from "./api-types.js";
 export * from "./attachment.js";
+export * from "./builtin-experiences.js";
 export * from "./character-asset.js";
 export * from "./chat-notification.js";
 export * from "./coauthor-transport-capabilities.js";

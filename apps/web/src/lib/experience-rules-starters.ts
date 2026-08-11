@@ -15,6 +15,8 @@
  * frozen original is never mutated.
  */
 
+import { CONVERSATION_RULES_SOURCE as MODEL_CONVERSATION_SOURCE } from "@vibe-tavern/domain";
+
 /** One shipped rules starter. */
 export interface RulesStarter {
   /** Stable id (matches the manifest id inside the source). */
@@ -136,59 +138,6 @@ const CARD_SOURCE = [
   "    hand.push(card);",
   "    var status = deck.length === 0 ? 'completed' : 'active';",
   "    return { state: { deck: deck, hand: hand }, status: status, events: [{ visibility: 'public', type: 'drew', detail: { card: card } }] };",
-  "  }",
-  "});",
-].join("\n");
-
-const MODEL_CONVERSATION_SOURCE = [
-  "context.experience.register({",
-  "  apiVersion: 1,",
-  '  manifest: { id: "model_conversation", name: "Model Conversation" },',
-  "  capabilities: [",
-  "    { capability: 'participants', reason: 'human and model seats' },",
-  "    { capability: 'model', reason: 'AI-driven conversation replies' }",
-  "  ],",
-  "  create() {",
-  "    return { messages: [], turn: 0 };",
-  "  },",
-  "  project(context) {",
-  "    return { messages: context.state.messages.slice(), turn: context.state.turn };",
-  "  },",
-  "  actions() {",
-  "    return [",
-  "      { type: 'reply', label: 'Reply', allowsText: true },",
-  "      { type: 'finish', label: 'Finish' }",
-  "    ];",
-  "  },",
-  "  reduce(context, action) {",
-  "    if (action.type === 'finish') {",
-  "      return { state: context.state, status: 'completed', events: [{ visibility: 'public', type: 'finished' }] };",
-  "    }",
-  "    if (action.type !== 'reply') return { state: context.state, status: 'active', events: [] };",
-  "    var text = '';",
-  "    if (action.payload && typeof action.payload === 'object') text = action.payload.text || '';",
-  "    var participants = context.participants || [];",
-  "    var modelSeat = null;",
-  "    for (var i = 0; i < participants.length; i++) {",
-  "      if (participants[i].controller === 'model') { modelSeat = participants[i]; break; }",
-  "    }",
-  "    var isModelReply = modelSeat !== null && action.participantId === modelSeat.id;",
-  "    var messages = context.state.messages.slice();",
-  "    var turn = context.state.turn + 1;",
-  "    if (isModelReply) {",
-  "      messages.push({ from: 'them', text: text });",
-  "      return { state: { messages: messages, turn: turn }, status: 'active', events: [{ visibility: 'public', type: 'model_replied', detail: { text: text } }] };",
-  "    }",
-  "    messages.push({ from: 'you', text: text });",
-  "    var transition = {",
-  "      state: { messages: messages, turn: turn },",
-  "      status: 'active',",
-  "      events: [{ visibility: 'public', type: 'user_replied', detail: { text: text } }]",
-  "    };",
-  "    if (modelSeat !== null) {",
-  "      transition.effects = [{ kind: 'model', request: { viewer: modelSeat.id, mode: 'text', actionType: 'reply', instruction: 'Reply in character to the conversation.' } }];",
-  "    }",
-  "    return transition;",
   "  }",
   "});",
 ].join("\n");
