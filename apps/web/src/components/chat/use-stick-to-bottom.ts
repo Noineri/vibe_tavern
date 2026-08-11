@@ -53,9 +53,29 @@ export function useStickToBottom(): StickToBottom {
     pinnedRef.current = next;
     setPinnedState(next);
   }, []);
-  // Geometry as of the previous scroll event — `nextPinned` uses it to tell a
+  // The last geometry we know of. `nextPinned` compares against it to tell a
   // user scrolling up from a position the content re-layout moved itself.
+  //
+  // It is refreshed EVERY time we look at the container, not just on scroll
+  // events, and that is load-bearing rather than tidy: Firefox delivers scroll
+  // events late, so `scrollTop` in the event belongs to one moment while the
+  // `scrollHeight` we read while handling it belongs to a later one. The
+  // virtualizer's height estimate wobbles (measured: 6762 → 6003 → 5890 →
+  // 6205), so it can change and change back between two scroll events — and a
+  // comparison against the previous EVENT then reports "the height never moved"
+  // while the position did, which reads as a user scrolling up. Comparing
+  // against the last height we actually observed keeps the two coherent.
   const lastMetricsRef = useRef<ScrollMetrics>({ scrollTop: 0, scrollHeight: 0, clientHeight: 0 });
+
+  const rememberGeometry = useCallback(() => {
+    const el = scrollerElRef.current;
+    if (!el) return;
+    lastMetricsRef.current = {
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    };
+  }, []);
 
   const followBottom = useCallback(() => {
     // Ask Virtuoso to scroll instead of writing scrollTop ourselves: it owns the
@@ -77,7 +97,8 @@ export function useStickToBottom(): StickToBottom {
     // `behavior: "auto"` — no animation: an animated scroll would still be
     // running when the next token arrives.
     virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER, behavior: "auto" });
-  }, []);
+    rememberGeometry();
+  }, [rememberGeometry]);
 
   const handleScroll = useCallback(() => {
     const el = scrollerElRef.current;
@@ -119,6 +140,7 @@ export function useStickToBottom(): StickToBottom {
       if (!el) return;
       const observer = new ResizeObserver(() => {
         if (pinnedRef.current) followBottom();
+        else rememberGeometry();
       });
       observer.observe(el);
       resizeObserverRef.current = observer;
@@ -147,14 +169,21 @@ export function useStickToBottom(): StickToBottom {
     };
   }, [handleScroll]);
 
-  const onTotalListHeightChanged = useCallback(() => {
+  const onTotalListHeightChanged = useCallback((height: number) => {
     if (pinnedRef.current) followBottom();
-  }, [followBottom]);
+    else rememberGeometry();
+  }, [followBottom, rememberGeometry]);
 
   const scrollToBottom = useCallback(() => {
     setPinned(true);
     followBottom();
   }, [followBottom, setPinned]);
+
+  // The very first geometry read: without it `lastMetrics` stays at zeroes and
+  // the first real scroll event compares against a container that never existed.
+  useEffect(() => {
+    rememberGeometry();
+  }, [rememberGeometry]);
 
   return { virtuosoRef, scrollerRef, onTotalListHeightChanged, pinned, scrollToBottom };
 }

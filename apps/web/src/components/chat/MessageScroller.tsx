@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Virtuoso } from "react-virtuoso";
 import type { ReactNode } from "react";
+import type { Components } from "react-virtuoso";
 import { useChatStore, useIsSending } from "../../stores/chat-store.js";
 import { useMessageOrder } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -82,7 +83,31 @@ export interface MessageScrollerProps {
 const Header = () => <div style={{ height: 28 }} />;
 const Footer = () => <div style={{ height: 12 }} />;
 
-const components = { Header, Footer };
+/**
+ * Item wrapper. Identical to the default one except for `display: flow-root`,
+ * and that one property is load-bearing.
+ *
+ * Message blocks space themselves with vertical margins. A plain block wrapper
+ * lets a child's margin escape its box, so the wrapper's measured height — which
+ * is what Virtuoso records — comes out ~8px short per item, while the DOM
+ * carries the full gap. The virtualizer's model of the content then sits below
+ * the real scrollHeight (measured in Firefox: 323px across 18 items), it places
+ * "the bottom" that much too high, and it drags the position back there every
+ * time we drive to the real bottom. That tug-of-war is what made a reload land
+ * anywhere between "fine" and "half a message hidden behind the composer",
+ * depending on which side moved last.
+ *
+ * `flow-root` gives the wrapper its own block formatting context, so the margins
+ * stay inside and the measured height matches what the DOM lays out. Measured
+ * after the change: item gaps 0, distance-to-bottom 0 in both engines.
+ */
+const Item: NonNullable<Components["Item"]> = ({ children, style, item, context, ...rest }) => (
+  <div {...rest} style={{ ...style, display: "flow-root" }}>
+    {children}
+  </div>
+);
+
+const components = { Header, Footer, Item };
 
 /**
  * Reusable virtualized message scroller.
