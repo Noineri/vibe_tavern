@@ -22,7 +22,6 @@ export interface ChatGenerationState {
    * state without it rendering as a transient action spinner.
    */
   streamingMessageId: string | null;
-  streamingText: string;
   streamingRevealedText: string;
   streamingReasoningText: string;
   generationStatus: ChatGenerationStatus;
@@ -45,7 +44,6 @@ function defaultGenState(): ChatGenerationState {
   return {
     isSending: false,
     streamingMessageId: null,
-    streamingText: "",
     streamingRevealedText: "",
     streamingReasoningText: "",
     generationStatus: "idle" as ChatGenerationStatus,
@@ -126,7 +124,7 @@ export interface ChatActions {
    */
   startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[], streamingMessageId?: string | null) => AbortController;
 
-  /** Set the revealed streaming text (throttled by StreamingReveal). Also updates streamingText. */
+  /** Set the revealed streaming text (throttled by StreamingReveal). */
   setStreamingRevealed: (chatId: string, revealedText: string) => void;
 
   /** Append a reasoning delta. */
@@ -215,7 +213,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
       return {
         generations: {
           ...s.generations,
-          [chatId]: { ...gen, streamingRevealedText: revealedText, streamingText: revealedText },
+          [chatId]: { ...gen, streamingRevealedText: revealedText },
         },
       };
     });
@@ -266,7 +264,6 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             ...gen,
             isSending: false,
             streamingMessageId: null,
-            streamingText: "",
             streamingRevealedText: "",
             streamingReasoningText: "",
             pendingUserMessageContent: null,
@@ -294,7 +291,6 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             ...g,
             isSending: false,
             streamingMessageId: null,
-            streamingText: "",
             streamingRevealedText: "",
             streamingReasoningText: "",
             pendingUserMessageContent: null,

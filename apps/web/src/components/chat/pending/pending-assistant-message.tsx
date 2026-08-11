@@ -12,7 +12,7 @@ import { GenerationDots } from "../variants/generation-dots.js";
 
 /**
  * Pending-assistant singleton: renders the streaming assistant reply as it
- * arrives (StreamingMarkdown reveals the revealed-slice of streamingText; the
+ * arrives (StreamingMarkdown reveals the revealed text; the
  * reasoning slot surfaces thinking tokens when present). One instance per
  * active generation (rendered by MessageBlock's main body on the
  * `__pending-assistant` early-return path).
@@ -32,7 +32,6 @@ export function PendingAssistantMessage() {
   if (!chatMeta || !activeGen) return null;
 
   const author = { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId, updatedAt: chatMeta.character.updatedAt }) };
-  const streamingText = activeGen.streamingText;
   const streamingRevealedText = activeGen.streamingRevealedText;
   const streamingReasoning = activeGen.streamingReasoningText;
 
@@ -90,7 +89,7 @@ export function PendingAssistantMessage() {
     >
       <div className={isMobile ? "my-0.5 w-full" : ""}>
         <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-          {streamingText ? <StreamingMarkdown text={streamingRevealedText} /> : null}
+          <StreamingMarkdown text={streamingRevealedText} />
           <GenerationDots label={t("generating_response")} />
         </div>
       </div>

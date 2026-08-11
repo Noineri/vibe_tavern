@@ -70,7 +70,7 @@ mock.module("../../stores/chat-selectors.js", () => ({
     },
   }),
   useIsStreamingTarget: () => false,
-  useStreamingRevealedFor: () => ({ streamingText: "", revealedText: "", reasoningText: "" }),
+  useStreamingRevealedFor: () => ({ revealedText: "", reasoningText: "" }),
 }));
 
 mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({

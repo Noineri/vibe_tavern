@@ -230,7 +230,6 @@ export function useActiveStreamingMessageId(): string | null {
 }
 
 export interface StreamingRevealInfo {
-  streamingText: string;
   revealedText: string;
   reasoningText: string;
 }
@@ -240,7 +239,6 @@ export interface StreamingRevealInfo {
  * same ref for every non-target block and they never re-render.
  */
 const EMPTY_STREAMING_REVEAL: StreamingRevealInfo = {
-  streamingText: "",
   revealedText: "",
   reasoningText: "",
 };
@@ -262,7 +260,6 @@ export function useStreamingRevealedFor(messageId: string): StreamingRevealInfo 
         return EMPTY_STREAMING_REVEAL;
       }
       return {
-        streamingText: gen.streamingText,
         revealedText: gen.streamingRevealedText,
         reasoningText: gen.streamingReasoningText,
       };

@@ -263,7 +263,7 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
 
   if (!msg) return null;
 
-  const isStreamingHere = isStreamingTarget && (!!streamingReveal.streamingText || !!streamingReveal.reasoningText);
+  const isStreamingHere = isStreamingTarget && (!!streamingReveal.revealedText || !!streamingReveal.reasoningText);
   const activeStreamingRevealedText = isStreamingHere ? streamingReveal.revealedText : "";
   const activeStreamingReasoning = isStreamingHere ? streamingReveal.reasoningText : null;
   const selectedVariant = msg.variants?.[msg.selectedVariantIndex ?? 0];

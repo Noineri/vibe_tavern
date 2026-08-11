@@ -125,7 +125,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // Streaming text — only populated for the streaming-target block (see
   // useStreamingRevealedFor). Non-target blocks receive the stable EMPTY
   // sentinel, so these are "" and never trigger downstream re-renders.
-  const globalStreamingText = streamingReveal.streamingText;
   const globalStreamingRevealedText = streamingReveal.revealedText;
   const globalStreamingReasoning = streamingReveal.reasoningText;
 
@@ -207,8 +206,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const renderContent = activeContent;
   const greetingActive = isGreeting && !isUser && variantCount > 1;
 
-  const isStreamingHere = !isUser && isStreamingTarget && (globalStreamingText || globalStreamingReasoning);
-  const activeStreamingText = isStreamingHere ? globalStreamingText : null;
+  const isStreamingHere = !isUser && isStreamingTarget && !!(globalStreamingRevealedText || globalStreamingReasoning);
   const activeStreamingRevealedText = isStreamingHere ? globalStreamingRevealedText : "";
   const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
 
@@ -356,7 +354,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   ) : isStreamingHere ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-        {activeStreamingText ? <StreamingMarkdown text={activeStreamingRevealedText} /> : null}
+        <StreamingMarkdown text={activeStreamingRevealedText} />
         <GenerationDots label={t("generating_response")} />
       </div>
     </div>
@@ -528,4 +526,3 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 function isBreakoutRole(role: string): boolean {
   return role === "tool";
 }
-
