@@ -913,6 +913,12 @@ export const experienceVisuals = sqliteTable('experience_visuals', {
   sourceHash: text('source_hash').notNull(),
   // Bridge API version this visual targets.
   apiVersion: integer('api_version').notNull(),
+  // Stable idempotency key for app-owned built-in visuals (nullable + unique):
+  // an `ensureVisualByKey` carrying a stableKey that already exists returns the
+  // existing visual rather than creating a second copy. NULL for user-owned
+  // visuals — SQLite unique constraints treat NULLs as distinct, so many
+  // coexist. Mirrors `scripts.creationIntentId`.
+  stableKey: text('stable_key').unique(),
   // Manifest ids this visual is compatible with (loose coupling — a rules
   // revision does not inherently change the visual contract).
   compatibleManifestIdsJson: text('compatible_manifest_ids_json').notNull().default('[]'),

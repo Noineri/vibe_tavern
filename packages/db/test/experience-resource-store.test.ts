@@ -107,6 +107,52 @@ describe("ExperienceResourceStore — visuals", () => {
     expect((await store.listVisualsForScope("character", "char_1"))).toHaveLength(1);
     expect((await store.listVisualsForScope("character", "char_other"))).toHaveLength(0);
   });
+
+  test("ensureVisualByKey is idempotent — same key returns the same row, no duplicate, no update", async () => {
+    const a = await store.ensureVisualByKey("builtin:conversation", {
+      name: "Conversation",
+      source: "<html>a</html>",
+      apiVersion: 1,
+    });
+    // Second ensure with the SAME key but different data returns the existing
+    // row unchanged — ensure is create-or-return, NOT upsert (the seed service
+    // decides whether to sync source on app updates).
+    const b = await store.ensureVisualByKey("builtin:conversation", {
+      name: "Conversation (changed)",
+      source: "<html>DIFFERENT</html>",
+      apiVersion: 1,
+    });
+    expect(b.id).toBe(a.id);
+    expect(b.name).toBe("Conversation");
+    expect(b.source).toBe("<html>a</html>");
+
+    // Exactly one row exists for that key.
+    const globals = await store.listVisualsForScope("global", null);
+    expect(globals.filter((v) => v.id === a.id)).toHaveLength(1);
+  });
+
+  test("ensureVisualByKey with distinct keys creates distinct visuals", async () => {
+    const a = await store.ensureVisualByKey("builtin:conversation", {
+      name: "Conversation",
+      source: "s1",
+      apiVersion: 1,
+    });
+    const b = await store.ensureVisualByKey("builtin:rps", {
+      name: "RPS",
+      source: "s2",
+      apiVersion: 1,
+    });
+    expect(a.id).not.toBe(b.id);
+  });
+
+  test("user visuals (no stable key) coexist — SQLite unique index treats NULLs as distinct", async () => {
+    // createVisual without a stableKey persists NULL; many user visuals coexist
+    // under the unique(stable_key) index. If the index incorrectly rejected
+    // duplicate NULLs, the second create would throw.
+    const u1 = await store.createVisual({ name: "User A", source: "a", apiVersion: 1 });
+    const u2 = await store.createVisual({ name: "User B", source: "b", apiVersion: 1 });
+    expect(u1.id).not.toBe(u2.id);
+  });
 });
 
 describe("ExperienceResourceStore — chat configs (one per chat)", () => {

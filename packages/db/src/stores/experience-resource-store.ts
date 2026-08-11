@@ -58,6 +58,8 @@ export interface CreateVisualData {
   name: string;
   source: string;
   apiVersion: number;
+  /** Optional stable key for idempotent ensure (built-in visuals). */
+  stableKey?: string | null;
   compatibleManifestIds?: string[];
   scopeType?: string;
   characterId?: string | null;
@@ -129,6 +131,7 @@ export class ExperienceResourceStore {
         source: data.source,
         sourceHash,
         apiVersion: data.apiVersion,
+        stableKey: data.stableKey ?? null,
         compatibleManifestIdsJson: JSON.stringify(data.compatibleManifestIds ?? []),
         scopeType: data.scopeType ?? 'global',
         characterId: data.characterId ?? null,
@@ -139,6 +142,37 @@ export class ExperienceResourceStore {
       })
       .returning();
     return this.mapRowVisual(row!);
+  }
+
+  /**
+   * Idempotent visual ensure by stable key (BE-2). If a visual with this
+   * stableKey already exists, return it unchanged; otherwise create it with
+   * the key set. Mirrors the script-store `creationIntentId` idempotency. The
+   * unique index is the race safety net; the lookup handles the common
+   * sequential case (retry / restart / re-seed).
+   */
+  async ensureVisualByKey(
+    stableKey: string,
+    data: CreateVisualData,
+  ): Promise<ExperienceVisualRow> {
+    const existing = await this.db
+      .select()
+      .from(experienceVisuals)
+      .where(eq(experienceVisuals.stableKey, stableKey))
+      .get();
+    if (existing) return this.mapRowVisual(existing);
+    try {
+      return await this.createVisual({ ...data, stableKey });
+    } catch {
+      // Racing insert on unique(stable_key) — the winner is now persisted; read it.
+      const winner = await this.db
+        .select()
+        .from(experienceVisuals)
+        .where(eq(experienceVisuals.stableKey, stableKey))
+        .get();
+      if (winner) return this.mapRowVisual(winner);
+      throw new Error(`Failed to ensure experience visual for stable key '${stableKey}'`);
+    }
   }
 
   async getVisualById(id: string): Promise<ExperienceVisualRow | null> {
