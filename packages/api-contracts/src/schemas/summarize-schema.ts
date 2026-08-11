@@ -8,7 +8,7 @@ export const autoSummaryConfigSchema = z.object({
   useChatModel: z.boolean().default(true),
   excludeSummarized: z.boolean().default(true),
   // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): feed preceding chat-summaries
-  // (summarizedTo < from) into the summary prompt as read-only continuity.
+  // (summarizedFrom < from) into the summary prompt as read-only continuity.
   // Default ON — ranged/auto summaries are continuity-aware out of the box.
   includePriorSummaries: z.boolean().default(true),
   // How many of the most-recent preceding summaries to include (0 = none,

@@ -214,7 +214,7 @@ export interface PromptAssemblyContext {
     injectPrompt: string;
   } | null;
   /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-2): preceding chat-summaries (the
-   *  `summarizedTo < from` chain, token-capped, oldest→newest) fed into the
+   *  `summarizedFrom < from` chain, token-capped, oldest→newest) fed into the
    *  summary prompt as read-only continuity context. Absent / empty = no layer.
    *  The pipeline renders a single `prior_summaries_context` layer (in_prompt)
    *  ONLY under `config.summary` with non-empty priors — never on a chat turn.

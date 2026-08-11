@@ -698,7 +698,7 @@ function buildLayers(
   // summary prompt as read-only continuity. Emitted ONLY under `config.summary`
   // with non-empty priors — the chat-turn path never sets `priorSummaries`, so
   // this layer is absent outside summary generation. The caller (lifecycle
-  // method) is responsible for chain selection (`summarizedTo < from`),
+  // method) is responsible for chain selection (`summarizedFrom < from`),
   // token-capping, and oldest→newest ordering; here we only frame and render.
   // Position is resolver-independent (`in_prompt` via makeLayer default): this is
   // summarizer framing, not a prompt-order slot. Priority 490 places it just

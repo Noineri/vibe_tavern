@@ -145,7 +145,7 @@ describe("ChatLifecycleRuntime prior-context characterization (SPC-1)", () => {
 
 // ─── SUMMARY_PRIOR_CONTEXT_PLAN W3 (SPC-3): ranged prior-chain loading ────
 //
-// assembleRangedSummaryPrompt loads preceding summaries (summarizedTo < from),
+// assembleRangedSummaryPrompt loads preceding summaries (summarizedFrom < from),
 // count-capped to maxPriorSummaries most-recent, reversed to oldest→newest,
 // and passes them as priorSummaries. Toggle off / max=0 / no priors → omitted.
 describe("ChatLifecycleRuntime prior-chain loading (SPC-3)", () => {
@@ -180,8 +180,8 @@ describe("ChatLifecycleRuntime prior-chain loading (SPC-3)", () => {
     return calls[0][2];
   }
 
-  it("passes preceding summaries (summarizedTo < from) as priorSummaries oldest→newest", async () => {
-    // ranged [61..70] → all 5 (summarizedTo <= 50 < 61) qualify, default cap 10.
+  it("passes preceding summaries (summarizedFrom < from) as priorSummaries oldest→newest", async () => {
+    // ranged [61..70] → all 5 (summarizedFrom <= 41 < 61) qualify, default cap 10.
     const options = await runRanged({ from: 61, to: 70 });
     expect(options.priorSummaries).toEqual([
       { id: "s1", label: "Ch1", content: "first chapter" },
@@ -202,10 +202,39 @@ describe("ChatLifecycleRuntime prior-chain loading (SPC-3)", () => {
     ]);
   });
 
-  it("excludes summaries whose range does not end strictly before from (no overlap)", async () => {
-    // ranged [25..30]: s1(≤10), s2(≤20) qualify; s3(≤30) does NOT (30 >= 25).
+  it("includes summaries that start before from even when their end overlaps it", async () => {
+    // ranged [25..30]: prior = summaries that START before 25. s1(1), s2(11),
+    // s3(21) all start < 25 → qualify, even though s3 ends at 30 (overlaps the
+    // range). Only s4(from=31) and s5(from=41) are excluded, as future-spoilers.
+    // Prior is decoupled from the range END — the old summarizedTo<from rule
+    // cut s3 here (30 < 25 = false) and silently cold-started the model.
     const options = await runRanged({ from: 25, to: 30 });
-    expect(options.priorSummaries?.map((s) => s.id)).toEqual(["s1", "s2"]);
+    expect(options.priorSummaries?.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+  });
+
+  it("feeds prior across an inclusive-chunk seam (regression: session-number reset)", async () => {
+    // User incident: chunk "T1–T50" then "T50–T100" — message 50 belongs to BOTH
+    // ranges (inclusive bounds). Old rule (summarizedTo < from) cut the prior at
+    // the seam (50 < 50 = false) → model cold-started → reset session numbering
+    // to 1 / hallucinated. New rule (summarizedFrom < from): the first chapter
+    // (from=1) starts before 50 → it is fed as prior.
+    const calls: Array<Parameters<ChatLifecycleRuntimeDeps["assemblePrompt"]>> = [];
+    const lifecycle = makeLifecycle(async (...args) => {
+      calls.push(args);
+      return assembled();
+    }, [], [
+      { id: "first", label: "T1–T50", content: "first chapter", summarizedFrom: 1, summarizedTo: 50 },
+    ]);
+    await lifecycle.assembleRangedSummaryPrompt({
+      chatId: "chat_1" as ChatId,
+      model: "summary-model",
+      summarizedFrom: 50,
+      summarizedTo: 99,
+      contextBudget: 8192,
+    });
+    expect(calls[0][2].priorSummaries).toEqual([
+      { id: "first", label: "T1–T50", content: "first chapter" },
+    ]);
   });
 
   it("omits priorSummaries when includePriorSummaries is false", async () => {

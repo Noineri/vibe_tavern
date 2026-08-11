@@ -146,7 +146,7 @@ export interface AssemblePromptForChatInput {
   /** Summary preparation is source-loading policy, not a pipeline mode. */
   summary?: boolean;
   /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): preceding chat-summaries
-   *  (`summarizedTo < from` chain, count-capped, oldest→newest) fed into the
+   *  (`summarizedFrom < from` chain, count-capped, oldest→newest) fed into the
    *  summary prompt as read-only continuity. Threaded into pipelineContext
    *  only when `summary` is true; absent on chat turns. */
   priorSummaries?: Array<{ id: string; label?: string; content: string }>;
