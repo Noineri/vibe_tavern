@@ -95,6 +95,7 @@ const baseVisual: ExperienceVisualRow = {
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const createScript = mock((_body: Record<string, unknown>) => Promise.resolve<ScriptRecord>({ ...baseScript }));
 const updateScript = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ScriptRecord>({ ...baseScript }));
+const deleteScript = mock((_id: string) => Promise.resolve<void>(undefined));
 const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
 const createExperienceVisual = mock((_body: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
 const updateExperienceVisual = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
@@ -111,6 +112,7 @@ mock.module("../../../api/script-api.js", () => ({
   listAllScripts,
   createScript,
   updateScript,
+  deleteScript,
 }));
 
 mock.module("../../../api/experience-api.js", () => ({
@@ -178,6 +180,7 @@ beforeEach(() => {
   listAllScripts.mockClear();
   createScript.mockClear();
   updateScript.mockClear();
+  deleteScript.mockClear();
   listExperienceVisuals.mockClear();
   createExperienceVisual.mockClear();
   updateExperienceVisual.mockClear();
@@ -221,6 +224,9 @@ beforeEach(() => {
     };
     serverScripts = serverScripts.map((s) => (s.id === id ? updated : s));
     return { ...updated };
+  });
+  deleteScript.mockImplementation(async (id) => {
+    serverScripts = serverScripts.filter((s) => s.id !== id);
   });
   createExperienceVisual.mockImplementation(async (body) => {
     const created: ExperienceVisualRow = {
@@ -336,6 +342,41 @@ async function waitForVisualDeleteConfirm(): Promise<HTMLElement> {
   });
   if (!confirm) throw new Error("visual delete confirm missing");
   return confirm;
+}
+
+/** The active experience (script) delete button in the rules header. */
+function experienceDeleteButton(container: HTMLElement): HTMLElement {
+  const btn = [...container.querySelectorAll('button[aria-label="experience_editor_delete"]')][0];
+  if (!(btn instanceof HTMLElement)) throw new Error("experience delete button missing");
+  return btn;
+}
+
+/** The open experience-delete confirm's primary (full) button (bg-danger). */
+async function waitForExperienceDeleteConfirm(): Promise<HTMLElement> {
+  let confirm: HTMLElement | undefined;
+  await waitFor(() => {
+    const found = [...document.body.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").trim() === "experience_editor_delete_full" && (b.getAttribute("class") ?? "").includes("bg-danger"),
+    );
+    if (!(found instanceof HTMLElement)) throw new Error("experience delete confirm not mounted");
+    confirm = found;
+  });
+  if (!confirm) throw new Error("experience delete confirm missing");
+  return confirm;
+}
+
+/** The open experience-delete confirm's secondary (rules-only) button (border-danger). */
+async function waitForExperienceDeleteSecondary(): Promise<HTMLElement> {
+  let secondary: HTMLElement | undefined;
+  await waitFor(() => {
+    const found = [...document.body.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").trim() === "experience_editor_delete_rules_only" && (b.getAttribute("class") ?? "").includes("border-danger"),
+    );
+    if (!(found instanceof HTMLElement)) throw new Error("experience delete secondary not mounted");
+    secondary = found;
+  });
+  if (!secondary) throw new Error("experience delete secondary missing");
+  return secondary;
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -867,5 +908,94 @@ describe("ExperienceEditor", () => {
     // code-change effect, stale promise's finally block skipped via token).
     const validateBtn = getByRole("button", { name: "experience_editor_validate_rules" });
     expect((validateBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  // ── IR-90A: explicit experience (script) delete with dual-action confirm ──
+
+  it("opens the experience-delete confirm from the script header trigger", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+
+    fireEvent.click(experienceDeleteButton(container));
+
+    // The dual-action confirm modal opened (primary confirm is mounted).
+    await waitForExperienceDeleteConfirm();
+  });
+
+  it("full delete removes the script and the active visual and clears both", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
+
+    fireEvent.click(experienceDeleteButton(container));
+    fireEvent.click(await waitForExperienceDeleteConfirm());
+
+    await waitFor(() => expect(deleteScript).toHaveBeenCalledWith("srv_1"));
+    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1"));
+    // Both drafts were removed.
+    await waitFor(() => expect(useScriptDraftStore.getState().drafts["srv_1"]).toBeUndefined());
+    await waitFor(() => expect(useExperienceVisualDraftStore.getState().drafts["vis_1"]).toBeUndefined());
+    // The editor returned to the picker (no active script); the script is gone
+    // from the list.
+    await waitFor(() => expect(queryByText("Existing Rules")).toBeNull());
+  });
+
+  it("rules-only delete removes the script but keeps the active visual", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    const { container, findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
+
+    fireEvent.click(experienceDeleteButton(container));
+    fireEvent.click(await waitForExperienceDeleteSecondary());
+
+    await waitFor(() => expect(deleteScript).toHaveBeenCalledWith("srv_1"));
+    // The visual was NOT deleted.
+    expect(deleteExperienceVisual).not.toHaveBeenCalled();
+    // The visual draft survives; the script draft is gone.
+    expect(useExperienceVisualDraftStore.getState().drafts["vis_1"]).toBeDefined();
+    await waitFor(() => expect(useScriptDraftStore.getState().drafts["srv_1"]).toBeUndefined());
+  });
+
+  it("does not render the rules-only secondary when no visual is active", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(experienceDeleteButton(container));
+
+    // The primary confirm is present ...
+    await waitForExperienceDeleteConfirm();
+    // ... but the secondary (rules-only) button is absent.
+    const secondary = [...document.body.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").trim() === "experience_editor_delete_rules_only",
+    );
+    expect(secondary).toBeUndefined();
+  });
+
+  it("cancel dismisses the experience-delete confirm without deleting", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(experienceDeleteButton(container));
+    await waitForExperienceDeleteConfirm();
+
+    const cancelBtn = [...document.body.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").trim() === "cancel",
+    )!;
+    fireEvent.click(cancelBtn);
+
+    expect(deleteScript).not.toHaveBeenCalled();
+    expect(deleteExperienceVisual).not.toHaveBeenCalled();
+    // The confirm modal is gone.
+    await waitFor(() => {
+      const confirm = [...document.body.querySelectorAll("button")].find(
+        (b) => (b.textContent ?? "").trim() === "experience_editor_delete_full",
+      );
+      expect(confirm).toBeUndefined();
+    });
   });
 });

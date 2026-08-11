@@ -64,7 +64,7 @@ import {
   type RulesStarter,
 } from "../../../lib/experience-rules-starters.js";
 import { VISUAL_STARTERS, getVisualStarter, type VisualStarter } from "../../experience/starters/index.js";
-import { createScript, listAllScripts, updateScript } from "../../../api/script-api.js";
+import { createScript, deleteScript, listAllScripts, updateScript } from "../../../api/script-api.js";
 import {
   createExperienceVisual,
   deleteExperienceVisual,
@@ -145,6 +145,14 @@ export function ExperienceEditor() {
   // and surfaces the error (never silently dropped).
   const [visualDeleteId, setVisualDeleteId] = useState<string | null>(null);
   const [visualDeleteError, setVisualDeleteError] = useState<string | null>(null);
+
+  // IR-90A: explicit destructive delete for the ACTIVE rules script (the
+  // experience's identity). Dual-action confirm mirrors chat message deletion:
+  // the primary deletes BOTH the script and the active visual; the secondary
+  // ("rules only") deletes just the script. A failed delete surfaces the error
+  // and keeps what it can (never silently dropped). Reachable only for a saved
+  // (non-local) script — an unsaved draft is discarded by navigating back.
+  const [experienceDeleteOpen, setExperienceDeleteOpen] = useState(false);
 
   // IR-90C: the three-step creation wizard. Opened from the NEW-experience
   // entry (starter pick / blank) instead of landing in the all-in-one editor.
@@ -393,6 +401,53 @@ export function ExperienceEditor() {
     }
   }, [activeVisualId, allVisuals, removeVisualDraft]);
 
+  /** IR-90A: delete the active rules script (and optionally the active visual).
+   *  The script is the experience's identity at the asset level; deleting it
+   *  makes every chat config referencing it scriptless automatically (the DB
+   *  FK is `onDelete: set null`, and `ExperienceAssignment` detects the stale
+   *  reference). So this does NOT touch any experience config — the asset
+   *  delete is the whole operation.
+   *
+   *  - "full": deletes the script AND the active visual (when it is a saved
+   *    non-local asset). The visual is an independent reusable global asset,
+   *  so deleting it here is a convenience, not a required cascade.
+   *  - "rules": deletes only the script; the visual stays.
+   *  Both land on no active script (the experience is gone). On error the
+   *  surviving resource is kept and the error is surfaced (same pattern as
+   *  the visual delete). */
+  const handleDeleteExperience = useCallback(async (mode: "full" | "rules") => {
+    if (!activeScriptId || isLocalId(activeScriptId)) return;
+    setExperienceDeleteOpen(false);
+    setVisualDeleteError(null);
+    const scriptId = activeScriptId;
+    const visualId = mode === "full" && activeVisualId !== null && !isLocalId(activeVisualId)
+      ? activeVisualId
+      : null;
+
+    try {
+      await deleteScript(scriptId);
+    } catch (error) {
+      setVisualDeleteError(errorMessage(error));
+      return;
+    }
+    setScripts((prev) => prev.filter((s) => s.id !== scriptId));
+    removeScriptDraft(scriptId);
+
+    if (visualId) {
+      try {
+        await deleteExperienceVisual(visualId);
+        setVisuals((prev) => prev.filter((v) => v.id !== visualId));
+        removeVisualDraft(visualId);
+      } catch (error) {
+        // The script is already deleted; surface the visual delete error but
+        // still clear the active selection (the experience itself is gone).
+        setVisualDeleteError(errorMessage(error));
+      }
+    }
+    setActiveScriptId(null);
+    setActiveVisualId(null);
+  }, [activeScriptId, activeVisualId, removeScriptDraft, removeVisualDraft]);
+
   // ── Saves ────────────────────────────────────────────────────────────────
   const handleSaveRules = useCallback(async () => {
     if (!activeScriptId) return;
@@ -632,6 +687,20 @@ export function ExperienceEditor() {
             <Ic.copy />
           </button>
         </CustomTooltip>
+        {/* IR-90A: delete the experience (its rules script). Reachable only for a
+            saved script — an unsaved/local draft is discarded by navigating back. */}
+        {!isNewScript && (
+          <CustomTooltip content={t("experience_editor_delete")}>
+            <button
+              type="button"
+              aria-label={t("experience_editor_delete")}
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
+              onClick={() => setExperienceDeleteOpen(true)}
+            >
+              <Ic.del />
+            </button>
+          </CustomTooltip>
+        )}
       </div>
       {enableLocked && (
         <div className="mb-4 rounded-md border border-warning/40 bg-warning-dim/30 px-2 py-1 text-[11px] leading-[1.4] text-t3">
@@ -992,6 +1061,26 @@ export function ExperienceEditor() {
           confirmLabel={t("experience_editor_visual_delete")}
           onConfirm={() => void handleDeleteVisual(visualDeleteId)}
           onCancel={() => { setVisualDeleteId(null); setVisualDeleteError(null); }}
+        />
+      )}
+
+      {/*
+       * IR-90A: dual-action destructive delete for the active experience (its
+       * rules script). Mirrors chat message deletion (MessageBlock): the
+       * primary deletes BOTH the script and the active visual; the secondary
+       * ("rules only") deletes just the script. The secondary is rendered
+       * ONLY when a visual is currently selected — otherwise the single
+       * primary is the whole action. Reuses the shared DestructiveConfirmModal.
+       */}
+      {experienceDeleteOpen && (
+        <DestructiveConfirmModal
+          title={t("experience_editor_delete_title")}
+          body={t("experience_editor_delete_body")}
+          confirmLabel={t("experience_editor_delete_full")}
+          onConfirm={() => void handleDeleteExperience("full")}
+          onCancel={() => setExperienceDeleteOpen(false)}
+          secondaryLabel={activeVisualId ? t("experience_editor_delete_rules_only") : undefined}
+          onSecondary={activeVisualId ? () => void handleDeleteExperience("rules") : undefined}
         />
       )}
     </div>
