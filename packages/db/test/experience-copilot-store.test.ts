@@ -199,4 +199,20 @@ describe("ExperienceCopilotStore", () => {
     expect((await store.getActive("script_x"))!.id).toBe(a.id);
     expect((await store.getActive("script_y"))!.id).toBe(b.id);
   });
+
+  test("listMessages returns thread messages oldest-first", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_msgs", "Msgs");
+
+    // Append out-of-order roles to verify ordering is by createdAt (not role).
+    const first = await store.appendMessage(thread.id, { role: "user", content: "first" });
+    const second = await store.appendMessage(thread.id, { role: "assistant", content: "second", toolCallsJson: "[{\"type\":\"tool-call\"}]" });
+    const third = await store.appendMessage(thread.id, { role: "tool", content: "{}", toolCallId: "tc_1" });
+
+    const messages = await store.listMessages(thread.id);
+    expect(messages.map((m) => m.id)).toEqual([first.id, second.id, third.id]);
+    expect(messages.map((m) => m.content)).toEqual(["first", "second", "{}"]);
+    expect(messages[1].toolCallsJson).toBe("[{\"type\":\"tool-call\"}]");
+    expect(messages[2].toolCallId).toBe("tc_1");
+  });
 });

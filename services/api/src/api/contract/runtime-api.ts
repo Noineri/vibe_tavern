@@ -735,6 +735,25 @@ export interface ExperienceRuntimeApi {
 	advanceExperiencePlayground: (body: ExperiencePlaygroundAdvanceInput) => Promise<ExperiencePlaygroundData>;
 }
 
+// ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
+
+import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
+
+/** The experience-copilot streaming subsystem — a standalone, editor-embedded
+ *  pair-editor (own endpoint, own tables — ER-3) that proposes rules/visual
+ *  edits via tools (ER-4) and streams one turn at a time. NOT a chat-mode and
+ *  NOT the multi-mode AI-assistant. The stream yields SSE-shaped
+ *  `{ event, data }` chunks (same contract as `sendMessageStream`) so the route
+ *  emits them verbatim through `streamSSE`. */
+export interface ExperienceCopilotRuntimeApi {
+	/** Stream one copilot turn for a thread. Loads the thread context, assembles
+	 *  the prompt (ER-5), builds the tools (ER-4), streams via `streamText`, and
+	 *  yields SSE events (`text-delta`, `reasoning-delta`, `tool-call`,
+	 *  `tool-result`, `finish`, `error`). Persists the turn (user message + tool
+	 *  calls/results + final assistant text) to the ER-3 store. */
+	experienceCopilotStream: (threadId: string, body: Omit<ExperienceCopilotStreamRequest, "threadId">, signal?: AbortSignal) => AsyncGenerator<ExperienceCopilotStreamEvent>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	chat: ChatRuntimeApi;
@@ -754,4 +773,5 @@ export interface RuntimeApi {
 	insights: InsightsRuntimeApi;
 	dice: DiceRuntimeApi;
 	experience: ExperienceRuntimeApi;
+	experienceCopilot: ExperienceCopilotRuntimeApi;
 }

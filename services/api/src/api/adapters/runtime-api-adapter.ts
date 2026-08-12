@@ -27,6 +27,7 @@ import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
+import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import type { DiceService } from "../../domain/dice/dice-service.js";
 import type { ExperienceService } from "../../domain/interactive/experience-service.js";
@@ -63,6 +64,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly coauthorSkills: CoauthorSkillAdapter;
 	readonly dice: DiceAdapter;
 	readonly experience: ExperienceAdapter;
+	readonly experienceCopilot: ExperienceCopilotAdapter;
 
 	constructor(
 		stores: StoreContainer,
@@ -106,5 +108,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
 		this.dice = new DiceAdapter(diceService);
 		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService, providerProfileService);
+		this.experienceCopilot = new ExperienceCopilotAdapter(stores);
 	}
 }

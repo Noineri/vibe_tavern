@@ -80,6 +80,19 @@ export class ExperienceCopilotStore {
     return row ? this.mapThread(row) : null;
   }
 
+  /** All messages for a thread, oldest → newest (createdAt asc, then id as a
+   *  stable tiebreaker for same-timestamp collisions). The history the copilot
+   *  stream (ER-6) reloads each turn. */
+  async listMessages(threadId: string): Promise<ExperienceCopilotMessage[]> {
+    const rows = await this.db
+      .select()
+      .from(experienceCopilotMessages)
+      .where(eq(experienceCopilotMessages.threadId, threadId))
+      .orderBy(experienceCopilotMessages.createdAt, experienceCopilotMessages.id)
+      .all();
+    return rows.map((r) => this.mapMessage(r));
+  }
+
   /** Fetch one thread by id. */
   async getById(sessionId: string): Promise<ExperienceCopilotThread | null> {
     const row = await this.db

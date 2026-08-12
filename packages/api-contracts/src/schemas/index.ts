@@ -195,10 +195,14 @@ export {
 export {
   experienceCopilotTargetSchema,
   experienceCopilotToolOutputSchema,
+  experienceCopilotStepSchema,
+  experienceCopilotStreamRequestSchema,
 } from "./experience-copilot-schema.js";
 export type {
   ExperienceCopilotTarget,
   ExperienceCopilotToolOutput,
+  ExperienceCopilotStep,
+  ExperienceCopilotStreamRequest,
 } from "./experience-copilot-schema.js";
 
 export {

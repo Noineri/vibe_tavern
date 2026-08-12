@@ -48,3 +48,31 @@ export const experienceCopilotToolOutputSchema = z.object({
   summary: z.string(),
 });
 export type ExperienceCopilotToolOutput = z.infer<typeof experienceCopilotToolOutputSchema>;
+
+/**
+ * The authoring step the user is on in the inline 3-step creation flow. Drives
+ * the system framing + the context package the model sees (ER-5). Omitted on
+ * the wire defaults to `"rules"` (the first step / a draft thread).
+ */
+export const experienceCopilotStepSchema = z.enum(["rules", "visual", "test"]);
+export type ExperienceCopilotStep = z.infer<typeof experienceCopilotStepSchema>;
+
+/**
+ * Request body for the experience-copilot stream endpoint (ER-6),
+ * `POST /api/experience-copilot/:threadId/stream`. Mirrors the AI-assistant's
+ * `{ providerProfileId, model }` resolution shape, plus the copilot-specific
+ * `content` (the user's message) and an optional `step`/`testFeedback`. The
+ * thread id is a path param, not a body field. `testFeedback` is a free-form
+ * passthrough of the latest test/simulate digest the user sent back from the
+ * test panel (ER-5 renders it as context) — it is validated as a record, not
+ * a typed digest, because the digest shapes live in the backend domain
+ * (`experience-copilot-tools.ts`) and ER-7 will lift them into wire contracts.
+ */
+export const experienceCopilotStreamRequestSchema = z.object({
+  content: z.string().min(1).max(50_000),
+  providerProfileId: z.string().min(1),
+  model: z.string().min(1).optional(),
+  step: experienceCopilotStepSchema.optional(),
+  testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+export type ExperienceCopilotStreamRequest = z.infer<typeof experienceCopilotStreamRequestSchema>;
