@@ -55,5 +55,19 @@ export function createScriptRoutes(runtime: ScriptRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.setScriptLinks(c.req.param("scriptId"), body.links));
     })
+
+    // ── Visual bindings (script_visuals junction, BE-5/BE-6) ─────────────
+    .get("/api/scripts/:scriptId/visuals", async (c) => {
+      return c.json(await runtime.getScriptVisuals(c.req.param("scriptId")));
+    })
+    .post("/api/scripts/:scriptId/visuals", zValidator("json", schemas.bindScriptVisualSchema), async (c) => {
+      const { visualId } = c.req.valid("json");
+      await runtime.bindScriptVisual(c.req.param("scriptId"), visualId);
+      return c.json({ ok: true });
+    })
+    .delete("/api/scripts/:scriptId/visuals/:visualId", async (c) => {
+      await runtime.unbindScriptVisual(c.req.param("scriptId"), c.req.param("visualId"));
+      return c.json({ ok: true });
+    })
   ;
 }

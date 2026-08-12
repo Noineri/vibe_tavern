@@ -95,6 +95,11 @@ export const setScriptLinksSchema = z.object({
   links: z.array(scriptLinkSchema),
 });
 
+/** Body for POST /api/scripts/:scriptId/visuals — bind a visual to a script. */
+export const bindScriptVisualSchema = z.object({
+  visualId: z.string().min(1),
+});
+
 // ─── Script test result (POST /scripts/:scriptId/test) ───────────────────────
 // Mirrors the backend's PromptScriptTestResult / DiceScriptTestResult /
 // ScriptTestResult (services/api/.../script-test-service.ts). Discriminated by

@@ -1,5 +1,5 @@
 import type { ScriptRuntimeApi } from "../contract/runtime-api.js";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { StoreContainer, ExperienceVisualRow } from "@vibe-tavern/db";
 import { testScript, parseScriptImport } from "../../domain/scripts-engine/script-test-service.js";
 
 export class ScriptAdapter implements ScriptRuntimeApi {
@@ -67,4 +67,22 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 
 	setScriptLinks = (scriptId: string, links: Array<{ targetType: string; targetId: string }>) =>
 		this.stores.scripts.setLinks(scriptId, links);
+
+	// ── Visual bindings (script_visuals junction, BE-5) ──────────────────────
+
+	getScriptVisuals = async (scriptId: string): Promise<ExperienceVisualRow[]> => {
+		const ids = await this.stores.scripts.getBoundVisualIds(scriptId);
+		const rows = await Promise.all(
+			ids.map((id) => this.stores.experienceResources.getVisualById(id)),
+		);
+		// A bound id may resolve to null if the visual was deleted and the soft
+		// default went stale; drop those rather than surfacing nulls to the UI.
+		return rows.filter((v): v is ExperienceVisualRow => v !== null);
+	};
+
+	bindScriptVisual = (scriptId: string, visualId: string): Promise<void> =>
+		this.stores.scripts.bindVisual(scriptId, visualId);
+
+	unbindScriptVisual = (scriptId: string, visualId: string): Promise<void> =>
+		this.stores.scripts.unbindVisual(scriptId, visualId);
 }

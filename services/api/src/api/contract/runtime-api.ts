@@ -336,6 +336,12 @@ export interface ScriptRuntimeApi {
 	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
 	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
 	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
+	/** List the visuals bound to a script (its equal-peer "skin" set; BE-5 junction). */
+	getScriptVisuals: (scriptId: string) => Promise<ExperienceVisualRow[]>;
+	/** Bind a visual to a script (idempotent; first bound visual auto-becomes the silent default). */
+	bindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
+	/** Unbind a visual (reassigns the silent default if it was the one removed). */
+	unbindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────

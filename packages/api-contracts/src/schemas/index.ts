@@ -138,6 +138,7 @@ export {
   importScriptSchema,
   scriptLinkSchema,
   setScriptLinksSchema,
+  bindScriptVisualSchema,
   scriptTestResultSchema,
   promptScriptTestResultSchema,
   diceScriptTestResultSchema,
