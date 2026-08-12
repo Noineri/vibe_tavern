@@ -532,24 +532,34 @@ async function importSillyTavernChat(
 	const createdId = chat.id as ChatId;
 	deps.chatOrder.add(createdId);
 
-	for (const imported of importedMessages) {
-		const selectedVariant = imported.variants.find((variant) => variant.isSelected) ?? imported.variants[0];
-		const variants = imported.variants.length > 0 ? imported.variants : [{ content: imported.content, isSelected: true }];
-		const message = await deps.stores.messages.addMessage({
+	// Rebuild every message's variants in ONE pass via addMessagesBatch. The
+	// per-message addMessage + addVariant loop it replaces fought itself: each
+	// addVariant deselects the previous and selects itself, so after the loop the
+	// implicit selection was the LAST swipe, and the `findIndex(by content)` +
+	// `if (selectedIndex > 0)` restore then (a) never ran when the chosen swipe
+	// was index 0 and (b) matched duplicate-content swipes to the first hit —
+	// so the round-trip "export chat → import back" landed on the wrong swipe.
+	// addMessagesBatch derives the selection from `isSelected` directly and
+	// writes dense variantIndex values in a single transaction, so the chosen
+	// swipe survives for every position. It also keeps the chosen variant 0's
+	// reasoning, which the old `addMessage` path dropped (addMessage takes none).
+	await deps.stores.messages.addMessagesBatch(
+		importedMessages.map((imported) => ({
 			chatId: createdId,
 			branchId: chat.activeBranchId,
 			role: imported.role,
-			authorType: imported.role === "user" ? "user" : imported.role === "system" ? "system" : "assistant",
-			content: variants[0]?.content ?? imported.content,
-		});
-		for (const variant of variants.slice(1)) {
-			await deps.stores.messages.addVariant(message.id, variant.content, undefined, variant.reasoning);
-		}
-		const selectedIndex = variants.findIndex((variant) => variant.content === selectedVariant?.content);
-		if (selectedIndex > 0) {
-			await deps.stores.messages.selectVariant(message.id, selectedIndex);
-		}
-	}
+			authorType:
+				imported.role === "user" ? "user" : imported.role === "system" ? "system" : "assistant",
+			variants:
+				imported.variants.length > 0
+					? imported.variants.map((variant) => ({
+							content: variant.content,
+							reasoning: variant.reasoning,
+							isSelected: variant.isSelected,
+						}))
+					: [{ content: imported.content, isSelected: true }],
+		})),
+	);
 
 	return {
 		activeChatId: createdId,
