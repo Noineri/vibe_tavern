@@ -11,6 +11,14 @@ export interface StickToBottom {
   /** Pass to `<Virtuoso totalListHeightChanged>`. */
   onTotalListHeightChanged: (height: number) => void;
   /**
+   * The same rule, applied the moment something inside a row grew instead of
+   * when the virtualizer notices. `totalListHeightChanged` reports that growth
+   * one frame later — it goes through the library's own re-measure and
+   * re-render first — and while tokens stream that frame is visible as a jump.
+   * Handed to the streamed body through `FollowBottomContext`.
+   */
+  followContent: () => void;
+  /**
    * Whether the view follows the bottom. It flips rarely — only when the user
    * detaches or re-attaches — so it is cheap to render the "to the end" button
    * from.
@@ -169,7 +177,7 @@ export function useStickToBottom(): StickToBottom {
     };
   }, [handleScroll]);
 
-  const onTotalListHeightChanged = useCallback((height: number) => {
+  const followContent = useCallback(() => {
     if (pinnedRef.current) followBottom();
     else rememberGeometry();
   }, [followBottom, rememberGeometry]);
@@ -185,5 +193,12 @@ export function useStickToBottom(): StickToBottom {
     rememberGeometry();
   }, [rememberGeometry]);
 
-  return { virtuosoRef, scrollerRef, onTotalListHeightChanged, pinned, scrollToBottom };
+  return {
+    virtuosoRef,
+    scrollerRef,
+    onTotalListHeightChanged: followContent,
+    followContent,
+    pinned,
+    scrollToBottom,
+  };
 }

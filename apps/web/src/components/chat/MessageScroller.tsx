@@ -12,6 +12,7 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useStickToBottom } from "./use-stick-to-bottom.js";
+import { FollowBottomContext } from "./follow-bottom-context.js";
 
 /**
  * Flat-list display-id derivation: the visible message sequence BEFORE any
@@ -127,11 +128,17 @@ const components = { Header, Footer, Item };
  * only fires when `totalCount` changes, so while tokens stream (item count
  * constant, one item growing) it is inert. Its role when a message is appended
  * is covered by the same `totalListHeightChanged`.
+ *
+ * `totalListHeightChanged` is not the only growth input, because it arrives one
+ * frame after the DOM grew — the virtualizer re-measures the row and re-renders
+ * first — and that frame is visible while tokens stream. `followContent` goes
+ * down through `FollowBottomContext` so the streamed body applies the same rule
+ * in the frame it grew in.
  */
 export function MessageScroller({ displayIds, renderItem }: MessageScrollerProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const { virtuosoRef, scrollerRef, onTotalListHeightChanged, pinned, scrollToBottom } =
+  const { virtuosoRef, scrollerRef, onTotalListHeightChanged, followContent, pinned, scrollToBottom } =
     useStickToBottom();
 
   const itemContent = (index: number) => {
@@ -143,18 +150,20 @@ export function MessageScroller({ displayIds, renderItem }: MessageScrollerProps
   return (
     <TranslateErrorBoundary>
       <div className={cn("relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
-        <Virtuoso
-          ref={virtuosoRef}
-          scrollerRef={scrollerRef}
-          computeItemKey={(index) => displayIds[index]}
-          totalCount={displayIds.length}
-          totalListHeightChanged={onTotalListHeightChanged}
-          overscan={{ main: 4000, reverse: 4000 }}
-          itemContent={itemContent}
-          components={components}
-          className="flex-1"
-          style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
-        />
+        <FollowBottomContext.Provider value={followContent}>
+          <Virtuoso
+            ref={virtuosoRef}
+            scrollerRef={scrollerRef}
+            computeItemKey={(index) => displayIds[index]}
+            totalCount={displayIds.length}
+            totalListHeightChanged={onTotalListHeightChanged}
+            overscan={{ main: 4000, reverse: 4000 }}
+            itemContent={itemContent}
+            components={components}
+            className="flex-1"
+            style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+          />
+        </FollowBottomContext.Provider>
         {!pinned && displayIds.length > 0 && (
           isMobile ? (
             <button type="button"

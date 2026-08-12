@@ -332,7 +332,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
         <StreamingMarkdown
           text={activeStreamingRevealedText}
-          trailing={<GenerationDots label={t("generating_response")} />}
+          indicator={<GenerationDots label={t("generating_response")} />}
         />
       </div>
     </div>
