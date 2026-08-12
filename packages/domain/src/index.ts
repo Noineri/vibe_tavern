@@ -19,3 +19,4 @@ export * from "./proxy-profile.js";
 export * from "./provider-support.js";
 export * from "./sampler-params.js";
 export * from "./scene-tracker-constants.js";
+export * from "./text-exact-edit.js";
