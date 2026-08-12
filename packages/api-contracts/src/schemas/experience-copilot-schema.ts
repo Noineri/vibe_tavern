@@ -76,3 +76,59 @@ export const experienceCopilotStreamRequestSchema = z.object({
   testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 export type ExperienceCopilotStreamRequest = z.infer<typeof experienceCopilotStreamRequestSchema>;
+
+/**
+ * Wire shape of an experience-copilot thread (ER-7). Mirrors
+ * `ExperienceCopilotThread` (packages/db/src/stores/experience-copilot-store.ts)
+ * field-for-field. The thread's branded `ExperienceCopilotThreadId` and the
+ * cross-domain soft-link `scriptId`/`draftSessionId` are all plain strings on
+ * the wire (repo convention: branded ids flatten to `z.string()` — see
+ * script-schema.ts). `archivedAt` is `null` for the active thread and an ISO
+ * timestamp once archived; the at-most-one-active invariant lives in the store
+ * (ER-3), not the schema.
+ */
+export const experienceCopilotThreadSchema = z.object({
+  id: z.string(),
+  scriptId: z.string().nullable(),
+  draftSessionId: z.string().nullable(),
+  title: z.string(),
+  archivedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ExperienceCopilotThreadWire = z.infer<typeof experienceCopilotThreadSchema>;
+
+/**
+ * Wire shape of an experience-copilot message (ER-7). Mirrors
+ * `ExperienceCopilotMessage` (packages/db/src/stores/experience-copilot-store.ts):
+ * a single assistant/user/tool-role turn on a thread. The message's branded
+ * `ExperienceCopilotMessageId` and its parent `threadId` are plain strings on
+ * the wire. `toolCallsJson`/`toolCallId` are nullable (present on tool-call /
+ * tool-result turns, `null` otherwise).
+ */
+export const experienceCopilotMessageSchema = z.object({
+  id: z.string(),
+  threadId: z.string(),
+  role: z.string(),
+  content: z.string(),
+  toolCallsJson: z.string().nullable(),
+  toolCallId: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type ExperienceCopilotMessageWire = z.infer<typeof experienceCopilotMessageSchema>;
+
+/**
+ * Wire shape of a visual that is bound to the experience being authored and so
+ * shown to the copilot as available context (ER-7). Mirrors the element shape of
+ * `CopilotContext.boundVisuals`
+ * (services/api/src/domain/interactive/copilot/experience-copilot-stream.ts):
+ * `{ id, name, kind }`. `kind` is free-form string (currently always
+ * `"visual"`) rather than an enum because the bound-visual set is open-ended;
+ * the prompt renderer (experience-copilot-prompt.ts) emits it verbatim.
+ */
+export const experienceCopilotBoundVisualSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.string(),
+});
+export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBoundVisualSchema>;

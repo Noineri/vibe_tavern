@@ -197,12 +197,18 @@ export {
   experienceCopilotToolOutputSchema,
   experienceCopilotStepSchema,
   experienceCopilotStreamRequestSchema,
+  experienceCopilotThreadSchema,
+  experienceCopilotMessageSchema,
+  experienceCopilotBoundVisualSchema,
 } from "./experience-copilot-schema.js";
 export type {
   ExperienceCopilotTarget,
   ExperienceCopilotToolOutput,
   ExperienceCopilotStep,
   ExperienceCopilotStreamRequest,
+  ExperienceCopilotThreadWire,
+  ExperienceCopilotMessageWire,
+  ExperienceCopilotBoundVisual,
 } from "./experience-copilot-schema.js";
 
 export {
