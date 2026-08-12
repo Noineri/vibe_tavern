@@ -193,6 +193,15 @@ export {
 } from "./dice-schema.js";
 
 export {
+  experienceCopilotTargetSchema,
+  experienceCopilotToolOutputSchema,
+} from "./experience-copilot-schema.js";
+export type {
+  ExperienceCopilotTarget,
+  ExperienceCopilotToolOutput,
+} from "./experience-copilot-schema.js";
+
+export {
   // Enums
   experienceCapabilitySchema,
   experienceControllerSchema,

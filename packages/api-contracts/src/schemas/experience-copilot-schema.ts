@@ -1,0 +1,50 @@
+/**
+ * Experience-Copilot wire schemas (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-4).
+ *
+ * The experience-copilot is a standalone, editor-embedded subsystem (own backend
+ * domain `interactive/copilot/`, own endpoint, own tables — ER-3) that lets the
+ * model propose rules/visual edits and run tests against the unsaved source. Its
+ * tools are the model's ONLY channel for proposing edits (the user commits via
+ * the BE-6 endpoints); they NEVER write to a store.
+ *
+ * This file holds the subsystem's WIRE contracts shared with the frontend. ER-4
+ * defines only the tool-output shape that the `write_buffer`/`edit_buffer` tools
+ * return (the `target`/`proposed`/`summary` triple the frontend renders as a
+ * diff). ER-7 will add the thread/message wire + context assembly schemas; those
+ * are intentionally NOT pre-built here.
+ *
+ * Convention follows the Co-Author sibling: `coauthorToolOutputSchema` lives in
+ * `chat-schema.ts` (the chat-bound co-author) while the co-author module config
+ * lives in `coauthor-module.ts`. The experience-copilot is NOT chat-bound, so it
+ * gets its own schema file rather than riding on `interactive-schema.ts` (which
+ * is the interactive-RUNTIME session lifecycle — sessions, kernel, tester — not
+ * the editor-copilot subsystem).
+ */
+
+import { z } from "zod";
+
+/**
+ * Which buffer a copilot proposed edit lands on. Drives which editor surface
+ * shows the diff (the rules editor vs the visual editor). Mirrors
+ * `CoauthorTarget` ("profile" | "greeting") for the two co-author surfaces.
+ */
+export const experienceCopilotTargetSchema = z.enum(["rules", "visual"]);
+export type ExperienceCopilotTarget = z.infer<typeof experienceCopilotTargetSchema>;
+
+/**
+ * The `output` payload of an experience-copilot `write_buffer`/`edit_buffer`
+ * `tool-result` (ER-4). The backend tool `execute()` returns this shape; it
+ * crosses the wire verbatim and the frontend renders it as a proposed-buffer
+ * diff for the user to commit via the BE-6 binding endpoints (the sole write
+ * path). Mirrors `coauthorToolOutputSchema`, with the copilot's two named text
+ * buffers ("rules"/"visual") in place of the co-author's profile/greeting
+ * surfaces. The read-only tools (`run_test`, `run_simulate`,
+ * `suggest_visual_binding`) return their own digest shapes and never carry this
+ * proposal triple.
+ */
+export const experienceCopilotToolOutputSchema = z.object({
+  target: experienceCopilotTargetSchema,
+  proposed: z.string(),
+  summary: z.string(),
+});
+export type ExperienceCopilotToolOutput = z.infer<typeof experienceCopilotToolOutputSchema>;
