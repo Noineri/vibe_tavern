@@ -1,35 +1,76 @@
 /**
- * Streaming reveal — gradually reveals streaming text with adaptive modes.
+ * Streaming reveal — gradually reveals streaming text.
  *
- * It splits visible text into:
- * - gradually revealed text, throttling it to avoid jank.
+ * Providers deliver tokens in bursts: one character at a time from a cloud
+ * model, a whole paragraph at once from a fast local one. This class smooths
+ * out the difference: it accumulates the received text as the target and
+ * reveals it evenly, stopping at word boundaries so a word is never split
+ * mid-way.
+ *
+ * It runs on requestAnimationFrame rather than setTimeout: the reveal is an
+ * animation, so it should sync with the browser's frames and freeze in a
+ * hidden tab. The scheduler is injected so tests can step through frames
+ * deterministically.
  */
 
 import { useChatStore } from "../stores/chat-store.js";
 
-const TICK_MS = 16;
-const SMALL_BACKLOG = 80;
-const MEDIUM_BACKLOG = 400;
-const LARGE_BACKLOG = 1200;
+/**
+ * Schedules `callback` for the next frame and returns a cancel function.
+ * Defaults to requestAnimationFrame; tests substitute a manual stepper.
+ */
+export type RevealScheduler = (callback: () => void) => () => void;
+
+const rafScheduler: RevealScheduler = (callback) => {
+  const id = requestAnimationFrame(() => callback());
+  return () => cancelAnimationFrame(id);
+};
+
+/**
+ * Fraction of the hidden remainder revealed per frame. At 60 frames per
+ * second the remainder shrinks by roughly an order of magnitude within half
+ * a second, so a local model that dumped a whole paragraph catches up quickly
+ * but not instantly. A single number instead of the previous four-tier table:
+ * the rule is self-correcting — the larger the backlog, the larger the step.
+ */
+const CATCH_UP_PER_FRAME = 0.08;
+
+/**
+ * Minimum characters per frame, so a rare thin trickle (one token per second)
+ * still moves instead of stalling on the fraction rounding down.
+ */
+const MIN_CHARS_PER_FRAME = 2;
+
+/**
+ * How far past the calculated step to reach for a word boundary. On the order
+ * of a long word plus punctuation: if there is no space within this window,
+ * cut at the calculated step rather than stall the reveal for a perfect join.
+ *
+ * Exported so the "no mid-word split" test reads the same number instead of
+ * keeping its own copy that would drift apart on the first edit.
+ */
+export const WORD_SNAP_WINDOW = 24;
 
 export class StreamingReveal {
-  private chatId: string;
+  private readonly chatId: string;
+  private readonly schedule: RevealScheduler;
   private target = "";
   private shownLength = 0;
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private cancelFrame: (() => void) | null = null;
   private flushResolve: (() => void) | null = null;
 
-  constructor(chatId: string) {
+  constructor(chatId: string, schedule: RevealScheduler = rafScheduler) {
     this.chatId = chatId;
+    this.schedule = schedule;
   }
 
-  /** Append a delta chunk to the target text and schedule reveal animation. */
+  /** Append a delta chunk to the target text and start the reveal. */
   pushDelta(delta: string): void {
     this.target += delta;
-    this.schedule();
+    this.ensureRunning();
   }
 
-  /** Wait until the shown text catches up to the full target. */
+  /** Wait until the shown text has caught up to the full target. */
   waitForReveal(): Promise<void> {
     if (this.shownLength >= this.target.length) {
       this.commitAll();
@@ -37,81 +78,71 @@ export class StreamingReveal {
     }
     return new Promise<void>((resolve) => {
       this.flushResolve = resolve;
-      this.schedule();
+      this.ensureRunning();
     });
   }
 
-  /** Reset all state and clear any pending timers. */
+  /** Reset state, cancel the pending frame, release the waiter, publish "". */
   clear(): void {
-    if (this.timer) clearTimeout(this.timer);
+    this.stop();
     this.target = "";
     this.shownLength = 0;
-    this.timer = null;
-    this.flushResolve?.();
-    this.flushResolve = null;
+    this.resolveFlush();
     useChatStore.getState().setStreamingRevealed(this.chatId, "");
   }
 
-  /** Current fully-revealed text so far. */
-  getText(): string {
-    return this.target.slice(0, this.shownLength);
+  // -- internals --
+
+  private ensureRunning(): void {
+    if (this.cancelFrame) return;
+    this.cancelFrame = this.schedule(() => this.tick());
   }
 
-  // -- internal --
-
-  private schedule(): void {
-    if (this.timer) return;
-
-    const tick = (): void => {
-      const remaining = this.target.length - this.shownLength;
-      if (remaining <= 0) {
-        this.timer = null;
-        this.commitAll();
-        this.flushResolve?.();
-        this.flushResolve = null;
-        return;
-      }
-
-      this.shownLength = Math.min(this.target.length, this.shownLength + this.nextStep(remaining));
-      this.publish();
-      this.timer = setTimeout(tick, TICK_MS);
-    };
-
-    this.timer = setTimeout(tick, TICK_MS);
+  private stop(): void {
+    this.cancelFrame?.();
+    this.cancelFrame = null;
   }
 
-  private nextStep(remaining: number): number {
-    if (remaining < SMALL_BACKLOG) return 4;
+  private tick(): void {
+    this.cancelFrame = null;
 
-    if (remaining < MEDIUM_BACKLOG) {
-      // Word flow: reveal roughly one short word per tick, snapping to boundary.
-      return this.stepToBoundary(8, 28);
+    const remaining = this.target.length - this.shownLength;
+    if (remaining <= 0) {
+      this.commitAll();
+      this.resolveFlush();
+      return;
     }
 
-    if (remaining < LARGE_BACKLOG) {
-      // Phrase flow: larger chunks, still trying to stop at word boundaries.
-      return this.stepToBoundary(32, 72);
-    }
-
-    // Burst flow: catch up fast for very quick local models, but avoid instant dump.
-    return this.stepToBoundary(96, 220);
+    this.shownLength += this.stepSize(remaining);
+    this.publish();
+    this.ensureRunning();
   }
 
-  private stepToBoundary(minStep: number, maxStep: number): number {
-    const start = this.shownLength;
-    const hardEnd = Math.min(this.target.length, start + maxStep);
-    const softStart = Math.min(this.target.length, start + minStep);
+  /**
+   * How many characters to reveal this frame: a fraction of the remainder,
+   * but no less than the minimum, extended forward to the nearest word
+   * boundary within the snap window.
+   */
+  private stepSize(remaining: number): number {
+    const base = Math.max(MIN_CHARS_PER_FRAME, Math.ceil(remaining * CATCH_UP_PER_FRAME));
+    if (base >= remaining) return remaining;
 
-    for (let i = softStart; i <= hardEnd; i++) {
-      const ch = this.target[i - 1];
-      if (ch === " " || ch === "\n" || ch === "\t") return i - start;
+    const searchEnd = Math.min(this.target.length, this.shownLength + base + WORD_SNAP_WINDOW);
+    for (let i = this.shownLength + base; i < searchEnd; i++) {
+      const ch = this.target[i];
+      if (ch === " " || ch === "\n" || ch === "\t") return i - this.shownLength + 1;
     }
-    return hardEnd - start;
+    return base;
+  }
+
+  private resolveFlush(): void {
+    const resolve = this.flushResolve;
+    this.flushResolve = null;
+    resolve?.();
   }
 
   private publish(): void {
-    const revealedText = this.target.slice(0, this.shownLength);
-    useChatStore.getState().setStreamingRevealed(this.chatId, revealedText);
+    useChatStore.getState().setStreamingRevealed(this.chatId, this.target.slice(0, this.shownLength));
   }
 
   private commitAll(): void {
@@ -119,4 +150,3 @@ export class StreamingReveal {
     useChatStore.getState().setStreamingRevealed(this.chatId, this.target);
   }
 }
-
