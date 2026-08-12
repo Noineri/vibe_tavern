@@ -569,27 +569,38 @@ function extractText(children: React.ReactNode): string {
 
 // ─── Public API ───
 
-export const Markdown: React.FC<MarkdownProps> = ({ text, className, variant = "chat" }) => {
+// react-markdown caches nothing: it rebuilds its unified processor and re-parses
+// the whole string on every render it is handed. React.memo is therefore the only
+// thing that keeps a finished message from being re-parsed on every streaming tick
+// of a sibling. The plugin lists sit at module scope so that render also stops
+// rebuilding the pipeline description each time.
+const REMARK_PLUGINS: PluggableList = [remarkGfm];
+
+const BASE_REHYPE_PLUGINS: PluggableList = [
+  rehypeRaw,
+  [rehypeSanitize, sanitizeSchema],
+];
+
+const CHAT_REHYPE_PLUGINS: PluggableList = [
+  ...BASE_REHYPE_PLUGINS,
+  rehypeQuotedText,
+  rehypeSystemBanner,
+];
+
+export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
   if (!text) return null;
-
-  const baseRehypePlugins: PluggableList = [
-    rehypeRaw,
-    [rehypeSanitize, sanitizeSchema]
-  ];
-
-  const rehypePlugins: PluggableList = variant === "plain" 
-    ? baseRehypePlugins 
-    : [...baseRehypePlugins, rehypeQuotedText, rehypeSystemBanner];
 
   return (
     <div className={className || "md-content"}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={rehypePlugins}
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={variant === "plain" ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS}
         components={components}
       >
         {text}
       </ReactMarkdown>
     </div>
   );
-};
+});
+
+Markdown.displayName = "Markdown";
