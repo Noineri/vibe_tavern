@@ -13,6 +13,7 @@ declare global {
     __useNavigationStore: typeof import("../stores/navigation-store").useNavigationStore;
     __useSnapshotStore: typeof import("../stores/snapshot-store").useSnapshotStore;
     __useCoauthorTurnStore: typeof import("../stores/coauthor-turn-store").useCoauthorTurnStore;
+    __useExperienceCopilotTurnStore: typeof import("../stores/experience-copilot-turn-store").useExperienceCopilotTurnStore;
     __useSessionStore: typeof import("../stores/session-store").useSessionStore;
     __useSceneRenderStore: typeof import("../stores/scene-render-store").useSceneRenderStore;
     __useCoauthorSkillStore: typeof import("../stores/coauthor-skill-store").useCoauthorSkillStore;
