@@ -54,8 +54,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const [variantControlsOverlay, setVariantControlsOverlay] = useState<VariantControlsOverlayState | null>(null);
   const variantControlsRef = useRef<HTMLSpanElement>(null);
   const variantOverlayTimerRef = useRef<number | undefined>(undefined);
-  const bottomPinRafRef = useRef<number | undefined>(undefined);
-  const bottomPinUntilRef = useRef(0);
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
   const msg = useDisplayMessage(input.messageId);
@@ -118,7 +116,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   useEffect(() => {
     return () => {
       if (variantOverlayTimerRef.current !== undefined) window.clearTimeout(variantOverlayTimerRef.current);
-      if (bottomPinRafRef.current !== undefined) window.cancelAnimationFrame(bottomPinRafRef.current);
     };
   }, []);
 
@@ -214,31 +211,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // ⚠️  FRAGILE — Variant Switch Bottom Pinning
-  // ⚠️  DO NOT REMOVE OR "SIMPLIFY" without manually testing long↔short swipes.
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  const pinVirtuosoToBottomDuringVariantSwitch = () => {
-    bottomPinUntilRef.current = Math.max(bottomPinUntilRef.current, performance.now() + 900);
-    if (bottomPinRafRef.current !== undefined) return;
-
-    const pin = () => {
-      const scroller = document.querySelector<HTMLElement>('[data-virtuoso-scroller="true"]');
-      if (scroller) {
-        scroller.scrollTop = scroller.scrollHeight;
-      }
-
-      if (performance.now() < bottomPinUntilRef.current) {
-        bottomPinRafRef.current = window.requestAnimationFrame(pin);
-      } else {
-        if (scroller) scroller.scrollTop = scroller.scrollHeight;
-        bottomPinRafRef.current = undefined;
-      }
-    };
-
-    pin();
-  };
-
   const handleSelectVariant = (targetIndex: number, swipeDirection: SwipeDirection) => {
     const controlsRect = variantControlsOverlay?.rect ?? variantControlsRef.current?.getBoundingClientRect();
     if (!isMobile && controlsRect) {
@@ -250,7 +222,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       }, 450);
     }
 
-    if (!isMobile && !isGreeting) pinVirtuosoToBottomDuringVariantSwitch();
     const targetVariant = variants[targetIndex];
     if (!targetVariant) return;
     useSnapshotStore.getState().selectVariant(msg.id, targetVariant.variantIndex, swipeDirection);
