@@ -106,12 +106,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // -- Variant slide: direction derived locally to prevent phantom renders --
   const prevVariantIndexRef = useRef(selectedVariantIndex);
   const directionRef = useRef(1);
+  const hasMountedVariantRef = useRef(false);
 
   if (selectedVariantIndex !== prevVariantIndexRef.current) {
     directionRef.current = selectedVariantIndex > prevVariantIndexRef.current ? 1 : -1;
     prevVariantIndexRef.current = selectedVariantIndex;
   }
   const direction = directionRef.current;
+  const shouldAnimateVariant = hasMountedVariantRef.current;
+  useEffect(() => {
+    hasMountedVariantRef.current = true;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -325,8 +330,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   ) : isStreamingHere ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-        <StreamingMarkdown text={activeStreamingRevealedText} />
-        <GenerationDots label={t("generating_response")} />
+        <StreamingMarkdown
+          text={activeStreamingRevealedText}
+          trailing={<GenerationDots label={t("generating_response")} />}
+        />
       </div>
     </div>
   ) : (
@@ -342,7 +349,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           <AnimatePresence initial={false}>
             <motion.div
               key={`v-${selectedVariantIndex}`}
-              initial={{ x: direction * 40, opacity: 0 }}
+              initial={shouldAnimateVariant ? { x: direction * 40, opacity: 0 } : false}
               animate={{ x: 0, opacity: 1 }}
               transition={{ type: "spring", stiffness: 400, damping: 35 }}
               translate="yes"

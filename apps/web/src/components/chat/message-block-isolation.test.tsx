@@ -72,6 +72,16 @@ const realChatController = await import("../../hooks/use-chat-controller.js");
 const realI18nContext = await import("../../i18n/context.js");
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realTooltip = await import("../shared/Tooltip.js");
+const realFramerMotion = await import("framer-motion");
+
+type MotionInitial = false | { x: number; opacity: number };
+const motionInitials: MotionInitial[] = [];
+
+function MotionDiv({ children, initial = false }: { children?: ReactNode; initial?: MotionInitial }) {
+  motionInitials.push(initial);
+  const initialValue = initial === false ? "false" : `${initial.x},${initial.opacity}`;
+  return <div data-motion-initial={initialValue}>{children}</div>;
+}
 
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
@@ -103,6 +113,12 @@ mock.module("../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+mock.module("framer-motion", () => ({
+  ...realFramerMotion,
+  AnimatePresence: ({ children }: { children?: ReactNode }) => children,
+  motion: { ...realFramerMotion.motion, div: MotionDiv },
 }));
 
 // ---------------------------------------------------------------------------
@@ -257,6 +273,7 @@ const CHAT = "chat-1";
 beforeEach(async () => {
   const { snapshotStore, chatStore } = await loadModules();
   snapshotStore.useSnapshotStore.getState().clear();
+  motionInitials.length = 0;
   // Reset chat-store to a clean baseline: no active chat, no generations.
   chatStore.useChatStore.setState({
     activeChatId: null, selectedCharacterId: null, draft: "", editingMessageId: null,
@@ -520,6 +537,23 @@ describe("MessageBlock — render isolation invariant", () => {
     expect(mainBody).toContain("useMessageAuthor()");
     expect(mainBody).toContain("useIsStreamingTarget(");
     expect(mainBody).toContain("useStreamingRevealedFor(");
+  });
+
+  test("does not enter animate when a finalized message first mounts", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeMultiVariantMessage("m1")]));
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const { container } = render(
+      <MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />,
+    );
+
+    expect(container.querySelector("[data-motion-initial]")?.getAttribute("data-motion-initial")).toBe("false");
+
+    act(() => { snapshotStore.useSnapshotStore.getState().selectVariant("m1", 1, 1); });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(container.querySelector("[data-motion-initial]")?.getAttribute("data-motion-initial")).toBe("40,0");
   });
 });
 

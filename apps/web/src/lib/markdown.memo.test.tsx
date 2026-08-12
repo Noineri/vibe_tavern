@@ -17,6 +17,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { Options } from "react-markdown";
+import type { ReactNode } from "react";
 import type { PluggableList } from "unified";
 import { useDomEnv } from "../../test/dom-env.js";
 
@@ -45,8 +46,12 @@ beforeEach(() => {
   seamCalls.length = 0;
 });
 
-function Parent({ text, variant }: { text: string; variant?: "chat" | "plain" }) {
-  return <Markdown text={text} variant={variant} />;
+function Parent({ text, trailing, variant }: {
+  text: string;
+  trailing?: ReactNode;
+  variant?: "chat" | "plain";
+}) {
+  return <Markdown text={text} trailing={trailing} variant={variant} />;
 }
 
 function pluginCount(list: PluggableList | null | undefined): number {
@@ -70,6 +75,14 @@ describe("Markdown — memoization", () => {
     expect(seamCalls).toHaveLength(2);
     expect(seamCalls[1]?.remarkPlugins).toBe(seamCalls[0]?.remarkPlugins);
     expect(seamCalls[1]?.rehypePlugins).toBe(seamCalls[0]?.rehypePlugins);
+  });
+
+  it("does not re-enter the seam when the trailing indicator is unchanged", () => {
+    const trailing = <span aria-label="Generating response" />;
+    const { rerender } = render(<Parent text="unchanged message" trailing={trailing} />);
+    rerender(<Parent text="unchanged message" trailing={trailing} />);
+
+    expect(seamCalls).toHaveLength(1);
   });
 });
 

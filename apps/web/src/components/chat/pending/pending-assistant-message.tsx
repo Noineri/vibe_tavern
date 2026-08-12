@@ -89,8 +89,10 @@ export function PendingAssistantMessage() {
     >
       <div className={isMobile ? "my-0.5 w-full" : ""}>
         <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-          <StreamingMarkdown text={streamingRevealedText} />
-          <GenerationDots label={t("generating_response")} />
+          <StreamingMarkdown
+            text={streamingRevealedText}
+            trailing={<GenerationDots label={t("generating_response")} />}
+          />
         </div>
       </div>
     </MessageShell>

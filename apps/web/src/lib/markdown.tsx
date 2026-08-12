@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import type { ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -17,6 +18,7 @@ const sanitizeSchema = {
 interface MarkdownProps {
   text: string;
   className?: string;
+  trailing?: ReactNode;
   /**
    * `"chat"` (default) applies the chat-flavored rehype plugins (quoted-text
    * wrapping, bracket system-banner detection) — appropriate for message
@@ -27,6 +29,19 @@ interface MarkdownProps {
 }
 
 const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
+
+type MarkdownComponentProps = {
+  children?: React.ReactNode;
+  className?: string;
+} & ExtraProps & Record<string, unknown>;
+
+const TRAILING_BLOCK_TAGS = new Set(["p", "li", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6"]);
+
+function isTrailingBlock(node: ExtraProps["node"], text: string): boolean {
+  return node !== undefined &&
+    TRAILING_BLOCK_TAGS.has(node.tagName) &&
+    node.position?.end.offset === text.trimEnd().length;
+}
 
 // ─── Rehype plugin: wrap "quoted text" in <span class="quoted-text"> ───
 //
@@ -423,19 +438,21 @@ function CodeBlock({ children }: { children?: React.ReactNode }) {
 
 // ─── Component overrides ───
 
-const components: Record<string, React.ComponentType<{ children?: React.ReactNode; className?: string; node?: unknown } & Record<string, unknown>>> = {
-  p({ children, ...props }) {
-    const text = extractText(children);
-    const content = (typeof text === "string" ? text : "").trim();
-    const blocks = content.match(SCENE_META_BLOCK_RE);
-    const allMeta = Boolean(blocks?.length) && content.replace(SCENE_META_BLOCK_RE, "").trim().length === 0;
+function MarkdownParagraph({ children, ...props }: MarkdownComponentProps) {
+  const text = extractText(children);
+  const content = (typeof text === "string" ? text : "").trim();
+  const blocks = content.match(SCENE_META_BLOCK_RE);
+  const allMeta = Boolean(blocks?.length) && content.replace(SCENE_META_BLOCK_RE, "").trim().length === 0;
 
-    if (allMeta && blocks) {
-      return <div className="scene-meta">{blocks.join("\n")}</div>;
-    }
+  if (allMeta && blocks) {
+    return <div className="scene-meta">{blocks.join("\n")}</div>;
+  }
 
-    return <p {...props}>{children}</p>;
-  },
+  return <p {...props}>{children}</p>;
+}
+
+const components: Record<string, React.ComponentType<MarkdownComponentProps>> = {
+  p: MarkdownParagraph,
 
   hr() {
     return <hr className="msg-hr" />;
@@ -587,7 +604,7 @@ const CHAT_REHYPE_PLUGINS: PluggableList = [
   rehypeSystemBanner,
 ];
 
-export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
+export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, trailing, variant = "chat" }: MarkdownProps) => {
   if (!text) return null;
 
   return (
@@ -595,7 +612,24 @@ export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, 
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={variant === "plain" ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS}
-        components={components}
+        components={trailing ? {
+          ...components,
+          p({ children, node, ...props }) {
+            return <MarkdownParagraph {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</MarkdownParagraph>;
+          },
+          li({ children, node, ...props }) {
+            return <li className="md-list-item" {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</li>;
+          },
+          blockquote({ children, node, ...props }) {
+            return <blockquote className="md-blockquote" {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</blockquote>;
+          },
+          h1: ({ children, node, ...props }) => <h1 className="md-h1" {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</h1>,
+          h2: ({ children, node, ...props }) => <h2 className="md-h2" {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</h2>,
+          h3: ({ children, node, ...props }) => <h3 className="md-h3" {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</h3>,
+          h4: ({ children, node, ...props }) => <h4 className="md-h4" {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</h4>,
+          h5: ({ children, node, ...props }) => <h5 className="md-h5" {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</h5>,
+          h6: ({ children, node, ...props }) => <h6 className="md-h6" {...props}>{isTrailingBlock(node, text) ? <>{children}{trailing}</> : children}</h6>,
+        } : components}
       >
         {text}
       </ReactMarkdown>
