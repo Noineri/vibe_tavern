@@ -36,6 +36,9 @@ export type ExperienceStepId = Brand<"ExperienceStepId">;
 export type ExperienceEffectId = Brand<"ExperienceEffectId">;
 export type ExperienceContextBundleId = Brand<"ExperienceContextBundleId">;
 export type ExperienceAttachmentId = Brand<"ExperienceAttachmentId">;
+// Experience copilot thread/message persistence (EXPERIENCE_EDITOR_REFACTOR_PLAN, ER-3).
+export type ExperienceCopilotThreadId = Brand<"ExperienceCopilotThreadId">;
+export type ExperienceCopilotMessageId = Brand<"ExperienceCopilotMessageId">;
 
 /** Unsafe cast from a plain string to a branded ID. Use only at layer boundaries (DB, API). */
 export function brandId<TId extends Id>(value: string): TId {

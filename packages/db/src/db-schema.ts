@@ -1189,3 +1189,70 @@ export const experienceAttachments = sqliteTable('experience_attachments', {
   messageIdx: index('idx_experience_attachments_message').on(table.boundMessageId),
   chatBranchIdx: index('idx_experience_attachments_chat_branch').on(table.chatId, table.branchId),
 }));
+
+// ═══ Experience copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, ER-3) ═══════════════
+//
+// Per-experience copilot conversation persistence. An "experience" is an
+// interactive rules script; the copilot is the LLM pair-editor that helps
+// author/refine it. Each experience owns MULTIPLE copilot sessions, ONE ACTIVE
+// at a time: "New session" archives the current and opens a clean one, and
+// archived sessions stay resumable (activate flips one back to active). This
+// mirrors the owner's B-b1 decision in the plan's Sessions bullet.
+//
+// At-most-one-active invariant (two layers, mirroring how
+// experience_sessions + VersionStore handle the single-active pattern):
+//  - DB layer: a PARTIAL unique index on script_id WHERE archived_at IS NULL —
+//    expressible in drizzle-orm 0.38.4's sqlite DSL via IndexBuilder.where().
+//  - App layer: ExperienceCopilotStore archives same-script_id siblings inside
+//    a synchronous transaction (startNewSession/activate) so two actives can
+//    never coexist even momentarily.
+//
+// script_id is a soft link with NO FK: set once the draft experience is first
+// saved (persisted as a real scripts row); until then draft_session_id
+// identifies the in-progress work. Deleting a script never cascade-deletes
+// copilot history (the snapshot/no-FK-source convention used throughout this
+// runtime), and a thread can predate the script row it will eventually point at.
+export const experienceCopilotThreads = sqliteTable('experience_copilot_threads', {
+  id: text('id').primaryKey(),
+  // Soft link to the experience (scripts row). Nullable + set-on-first-save.
+  // No FK — see the section comment above.
+  scriptId: text('script_id'),
+  // Identifies an unsaved draft session before the experience has a script_id.
+  // Null once script_id is set.
+  draftSessionId: text('draft_session_id'),
+  title: text('title').notNull().default(''),
+  // NULL = the active session for this script_id; non-null ISO timestamp =
+  // archived (resumable). The partial unique index below guarantees at most one
+  // NULL-archived_at row per script_id.
+  archivedAt: text('archived_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  scriptIdIdx: index('idx_experience_copilot_threads_script').on(table.scriptId),
+  // At-most-one-active invariant (DB layer): at most one row per script_id with
+  // archived_at IS NULL. The `sql` template is used instead of `and(isNull(...),
+  // isNotNull(...))` because `and()` returns `SQL | undefined`, which the
+  // IndexBuilder.where(condition: SQL) signature rejects. script_id IS NOT NULL
+  // is belt-and-suspenders (the index is already ON script_id, so NULL rows are
+  // distinct anyway); kept to match the spec's WHERE clause verbatim.
+  activeScriptUnique: uniqueIndex('idx_experience_copilot_threads_active_script')
+    .on(table.scriptId)
+    .where(sql`${table.archivedAt} IS NULL AND ${table.scriptId} IS NOT NULL`),
+}));
+
+// ─── experienceCopilotMessages ────────────────────────────────────────────────
+// The message history of a copilot thread — same conceptual shape as `messages`
+// (role/content/tool_calls_json/tool_call_id) so a future turn-store adapts
+// ~1:1. Append-only on the copilot turn loop; deleting a thread cascades its
+// messages (ON DELETE CASCADE on the FK below).
+export const experienceCopilotMessages = sqliteTable('experience_copilot_messages', {
+  id: text('id').primaryKey(),
+  threadId: text('thread_id').notNull().references(() => experienceCopilotThreads.id, { onDelete: 'cascade' }),
+  role: text('role').notNull(),
+  content: text('content').notNull().default(''),
+  toolCallsJson: text('tool_calls_json'),
+  toolCallId: text('tool_call_id'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  threadIdx: index('idx_experience_copilot_messages_thread').on(table.threadId),
+}));

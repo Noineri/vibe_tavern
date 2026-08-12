@@ -108,6 +108,13 @@ export type {
   UpdateChatConfigData,
 } from './experience-resource-store.js';
 
+export { ExperienceCopilotStore } from './experience-copilot-store.js';
+export type {
+  ExperienceCopilotThread,
+  ExperienceCopilotMessage,
+  AppendMessageInput,
+} from './experience-copilot-store.js';
+
 export { QuotaStore, defaultQuotaConfigForKind } from './quota-store.js';
 export type {
   QuotaSettingsRecord,

@@ -260,6 +260,13 @@
       "when": 1786521182867,
       "tag": "0036_hard_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1786554360369,
+      "tag": "0037_loud_polaris",
+      "breakpoints": true
     }
   ]
 }
