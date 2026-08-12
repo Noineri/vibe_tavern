@@ -59,13 +59,13 @@ Streaming-target selectors live in `stores/chat-selectors.ts`:
 ### Virtualization with react-virtuoso
 
 The message list uses `<Virtuoso>` with:
-- `followOutput="smooth"` — auto-scrolls when new messages arrive
-- `initialTopMostItemIndex` — starts at the bottom on load
-- `overscan={5}` — renders 5 items above/below viewport for smooth scrolling
-- Dynamic height measurement built-in (no manual `estimateSize`)
-- `Footer` component renders `StreamingContent` (pending user message + live streaming reply)
+- `displayIds` as the item source, including synthetic pending user/assistant messages while generation is active
+- `totalListHeightChanged` delegated to `useStickToBottom`, which follows content-height changes only while the viewport is pinned
+- `overscan={{ main: 4000, reverse: 4000 }}` for stable variable-height rendering
+- Dynamic height measurement built in, with a `flow-root` item wrapper so message margins stay inside Virtuoso's measured boxes
+- Small header and footer spacers that remain part of the measured list
 
-The scroller element is marked with `data-virtuoso-scroller="true"` for external access (bottom-pinning logic in `MessageBlock`).
+There is intentionally no `followOutput` or `initialTopMostItemIndex`; the centralized stick-to-bottom controller owns the scroll position through Virtuoso's public handle.
 
 ### Ghost Message Prevention
 
@@ -138,7 +138,7 @@ Messages support **multiple variants** (swipes). Each variant has its own `conte
 
 **Problem:** When switching variants, the message height changes. If the message shrinks, the variant control arrows drift away from the cursor. If it grows, Virtuoso recalculates layout and the action row jumps.
 
-**Solution — two-part fix:**
+**Solution — portal overlay plus the centralized scroll rule:**
 
 1. **`VariantControlsOverlay` via `createPortal`** — when the user clicks a variant arrow:
    - Capture the arrow's bounding rect
@@ -147,13 +147,13 @@ Messages support **multiple variants** (swipes). Each variant has its own `conte
    - After 450ms (animation window), the portal overlay fades out and original controls reappear
    - This keeps the clickable arrows fixed under the cursor regardless of layout shifts
 
-2. **Bottom-pinning via `requestAnimationFrame`** — `pinVirtuosoToBottomDuringVariantSwitch()`:
-   - Runs a 900ms rAF loop that forces `scrollTop = scrollHeight` on the Virtuoso scroller
-   - Prevents Virtuoso from adjusting scroll position during the spring animation
-   - One final pin after the window expires
-   - Combined with the portal overlay, keeps controls and cursor aligned
+2. **Bottom positioning via `useStickToBottom`**:
+   - Switching variants changes the measured list height, so Virtuoso calls `totalListHeightChanged`
+   - If the viewport is pinned, the controller follows the bottom through Virtuoso's public handle
+   - If the user has detached, the controller preserves that reading position instead of forcing the view down
+   - `MessageBlock` does not query the global DOM or write `scrollTop` directly
 
-> ⚠️ **FRAGILE — DO NOT SIMPLIFY** without manually testing both directions (long→short and short→long variants) at the bottom of a chat.
+The portal overlay remains load-bearing and should still be tested in both directions (long→short and short→long) when its positioning or animation changes.
 
 ### Mobile Variant Carousel (`MobileVariantCarousel`)
 

@@ -66,7 +66,6 @@ afterEach(() => {
 const genState = (over: Partial<ChatGenerationState> = {}): ChatGenerationState => ({
 	isSending: true,
 	streamingMessageId: null,
-	streamingText: "",
 	streamingRevealedText: "",
 	streamingReasoningText: "",
 	generationStatus: "streaming" as ChatGenerationState["generationStatus"],

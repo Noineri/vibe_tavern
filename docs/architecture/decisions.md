@@ -6,6 +6,8 @@
 
 ## AD-001: Bottom-Pinning over Delta-Anchoring for Variant Switches
 
+**Status:** partially superseded — the rAF bottom-pin is gone, the portal overlay stays. See the update at the end of this entry.
+
 **Context:** When switching message variants (swipes) on desktop, the message height changes. This causes Virtuoso to recalculate scroll position, making the variant control arrows drift away from the cursor.
 
 **Options considered:**
@@ -25,6 +27,21 @@
 - If the message is at the bottom of the chat (most common case for variant switching), bottom-pinning is exactly the right behavior — the user expects to stay at the bottom
 
 **Trade-off:** Brief visual "stickiness" at the bottom during the pin window. Acceptable because the user is actively interacting with variant controls and not scrolling.
+
+**Update (scroll refactor, branch `refactor/chat-streaming-scroll`):** the rAF bottom-pin was removed; the portal overlay for the variant controls remains.
+
+Chat scrolling is now governed by one rule (`apps/web/src/lib/stick-to-bottom.ts` + `apps/web/src/components/chat/use-stick-to-bottom.ts`): `pinned` means the viewport is at the bottom, and any change in content height while `pinned` drives the view to the bottom through Virtuoso's `totalListHeightChanged`.
+Switching a variant changes the message height, so it is already covered by that mechanism and needs no pin of its own.
+That also removed the last global-DOM write in the chat — `document.querySelector('[data-virtuoso-scroller="true"]')` followed by a direct `scrollTop` assignment behind Virtuoso's back, repeated every frame for 900ms.
+
+The portal overlay is untouched. It solves the other half of the original problem — keeping the clickable arrows at fixed screen coordinates while the message resizes — and that problem has not gone away.
+
+One behavior changed deliberately: when the user has scrolled up, switching a variant no longer yanks the view down.
+The 900ms pin did that unconditionally, overriding the position the user had chosen.
+
+Why the original decision missed this: the options table above weighs three ways to fight Virtuoso's measurement cycle and never considers delegating to it.
+The signal needed was already in the library — `totalListHeightChanged` is derived from the list state and fires whenever an item is re-measured, whereas `followOutput` fires only when `totalCount` changes, which is why it stays inert while tokens stream into a message that already exists.
+That gap is what made every earlier fix imperative.
 
 ---
 

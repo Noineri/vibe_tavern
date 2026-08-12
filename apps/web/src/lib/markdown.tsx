@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import type { ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -27,6 +28,11 @@ interface MarkdownProps {
 }
 
 const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
+
+type MarkdownComponentProps = {
+  children?: React.ReactNode;
+  className?: string;
+} & ExtraProps & Record<string, unknown>;
 
 // ─── Rehype plugin: wrap "quoted text" in <span class="quoted-text"> ───
 //
@@ -423,19 +429,21 @@ function CodeBlock({ children }: { children?: React.ReactNode }) {
 
 // ─── Component overrides ───
 
-const components: Record<string, React.ComponentType<{ children?: React.ReactNode; className?: string; node?: unknown } & Record<string, unknown>>> = {
-  p({ children, ...props }) {
-    const text = extractText(children);
-    const content = (typeof text === "string" ? text : "").trim();
-    const blocks = content.match(SCENE_META_BLOCK_RE);
-    const allMeta = Boolean(blocks?.length) && content.replace(SCENE_META_BLOCK_RE, "").trim().length === 0;
+function MarkdownParagraph({ children, ...props }: MarkdownComponentProps) {
+  const text = extractText(children);
+  const content = (typeof text === "string" ? text : "").trim();
+  const blocks = content.match(SCENE_META_BLOCK_RE);
+  const allMeta = Boolean(blocks?.length) && content.replace(SCENE_META_BLOCK_RE, "").trim().length === 0;
 
-    if (allMeta && blocks) {
-      return <div className="scene-meta">{blocks.join("\n")}</div>;
-    }
+  if (allMeta && blocks) {
+    return <div className="scene-meta">{blocks.join("\n")}</div>;
+  }
 
-    return <p {...props}>{children}</p>;
-  },
+  return <p {...props}>{children}</p>;
+}
+
+const components: Record<string, React.ComponentType<MarkdownComponentProps>> = {
+  p: MarkdownParagraph,
 
   hr() {
     return <hr className="msg-hr" />;
@@ -569,27 +577,38 @@ function extractText(children: React.ReactNode): string {
 
 // ─── Public API ───
 
-export const Markdown: React.FC<MarkdownProps> = ({ text, className, variant = "chat" }) => {
+// react-markdown caches nothing: it rebuilds its unified processor and re-parses
+// the whole string on every render it is handed. React.memo is therefore the only
+// thing that keeps a finished message from being re-parsed on every streaming tick
+// of a sibling. The plugin lists sit at module scope so that render also stops
+// rebuilding the pipeline description each time.
+const REMARK_PLUGINS: PluggableList = [remarkGfm];
+
+const BASE_REHYPE_PLUGINS: PluggableList = [
+  rehypeRaw,
+  [rehypeSanitize, sanitizeSchema],
+];
+
+const CHAT_REHYPE_PLUGINS: PluggableList = [
+  ...BASE_REHYPE_PLUGINS,
+  rehypeQuotedText,
+  rehypeSystemBanner,
+];
+
+export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
   if (!text) return null;
-
-  const baseRehypePlugins: PluggableList = [
-    rehypeRaw,
-    [rehypeSanitize, sanitizeSchema]
-  ];
-
-  const rehypePlugins: PluggableList = variant === "plain" 
-    ? baseRehypePlugins 
-    : [...baseRehypePlugins, rehypeQuotedText, rehypeSystemBanner];
 
   return (
     <div className={className || "md-content"}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={rehypePlugins}
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={variant === "plain" ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS}
         components={components}
       >
         {text}
       </ReactMarkdown>
     </div>
   );
-};
+});
+
+Markdown.displayName = "Markdown";
