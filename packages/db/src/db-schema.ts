@@ -398,6 +398,30 @@ export const scriptLinks = sqliteTable('script_links', {
   scriptIdx: index('idx_script_links_script').on(table.scriptId),
 }));
 
+// ─── scriptVisuals ───────────────────────────────────────────────────────────
+//
+// Many-to-many junction: an interactive rules script binds a SET of visuals
+// ("skins" — e.g. a VK-style messenger skin + a compact skin), one of which is
+// its primary (`scripts.default_visual_id` — the one auto-selected when the
+// rules are picked). The per-chat visual dropdown narrows to JUST this bound
+// set; it is never a flat pick from all visuals. The primary is always a
+// member of the bound set (enforced in `ScriptStore.unbindVisual` and restored
+// by the migration backfill). Same link-binding principle as `scriptLinks` and
+// the lorebook/persona/character binders: bind by reference to a reusable
+// resource, not a copy. The cascade FKs mean deleting a script or visual
+// removes its junction rows automatically; `scripts.default_visual_id` is a
+// soft link (no FK) and may go stale on visual deletion — tolerated by the
+// app-level existence guard in ExperienceAssignment.
+export const scriptVisuals = sqliteTable('script_visuals', {
+  scriptId: text('script_id').notNull().references(() => scripts.id, { onDelete: 'cascade' }),
+  visualId: text('visual_id').notNull().references(() => experienceVisuals.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  // Composite PK: one binding per (script, visual) pair.
+  pk: primaryKey({ columns: [table.scriptId, table.visualId] }),
+  scriptIdx: index('idx_script_visuals_script').on(table.scriptId),
+  visualIdx: index('idx_script_visuals_visual').on(table.visualId),
+}));
+
 // ─── chatBranches ──────────────────────────────────────────────────────────────
 
 export const chatBranches = sqliteTable('chat_branches', {

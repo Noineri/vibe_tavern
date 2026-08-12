@@ -75,7 +75,7 @@ async function seedOneBuiltin(
   // 2. Interactive script — idempotent via creationIntentId "builtin:<id>".
   //    enabled + global + builtinId so it is playable app-wide and identifiable
   //    by the UI; defaultVisualId wires the pair.
-  await stores.scripts.create({
+  const script = await stores.scripts.create({
     name: entry.displayName,
     description: entry.description,
     code: entry.rulesSource,
@@ -86,4 +86,10 @@ async function seedOneBuiltin(
     defaultVisualId: visual.id,
     extensions: { builtinId: entry.id, builtin: true },
   });
+
+  // 3. Bind the visual into the script's bound set (BE-5). Idempotent — the
+  //    default is already set above so bindVisual will not change it. On a
+  //    fresh DB this creates the junction row so "primary ∈ bound set" holds;
+  //    on a re-seed it is a no-op (composite-PK conflict is ignored).
+  await stores.scripts.bindVisual(script.id, visual.id);
 }

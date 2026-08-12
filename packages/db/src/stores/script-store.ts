@@ -1,5 +1,5 @@
 import { eq, and, or, asc, inArray } from 'drizzle-orm';
-import { scripts, scriptLinks } from '../db-schema.js';
+import { scripts, scriptLinks, scriptVisuals } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
@@ -511,6 +511,97 @@ export class ScriptStore {
       .select()
       .from(scripts)
       .where(inArray(scripts.id, linkedIds))
+      .orderBy(asc(scripts.sortOrder), asc(scripts.name))
+      .all();
+    return rows.map((r) => this.mapRow(r));
+  }
+
+  // ─── Visual bindings (script_visuals junction) ────────────────────────────
+
+  /**
+   * List the visuals bound to a script (its "skin" set). The primary
+   * (`default_visual_id`) is always one of these (or null when the set is
+   * empty). Order is unspecified — there is no per-binding sort column.
+   */
+  async getBoundVisualIds(scriptId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ visualId: scriptVisuals.visualId })
+      .from(scriptVisuals)
+      .where(eq(scriptVisuals.scriptId, scriptId))
+      .all();
+    return rows.map((r) => r.visualId);
+  }
+
+  /**
+   * Bind a visual to a script (idempotent — ignores duplicates via the
+   * composite PK). If the script has no primary yet (`default_visual_id` IS
+   * NULL), this visual becomes the primary — the first bound visual is
+   * auto-selected, matching the creation-wizard + built-in seed behavior, so
+   * the "primary ∈ bound set" invariant holds from the first binding.
+   */
+  async bindVisual(scriptId: string, visualId: string): Promise<void> {
+    await this.db.insert(scriptVisuals).values({ scriptId, visualId }).onConflictDoNothing().run();
+    const row = await this.db
+      .select({ default: scripts.defaultVisualId })
+      .from(scripts)
+      .where(eq(scripts.id, scriptId))
+      .get();
+    if (row && row.default === null) {
+      await this.db
+        .update(scripts)
+        .set({ defaultVisualId: visualId, updatedAt: this.clock.now() })
+        .where(eq(scripts.id, scriptId))
+        .run();
+    }
+  }
+
+  /**
+   * Unbind a visual from a script (idempotent). If the unbound visual was the
+   * script's primary, reassign the primary to one of the remaining bound
+   * visuals (or null if none remain) so "primary ∈ bound set" still holds.
+   */
+  async unbindVisual(scriptId: string, visualId: string): Promise<void> {
+    await this.db
+      .delete(scriptVisuals)
+      .where(and(eq(scriptVisuals.scriptId, scriptId), eq(scriptVisuals.visualId, visualId)))
+      .run();
+    const row = await this.db
+      .select({ default: scripts.defaultVisualId })
+      .from(scripts)
+      .where(eq(scripts.id, scriptId))
+      .get();
+    if (row && row.default === visualId) {
+      const remaining = await this.db
+        .select({ visualId: scriptVisuals.visualId })
+        .from(scriptVisuals)
+        .where(eq(scriptVisuals.scriptId, scriptId))
+        .all();
+      const next = remaining[0]?.visualId ?? null;
+      await this.db
+        .update(scripts)
+        .set({ defaultVisualId: next, updatedAt: this.clock.now() })
+        .where(eq(scripts.id, scriptId))
+        .run();
+    }
+  }
+
+  /**
+   * Reverse query — list scripts that have bound a given visual (the visual's
+   * "used by" view). Mirrors `listScriptsLinkedToTarget` for the char/persona
+   * junction.
+   */
+  async listScriptsBoundToVisual(visualId: string): Promise<Script[]> {
+    const linkedRows = await this.db
+      .select({ scriptId: scriptVisuals.scriptId })
+      .from(scriptVisuals)
+      .where(eq(scriptVisuals.visualId, visualId))
+      .all();
+    const ids = [...new Set(linkedRows.map((r) => r.scriptId))];
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(scripts)
+      .where(inArray(scripts.id, ids))
       .orderBy(asc(scripts.sortOrder), asc(scripts.name))
       .all();
     return rows.map((r) => this.mapRow(r));

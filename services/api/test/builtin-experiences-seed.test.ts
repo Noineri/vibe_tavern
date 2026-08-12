@@ -4,7 +4,8 @@
  * Proves `seedBuiltinExperiences` is idempotent against a real temp
  * StoreContainer (real SQLite, real stores — no mocks): seed twice → exactly
  * one Conversation script + one visual, the script enabled + global + carrying
- * `extensions.builtinId`, `defaultVisualId` wired to the visual.
+ * `extensions.builtinId`, `defaultVisualId` wired to the visual, and the visual
+ * bound into the script's bound set (BE-5 junction).
  */
 import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
@@ -49,6 +50,11 @@ describe("seedBuiltinExperiences (BE-3)", () => {
     expect(visual!.name).toBe("Conversation");
     expect(visual!.source).toBeTypeOf("string");
     expect(visual!.source.length).toBeGreaterThan(0);
+
+    // BE-5: the visual is a member of the script's bound set (junction row
+    // created by the seed's bindVisual call), so "primary ∈ bound set" holds.
+    const bound = await stores.scripts.getBoundVisualIds(convo!.id);
+    expect(bound).toContain(visual!.id);
   });
 
   test("is idempotent — seeding twice produces exactly one script + one visual, no duplicate", async () => {

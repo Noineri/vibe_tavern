@@ -217,7 +217,9 @@ export class ExperienceResourceStore {
   /**
    * List visuals visible to a scope. Global visuals are always returned; a
    * character/persona/chat scope additionally returns its directly-owned visual.
-   * (Junction linking — like scriptLinks — is not part of V1 for visuals.)
+   * (Visual→rules BINDING is the `script_visuals` junction managed by
+   * `ScriptStore` since BE-5; this method is the scope-visibility filter for
+   * the visual picker, not the bound-set query.)
    */
   async listVisualsForScope(
     scopeType: string,
