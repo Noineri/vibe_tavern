@@ -1889,6 +1889,7 @@
   "experience_editor_visual_none": "Представление не выбрано — выберите существующее или начните с заготовки.",
   "experience_editor_visual_paired": "Парный",
   "experience_editor_visual_save": "Сохранить представление",
+  "experience_editor_visual_bound": "Привязан к этому мини-приложению",
   "experience_editor_visual_name_ph": "Название представления",
   "experience_editor_visual_source_label": "Исходник представления (HTML/CSS/JS)",
   "experience_editor_visual_api_version": "Версия API моста",

@@ -220,6 +220,7 @@ beforeEach(() => {
   updateScript.mockClear();
   deleteScript.mockClear();
   getScriptVisuals.mockClear();
+  getScriptVisuals.mockImplementation(async () => []);
   bindScriptVisual.mockClear();
   unbindScriptVisual.mockClear();
   listExperienceVisuals.mockClear();
@@ -483,6 +484,35 @@ describe("ExperienceEditor", () => {
     expect(await findByText("Existing Visual")).toBeTruthy();
     // The dashed "+" trigger (aria-label = scope_visual key) is present.
     expect(await findByLabelText("scope_visual")).toBeTruthy();
+  });
+
+  it("auto-selects the first bound visual on open and badges bound visuals in the list (ER-18b)", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [
+      { ...baseVisual },
+      { ...baseVisual, id: "vis_2", name: "Visual Two", source: "<!doctype html><html><body>two</body></html>" },
+    ];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]); // only vis_1 is bound
+
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+
+    // Auto-select: the dropdown trigger shows the bound visual, not the placeholder.
+    await waitFor(() => {
+      const trigger = [...container.querySelectorAll("button")].find((b) =>
+        (b.textContent ?? "").includes("Existing Visual"),
+      );
+      expect(trigger).toBeTruthy();
+    });
+
+    // Open the dropdown: only the bound visual (vis_1) carries the bound badge.
+    const trigger = [...container.querySelectorAll("button")].find((b) => (b.textContent ?? "").includes("Existing Visual"));
+    if (!trigger) throw new Error("dropdown trigger missing");
+    fireEvent.click(trigger);
+    await waitFor(() => expect(document.body.querySelector("[cmdk-list]")).toBeTruthy());
+    expect(document.body.querySelectorAll("[data-testid='experience_visual_bound_badge']").length).toBe(1);
   });
 
   it("persists the script immediately on the blank create in a saved/idle state (server id, not local)", async () => {

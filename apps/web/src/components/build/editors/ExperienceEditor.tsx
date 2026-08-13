@@ -210,6 +210,28 @@ export function ExperienceEditor() {
     }
   }, []);
 
+  // ER-18b: opening a mini-app auto-selects its FIRST bound visual, so the
+  // editor starts on the already-bound visual instead of an empty one the user
+  // then has to swap for the bound one.
+  const openScript = useCallback((scriptId: string) => {
+    setActiveScriptId(scriptId);
+    const bound = boundVisuals[scriptId] ?? [];
+    const firstExisting = bound.find((v) => visuals.some((av) => av.id === v.id));
+    setActiveVisualId(firstExisting?.id ?? null);
+  }, [boundVisuals, visuals]);
+
+  // Backfill for the rare case where the bound set arrives AFTER the script was
+  // opened (fast click before the per-script fetch resolved): fill the first
+  // bound visual once it is known, as long as nothing else has been selected.
+  useEffect(() => {
+    if (!activeScriptId || isLocalId(activeScriptId)) return;
+    if (activeVisualId !== null) return;
+    const bound = boundVisuals[activeScriptId];
+    if (!bound || bound.length === 0) return;
+    const first = bound.find((v) => visuals.some((av) => av.id === v.id));
+    if (first) setActiveVisualId(first.id);
+  }, [activeScriptId, activeVisualId, boundVisuals, visuals]);
+
   // Keep clean draft bases in sync with freshly loaded server rows; dirty
   // buffers are preserved by the stores themselves (IR-81A semantics).
   useEffect(() => {
@@ -619,7 +641,7 @@ export function ExperienceEditor() {
                   <button
                     type="button"
                     className="flex w-full cursor-pointer flex-col p-3.5 text-left"
-                    onClick={() => setActiveScriptId(script.id)}
+                    onClick={() => openScript(script.id)}
                   >
                     <div className="flex items-start gap-2.5">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.stack /></div>
@@ -828,11 +850,23 @@ export function ExperienceEditor() {
                 <div className="min-w-[220px] flex-1">
                   <DropdownSelect
                     value={activeVisualId ?? ""}
-                    options={allVisuals.map((visual) => ({
-                      id: visual.id,
-                      label: (visualDrafts[visual.id]?.values.name ?? visual.name) || visual.id,
-                      ...(isLocalId(visual.id) ? { detail: t("experience_editor_unsaved_badge") } : {}),
-                    }))}
+                    options={allVisuals.map((visual) => {
+                      const isBound = activeScriptId !== null && (boundVisuals[activeScriptId] ?? []).some((v) => v.id === visual.id);
+                      return {
+                        id: visual.id,
+                        label: (visualDrafts[visual.id]?.values.name ?? visual.name) || visual.id,
+                        ...(isLocalId(visual.id) ? { detail: t("experience_editor_unsaved_badge") } : {}),
+                        ...(isBound
+                          ? {
+                              trailing: (
+                                <CustomTooltip content={t("experience_editor_visual_bound")}>
+                                  <span data-testid="experience_visual_bound_badge" className="flex h-4 w-4 items-center justify-center rounded-full bg-accent-dim text-accent-t"><Ic.plug /></span>
+                                </CustomTooltip>
+                              ),
+                            }
+                          : {}),
+                      };
+                    })}
                     placeholder={t("experience_assign_visual_placeholder")}
                     searchPlaceholder={t("experience_assign_visual_search")}
                     onChange={(id) => setActiveVisualId(id === "" ? null : id)}

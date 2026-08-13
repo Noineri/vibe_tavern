@@ -1871,6 +1871,7 @@
   "experience_editor_visual_none": "No visual selected — pick an existing one or start from a visual starter.",
   "experience_editor_visual_paired": "Paired",
   "experience_editor_visual_save": "Save visual",
+  "experience_editor_visual_bound": "Bound to this mini-app",
   "experience_editor_visual_name_ph": "Visual name",
   "experience_editor_visual_source_label": "Visual source (HTML/CSS/JS)",
   "experience_editor_visual_api_version": "Bridge API version",
