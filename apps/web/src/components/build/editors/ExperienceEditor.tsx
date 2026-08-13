@@ -587,30 +587,39 @@ export function ExperienceEditor() {
         {allScripts.length === 0 ? (
           <div className="py-6 text-center font-ui text-[13px] text-t3">{t("experience_editor_no_scripts")}</div>
         ) : (
-          allScripts.map((script) => {
-            const display = { ...script, ...(scriptDrafts[script.id]?.values ?? {}) };
-            return (
-              <div
-                key={script.id}
-                className="mb-3 cursor-pointer rounded-xl border border-border bg-surface transition-all hover:bg-s2"
-                onClick={() => setActiveScriptId(script.id)}
-              >
-                <div className="flex items-center gap-2 px-4 pt-3 pb-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-                  <span className="flex-1 truncate text-[14px] font-semibold text-t1">{display.name}</span>
-                  {isLocalId(script.id) && (
-                    <div className="mr-1 shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-warning-dim text-warning-text">
-                      {t("experience_editor_unsaved_badge")}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {allScripts.map((script) => {
+              const display = { ...script, ...(scriptDrafts[script.id]?.values ?? {}) };
+              return (
+                <button
+                  key={script.id}
+                  type="button"
+                  className="group flex cursor-pointer flex-col rounded-xl border border-border bg-surface p-3.5 text-left transition-all hover:border-accent/40 hover:bg-s2"
+                  onClick={() => setActiveScriptId(script.id)}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.stack /></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
+                        {isLocalId(script.id) && (
+                          <span className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-warning-dim text-warning-text">
+                            {t("experience_editor_unsaved_badge")}
+                          </span>
+                        )}
+                      </div>
+                      <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase leading-none", display.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+                        {display.enabled ? "ON" : "OFF"}
+                      </span>
                     </div>
-                  )}
-                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", display.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
-                    {display.enabled ? "ON" : "OFF"}
                   </div>
-                </div>
-                {display.description && <div className="px-4 pb-3 pt-0 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{display.description}</div>}
-              </div>
-            );
-          })
+                  {display.description && (
+                    <div className="mt-2.5 line-clamp-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{display.description}</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
       </>
