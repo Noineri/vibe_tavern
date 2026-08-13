@@ -326,7 +326,13 @@ export function ExperienceCopilotShell({
           {isMobile ? (
             <ExperienceCopilotMobileInputArea
               isSending={ctrl.isSending}
-              onSend={(content) => void ctrl.handleSend(content)}
+              onSend={(content) =>
+                void ctrl.handleSend(content, {
+                  rules: rulesCode,
+                  visual: visualSource,
+                  step: editorBuffer === "visual" ? "visual" : editorBuffer === "sandbox" ? "test" : "rules",
+                })
+              }
               onCancel={ctrl.handleCancel}
               providerProfileId={providerProfileId}
               model={model}
@@ -335,7 +341,13 @@ export function ExperienceCopilotShell({
           ) : (
             <ExperienceCopilotInputArea
               isSending={ctrl.isSending}
-              onSend={(content) => void ctrl.handleSend(content)}
+              onSend={(content) =>
+                void ctrl.handleSend(content, {
+                  rules: rulesCode,
+                  visual: visualSource,
+                  step: editorBuffer === "visual" ? "visual" : editorBuffer === "sandbox" ? "test" : "rules",
+                })
+              }
               onCancel={ctrl.handleCancel}
               providerProfileId={providerProfileId}
               model={model}

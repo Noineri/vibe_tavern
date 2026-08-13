@@ -346,6 +346,55 @@ describe("experience-copilot stream (ER-6)", () => {
     expect((finish!.data as { finishReason: string }).finishReason).toBe("stop");
   });
 
+  it("prefers the live request draft (rules/visual) over the persisted DB context", async () => {
+    // The DB holds stale buffers; the editor sends the current unsaved draft.
+    // The copilot must see the DRAFT (what the user sees), not the DB copy —
+    // otherwise it is blind to in-progress edits and the buffer the user
+    // switched to (root cause of 'the model doesn't see my visual').
+    const script: ScriptRow = {
+      id: "script_1", name: "Dice", description: "",
+      code: "DB RULES BODY", enabled: true, scriptKind: "interactive",
+      creationIntentId: null, scopeType: "global", sortOrder: 0,
+      characterId: null, personaId: null, chatId: null, defaultVisualId: "vis_1",
+      extensions: {}, createdAt: "2025-01-01T00:00:00.000Z", updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const visual: ExperienceVisualRow = {
+      id: "vis_1", name: "Dice Visual", source: "DB VISUAL BODY", sourceHash: "hash",
+      apiVersion: 1, compatibleManifestIds: [], scopeType: "global",
+      characterId: null, personaId: null, chatId: null,
+      createdAt: "2025-01-01T00:00:00.000Z", updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const store = createFakeStore(makeThread("script_1"));
+    // Capture the full streamText opts; the system context + tool seeds both
+    // derive from the chosen buffers, so the draft must appear and the DB body
+    // must not, anywhere in the payload sent to the model.
+    let captured: unknown = null;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        {
+          threadId: "thread_1", content: "tweak the visual", providerProfileId: "prov_1",
+          step: "visual", rules: "DRAFT RULES BODY", visual: "DRAFT VISUAL BODY",
+        },
+        makeDeps(store, {
+          getScript: async (id) => (id === "script_1" ? script : null),
+          getBoundVisualIds: async () => ["vis_1"],
+          getVisual: async (id) => (id === "vis_1" ? visual : null),
+        }),
+      ),
+    );
+
+    const blob = JSON.stringify(captured);
+    expect(blob).toContain("DRAFT RULES BODY");
+    expect(blob).toContain("DRAFT VISUAL BODY");
+    expect(blob).not.toContain("DB RULES BODY");
+    expect(blob).not.toContain("DB VISUAL BODY");
+  });
+
   it("round-trips tool-call/tool-result history across turns", async () => {
     const store = createFakeStore(makeThread());
 

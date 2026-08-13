@@ -61,7 +61,10 @@ export type ExperienceCopilotStep = z.infer<typeof experienceCopilotStepSchema>;
  * Request body for the experience-copilot stream endpoint (ER-6),
  * `POST /api/experience-copilot/:threadId/stream`. Mirrors the AI-assistant's
  * `{ providerProfileId, model }` resolution shape, plus the copilot-specific
- * `content` (the user's message) and an optional `step`/`testFeedback`. The
+ * `content` (the user's message), an optional `step`/`testFeedback`, and the
+ * live `rules`/`visual` draft buffers the model should see (the editor sends
+ * the current unsaved source so the copilot is never blind to in-progress
+ * edits — the backend prefers these over the last-persisted buffers). The
  * thread id is a path param, not a body field. `testFeedback` is a free-form
  * passthrough of the latest test/simulate digest the user sent back from the
  * test panel (ER-5 renders it as context) — it is validated as a record, not
@@ -73,6 +76,8 @@ export const experienceCopilotStreamRequestSchema = z.object({
   providerProfileId: z.string().min(1),
   model: z.string().min(1).optional(),
   step: experienceCopilotStepSchema.optional(),
+  rules: z.string().max(200_000).optional(),
+  visual: z.string().max(200_000).optional(),
   testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 export type ExperienceCopilotStreamRequest = z.infer<typeof experienceCopilotStreamRequestSchema>;

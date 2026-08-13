@@ -59,6 +59,12 @@ export interface ExperienceCopilotStreamRequest {
   model?: string;
   /** The current authoring step (inline 3-step creation flow). Default "rules". */
   step?: ExperienceCopilotStep;
+  /** The LIVE rules draft the user is editing (the editor sends the current
+   *  unsaved source). Preferred over the last-persisted buffer so the model is
+   *  never blind to in-progress edits. */
+  rules?: string;
+  /** The LIVE visual draft the user is editing (see `rules`). */
+  visual?: string;
   /** The latest test/simulate digest the user sent back from the test panel.
    *  Loosely typed on the wire (`Record<string, unknown>`) because the digest
    *  shapes live in the backend domain — ER-7 will lift them into wire
@@ -304,10 +310,16 @@ export async function* streamExperienceCopilot(
     { role: "user", content: request.content },
   ];
   const step: ExperienceCopilotStep = request.step ?? "rules";
+  // Prefer the LIVE draft buffers the editor sent (unsaved in-progress edits)
+  // over the last-persisted buffers loaded from the DB — the copilot must see
+  // exactly what the user sees, including a fresh creation draft (pre-save,
+  // where the DB buffers are empty) and the buffer the user has switched to.
+  const rules = request.rules ?? context.rules;
+  const visual = request.visual ?? context.visual;
   const assembled = await assembleExperienceCopilotPrompt({
     history,
-    rules: context.rules,
-    ...(context.visual !== undefined ? { visual: context.visual } : {}),
+    rules,
+    ...(visual !== undefined ? { visual } : {}),
     ...(context.boundVisuals.length > 0 ? { boundVisuals: context.boundVisuals } : {}),
     ...(request.testFeedback !== undefined && request.testFeedback !== null
       ? { testFeedback: request.testFeedback as unknown as ExperienceCopilotTestFeedback }
@@ -327,8 +339,8 @@ export async function* streamExperienceCopilot(
 
   // ── 6. Build tools (ER-4), seeded from the current rules/visual ──
   const tools: ToolSet = buildExperienceCopilotTools({
-    ...(context.rules ? { rules: context.rules } : {}),
-    ...(context.visual !== undefined ? { visual: context.visual } : {}),
+    ...(rules ? { rules } : {}),
+    ...(visual !== undefined ? { visual } : {}),
     skillRoots: deps.skillRoots ?? [],
   });
 

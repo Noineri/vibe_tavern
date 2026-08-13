@@ -6,6 +6,7 @@ import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn
 import {
   coauthorSkillReadOutputSchema,
   experienceCopilotToolOutputSchema,
+  type ExperienceCopilotStep,
 } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
@@ -35,11 +36,20 @@ export interface UseExperienceCopilotControllerArgs {
   onTurnSettled?: () => void;
 }
 
+/** Live draft buffers + active authoring step to send with a copilot message so
+ *  the model sees the current (possibly unsaved) source and knows which buffer
+ *  the user is editing. */
+export interface ExperienceCopilotSendOptions {
+  rules?: string;
+  visual?: string;
+  step?: ExperienceCopilotStep;
+}
+
 export interface ExperienceCopilotController {
   isSending: boolean;
   /** Live assistant text accumulated from text-deltas this turn (cleared on settle). */
   pendingText: string;
-  handleSend: (content: string) => Promise<void>;
+  handleSend: (content: string, opts?: ExperienceCopilotSendOptions) => Promise<void>;
   handleCancel: () => void;
 }
 
@@ -100,7 +110,7 @@ export function useExperienceCopilotController(
   const isSendingRef = useRef(false);
 
   const handleSend = useCallback(
-    async (content: string): Promise<void> => {
+    async (content: string, opts?: ExperienceCopilotSendOptions): Promise<void> => {
       const trimmed = content.trim();
 
       // Silent guards (no toast): empty content, missing thread, already sending.
@@ -128,6 +138,9 @@ export function useExperienceCopilotController(
             content: trimmed,
             providerProfileId,
             ...(model ? { model } : {}),
+            ...(opts?.rules !== undefined ? { rules: opts.rules } : {}),
+            ...(opts?.visual !== undefined ? { visual: opts.visual } : {}),
+            ...(opts?.step ? { step: opts.step } : {}),
           },
           {
             signal: controller.signal,
