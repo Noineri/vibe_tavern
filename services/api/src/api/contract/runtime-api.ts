@@ -738,6 +738,7 @@ export interface ExperienceRuntimeApi {
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 
 /** The experience-copilot streaming subsystem — a standalone, editor-embedded
  *  pair-editor (own endpoint, own tables — ER-3) that proposes rules/visual
@@ -752,6 +753,19 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  `tool-result`, `finish`, `error`). Persists the turn (user message + tool
 	 *  calls/results + final assistant text) to the ER-3 store. */
 	experienceCopilotStream: (threadId: string, body: Omit<ExperienceCopilotStreamRequest, "threadId">, signal?: AbortSignal) => AsyncGenerator<ExperienceCopilotStreamEvent>;
+
+	/** The single active (unarchived) thread for a script, or null. Delegates to
+	 *  the ER-3 store's `getActive`. */
+	experienceCopilotGetActive: (scriptId: string) => Promise<ExperienceCopilotThreadWire | null>;
+
+	/** All messages for a thread, oldest → newest. Delegates to the ER-3 store's
+	 *  `listMessages`. */
+	experienceCopilotListMessages: (threadId: string) => Promise<ExperienceCopilotMessageWire[]>;
+
+	/** Archive the current active thread (if any) and create a fresh active one.
+	 *  Delegates to the ER-3 store's `startNewSession` (single-tx archive-then-
+	 *  insert). */
+	experienceCopilotStartNewSession: (scriptId: string, title?: string) => Promise<ExperienceCopilotThreadWire>;
 }
 
 export interface RuntimeApi {

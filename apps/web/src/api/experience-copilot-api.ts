@@ -14,7 +14,13 @@
  */
 import { streamChatEndpoint } from "./stream.js";
 import type { StreamOpts } from "./stream.js";
-import type { ExperienceCopilotStreamRequest } from "@vibe-tavern/api-contracts";
+import { client } from "./client.js";
+import { unwrapRpc } from "./unwrap.js";
+import type {
+  ExperienceCopilotStreamRequest,
+  ExperienceCopilotThreadWire,
+  ExperienceCopilotMessageWire,
+} from "@vibe-tavern/api-contracts";
 
 /** Stream opts for the copilot endpoint — `StreamOpts` without the co-author
  *  module/skill callback (the copilot has no module/skill concept, so
@@ -27,3 +33,41 @@ export const streamExperienceCopilot = (
   body: ExperienceCopilotStreamRequest,
   opts: CopilotStreamOpts,
 ) => streamChatEndpoint(`/api/experience-copilot/${threadId}/stream`, body, opts);
+
+// ─── Lifecycle REST methods (ER-11a) ────────────────────────────────────────
+//
+// Typed-RPC twins of the three ER-3 store lifecycle ops the copilot editor
+// shell needs. Unlike the stream (raw-fetch SSE), these are ordinary REST calls
+// through `client.api` (same pattern as experience-api.ts).
+
+/** The single active thread for a script, or null when none exists. */
+export async function getExperienceCopilotActive(
+  scriptId: string,
+): Promise<ExperienceCopilotThreadWire | null> {
+  const response = await client.api["experience-copilot"].script[":scriptId"].active.$get({
+    param: { scriptId },
+  });
+  return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+}
+
+/** All messages for a thread, oldest → newest. */
+export async function listExperienceCopilotMessages(
+  threadId: string,
+): Promise<ExperienceCopilotMessageWire[]> {
+  const response = await client.api["experience-copilot"][":threadId"].messages.$get({
+    param: { threadId },
+  });
+  return unwrapRpc<ExperienceCopilotMessageWire[]>(response);
+}
+
+/** Archive the current active thread (if any) and start a fresh one. */
+export async function startExperienceCopilotSession(
+  scriptId: string,
+  title?: string,
+): Promise<ExperienceCopilotThreadWire> {
+  const response = await client.api["experience-copilot"].script[":scriptId"].session.$post({
+    param: { scriptId },
+    json: title ? { title } : {},
+  });
+  return unwrapRpc<ExperienceCopilotThreadWire>(response);
+}

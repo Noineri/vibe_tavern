@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { ExperienceCopilotRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import { streamSSE } from "hono/streaming";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -84,16 +85,34 @@ async function writeCopilotSseEvents(
 }
 
 export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeApi) {
-  return new Hono().post(
-    "/api/experience-copilot/:threadId/stream",
-    zValidator("json", schemas.experienceCopilotStreamRequestSchema),
-    (c) => {
+  return new Hono()
+    .post(
+      "/api/experience-copilot/:threadId/stream",
+      zValidator("json", schemas.experienceCopilotStreamRequestSchema),
+      (c) => {
+        const threadId = c.req.param("threadId");
+        const body = c.req.valid("json");
+        logSendDebug("api.route.experience-copilot-stream.post", { threadId, contentLength: body.content?.length ?? 0 });
+        const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.experience-copilot-stream", { threadId });
+        const gen = runtime.experienceCopilotStream(threadId, body, abortBridge.signal);
+        return streamSSE(c, async (stream) => writeCopilotSseEvents(stream, gen, abortBridge));
+      },
+    )
+    .get("/api/experience-copilot/script/:scriptId/active", async (c) => {
+      const scriptId = c.req.param("scriptId");
+      return c.json(await runtime.experienceCopilotGetActive(scriptId));
+    })
+    .get("/api/experience-copilot/:threadId/messages", async (c) => {
       const threadId = c.req.param("threadId");
-      const body = c.req.valid("json");
-      logSendDebug("api.route.experience-copilot-stream.post", { threadId, contentLength: body.content?.length ?? 0 });
-      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.experience-copilot-stream", { threadId });
-      const gen = runtime.experienceCopilotStream(threadId, body, abortBridge.signal);
-      return streamSSE(c, async (stream) => writeCopilotSseEvents(stream, gen, abortBridge));
-    },
-  );
+      return c.json(await runtime.experienceCopilotListMessages(threadId));
+    })
+    .post(
+      "/api/experience-copilot/script/:scriptId/session",
+      zValidator("json", z.object({ title: z.string().optional() }).optional()),
+      async (c) => {
+        const scriptId = c.req.param("scriptId");
+        const body = c.req.valid("json");
+        return c.json(await runtime.experienceCopilotStartNewSession(scriptId, body?.title));
+      },
+    );
 }

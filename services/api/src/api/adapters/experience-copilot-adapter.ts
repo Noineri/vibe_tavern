@@ -1,5 +1,6 @@
 import type { ExperienceCopilotRuntimeApi } from "../contract/runtime-api.js";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage } from "@vibe-tavern/db";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
@@ -53,4 +54,53 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     };
     yield* streamExperienceCopilot({ ...body, threadId }, deps, signal);
   };
+
+  experienceCopilotGetActive = async (scriptId: string): Promise<ExperienceCopilotThreadWire | null> => {
+    const thread = await this.stores.experienceCopilot.getActive(scriptId);
+    return thread ? this.toThreadWire(thread) : null;
+  };
+
+  experienceCopilotListMessages = async (threadId: string): Promise<ExperienceCopilotMessageWire[]> => {
+    const messages = await this.stores.experienceCopilot.listMessages(threadId);
+    return messages.map((m) => this.toMessageWire(m));
+  };
+
+  experienceCopilotStartNewSession = async (
+    scriptId: string,
+    title?: string,
+  ): Promise<ExperienceCopilotThreadWire> => {
+    const thread = await this.stores.experienceCopilot.startNewSession(scriptId, title);
+    return this.toThreadWire(thread);
+  };
+
+  // ─── Domain → wire mappers (ER-7) ────────────────────────────────────────
+  //
+  // Field-for-field: the store's branded ids are phantom string brands (already
+  // `string`-assignable), so the only job here is the explicit object literal
+  // that pins the nullability contract (nullable fields stay `null`, never
+  // `undefined`).
+
+  private toThreadWire(t: ExperienceCopilotThread): ExperienceCopilotThreadWire {
+    return {
+      id: t.id,
+      scriptId: t.scriptId,
+      draftSessionId: t.draftSessionId,
+      title: t.title,
+      archivedAt: t.archivedAt,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+    };
+  }
+
+  private toMessageWire(m: ExperienceCopilotMessage): ExperienceCopilotMessageWire {
+    return {
+      id: m.id,
+      threadId: m.threadId,
+      role: m.role,
+      content: m.content,
+      toolCallsJson: m.toolCallsJson,
+      toolCallId: m.toolCallId,
+      createdAt: m.createdAt,
+    };
+  }
 }
