@@ -71,7 +71,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
           onKeyDown={handleKeyDown}
         />
 
-        <div className="relative flex flex-wrap items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
+        <div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
           {/* Provider picker — controlled via props. */}
           <ToolbarSelect
             title={t("experience_copilot_provider")}

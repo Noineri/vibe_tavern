@@ -707,7 +707,7 @@ export function ExperienceEditor() {
       )}
 
       {/* Body: the 2-pane copilot shell hosts both editors + top-button modals. */}
-      <div className="min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1">
         <ExperienceCopilotShell
           scriptId={activeScript.id}
           creationMode={creationMode}
