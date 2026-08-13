@@ -556,7 +556,12 @@ describe("ExperiencePlayground", () => {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: `${SEAM_CODE}\n// unsaved edit` } });
     });
 
-    // The playground is mounted in the IR-84B seam, below the visual section.
+    // ER-13 moved the playground out of the inline IR-84B seam into the
+    // copilot-shell Sandbox toolbar modal. Open the modal first, then the
+    // playground's accordion header + start button are reachable inside it.
+    // (The boundary pinned here is unchanged: the playground still drives the
+    // CURRENT UNSAVED rules buffer that the editor owns.)
+    fireEvent.click(getByText("experience_copilot_sandbox"));
     fireEvent.click(getByText("experience_playground_title"));
     fireEvent.click(getByText("experience_playground_start"));
 
