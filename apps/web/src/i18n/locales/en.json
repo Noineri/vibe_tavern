@@ -249,6 +249,8 @@
   "filter_by_tags": "Filter by tags",
   "ws_title": "Welcome",
   "ws_sub": "Choose how to start",
+  "star_prompt_welcome_line": "Free and open-source. A star helps a lot.",
+  "star_prompt_cta": "Star on GitHub",
   "ws_import": "Upload Card",
   "ws_name_label": "Name *",
   "ws_desc_label": "Description",

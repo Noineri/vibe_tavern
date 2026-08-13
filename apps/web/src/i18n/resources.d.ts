@@ -1634,6 +1634,8 @@ export default interface Resources {
     "st_select_folder": "Select your SillyTavern data folder",
     "st_where_to_find": "Where to find data?",
     "stale_badge": "stale",
+    "star_prompt_cta": "Star on GitHub",
+    "star_prompt_welcome_line": "Free and open-source. A star helps a lot.",
     "starred_models": "Favorite Models",
     "sticky_win_hint": "How many turns the entry stays active after triggering",
     "stop_seqs_hint": "A list of trigger words where the model stops generating.",
