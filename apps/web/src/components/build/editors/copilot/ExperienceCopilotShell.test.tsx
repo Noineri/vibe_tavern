@@ -473,3 +473,83 @@ describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
     expect(queryByTestId("visual-toolbar-slot")).toBeNull();
   });
 });
+
+describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
+  it("renders a 3-position toggle (rules/visual/sandbox)", async () => {
+    const { getByRole } = renderShell({ creationMode: true });
+    await flushSessionLoad();
+
+    // Identity i18n: the creation labels resolve through `t` (key-as-string
+    // fallback without a LocaleProvider), unlike the non-creation inline labels.
+    expect(getByRole("radio", { name: "experience_copilot_rules" })).toBeDefined();
+    expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
+    expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
+  });
+
+  it("sandbox position renders the playground inline and hides the code editor + toolbar buttons", async () => {
+    const { container, getByRole, getByText, queryByTestId } = renderShell({ creationMode: true });
+    await flushSessionLoad();
+
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_sandbox" }));
+
+    // The shared playground element mounts INLINE (its collapsed header marker).
+    expect(getByText("experience_playground_title")).toBeDefined();
+    // The CodeEditor is absent on the sandbox position.
+    expect(container.querySelector(".cm-editor")).toBeNull();
+    // Toggle only — the tester/preview/sandbox toolbar buttons are hidden.
+    expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
+    expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
+    expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
+  });
+
+  it("does not render the sandbox modal in creation mode", async () => {
+    const { getByRole, queryByTestId } = renderShell({ creationMode: true });
+    await flushSessionLoad();
+
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_sandbox" }));
+    expect(queryByTestId("copilot-sandbox-modal")).toBeNull();
+  });
+
+  it("rules position: rules toolbar + code editor + tester/preview present, sandbox button hidden", async () => {
+    const { container, getByTestId, queryByTestId } = renderShell({
+      creationMode: true,
+      rulesToolbar: <div data-testid="rules-toolbar-slot">rules toolbar</div>,
+    });
+    await flushSessionLoad();
+
+    expect(getByTestId("rules-toolbar-slot")).toBeDefined();
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
+    expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
+    expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
+    expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
+  });
+
+  it("visual position: visual toolbar + code editor + tester/preview present, sandbox button hidden", async () => {
+    const { container, getByRole, getByTestId, queryByTestId } = renderShell({
+      creationMode: true,
+      visualToolbar: <div data-testid="visual-toolbar-slot">visual toolbar</div>,
+    });
+    await flushSessionLoad();
+
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+
+    expect(getByTestId("visual-toolbar-slot")).toBeDefined();
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
+    expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
+    expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
+    expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
+  });
+
+  it("tester + preview toolbar buttons still open their modals", async () => {
+    const { getByTestId, getByText } = renderShell({ creationMode: true });
+    await flushSessionLoad();
+
+    fireEvent.click(getByTestId("copilot-toolbar-tester"));
+    expect(getByTestId("copilot-tester-modal")).toBeDefined();
+    expect(getByText("experience_tester_title")).toBeDefined();
+
+    fireEvent.click(getByTestId("copilot-toolbar-preview"));
+    expect(getByTestId("copilot-preview-modal")).toBeDefined();
+    expect(getByTestId("experience-frame-stub")).toBeDefined();
+  });
+});

@@ -52,6 +52,11 @@ import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInput
  * desktop and mobile; only the chat InputArea forks (desktop →
  * `ExperienceCopilotInputArea`, mobile → `ExperienceCopilotMobileInputArea`),
  * chosen via the shared `useIsMobile` hook.
+ *
+ * In CREATION MODE (`creationMode`, ER-13d-1) the editor toggle becomes
+ * 3-position `[Rules | Visual | Sandbox]`, the shared playground renders
+ * INLINE on the `sandbox` position, and the sandbox toolbar button + modal are
+ * hidden. Non-creation mode is byte-identical to the ER-13b′ surface.
  */
 
 export interface ExperienceCopilotShellProps {
@@ -70,10 +75,16 @@ export interface ExperienceCopilotShellProps {
   /** Contextual toolbar rendered BELOW the editor toolbar when the Visual
    *  buffer is active. Optional — undefined renders nothing (no gap). */
   visualToolbar?: ReactNode;
+  /** CREATION MODE (ER-13d-1): swaps the editor toggle for a 3-position
+   *  `[Rules | Visual | Sandbox]` control, renders the playground INLINE on
+   *  the `sandbox` position, and hides the sandbox toolbar button + modal.
+   *  Defaults to false — the shell is byte-identical to the ER-13b′ surface
+   *  (2-position toggle + tester/preview/sandbox modals). */
+  creationMode?: boolean;
 }
 
 type MobileTab = "chat" | "edit";
-type EditorBuffer = "rules" | "visual";
+type EditorBuffer = "rules" | "visual" | "sandbox";
 
 const BUFFER_OPTIONS = [
   { value: "rules", label: "Rules" },
@@ -89,6 +100,7 @@ export function ExperienceCopilotShell({
   onApply,
   rulesToolbar,
   visualToolbar,
+  creationMode = false,
 }: ExperienceCopilotShellProps) {
   const isMobile = useIsMobile();
   const { t } = useT();
@@ -256,6 +268,24 @@ export function ExperienceCopilotShell({
     }
   }, [hasProposal, isMobile]);
 
+  // ── Creation-mode editor toggle options ──────────────────────────────────
+  // Non-creation keeps the original inline-English 2-option constant; creation
+  // adds the i18n-labelled `sandbox` position (ER-13d-1). Built here because
+  // the creation labels resolve through `t`.
+  const bufferOptions = creationMode
+    ? [
+        { value: "rules", label: t("experience_copilot_rules") },
+        { value: "visual", label: t("experience_copilot_visual") },
+        { value: "sandbox", label: t("experience_copilot_sandbox") },
+      ]
+    : BUFFER_OPTIONS;
+
+  // IR-90A: exactly one ExperiencePlayground element is shared by the two
+  // surfaces. In creation mode it renders INLINE on the `sandbox` position;
+  // otherwise it renders inside the sandbox modal. The branches are mutually
+  // exclusive, so a single instance ever mounts.
+  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} />;
+
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   const chatPane = (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
@@ -332,52 +362,65 @@ export function ExperienceCopilotShell({
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
         <SegmentedControl
           value={editorBuffer}
-          options={BUFFER_OPTIONS}
-          onChange={(value) => setEditorBuffer(value === "visual" ? "visual" : "rules")}
+          options={bufferOptions}
+          onChange={(value) =>
+            setEditorBuffer(value === "sandbox" ? "sandbox" : value === "visual" ? "visual" : "rules")
+          }
           compact
         />
-        <div className="flex items-center gap-1.5">
-          <ToolbarButton
-            label={t("experience_copilot_tester")}
-            icon={<Icons.Terminal />}
-            onClick={() => setTesterOpen(true)}
-            testId="copilot-toolbar-tester"
-          />
-          <ToolbarButton
-            label={t("experience_copilot_preview")}
-            icon={<Icons.Eye />}
-            onClick={() => setPreviewOpen(true)}
-            testId="copilot-toolbar-preview"
-          />
-          <ToolbarButton
-            label={t("experience_copilot_sandbox")}
-            icon={<Icons.Dice />}
-            onClick={() => setSandboxOpen(true)}
-            testId="copilot-toolbar-sandbox"
-          />
-        </div>
+        {editorBuffer !== "sandbox" && (
+          <div className="flex items-center gap-1.5">
+            <ToolbarButton
+              label={t("experience_copilot_tester")}
+              icon={<Icons.Terminal />}
+              onClick={() => setTesterOpen(true)}
+              testId="copilot-toolbar-tester"
+            />
+            <ToolbarButton
+              label={t("experience_copilot_preview")}
+              icon={<Icons.Eye />}
+              onClick={() => setPreviewOpen(true)}
+              testId="copilot-toolbar-preview"
+            />
+            {!creationMode && (
+              <ToolbarButton
+                label={t("experience_copilot_sandbox")}
+                icon={<Icons.Dice />}
+                onClick={() => setSandboxOpen(true)}
+                testId="copilot-toolbar-sandbox"
+              />
+            )}
+          </div>
+        )}
       </div>
-      {editorBuffer === "rules" ? rulesToolbar : visualToolbar}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        <div className="relative rounded-md border border-border bg-bg">
-          <CodeEditor
-            value={editorBuffer === "rules" ? rulesCode : visualSource}
-            onChange={editorBuffer === "rules" ? onRulesChange : onVisualChange}
-            minHeight="300px"
-            scrollMode="inner"
-          />
-        </div>
-      </div>
+      {editorBuffer === "sandbox" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">{playground}</div>
+      ) : (
+        <>
+          {editorBuffer === "rules" ? rulesToolbar : visualToolbar}
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <div className="relative rounded-md border border-border bg-bg">
+              <CodeEditor
+                value={editorBuffer === "rules" ? rulesCode : visualSource}
+                onChange={editorBuffer === "rules" ? onRulesChange : onVisualChange}
+                minHeight="300px"
+                scrollMode="inner"
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 
   // ── Toolbar modals (tester / preview / sandbox) ──────────────────────────
   // The tester/preview/sandbox surfaces moved OUT of a bottom panel (ER-13b)
-  // into top-of-editor toolbar buttons that open these modals. Exactly one
-  // ExperiencePlayground is mounted here (the sandbox modal) — the IR-90A
-  // single-instance invariant holds. Exactly one ExperienceFrame is mounted
-  // (the preview modal); the sandbox's own frame is nested inside
-  // ExperiencePlayground, not rendered directly by this shell.
+  // into top-of-editor toolbar buttons that open these modals. The sandbox
+  // modal hosts the shared `playground` element only in non-creation mode; in
+  // creation mode that same element renders INLINE on the `sandbox` toggle
+  // position instead (mutually exclusive — IR-90A single-instance). Exactly one
+  // ExperienceFrame is mounted (the preview modal); the sandbox's own frame is
+  // nested inside ExperiencePlayground, not rendered directly by this shell.
   const modals = (
     <>
       <ShellModal
@@ -413,14 +456,16 @@ export function ExperienceCopilotShell({
         )}
       </ShellModal>
 
-      <ShellModal
-        open={sandboxOpen}
-        onClose={() => setSandboxOpen(false)}
-        title={t("experience_copilot_sandbox_title")}
-        testId="copilot-sandbox-modal"
-      >
-        <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} />
-      </ShellModal>
+      {!creationMode && (
+        <ShellModal
+          open={sandboxOpen}
+          onClose={() => setSandboxOpen(false)}
+          title={t("experience_copilot_sandbox_title")}
+          testId="copilot-sandbox-modal"
+        >
+          {playground}
+        </ShellModal>
+      )}
     </>
   );
 
