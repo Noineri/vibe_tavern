@@ -17,9 +17,10 @@
  *
  * The copilot PROPOSES edits (`write_buffer`/`edit_buffer`), can self-test
  * (`run_test`/`run_simulate`), and NEVER binds — binding is the user's action
- * via the BE-6 endpoints. The system message bakes in the experience SDK API
- * reference (the `context.experience.register({...})` DSL) loaded from the
- * canonical `interactive-rules.md` asset so the model knows the rules shape.
+ * via the BE-6 endpoints. The system message bakes in BOTH API contracts so the
+ * model can author either buffer correctly: the rules DSL (`interactive-rules.md`,
+ * `context.experience.register({...})`) and the host↔visual bridge
+ * (`interactive-visual.md`, the `VibeExperience` SDK).
  *
  * History compaction: `HISTORY_LIMIT = 20` caps the recent window (tool-pair-
  * safe via {@link findSafeCompactionBoundary}); {@link planHistoryCompaction}
@@ -155,7 +156,7 @@ function deriveContract(rules: string): ExperienceCopilotContract | null {
 
 const ROLE_FRAMING = [
   "# Role",
-  "You are an EXPERIENCE COPILLOT — an AI pair-programmer that helps the user author an interactive experience's `rules` and `visual` source via two named text buffers. You PROPOSE edits with tools; you NEVER bind or commit anything yourself — the user reviews each proposal as a diff and commits via the binding UI.",
+  "You are the EXPERIENCE ASSISTANT — a coding assistant that helps the user author an interactive experience's `rules` and `visual` source via two named text buffers. You PROPOSE edits with tools; you NEVER bind or commit anything yourself — the user reviews each proposal as a diff and commits via the binding UI.",
   "",
   "## Tools you have",
   "- `write_buffer` — replace the ENTIRE `rules` or `visual` buffer. Must be the FIRST change to a buffer in a turn; afterwards use `edit_buffer`.",
@@ -272,8 +273,11 @@ export async function assembleExperienceCopilotPrompt(
   // ── Derive contract from current rules (pure create-only test) ─────────────
   const contract = deriveContract(input.rules);
 
-  // ── Load the canonical SDK API reference (the register DSL) ────────────────
-  const apiReference = await loadPromptAsset("interactive-rules.md");
+  // ── Load the canonical API references (rules register DSL + visual bridge) ─
+  const [rulesReference, visualReference] = await Promise.all([
+    loadPromptAsset("interactive-rules.md"),
+    loadPromptAsset("interactive-visual.md"),
+  ]);
 
   // ── Build the context-package section ──────────────────────────────────────
   const contextPackage = renderContextPackage(
@@ -291,9 +295,13 @@ export async function assembleExperienceCopilotPrompt(
     "",
     contextPackage,
     "",
-    "# Experience SDK API reference (reference material — use the tools above to propose edits, do NOT output raw code)",
+    "# Experience rules API reference (the `context.experience.register({...})` DSL — reference material; use the tools above to propose edits, do NOT output raw code in chat)",
     "",
-    apiReference,
+    rulesReference,
+    "",
+    "# Experience visual API reference (the host↔visual `VibeExperience` bridge — reference material for the `visual` buffer; use `write_buffer`/`edit_buffer` to propose, do NOT output raw code in chat)",
+    "",
+    visualReference,
   ];
   const systemMessage = sections.join("\n");
 

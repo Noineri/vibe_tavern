@@ -62,7 +62,7 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     });
 
     // Role framing
-    expect(result.systemMessage).toContain("EXPERIENCE COPILLOT");
+    expect(result.systemMessage).toContain("EXPERIENCE ASSISTANT");
     expect(result.systemMessage).toContain("write_buffer");
     expect(result.systemMessage).toContain("edit_buffer");
 
@@ -76,9 +76,10 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(result.systemMessage).toContain("Counter"); // manifest name
     expect(result.systemMessage).toContain("choose method: absent");
 
-    // API reference baked in
+    // API references baked in (rules register DSL + visual host bridge)
     expect(result.systemMessage).toContain("context.experience.register");
     expect(result.systemMessage).toContain("apiVersion");
+    expect(result.systemMessage).toContain("VibeExperience"); // visual bridge contract is now included
 
     // Messages array starts with the system message
     expect(result.messages.length).toBe(1);
