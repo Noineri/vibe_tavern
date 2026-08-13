@@ -280,6 +280,18 @@ function replaceCode(view: EditorViewInstance, code: string) {
   });
 }
 
+/** Set a controlled text input value via the native setter + `input` event.
+ *  Mirrors ExperienceSetupModal.test.tsx: React's valueTracker does not
+ *  reliably pick up a bare fireEvent.change target override on controlled
+ *  text controls, so use the native setter + dispatched input event. */
+function setInputValue(el: HTMLInputElement, value: string) {
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 function rulesDraftEntries() {
   return Object.entries(useScriptDraftStore.getState().drafts);
 }
@@ -998,5 +1010,107 @@ describe("ExperienceEditor", () => {
       );
       expect(confirm).toBeUndefined();
     });
+  });
+
+  // ── ER-13a: characterization gap-fill (pre-rewrite pins) ────────────────
+  // These pin behaviors the ER-13 rewrite must preserve. Each exercises the
+  // SAME boundary as the tests above (API mocks → real ExperienceEditor → DOM
+  // + store observation) — no pure-helper unit tests.
+
+  it("switches between two saved visuals and shows each one's source", async () => {
+    const visualTwoSource = "<!doctype html><html><body>two</body></html>";
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [
+      { ...baseVisual },
+      { ...baseVisual, id: "vis_2", name: "Visual Two", source: visualTwoSource },
+    ];
+    const { container, findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    // Select vis_1 (the dropdown shows its placeholder while none is active).
+    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
+
+    // A second CodeMirror editor now mounts in DOM order: [rules, visual].
+    await waitFor(() => {
+      expect(container.querySelectorAll(".cm-editor").length).toBe(2);
+    });
+    const [, visualView] = await codeViews(container);
+    if (!visualView) throw new Error("visual editor missing");
+    expect(visualView.state.doc.toString()).toBe(baseVisual.source);
+
+    // Switch to vis_2 (the trigger now displays vis_1's name).
+    await pickDropdown({ container, baseElement: document.body }, "Existing Visual", "Visual Two");
+
+    // The SAME visual editor now shows vis_2's source (external-value sync).
+    await waitFor(() => {
+      expect(visualView.state.doc.toString()).toBe(visualTwoSource);
+    });
+    // The active visual is vis_2 — its name field reflects the active buffer.
+    const nameInput = container.querySelector('input[placeholder="experience_editor_visual_name_ph"]') as HTMLInputElement | null;
+    if (!nameInput) throw new Error("visual name input missing");
+    expect(nameInput.value).toBe("Visual Two");
+  });
+
+  it("renames a saved visual and persists the new name via updateExperienceVisual", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
+
+    const nameInput = container.querySelector('input[placeholder="experience_editor_visual_name_ph"]') as HTMLInputElement | null;
+    if (!nameInput) throw new Error("visual name input missing");
+    setInputValue(nameInput, "Renamed Visual");
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_visual_save" }));
+
+    await waitFor(() => {
+      expect(updateExperienceVisual).toHaveBeenCalledWith("vis_1", expect.objectContaining({ name: "Renamed Visual" }));
+    });
+    expect(updateExperienceVisual).toHaveBeenCalledTimes(1);
+    expect(createExperienceVisual).not.toHaveBeenCalled();
+  });
+
+  it("renames a saved script and persists the new name via updateScript", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    const nameInput = container.querySelector('input[placeholder="script_name"]') as HTMLInputElement | null;
+    if (!nameInput) throw new Error("script name input missing");
+    setInputValue(nameInput, "Renamed Rules");
+
+    fireEvent.click(getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(updateScript).toHaveBeenCalledWith("srv_1", expect.objectContaining({ name: "Renamed Rules" }));
+    });
+    expect(updateScript).toHaveBeenCalledTimes(1);
+    expect(createScript).not.toHaveBeenCalled();
+  });
+
+  it("returns to the starter picker when navigating back", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+
+    // The editor view is mounted (the rules name field is present).
+    expect(container.querySelector('input[placeholder="script_name"]')).toBeTruthy();
+
+    const backButton = [...container.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").includes("experience_editor_back"),
+    );
+    if (!backButton) throw new Error("back button missing");
+    fireEvent.click(backButton);
+
+    // The picker returns: starters are visible again and no script is active.
+    expect(await findByText("experience_editor_starters_label")).toBeTruthy();
+    expect(await findByText("Board")).toBeTruthy();
+    expect(queryByText("experience_editor_back")).toBeNull();
+    expect(container.querySelector('input[placeholder="script_name"]')).toBeNull();
   });
 });
