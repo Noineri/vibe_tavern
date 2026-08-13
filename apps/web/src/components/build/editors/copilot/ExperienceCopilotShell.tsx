@@ -437,12 +437,15 @@ export function ExperienceCopilotShell({
         testId="copilot-preview-modal"
       >
         {visualSource.trim() !== "" ? (
-          // Disconnected visual render: no session, no state push — just the
-          // visual's own HTML/CSS/JS as authored. Actions/errors are no-ops.
+          // Disconnected visual render: no session. An EMPTY initial view is
+          // pushed on ready so the visual's render() fires + reports its height
+          // (otherwise auto-resize never runs and the iframe stalls at the
+          // 120px fallback). Actions/errors are no-ops.
           <ExperienceFrame
             visualSource={visualSource}
             sessionId="preview"
             initialRevision={0}
+            initialView={{ state: {}, actions: [], revision: 0, status: "active" }}
             onAction={() => {}}
             onError={() => {}}
           />
