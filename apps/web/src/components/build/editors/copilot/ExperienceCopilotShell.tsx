@@ -7,6 +7,7 @@ import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { CodeEditor } from "../../../shared/CodeEditor.js";
 import { InteractiveTester } from "../InteractiveTester.js";
+import { ExperiencePlayground } from "../ExperiencePlayground.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useT } from "../../../../i18n/context.js";
 import { useExperienceCopilotController } from "../../../../hooks/use-experience-copilot-controller.js";
@@ -332,10 +333,28 @@ export function ExperienceCopilotShell({
     </div>
   );
 
+  /**
+   * Mode-aware bottom panel (ER-13b). Per the user's vision — step 1 is «снизу
+   * панель тестирования правил», step 2 is «превью, которое обновляется снизу
+   * как панель тестирования визуала» — the panel follows the active editor
+   * sub-tab: the Rules tab shows the rules test panel (InteractiveTester), the
+   * Visual tab shows the visual preview/play panel (ExperiencePlayground). Both
+   * run against the current UNSAVED buffers (`rulesCode` / `visualSource`), and
+   * both are driven by the SAME `editorBuffer` state the editor SegmentedControl
+   * toggles, so switching the editor sub-tab also swaps this bottom pane. This
+   * applies in BOTH placements: the desktop bottom pane and the mobile Test tab
+   * (they render this same `testPane`). Exactly one ExperiencePlayground is
+   * mounted here (the visual-mode branch), satisfying the IR-90A single-instance
+   * invariant.
+   */
   const testPane = (
     <div className="shrink-0 border-t border-border bg-bg">
       <div className="max-h-[300px] overflow-y-auto">
-        <InteractiveTester code={rulesCode} />
+        {editorBuffer === "rules" ? (
+          <InteractiveTester code={rulesCode} />
+        ) : (
+          <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} />
+        )}
       </div>
     </div>
   );

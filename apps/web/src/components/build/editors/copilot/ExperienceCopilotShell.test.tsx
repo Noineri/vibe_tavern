@@ -322,6 +322,45 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
   });
 });
 
+describe("ExperienceCopilotShell — mode-aware bottom panel (ER-13b)", () => {
+  // Identity i18n (no LocaleProvider mounted): `useT` falls back to the
+  // key-as-string default, so the component markers render their i18n keys
+  // verbatim — matching the InteractiveTester/ExperienceEditor test pattern.
+  it("shows the rules tester (not the playground) in Rules mode by default", async () => {
+    const { getByText, queryByText } = renderShell();
+    await flushSessionLoad();
+
+    // Default editorBuffer is "rules" → the bottom panel holds the tester.
+    expect(getByText("experience_tester_title")).toBeDefined();
+    expect(queryByText("experience_playground_title")).toBeNull();
+  });
+
+  it("swaps the bottom panel to the visual playground when the editor sub-tab is Visual", async () => {
+    const { getByText, getByRole, queryByText } = renderShell();
+    await flushSessionLoad();
+
+    // The same SegmentedControl that swaps the CodeEditor buffer also swaps
+    // this bottom pane (both read the shared `editorBuffer` state).
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
+
+    expect(getByText("experience_playground_title")).toBeDefined();
+    expect(queryByText("experience_tester_title")).toBeNull();
+  });
+
+  it("restores the rules tester when switching back to Rules", async () => {
+    const { getByText, getByRole, queryByText } = renderShell();
+    await flushSessionLoad();
+
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    expect(getByText("experience_playground_title")).toBeDefined();
+    expect(queryByText("experience_tester_title")).toBeNull();
+
+    fireEvent.click(getByRole("radio", { name: "Rules" }));
+    expect(getByText("experience_tester_title")).toBeDefined();
+    expect(queryByText("experience_playground_title")).toBeNull();
+  });
+});
+
 describe("ExperienceCopilotShell — mobile tabs", () => {
   it("keeps all three panes mounted and toggles visibility on tab switch", async () => {
     mobileOverride = true;
