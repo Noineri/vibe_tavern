@@ -119,6 +119,6 @@ describe("ExperienceCopilotMessageList", () => {
       />,
     );
 
-    expect(getByText("Copilot")).toBeDefined();
+    expect(getByText("experience_copilot_title")).toBeDefined();
   });
 });

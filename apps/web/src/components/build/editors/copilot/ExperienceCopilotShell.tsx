@@ -86,11 +86,6 @@ export interface ExperienceCopilotShellProps {
 type MobileTab = "chat" | "edit";
 type EditorBuffer = "rules" | "visual" | "sandbox";
 
-const BUFFER_OPTIONS = [
-  { value: "rules", label: "Rules" },
-  { value: "visual", label: "Visual" },
-];
-
 export function ExperienceCopilotShell({
   scriptId,
   rulesCode,
@@ -164,7 +159,7 @@ export function ExperienceCopilotShell({
         setMessages([]);
       }
     } catch (error) {
-      setSessionError(error instanceof Error ? error.message : "Failed to load copilot session");
+      setSessionError(error instanceof Error ? error.message : t("experience_copilot_load_session_error"));
     } finally {
       setSessionLoading(false);
     }
@@ -278,7 +273,10 @@ export function ExperienceCopilotShell({
         { value: "visual", label: t("experience_copilot_visual") },
         { value: "sandbox", label: t("experience_copilot_sandbox") },
       ]
-    : BUFFER_OPTIONS;
+    : [
+        { value: "rules", label: t("experience_copilot_rules") },
+        { value: "visual", label: t("experience_copilot_visual") },
+      ];
 
   // IR-90A: exactly one ExperiencePlayground element is shared by the two
   // surfaces. In creation mode it renders INLINE on the `sandbox` position;
@@ -293,16 +291,16 @@ export function ExperienceCopilotShell({
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             icon={<Icons.Sparkles className="h-6 w-6 animate-pulse text-t3" />}
-            title="Loading copilot…"
+            title={t("experience_copilot_loading")}
           />
         </div>
       ) : sessionError ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             icon={<Icons.Close className="h-6 w-6 text-danger-text" />}
-            title="Couldn't load the copilot"
+            title={t("experience_copilot_load_error")}
             sub={sessionError}
-            cta={<span>Retry</span>}
+            cta={<span>{t("experience_copilot_retry")}</span>}
             onCta={() => void loadSession()}
           />
         </div>
@@ -349,8 +347,8 @@ export function ExperienceCopilotShell({
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             icon={<Icons.Sparkles className="h-6 w-6 text-t3" />}
-            title="Copilot"
-            sub="Ask the copilot to propose rules or visual edits."
+            title={t("experience_copilot_title")}
+            sub={t("experience_copilot_subtitle")}
           />
         </div>
       )}
@@ -475,10 +473,10 @@ export function ExperienceCopilotShell({
         <div
           className="flex shrink-0 border-b border-border bg-surface"
           role="tablist"
-          aria-label="Copilot editor"
+          aria-label={t("experience_copilot_editor_aria")}
         >
-          <TabButton label="Chat" active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
-          <TabButton label="Edit" active={activeTab === "edit"} onClick={() => setActiveTab("edit")} />
+          <TabButton label={t("experience_copilot_tab_chat")} active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
+          <TabButton label={t("experience_copilot_tab_edit")} active={activeTab === "edit"} onClick={() => setActiveTab("edit")} />
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">

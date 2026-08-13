@@ -5,6 +5,7 @@ import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { ToolbarSelect } from "../../../shared/ToolbarSelect.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useToolCapableModels } from "../../../coauthor/useToolCapableModels.js";
+import { useT } from "../../../../i18n/context.js";
 import type { ExperienceCopilotInputAreaProps } from "./ExperienceCopilotInputArea.js";
 
 /**
@@ -21,6 +22,8 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
   const { isSending, onSend, onCancel, providerProfileId, model, onProviderChange } = props;
 
   const [draft, setDraft] = useState("");
+
+  const { t } = useT();
 
   const profiles = useProviderDataStore((s) => s.profiles);
   const { models } = useToolCapableModels(providerProfileId);
@@ -51,7 +54,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
         <div className="flex flex-wrap items-center gap-2">
           <ToolbarSelect
             mobile
-            title="Provider"
+            title={t("experience_copilot_provider")}
             items={profiles.map((p) => ({ value: p.id, label: p.name }))}
             value={providerProfileId}
             onSelect={(profileId) => onProviderChange(profileId)}
@@ -63,7 +66,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
                 className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2"
               >
                 <Icons.Plug className="h-3.5 w-3.5 shrink-0 text-t3" />
-                <span className="max-w-[110px] min-w-0 truncate">{activeProfile?.name ?? "Provider"}</span>
+                <span className="max-w-[110px] min-w-0 truncate">{activeProfile?.name ?? t("experience_copilot_provider")}</span>
                 <Icons.Caret direction="d" className="h-3 w-3 shrink-0" />
               </button>
             }
@@ -71,8 +74,8 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
 
           <ToolbarSelect
             mobile
-            title="Model"
-            emptyText="No tool-capable models"
+            title={t("experience_copilot_model")}
+            emptyText={t("experience_copilot_no_models")}
             items={models.map((m) => ({ value: m.id, label: m.label }))}
             value={model ?? null}
             onSelect={(modelId) => {
@@ -86,7 +89,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
                 className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2"
               >
                 <Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
-                <span className="max-w-[110px] min-w-0 truncate">{activeModelLabel || "Model"}</span>
+                <span className="max-w-[110px] min-w-0 truncate">{activeModelLabel || t("experience_copilot_model")}</span>
                 <Icons.Caret direction="d" className="h-3 w-3 shrink-0" />
               </button>
             }
@@ -99,7 +102,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
             className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4"
             minRows={1}
             maxRows={6}
-            placeholder="Ask the copilot…"
+            placeholder={t("experience_copilot_input_placeholder")}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={handleKeyDown}

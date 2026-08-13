@@ -7,6 +7,7 @@ import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.j
 import { ExperienceCopilotTurnShell } from "./ExperienceCopilotTurnShell.js";
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
+import { useT } from "../../../../i18n/context.js";
 
 const EMPTY: ExperienceCopilotToolActivity[] = [];
 
@@ -45,6 +46,7 @@ export function ExperienceCopilotMessageList({
   baseVisual,
   onApply,
 }: ExperienceCopilotMessageListProps) {
+  const { t } = useT();
   const activities = useExperienceCopilotTurnStore(
     useShallow((s) => s.turnsByThread[threadId] ?? EMPTY),
   );
@@ -82,8 +84,8 @@ export function ExperienceCopilotMessageList({
       <div className="flex flex-1 items-center justify-center">
         <EmptyState
           icon={<Icons.Sparkles className="h-6 w-6 text-t3" />}
-          title="Copilot"
-          sub="Ask the copilot to propose rules or visual edits."
+          title={t("experience_copilot_title")}
+          sub={t("experience_copilot_subtitle")}
         />
       </div>
     );

@@ -586,7 +586,7 @@ describe("ExperienceEditor", () => {
     // Re-open the same script → editing mode (2-position toggle, no sandbox).
     fireEvent.click(await findByText("experience_editor_new_experience_name"));
     await waitFor(() => {
-      expect(getByRole("radio", { name: "Visual" })).toBeDefined();
+      expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
       expect(queryByRole("radio", { name: "experience_copilot_sandbox" })).toBeNull();
     });
   });
@@ -682,7 +682,7 @@ describe("ExperienceEditor", () => {
 
     // The visual starter picker lives in the Visual buffer's contextual
     // toolbar, so switch the shell to the Visual tab first.
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
 
     // Create a pending visual from the Choice starter (the editor's visual
     // starter picker, not the rules starter picker).
@@ -809,7 +809,7 @@ describe("ExperienceEditor", () => {
 
     // Switch to the Visual tab (the dropdown + duplicate button live in the
     // visual toolbar slot).
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
 
     // Select the saved visual so it is active (the duplicate targets it).
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
@@ -878,7 +878,7 @@ describe("ExperienceEditor", () => {
     const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
 
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
 
     // Select the saved visual from the visual dropdown.
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
@@ -902,7 +902,7 @@ describe("ExperienceEditor", () => {
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
 
     // Create a pending visual from the Choice starter.
     fireEvent.click(await findByText("Choice"));
@@ -921,7 +921,7 @@ describe("ExperienceEditor", () => {
     deleteExperienceVisual.mockImplementationOnce(async () => { throw new Error("network down"); });
     const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(visualDeleteButton(container));
@@ -942,7 +942,7 @@ describe("ExperienceEditor", () => {
 
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(visualDeleteButton(container));
@@ -1086,7 +1086,7 @@ describe("ExperienceEditor", () => {
     serverVisuals = [{ ...baseVisual }];
     const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(experienceDeleteButton(container));
@@ -1107,7 +1107,7 @@ describe("ExperienceEditor", () => {
     serverVisuals = [{ ...baseVisual }];
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(experienceDeleteButton(container));
@@ -1176,7 +1176,7 @@ describe("ExperienceEditor", () => {
     await codeViews(container);
 
     // Switch to the Visual buffer (the dropdown + source editor live there).
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
 
     // Select vis_1 (the dropdown shows its placeholder while none is active).
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
@@ -1208,7 +1208,7 @@ describe("ExperienceEditor", () => {
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
 
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 

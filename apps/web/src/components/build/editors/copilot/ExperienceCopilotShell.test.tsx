@@ -226,7 +226,7 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
     await flushSessionLoad();
 
     // MessageList's empty state (thread exists but no messages/activities).
-    expect(getByText("Ask the copilot to propose rules or visual edits.")).toBeDefined();
+    expect(getByText("experience_copilot_subtitle")).toBeDefined();
     expect(getExperienceCopilotActive).toHaveBeenCalledWith("script-1");
     expect(startExperienceCopilotSession).toHaveBeenCalledWith("script-1");
     expect(listExperienceCopilotMessages).not.toHaveBeenCalled();
@@ -317,7 +317,7 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
     expect(view!.state.doc.toString()).toBe("// rules buffer");
 
     // Switch to the Visual buffer.
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
 
     // CodeEditor syncs the external value without clobbering the editor.
     expect(view!.state.doc.toString()).toBe("// visual buffer");
@@ -401,7 +401,7 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     expect(hasHiddenClass(chatPane)).toBe(false);
     expect(hasHiddenClass(editPane)).toBe(true);
 
-    fireEvent.click(getByRole("tab", { name: "Edit" }));
+    fireEvent.click(getByRole("tab", { name: "experience_copilot_tab_edit" }));
     expect(hasHiddenClass(chatPane)).toBe(true);
     expect(hasHiddenClass(editPane)).toBe(false);
 
@@ -453,7 +453,7 @@ describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
     // Default editorBuffer is rules → the rules slot is rendered.
     expect(getByTestId("rules-toolbar-slot")).toBeDefined();
 
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
     expect(queryByTestId("rules-toolbar-slot")).toBeNull();
   });
 
@@ -466,10 +466,10 @@ describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
     // Default editorBuffer is rules → the visual slot is absent.
     expect(queryByTestId("visual-toolbar-slot")).toBeNull();
 
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
     expect(getByTestId("visual-toolbar-slot")).toBeDefined();
 
-    fireEvent.click(getByRole("radio", { name: "Rules" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_rules" }));
     expect(queryByTestId("visual-toolbar-slot")).toBeNull();
   });
 });

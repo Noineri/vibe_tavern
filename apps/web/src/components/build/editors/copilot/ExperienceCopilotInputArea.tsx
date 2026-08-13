@@ -6,6 +6,7 @@ import { ToolbarSelect } from "../../../shared/ToolbarSelect.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useToolCapableModels } from "../../../coauthor/useToolCapableModels.js";
+import { useT } from "../../../../i18n/context.js";
 
 /**
  * Experience-copilot input area (ER-11c, desktop). Props-driven and CONTROLLED:
@@ -32,6 +33,8 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
   const { isSending, onSend, onCancel, providerProfileId, model, onProviderChange } = props;
 
   const [draft, setDraft] = useState("");
+
+  const { t } = useT();
 
   const profiles = useProviderDataStore((s) => s.profiles);
   const { models } = useToolCapableModels(providerProfileId);
@@ -62,7 +65,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
           className="min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
           maxRows={12}
           minRows={3}
-          placeholder="Ask the copilot…"
+          placeholder={t("experience_copilot_input_placeholder")}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -71,8 +74,8 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
         <div className="relative flex flex-wrap items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
           {/* Provider picker — controlled via props. */}
           <ToolbarSelect
-            title="Provider"
-            triggerTooltip="Provider"
+            title={t("experience_copilot_provider")}
+            triggerTooltip={t("experience_copilot_provider")}
             contentWidth={220}
             items={profiles.map((p) => ({ value: p.id, label: p.name }))}
             value={providerProfileId}
@@ -85,7 +88,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
                 className="flex h-8 min-w-0 max-w-[120px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
               >
                 <Icons.Plug className="h-3.5 w-3.5 shrink-0 text-t3" />
-                <span className="min-w-0 truncate">{activeProfile?.name ?? "Select provider"}</span>
+                <span className="min-w-0 truncate">{activeProfile?.name ?? t("experience_copilot_provider_select")}</span>
                 <Icons.Caret direction="d" className="h-3 w-3 shrink-0 text-t3" />
               </button>
             }
@@ -93,10 +96,10 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
 
           {/* Model picker — tool-capable models only, controlled via props. */}
           <ToolbarSelect
-            title="Model"
-            triggerTooltip="Model"
+            title={t("experience_copilot_model")}
+            triggerTooltip={t("experience_copilot_model")}
             contentWidth={260}
-            emptyText="No tool-capable models"
+            emptyText={t("experience_copilot_no_models")}
             items={models.map((m) => ({ value: m.id, label: m.label }))}
             value={model ?? null}
             onSelect={(modelId) => {
@@ -110,7 +113,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
                 className="flex h-8 min-w-0 max-w-[140px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
               >
                 <Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
-                <span className="min-w-0 truncate">{activeModelLabel || "Select model"}</span>
+                <span className="min-w-0 truncate">{activeModelLabel || t("experience_copilot_model_select")}</span>
                 <Icons.Caret direction="d" className="h-3 w-3 shrink-0 text-t3" />
               </button>
             }
@@ -124,10 +127,10 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
                 className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim"
                 onClick={onCancel}
               >
-                Cancel
+                {t("experience_copilot_cancel")}
               </button>
             ) : (
-              <CustomTooltip content="Send">
+              <CustomTooltip content={t("experience_copilot_send")}>
                 <button
                   type="button"
                   data-testid="copilot-send-btn"
@@ -137,9 +140,9 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
                   )}
                   disabled={!canSend}
                   onClick={handleSend}
-                  aria-label="Send"
+                  aria-label={t("experience_copilot_send")}
                 >
-                  Send
+                  {t("experience_copilot_send")}
                 </button>
               </CustomTooltip>
             )}
