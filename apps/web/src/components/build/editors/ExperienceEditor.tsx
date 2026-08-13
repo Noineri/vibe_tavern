@@ -626,7 +626,7 @@ export function ExperienceEditor() {
   // tester / preview / sandbox surfaces are the shell's top-button modals
   // (ER-13b′); the inline editors and playground moved into the shell.
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full w-full flex-col">
       {/* Top bar: back, name, trust, save, duplicate, delete. */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
         <button

@@ -43,7 +43,6 @@ import { Ic } from "../../shared/icons.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
-import { CustomTooltip } from "../../shared/Tooltip.js";
 import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
@@ -207,8 +206,6 @@ interface InteractiveTesterProps {
 export function InteractiveTester({ code }: InteractiveTesterProps) {
   const { t } = useT();
 
-  const [open, setOpen] = useState(false);
-
   // Test context (local only).
   const [seats, setSeats] = useState<TesterSeat[]>([
     { id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human },
@@ -349,29 +346,13 @@ export function InteractiveTester({ code }: InteractiveTesterProps) {
   };
 
   return (
-    <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-      <button
-        type="button"
-        className="flex w-full cursor-pointer items-center gap-2 text-left"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="inline-block text-t3 transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }}>▶</span>
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></span>
-        <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
-          {t("experience_tester_title")}
-        </span>
-        <CustomTooltip content={t("experience_tester_hint")}>
-          <span className="cursor-help text-[11px] text-t4">ⓘ</span>
-        </CustomTooltip>
-      </button>
-
-      {open && (
-        <div className="mt-3">
+    <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }} data-testid="interactive-tester">
+      <div>
           {/* Test context: roster + capability grants + seed + settings */}
           <div className="mb-3">
             <label className={lblCls}>{t("experience_setup_participants_label")}</label>
             {seats.map((seat, index) => (
-              <div key={index} className="mb-1.5 mt-1.5 flex items-center gap-2">
+              <div key={index} className="mb-1.5 mt-1.5 flex flex-wrap items-center gap-2">
                 <input
                   className={cn(inputCls, "w-24 shrink-0")}
                   value={seat.id}
@@ -675,7 +656,6 @@ export function InteractiveTester({ code }: InteractiveTesterProps) {
             </div>
           )}
         </div>
-      )}
     </div>
   );
 }

@@ -221,10 +221,8 @@ beforeEach(() => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function renderTester(code: string = VALID_CODE) {
-  const utils = render(<InteractiveTester code={code} />);
-  // Expand the disclosure (collapsed by default in the editor layout).
-  fireEvent.click(utils.getByText("experience_tester_title"));
-  return utils;
+  // The tester content is always visible (internal disclosure removed — ER-13 review fix C).
+  return render(<InteractiveTester code={code} />);
 }
 
 function draftSnapshot(): string {
@@ -402,7 +400,7 @@ describe("InteractiveTester", () => {
 
   it("editor seam: mounts inside ExperienceEditor and drives the CURRENT UNSAVED buffer", async () => {
     listAllScripts.mockImplementation(async () => [{ ...seamScript }]);
-    const { container, findByText, getByText } = render(<ExperienceEditor />);
+    const { container, findByText, getByTestId, getByText } = render(<ExperienceEditor />);
 
     // Open the existing interactive script from the list.
     fireEvent.click(await findByText("Seam Rules"));
@@ -422,14 +420,9 @@ describe("InteractiveTester", () => {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: `${SEAM_CODE}\n// unsaved edit` } });
     });
 
-    // The tester is mounted in the IR-81D seam, below the rules editor.
-    // IR-90E: the tester section is collapsed by default; expand it first.
-    const testerBtn = [...container.querySelectorAll("button")].find(
-      (b) => (b.textContent ?? "").includes("experience_editor_tester_section"),
-    );
-    if (!testerBtn) throw new Error("tester disclosure button missing");
-    fireEvent.click(testerBtn);
-    fireEvent.click(getByText("experience_tester_title"));
+    // The tester lives in the shell's tester modal (ER-13b′); open it. Its
+    // content is always visible (internal disclosure removed — ER-13 review fix C).
+    fireEvent.click(getByTestId("copilot-toolbar-tester"));
     fireEvent.click(getByText("experience_tester_run"));
 
     await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));

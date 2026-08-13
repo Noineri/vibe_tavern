@@ -996,7 +996,7 @@ describe("ExperienceEditor", () => {
 
   it("reveals the InteractiveTester in the shell's tester modal", async () => {
     serverScripts = [{ ...baseScript }];
-    const { container, findByText, getByTestId, queryByTestId } = render(<ExperienceEditor />);
+    const { container, findByText, findByTestId, getByTestId, queryByTestId } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
@@ -1006,8 +1006,8 @@ describe("ExperienceEditor", () => {
     fireEvent.click(getByTestId("copilot-toolbar-tester"));
 
     expect(getByTestId("copilot-tester-modal")).toBeDefined();
-    // InteractiveTester's collapsed header carries the rules-tester marker.
-    expect(await findByText("experience_tester_title")).toBeTruthy();
+    // InteractiveTester renders its content directly (collapsible removed — ER-13 review fix C).
+    expect(await findByTestId("interactive-tester")).toBeTruthy();
   });
 
   // IR-90E: fail-closed validation — stale valid state must never survive

@@ -48,7 +48,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2">
       <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
         {/* Toolbar row: provider + model pills (mobile → BottomSheet via ToolbarSelect). */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ToolbarSelect
             mobile
             title="Provider"

@@ -68,7 +68,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
           onKeyDown={handleKeyDown}
         />
 
-        <div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
+        <div className="relative flex flex-wrap items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
           {/* Provider picker — controlled via props. */}
           <ToolbarSelect
             title="Provider"
@@ -82,7 +82,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
               <button
                 type="button"
                 data-testid="copilot-provider-pill"
-                className="flex h-8 max-w-[180px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
+                className="flex h-8 min-w-0 max-w-[120px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
               >
                 <Icons.Plug className="h-3.5 w-3.5 shrink-0 text-t3" />
                 <span className="min-w-0 truncate">{activeProfile?.name ?? "Select provider"}</span>
@@ -107,7 +107,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
               <button
                 type="button"
                 data-testid="copilot-model-pill"
-                className="flex h-8 max-w-[200px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
+                className="flex h-8 min-w-0 max-w-[140px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
               >
                 <Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
                 <span className="min-w-0 truncate">{activeModelLabel || "Select model"}</span>

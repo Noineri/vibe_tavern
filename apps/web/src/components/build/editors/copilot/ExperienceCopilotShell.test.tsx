@@ -352,8 +352,8 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
     fireEvent.click(getByTestId("copilot-toolbar-tester"));
 
     expect(getByTestId("copilot-tester-modal")).toBeDefined();
-    // InteractiveTester's collapsed header carries the rules-tester marker.
-    expect(getByText("experience_tester_title")).toBeDefined();
+    // InteractiveTester renders its content directly (collapsible removed — ER-13 review fix C).
+    expect(getByTestId("interactive-tester")).toBeDefined();
   });
 
   it("opens the Preview modal containing ExperienceFrame", async () => {
@@ -546,7 +546,7 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
 
     fireEvent.click(getByTestId("copilot-toolbar-tester"));
     expect(getByTestId("copilot-tester-modal")).toBeDefined();
-    expect(getByText("experience_tester_title")).toBeDefined();
+    expect(getByTestId("interactive-tester")).toBeDefined();
 
     fireEvent.click(getByTestId("copilot-toolbar-preview"));
     expect(getByTestId("copilot-preview-modal")).toBeDefined();
