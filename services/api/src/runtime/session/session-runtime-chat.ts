@@ -1,6 +1,6 @@
 import type { AssemblePromptResponse, Message, PromptTrace, ProviderResponseTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, UiSettingsStore } from "@vibe-tavern/db";
 import type { ToolSet } from "ai";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { SendMessageRequest } from "../../domain/chat/chat-application-types.js";
@@ -56,6 +56,9 @@ export interface ChatRuntimeDeps {
    * assembly-failure cleanup to release rolls bound to a just-inserted user
    * message (a compensating write — NOT a transaction rollback). */
   diceRolls: DiceRollStore;
+  /** Star-prompt counter storage. `prepareLiveTurn` bumps `userMessageCount`
+   * once per committed live user turn; nothing else in this runtime reads it. */
+  uiSettings: UiSettingsStore;
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
@@ -138,6 +141,15 @@ export class ChatRuntime {
       } catch { /* best-effort rollback of the just-inserted user message; the original assemble error is rethrown below */ }
       throw err;
     }
+    // Star-prompt counter — bumped once per committed live user turn, AFTER the
+    // assembly-failure window above: that path deletes the user message it just
+    // inserted, and a count for a deleted message would drift the nag schedule.
+    // Server-side because it must survive a frontend that reloads mid-turn.
+    // Read-then-write is not transactional; the worst case is a nag prompt
+    // arriving one message early, which does not warrant a transaction.
+    const settings = await this.deps.uiSettings.get();
+    await this.deps.uiSettings.update({ userMessageCount: settings.userMessageCount + 1 });
+
     this.pendingPromptTraceByChat.set(chatId, {
       branchId: assembled.branchId,
       draft: assembled.promptTraceDraft,
