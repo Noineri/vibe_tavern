@@ -9,6 +9,7 @@ import {
 import { buildWordDiff, TextDiffPreview } from "../../../shared/TextDiffPreview.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
+import { useT } from "../../../../i18n/context.js";
 
 /**
  * Experience-copilot turn shell (ER-11c). Props-driven: the shell (ER-11d)
@@ -37,29 +38,32 @@ export interface ExperienceCopilotTurnShellProps {
   onApply: (patch: ExperienceCopilotApplyPatch) => void;
 }
 
-const TARGET_LABEL: Record<"rules" | "visual", string> = {
-  rules: "Rules",
-  visual: "Visual",
-};
-
-function targetLabel(target: "rules" | "visual"): string {
-  return TARGET_LABEL[target];
-}
-
 export const ExperienceCopilotTurnShell = memo(function ExperienceCopilotTurnShell({
   activities,
   baseRules,
   baseVisual,
   onApply,
 }: ExperienceCopilotTurnShellProps) {
+  const { t } = useT();
   const proposal = useMemo(() => aggregateExperienceCopilotProposal(activities), [activities]);
 
+  // Track the last-applied proposal so the button reflects an "applied" state.
+  // Keyed by the proposed content so a NEW proposal (the model's multi-step
+  // loop) re-enables the button automatically.
+  const proposalKey = proposal.hasProposal
+    ? `${proposal.proposedRules ?? ""}\u0000${proposal.proposedVisual ?? ""}`
+    : null;
+  const [appliedKey, setAppliedKey] = useState<string | null>(null);
+  const applied = appliedKey !== null && appliedKey === proposalKey;
+
   const apply = () => {
+    if (!proposal.hasProposal) return;
     const merged: ExperienceCopilotApplyPatch = {
       ...(proposal.proposedRules !== undefined ? { rules: proposal.proposedRules } : {}),
       ...(proposal.proposedVisual !== undefined ? { visual: proposal.proposedVisual } : {}),
     };
     onApply(buildExperienceCopilotApplyPatch(merged, proposal));
+    setAppliedKey(proposalKey);
   };
 
   if (activities.length === 0) return null;
@@ -79,14 +83,14 @@ export const ExperienceCopilotTurnShell = memo(function ExperienceCopilotTurnShe
         <button
           type="button"
           data-testid="copilot-apply-btn"
-          disabled={!proposal.hasProposal}
+          disabled={!proposal.hasProposal || applied}
           onClick={apply}
           className={cn(
             "cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110",
             "disabled:cursor-default disabled:opacity-45 disabled:filter-none",
           )}
         >
-          Apply
+          {applied ? t("experience_copilot_applied") : t("experience_copilot_apply")}
         </button>
       </div>
     </div>
@@ -102,10 +106,14 @@ function ExperienceCopilotActivityCard({
   baseRules: string;
   baseVisual: string;
 }) {
-  const [open, setOpen] = useState(false);
-
+  const { t } = useT();
   const isRead = activity.readPath !== undefined;
   const isProposal = activity.target !== undefined && activity.proposed !== undefined;
+  // Proposals expand by default so the diff preview is visible without a click;
+  // read/informational cards stay collapsed (their summary is the content).
+  const [open, setOpen] = useState(isProposal);
+  const targetText =
+    activity.target === "rules" ? t("experience_copilot_rules") : t("experience_copilot_visual");
   const streaming = activity.status === "streaming";
   const errored = activity.status === "error";
 
@@ -125,7 +133,7 @@ function ExperienceCopilotActivityCard({
   // name / target.
   const title = isRead
     ? activity.readPath!
-    : activity.summary?.trim() || (isProposal ? targetLabel(activity.target!) : activity.toolName);
+    : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
 
   // Only proposal + informational cards expand; reads have no preview (the path
   // IS the label; the file content is intentionally not surfaced) and streaming
@@ -152,7 +160,7 @@ function ExperienceCopilotActivityCard({
             data-testid="copilot-activity-target"
             className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent"
           >
-            {targetLabel(activity.target!)}
+            {targetText}
           </span>
         )}
         {streaming && <span className="italic text-t3">…</span>}
@@ -164,7 +172,7 @@ function ExperienceCopilotActivityCard({
       </button>
 
       {errored && (
-        <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">Tool failed</div>
+        <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("experience_copilot_tool_failed")}</div>
       )}
 
       <AnimatedDisclosure open={expandable && open}>
@@ -174,9 +182,9 @@ function ExperienceCopilotActivityCard({
               granularity="word"
               summary={buildWordDiff(base, activity.proposed!)}
               labels={{
-                title: `Proposed ${targetLabel(activity.target!)}`,
-                tooLarge: "Diff too large to preview",
-                noChanges: "No changes",
+                title: t("experience_copilot_proposed"),
+                tooLarge: t("experience_copilot_diff_too_large"),
+                noChanges: t("experience_copilot_no_changes"),
               }}
             />
           ) : (

@@ -44,7 +44,9 @@ describe("ExperienceCopilotTurnShell — activity card shapes", () => {
     expect(getByText("/skills/combat.md")).toBeDefined();
     // write_buffer → summary + target chip (copilot target is "rules"|"visual").
     expect(getByText("wrote rules")).toBeDefined();
-    expect(getByTestId("copilot-activity-target").textContent).toBe("Rules");
+    // Identity i18n (no LocaleProvider mounted): useT falls back to the
+    // key-as-string default, so the target chip renders its i18n key.
+    expect(getByTestId("copilot-activity-target").textContent).toBe("experience_copilot_rules");
     // run_test → informational summary.
     expect(getByText("2 passed")).toBeDefined();
 
@@ -71,7 +73,7 @@ describe("ExperienceCopilotTurnShell — activity card shapes", () => {
       />,
     );
 
-    expect(getByTestId("copilot-activity-target").textContent).toBe("Visual");
+    expect(getByTestId("copilot-activity-target").textContent).toBe("experience_copilot_visual");
   });
 });
 
