@@ -157,7 +157,6 @@ function makeDeps(
     getProviderProfile: async () => profile,
     getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
-    skillRoots: [],
     ...overrides,
   };
 }

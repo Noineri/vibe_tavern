@@ -47,10 +47,9 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         model,
         fetch,
       ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
-      // Skill roots are not wired yet (the copilot's own skill library is a
-      // later unit). The read_skill_file tool then rejects reads; the four
-      // authoring/diagnostic tools work fully.
-      skillRoots: [],
+      // Skill roots are derived in the prompt assembler from the resolved skill
+      // catalog (ER-16) and flow to the tool builder via `assembled.skillRoots`,
+      // so no skill-root wiring is needed here.
     };
     yield* streamExperienceCopilot({ ...body, threadId }, deps, signal);
   };

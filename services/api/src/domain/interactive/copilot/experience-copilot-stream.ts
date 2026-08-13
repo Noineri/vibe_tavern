@@ -45,6 +45,7 @@ import {
   type ExperienceCopilotTestFeedback,
 } from "./experience-copilot-prompt.js";
 import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
+import { EXPERIENCE_COPILOT_MODULE } from "./experience-copilot-module.js";
 
 // ─── Request / response types ────────────────────────────────────────────────
 
@@ -117,16 +118,13 @@ export interface ExperienceCopilotStreamDeps {
     model: string,
     fetch?: ProviderFetch,
   ) => LanguageModel;
-  /** Roots for the reused `read_skill_file` tool. Empty when no skill library
-   *  is wired (the tool then rejects reads; the other four tools work). */
-  readonly skillRoots?: readonly string[];
   /** Max tool-loop steps for the multi-step loop (mirrors co-author maxSteps).
-   *  Default {@link DEFAULT_MAX_STEPS}. */
+   *  Default {@link EXPERIENCE_COPILOT_MODULE.maxSteps}. */
   readonly maxSteps?: number;
 }
 
-/** Max tool-loop steps when none is configured. Mirrors COAUTHOR_MAX_STEPS_DEFAULT. */
-const DEFAULT_MAX_STEPS = 20;
+// DEFAULT_MAX_STEPS moved to EXPERIENCE_COPILOT_MODULE.maxSteps (ER-16) — the
+// module definition is the single declarative source for the tool-loop bound.
 
 // ─── History conversion (store ↔ prompt ↔ SDK) ───────────────────────────────
 
@@ -338,16 +336,21 @@ export async function* streamExperienceCopilot(
   });
 
   // ── 6. Build tools (ER-4), seeded from the current rules/visual ──
+  // Skill roots come from the resolved skill catalog (ER-16) — the prompt
+  // assembler derives them from the same catalog it rendered, so read_skill_file
+  // resolves paths against the matching root. toolSet is the module's declarative
+  // set (read_skill_file is always added on top, mirroring Co-Author).
   const tools: ToolSet = buildExperienceCopilotTools({
     ...(rules ? { rules } : {}),
     ...(visual !== undefined ? { visual } : {}),
-    skillRoots: deps.skillRoots ?? [],
+    toolSet: EXPERIENCE_COPILOT_MODULE.toolSet,
+    skillRoots: assembled.skillRoots,
   });
 
   // ── 7. Resolve the model + start streaming ──
   const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
   const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
-  const maxSteps = deps.maxSteps ?? DEFAULT_MAX_STEPS;
+  const maxSteps = deps.maxSteps ?? EXPERIENCE_COPILOT_MODULE.maxSteps;
 
   const modelMessages = toModelMessages(assembled.messages);
 

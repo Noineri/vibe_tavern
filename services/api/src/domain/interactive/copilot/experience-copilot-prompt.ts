@@ -1,6 +1,6 @@
 /**
  * Experience-Copilot prompt assembly (EXPERIENCE_EDITOR_REFACTOR_PLAN,
- * Wave 2 / ER-5).
+ * Wave 2 / ER-5; module + skill wiring Wave 6 / ER-16).
  *
  * Builds the system message + compacted message-history the copilot model sees
  * each turn. ADAPTED from {@link assembleCoauthorPrompt} (same assembly shape —
@@ -17,10 +17,13 @@
  *
  * The copilot PROPOSES edits (`write_buffer`/`edit_buffer`), can self-test
  * (`run_test`/`run_simulate`), and NEVER binds — binding is the user's action
- * via the BE-6 endpoints. The system message bakes in BOTH API contracts so the
- * model can author either buffer correctly: the rules DSL (`interactive-rules.md`,
- * `context.experience.register({...})`) and the host↔visual bridge
- * (`interactive-visual.md`, the `VibeExperience` SDK).
+ * via the BE-6 endpoints. The system message is assembled from: the module's
+ * base-prompt asset (ER-16 — role + tool mechanics + key constraints, loaded
+ * live from `experience-copilot/base.md`), the resolved skill catalog (ER-16 —
+ * the on-demand `read_skill_file` channel), the per-turn context package, and
+ * BOTH API contracts so the model can author either buffer correctly: the rules
+ * DSL (`interactive-rules.md`, `context.experience.register({...})`) and the
+ * host↔visual bridge (`interactive-visual.md`, the `VibeExperience` SDK).
  *
  * History compaction: `HISTORY_LIMIT = 20` caps the recent window (tool-pair-
  * safe via {@link findSafeCompactionBoundary}); {@link planHistoryCompaction}
@@ -29,6 +32,7 @@
  * result).
  */
 
+import { dirname } from "node:path";
 import {
   estimateTokens,
   findSafeCompactionBoundary,
@@ -42,6 +46,11 @@ import type {
   ExperienceCopilotRunSimulateDigest,
   ExperienceCopilotRunTestDigest,
 } from "./experience-copilot-tools.js";
+import {
+  resolveExperienceCopilotModule,
+  resolveExperienceCopilotSkillCatalog,
+  renderExperienceCopilotSkillCatalog,
+} from "./experience-copilot-module.js";
 
 /** How many of the most recent history messages to include before budget trimming. */
 const HISTORY_LIMIT = 20;
@@ -117,7 +126,7 @@ export type ExperienceCopilotPromptMessage =
   | ExperienceCopilotHistoryMessage;
 
 export interface ExperienceCopilotAssembleResult {
-  /** The full system message (role framing + context package + SDK API reference). */
+  /** The full system message (module base prompt + skill catalog + context package + SDK API references). */
   readonly systemMessage: string;
   /** Messages to pass to the AI SDK `streamText`/`generateText`:
    *  `[systemMessage, ...compactedHistory]`. */
@@ -130,6 +139,11 @@ export interface ExperienceCopilotAssembleResult {
   /** Compaction summary when history was windowed or budget-trimmed; undefined
    *  when no history was dropped. */
   readonly compactionSummary?: string;
+  /** Skill roots derived from the resolved skill catalog (ER-16) — the stream
+   *  passes these to {@link buildExperienceCopilotTools} so the reused
+   *  `read_skill_file` tool resolves paths against the same root the catalog was
+   *  built from. Empty when no skills are available (reads then reject). */
+  readonly skillRoots: readonly string[];
 }
 
 // ─── Contract derivation ─────────────────────────────────────────────────────
@@ -154,25 +168,11 @@ function deriveContract(rules: string): ExperienceCopilotContract | null {
 
 // ─── System-message section renderers ────────────────────────────────────────
 
-const ROLE_FRAMING = [
-  "# Role",
-  "You are the EXPERIENCE ASSISTANT — a coding assistant that helps the user author an interactive experience's `rules` and `visual` source via two named text buffers. You PROPOSE edits with tools; you NEVER bind or commit anything yourself — the user reviews each proposal as a diff and commits via the binding UI.",
-  "",
-  "## Tools you have",
-  "- `write_buffer` — replace the ENTIRE `rules` or `visual` buffer. Must be the FIRST change to a buffer in a turn; afterwards use `edit_buffer`.",
-  "- `edit_buffer` — apply exact SEARCH/REPLACE edits to the current `rules` or `visual` buffer.",
-  "- `run_test` — run a create-only test of the current working rules (discover, create, project, list legal actions). Read-only.",
-  "- `run_simulate` — run a bounded simulation of the current working rules to check termination. Read-only.",
-  "- `suggest_visual_binding` — recommend a visual resource be bound (non-binding; only the user can bind).",
-  "- `read_skill_file` — read a skill's SKILL.md on demand for craft guidance.",
-  "",
-  "## Key constraints",
-  "- You PROPOSE; the user COMMITS. Proposals for `rules` are validated through the experience sandbox before surfacing — an invalid proposal returns a tool-error so you can self-correct in the same turn.",
-  "- NEVER attempt to bind a visual yourself. Use `suggest_visual_binding` to recommend; the user binds it.",
-  "- When the user is on the `rules` step, focus on authoring valid rules that pass `run_test`.",
-  "- When on the `visual` step, focus on the visual source that renders the experience.",
-  "- When on the `test` step, help the user interpret test results and fix issues.",
-].join("\n");
+// The role framing + tool mechanics + key constraints live in the module's
+// base-prompt asset (`experience-copilot/base.md`), loaded live each turn via
+// `resolveExperienceCopilotModule()` (ER-16) — the same live-edit-on-disk
+// property Co-Author modules have. The skill catalog (the on-demand
+// `read_skill_file` channel) is rendered by `renderExperienceCopilotSkillCatalog`.
 
 function renderContextPackage(
   rules: string,
@@ -258,7 +258,8 @@ function estimateHistoryTokens(messages: ReadonlyArray<ExperienceCopilotHistoryM
 /**
  * Assemble the experience-copilot prompt. Pure — all state comes in through
  * {@link ExperienceCopilotAssembleInput}; no store access. Returns the system
- * message + compacted history ready for the AI SDK `streamText`/`generateText`.
+ * message + compacted history ready for the AI SDK `streamText`/`generateText`,
+ * plus the skill roots the stream forwards to the tool builder.
  *
  * Compaction has two layers: (1) the history is windowed to the last
  * {@link HISTORY_LIMIT} messages (tool-pair-safe via
@@ -273,11 +274,25 @@ export async function assembleExperienceCopilotPrompt(
   // ── Derive contract from current rules (pure create-only test) ─────────────
   const contract = deriveContract(input.rules);
 
-  // ── Load the canonical API references (rules register DSL + visual bridge) ─
-  const [rulesReference, visualReference] = await Promise.all([
+  // ── Load the module base prompt + skill catalog + the canonical API refs ──
+  // The module's base prompt (role + tool mechanics + key constraints) lives in
+  // a `.md` asset loaded live each turn (ER-16); the skill catalog drives the
+  // on-demand `read_skill_file` tool and is injected as the "Available skills"
+  // section. The two API references (rules DSL + visual bridge) are loaded
+  // alongside so all asset I/O fans out together.
+  const [module, { entries: skillCatalog }, rulesReference, visualReference] = await Promise.all([
+    resolveExperienceCopilotModule(),
+    resolveExperienceCopilotSkillCatalog(),
     loadPromptAsset("interactive-rules.md"),
     loadPromptAsset("interactive-visual.md"),
   ]);
+  const basePrompt = module.basePrompt;
+  const skillCatalogBlock = renderExperienceCopilotSkillCatalog(skillCatalog);
+  // Derive the skill roots from the catalog entries' skill dirs so
+  // `read_skill_file` (built in the stream from this result) resolves paths
+  // against the same root the catalog was built from. Empty when no skills are
+  // available (reads then reject; the other tools work fully).
+  const skillRoots = [...new Set(skillCatalog.map((e) => dirname(e.skillDir)))];
 
   // ── Build the context-package section ──────────────────────────────────────
   const contextPackage = renderContextPackage(
@@ -290,8 +305,11 @@ export async function assembleExperienceCopilotPrompt(
   );
 
   // ── Assemble the system message ────────────────────────────────────────────
-  const sections = [
-    ROLE_FRAMING,
+  const sections: string[] = [basePrompt];
+  if (skillCatalogBlock) {
+    sections.push("", skillCatalogBlock);
+  }
+  sections.push(
     "",
     contextPackage,
     "",
@@ -302,7 +320,7 @@ export async function assembleExperienceCopilotPrompt(
     "# Experience visual API reference (the host↔visual `VibeExperience` bridge — reference material for the `visual` buffer; use `write_buffer`/`edit_buffer` to propose, do NOT output raw code in chat)",
     "",
     visualReference,
-  ];
+  );
   const systemMessage = sections.join("\n");
 
   // ── Window to HISTORY_LIMIT (tool-pair-safe) ───────────────────────────────
@@ -357,5 +375,6 @@ export async function assembleExperienceCopilotPrompt(
       recentHistory: recentMessages.length,
     },
     ...(compactionSummary !== undefined ? { compactionSummary } : {}),
+    skillRoots,
   };
 }

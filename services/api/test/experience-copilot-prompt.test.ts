@@ -87,6 +87,32 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(result.tokenAccounting.recentHistory).toBe(0);
   });
 
+  test("system message carries the skill catalog and result exposes skill roots (ER-16)", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+
+    // The module's base prompt is loaded from the base.md asset (ER-16) — the
+    // role framing now lives there, not inline, but the content is unchanged.
+    expect(result.systemMessage).toContain("EXPERIENCE ASSISTANT");
+    expect(result.systemMessage).toContain("read_skill_file");
+
+    // The resolved skill catalog is injected as an on-demand "Available skills"
+    // section so the model knows what it can read via read_skill_file.
+    expect(result.systemMessage).toContain("Available skills");
+    expect(result.systemMessage).toContain("experience-authoring");
+    expect(result.systemMessage).toContain("experience-authoring/SKILL.md");
+
+    // Skill roots are derived from the catalog so read_skill_file resolves
+    // against the same root the catalog was built from (forwarded to the tool
+    // builder by the stream).
+    expect(result.skillRoots.length).toBeGreaterThanOrEqual(1);
+    expect(result.skillRoots[0]).toContain("experience-copilot");
+    expect(result.skillRoots[0]).toContain("skills");
+  });
+
   test("contract is omitted when rules discovery fails (broken rules)", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: [],
