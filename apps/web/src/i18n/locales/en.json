@@ -1847,7 +1847,7 @@
   "experience_editor_start_blank": "Start blank",
   "experience_editor_start_blank_desc": "Empty rules source — register your own state machine from scratch.",
   "experience_editor_existing_label": "Your mini-apps",
-  "experience_editor_no_scripts": "No interactive rules yet — pick a starter above.",
+  "experience_editor_no_scripts": "No mini-apps yet — create one above.",
   "experience_editor_back": "All mini-apps",
   "experience_editor_create_error": "Couldn't create the mini-app",
   "experience_editor_create_new": "Create new mini-app",
