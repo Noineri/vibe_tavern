@@ -761,7 +761,7 @@ export const uiSettings = sqliteTable('ui_settings', {
   // let the count run past the due point before the modal ever opens.
   githubStarred: integer('github_starred', { mode: 'boolean' }).notNull().default(false),
   userMessageCount: integer('user_message_count').notNull().default(0),
-  nextStarPromptAt: integer('next_star_prompt_at').notNull().default(100),
+  nextStarPromptAt: integer('next_star_prompt_at').notNull().default(10),
   starPromptDeferrals: integer('star_prompt_deferrals').notNull().default(0),
   updatedAt: text('updated_at').notNull(),
 });

@@ -59,7 +59,7 @@ test("the adapter ignores star fields of the wrong type", async () => {
   const updated = await adapter.updateUiSettings({ githubStarred: "yes", nextStarPromptAt: 12.5 });
 
   expect(updated.githubStarred).toBe(false);
-  expect(updated.nextStarPromptAt).toBe(100);
+  expect(updated.nextStarPromptAt).toBe(10);
 });
 
 test("the adapter refuses a negative due point", async () => {
@@ -67,6 +67,6 @@ test("the adapter refuses a negative due point", async () => {
 
   const updated = await adapter.updateUiSettings({ nextStarPromptAt: -1, starPromptDeferrals: -5 });
 
-  expect(updated.nextStarPromptAt).toBe(100);
+  expect(updated.nextStarPromptAt).toBe(10);
   expect(updated.starPromptDeferrals).toBe(0);
 });

@@ -74,7 +74,7 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   coauthorContextBudget: null,
   githubStarred: false,
   userMessageCount: 0,
-  nextStarPromptAt: 100,
+  nextStarPromptAt: 10,
   starPromptDeferrals: 0,
 };
 

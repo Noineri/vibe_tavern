@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a1f8ee8c-2806-4444-9a2c-7d856198b29f",
+  "id": "5bd051c1-c1d9-4b5f-ae73-866fe9ed524d",
   "prevId": "caf84726-7b9b-416c-b137-11489888fc59",
   "tables": {
     "cached_models": {
@@ -4265,7 +4265,7 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": 100
+          "default": 10
         },
         "star_prompt_deferrals": {
           "name": "star_prompt_deferrals",

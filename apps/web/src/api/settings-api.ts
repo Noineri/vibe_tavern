@@ -52,7 +52,7 @@ export async function bootstrapApp(): Promise<{
       coauthorContextBudget: null,
       githubStarred: false,
       userMessageCount: 0,
-      nextStarPromptAt: 100,
+      nextStarPromptAt: 10,
       starPromptDeferrals: 0,
       updatedAt: "",
     },

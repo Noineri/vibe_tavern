@@ -63,8 +63,8 @@ function baseSettings(over: Partial<UiSettingsRecord> = {}): UiSettingsRecord {
     coauthorProviderId: null,
     coauthorModelName: null,
     githubStarred: false,
-    userMessageCount: 100,
-    nextStarPromptAt: 100,
+    userMessageCount: 10,
+    nextStarPromptAt: 10,
     starPromptDeferrals: 0,
     updatedAt: "2026-01-01",
     ...over,
@@ -115,15 +115,15 @@ describe("StarPromptModal", () => {
     fireEvent.click(screen.getByText("star_prompt_later"));
 
     expect(mockState.opened).toEqual([]);
-    expect(mockState.patches).toEqual([{ starPromptDeferrals: 1, nextStarPromptAt: 400 }]);
+    expect(mockState.patches).toEqual([{ starPromptDeferrals: 1, nextStarPromptAt: 110 }]);
   });
 
   it("a second Later waits longer than the first", () => {
-    openModal({ userMessageCount: 400, nextStarPromptAt: 400, starPromptDeferrals: 1 });
+    openModal({ userMessageCount: 110, nextStarPromptAt: 110, starPromptDeferrals: 1 });
 
     fireEvent.click(screen.getByText("star_prompt_later"));
 
-    expect(mockState.patches).toEqual([{ starPromptDeferrals: 2, nextStarPromptAt: 1300 }]);
+    expect(mockState.patches).toEqual([{ starPromptDeferrals: 2, nextStarPromptAt: 410 }]);
   });
 
   it("the opt-out silences the prompt without opening the repo", () => {
@@ -140,6 +140,6 @@ describe("StarPromptModal", () => {
 
     fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
 
-    expect(mockState.patches).toEqual([{ starPromptDeferrals: 1, nextStarPromptAt: 400 }]);
+    expect(mockState.patches).toEqual([{ starPromptDeferrals: 1, nextStarPromptAt: 110 }]);
   });
 });

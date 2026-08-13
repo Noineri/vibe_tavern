@@ -52,7 +52,7 @@ export function notifyUserTurnSettled(replyCompleted: boolean): void {
   if (!isStarPromptDue({
     githubStarred: uiSettings.githubStarred ?? false,
     userMessageCount: uiSettings.userMessageCount,
-    nextStarPromptAt: uiSettings.nextStarPromptAt ?? 100,
+    nextStarPromptAt: uiSettings.nextStarPromptAt ?? 10,
   })) return;
 
   const modals = useModalStore.getState();

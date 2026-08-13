@@ -8,8 +8,14 @@
  */
 import * as buildConfig from "../build-config.js";
 
-/** Messages to wait before each successive ask. The last value repeats. */
-export const STAR_PROMPT_INTERVALS = [100, 300, 900] as const;
+/**
+ * Messages to wait before each successive ask. The last value repeats.
+ *
+ * The first interval is deliberately short: on upgrade an existing user starts
+ * from a zero count, and a large first threshold would hide the ask for weeks
+ * from exactly the people most likely to star.
+ */
+export const STAR_PROMPT_INTERVALS = [10, 100, 300] as const;
 
 export interface StarPromptState {
   githubStarred: boolean;

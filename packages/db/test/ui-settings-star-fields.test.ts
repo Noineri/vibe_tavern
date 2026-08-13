@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { createDb } from "../src/db-connection.js";
 import { UiSettingsStore } from "../src/stores/ui-settings-store.js";
 
-test("a fresh settings row defaults to un-starred with the first prompt due at 100", async () => {
+test("a fresh settings row defaults to un-starred with the first prompt due at 10", async () => {
   const db = await createDb(":memory:");
   const store = new UiSettingsStore(db);
 
@@ -10,7 +10,7 @@ test("a fresh settings row defaults to un-starred with the first prompt due at 1
 
   expect(settings.githubStarred).toBe(false);
   expect(settings.userMessageCount).toBe(0);
-  expect(settings.nextStarPromptAt).toBe(100);
+  expect(settings.nextStarPromptAt).toBe(10);
   expect(settings.starPromptDeferrals).toBe(0);
 });
 
@@ -47,6 +47,6 @@ test("update() on a missing row inserts the star defaults", async () => {
 
   expect(settings.userMessageCount).toBe(1);
   expect(settings.githubStarred).toBe(false);
-  expect(settings.nextStarPromptAt).toBe(100);
+  expect(settings.nextStarPromptAt).toBe(10);
   expect(settings.starPromptDeferrals).toBe(0);
 });
