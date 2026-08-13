@@ -30,6 +30,9 @@ export interface ExperienceCopilotMessageListProps {
   messages: ExperienceCopilotMessageWire[];
   /** Live assistant text accumulated this turn (cleared by the shell on settle). */
   pendingText: string;
+  /** The user's just-sent message, shown optimistically while the model
+   *  generates (the persisted user row only lands after the turn settles). */
+  pendingUserContent: string;
   /** Forwarded to the turn shell's diff view ("before" side). */
   baseRules: string;
   /** Forwarded to the turn shell's diff view ("before" side). */
@@ -42,6 +45,7 @@ export function ExperienceCopilotMessageList({
   threadId,
   messages,
   pendingText,
+  pendingUserContent,
   baseRules,
   baseVisual,
   onApply,
@@ -57,6 +61,7 @@ export function ExperienceCopilotMessageList({
 
   const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
   const hasPendingText = pendingText.trim().length > 0;
+  const hasPendingUserContent = pendingUserContent.trim().length > 0;
 
   const scrollToBottom = () => {
     const el = scrollRef.current;
@@ -71,13 +76,21 @@ export function ExperienceCopilotMessageList({
     setShowJumpToBottom(!nearBottom);
   };
 
-  const contentCount = visibleMessages.length + (hasPendingText ? 1 : 0) + (activities.length > 0 ? 1 : 0);
+  const contentCount =
+    visibleMessages.length +
+    (hasPendingUserContent ? 1 : 0) +
+    (hasPendingText ? 1 : 0) +
+    (activities.length > 0 ? 1 : 0);
 
   useLayoutEffect(() => {
     if (pinnedRef.current) scrollToBottom();
   }, [contentCount, pendingText, activities.length]);
 
-  const isEmpty = visibleMessages.length === 0 && !hasPendingText && activities.length === 0;
+  const isEmpty =
+    visibleMessages.length === 0 &&
+    !hasPendingUserContent &&
+    !hasPendingText &&
+    activities.length === 0;
 
   if (isEmpty) {
     return (
@@ -98,6 +111,20 @@ export function ExperienceCopilotMessageList({
           {visibleMessages.map((message) => (
             <ExperienceCopilotMessageBlock key={message.id} message={message} />
           ))}
+
+          {hasPendingUserContent && (
+            <ExperienceCopilotMessageBlock
+              message={{
+                id: "__pending-user",
+                threadId,
+                role: "user",
+                content: pendingUserContent,
+                toolCallsJson: null,
+                toolCallId: null,
+                createdAt: "",
+              }}
+            />
+          )}
 
           {activities.length > 0 && (
             <ExperienceCopilotTurnShell

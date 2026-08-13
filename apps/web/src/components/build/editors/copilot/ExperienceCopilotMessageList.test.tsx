@@ -58,6 +58,7 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "a1", role: "assistant", content: "Here are the rules" }),
         ]}
         pendingText=""
+        pendingUserContent=""
         baseRules=""
         baseVisual=""
         onApply={mock()}
@@ -74,6 +75,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText="streaming reply…"
+        pendingUserContent=""
         baseRules=""
         baseVisual=""
         onApply={mock()}
@@ -81,6 +83,25 @@ describe("ExperienceCopilotMessageList", () => {
     );
 
     expect(getByText("streaming reply…")).toBeDefined();
+  });
+
+  it("shows the optimistic user bubble while pendingUserContent is non-empty", () => {
+    // The user's just-sent message must render immediately (before the model
+    // replies) — not only after the turn settles and the persisted row is
+    // refetched. This pins the fix for 'I don't see my message while it generates'.
+    const { getByText } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[]}
+        pendingText=""
+        pendingUserContent="make the visual darker"
+        baseRules=""
+        baseVisual=""
+        onApply={mock()}
+      />,
+    );
+
+    expect(getByText("make the visual darker")).toBeDefined();
   });
 
   it("reads the current turn's activities from the store and renders the turn shell", () => {
@@ -98,6 +119,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText=""
+        pendingUserContent=""
         baseRules=""
         baseVisual=""
         onApply={mock()}
@@ -113,6 +135,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText=""
+        pendingUserContent=""
         baseRules=""
         baseVisual=""
         onApply={mock()}

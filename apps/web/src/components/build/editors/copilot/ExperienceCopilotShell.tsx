@@ -319,6 +319,7 @@ export function ExperienceCopilotShell({
             threadId={threadId}
             messages={messages}
             pendingText={ctrl.pendingText}
+            pendingUserContent={ctrl.pendingUserContent}
             baseRules={rulesCode}
             baseVisual={visualSource}
             onApply={onApply}

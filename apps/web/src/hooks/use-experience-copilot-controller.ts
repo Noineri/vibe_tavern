@@ -49,6 +49,11 @@ export interface ExperienceCopilotController {
   isSending: boolean;
   /** Live assistant text accumulated from text-deltas this turn (cleared on settle). */
   pendingText: string;
+  /** The user's just-sent message, shown optimistically while the model
+   *  generates — the persisted user row only appears after the turn settles
+   *  and the shell refetches, so without this the user's own message is
+   *  invisible for the entire generation. Cleared in `finally`. */
+  pendingUserContent: string;
   handleSend: (content: string, opts?: ExperienceCopilotSendOptions) => Promise<void>;
   handleCancel: () => void;
 }
@@ -103,6 +108,11 @@ export function useExperienceCopilotController(
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
+  // Optimistic user message: shown immediately on send so the user sees their
+  // own message while the model generates (the persisted row only arrives
+  // after the turn settles + the shell refetches). Cleared in `finally` so
+  // every exit path (success / error / abort) drops it once the turn is done.
+  const [pendingUserContent, setPendingUserContent] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   // Synchronous re-entrancy guard: `isSending` state flips on the next render,
   // so a rapid double-send in the same tick would otherwise both pass the
@@ -130,6 +140,7 @@ export function useExperienceCopilotController(
       isSendingRef.current = true;
       setIsSending(true);
       setPendingText("");
+      setPendingUserContent(trimmed);
 
       try {
         await streamExperienceCopilot(
@@ -222,6 +233,7 @@ export function useExperienceCopilotController(
         onTurnSettled?.();
       } finally {
         abortRef.current = null;
+        setPendingUserContent("");
       }
     },
     [threadId, providerProfileId, model, onTurnSettled],
@@ -232,5 +244,5 @@ export function useExperienceCopilotController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, handleSend, handleCancel };
+  return { isSending, pendingText, pendingUserContent, handleSend, handleCancel };
 }
