@@ -109,6 +109,9 @@ const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const createScript = mock((_body: Record<string, unknown>) => Promise.resolve<ScriptRecord>({ ...baseScript }));
 const updateScript = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ScriptRecord>({ ...baseScript }));
 const deleteScript = mock((_id: string) => Promise.resolve<void>(undefined));
+const getScriptVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
+const bindScriptVisual = mock((_scriptId: string, _visualId: string) => Promise.resolve<void>(undefined));
+const unbindScriptVisual = mock((_scriptId: string, _visualId: string) => Promise.resolve<void>(undefined));
 const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
 const createExperienceVisual = mock((_body: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
 const updateExperienceVisual = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
@@ -126,6 +129,9 @@ mock.module("../../../api/script-api.js", () => ({
   createScript,
   updateScript,
   deleteScript,
+  getScriptVisuals,
+  bindScriptVisual,
+  unbindScriptVisual,
 }));
 
 mock.module("../../../api/experience-api.js", () => ({
@@ -213,6 +219,9 @@ beforeEach(() => {
   createScript.mockClear();
   updateScript.mockClear();
   deleteScript.mockClear();
+  getScriptVisuals.mockClear();
+  bindScriptVisual.mockClear();
+  unbindScriptVisual.mockClear();
   listExperienceVisuals.mockClear();
   createExperienceVisual.mockClear();
   updateExperienceVisual.mockClear();
@@ -461,6 +470,19 @@ describe("ExperienceEditor", () => {
       expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
       expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
     });
+  });
+
+  it("the card shows bound visuals as pills and a '+' to add more (ER-18b)", async () => {
+    serverScripts = [{ ...baseScript }];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]);
+    listExperienceVisuals.mockResolvedValue([{ ...baseVisual }]);
+
+    const { findByText, findByLabelText } = render(<ExperienceEditor />);
+
+    // The bound visual renders as a pill on the card.
+    expect(await findByText("Existing Visual")).toBeTruthy();
+    // The dashed "+" trigger (aria-label = scope_visual key) is present.
+    expect(await findByLabelText("scope_visual")).toBeTruthy();
   });
 
   it("persists the script immediately on the blank create in a saved/idle state (server id, not local)", async () => {

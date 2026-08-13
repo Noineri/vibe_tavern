@@ -65,7 +65,7 @@ import {
   type RulesStarter,
 } from "../../../lib/experience-rules-starters.js";
 import { VISUAL_STARTERS, getVisualStarter, type VisualStarter } from "../../experience/starters/index.js";
-import { createScript, deleteScript, listAllScripts, updateScript } from "../../../api/script-api.js";
+import { bindScriptVisual, createScript, deleteScript, getScriptVisuals, listAllScripts, unbindScriptVisual, updateScript } from "../../../api/script-api.js";
 import {
   createExperienceVisual,
   deleteExperienceVisual,
@@ -85,6 +85,7 @@ import {
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
 import { ExperienceCopilotShell } from "./copilot/ExperienceCopilotShell.js";
+import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
 
 function draftValuesEqual(a: ScriptDraftValues, b: ScriptDraftValues): boolean {
   return a.name === b.name
@@ -114,6 +115,7 @@ export function ExperienceEditor() {
   // ── Lists (server rows + unsaved local buffers) ──────────────────────────
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
   const [visuals, setVisuals] = useState<ExperienceVisualRow[]>([]);
+  const [boundVisuals, setBoundVisuals] = useState<Record<string, ExperienceVisualRow[]>>({});
   const [pendingScripts, setPendingScripts] = useState<ScriptRecord[]>([]);
   const [pendingVisuals, setPendingVisuals] = useState<ExperienceVisualRow[]>([]);
   const [listsFailed, setListsFailed] = useState(false);
@@ -160,10 +162,17 @@ export function ExperienceEditor() {
       listAllScripts(),
       listExperienceVisuals({ scopeType: "global" }),
     ])
-      .then(([allScripts, globalVisuals]) => {
+      .then(async ([allScripts, globalVisuals]) => {
         if (cancelled) return;
-        setScripts(allScripts.filter((s) => s.scriptKind === "interactive"));
+        const interactive = allScripts.filter((s) => s.scriptKind === "interactive");
+        setScripts(interactive);
         setVisuals(globalVisuals);
+        // Bound visuals per experience (BE-6 junction) drive the card pills.
+        const boundEntries = await Promise.all(
+          interactive.map(async (s) => [s.id, await getScriptVisuals(s.id).catch(() => [] as ExperienceVisualRow[])] as const),
+        );
+        if (cancelled) return;
+        setBoundVisuals(Object.fromEntries(boundEntries));
       })
       .catch(() => { if (!cancelled) setListsFailed(true); });
     return () => { cancelled = true; };
@@ -188,6 +197,18 @@ export function ExperienceEditor() {
 
   const allScripts = [...scripts, ...pendingScripts];
   const allVisuals = [...visuals, ...pendingVisuals];
+
+  // BE-6: bind/unbind a visual on an experience card, then refresh the bound set.
+  const handleToggleVisual = useCallback(async (scriptId: string, visualId: string, bind: boolean) => {
+    try {
+      if (bind) await bindScriptVisual(scriptId, visualId);
+      else await unbindScriptVisual(scriptId, visualId);
+      const refreshed = await getScriptVisuals(scriptId);
+      setBoundVisuals((prev) => ({ ...prev, [scriptId]: refreshed }));
+    } catch (err) {
+      console.warn("experience visual bind/unbind failed", err);
+    }
+  }, []);
 
   // Keep clean draft bases in sync with freshly loaded server rows; dirty
   // buffers are preserved by the stores themselves (IR-81A semantics).
@@ -591,32 +612,45 @@ export function ExperienceEditor() {
             {allScripts.map((script) => {
               const display = { ...script, ...(scriptDrafts[script.id]?.values ?? {}) };
               return (
-                <button
+                <div
                   key={script.id}
-                  type="button"
-                  className="group flex cursor-pointer flex-col rounded-xl border border-border bg-surface p-3.5 text-left transition-all hover:border-accent/40 hover:bg-s2"
-                  onClick={() => setActiveScriptId(script.id)}
+                  className="group flex flex-col rounded-xl border border-border bg-surface transition-all hover:border-accent/40 hover:bg-s2"
                 >
-                  <div className="flex items-start gap-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.stack /></div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
-                        {isLocalId(script.id) && (
-                          <span className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-warning-dim text-warning-text">
-                            {t("experience_editor_unsaved_badge")}
-                          </span>
-                        )}
+                  <button
+                    type="button"
+                    className="flex w-full cursor-pointer flex-col p-3.5 text-left"
+                    onClick={() => setActiveScriptId(script.id)}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.stack /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
+                          {isLocalId(script.id) && (
+                            <span className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-warning-dim text-warning-text">
+                              {t("experience_editor_unsaved_badge")}
+                            </span>
+                          )}
+                        </div>
+                        <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase leading-none", display.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+                          {display.enabled ? "ON" : "OFF"}
+                        </span>
                       </div>
-                      <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase leading-none", display.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
-                        {display.enabled ? "ON" : "OFF"}
-                      </span>
                     </div>
-                  </div>
-                  {display.description && (
-                    <div className="mt-2.5 line-clamp-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{display.description}</div>
+                    {display.description && (
+                      <div className="mt-2.5 line-clamp-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{display.description}</div>
+                    )}
+                  </button>
+                  {!isLocalId(script.id) && (
+                    <div className="border-t border-border px-3 py-2">
+                      <ExperienceVisualBinding
+                        bound={boundVisuals[script.id] ?? []}
+                        available={visuals}
+                        onToggle={(visualId, bind) => void handleToggleVisual(script.id, visualId, bind)}
+                      />
+                    </div>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
