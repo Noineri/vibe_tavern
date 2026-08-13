@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import { toast } from "sonner";
+import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
@@ -7,6 +8,7 @@ import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { CodeEditor } from "../../../shared/CodeEditor.js";
 import { InteractiveTester } from "../InteractiveTester.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
+import { useT } from "../../../../i18n/context.js";
 import { useExperienceCopilotController } from "../../../../hooks/use-experience-copilot-controller.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useToolCapableModels } from "../../../coauthor/useToolCapableModels.js";
@@ -17,7 +19,10 @@ import {
   getExperienceCopilotActive,
   listExperienceCopilotMessages,
   startExperienceCopilotSession,
+  listExperienceCopilotSessions,
+  activateExperienceCopilotSession,
 } from "../../../../api/experience-copilot-api.js";
+import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
 import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
 import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
 import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
@@ -73,10 +78,12 @@ export function ExperienceCopilotShell({
   onApply,
 }: ExperienceCopilotShellProps) {
   const isMobile = useIsMobile();
+  const { t } = useT();
 
   // ── Session lifecycle state ──────────────────────────────────────────────
   const [threadId, setThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ExperienceCopilotMessageWire[]>([]);
+  const [sessions, setSessions] = useState<ExperienceCopilotThreadWire[]>([]);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
@@ -133,10 +140,24 @@ export function ExperienceCopilotShell({
     }
   }, [scriptId]);
 
+  // Session list (active + archived) for the switcher. Fetched in parallel with
+  // `loadSession` on mount, then refetched after every switch/new so the active
+  // indicator and archived set stay current.
+  const fetchSessions = useCallback(async () => {
+    try {
+      const list = await listExperienceCopilotSessions(scriptId);
+      setSessions(list);
+    } catch {
+      // Best-effort session-list fetch — a transient list failure leaves the
+      // switcher with its last-known sessions rather than surfacing an error.
+    }
+  }, [scriptId]);
+
   useEffect(() => {
     rehydrateExperienceCopilotDrafts();
     void loadSession();
-  }, [loadSession]);
+    void fetchSessions();
+  }, [loadSession, fetchSessions]);
 
   // ── Stream controller ────────────────────────────────────────────────────
   // Refetch persisted messages after each turn settles: the live `pendingText`
@@ -157,6 +178,45 @@ export function ExperienceCopilotShell({
     model,
     onTurnSettled: handleTurnSettled,
   });
+
+  // ── Session switch / new (ER-12b) ────────────────────────────────────────
+  // Both are NO-OP while a turn is streaming (the switcher is also visually
+  // disabled via `disabled={ctrl.isSending}`): switching `threadId` mid-stream
+  // would race the in-flight stream's settle-closure. On failure, `threadId` /
+  // `messages` are left UNCHANGED (no half-switch) and an error toast surfaces.
+  const handleActivate = useCallback(
+    async (targetThreadId: string) => {
+      if (ctrl.isSending) return;
+      try {
+        const activated = await activateExperienceCopilotSession(targetThreadId);
+        if (!activated) {
+          toast.error(t("experience_copilot_switch_error"));
+          return;
+        }
+        setThreadId(targetThreadId);
+        const msgs = await listExperienceCopilotMessages(targetThreadId);
+        setMessages(msgs);
+        await fetchSessions();
+      } catch {
+        // Best-effort — leave threadId/messages unchanged and surface the error.
+        toast.error(t("experience_copilot_switch_error"));
+      }
+    },
+    [ctrl.isSending, fetchSessions, t],
+  );
+
+  const handleNewSession = useCallback(async () => {
+    if (ctrl.isSending) return;
+    try {
+      const thread = await startExperienceCopilotSession(scriptId);
+      setThreadId(thread.id);
+      setMessages([]);
+      await fetchSessions();
+    } catch {
+      // Best-effort — leave threadId/messages unchanged and surface the error.
+      toast.error(t("experience_copilot_new_session_error"));
+    }
+  }, [ctrl.isSending, scriptId, fetchSessions, t]);
 
   // ── Mobile auto-switch on proposal ───────────────────────────────────────
   // A proposal becomes reviewable in the Chat pane (activity cards + Apply), so
@@ -200,6 +260,15 @@ export function ExperienceCopilotShell({
         </div>
       ) : threadId ? (
         <>
+          <div className="flex shrink-0 items-center border-b border-border bg-surface px-2 py-1.5">
+            <ExperienceSessionSwitcher
+              sessions={sessions}
+              activeThreadId={threadId}
+              disabled={ctrl.isSending}
+              onActivate={handleActivate}
+              onNew={handleNewSession}
+            />
+          </div>
           <ExperienceCopilotMessageList
             threadId={threadId}
             messages={messages}
