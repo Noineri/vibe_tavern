@@ -20,6 +20,7 @@ import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
+import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema } from "@vibe-tavern/api-contracts";
@@ -591,12 +592,13 @@ export function useChatController(): ChatControllerActions {
       });
       const currentAttachments = [...csStore.draftAttachments];
       csStore.clearDraftAttachments();
-      await executeStreamAction(
+      const outcome = await executeStreamAction(
         activeChatId,
         (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined, ...dice.commitIntent }, opts),
         draft,
         currentAttachments,
       );
+      notifyUserTurnSettled(outcome === "done");
     } else {
       void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
       const currentAttachments = [...csStore.draftAttachments];
@@ -606,7 +608,7 @@ export function useChatController(): ChatControllerActions {
       // abort is an explicit user cancel, the message is already gone from
       // the draft by design). executeNonStreamAction owns the lifecycle and
       // treats abort as a settled "cancelled" outcome without invoking onError.
-      await executeNonStreamAction(
+      const outcome = await executeNonStreamAction(
         activeChatId,
         (signal) => sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, dice.commitIntent, signal),
         {
@@ -633,6 +635,7 @@ export function useChatController(): ChatControllerActions {
           },
         },
       );
+      notifyUserTurnSettled(outcome === "done");
     }
   }, []);
 

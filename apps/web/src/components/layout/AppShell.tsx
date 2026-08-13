@@ -37,6 +37,7 @@ import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
 import { ProxyManagerModal } from "../modals/ProxyManagerModal.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
+import { StarPromptModal } from "../modals/StarPromptModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
@@ -543,6 +544,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         releaseUrl={updateCheck.releaseUrl}
         releaseNotes={updateCheck.releaseNotes}
       />
+      <StarPromptModal />
       <CoauthorModuleModal />
       <CoauthorSkillModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />
