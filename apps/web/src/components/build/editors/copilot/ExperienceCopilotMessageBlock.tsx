@@ -44,7 +44,7 @@ export const ExperienceCopilotMessageBlock = memo(function ExperienceCopilotMess
           isUser ? "bg-user-bg" : "bg-s2",
         )}
       >
-        <div className="font-body text-[length:var(--mfs)] leading-[1.6] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
           <Markdown text={message.content} />
         </div>
       </div>
