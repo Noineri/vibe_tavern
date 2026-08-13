@@ -2008,8 +2008,6 @@
   "experience_tester_effects": "Эффекты (показаны, не выполнены)",
   "experience_tester_steps": "Шаги",
   "experience_tester_replayed": "повтор",
-  "experience_playground_title": "Песочница",
-  "experience_playground_hint": "Проигрывайте несохранённые правила выше ход за ходом: выберите своё место, совершайте действия, наблюдайте за ходами скриптовых мест и оценивайте визуал на живом состоянии. Ничего не сохраняется, не отправляется в чат и не изменяется.",
   "experience_playground_start": "Запустить песочницу",
   "experience_playground_reset": "Сброс",
   "experience_playground_human_seat_label": "Ваше место",

@@ -249,8 +249,6 @@ interface ExperiencePlaygroundProps {
 export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: ExperiencePlaygroundProps) {
   const { t } = useT();
 
-  const [open, setOpen] = useState(false);
-
   // Play context (local only).
   const [seats, setSeats] = useState<PlaygroundSeat[]>([
     { id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human },
@@ -322,13 +320,13 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
   // IR-90E: load provider profiles when the panel opens and a model seat exists.
   const hasModelSeat = seats.some((s) => s.controller === EXPERIENCE_CONTROLLER.model);
   useEffect(() => {
-    if (!open || !hasModelSeat || providerProfiles !== null) return;
+    if (!hasModelSeat || providerProfiles !== null) return;
     let cancelled = false;
     listProviderProfiles()
       .then((profiles) => { if (!cancelled) setProviderProfiles(profiles); })
       .catch(() => { if (!cancelled) setProviderProfiles([]); });
     return () => { cancelled = true; };
-  }, [open, hasModelSeat, providerProfiles]);
+  }, [hasModelSeat, providerProfiles]);
 
   function ensureModels(profileId: string): void {
     if (profileId === "" || modelsByProfile[profileId] !== undefined || loadingProfiles.has(profileId)) return;
@@ -357,7 +355,7 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
   // — discovery failure (broken rules) explicitly restores the safe default
   // single human seat plus empty grants.
   useEffect(() => {
-    if (!open || seatsTouched || code.trim() === "") return;
+    if (seatsTouched || code.trim() === "") return;
     let cancelled = false;
     setDeriving(true);
     runExperienceTest({ rulesCode: code, actions: [] })
@@ -388,7 +386,7 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
       })
       .finally(() => { if (!cancelled) setDeriving(false); });
     return () => { cancelled = true; };
-  }, [open, code, seatsTouched]);
+  }, [code, seatsTouched]);
 
   /** The ONE advance path (host chrome AND frame actions): apply one human
    *  action to the live session, then let the driver advance script seats.
@@ -564,24 +562,8 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
   })();
 
   return (
-    <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-      <button
-        type="button"
-        className="flex w-full cursor-pointer items-center gap-2 text-left"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="inline-block text-t3 transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }}>▶</span>
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.dice /></span>
-        <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
-          {t("experience_playground_title")}
-        </span>
-        <CustomTooltip content={t("experience_playground_hint")}>
-          <span className="cursor-help text-[11px] text-t4">ⓘ</span>
-        </CustomTooltip>
-      </button>
-
-      {open && (
-        <div className="mt-3">
+    <div data-testid="experience-playground" className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
+      <div>
           {/* Play context: roster + capability grants + seed + settings + seat */}
           <div className="mb-3">
             <label className={lblCls}>{t("experience_setup_participants_label")}</label>
@@ -968,7 +950,6 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
             </div>
           )}
         </div>
-      )}
     </div>
   );
 }

@@ -418,14 +418,14 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
   });
 
   it("opens the Sandbox modal containing ExperiencePlayground", async () => {
-    const { getByTestId, getByText } = renderShell();
+    const { getByTestId } = renderShell();
     await flushSessionLoad();
 
     fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
 
     expect(getByTestId("copilot-sandbox-modal")).toBeDefined();
-    // ExperiencePlayground's collapsed header carries the playground marker.
-    expect(getByText("experience_playground_title")).toBeDefined();
+    // The shared playground element mounts inside the modal.
+    expect(getByTestId("experience-playground")).toBeDefined();
   });
 });
 
@@ -538,13 +538,13 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
   });
 
   it("sandbox position renders the playground inline and hides the code editor + toolbar buttons", async () => {
-    const { container, getByRole, getByText, queryByTestId } = renderShell({ creationMode: true });
+    const { container, getByRole, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
     fireEvent.click(getByRole("radio", { name: "experience_copilot_sandbox" }));
 
-    // The shared playground element mounts INLINE (its collapsed header marker).
-    expect(getByText("experience_playground_title")).toBeDefined();
+    // The shared playground element mounts INLINE.
+    expect(queryByTestId("experience-playground")).toBeTruthy();
     // The CodeEditor is absent on the sandbox position.
     expect(container.querySelector(".cm-editor")).toBeNull();
     // Toggle only — the tester/preview/sandbox toolbar buttons are hidden.
@@ -649,9 +649,8 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     const { getByTestId, getByText, findByText } = renderShell();
     await flushSessionLoad();
 
-    // Open the sandbox modal + expand the playground + start a session.
+    // Open the sandbox modal + start a session.
     fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
-    fireEvent.click(getByText("experience_playground_title"));
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
     // Wait for the session to render (the turn title appears after setSession).

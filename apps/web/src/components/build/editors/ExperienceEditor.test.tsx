@@ -343,9 +343,7 @@ function singlePendingRulesDraft() {
  *  portaled Modals) via its unique title text node — enforces the IR-90A
  *  single-instance invariant. */
 function playgroundInstanceCount(): number {
-  return [...document.body.querySelectorAll("span")].filter(
-    (s) => s.textContent === "experience_playground_title",
-  ).length;
+  return [...document.body.querySelectorAll("[data-testid='experience-playground']")].length;
 }
 
 /** Open a DropdownSelect (its trigger currently showing `triggerText`) and pick

@@ -259,8 +259,6 @@ beforeEach(() => {
 
 function renderPlayground(code: string = VALID_CODE, visualSource: string | null = null) {
   const utils = render(<ExperiencePlayground code={code} visualSource={visualSource} />);
-  // Expand the disclosure (collapsed by default in the editor layout).
-  fireEvent.click(utils.getByText("experience_playground_title"));
   return utils;
 }
 
@@ -558,11 +556,10 @@ describe("ExperiencePlayground", () => {
 
     // ER-13 moved the playground out of the inline IR-84B seam into the
     // copilot-shell Sandbox toolbar modal. Open the modal first, then the
-    // playground's accordion header + start button are reachable inside it.
-    // (The boundary pinned here is unchanged: the playground still drives the
-    // CURRENT UNSAVED rules buffer that the editor owns.)
+    // playground's start button is reachable inside it. (The boundary pinned
+    // here is unchanged: the playground still drives the CURRENT UNSAVED rules
+    // buffer that the editor owns.)
     fireEvent.click(getByText("experience_copilot_sandbox"));
-    fireEvent.click(getByText("experience_playground_title"));
     fireEvent.click(getByText("experience_playground_start"));
 
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
@@ -623,7 +620,7 @@ describe("ExperiencePlayground", () => {
 
   // IR-90E: the UNCHANGED shipped Model Conversation rules + Conversation visual
   // pair is playable in the authoring playground with auto-derived setup.
-  // Discovery is mocked BEFORE render; after expanding the panel the starter's
+  // Discovery is mocked BEFORE render; on mount the starter's
   // declared capabilities auto-populate human+model seats and grants. The
   // author then ONLY selects provider + model for the model seat — no manual
   // capability checking, seat adding, or controller changing. This test asserts
@@ -726,10 +723,9 @@ describe("ExperiencePlayground", () => {
 
     installUrlSpies();
     const utils = render(<ExperiencePlayground code={STARTER.source} visualSource={CONVERSATION_VISUAL_SOURCE} />);
-    fireEvent.click(utils.getByText("experience_playground_title"));
     const { container, getByText, findByText } = utils;
 
-    // ── Step 1: wait for auto-derive (effect fires on expand) ──
+    // ── Step 1: wait for auto-derive (effect fires on mount) ──
     // The discovery mock returns participants + model → seats and grants
     // are populated WITHOUT any manual clicks.
     await waitFor(() => {
@@ -858,7 +854,6 @@ describe("ExperiencePlayground — send diagnostics to assistant (ER-14)", () =>
     const onSendToCopilot = mock();
     const utils = render(<ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />);
     const { getByText, queryByTestId } = utils;
-    fireEvent.click(getByText("experience_playground_title"));
 
     // Before start: no session → the diagnostics disclosure is not rendered
     // (it only mounts inside `{session !== null && ...}`), so the button is absent.

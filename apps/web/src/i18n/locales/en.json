@@ -1990,8 +1990,6 @@
   "experience_tester_effects": "Effects (reported, never executed)",
   "experience_tester_steps": "Steps",
   "experience_tester_replayed": "replayed",
-  "experience_playground_title": "Playground",
-  "experience_playground_hint": "Play the unsaved rules above turn by turn: pick your seat, take actions, watch script seats move, and judge the visual against the live state. Nothing is saved, sent to a chat, or changed.",
   "experience_playground_start": "Start playground",
   "experience_playground_reset": "Reset",
   "experience_playground_human_seat_label": "Your seat",
