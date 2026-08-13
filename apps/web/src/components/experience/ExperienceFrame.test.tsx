@@ -89,6 +89,21 @@ describe("buildExperienceFrameDocument", () => {
     // the doc itself does not relax isolation. The attribute is asserted below.
     expect(EXPERIENCE_FRAME_CSP).not.toContain("allow-same-origin");
   });
+
+  it("bakes the host scrollbar color into the base style (theme-aware)", () => {
+    // The frame is opaque-origin, so it cannot inherit the host's ::-webkit-scrollbar
+    // rule or --border2 token; the color must be baked into the srcdoc.
+    const doc = buildExperienceFrameDocument(VISUAL, "oklch(0.4 0.02 290)");
+    expect(doc).toContain("::-webkit-scrollbar");
+    expect(doc).toContain("scrollbar-width:thin");
+    expect(doc).toContain("oklch(0.4 0.02 290)");
+  });
+
+  it("falls back to a neutral scrollbar when no theme color is provided", () => {
+    const doc = buildExperienceFrameDocument(VISUAL);
+    expect(doc).toContain("::-webkit-scrollbar");
+    expect(doc).toContain("rgba(140,140,140,0.5)");
+  });
 });
 
 // ─── ExperienceFrame component (DOM + URL lifecycle) ────────────────────────

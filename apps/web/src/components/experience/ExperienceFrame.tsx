@@ -76,7 +76,21 @@ export const EXPERIENCE_FRAME_CSP = [
  * still gets their code parsed as HTML (a stray `<` won't break the SDK); the
  * SDK always precedes the source so `VibeExperience` exists when the source runs.
  */
-export function buildExperienceFrameDocument(visualSource: string): string {
+export function buildExperienceFrameDocument(
+  visualSource: string,
+  scrollbarColor?: string,
+): string {
+  // The frame is a separate opaque-origin document (sandbox="allow-scripts",
+  // no allow-same-origin): it inherits neither the host's ::-webkit-scrollbar
+  // rule nor its theme CSS variables. Bake the scrollbar chrome into the base
+  // style so any inner scrollbar (frame body, or a visual's own scroll region)
+  // matches the host instead of falling back to the browser default. The thumb
+  // is the host's --border2 theme token (read from :root at build time); a
+  // neutral fallback covers the rare case it is absent.
+  const thumb =
+    scrollbarColor && scrollbarColor.trim() !== ""
+      ? scrollbarColor.trim()
+      : "rgba(140,140,140,0.5)";
   return [
     "<!DOCTYPE html>",
     "<html>",
@@ -85,6 +99,8 @@ export function buildExperienceFrameDocument(visualSource: string): string {
     `<meta http-equiv="Content-Security-Policy" content="${EXPERIENCE_FRAME_CSP}">`,
     "<style>",
     "html,body{margin:0;padding:0;background:transparent;color:inherit;font:inherit;}",
+    `::-webkit-scrollbar{width:3px;height:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${thumb};border-radius:2px}`,
+    `html{scrollbar-width:thin;scrollbar-color:${thumb} transparent}`,
     "</style>",
     "</head>",
     "<body>",
@@ -159,7 +175,11 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
     // version is pinned in the bundle, so it is not a dependency.
     const [docUrl, setDocUrl] = useState<string | null>(null);
     useEffect(() => {
-      const doc = buildExperienceFrameDocument(visualSource);
+      // The frame is an opaque-origin document (see buildExperienceFrameDocument),
+      // so it can see neither the host's ::-webkit-scrollbar rule nor the --border2
+      // theme token — read the token from :root here and bake it into the doc.
+      const scrollbarColor = getComputedStyle(document.documentElement).getPropertyValue("--border2");
+      const doc = buildExperienceFrameDocument(visualSource, scrollbarColor);
       const url = URL.createObjectURL(new Blob([doc], { type: "text/html" }));
       setDocUrl(url);
       return () => {
