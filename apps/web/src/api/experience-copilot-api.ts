@@ -71,3 +71,35 @@ export async function startExperienceCopilotSession(
   });
   return unwrapRpc<ExperienceCopilotThreadWire>(response);
 }
+
+/** All sessions (active + archived) for a script, newest first. */
+export async function listExperienceCopilotSessions(
+  scriptId: string,
+): Promise<ExperienceCopilotThreadWire[]> {
+  const response = await client.api["experience-copilot"].script[":scriptId"].sessions.$get({
+    param: { scriptId },
+  });
+  return unwrapRpc<ExperienceCopilotThreadWire[]>(response);
+}
+
+/** Resume an archived session (archiving its active sibling, if any), or a
+ *  no-op when already active. Returns null when the thread does not exist. */
+export async function activateExperienceCopilotSession(
+  threadId: string,
+): Promise<ExperienceCopilotThreadWire | null> {
+  const response = await client.api["experience-copilot"][":threadId"].activate.$post({
+    param: { threadId },
+  });
+  return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+}
+
+/** Archive a single session (idempotent). Returns null when the thread does
+ *  not exist. */
+export async function archiveExperienceCopilotSession(
+  threadId: string,
+): Promise<ExperienceCopilotThreadWire | null> {
+  const response = await client.api["experience-copilot"][":threadId"].archive.$post({
+    param: { threadId },
+  });
+  return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+}

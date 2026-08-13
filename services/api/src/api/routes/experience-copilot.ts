@@ -114,5 +114,17 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
         const body = c.req.valid("json");
         return c.json(await runtime.experienceCopilotStartNewSession(scriptId, body?.title));
       },
-    );
+    )
+    .get("/api/experience-copilot/script/:scriptId/sessions", async (c) => {
+      const scriptId = c.req.param("scriptId");
+      return c.json(await runtime.experienceCopilotListSessions(scriptId));
+    })
+    .post("/api/experience-copilot/:threadId/activate", async (c) => {
+      const threadId = c.req.param("threadId");
+      return c.json(await runtime.experienceCopilotActivate(threadId));
+    })
+    .post("/api/experience-copilot/:threadId/archive", async (c) => {
+      const threadId = c.req.param("threadId");
+      return c.json(await runtime.experienceCopilotArchive(threadId));
+    });
 }

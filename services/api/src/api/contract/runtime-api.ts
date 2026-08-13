@@ -766,6 +766,19 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  Delegates to the ER-3 store's `startNewSession` (single-tx archive-then-
 	 *  insert). */
 	experienceCopilotStartNewSession: (scriptId: string, title?: string) => Promise<ExperienceCopilotThreadWire>;
+
+	/** All sessions (active + archived) for a script, newest first. Delegates
+	 *  to the ER-3 store's `listSessions`. */
+	experienceCopilotListSessions: (scriptId: string) => Promise<ExperienceCopilotThreadWire[]>;
+
+	/** Resume an archived session (archiving its active sibling, if any), or a
+	 *  no-op when it is already active. Delegates to the ER-3 store's
+	 *  `activate`. Returns null when the thread does not exist. */
+	experienceCopilotActivate: (sessionId: string) => Promise<ExperienceCopilotThreadWire | null>;
+
+	/** Archive a single session (idempotent). Delegates to the ER-3 store's
+	 *  `archive`. Returns null when the thread does not exist. */
+	experienceCopilotArchive: (sessionId: string) => Promise<ExperienceCopilotThreadWire | null>;
 }
 
 export interface RuntimeApi {

@@ -73,6 +73,21 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     return this.toThreadWire(thread);
   };
 
+  experienceCopilotListSessions = async (scriptId: string): Promise<ExperienceCopilotThreadWire[]> => {
+    const threads = await this.stores.experienceCopilot.listSessions(scriptId);
+    return threads.map((t) => this.toThreadWire(t));
+  };
+
+  experienceCopilotActivate = async (sessionId: string): Promise<ExperienceCopilotThreadWire | null> => {
+    const thread = await this.stores.experienceCopilot.activate(sessionId);
+    return thread ? this.toThreadWire(thread) : null;
+  };
+
+  experienceCopilotArchive = async (sessionId: string): Promise<ExperienceCopilotThreadWire | null> => {
+    const thread = await this.stores.experienceCopilot.archive(sessionId);
+    return thread ? this.toThreadWire(thread) : null;
+  };
+
   // ─── Domain → wire mappers (ER-7) ────────────────────────────────────────
   //
   // Field-for-field: the store's branded ids are phantom string brands (already
