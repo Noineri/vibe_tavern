@@ -31,21 +31,21 @@
  *    — always a fresh, explicitly untrusted copy; the source is never mutated.
  *  - The package contract at hand via `InteractiveApiReference`.
  *
- * IR-81D: the stateless InteractiveTester mounts below the rules CodeEditor
- * and drives the unsaved rules buffer through POST
- * /api/experience/test/run|simulate as a read-only diagnostic (it never
- * mutates these drafts or any store).
+ * IR-81D: the stateless InteractiveTester drives the unsaved rules buffer
+ * through POST /api/experience/test/run|simulate as a read-only diagnostic
+ * (it never mutates these drafts or any store). It now mounts inside the
+ * copilot shell's Tester modal (IR-13c), not inline below the rules editor.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Ic } from "../../shared/icons.js";
-import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { inputCls } from "../fields/field-styles.js";
 import { cn } from "../../../lib/cn.js";
+import type { ExperienceCopilotApplyPatch } from "../../../lib/experience-copilot-apply.js";
 import { useT } from "../../../i18n/context.js";
 import {
   isScriptDraftDirty,
@@ -74,9 +74,6 @@ import {
 } from "../../../api/experience-api.js";
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { InteractiveApiReference } from "./interactive-api-reference.js";
-import { InteractiveTester } from "./InteractiveTester.js";
-import { ExperiencePlayground } from "./ExperiencePlayground.js";
-import { Modal } from "../../shared/Modal.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import {
@@ -88,6 +85,7 @@ import {
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
 import { ExperienceCreationWizard } from "./ExperienceCreationWizard.js";
+import { ExperienceCopilotShell } from "./copilot/ExperienceCopilotShell.js";
 
 function draftValuesEqual(a: ScriptDraftValues, b: ScriptDraftValues): boolean {
   return a.name === b.name
@@ -124,21 +122,12 @@ export function ExperienceEditor() {
   const [activeScriptId, setActiveScriptId] = useState<string | null>(null);
   const [activeVisualId, setActiveVisualId] = useState<string | null>(null);
   const [apiRefOpen, setApiRefOpen] = useState(false);
-  const [testerOpen, setTesterOpen] = useState(false);
   // IR-90E: compact friendly validation result (reuses the wizard's pattern).
   const [rulesValid, setRulesValid] = useState<boolean | null>(null);
   const [rulesValidationError, setRulesValidationError] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const [visualAiHelperOpen, setVisualAiHelperOpen] = useState(false);
-
-  // IR-84B launcher: the inline playground is mounted at the bottom of the
-  // editor; this opens the SAME draft-bound playground in a shared Modal from
-  // the top toolbar so it is reachable without scrolling. At most ONE
-  // ExperiencePlayground instance is mounted at a time — when the modal is
-  // open the inline slot renders a collapsed placeholder (playground state is
-  // ephemeral/scratch, so re-mounting on close/reopen is acceptable).
-  const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
 
   // IR-90A: explicit destructive delete for a saved/pending visual, confirmed
   // via the shared DestructiveConfirmModal. A failed delete keeps the visual
@@ -237,6 +226,13 @@ export function ExperienceEditor() {
     if (!activeVisualRecord) return;
     ensureVisualDraft(activeVisualRecord);
     patchVisualDraft(activeVisualRecord.id, patch);
+  };
+
+  // IR-13c: wire the shell's Apply to the two draft stores — proposed rules
+  // text → the script draft, proposed visual text → the visual draft.
+  const handleCopilotApply = (patch: ExperienceCopilotApplyPatch) => {
+    if (patch.rules !== undefined) updateScriptDraft({ code: patch.rules });
+    if (patch.visual !== undefined) updateVisualDraft({ source: patch.visual });
   };
 
   // ── Trust model (IR-81A) ─────────────────────────────────────────────────
@@ -624,46 +620,33 @@ export function ExperienceEditor() {
       </>
     );
   }
-
   // ── Editor view ──────────────────────────────────────────────────────────
+  // IR-13c: the editing surface is a full-bleed 2-pane copilot layout — chat
+  // left + editor right (rules/visual toggle) with the management controls
+  // (name / trust / save / duplicate / delete / back) in a sticky top bar. The
+  // tester / preview / sandbox surfaces are the shell's top-button modals
+  // (ER-13b′); the inline editors and playground moved into the shell.
   return (
-    <div className="mx-auto max-w-[860px] px-6 py-5">
-      <button
-        type="button"
-        className="mb-4 flex cursor-pointer items-center gap-1.5 font-ui text-[12px] text-t3 transition-all hover:text-t1"
-        onClick={() => setActiveScriptId(null)}
-      >
-        {Ic.caret("l")} {t("experience_editor_back")}
-      </button>
-
-      {/* Rules: explicit-save status + action. Ctrl/Cmd+S calls the same handler. */}
-      <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-border bg-s2 px-3 py-2">
-        <span
-          className={cn("min-w-0 truncate font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
-          title={activeScriptDraft?.error ?? undefined}
+    <div className="flex h-full flex-col">
+      {/* Top bar: back, name, trust, save, duplicate, delete. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
+        <button
+          type="button"
+          aria-label={t("experience_editor_back")}
+          className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
+          onClick={() => setActiveScriptId(null)}
         >
-          {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
-        </span>
-        <SaveButton
-          dirty={scriptDirty}
-          saveState={scriptSaveState}
-          resetKey={activeScriptId}
-          onClick={() => void handleSaveRules()}
-          label={scriptSaveState === "error" ? t("retry") : t("save")}
-        />
-      </div>
+          {Ic.caret("l")} {t("experience_editor_back")}
+        </button>
 
-      {/* Name + trust toggle + duplicate */}
-      <div className="flex items-center gap-3" style={{ marginBottom: 8 }}>
-        <div className="min-w-0 flex-1">
-          <input
-            className={cn(inputCls, "text-[15px] font-semibold")}
-            type="text"
-            value={activeScript.name}
-            onChange={(e) => updateScriptDraft({ name: e.target.value })}
-            placeholder={t("script_name")}
-          />
-        </div>
+        <input
+          className={cn(inputCls, "min-w-0 flex-1 text-[15px] font-semibold")}
+          type="text"
+          value={activeScript.name}
+          onChange={(e) => updateScriptDraft({ name: e.target.value })}
+          placeholder={t("script_name")}
+        />
+
         <span
           className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text")}
         >
@@ -677,6 +660,21 @@ export function ExperienceEditor() {
           disabled={enableLocked}
           onChange={(enabled) => updateScriptDraft({ enabled })}
         />
+
+        <span
+          className={cn("shrink-0 font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
+          title={activeScriptDraft?.error ?? undefined}
+        >
+          {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
+        </span>
+        <SaveButton
+          dirty={scriptDirty}
+          saveState={scriptSaveState}
+          resetKey={activeScriptId}
+          onClick={() => void handleSaveRules()}
+          label={scriptSaveState === "error" ? t("retry") : t("save")}
+        />
+
         <CustomTooltip content={t("experience_editor_duplicate")}>
           <button
             type="button"
@@ -702,284 +700,198 @@ export function ExperienceEditor() {
           </CustomTooltip>
         )}
       </div>
+
       {enableLocked && (
-        <div className="mb-4 rounded-md border border-warning/40 bg-warning-dim/30 px-2 py-1 text-[11px] leading-[1.4] text-t3">
+        <div className="shrink-0 border-b border-warning/40 bg-warning-dim/30 px-3 py-1 text-[11px] leading-[1.4] text-t3">
           {t("experience_editor_trust_blocked_hint")}
         </div>
       )}
 
-      {/* Description */}
-      <div style={{ marginBottom: 16 }}>
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
-        <input
-          className={inputCls}
-          value={activeScript.description}
-          onChange={(e) => updateScriptDraft({ description: e.target.value })}
-          placeholder={t("script_desc_placeholder")}
-        />
-      </div>
-
-      {/* Toolbar: API reference + AI helper */}
-      <div className="mb-2 flex flex-wrap gap-2">
-        {/* IR-84B/IR-90A: above-the-fold playground launcher — opens the SAME
-            draft-bound playground in a shared Modal so it is reachable without
-            scrolling to the inline section at the bottom. */}
-        <button
-          type="button"
-          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-accent-dim px-2.5 font-ui text-[11px] text-accent-t transition-all hover:brightness-110"
-          onClick={() => setPlaygroundModalOpen(true)}
-        >
-          <Ic.dice /> {t("experience_editor_playground_open")}
-        </button>
-        <button
-          type="button"
-          className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
-          onClick={() => setApiRefOpen((v) => !v)}
-        >
-          <Ic.book /> {t("script_api_reference")}
-        </button>
-        <button
-          type="button"
-          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
-          onClick={() => setAiHelperOpen(true)}
-        >
-          <Ic.brain /> {t("experience_editor_ai_helper")}
-        </button>
-      </div>
-      {apiRefOpen && <InteractiveApiReference />}
-
-      {/* Rules source */}
-      <div style={{ marginBottom: 20 }}>
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_code_label")}</label>
-        <div className="relative rounded-md border border-border bg-bg">
-          <CodeEditor
-            value={activeScript.code}
-            onChange={(code) => updateScriptDraft({ code })}
-            minHeight="300px"
-            scrollMode="inner"
-          />
-        </div>
-      </div>
-
-      {/*
-       * IR-81D/IR-90E: the stateless unsaved-source tester is collapsed by
-       * default (novice-readable editor). It drives the CURRENT UNSAVED rules
-       * buffer through the IR-81B backend tester
-       * (POST /api/experience/test/run|simulate) as a read-only diagnostic —
-       * it never mutates these drafts, never touches a store, and never
-       * forwards an action to any chat/session.
-       */}
-      <div className="mt-4">
-        {/* IR-90E: compact friendly validation (presented first, before the
-            collapsed raw tester). */}
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-            disabled={validating || activeScript.code.trim() === ""}
-            onClick={() => void handleValidateRules()}
-          >
-            <Ic.check />
-            {validating ? t("experience_wizard_validating") : t("experience_editor_validate_rules")}
-          </button>
-          {rulesValid === true && (
-            <span className="font-ui text-[11px] text-success">{t("experience_wizard_rules_valid")}</span>
-          )}
-          {rulesValid === false && (
-            <span className="font-ui text-[11px] text-danger">{t("experience_wizard_rules_invalid")}: {rulesValidationError}</span>
-          )}
-        </div>
-        <button
-          type="button"
-          className="flex w-full cursor-pointer items-center gap-1.5 text-left"
-          onClick={() => setTesterOpen((v) => !v)}
-        >
-          <span className="inline-block text-t3 transition-transform" style={{ transform: testerOpen ? "rotate(90deg)" : "none" }}>▶</span>
-          <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-t3">{t("experience_editor_tester_section")}</span>
-        </button>
-        {testerOpen && <InteractiveTester code={activeScript.code} />}
-      </div>
-
-      {/* Visual: independent buffer with its own explicit save */}
-      <div className="mt-8 border-t border-border pt-4">
-        <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
-          {t("experience_editor_visual_section")}
-        </div>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <div className="min-w-[220px] flex-1">
-            <DropdownSelect
-              value={activeVisualId ?? ""}
-              options={allVisuals.map((visual) => ({
-                id: visual.id,
-                label: (visualDrafts[visual.id]?.values.name ?? visual.name) || visual.id,
-                ...(isLocalId(visual.id) ? { detail: t("experience_editor_unsaved_badge") } : {}),
-              }))}
-              placeholder={t("experience_assign_visual_placeholder")}
-              searchPlaceholder={t("experience_assign_visual_search")}
-              onChange={(id) => setActiveVisualId(id === "" ? null : id)}
-            />
-          </div>
-          <CustomTooltip content={t("experience_editor_duplicate")}>
-            <button
-              type="button"
-              aria-label={t("experience_editor_duplicate")}
-              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-              disabled={!activeVisual}
-              onClick={handleDuplicateVisual}
-            >
-              <Ic.copy />
-            </button>
-          </CustomTooltip>
-          <CustomTooltip content={t("experience_editor_visual_delete")}>
-            <button
-              type="button"
-              aria-label={t("experience_editor_visual_delete")}
-              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2 disabled:cursor-default disabled:opacity-40"
-              disabled={!activeVisual}
-              onClick={() => {
-                if (activeVisualId) {
-                  setVisualDeleteError(null);
-                  setVisualDeleteId(activeVisualId);
-                }
-              }}
-            >
-              <Ic.del />
-            </button>
-          </CustomTooltip>
-        </div>
-        {visualDeleteError && (
-          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
-            {t("experience_editor_visual_delete_error")}: {visualDeleteError}
-          </div>
-        )}
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="font-ui text-[11px] text-t3">{t("experience_editor_visual_new")}</span>
-          {VISUAL_STARTERS.map((starter) => (
-            <button
-              type="button"
-              key={starter.id}
-              className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
-              onClick={() => handleNewVisualFromStarter(starter)}
-            >
-              {starter.label}
-            </button>
-          ))}
-        </div>
-
-        {activeVisual ? (
-          <>
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-border bg-s2 px-3 py-2">
-              <span
-                className={cn("min-w-0 truncate font-ui text-[12px]", visualSaveState === "error" ? "text-danger" : "text-t3")}
-                title={activeVisualDraft?.error ?? undefined}
-              >
-                {visualSaveState === "error" ? t("retry") : visualDirty ? t("unsaved_changes") : t("saved_state")}
-              </span>
-              <SaveButton
-                dirty={visualDirty}
-                saveState={visualSaveState}
-                resetKey={activeVisualId}
-                onClick={() => void handleSaveVisual()}
-                label={visualSaveState === "error" ? t("retry") : t("experience_editor_visual_save")}
-              />
-            </div>
-            <div style={{ marginBottom: 12 }}>
+      {/* Body: the 2-pane copilot shell hosts both editors + top-button modals. */}
+      <div className="min-h-0 flex-1">
+        <ExperienceCopilotShell
+          scriptId={activeScript.id}
+          rulesCode={activeScript.code}
+          onRulesChange={(code) => updateScriptDraft({ code })}
+          visualSource={activeVisual?.source ?? ""}
+          onVisualChange={(source) => updateVisualDraft({ source })}
+          onApply={handleCopilotApply}
+          rulesToolbar={
+            <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
+              <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
               <input
                 className={inputCls}
-                type="text"
-                value={activeVisual.name}
-                onChange={(e) => updateVisualDraft({ name: e.target.value })}
-                placeholder={t("experience_editor_visual_name_ph")}
+                value={activeScript.description}
+                onChange={(e) => updateScriptDraft({ description: e.target.value })}
+                placeholder={t("script_desc_placeholder")}
               />
-            </div>
-            <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
-              <span>{t("experience_editor_visual_api_version")}: {activeVisual.apiVersion}</span>
-              <span>
-                {t("experience_editor_visual_hash")}:{" "}
-                {isNewVisual
-                  ? t("experience_editor_visual_hash_unsaved")
-                  : (activeVisualDraft?.sourceHash ? activeVisualDraft.sourceHash.slice(0, 12) : "—")}
-              </span>
-              <span>
-                {t("experience_editor_visual_manifests")}:{" "}
-                {activeVisual.compatibleManifestIds.length > 0 ? activeVisual.compatibleManifestIds.join(", ") : "—"}
-              </span>
-            </div>
-            <div style={{ marginBottom: 20 }}>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                {/*
-                 * IR-83B: launch the VISUAL AI assistant. It discovers the validated
-                 * contract from the ACTIVE RULES source (interactiveRulesSource) and
-                 * emits visual source only — it never touches the rules draft. It is
-                 * disabled when there is no rules source to discover a contract from.
-                 */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  onClick={() => setApiRefOpen((v) => !v)}
+                >
+                  <Ic.book /> {t("script_api_reference")}
+                </button>
+                <button
+                  type="button"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                  onClick={() => setAiHelperOpen(true)}
+                >
+                  <Ic.brain /> {t("experience_editor_ai_helper")}
+                </button>
                 <button
                   type="button"
                   className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                  disabled={!activeScript?.code?.trim()}
-                  onClick={() => setVisualAiHelperOpen(true)}
+                  disabled={validating || activeScript.code.trim() === ""}
+                  onClick={() => void handleValidateRules()}
                 >
-                  <Ic.brain /> {t("experience_editor_visual_ai_helper")}
+                  <Ic.check />
+                  {validating ? t("experience_wizard_validating") : t("experience_editor_validate_rules")}
                 </button>
-                {!activeScript?.code?.trim() && (
-                  <span className="font-ui text-[11px] italic text-t3">{t("experience_editor_visual_ai_helper_no_rules")}</span>
+                {rulesValid === true && (
+                  <span className="font-ui text-[11px] text-success">{t("experience_wizard_rules_valid")}</span>
+                )}
+                {rulesValid === false && (
+                  <span className="font-ui text-[11px] text-danger">{t("experience_wizard_rules_invalid")}: {rulesValidationError}</span>
                 )}
               </div>
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("experience_editor_visual_source_label")}</label>
-              <div className="relative rounded-md border border-border bg-bg">
-                <CodeEditor
-                  value={activeVisual.source}
-                  onChange={(source) => updateVisualDraft({ source })}
-                  minHeight="220px"
-                  scrollMode="inner"
-                />
-              </div>
+              {apiRefOpen && <InteractiveApiReference />}
             </div>
-          </>
-        ) : (
-          <div className="py-4 text-center font-ui text-[12px] italic text-t3">
-            {t("experience_editor_visual_none")}
-          </div>
-        )}
-      </div>
+          }
+          visualToolbar={
+            <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
+              {visualDeleteError && (
+                <div className="rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+                  {t("experience_editor_visual_delete_error")}: {visualDeleteError}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-[220px] flex-1">
+                  <DropdownSelect
+                    value={activeVisualId ?? ""}
+                    options={allVisuals.map((visual) => ({
+                      id: visual.id,
+                      label: (visualDrafts[visual.id]?.values.name ?? visual.name) || visual.id,
+                      ...(isLocalId(visual.id) ? { detail: t("experience_editor_unsaved_badge") } : {}),
+                    }))}
+                    placeholder={t("experience_assign_visual_placeholder")}
+                    searchPlaceholder={t("experience_assign_visual_search")}
+                    onChange={(id) => setActiveVisualId(id === "" ? null : id)}
+                  />
+                </div>
+                {activeVisual ? (
+                  <>
+                    <CustomTooltip content={t("experience_editor_duplicate")}>
+                      <button
+                        type="button"
+                        aria-label={t("experience_editor_duplicate")}
+                        className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
+                        onClick={handleDuplicateVisual}
+                      >
+                        <Ic.copy />
+                      </button>
+                    </CustomTooltip>
+                    <CustomTooltip content={t("experience_editor_visual_delete")}>
+                      <button
+                        type="button"
+                        aria-label={t("experience_editor_visual_delete")}
+                        className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
+                        onClick={() => {
+                          if (activeVisualId) {
+                            setVisualDeleteError(null);
+                            setVisualDeleteId(activeVisualId);
+                          }
+                        }}
+                      >
+                        <Ic.del />
+                      </button>
+                    </CustomTooltip>
+                  </>
+                ) : null}
+              </div>
 
-      <div className="mt-3">
-        {/*
-         * IR-84B: the interactive playground. A peer of the IR-81D tester with
-         * access to BOTH unsaved buffers — it PLAYS the CURRENT UNSAVED rules
-         * (`activeScript.code`) through the IR-84A in-memory playground driver
-         * (POST /api/experience/playground/start|advance) turn by turn, and
-         * renders the CURRENT UNSAVED visual (`activeVisual.source`, when one
-         * is selected) inside the isolated ExperienceFrame against the live
-         * playground state. Read-only: it never mutates these drafts, never
-         * touches a store, and never forwards an action to any chat/session.
-         *
-         * IR-90A single-instance invariant: when the playground is open in the
-         * header Modal, the inline slot renders a collapsed placeholder
-         * instead of a second ExperiencePlayground (a second mounted instance
-         * would create a second in-memory driver). Playground state is
-         * ephemeral/scratch, so re-mounting on close/reopen is acceptable.
-         */}
-        {playgroundModalOpen ? (
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <span className="font-ui text-[12px] text-t3">{t("experience_editor_playground_open_in_modal")}</span>
-          </div>
-        ) : (
-          <ExperiencePlayground code={activeScript.code} visualSource={activeVisual?.source ?? null} />
-        )}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-ui text-[11px] text-t3">{t("experience_editor_visual_new")}</span>
+                {VISUAL_STARTERS.map((starter) => (
+                  <button
+                    type="button"
+                    key={starter.id}
+                    className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                    onClick={() => handleNewVisualFromStarter(starter)}
+                  >
+                    {starter.label}
+                  </button>
+                ))}
+              </div>
+
+              {activeVisual ? (
+                <>
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-s2 px-3 py-2">
+                    <span
+                      className={cn("min-w-0 truncate font-ui text-[12px]", visualSaveState === "error" ? "text-danger" : "text-t3")}
+                      title={activeVisualDraft?.error ?? undefined}
+                    >
+                      {visualSaveState === "error" ? t("retry") : visualDirty ? t("unsaved_changes") : t("saved_state")}
+                    </span>
+                    <SaveButton
+                      dirty={visualDirty}
+                      saveState={visualSaveState}
+                      resetKey={activeVisualId}
+                      onClick={() => void handleSaveVisual()}
+                      label={visualSaveState === "error" ? t("retry") : t("experience_editor_visual_save")}
+                    />
+                  </div>
+                  <input
+                    className={inputCls}
+                    type="text"
+                    value={activeVisual.name}
+                    onChange={(e) => updateVisualDraft({ name: e.target.value })}
+                    placeholder={t("experience_editor_visual_name_ph")}
+                  />
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+                    <span>{t("experience_editor_visual_api_version")}: {activeVisual.apiVersion}</span>
+                    <span>
+                      {t("experience_editor_visual_hash")}:{" "}
+                      {isNewVisual
+                        ? t("experience_editor_visual_hash_unsaved")
+                        : (activeVisualDraft?.sourceHash ? activeVisualDraft.sourceHash.slice(0, 12) : "—")}
+                    </span>
+                    <span>
+                      {t("experience_editor_visual_manifests")}:{" "}
+                      {activeVisual.compatibleManifestIds.length > 0 ? activeVisual.compatibleManifestIds.join(", ") : "—"}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* IR-83B: launch the VISUAL AI assistant (discovers the
+                        validated contract from the ACTIVE RULES source). */}
+                    <button
+                      type="button"
+                      className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                      disabled={!activeScript?.code?.trim()}
+                      onClick={() => setVisualAiHelperOpen(true)}
+                    >
+                      <Ic.brain /> {t("experience_editor_visual_ai_helper")}
+                    </button>
+                    {!activeScript?.code?.trim() && (
+                      <span className="font-ui text-[11px] italic text-t3">{t("experience_editor_visual_ai_helper_no_rules")}</span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="py-2 text-center font-ui text-[12px] italic text-t3">
+                  {t("experience_editor_visual_none")}
+                </div>
+              )}
+            </div>
+          }
+        />
       </div>
 
       {/*
        * IR-82: the universal AI assistant, thin-wired exactly like the
-       * ScriptEditor→AiAssistantModal integration. It generates OR repairs
-       * raw reviewable rules source from the selected starter, the package
-       * API reference (baked into the interactive_rules prompt asset), the
-       * current source, and the author's design direction. Output lands back
-       * in the rules draft via the normal updateScriptDraft({ code }) action —
-       * the IR-81A store invariant then keeps it UNTRUSTED (any code change
-       * drops enabled=false), so AI-generated source is NEVER auto-enabled;
-       * on a dirty buffer the modal's own diff/replace review governs
-       * acceptance (no silent blind overwrite).
+       * ScriptEditor→AiAssistantModal integration. Output lands back in the
+       * rules draft via the normal updateScriptDraft({ code }) action.
        */}
       <AiAssistantModal
         mode="full"
@@ -992,17 +904,8 @@ export function ExperienceEditor() {
       />
 
       {/*
-       * IR-83B: the universal AI assistant, thin-wired exactly like the IR-82
-       * interactive_rules integration but targeting the active VISUAL draft. It
-       * generates OR repairs raw reviewable VISUAL source from the validated game
-       * contract (discovered server-side from the active rules source via the new
-       * interactiveRulesSource channel), the current visual source, and the author's
-       * design direction. Output lands back in the VISUAL draft via the normal
-       * updateVisualDraft({ source }) action — it NEVER touches the rules draft
-       * (rules immutability). Visuals have no trusted/enabled gate (they run inside
-       * a sandboxed iframe), so the write-back is a plain source edit; on a dirty
-       * buffer the modal's own diff/replace review governs acceptance (no silent
-       * blind overwrite, no auto-persist).
+       * IR-83B: the universal AI assistant targeting the active VISUAL draft.
+       * Output lands back via the normal updateVisualDraft({ source }) action.
        */}
       <AiAssistantModal
         mode="full"
@@ -1015,45 +918,7 @@ export function ExperienceEditor() {
         onReplace={(text) => updateVisualDraft({ source: text })}
       />
 
-      {/*
-       * IR-90A: the above-the-fold playground launcher (header toolbar) opens
-       * the SAME draft-bound playground in a shared Modal. No persistent write
-       * and no second LIVE/API session is introduced — the playground never
-       * persists and never creates an API session; closing the Modal writes
-       * nothing. The inline instance is unmounted while this is open
-       * (single-instance invariant, see the inline slot above).
-       */}
-      <Modal
-        open={playgroundModalOpen}
-        onClose={() => setPlaygroundModalOpen(false)}
-        title={t("experience_editor_playground_modal_title")}
-        description={t("experience_editor_playground_modal_title")}
-      >
-        <div className="flex max-h-[88vh] w-[min(760px,94vw)] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
-          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-            <span className="text-[13px] font-semibold text-t1">{t("experience_editor_playground_modal_title")}</span>
-            <button
-              type="button"
-              aria-label={t("close")}
-              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-              onClick={() => setPlaygroundModalOpen(false)}
-            >
-              <Ic.close />
-            </button>
-          </div>
-          <div className="overflow-y-auto p-4">
-            <ExperiencePlayground code={activeScript.code} visualSource={activeVisual?.source ?? null} />
-          </div>
-        </div>
-      </Modal>
-
-      {/*
-       * IR-90A: explicit destructive delete for the active visual, confirmed
-       * via the shared DestructiveConfirmModal (same idiom as ScriptEditor).
-       * A saved visual is DELETEd server-side; a pending visual is removed
-       * locally. A live session that already pinned this visual keeps its own
-       * immutable snapshot, so deletion never mutates a pinned source.
-       */}
+      {/* IR-90A: explicit destructive delete for the active visual. */}
       {visualDeleteId && (
         <DestructiveConfirmModal
           title={t("experience_editor_visual_delete_title")}
@@ -1064,14 +929,8 @@ export function ExperienceEditor() {
         />
       )}
 
-      {/*
-       * IR-90A: dual-action destructive delete for the active experience (its
-       * rules script). Mirrors chat message deletion (MessageBlock): the
-       * primary deletes BOTH the script and the active visual; the secondary
-       * ("rules only") deletes just the script. The secondary is rendered
-       * ONLY when a visual is currently selected — otherwise the single
-       * primary is the whole action. Reuses the shared DestructiveConfirmModal.
-       */}
+      {/* IR-90A: dual-action destructive delete for the active experience (its
+          rules script). */}
       {experienceDeleteOpen && (
         <DestructiveConfirmModal
           title={t("experience_editor_delete_title")}

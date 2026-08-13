@@ -142,6 +142,25 @@ mock.module("../../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
+// The editor view now hosts ExperienceCopilotShell (ER-13c). Its session-load
+// lifecycle would hit the real experience-copilot REST client under happy-dom
+// (no server). SAFE mock: capture the real module first, then override only the
+// two lifecycle fns this test surface reaches. getExperienceCopilotActive
+// rejects → the chat pane renders its error empty state, so the heavy chat
+// subcomponents (session switcher / message list / input area) never mount
+// here; the editor pane is the only surface these tests drive.
+const getExperienceCopilotActive = mock(async () => {
+  throw new Error("no copilot session in ExperienceEditor tests");
+});
+const listExperienceCopilotSessions = mock(async () => []);
+
+const realCopilotApi = await import("../../../api/experience-copilot-api.js");
+mock.module("../../../api/experience-copilot-api.js", () => ({
+  ...realCopilotApi,
+  getExperienceCopilotActive,
+  listExperienceCopilotSessions,
+}));
+
 let ExperienceEditor: typeof import("./ExperienceEditor.js").ExperienceEditor;
 type EditorViewInstance = import("@codemirror/view").EditorView;
 let act: typeof import("@testing-library/react").act;
@@ -542,6 +561,10 @@ describe("ExperienceEditor", () => {
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
+    // The visual starter picker lives in the Visual buffer's contextual
+    // toolbar, so switch the shell to the Visual tab first.
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
+
     // Create a pending visual from the Choice starter (the editor's visual
     // starter picker, not the rules starter picker).
     fireEvent.click(await findByText("Choice"));
@@ -661,9 +684,13 @@ describe("ExperienceEditor", () => {
     // script and select the saved visual. The boundary is unchanged.
     serverScripts = [{ ...baseScript }];
     serverVisuals = [{ ...baseVisual }];
-    const { container, findByText, getAllByRole } = render(<ExperienceEditor />);
+    const { container, findByText, getAllByRole, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
+
+    // Switch to the Visual tab (the dropdown + duplicate button live in the
+    // visual toolbar slot).
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
 
     // Select the saved visual so it is active (the duplicate targets it).
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
@@ -696,35 +723,30 @@ describe("ExperienceEditor", () => {
   });
 
   // ── IR-90A: above-the-fold playground launcher + explicit visual delete ──
-  it("opens the draft-bound playground from an above-the-fold launcher in a shared Modal (single instance, no persistent write)", async () => {
+  it("opens the draft-bound playground from the shell sandbox button in a modal (single instance, no persistent write)", async () => {
     serverScripts = [{ ...baseScript }];
-    const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
+    const { container, findByText, getByTestId, queryByTestId } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
 
-    // The launcher is rendered ABOVE the rules editor (visible without scrolling).
-    const launcher = getByRole("button", { name: "experience_editor_playground_open" });
-    const rulesEditor = container.querySelector(".cm-editor");
-    expect(rulesEditor).not.toBeNull();
-    expect(Boolean(rulesEditor!.compareDocumentPosition(launcher) & Node.DOCUMENT_POSITION_PRECEDING)).toBe(true);
+    // IR-90A: exactly one ExperiencePlayground lives in the tree — the shell's
+    // sandbox modal. None is mounted until that modal opens.
+    expect(playgroundInstanceCount()).toBe(0);
 
-    // Before opening: exactly one playground instance (inline, collapsed).
-    expect(playgroundInstanceCount()).toBe(1);
+    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
 
-    fireEvent.click(launcher);
-
-    // The inline slot collapses to a placeholder; the SAME draft-bound
-    // playground renders inside the Modal. Exactly ONE instance is mounted at
-    // a time (the inline instance is unmounted while the modal is open — no
-    // second in-memory driver).
-    await waitFor(() => expect(queryByText("experience_editor_playground_open_in_modal")).not.toBeNull());
-    expect(playgroundInstanceCount()).toBe(1);
+    // The sandbox modal mounted with the SAME draft-bound playground.
+    await waitFor(() => {
+      expect(getByTestId("copilot-sandbox-modal")).toBeDefined();
+      expect(playgroundInstanceCount()).toBe(1);
+    });
 
     // Closing the modal writes nothing — no create/update/delete API call fires
     // (the playground never persists and never creates an API session).
-    const closeBtn = [...document.body.querySelectorAll('button[aria-label="close"]')][0]!;
+    const closeBtn = [...document.body.querySelectorAll('button[aria-label="experience_setup_close"]')][0]!;
     fireEvent.click(closeBtn);
-    await waitFor(() => expect(queryByText("experience_editor_playground_open_in_modal")).toBeNull());
-    expect(playgroundInstanceCount()).toBe(1);
+    await waitFor(() => expect(queryByTestId("copilot-sandbox-modal")).toBeNull());
+    expect(playgroundInstanceCount()).toBe(0);
     expect(createScript).not.toHaveBeenCalled();
     expect(updateScript).not.toHaveBeenCalled();
     expect(createExperienceVisual).not.toHaveBeenCalled();
@@ -734,8 +756,10 @@ describe("ExperienceEditor", () => {
   it("deletes a saved visual on confirm via deleteExperienceVisual and removes it from the list + draft", async () => {
     serverScripts = [{ ...baseScript }];
     serverVisuals = [{ ...baseVisual }];
-    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
+
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
 
     // Select the saved visual from the visual dropdown.
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
@@ -755,9 +779,11 @@ describe("ExperienceEditor", () => {
     // created from the editor's visual starter picker instead. The boundary is
     // unchanged: a local-id visual is removed locally with no API call.
     serverScripts = [{ ...baseScript }];
-    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
+
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
 
     // Create a pending visual from the Choice starter.
     fireEvent.click(await findByText("Choice"));
@@ -774,8 +800,9 @@ describe("ExperienceEditor", () => {
     serverScripts = [{ ...baseScript }];
     serverVisuals = [{ ...baseVisual }];
     deleteExperienceVisual.mockImplementationOnce(async () => { throw new Error("network down"); });
-    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(visualDeleteButton(container));
@@ -794,8 +821,9 @@ describe("ExperienceEditor", () => {
     // time, independent of the resource row (the editor has no session handle).
     const pinnedBySession = serverVisuals[0]!.source;
 
-    const { container, findByText } = render(<ExperienceEditor />);
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(visualDeleteButton(container));
@@ -847,21 +875,19 @@ describe("ExperienceEditor", () => {
     expect(await findByText(/syntax error at line 1/)).toBeTruthy();
   });
 
-  it("hides the raw InteractiveTester by default and reveals it after disclosure", async () => {
+  it("reveals the InteractiveTester in the shell's tester modal", async () => {
     serverScripts = [{ ...baseScript }];
-    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    const { container, findByText, getByTestId, queryByTestId } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
-    // The InteractiveTester is absent until the disclosure is expanded.
-    expect(queryByText("experience_tester_title")).toBeNull();
+    // The InteractiveTester is absent until the tester modal opens.
+    expect(queryByTestId("copilot-tester-modal")).toBeNull();
 
-    // Expand the tester section.
-    const testerBtn = [...container.querySelectorAll("button")].find(
-      (b) => (b.textContent ?? "").includes("experience_editor_tester_section"),
-    );
-    if (!testerBtn) throw new Error("tester disclosure button missing");
-    fireEvent.click(testerBtn);
+    fireEvent.click(getByTestId("copilot-toolbar-tester"));
+
+    expect(getByTestId("copilot-tester-modal")).toBeDefined();
+    // InteractiveTester's collapsed header carries the rules-tester marker.
     expect(await findByText("experience_tester_title")).toBeTruthy();
   });
 
@@ -939,8 +965,9 @@ describe("ExperienceEditor", () => {
   it("full delete removes the script and the active visual and clears both", async () => {
     serverScripts = [{ ...baseScript }];
     serverVisuals = [{ ...baseVisual }];
-    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    const { container, findByText, queryByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(experienceDeleteButton(container));
@@ -959,8 +986,9 @@ describe("ExperienceEditor", () => {
   it("rules-only delete removes the script but keeps the active visual", async () => {
     serverScripts = [{ ...baseScript }];
     serverVisuals = [{ ...baseVisual }];
-    const { container, findByText } = render(<ExperienceEditor />);
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
     fireEvent.click(experienceDeleteButton(container));
@@ -1024,25 +1052,27 @@ describe("ExperienceEditor", () => {
       { ...baseVisual },
       { ...baseVisual, id: "vis_2", name: "Visual Two", source: visualTwoSource },
     ];
-    const { container, findByText } = render(<ExperienceEditor />);
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
+
+    // Switch to the Visual buffer (the dropdown + source editor live there).
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
 
     // Select vis_1 (the dropdown shows its placeholder while none is active).
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 
-    // A second CodeMirror editor now mounts in DOM order: [rules, visual].
-    await waitFor(() => {
-      expect(container.querySelectorAll(".cm-editor").length).toBe(2);
-    });
-    const [, visualView] = await codeViews(container);
+    // The single shell CodeEditor now shows the selected visual's source.
+    const [visualView] = await codeViews(container);
     if (!visualView) throw new Error("visual editor missing");
-    expect(visualView.state.doc.toString()).toBe(baseVisual.source);
+    await waitFor(() => {
+      expect(visualView.state.doc.toString()).toBe(baseVisual.source);
+    });
 
     // Switch to vis_2 (the trigger now displays vis_1's name).
     await pickDropdown({ container, baseElement: document.body }, "Existing Visual", "Visual Two");
 
-    // The SAME visual editor now shows vis_2's source (external-value sync).
+    // The SAME editor now shows vis_2's source (external-value sync).
     await waitFor(() => {
       expect(visualView.state.doc.toString()).toBe(visualTwoSource);
     });
@@ -1058,6 +1088,8 @@ describe("ExperienceEditor", () => {
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
+
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
 
     await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
 

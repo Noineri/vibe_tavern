@@ -442,3 +442,34 @@ describe("ExperienceCopilotShell — Apply forwarding", () => {
     expect(onApply).toHaveBeenCalledWith({ rules: "new rules" });
   });
 });
+
+describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
+  it("renders rulesToolbar in the Rules buffer and hides it in the Visual buffer", async () => {
+    const { getByTestId, queryByTestId, getByRole } = renderShell({
+      rulesToolbar: <div data-testid="rules-toolbar-slot">rules toolbar</div>,
+    });
+    await flushSessionLoad();
+
+    // Default editorBuffer is rules → the rules slot is rendered.
+    expect(getByTestId("rules-toolbar-slot")).toBeDefined();
+
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    expect(queryByTestId("rules-toolbar-slot")).toBeNull();
+  });
+
+  it("renders visualToolbar in the Visual buffer and hides it in the Rules buffer", async () => {
+    const { getByTestId, queryByTestId, getByRole } = renderShell({
+      visualToolbar: <div data-testid="visual-toolbar-slot">visual toolbar</div>,
+    });
+    await flushSessionLoad();
+
+    // Default editorBuffer is rules → the visual slot is absent.
+    expect(queryByTestId("visual-toolbar-slot")).toBeNull();
+
+    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    expect(getByTestId("visual-toolbar-slot")).toBeDefined();
+
+    fireEvent.click(getByRole("radio", { name: "Rules" }));
+    expect(queryByTestId("visual-toolbar-slot")).toBeNull();
+  });
+});

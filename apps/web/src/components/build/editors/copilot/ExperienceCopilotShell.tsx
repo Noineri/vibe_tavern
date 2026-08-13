@@ -64,6 +64,12 @@ export interface ExperienceCopilotShellProps {
   onVisualChange: (source: string) => void;
   /** Copilot Apply: parent writes the proposed buffers to the draft stores. */
   onApply: (patch: ExperienceCopilotApplyPatch) => void;
+  /** Contextual toolbar rendered BELOW the editor toolbar when the Rules
+   *  buffer is active. Optional — undefined renders nothing (no gap). */
+  rulesToolbar?: ReactNode;
+  /** Contextual toolbar rendered BELOW the editor toolbar when the Visual
+   *  buffer is active. Optional — undefined renders nothing (no gap). */
+  visualToolbar?: ReactNode;
 }
 
 type MobileTab = "chat" | "edit";
@@ -81,6 +87,8 @@ export function ExperienceCopilotShell({
   visualSource,
   onVisualChange,
   onApply,
+  rulesToolbar,
+  visualToolbar,
 }: ExperienceCopilotShellProps) {
   const isMobile = useIsMobile();
   const { t } = useT();
@@ -349,6 +357,7 @@ export function ExperienceCopilotShell({
           />
         </div>
       </div>
+      {editorBuffer === "rules" ? rulesToolbar : visualToolbar}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <div className="relative rounded-md border border-border bg-bg">
           <CodeEditor
