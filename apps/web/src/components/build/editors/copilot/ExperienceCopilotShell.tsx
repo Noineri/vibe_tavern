@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
+import { Modal } from "../../../shared/Modal.js";
 import { CodeEditor } from "../../../shared/CodeEditor.js";
 import { InteractiveTester } from "../InteractiveTester.js";
 import { ExperiencePlayground } from "../ExperiencePlayground.js";
+import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useT } from "../../../../i18n/context.js";
 import { useExperienceCopilotController } from "../../../../hooks/use-experience-copilot-controller.js";
@@ -29,25 +31,27 @@ import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
 import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
 
 /**
- * ExperienceCopilotShell (ER-11d) — the visible 3-pane copilot editor surface:
- * chat-left (propose rules/visual edits → review activity cards → Apply),
- * editor-right (manually edit the two canonical buffers via CodeEditor), and
- * test-bottom (run the rules buffer through InteractiveTester). On mobile it
- * collapses to a 3-tab `[Chat][Edit][Test]` bar.
+ * ExperienceCopilotShell (ER-11d / ER-13b′) — the visible 2-pane copilot
+ * editor surface: chat-left (propose rules/visual edits → review activity
+ * cards → Apply) and editor-right (manually edit the two canonical buffers via
+ * CodeEditor). The tester / preview / sandbox surfaces are NO LONGER a bottom
+ * panel (ER-13b): they are top-of-editor toolbar buttons that open modals
+ * (Tester → InteractiveTester, Preview → ExperienceFrame, Sandbox →
+ * ExperiencePlayground). On mobile it collapses to a 2-tab `[Chat][Edit]` bar.
  *
  * CONTROLLED. This component owns NO canonical buffer text — `rulesCode` /
  * `visualSource` are props from the parent (ER-13 wires this into
  * `ExperienceEditor`), and every edit routes back through `onRulesChange` /
  * `onVisualChange`. The only buffers the shell holds are session state
- * (threadId / messages / loading / error), the provider/model selection, and
- * the UI-only tab selection.
+ * (threadId / messages / loading / error), the provider/model selection, the
+ * UI-only tab selection, and the toolbar modal open flags.
  *
- * Responsive pattern mirrors `CoauthorMode`: both/three panes stay MOUNTED
- * across mobile tab switches (only `hidden` toggles) so the CodeMirror editor
- * and the chat scroll positions survive. The editor/test panes reuse the same
- * components on desktop and mobile; only the chat InputArea forks
- * (desktop → `ExperienceCopilotInputArea`, mobile →
- * `ExperienceCopilotMobileInputArea`), chosen via the shared `useIsMobile` hook.
+ * Responsive pattern mirrors `CoauthorMode`: both panes stay MOUNTED across
+ * mobile tab switches (only `hidden` toggles) so the CodeMirror editor and the
+ * chat scroll positions survive. The editor pane reuses the same components on
+ * desktop and mobile; only the chat InputArea forks (desktop →
+ * `ExperienceCopilotInputArea`, mobile → `ExperienceCopilotMobileInputArea`),
+ * chosen via the shared `useIsMobile` hook.
  */
 
 export interface ExperienceCopilotShellProps {
@@ -62,7 +66,7 @@ export interface ExperienceCopilotShellProps {
   onApply: (patch: ExperienceCopilotApplyPatch) => void;
 }
 
-type MobileTab = "chat" | "edit" | "test";
+type MobileTab = "chat" | "edit";
 type EditorBuffer = "rules" | "visual";
 
 const BUFFER_OPTIONS = [
@@ -97,6 +101,11 @@ export function ExperienceCopilotShell({
   // ── UI-only tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
   const [editorBuffer, setEditorBuffer] = useState<EditorBuffer>("rules");
+
+  // ── Toolbar modal open state (tester / preview / sandbox) ────────────────
+  const [testerOpen, setTesterOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [sandboxOpen, setSandboxOpen] = useState(false);
 
   // Default the provider to the first available profile once known.
   useEffect(() => {
@@ -312,13 +321,33 @@ export function ExperienceCopilotShell({
 
   const editorPane = (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
-      <div className="flex shrink-0 items-center border-b border-border bg-surface px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
         <SegmentedControl
           value={editorBuffer}
           options={BUFFER_OPTIONS}
           onChange={(value) => setEditorBuffer(value === "visual" ? "visual" : "rules")}
           compact
         />
+        <div className="flex items-center gap-1.5">
+          <ToolbarButton
+            label={t("experience_copilot_tester")}
+            icon={<Icons.Terminal />}
+            onClick={() => setTesterOpen(true)}
+            testId="copilot-toolbar-tester"
+          />
+          <ToolbarButton
+            label={t("experience_copilot_preview")}
+            icon={<Icons.Eye />}
+            onClick={() => setPreviewOpen(true)}
+            testId="copilot-toolbar-preview"
+          />
+          <ToolbarButton
+            label={t("experience_copilot_sandbox")}
+            icon={<Icons.Dice />}
+            onClick={() => setSandboxOpen(true)}
+            testId="copilot-toolbar-sandbox"
+          />
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <div className="relative rounded-md border border-border bg-bg">
@@ -333,30 +362,57 @@ export function ExperienceCopilotShell({
     </div>
   );
 
-  /**
-   * Mode-aware bottom panel (ER-13b). Per the user's vision — step 1 is «снизу
-   * панель тестирования правил», step 2 is «превью, которое обновляется снизу
-   * как панель тестирования визуала» — the panel follows the active editor
-   * sub-tab: the Rules tab shows the rules test panel (InteractiveTester), the
-   * Visual tab shows the visual preview/play panel (ExperiencePlayground). Both
-   * run against the current UNSAVED buffers (`rulesCode` / `visualSource`), and
-   * both are driven by the SAME `editorBuffer` state the editor SegmentedControl
-   * toggles, so switching the editor sub-tab also swaps this bottom pane. This
-   * applies in BOTH placements: the desktop bottom pane and the mobile Test tab
-   * (they render this same `testPane`). Exactly one ExperiencePlayground is
-   * mounted here (the visual-mode branch), satisfying the IR-90A single-instance
-   * invariant.
-   */
-  const testPane = (
-    <div className="shrink-0 border-t border-border bg-bg">
-      <div className="max-h-[300px] overflow-y-auto">
-        {editorBuffer === "rules" ? (
-          <InteractiveTester code={rulesCode} />
+  // ── Toolbar modals (tester / preview / sandbox) ──────────────────────────
+  // The tester/preview/sandbox surfaces moved OUT of a bottom panel (ER-13b)
+  // into top-of-editor toolbar buttons that open these modals. Exactly one
+  // ExperiencePlayground is mounted here (the sandbox modal) — the IR-90A
+  // single-instance invariant holds. Exactly one ExperienceFrame is mounted
+  // (the preview modal); the sandbox's own frame is nested inside
+  // ExperiencePlayground, not rendered directly by this shell.
+  const modals = (
+    <>
+      <ShellModal
+        open={testerOpen}
+        onClose={() => setTesterOpen(false)}
+        title={t("experience_copilot_tester_title")}
+        testId="copilot-tester-modal"
+      >
+        <InteractiveTester code={rulesCode} />
+      </ShellModal>
+
+      <ShellModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title={t("experience_copilot_preview_title")}
+        testId="copilot-preview-modal"
+      >
+        {visualSource.trim() !== "" ? (
+          // Disconnected visual render: no session, no state push — just the
+          // visual's own HTML/CSS/JS as authored. Actions/errors are no-ops.
+          <ExperienceFrame
+            visualSource={visualSource}
+            sessionId="preview"
+            initialRevision={0}
+            onAction={() => {}}
+            onError={() => {}}
+          />
         ) : (
-          <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} />
+          <EmptyState
+            icon={<Icons.Eye />}
+            title={t("experience_playground_no_visual")}
+          />
         )}
-      </div>
-    </div>
+      </ShellModal>
+
+      <ShellModal
+        open={sandboxOpen}
+        onClose={() => setSandboxOpen(false)}
+        title={t("experience_copilot_sandbox_title")}
+        testId="copilot-sandbox-modal"
+      >
+        <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} />
+      </ShellModal>
+    </>
   );
 
   if (isMobile) {
@@ -369,7 +425,6 @@ export function ExperienceCopilotShell({
         >
           <TabButton label="Chat" active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
           <TabButton label="Edit" active={activeTab === "edit"} onClick={() => setActiveTab("edit")} />
-          <TabButton label="Test" active={activeTab === "test"} onClick={() => setActiveTab("test")} />
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
@@ -379,10 +434,8 @@ export function ExperienceCopilotShell({
           <div className={cn("flex min-h-0 flex-1 flex-col", activeTab !== "edit" && "hidden")} data-testid="copilot-pane-edit">
             {editorPane}
           </div>
-          <div className={cn("flex min-h-0 flex-1 flex-col", activeTab !== "test" && "hidden")} data-testid="copilot-pane-test">
-            {testPane}
-          </div>
         </div>
+        {modals}
       </div>
     );
   }
@@ -390,10 +443,8 @@ export function ExperienceCopilotShell({
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex w-[380px] shrink-0 flex-col border-r border-border">{chatPane}</div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        {editorPane}
-        {testPane}
-      </div>
+      <div className="flex min-w-0 flex-1 flex-col">{editorPane}</div>
+      {modals}
     </div>
   );
 }
@@ -418,5 +469,68 @@ function TabButton({ label, active, onClick }: TabButtonProps) {
     >
       {label}
     </button>
+  );
+}
+
+interface ToolbarButtonProps {
+  label: string;
+  icon: ReactNode;
+  onClick: () => void;
+  testId: string;
+}
+
+function ToolbarButton({ label, icon, onClick, testId }: ToolbarButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testId}
+      className="flex items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+interface ShellModalProps {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  testId: string;
+  children: ReactNode;
+}
+
+/** Shared modal chrome for the three toolbar surfaces (tester / preview /
+ *  sandbox). Reuses the app's shared {@link Modal} shell; the panel mirrors the
+ *  ExperienceSetupModal header/body pattern (title + close header, scrollable
+ *  body). Full-screen on mobile via the shared Modal. */
+function ShellModal({ open, onClose, title, testId, children }: ShellModalProps) {
+  const isMobile = useIsMobile();
+  const { t } = useT();
+  return (
+    <Modal open={open} onClose={onClose} title={title} description={title}>
+      <div
+        className={cn(
+          isMobile
+            ? "flex h-full w-full flex-col bg-surface"
+            : "flex max-h-[88vh] w-[min(760px,94vw)] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl",
+        )}
+        data-testid={testId}
+      >
+        <header className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+          <h2 className="min-w-0 flex-1 truncate font-ui text-sm font-semibold text-t1">{title}</h2>
+          <button
+            type="button"
+            className="rounded p-1 text-t4 hover:bg-s3 hover:text-t2"
+            onClick={onClose}
+            aria-label={t("experience_setup_close")}
+          >
+            <Icons.Close />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
+      </div>
+    </Modal>
   );
 }

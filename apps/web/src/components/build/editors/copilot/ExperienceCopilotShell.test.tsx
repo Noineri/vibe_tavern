@@ -85,6 +85,16 @@ mock.module("@radix-ui/react-popover", () => ({
   Anchor: () => null,
 }));
 
+// ExperienceFrame renders a sandboxed iframe served from a blob URL; its
+// DOM/CSP/URL lifecycle is pinned in ExperienceFrame.test.tsx. The shell test
+// only needs to assert the shell mounts the frame in the preview modal, so
+// replace the component with a marker stub (SAFE: capture real first, spread).
+const realFrame = await import("../../../experience/ExperienceFrame.js");
+mock.module("../../../experience/ExperienceFrame.js", () => ({
+  ...realFrame,
+  ExperienceFrame: () => <div data-testid="experience-frame-stub" />,
+}));
+
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let act: typeof import("@testing-library/react").act;
@@ -322,78 +332,83 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
   });
 });
 
-describe("ExperienceCopilotShell — mode-aware bottom panel (ER-13b)", () => {
+describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () => {
   // Identity i18n (no LocaleProvider mounted): `useT` falls back to the
   // key-as-string default, so the component markers render their i18n keys
   // verbatim — matching the InteractiveTester/ExperienceEditor test pattern.
-  it("shows the rules tester (not the playground) in Rules mode by default", async () => {
-    const { getByText, queryByText } = renderShell();
+  it("renders the three toolbar buttons in the editor pane", async () => {
+    const { getByTestId } = renderShell();
     await flushSessionLoad();
 
-    // Default editorBuffer is "rules" → the bottom panel holds the tester.
-    expect(getByText("experience_tester_title")).toBeDefined();
-    expect(queryByText("experience_playground_title")).toBeNull();
+    expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
+    expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
+    expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
   });
 
-  it("swaps the bottom panel to the visual playground when the editor sub-tab is Visual", async () => {
-    const { getByText, getByRole, queryByText } = renderShell();
+  it("opens the Tester modal containing InteractiveTester", async () => {
+    const { getByTestId, getByText } = renderShell();
     await flushSessionLoad();
 
-    // The same SegmentedControl that swaps the CodeEditor buffer also swaps
-    // this bottom pane (both read the shared `editorBuffer` state).
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
+    fireEvent.click(getByTestId("copilot-toolbar-tester"));
 
-    expect(getByText("experience_playground_title")).toBeDefined();
-    expect(queryByText("experience_tester_title")).toBeNull();
+    expect(getByTestId("copilot-tester-modal")).toBeDefined();
+    // InteractiveTester's collapsed header carries the rules-tester marker.
+    expect(getByText("experience_tester_title")).toBeDefined();
   });
 
-  it("restores the rules tester when switching back to Rules", async () => {
-    const { getByText, getByRole, queryByText } = renderShell();
+  it("opens the Preview modal containing ExperienceFrame", async () => {
+    const { getByTestId } = renderShell();
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "Visual" }));
-    expect(getByText("experience_playground_title")).toBeDefined();
-    expect(queryByText("experience_tester_title")).toBeNull();
+    fireEvent.click(getByTestId("copilot-toolbar-preview"));
 
-    fireEvent.click(getByRole("radio", { name: "Rules" }));
-    expect(getByText("experience_tester_title")).toBeDefined();
-    expect(queryByText("experience_playground_title")).toBeNull();
+    expect(getByTestId("copilot-preview-modal")).toBeDefined();
+    expect(getByTestId("experience-frame-stub")).toBeDefined();
+  });
+
+  it("opens the Sandbox modal containing ExperiencePlayground", async () => {
+    const { getByTestId, getByText } = renderShell();
+    await flushSessionLoad();
+
+    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+
+    expect(getByTestId("copilot-sandbox-modal")).toBeDefined();
+    // ExperiencePlayground's collapsed header carries the playground marker.
+    expect(getByText("experience_playground_title")).toBeDefined();
   });
 });
 
 describe("ExperienceCopilotShell — mobile tabs", () => {
-  it("keeps all three panes mounted and toggles visibility on tab switch", async () => {
+  it("keeps both panes mounted and toggles visibility on a 2-tab switch", async () => {
     mobileOverride = true;
     getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
 
-    const { getByTestId, getByRole } = renderShell();
+    const { getByTestId, getByRole, queryByTestId, queryByRole } = renderShell();
 
     // Wait for session load so the chat pane reaches its thread branch.
     await flushSessionLoad();
 
-    // Tab bar + all three panes are mounted.
+    // 2-tab bar + both panes are mounted; the Test tab/pane is gone.
     expect(getByRole("tablist")).toBeDefined();
+    expect(queryByRole("tab", { name: "Test" })).toBeNull();
     const chatPane = getByTestId("copilot-pane-chat");
     const editPane = getByTestId("copilot-pane-edit");
-    const testPane = getByTestId("copilot-pane-test");
     expect(chatPane).toBeDefined();
     expect(editPane).toBeDefined();
-    expect(testPane).toBeDefined();
+    expect(queryByTestId("copilot-pane-test")).toBeNull();
 
     // Default active tab is chat.
     expect(hasHiddenClass(chatPane)).toBe(false);
     expect(hasHiddenClass(editPane)).toBe(true);
-    expect(hasHiddenClass(testPane)).toBe(true);
 
     fireEvent.click(getByRole("tab", { name: "Edit" }));
     expect(hasHiddenClass(chatPane)).toBe(true);
     expect(hasHiddenClass(editPane)).toBe(false);
-    expect(hasHiddenClass(testPane)).toBe(true);
 
-    fireEvent.click(getByRole("tab", { name: "Test" }));
-    expect(hasHiddenClass(chatPane)).toBe(true);
-    expect(hasHiddenClass(editPane)).toBe(true);
-    expect(hasHiddenClass(testPane)).toBe(false);
+    // The three toolbar buttons live in the Edit pane toolbar (same as desktop).
+    expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
+    expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
+    expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
   });
 });
 
