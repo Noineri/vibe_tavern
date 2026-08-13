@@ -24,6 +24,14 @@ export interface UiSettings {
   coauthorMaxTokens: number | null;
   /** Null inherits the bound profile/model's effective context budget. */
   coauthorContextBudget: number | null;
+  /** True once the user starred the repo or opted out — silences both prompts. */
+  githubStarred: boolean;
+  /** Monotonic count of user messages ever sent. Server-owned. */
+  userMessageCount: number;
+  /** Value of userMessageCount at which the star modal becomes due. */
+  nextStarPromptAt: number;
+  /** How many times "Later" was chosen — selects the backoff interval. */
+  starPromptDeferrals: number;
   updatedAt: string;
 }
 
@@ -42,6 +50,10 @@ export interface UiSettingsUpdate {
   coauthorModelName?: string | null;
   coauthorMaxTokens?: number | null;
   coauthorContextBudget?: number | null;
+  githubStarred?: boolean;
+  userMessageCount?: number;
+  nextStarPromptAt?: number;
+  starPromptDeferrals?: number;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -60,6 +72,10 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   coauthorModelName: null,
   coauthorMaxTokens: null,
   coauthorContextBudget: null,
+  githubStarred: false,
+  userMessageCount: 0,
+  nextStarPromptAt: 100,
+  starPromptDeferrals: 0,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -109,6 +125,10 @@ export class UiSettingsStore {
       coauthorModelName: partial.coauthorModelName ?? UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: partial.coauthorMaxTokens ?? UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
       coauthorContextBudget: partial.coauthorContextBudget ?? UI_SETTINGS_DEFAULTS.coauthorContextBudget,
+      githubStarred: partial.githubStarred ?? UI_SETTINGS_DEFAULTS.githubStarred,
+      userMessageCount: partial.userMessageCount ?? UI_SETTINGS_DEFAULTS.userMessageCount,
+      nextStarPromptAt: partial.nextStarPromptAt ?? UI_SETTINGS_DEFAULTS.nextStarPromptAt,
+      starPromptDeferrals: partial.starPromptDeferrals ?? UI_SETTINGS_DEFAULTS.starPromptDeferrals,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -134,6 +154,10 @@ export class UiSettingsStore {
       coauthorModelName: UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
       coauthorContextBudget: UI_SETTINGS_DEFAULTS.coauthorContextBudget,
+      githubStarred: UI_SETTINGS_DEFAULTS.githubStarred,
+      userMessageCount: UI_SETTINGS_DEFAULTS.userMessageCount,
+      nextStarPromptAt: UI_SETTINGS_DEFAULTS.nextStarPromptAt,
+      starPromptDeferrals: UI_SETTINGS_DEFAULTS.starPromptDeferrals,
       updatedAt: this.clock.now(),
     }).returning();
 
@@ -157,6 +181,10 @@ export class UiSettingsStore {
       coauthorModelName: row.coauthorModelName ?? null,
       coauthorMaxTokens: row.coauthorMaxTokens ?? null,
       coauthorContextBudget: row.coauthorContextBudget ?? null,
+      githubStarred: row.githubStarred,
+      userMessageCount: row.userMessageCount,
+      nextStarPromptAt: row.nextStarPromptAt,
+      starPromptDeferrals: row.starPromptDeferrals,
       updatedAt: row.updatedAt,
     };
   }

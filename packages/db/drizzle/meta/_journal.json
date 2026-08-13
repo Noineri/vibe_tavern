@@ -232,6 +232,13 @@
       "when": 1786138099667,
       "tag": "0032_lethal_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1786654385110,
+      "tag": "0033_youthful_black_panther",
+      "breakpoints": true
     }
   ]
 }
