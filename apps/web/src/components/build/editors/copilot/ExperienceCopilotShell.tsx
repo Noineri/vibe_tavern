@@ -397,8 +397,9 @@ export function ExperienceCopilotShell({
         <>
           {editorBuffer === "rules" ? rulesToolbar : visualToolbar}
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <div className="relative rounded-md border border-border bg-bg">
+            <div className="relative h-full min-h-0 rounded-md border border-border bg-bg">
               <CodeEditor
+                className="h-full"
                 value={editorBuffer === "rules" ? rulesCode : visualSource}
                 onChange={editorBuffer === "rules" ? onRulesChange : onVisualChange}
                 minHeight="300px"
@@ -497,8 +498,8 @@ export function ExperienceCopilotShell({
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="flex w-[440px] shrink-0 flex-col border-r border-border">{chatPane}</div>
-      <div className="flex min-w-0 flex-1 flex-col">{editorPane}</div>
+      <div className="flex min-h-0 w-[440px] shrink-0 flex-col border-r border-border">{chatPane}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{editorPane}</div>
       {modals}
     </div>
   );

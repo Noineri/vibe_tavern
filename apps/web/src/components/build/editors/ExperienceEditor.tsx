@@ -868,14 +868,20 @@ export function ExperienceEditor() {
 
               {activeVisual ? (
                 <>
-                  <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-s2 px-3 py-2">
-                    <span
-                      className={cn("min-w-0 truncate font-ui text-[12px]", visualSaveState === "error" ? "text-danger" : "text-t3")}
+                  <div className="flex items-center gap-2">
+                    <input
+                      className={cn(inputCls, "min-w-0 flex-1")}
+                      type="text"
+                      value={activeVisual.name}
+                      onChange={(e) => updateVisualDraft({ name: e.target.value })}
+                      placeholder={t("experience_editor_visual_name_ph")}
                       title={activeVisualDraft?.error ?? undefined}
-                    >
-                      {visualSaveState === "error" ? t("retry") : visualDirty ? t("unsaved_changes") : t("saved_state")}
-                    </span>
+                    />
+                    {visualDirty && (
+                      <span className="shrink-0 whitespace-nowrap font-ui text-[12px] text-t3">{t("unsaved_changes")}</span>
+                    )}
                     <SaveButton
+                      className="shrink-0"
                       dirty={visualDirty}
                       saveState={visualSaveState}
                       resetKey={activeVisualId}
@@ -883,13 +889,6 @@ export function ExperienceEditor() {
                       label={visualSaveState === "error" ? t("retry") : t("experience_editor_visual_save")}
                     />
                   </div>
-                  <input
-                    className={inputCls}
-                    type="text"
-                    value={activeVisual.name}
-                    onChange={(e) => updateVisualDraft({ name: e.target.value })}
-                    placeholder={t("experience_editor_visual_name_ph")}
-                  />
                   <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
                     <span>{t("experience_editor_visual_api_version")}: {activeVisual.apiVersion}</span>
                     <span>

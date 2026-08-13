@@ -10,6 +10,7 @@ const rpTheme = EditorView.theme(
   {
     "&": {
       fontSize: "14px",
+      height: "100%",
       backgroundColor: "var(--syn-bg)",
       color: "var(--t1)",
       borderRadius: "6px",
