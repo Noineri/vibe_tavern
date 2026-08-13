@@ -5,7 +5,7 @@ import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { ToolbarSelect } from "../../../shared/ToolbarSelect.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
-import { useToolCapableModels } from "../../../coauthor/useToolCapableModels.js";
+import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useT } from "../../../../i18n/context.js";
 
 /**
@@ -17,8 +17,8 @@ import { useT } from "../../../../i18n/context.js";
  * context token counter, and (RP) chat-pipeline send. The provider/model picker
  * is the controlled counterpart of the co-author favorites pill: the available
  * PROVIDER list is the global `useProviderDataStore.profiles` (the same source
- * the co-author binding reads), and the MODEL list is `useToolCapableModels`
- * (read-only — a non-tool model would silently break the copilot's tool loop).
+ * the co-author binding reads), and the MODEL list is `useProviderModels`
+ * (all of the provider's models — same source as the co-author picker).
  */
 export interface ExperienceCopilotInputAreaProps {
   isSending: boolean;
@@ -37,7 +37,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
   const { t } = useT();
 
   const profiles = useProviderDataStore((s) => s.profiles);
-  const { models } = useToolCapableModels(providerProfileId);
+  const { models } = useProviderModels(providerProfileId);
 
   const activeProfile = profiles.find((p) => p.id === providerProfileId) ?? null;
   const activeModelLabel = models.find((m) => m.id === model)?.label ?? model ?? "";

@@ -135,7 +135,7 @@ function msg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilo
 }
 
 // Two profiles; p1 carries one tool-capable cached model so the REAL
-// `useToolCapableModels` hook serves the model list from cache (no fetch).
+// `useProviderModels` hook serves the model list from cache (no fetch).
 const PROFILES = [
   {
     id: "p1",

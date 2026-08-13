@@ -4,7 +4,7 @@ import { Icons } from "../../../shared/icons.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { ToolbarSelect } from "../../../shared/ToolbarSelect.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
-import { useToolCapableModels } from "../../../coauthor/useToolCapableModels.js";
+import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useT } from "../../../../i18n/context.js";
 import type { ExperienceCopilotInputAreaProps } from "./ExperienceCopilotInputArea.js";
 
@@ -26,7 +26,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
   const { t } = useT();
 
   const profiles = useProviderDataStore((s) => s.profiles);
-  const { models } = useToolCapableModels(providerProfileId);
+  const { models } = useProviderModels(providerProfileId);
 
   const activeProfile = profiles.find((p) => p.id === providerProfileId) ?? null;
   const activeModelLabel = models.find((m) => m.id === model)?.label ?? model ?? "";

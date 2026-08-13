@@ -14,7 +14,7 @@ import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useT } from "../../../../i18n/context.js";
 import { useExperienceCopilotController } from "../../../../hooks/use-experience-copilot-controller.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
-import { useToolCapableModels } from "../../../coauthor/useToolCapableModels.js";
+import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
 import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
 import type { ExperienceCopilotApplyPatch } from "../../../../lib/experience-copilot-apply.js";
@@ -111,7 +111,7 @@ export function ExperienceCopilotShell({
   const profiles = useProviderDataStore((s) => s.profiles);
   const [providerProfileId, setProviderProfileId] = useState<string | null>(null);
   const [model, setModel] = useState<string | undefined>(undefined);
-  const { models } = useToolCapableModels(providerProfileId);
+  const { models } = useProviderModels(providerProfileId);
 
   // ── UI-only tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
@@ -130,7 +130,7 @@ export function ExperienceCopilotShell({
     setProviderProfileId(first.id);
   }, [profiles, providerProfileId]);
 
-  // Default the model to the first tool-capable model once known.
+  // Default the model to the first available model once known.
   useEffect(() => {
     if (model !== undefined) return;
     const first = models[0];
