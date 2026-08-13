@@ -8,12 +8,13 @@
  * interactive rules scripts and their independent visuals.
  *
  * What an author gets:
- *  - A starter picker: the five frozen rules starters (IR-81A
- *    `RULES_STARTERS`) or a blank start. Picking one lands in the editor with
- *    an UNSAVED rules draft PLUS a paired UNSAVED visual draft (Round ↔
- *    Choice, Board ↔ Grid/Board, Card ↔ Card Table, Model Conversation ↔
- *    Conversation, Blank ↔ Blank) — two independent buffers, two independent
- *    saves.
+ *  - A blank "create new" entry that persists a fresh EMPTY script immediately
+ *    and opens the editor in CREATION MODE (ER-13d-2a). Step 1 offers the five
+ *    frozen rules starters (IR-81A `RULES_STARTERS`) as a template picker that
+ *    fills the existing buffer; step 2 highlights the PAIRED visual starter
+ *    (Round ↔ Choice, Board ↔ Grid/Board, Card ↔ Card Table, Model
+ *    Conversation ↔ Conversation, Blank ↔ Blank) (ER-13d-2b). Rules and
+ *    visuals remain two independent buffers with two independent saves.
  *  - Explicit-save editing: rules edits live in `useScriptDraftStore`
  *    (scriptKind "interactive"), visual edits in `useExperienceVisualDraftStore`.
  *    Typing never hits the server; Save creates (first save) or patches
@@ -151,6 +152,10 @@ export function ExperienceEditor() {
   // [Rules|Visual|Sandbox] toggle). Cleared on navigating back so re-opening
   // the same script later is EDITING mode (2-position toggle).
   const [creatingScriptId, setCreatingScriptId] = useState<string | null>(null);
+  // ER-13d-2b: the rules starter id chosen in step 1 (creation rules template
+  // picker). Drives the paired-visual highlight in step 2. Cleared on
+  // navigating back so a later creation starts fresh.
+  const [chosenRulesStarterId, setChosenRulesStarterId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -274,17 +279,18 @@ export function ExperienceEditor() {
     return id;
   }, [ensureVisualDraft, patchVisualDraft]);
 
-  // ER-13d-2a: persist-on-create. The starter pick (or blank "create new")
-  // persists a fresh script immediately (enabled=false, global scope) so a
-  // server id exists from the start and the copilot is iterative from step 1.
-  // The paired VISUAL is NOT created here — visual is step 2 (ER-13d-2b).
-  const handleCreateExperience = async (starter: RulesStarter | null) => {
+  // ER-13d-2a/2b: persist-on-create. The blank "create new" button persists a
+  // fresh EMPTY script immediately (enabled=false, global scope) so a server
+  // id exists from step 1 and the copilot is iterative. Rules templates are no
+  // longer a picker choice — they are applied to this buffer in step 1
+  // (creation rulesToolbar); the paired VISUAL is step 2 (ER-13d-2b).
+  const handleCreateExperience = async () => {
     setCreateError(null);
     try {
       const created = await createScript({
-        name: starter?.label ?? t("experience_editor_new_experience_name"),
+        name: t("experience_editor_new_experience_name"),
         description: "",
-        code: starter?.source ?? "",
+        code: "",
         scriptKind: "interactive",
         enabled: false,
         scopeType: "global",
@@ -292,6 +298,7 @@ export function ExperienceEditor() {
       setScripts((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
       setActiveScriptId(created.id);
       setCreatingScriptId(created.id);
+      setChosenRulesStarterId(null);
     } catch (error) {
       setCreateError(errorMessage(error));
     }
@@ -348,6 +355,19 @@ export function ExperienceEditor() {
       apiVersion: VISUAL_API_VERSION,
       compatibleManifestIds: [],
     }));
+  };
+
+  // ER-13d-2b: applying a rules template in step 1 fills the EXISTING rules
+  // buffer (the script was already persisted on create) via the draft store —
+  // NOT a direct createScript (template application is a buffer edit the user
+  // then saves as a PATCH). The name is overwritten only while it is still the
+  // blank-create default, so a user-typed name is never clobbered.
+  const handlePickRulesStarter = (starter: RulesStarter) => {
+    updateScriptDraft({ code: starter.source });
+    if (activeScript?.name === t("experience_editor_new_experience_name")) {
+      updateScriptDraft({ name: starter.label });
+    }
+    setChosenRulesStarterId(starter.id);
   };
 
   /** Duplicate the CURRENT rules buffer (including unsaved edits) as a fresh,
@@ -453,6 +473,7 @@ export function ExperienceEditor() {
     setActiveScriptId(null);
     setActiveVisualId(null);
     setCreatingScriptId(null);
+    setChosenRulesStarterId(null);
   }, [activeScriptId, activeVisualId, removeScriptDraft, removeVisualDraft]);
 
   // ── Saves ────────────────────────────────────────────────────────────────
@@ -557,33 +578,13 @@ export function ExperienceEditor() {
         <button
           type="button"
           className="mb-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border border-accent bg-accent/10 px-4 py-3 text-left transition-all hover:bg-accent/20"
-          onClick={() => void handleCreateExperience(null)}
+          onClick={() => void handleCreateExperience()}
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent"><Ic.plus /></div>
           <span className="flex-1 text-[14px] font-semibold text-t1">{t("experience_editor_create_new")}</span>
         </button>
 
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
-          {t("experience_editor_starters_label")}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {RULES_STARTERS.map((starter) => (
-            <button
-              type="button"
-              key={starter.id}
-              className="cursor-pointer rounded-xl border border-border bg-surface px-4 py-3 text-left transition-all hover:bg-s2 hover:border-accent"
-              onClick={() => void handleCreateExperience(starter)}
-            >
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-                <span className="flex-1 truncate text-[14px] font-semibold text-t1">{starter.label}</span>
-              </div>
-              <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{starter.description}</div>
-            </button>
-          ))}
-        </div>
-
-        <div className="mb-2 mt-6 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
           {t("experience_editor_existing_label")}
         </div>
         {allScripts.length === 0 ? (
@@ -632,7 +633,7 @@ export function ExperienceEditor() {
           type="button"
           aria-label={t("experience_editor_back")}
           className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
-          onClick={() => { setActiveScriptId(null); setCreatingScriptId(null); }}
+          onClick={() => { setActiveScriptId(null); setCreatingScriptId(null); setChosenRulesStarterId(null); }}
         >
           {Ic.caret("l")} {t("experience_editor_back")}
         </button>
@@ -717,6 +718,31 @@ export function ExperienceEditor() {
           onApply={handleCopilotApply}
           rulesToolbar={
             <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
+              {creationMode && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("experience_editor_rules_template")}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {RULES_STARTERS.map((starter) => {
+                      const active = starter.id === chosenRulesStarterId;
+                      return (
+                        <button
+                          type="button"
+                          key={starter.id}
+                          className={cn(
+                            "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
+                            active
+                              ? "border-accent bg-accent/10 text-accent-t"
+                              : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
+                          )}
+                          onClick={() => handlePickRulesStarter(starter)}
+                        >
+                          {starter.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
               <input
                 className={inputCls}
@@ -812,16 +838,32 @@ export function ExperienceEditor() {
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-ui text-[11px] text-t3">{t("experience_editor_visual_new")}</span>
-                {VISUAL_STARTERS.map((starter) => (
-                  <button
-                    type="button"
-                    key={starter.id}
-                    className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
-                    onClick={() => handleNewVisualFromStarter(starter)}
-                  >
-                    {starter.label}
-                  </button>
-                ))}
+                {VISUAL_STARTERS.map((starter) => {
+                  const isPaired = creationMode
+                    && chosenRulesStarterId !== null
+                    && PAIRED_VISUAL_STARTER_ID[chosenRulesStarterId] === starter.id;
+                  return (
+                    <button
+                      type="button"
+                      key={starter.id}
+                      aria-label={isPaired ? t("experience_editor_visual_paired") : undefined}
+                      className={cn(
+                        "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
+                        isPaired
+                          ? "border-accent bg-accent/10 text-accent-t ring-2 ring-accent/40"
+                          : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
+                      )}
+                      onClick={() => handleNewVisualFromStarter(starter)}
+                    >
+                      {starter.label}
+                      {isPaired && (
+                        <span className="rounded bg-accent-dim px-1 py-0.5 font-ui text-[9px] font-semibold uppercase tracking-wide text-accent-t">
+                          {t("experience_editor_visual_paired")}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               {activeVisual ? (

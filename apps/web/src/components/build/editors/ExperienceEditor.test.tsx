@@ -9,10 +9,11 @@
  * matching ScriptEditor.test.tsx and ExperienceAssignment.test.tsx.
  *
  * Pinned behavior (per the IR-81C contract):
- *  1. Persist-on-create (ER-13d-2a): a starter pick (or the blank
- *     "create new" button) persists a fresh script immediately (enabled=false,
- *     server id) and opens the editor in CREATION MODE (3-position toggle).
- *     The paired VISUAL is NOT created here (step 2 / ER-13d-2b).
+ *  1. Persist-on-create (ER-13d-2a/2b): the blank "create new" button persists
+ *     a fresh EMPTY script immediately (enabled=false, server id) and opens the
+ *     editor in CREATION MODE (3-position toggle). Rules templates are applied
+ *     to that buffer in step 1; the paired VISUAL is highlighted (not created)
+ *     in step 2.
  *  2. Dirty/save flow: the created script is already server-side, so saves
  *     PATCH via updateScript (prepareSave/completeSave); a failed save stays
  *     dirty and retryable; edits made during an in-flight save survive
@@ -425,7 +426,7 @@ async function waitForExperienceDeleteSecondary(): Promise<HTMLElement> {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("ExperienceEditor", () => {
-  it("lists only interactive scripts; clicking a starter persists a fresh script and opens the editor in creation mode", async () => {
+  it("lists only interactive scripts; the blank create persists a fresh script and opens the editor in creation mode", async () => {
     serverScripts = [
       { ...baseScript },
       { ...baseScript, id: "srv_prompt", name: "Prompt Script", scriptKind: "prompt" },
@@ -433,22 +434,21 @@ describe("ExperienceEditor", () => {
 
     const { findByText, queryByText, getByRole } = render(<ExperienceEditor />);
 
-    // Picker: the create-new button + five starters; the existing list shows
-    // only interactive scripts.
+    // Picker: the create-new button + the existing list (only interactive
+    // scripts). The rules template grid is gone — templates live in step 1.
     expect(await findByText("experience_editor_create_new")).toBeTruthy();
-    expect(await findByText("Board")).toBeTruthy();
     expect(await findByText("Existing Rules")).toBeTruthy();
     expect(queryByText("Prompt Script")).toBeNull();
 
-    // ER-13d-2a: a starter pick persists a fresh script (enabled=false) and
+    // ER-13d-2a: the blank create persists a fresh script (enabled=false) and
     // opens the editor in CREATION MODE (3-position toggle).
-    fireEvent.click(await findByText("Board"));
+    fireEvent.click(await findByText("experience_editor_create_new"));
 
     await waitFor(() => {
       expect(createScript).toHaveBeenCalledWith({
-        name: "Board",
+        name: "experience_editor_new_experience_name",
         description: "",
-        code: BOARD_SOURCE,
+        code: "",
         scriptKind: "interactive",
         enabled: false,
         scopeType: "global",
@@ -465,19 +465,20 @@ describe("ExperienceEditor", () => {
     });
   });
 
-  it("persists the script immediately on a starter pick in a saved/idle state (server id, not local)", async () => {
-    // ER-13d-2a: the create happens on the starter pick (persist-on-create),
-    // NOT on the first save. The boundary is unchanged: createScript is called
-    // once with the right body and the script exists with a server id.
+  it("persists the script immediately on the blank create in a saved/idle state (server id, not local)", async () => {
+    // ER-13d-2a: the create happens on the blank create button
+    // (persist-on-create), NOT on the first save. The boundary is unchanged:
+    // createScript is called once with the right body and the script exists
+    // with a server id.
     serverScripts = [{ ...baseScript }];
     const { findByText } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Board"));
+    fireEvent.click(await findByText("experience_editor_create_new"));
 
     await waitFor(() => {
       expect(createScript).toHaveBeenCalledWith({
-        name: "Board",
+        name: "experience_editor_new_experience_name",
         description: "",
-        code: BOARD_SOURCE,
+        code: "",
         scriptKind: "interactive",
         enabled: false,
         scopeType: "global",
@@ -489,8 +490,59 @@ describe("ExperienceEditor", () => {
     expect(await findByText("saved_state")).toBeTruthy();
     const drafts = rulesDraftEntries().filter(([id]) => !id.startsWith("local:"));
     expect(drafts.some(([id]) => id === "srv_2")).toBe(true);
-    // No local (unsaved) draft was ever created for the starter pick.
+    // No local (unsaved) draft was ever created for the blank create.
     expect(rulesDraftEntries().filter(([id]) => id.startsWith("local:"))).toHaveLength(0);
+  });
+
+  it("in creation mode the rules template picker fills the buffer and records the choice", async () => {
+    const { findByText, getByRole } = render(<ExperienceEditor />);
+
+    // Blank create → creation mode.
+    fireEvent.click(await findByText("experience_editor_create_new"));
+    await waitFor(() => {
+      expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
+    });
+
+    // The rules template picker renders in step 1 (creation only).
+    expect(await findByText("experience_editor_rules_template")).toBeTruthy();
+
+    // Picking a starter fills the EXISTING (server-id) rules buffer via the
+    // draft store and overwrites the blank-create default name.
+    fireEvent.click(await findByText("Board"));
+
+    await waitFor(() => {
+      const drafts = rulesDraftEntries().filter(([id]) => !id.startsWith("local:"));
+      expect(drafts).toHaveLength(1);
+      expect(drafts[0]?.[1].values.code).toBe(BOARD_SOURCE);
+      expect(drafts[0]?.[1].values.name).toBe("Board");
+    });
+    // No second create — the template is a buffer edit, not a new script.
+    expect(createScript).toHaveBeenCalledTimes(1);
+  });
+
+  it("highlights the paired visual starter after choosing a rules starter in creation mode", async () => {
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+
+    // Blank create → creation mode.
+    fireEvent.click(await findByText("experience_editor_create_new"));
+    await waitFor(() => {
+      expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
+    });
+
+    // Switch to the Visual buffer before choosing a rules starter: no paired
+    // highlight (nothing chosen yet).
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    expect(container.querySelector('button[aria-label="experience_editor_visual_paired"]')).toBeNull();
+
+    // Back to Rules, choose the board starter (paired visual = Grid / Board).
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_rules" }));
+    fireEvent.click(await findByText("Board"));
+
+    // Switch to Visual: the paired starter is highlighted + badged.
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    const paired = container.querySelector('button[aria-label="experience_editor_visual_paired"]');
+    expect(paired).toBeTruthy();
+    expect(paired?.textContent).toContain("Grid / Board");
   });
 
   it("the blank 'create new' button persists an empty script and opens creation mode", async () => {
@@ -529,7 +581,7 @@ describe("ExperienceEditor", () => {
     );
     if (!backButton) throw new Error("back button missing");
     fireEvent.click(backButton);
-    expect(await findByText("experience_editor_starters_label")).toBeTruthy();
+    expect(await findByText("experience_editor_create_new")).toBeTruthy();
 
     // Re-open the same script → editing mode (2-position toggle, no sandbox).
     fireEvent.click(await findByText("experience_editor_new_experience_name"));
@@ -1206,9 +1258,10 @@ describe("ExperienceEditor", () => {
     if (!backButton) throw new Error("back button missing");
     fireEvent.click(backButton);
 
-    // The picker returns: starters are visible again and no script is active.
-    expect(await findByText("experience_editor_starters_label")).toBeTruthy();
-    expect(await findByText("Board")).toBeTruthy();
+    // The picker returns: the create button + existing-list label are visible
+    // again and no script is active.
+    expect(await findByText("experience_editor_create_new")).toBeTruthy();
+    expect(await findByText("experience_editor_existing_label")).toBeTruthy();
     expect(queryByText("experience_editor_back")).toBeNull();
     expect(container.querySelector('input[placeholder="script_name"]')).toBeNull();
   });
