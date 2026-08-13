@@ -76,7 +76,6 @@ import {
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { InteractiveApiReference } from "./interactive-api-reference.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
-import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import {
   isLocalId,
   nextLocalId,
@@ -126,8 +125,6 @@ export function ExperienceEditor() {
   const [rulesValid, setRulesValid] = useState<boolean | null>(null);
   const [rulesValidationError, setRulesValidationError] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
-  const [aiHelperOpen, setAiHelperOpen] = useState(false);
-  const [visualAiHelperOpen, setVisualAiHelperOpen] = useState(false);
 
   // IR-90A: explicit destructive delete for a saved/pending visual, confirmed
   // via the shared DestructiveConfirmModal. A failed delete keeps the visual
@@ -760,13 +757,6 @@ export function ExperienceEditor() {
                 </button>
                 <button
                   type="button"
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
-                  onClick={() => setAiHelperOpen(true)}
-                >
-                  <Ic.brain /> {t("experience_editor_ai_helper")}
-                </button>
-                <button
-                  type="button"
                   className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                   disabled={validating || activeScript.code.trim() === ""}
                   onClick={() => void handleValidateRules()}
@@ -902,21 +892,6 @@ export function ExperienceEditor() {
                       {activeVisual.compatibleManifestIds.length > 0 ? activeVisual.compatibleManifestIds.join(", ") : "—"}
                     </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* IR-83B: launch the VISUAL AI assistant (discovers the
-                        validated contract from the ACTIVE RULES source). */}
-                    <button
-                      type="button"
-                      className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                      disabled={!activeScript?.code?.trim()}
-                      onClick={() => setVisualAiHelperOpen(true)}
-                    >
-                      <Ic.brain /> {t("experience_editor_visual_ai_helper")}
-                    </button>
-                    {!activeScript?.code?.trim() && (
-                      <span className="font-ui text-[11px] italic text-t3">{t("experience_editor_visual_ai_helper_no_rules")}</span>
-                    )}
-                  </div>
                 </>
               ) : (
                 <div className="py-2 text-center font-ui text-[12px] italic text-t3">
@@ -927,36 +902,6 @@ export function ExperienceEditor() {
           }
         />
       </div>
-
-      {/*
-       * IR-82: the universal AI assistant, thin-wired exactly like the
-       * ScriptEditor→AiAssistantModal integration. Output lands back in the
-       * rules draft via the normal updateScriptDraft({ code }) action.
-       */}
-      <AiAssistantModal
-        mode="full"
-        apiMode="interactive_rules"
-        isOpen={aiHelperOpen}
-        onClose={() => setAiHelperOpen(false)}
-        existingContent={activeScript.code}
-        onInsert={(text) => updateScriptDraft({ code: text })}
-        onReplace={(text) => updateScriptDraft({ code: text })}
-      />
-
-      {/*
-       * IR-83B: the universal AI assistant targeting the active VISUAL draft.
-       * Output lands back via the normal updateVisualDraft({ source }) action.
-       */}
-      <AiAssistantModal
-        mode="full"
-        apiMode="interactive_visual"
-        isOpen={visualAiHelperOpen}
-        onClose={() => setVisualAiHelperOpen(false)}
-        existingContent={activeVisual?.source ?? ""}
-        interactiveRulesSource={activeScript?.code ?? ""}
-        onInsert={(text) => updateVisualDraft({ source: text })}
-        onReplace={(text) => updateVisualDraft({ source: text })}
-      />
 
       {/* IR-90A: explicit destructive delete for the active visual. */}
       {visualDeleteId && (
