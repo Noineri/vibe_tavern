@@ -109,9 +109,7 @@ function ExperienceCopilotActivityCard({
   const { t } = useT();
   const isRead = activity.readPath !== undefined;
   const isProposal = activity.target !== undefined && activity.proposed !== undefined;
-  // Proposals expand by default so the diff preview is visible without a click;
-  // read/informational cards stay collapsed (their summary is the content).
-  const [open, setOpen] = useState(isProposal);
+  const [open, setOpen] = useState(false);
   const targetText =
     activity.target === "rules" ? t("experience_copilot_rules") : t("experience_copilot_visual");
   const streaming = activity.status === "streaming";
