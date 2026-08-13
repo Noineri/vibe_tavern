@@ -1864,7 +1864,7 @@
   "experience_editor_starters_label": "Новые правила из заготовки",
   "experience_editor_start_blank": "Начать с нуля",
   "experience_editor_start_blank_desc": "Пустой исходник правил — зарегистрируйте собственный автомат состояний с нуля.",
-  "experience_editor_existing_label": "Ваши интерактивные правила",
+  "experience_editor_existing_label": "Ваши мини-приложения",
   "experience_editor_no_scripts": "Интерактивных правил пока нет — выберите заготовку выше.",
   "experience_editor_back": "Все мини-приложения",
   "experience_editor_create_error": "Не удалось создать мини-приложение",
