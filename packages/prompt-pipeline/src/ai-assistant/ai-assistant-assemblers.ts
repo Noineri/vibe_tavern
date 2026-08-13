@@ -8,8 +8,6 @@ import {
 export const AI_ASSISTANT_ASSEMBLERS = {
   script: DefaultAiAssistantAssembler,
   dice_script: DefaultAiAssistantAssembler,
-  interactive_rules: DefaultAiAssistantAssembler,
-  interactive_visual: DefaultAiAssistantAssembler,
   lore_entry: DefaultAiAssistantAssembler,
   lore_keys: DefaultAiAssistantAssembler,
   chat_impersonate: DefaultAiAssistantAssembler,

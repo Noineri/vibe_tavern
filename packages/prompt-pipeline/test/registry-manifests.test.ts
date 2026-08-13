@@ -9,8 +9,6 @@ describe("prompt assembly registries", () => {
     expect(Object.keys(AI_ASSISTANT_ASSEMBLERS).sort()).toEqual([
       "chat_impersonate",
       "dice_script",
-      "interactive_rules",
-      "interactive_visual",
       "lore_entry",
       "lore_keys",
       "md_import",

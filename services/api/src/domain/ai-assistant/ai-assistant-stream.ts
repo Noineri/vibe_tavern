@@ -40,10 +40,6 @@ import {
   type MessageEditorPromptMode,
   type MessageEditorPromptSource,
 } from "./message-editor-prompt.js";
-import {
-  discoverExperienceDefinition,
-  type ExperienceDefinition,
-} from "../interactive/experience-kernel.js";
 
 // ─── Request / response types ────────────────────────────────────────────────
 
@@ -54,11 +50,6 @@ export interface AiAssistantStreamRequest {
   instruction: string;
   /** Current field content being edited/refined. */
   existingContent?: string;
-  /** For `interactive_visual`: the interactive rules source used ONLY to
-   *  discover the validated game contract (manifest/capabilities/setup) via
-   *  the real sandbox. It is NEVER forwarded to the model and is NOT a
-   *  mutable output of this mode — the visual mode emits visual source only. */
-  interactiveRulesSource?: string;
   /** Provider profile ID to use. */
   providerProfileId: string;
   /** Model name override (optional, uses profile default). */
@@ -358,42 +349,8 @@ async function prepareAiAssistantRequest(
     recentMessages = await deps.getChatMessages(request.chatId, count);
   }
 
-  // 4b. interactive_visual: resolve the validated game contract by discovering
-  // the supplied rules source through the REAL sandbox. The rules source is a
-  // discovery INPUT ONLY — it is never forwarded to the model (only the
-  // discovered manifest/capabilities/setup shapes are). A missing source or a
-  // broken rules body surfaces as a typed failure (caught by the stream's
-  // top-level try/catch and yielded as `{ type: "error" }`), so the consumer
-  // never receives a hallucinated visual against an unknown contract.
-  let interactiveVisualContract: string | undefined;
-  if (request.mode === "interactive_visual") {
-    if (!request.interactiveRulesSource?.trim()) {
-      throw validation(
-        "The visual assistant requires a validated interactive rules contract to target. Provide the rules source so it can be discovered.",
-      );
-    }
-    const discovery = discoverExperienceDefinition(
-      request.interactiveRulesSource,
-      "interactive-visual-discovery",
-    );
-    if (!discovery.ok) {
-      throw validation(
-        `Could not validate the interactive rules contract for visual generation (${discovery.kind}): ${discovery.message}`,
-      );
-    }
-    interactiveVisualContract = formatDiscoveredExperienceContract(discovery.definition);
-    deps.logDebug?.("api.ai-assistant.interactive-visual.discovered", {
-      manifestId: discovery.definition.manifest.id,
-      manifestName: discovery.definition.manifest.name,
-      capabilityCount: discovery.definition.declaredCapabilities.length,
-      hasChoose: discovery.definition.hasChoose,
-      hasFlavor: discovery.definition.hasFlavor,
-      setupFieldCount: discovery.definition.setup?.fields.length ?? 0,
-    });
-  }
-
   // 5. Build user message (mode-specific)
-  const userMessage = buildUserMessage(request, config, interactiveVisualContract);
+  const userMessage = buildUserMessage(request, config);
 
   // 6. Assemble via pipeline using the selected model tokenizer
   const pipelineContext: PromptAssemblyContext = {
@@ -578,17 +535,13 @@ export async function* streamAiAssistant(
         }
       }
 
-      // Emit the cleaned text result. For code-generating modes (dice_script,
-      // interactive_rules), strip any stray markdown fences the model added
-      // despite instructions so the user receives raw executable source.
-      // interactive_visual output is full HTML/CSS/JS and may be wrapped in a
-      // ```html fence; it uses a visual-specific cleaner for that.
+      // Emit the cleaned text result. For the code-generating dice_script mode,
+      // strip any stray markdown fences the model added despite instructions so
+      // the user receives raw executable source.
       if (fullText.trim()) {
-        const finalText = request.mode === "dice_script" || request.mode === "interactive_rules"
+        const finalText = request.mode === "dice_script"
           ? cleanGeneratedCode(fullText)
-          : request.mode === "interactive_visual"
-            ? cleanGeneratedVisualSource(fullText)
-            : fullText;
+          : fullText;
         yield { type: "text", text: finalText };
       }
     } else {
@@ -682,72 +635,6 @@ export function cleanGeneratedCode(text: string): string {
     cleaned = fenceMatch[1].trim();
   }
   return cleaned;
-}
-
-/**
- * Clean generated VISUAL source from a model response: strips a single
- * surrounding markdown code fence if the model added one despite instructions,
- * and trims surrounding whitespace. Visual source is a full HTML document (with
- * embedded CSS/JS); models commonly wrap it in a ```html fence, so this accepts
- * `html`/`javascript`/`js` language tags or a bare fence, unlike
- * {@link cleanGeneratedCode} which targets JS-only fences. Used for the
- * `interactive_visual` mode so the user receives the raw iframe source.
- */
-export function cleanGeneratedVisualSource(text: string): string {
-  let cleaned = text.trim();
-  const fenceMatch = cleaned.match(/^```(?:html|javascript|js)?\s*\n?([\s\S]*?)\n?```\s*$/);
-  if (fenceMatch) {
-    cleaned = fenceMatch[1].trim();
-  }
-  return cleaned;
-}
-
-/**
- * Render the discovered {@link ExperienceDefinition} into a compact, readable
- * contract block for the interactive_visual user message. Contains ONLY the
- * validated shapes (manifest / declared capabilities / optional-method flags /
- * setup fields) — never the raw rules source or rules logic. This is the sole
- * representation of the rules that reaches the model; the discovery INPUT (the
- * rules body) stays out of the prompt entirely.
- */
-function formatDiscoveredExperienceContract(def: ExperienceDefinition): string {
-  const lines: string[] = [];
-  lines.push("## Validated game contract (discovered from the rules source)");
-  lines.push(`- Manifest: id="${def.manifest.id}", name="${def.manifest.name}"`);
-  lines.push(`- API version: ${def.apiVersion}`);
-  if (def.declaredCapabilities.length) {
-    const caps = def.declaredCapabilities.map((c) => {
-      const reason = c.reason ? ` — ${c.reason}` : "";
-      return `  - ${c.capability}${reason}`;
-    });
-    lines.push("- Declared capabilities:");
-    lines.push(caps.join("\n"));
-  } else {
-    lines.push("- Declared capabilities: (none)");
-  }
-  const optionalMethods: string[] = [];
-  if (def.hasChoose) optionalMethods.push("choose (script-controlled seat turns)");
-  if (def.hasFlavor) optionalMethods.push("flavor (display-time cosmetic data via view.flavor)");
-  lines.push(
-    optionalMethods.length
-      ? `- Optional methods present: ${optionalMethods.join(", ")}`
-      : "- Optional methods present: (none)",
-  );
-  const setupFields = def.setup?.fields ?? [];
-  if (setupFields.length) {
-    const fieldLines = setupFields.map(
-      (f) => `  - ${f.id} (${f.kind})${f.label ? ` — ${f.label}` : ""}`,
-    );
-    lines.push("- Setup fields:");
-    lines.push(fieldLines.join("\n"));
-  } else {
-    lines.push("- Setup fields: (none declared)");
-  }
-  lines.push("");
-  lines.push(
-    "This contract was obtained by running the rules through the real sandbox. The raw rules source is NOT included — generate the visual from these validated shapes and the bridge reference in the system prompt only.",
-  );
-  return lines.join("\n");
 }
 
 function mergeMdImportWithSourceSections(
@@ -1109,11 +996,6 @@ function tryParseJson(text: string): Record<string, unknown> | null {
 function buildUserMessage(
   request: AiAssistantStreamRequest,
   config: ReturnType<typeof getModeConfig>,
-  /** For `interactive_visual`: the validated game contract discovered from the
-   *  rules source (manifest/capabilities/setup). `undefined` for every other
-   *  mode. Present (non-empty) whenever interactive_visual reaches this point
-   *  — discovery already threw on failure upstream. */
-  discoveredContract?: string,
 ): string {
   switch (request.mode) {
     case "script": {
@@ -1128,28 +1010,6 @@ function buildUserMessage(
         return `Here is my current Dice script:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated JavaScript Dice script only. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible.`;
       }
       return `${request.instruction}\n\nReturn the complete JavaScript Dice script only. Do not return markdown, explanation, or anything other than the script code.`;
-    }
-
-    case "interactive_rules": {
-      if (request.existingContent) {
-        return `Here is my current interactive rules script:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated interactive rules script only — the full single context.experience.register({ ... }) body. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible.`;
-      }
-      return `${request.instruction}\n\nReturn the complete interactive rules script only — a single context.experience.register({ ... }) body. Do not return markdown, explanation, or anything other than the script code.`;
-    }
-
-    case "interactive_visual": {
-      // The discovered validated contract (manifest/capabilities/setup) leads.
-      // The raw rules source is NEVER included — only these discovered shapes.
-      const parts: string[] = [];
-      if (discoveredContract) {
-        parts.push(discoveredContract);
-      }
-      if (request.existingContent?.trim()) {
-        parts.push(`Here is my current visual source:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated visual source only — the full HTML/CSS/JS iframe body that binds to the host bridge via VibeExperience.connect. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible. Do NOT output rules source.`);
-      } else {
-        parts.push(`${request.instruction}\n\nReturn the complete visual source only — the full HTML/CSS/JS iframe body that binds to the host bridge via VibeExperience.connect. Do not return markdown, explanation, rules source, or anything other than the visual source.`);
-      }
-      return parts.join("\n\n");
     }
 
     case "lore_entry": {
