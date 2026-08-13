@@ -75,6 +75,10 @@ import {
   ExperienceFrame,
   type ExperienceFrameHandle,
 } from "../../experience/ExperienceFrame.js";
+import {
+  buildPlaygroundDigest,
+  type CopilotDigest,
+} from "../../../lib/experience-copilot-digest.js";
 
 // ─── Local types + constants ────────────────────────────────────────────────
 //
@@ -235,9 +239,14 @@ interface ExperiencePlaygroundProps {
   /** The CURRENT UNSAVED visual source, or null when no visual is selected.
    *  Rendered read-only inside the isolated frame; never edited here. */
   visualSource: string | null;
+  /** ER-14: when provided (by the copilot shell), a "Send diagnostics to
+   *  assistant" button appears INSIDE the Developer-diagnostics disclosure and
+   *  posts the live session digest into the copilot thread. Undefined outside
+   *  the shell (standalone playground use → no button). */
+  onSendToCopilot?: (digest: CopilotDigest) => void;
 }
 
-export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroundProps) {
+export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: ExperiencePlaygroundProps) {
   const { t } = useT();
 
   const [open, setOpen] = useState(false);
@@ -831,6 +840,22 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
                 </button>
                 {diagnosticsOpen && (
                   <div className="mt-2 space-y-2">
+                    {/* ER-14: send the live session diagnostics to the copilot
+                        thread. Shown only when the shell wires the callback AND
+                        a session is live. Lives INSIDE the Developer-diagnostics
+                        disclosure per the user's intent. */}
+                    {onSendToCopilot !== undefined && (
+                      <button
+                        type="button"
+                        data-testid="playground-send-to-copilot"
+                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                        disabled={busy !== null}
+                        onClick={() => onSendToCopilot(buildPlaygroundDigest({ session, definition, error }))}
+                      >
+                        {t("experience_playground_send_diagnostics")}
+                      </button>
+                    )}
+
                     {definition !== null && (
                       <div>
                         <div className={blockLabelCls}>{t("experience_tester_definition")}</div>

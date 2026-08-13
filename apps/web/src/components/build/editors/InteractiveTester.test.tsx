@@ -433,3 +433,67 @@ describe("InteractiveTester", () => {
     expect(await findByText("experience_tester_definition")).toBeTruthy();
   });
 });
+
+// ── ER-14: send result to copilot ───────────────────────────────────────────
+
+describe("InteractiveTester — send result to copilot (ER-14)", () => {
+  it("renders the send button only when onSendToCopilot is wired AND a result exists", async () => {
+    const onSendToCopilot = mock();
+    const { getByText, queryByTestId, findByText } = render(
+      <InteractiveTester code={VALID_CODE} onSendToCopilot={onSendToCopilot} />,
+    );
+
+    // Before any run: no result → button absent.
+    expect(queryByTestId("tester-send-to-copilot")).toBeNull();
+
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(await findByText("experience_tester_definition")).toBeTruthy();
+
+    // After a successful run: the button is present.
+    const btn = queryByTestId("tester-send-to-copilot");
+    expect(btn).not.toBeNull();
+    expect(btn?.textContent).toBe("experience_tester_send_to_copilot");
+
+    fireEvent.click(btn!);
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(true);
+    expect(digest.feedback.legalActionTypes).toEqual(["score", "pass"]);
+    // The human-readable text is posted as the user message.
+    expect(typeof digest.text).toBe("string");
+    expect(digest.text.length).toBeGreaterThan(0);
+  });
+
+  it("sends the error digest when the last action failed (error precedence)", async () => {
+    const onSendToCopilot = mock();
+    runExperienceTest.mockRejectedValueOnce(
+      new ExperienceApiError(422, "Unexpected token", "vm_error", {
+        kind: "syntax",
+        console: [{ level: "error", args: ["boom"] }],
+      }),
+    );
+    const { getByText, queryByTestId, findByText } = render(
+      <InteractiveTester code={VALID_CODE} onSendToCopilot={onSendToCopilot} />,
+    );
+
+    fireEvent.click(getByText("experience_tester_run"));
+    expect(await findByText("vm_error")).toBeTruthy();
+
+    fireEvent.click(queryByTestId("tester-send-to-copilot")!);
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(false);
+    expect(digest.feedback.errorCode).toBe("vm_error");
+    expect(digest.feedback.errorMessage).toBe("Unexpected token");
+  });
+
+  it("does NOT render the send button when onSendToCopilot is undefined (standalone use)", async () => {
+    const { getByText, queryByTestId, findByText } = renderTester();
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(await findByText("experience_tester_definition")).toBeTruthy();
+    // A result exists but no callback was wired → button absent.
+    expect(queryByTestId("tester-send-to-copilot")).toBeNull();
+  });
+});

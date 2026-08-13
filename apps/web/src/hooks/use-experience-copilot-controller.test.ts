@@ -195,6 +195,28 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     expect(body).toEqual({ content: "hi", providerProfileId: PROVIDER, model: "m1" });
   });
 
+  test("passes testFeedback through to the stream body when provided in opts (ER-14)", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    const feedback = { ok: true, status: "active", revision: 3, legalActionTypes: ["score"], stateSummary: "{}", consoleTail: [] };
+    await act(async () => {
+      await result.current.handleSend("here is my test result", { testFeedback: feedback });
+    });
+
+    expect(streamExperienceCopilot).toHaveBeenCalledTimes(1);
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.testFeedback).toEqual(feedback);
+    // Omitting testFeedback does not add the field (the undefined guard).
+    streamExperienceCopilot.mockClear();
+    await act(async () => {
+      await result.current.handleSend("plain follow-up");
+    });
+    expect("testFeedback" in (streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>)).toBe(false);
+  });
+
   test("write_buffer tool error (isError) marks the card error", async () => {
     const d = deferred<{ finishReason: string }>();
     let captured!: CopilotStreamOpts;

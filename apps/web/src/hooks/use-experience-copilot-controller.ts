@@ -43,6 +43,10 @@ export interface ExperienceCopilotSendOptions {
   rules?: string;
   visual?: string;
   step?: ExperienceCopilotStep;
+  /** The latest test/simulate digest the user sent back from the test panel
+   *  (ER-14). Carried on the body as `testFeedback` and rendered as a JSON
+   *  context section by the backend (surviving history compaction). */
+  testFeedback?: Record<string, unknown> | null;
 }
 
 export interface ExperienceCopilotController {
@@ -152,6 +156,7 @@ export function useExperienceCopilotController(
             ...(opts?.rules !== undefined ? { rules: opts.rules } : {}),
             ...(opts?.visual !== undefined ? { visual: opts.visual } : {}),
             ...(opts?.step ? { step: opts.step } : {}),
+            ...(opts?.testFeedback !== undefined ? { testFeedback: opts.testFeedback } : {}),
           },
           {
             signal: controller.signal,

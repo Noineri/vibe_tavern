@@ -27,7 +27,7 @@ const listExperienceCopilotSessions = mock(
 const activateExperienceCopilotSession = mock(
   async (_threadId: string): Promise<ExperienceCopilotThreadWire | null> => null,
 );
-const streamExperienceCopilot = mock(async (): Promise<void> => {});
+const streamExperienceCopilot = mock(async (_threadId: string, _body: unknown, _opts: unknown): Promise<void> => {});
 
 const realApi = await import("../../../../api/experience-copilot-api.js");
 mock.module("../../../../api/experience-copilot-api.js", () => ({
@@ -67,6 +67,54 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
   ToolbarSelect: FakeToolbarSelect,
 }));
 
+// The InteractiveTester (inside the tester modal) drives runExperienceTest;
+// the ExperiencePlayground (inside the sandbox modal) drives
+// startExperiencePlayground. Both are mocked at the client-function boundary
+// so the ER-14 send-to-copilot flow is observable through the REAL shell →
+// child → callback → controller → stream wiring. (SAFE: capture real first,
+// spread `...real` so every other export stays available.)
+const realExperienceApi = await import("../../../../api/experience-api.js");
+const runExperienceTest = mock((_body: Record<string, unknown>) =>
+  Promise.resolve({
+    definition: {
+      apiVersion: 1,
+      manifest: { id: "round", name: "Round" },
+      declaredCapabilities: [{ capability: "participants", reason: "x" }],
+      hasChoose: false,
+      hasFlavor: false,
+    },
+    sourceHash: "h",
+    initialState: {},
+    finalState: {},
+    revision: 0,
+    status: "active",
+    projection: { state: { round: 1 }, actions: [{ type: "score", label: "Score" }] },
+    events: [],
+    effects: [],
+    console: [],
+    steps: [],
+  } as Awaited<ReturnType<typeof realExperienceApi.runExperienceTest>>),
+);
+const startExperiencePlayground = mock((_body: Record<string, unknown>) =>
+  Promise.resolve({
+    playgroundSessionId: "pg-shell-1",
+    initialState: {},
+    state: { round: 1 },
+    projection: { state: { round: 1 }, actions: [{ type: "score", label: "Score" }] },
+    events: [],
+    effects: [],
+    console: [],
+    revision: 0,
+    status: "active",
+    stopReason: "awaiting_human",
+  } as Awaited<ReturnType<typeof realExperienceApi.startExperiencePlayground>>),
+);
+mock.module("../../../../api/experience-api.js", () => ({
+  ...realExperienceApi,
+  runExperienceTest,
+  startExperiencePlayground,
+}));
+
 // The shell reads `useIsMobile` (matchMedia). Mock it to a controllable flag.
 const realMobile = await import("../../../../hooks/use-mobile.js");
 mock.module("../../../../hooks/use-mobile.js", () => ({
@@ -97,12 +145,13 @@ mock.module("../../../experience/ExperienceFrame.js", () => ({
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 let act: typeof import("@testing-library/react").act;
 let ExperienceCopilotShell: typeof import("./ExperienceCopilotShell.js").ExperienceCopilotShell;
 let EditorView: typeof import("@codemirror/view").EditorView;
 
 beforeAll(async () => {
-  ({ render, fireEvent, act } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
   ({ EditorView } = await import("@codemirror/view"));
   ({ ExperienceCopilotShell } = await import("./ExperienceCopilotShell.js"));
 });
@@ -169,6 +218,8 @@ beforeEach(() => {
   activateExperienceCopilotSession.mockResolvedValue(null);
   streamExperienceCopilot.mockReset();
   streamExperienceCopilot.mockResolvedValue(undefined);
+  runExperienceTest.mockClear();
+  startExperiencePlayground.mockClear();
 });
 
 function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]> = {}) {
@@ -551,5 +602,69 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     fireEvent.click(getByTestId("copilot-toolbar-preview"));
     expect(getByTestId("copilot-preview-modal")).toBeDefined();
     expect(getByTestId("experience-frame-stub")).toBeDefined();
+  });
+});
+
+describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () => {
+  it("tester send: posts a digest into the thread (testFeedback reaches the stream body) and a subsequent manual send carries it", async () => {
+    const { getByTestId, getByText, findByText, container } = renderShell();
+    await flushSessionLoad();
+
+    // Open the tester modal + run a create-only test.
+    fireEvent.click(getByTestId("copilot-toolbar-tester"));
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    // Wait for the result to render (the definition block appears after setResult).
+    await findByText("experience_tester_definition");
+
+    // The send-to-copilot button is present after a successful run.
+    const sendBtn = await findByText("experience_tester_send_to_copilot");
+    fireEvent.click(sendBtn);
+
+    // handleSendToCopilot → ctrl.handleSend → streamExperienceCopilot body carries testFeedback.
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    const firstBody = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect(firstBody.testFeedback).toMatchObject({ ok: true, status: "active" });
+    expect(firstBody.step).toBe("test");
+    // The digest text was posted as the user message content.
+    expect(typeof firstBody.content).toBe("string");
+    expect((firstBody.content as string).length).toBeGreaterThan(0);
+
+    // Close the tester modal so the chat input textarea is the only one left.
+    fireEvent.click(getByTestId("copilot-toolbar-tester"));
+
+    // A SUBSEQUENT manual send (typed into the chat input) also carries the
+    // latest testFeedback (it survives until overwritten).
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "can you fix the rules?" } });
+    fireEvent.click(getByTestId("copilot-send-btn"));
+
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(2));
+    const secondBody = streamExperienceCopilot.mock.calls[1][1] as Record<string, unknown>;
+    expect(secondBody.content).toBe("can you fix the rules?");
+    expect(secondBody.testFeedback).toMatchObject({ ok: true, status: "active" });
+  });
+
+  it("playground send: the sandbox-modal playground posts a diagnostics digest", async () => {
+    const { getByTestId, getByText, findByText } = renderShell();
+    await flushSessionLoad();
+
+    // Open the sandbox modal + expand the playground + start a session.
+    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+    fireEvent.click(getByText("experience_playground_title"));
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    // Wait for the session to render (the turn title appears after setSession).
+    await findByText("experience_playground_turn_title");
+
+    // Open the Developer-diagnostics disclosure (the send button lives inside).
+    fireEvent.click(getByText("experience_playground_diagnostics"));
+    const sendBtn = await findByText("experience_playground_send_diagnostics");
+    fireEvent.click(sendBtn);
+
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.testFeedback).toMatchObject({ ok: true, status: "active", revision: 0 });
+    expect(body.step).toBe("test");
   });
 });

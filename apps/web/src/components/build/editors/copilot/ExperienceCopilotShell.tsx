@@ -18,6 +18,7 @@ import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
 import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
 import type { ExperienceCopilotApplyPatch } from "../../../../lib/experience-copilot-apply.js";
+import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
 import {
   getExperienceCopilotActive,
   listExperienceCopilotMessages,
@@ -122,6 +123,13 @@ export function ExperienceCopilotShell({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [sandboxOpen, setSandboxOpen] = useState(false);
 
+  // ER-14: the latest test/simulate digest the user sent back from the test
+  // panel (set by `handleSendToCopilot`). Carried on EVERY subsequent copilot
+  // send (desktop + mobile InputArea) as `testFeedback` so a manual follow-up
+  // message also carries the latest test feedback (it survives history
+  // compaction as a system-level JSON context section).
+  const [testFeedback, setTestFeedback] = useState<Record<string, unknown> | undefined>(undefined);
+
   // Default the provider to the first available profile once known.
   useEffect(() => {
     if (providerProfileId !== null) return;
@@ -204,6 +212,25 @@ export function ExperienceCopilotShell({
     onTurnSettled: handleTurnSettled,
   });
 
+  // ER-14: post a test/simulate/playground digest into the copilot thread. The
+  // digest's human-readable `text` becomes a user message (the model responds);
+  // its structured `feedback` is set as `testFeedback` and carried on every
+  // subsequent send until overwritten. A toast confirms when the chat pane
+  // isn't visible (the tester/playground live in modals/panes).
+  const handleSendToCopilot = useCallback(
+    (digest: CopilotDigest) => {
+      setTestFeedback(digest.feedback);
+      void ctrl.handleSend(digest.text, {
+        rules: rulesCode,
+        visual: visualSource,
+        step: "test",
+        testFeedback: digest.feedback,
+      });
+      toast.success(t("experience_copilot_result_sent"));
+    },
+    [ctrl, rulesCode, visualSource, t],
+  );
+
   // ── Session switch / new (ER-12b) ────────────────────────────────────────
   // Both are NO-OP while a turn is streaming (the switcher is also visually
   // disabled via `disabled={ctrl.isSending}`): switching `threadId` mid-stream
@@ -282,7 +309,7 @@ export function ExperienceCopilotShell({
   // surfaces. In creation mode it renders INLINE on the `sandbox` position;
   // otherwise it renders inside the sandbox modal. The branches are mutually
   // exclusive, so a single instance ever mounts.
-  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} />;
+  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} onSendToCopilot={handleSendToCopilot} />;
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   const chatPane = (
@@ -332,6 +359,7 @@ export function ExperienceCopilotShell({
                   rules: rulesCode,
                   visual: visualSource,
                   step: editorBuffer === "visual" ? "visual" : editorBuffer === "sandbox" ? "test" : "rules",
+                  ...(testFeedback !== undefined ? { testFeedback } : {}),
                 })
               }
               onCancel={ctrl.handleCancel}
@@ -347,6 +375,7 @@ export function ExperienceCopilotShell({
                   rules: rulesCode,
                   visual: visualSource,
                   step: editorBuffer === "visual" ? "visual" : editorBuffer === "sandbox" ? "test" : "rules",
+                  ...(testFeedback !== undefined ? { testFeedback } : {}),
                 })
               }
               onCancel={ctrl.handleCancel}
@@ -441,7 +470,7 @@ export function ExperienceCopilotShell({
         title={t("experience_copilot_tester_title")}
         testId="copilot-tester-modal"
       >
-        <InteractiveTester code={rulesCode} />
+        <InteractiveTester code={rulesCode} onSendToCopilot={handleSendToCopilot} />
       </ShellModal>
 
       <ShellModal

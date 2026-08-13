@@ -845,3 +845,45 @@ describe("ExperiencePlayground", () => {
     expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_setup_controller_model")).toBe(true);
   });
 });
+
+// ── ER-14: send diagnostics to assistant ────────────────────────────────────
+
+describe("ExperiencePlayground — send diagnostics to assistant (ER-14)", () => {
+  it("renders the send button inside the open diagnostics disclosure when a session is live, and posts the digest on click", async () => {
+    const onSendToCopilot = mock();
+    const utils = render(<ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />);
+    const { getByText, queryByTestId } = utils;
+    fireEvent.click(getByText("experience_playground_title"));
+
+    // Before start: no session → the diagnostics disclosure is not rendered
+    // (it only mounts inside `{session !== null && ...}`), so the button is absent.
+    expect(queryByTestId("playground-send-to-copilot")).toBeNull();
+
+    // Start a session.
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    // Open the Developer-diagnostics disclosure (it now exists; the button lives inside).
+    expandDiagnostics(utils);
+
+    const btn = queryByTestId("playground-send-to-copilot");
+    expect(btn).not.toBeNull();
+    expect(btn?.textContent).toBe("experience_playground_send_diagnostics");
+
+    fireEvent.click(btn!);
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(true);
+    expect(digest.feedback.revision).toBe(0);
+    expect(digest.feedback.stopReason).toBe("awaiting_human");
+  });
+
+  it("does NOT render the send button when onSendToCopilot is undefined (standalone use)", async () => {
+    const utils = renderPlayground();
+    const { getByText, queryByTestId } = utils;
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expandDiagnostics(utils);
+    expect(queryByTestId("playground-send-to-copilot")).toBeNull();
+  });
+});

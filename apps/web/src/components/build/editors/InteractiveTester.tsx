@@ -58,6 +58,12 @@ import type {
   ExperienceTestRunData,
   ExperienceTestSimulateData,
 } from "../../../api/types.js";
+import {
+  buildRunTestDigest,
+  buildRunTestErrorDigest,
+  buildSimulateDigest,
+  type CopilotDigest,
+} from "../../../lib/experience-copilot-digest.js";
 
 // ─── Local types + constants ────────────────────────────────────────────────
 
@@ -201,9 +207,13 @@ function ConsoleBlock({ entries, label }: { entries: readonly ExperienceTestCons
 interface InteractiveTesterProps {
   /** The CURRENT UNSAVED rules buffer (owned by the ExperienceEditor). */
   code: string;
+  /** ER-14: when provided (by the copilot shell), a "Send result to copilot"
+   *  button appears and posts the latest test/simulate digest into the copilot
+   *  thread. Undefined outside the shell (standalone tester use → no button). */
+  onSendToCopilot?: (digest: CopilotDigest) => void;
 }
 
-export function InteractiveTester({ code }: InteractiveTesterProps) {
+export function InteractiveTester({ code, onSendToCopilot }: InteractiveTesterProps) {
   const { t } = useT();
 
   // Test context (local only).
@@ -508,6 +518,31 @@ export function InteractiveTester({ code }: InteractiveTesterProps) {
               />
             </div>
           </div>
+
+          {/* ER-14: send the latest result/error digest to the copilot thread.
+              Shown only when the shell wires the callback AND there is something
+              to send. Disabled while a run/simulate is in flight. */}
+          {onSendToCopilot !== undefined && (result !== null || simResult !== null || error !== null) && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="tester-send-to-copilot"
+                className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                disabled={busy !== null}
+                onClick={() => {
+                  if (error !== null) {
+                    onSendToCopilot(buildRunTestErrorDigest(error));
+                  } else if (result !== null) {
+                    onSendToCopilot(buildRunTestDigest(result));
+                  } else if (simResult !== null) {
+                    onSendToCopilot(buildSimulateDigest(simResult));
+                  }
+                }}
+              >
+                {t("experience_tester_send_to_copilot")}
+              </button>
+            </div>
+          )}
 
           {/* Typed error (run or simulate) */}
           {error !== null && (
