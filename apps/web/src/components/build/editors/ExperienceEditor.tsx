@@ -84,7 +84,6 @@ import {
   pendingVisualRow,
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
-import { ExperienceCreationWizard } from "./ExperienceCreationWizard.js";
 import { ExperienceCopilotShell } from "./copilot/ExperienceCopilotShell.js";
 
 function draftValuesEqual(a: ScriptDraftValues, b: ScriptDraftValues): boolean {
@@ -143,14 +142,15 @@ export function ExperienceEditor() {
   // (non-local) script — an unsaved draft is discarded by navigating back.
   const [experienceDeleteOpen, setExperienceDeleteOpen] = useState(false);
 
-  // IR-90C: the three-step creation wizard. Opened from the NEW-experience
-  // entry (starter pick / blank) instead of landing in the all-in-one editor.
-  // The wizard owns its own draft session; on Finish it hands the created
-  // script + visual back here so the editor opens the new experience.
-  const [creationWizard, setCreationWizard] = useState<{
-    open: boolean;
-    starter: RulesStarter | null;
-  }>({ open: false, starter: null });
+  // ER-13d-2a: persist-on-create. The "create" entry persists a fresh script
+  // (enabled=false) immediately, so a server id exists from step 1 and the
+  // copilot is iterative. A failed create surfaces a transient banner — never
+  // silently dropped.
+  const [createError, setCreateError] = useState<string | null>(null);
+  // The just-created script id — drives the shell's CREATION MODE (3-position
+  // [Rules|Visual|Sandbox] toggle). Cleared on navigating back so re-opening
+  // the same script later is EDITING mode (2-position toggle).
+  const [creatingScriptId, setCreatingScriptId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,6 +205,9 @@ export function ExperienceEditor() {
   const isNewScript = activeScriptId !== null && isLocalId(activeScriptId);
   const scriptDirty = isNewScript || isScriptDraftDirty(activeScriptDraft);
   const scriptSaveState = activeScriptDraft?.saveState ?? "idle";
+  // ER-13d-2a: creation mode is transient + session-scoped for the just-created
+  // script (server id). Cleared on navigating back to the picker.
+  const creationMode = creatingScriptId !== null && activeScriptId === creatingScriptId;
 
   const updateScriptDraft = (patch: Partial<ScriptDraftValues>) => {
     if (!activeScriptRecord) return;
@@ -271,21 +274,28 @@ export function ExperienceEditor() {
     return id;
   }, [ensureVisualDraft, patchVisualDraft]);
 
-  // IR-90C: the NEW-experience entry now opens the creation wizard instead of
-  // landing in the all-in-one editor. The wizard seeds its own paired drafts,
-  // walks the three steps, and on Finish creates both resources then hands them
-  // back via onFinish so the editor opens the new experience as if it always existed.
-  const handlePickStarter = (starter: RulesStarter | null) => {
-    setCreationWizard({ open: true, starter });
+  // ER-13d-2a: persist-on-create. The starter pick (or blank "create new")
+  // persists a fresh script immediately (enabled=false, global scope) so a
+  // server id exists from the start and the copilot is iterative from step 1.
+  // The paired VISUAL is NOT created here — visual is step 2 (ER-13d-2b).
+  const handleCreateExperience = async (starter: RulesStarter | null) => {
+    setCreateError(null);
+    try {
+      const created = await createScript({
+        name: starter?.label ?? t("experience_editor_new_experience_name"),
+        description: "",
+        code: starter?.source ?? "",
+        scriptKind: "interactive",
+        enabled: false,
+        scopeType: "global",
+      });
+      setScripts((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
+      setActiveScriptId(created.id);
+      setCreatingScriptId(created.id);
+    } catch (error) {
+      setCreateError(errorMessage(error));
+    }
   };
-
-  const handleWizardFinish = useCallback((script: ScriptRecord, visual: ExperienceVisualRow) => {
-    setCreationWizard({ open: false, starter: null });
-    setScripts((prev) => (prev.some((s) => s.id === script.id) ? prev : [...prev, script]));
-    setVisuals((prev) => (prev.some((v) => v.id === visual.id) ? prev : [...prev, visual]));
-    setActiveScriptId(script.id);
-    setActiveVisualId(visual.id);
-  }, []);
 
   // IR-90E: monotonic validation token. Changing the active script or its
   // source invalidates every in-flight validation so a stale promise can
@@ -442,6 +452,7 @@ export function ExperienceEditor() {
     }
     setActiveScriptId(null);
     setActiveVisualId(null);
+    setCreatingScriptId(null);
   }, [activeScriptId, activeVisualId, removeScriptDraft, removeVisualDraft]);
 
   // ── Saves ────────────────────────────────────────────────────────────────
@@ -538,6 +549,20 @@ export function ExperienceEditor() {
             {t("experience_editor_load_error")}
           </div>
         )}
+        {createError && (
+          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+            {t("experience_editor_create_error")}: {createError}
+          </div>
+        )}
+        <button
+          type="button"
+          className="mb-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border border-accent bg-accent/10 px-4 py-3 text-left transition-all hover:bg-accent/20"
+          onClick={() => void handleCreateExperience(null)}
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent"><Ic.plus /></div>
+          <span className="flex-1 text-[14px] font-semibold text-t1">{t("experience_editor_create_new")}</span>
+        </button>
+
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
           {t("experience_editor_starters_label")}
         </div>
@@ -547,7 +572,7 @@ export function ExperienceEditor() {
               type="button"
               key={starter.id}
               className="cursor-pointer rounded-xl border border-border bg-surface px-4 py-3 text-left transition-all hover:bg-s2 hover:border-accent"
-              onClick={() => handlePickStarter(starter)}
+              onClick={() => void handleCreateExperience(starter)}
             >
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
@@ -556,17 +581,6 @@ export function ExperienceEditor() {
               <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{starter.description}</div>
             </button>
           ))}
-          <button
-            type="button"
-            className="cursor-pointer rounded-xl border border-dashed border-border bg-surface px-4 py-3 text-left transition-all hover:bg-s2 hover:border-accent"
-            onClick={() => handlePickStarter(null)}
-          >
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-s3 text-t2"><Ic.plus /></div>
-              <span className="flex-1 truncate text-[14px] font-semibold text-t1">{t("experience_editor_start_blank")}</span>
-            </div>
-            <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{t("experience_editor_start_blank_desc")}</div>
-          </button>
         </div>
 
         <div className="mb-2 mt-6 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
@@ -601,22 +615,6 @@ export function ExperienceEditor() {
           })
         )}
       </div>
-
-      {/*
-       * IR-90C: the three-step creation wizard. Opened from a starter pick /
-       * blank instead of landing in the all-in-one editor. The wizard owns its
-       * own draft session (rules + visual, seeded via the shared draft stores)
-       * and persists NOTHING until the confirmed Finish — at which point it
-       * creates both resources and hands them back so the editor opens the new
-       * experience exactly as if it always existed.
-       */}
-      {creationWizard.open && (
-        <ExperienceCreationWizard
-          starter={creationWizard.starter}
-          onClose={() => setCreationWizard({ open: false, starter: null })}
-          onFinish={handleWizardFinish}
-        />
-      )}
       </>
     );
   }
@@ -634,7 +632,7 @@ export function ExperienceEditor() {
           type="button"
           aria-label={t("experience_editor_back")}
           className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
-          onClick={() => setActiveScriptId(null)}
+          onClick={() => { setActiveScriptId(null); setCreatingScriptId(null); }}
         >
           {Ic.caret("l")} {t("experience_editor_back")}
         </button>
@@ -711,6 +709,7 @@ export function ExperienceEditor() {
       <div className="min-h-0 flex-1">
         <ExperienceCopilotShell
           scriptId={activeScript.id}
+          creationMode={creationMode}
           rulesCode={activeScript.code}
           onRulesChange={(code) => updateScriptDraft({ code })}
           visualSource={activeVisual?.source ?? ""}

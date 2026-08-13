@@ -1,12 +1,12 @@
 /**
  * Shared local-id + pending-record helpers for the interactive Experience
- * authoring surfaces (ExperienceEditor + ExperienceCreationWizard).
+ * authoring surfaces (ExperienceEditor).
  *
- * Extracted from ExperienceEditor.tsx so the creation wizard (IR-90C) can seed
- * pending rules/visual drafts through the SAME draft stores and the SAME
+ * Extracted from ExperienceEditor.tsx so duplicate drafts can seed pending
+ * rules/visual drafts through the SAME draft stores and the SAME
  * empty-base-dirty trick without duplicating the id counter or the record
  * factories. The id counter is module-level and shared so local ids never
- * collide across the editor and the wizard.
+ * collide across the editor.
  */
 import type { ExperienceVisualDraftValues } from "../../../stores/experience-authoring-store.js";
 import type { InteractiveRulesDraftValues } from "../../../lib/experience-rules-starters.js";

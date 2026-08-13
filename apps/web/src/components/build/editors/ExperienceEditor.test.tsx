@@ -1,5 +1,5 @@
 /**
- * ExperienceEditor — IR-81C boundary tests.
+ * ExperienceEditor — IR-81C / ER-13d-2a boundary tests.
  *
  * Boundary under test: API mocks (script-api / experience-api) → the REAL
  * ExperienceEditor with the REAL CodeMirror editor, REAL draft stores
@@ -9,20 +9,22 @@
  * matching ScriptEditor.test.tsx and ExperienceAssignment.test.tsx.
  *
  * Pinned behavior (per the IR-81C contract):
- *  1. The starter picker lands in the editor with the starter's rules source
- *     plus a paired, INDEPENDENT visual draft — both editable, both dirty,
- *     and edits to one never touch the other.
- *  2. Dirty/save flow: the first save CREATEs (scriptKind "interactive",
- *     scopeType "global", enabled false); later saves PATCH one snapshot via
- *     prepareSave/completeSave; a failed save stays dirty and retryable;
- *     edits made during an in-flight save survive reconciliation. The visual
- *     buffer saves independently through the visuals API.
+ *  1. Persist-on-create (ER-13d-2a): a starter pick (or the blank
+ *     "create new" button) persists a fresh script immediately (enabled=false,
+ *     server id) and opens the editor in CREATION MODE (3-position toggle).
+ *     The paired VISUAL is NOT created here (step 2 / ER-13d-2b).
+ *  2. Dirty/save flow: the created script is already server-side, so saves
+ *     PATCH via updateScript (prepareSave/completeSave); a failed save stays
+ *     dirty and retryable; edits made during an in-flight save survive
+ *     reconciliation. The duplicate path still CREATEs a local-id draft on its
+ *     first save. The visual buffer saves independently through the visuals
+ *     API.
  *  3. Trust UX: a changed (or never-saved) source shows untrusted and LOCKS
  *     the enable toggle; after saving the exact reviewed source the toggle
  *     unlocks and enabling persists only via an explicit second save; an
  *     enabled script that is edited drops to untrusted (store invariant).
- *  4. Duplication from a starter and from an existing script/visual produces
- *     independent, explicitly untrusted copies (no shared array references).
+ *  4. Duplication from an existing script/visual produces independent,
+ *     explicitly untrusted copies (no shared array references).
  *  5. The interactive API reference mounts from the editor toolbar.
  *
  * Runner: bun:test with scoped happy-dom (one file per process —
@@ -32,6 +34,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import type { ExperienceTestRunData, ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { getVisualStarter } from "../../experience/starters/index.js";
+import { RULES_STARTERS } from "../../../lib/experience-rules-starters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -39,6 +42,14 @@ import { useDomEnv } from "../../../../test/dom-env.js";
 useDomEnv();
 
 const EXISTING_CODE = "context.experience.register({ apiVersion: 1, manifest: { id: 'existing', name: 'Existing' }, capabilities: [], create() { return {}; }, project() { return {}; }, actions() { return []; }, reduce(context) { return { state: context.state, status: 'active', events: [] }; } });";
+
+/** The frozen "board" rules starter source — the exact code persist-on-create
+ *  seeds when a starter pick creates a fresh script (ER-13d-2a). */
+const BOARD_SOURCE = (() => {
+  const starter = RULES_STARTERS.find((s) => s.id === "board");
+  if (!starter) throw new Error("board starter missing");
+  return starter.source;
+})();
 
 /** A typed `ExperienceTestRunData` fixture — no `unknown`/`any` cast, no suppressions. */
 function makeTestRunData(): ExperienceTestRunData {
@@ -414,53 +425,30 @@ async function waitForExperienceDeleteSecondary(): Promise<HTMLElement> {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("ExperienceEditor", () => {
-  it("lists only interactive scripts and opens the creation wizard from a starter pick", async () => {
+  it("lists only interactive scripts; clicking a starter persists a fresh script and opens the editor in creation mode", async () => {
     serverScripts = [
       { ...baseScript },
       { ...baseScript, id: "srv_prompt", name: "Prompt Script", scriptKind: "prompt" },
     ];
 
-    const { findByText, queryByText, queryAllByTestId } = render(<ExperienceEditor />);
+    const { findByText, queryByText, getByRole } = render(<ExperienceEditor />);
 
-    // Picker: five starters + blank; the existing list shows only interactive.
+    // Picker: the create-new button + five starters; the existing list shows
+    // only interactive scripts.
+    expect(await findByText("experience_editor_create_new")).toBeTruthy();
     expect(await findByText("Board")).toBeTruthy();
     expect(await findByText("Existing Rules")).toBeTruthy();
     expect(queryByText("Prompt Script")).toBeNull();
 
-    // IR-90C: a starter pick now opens the three-step creation wizard instead
-    // of landing in the all-in-one editor.
+    // ER-13d-2a: a starter pick persists a fresh script (enabled=false) and
+    // opens the editor in CREATION MODE (3-position toggle).
     fireEvent.click(await findByText("Board"));
-    // Exactly three step indicators render; the wizard opens on Step 1.
-    await waitFor(() => {
-      const indicators = queryAllByTestId("wizard-step-indicator");
-      expect(indicators.length).toBe(3);
-    });
-    const indicators = queryAllByTestId("wizard-step-indicator");
-    expect(indicators[0]?.getAttribute("aria-current")).toBe("step");
-    expect(indicators[1]?.getAttribute("aria-current")).toBeNull();
-  });
-
-  it("creates the rules script on first save and returns to idle-clean", async () => {
-    // IR-90C: the create path is now reached via duplication (the starter pick
-    // opens the wizard). The boundary is unchanged: saving a local-id draft
-    // calls createScript with the right body and migrates to the server id.
-    serverScripts = [{ ...baseScript }];
-    const { container, findByText, findByRole, getAllByRole } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Existing Rules"));
-    await codeViews(container);
-
-    // Duplicate the existing script → a fresh local-id (untrusted) draft.
-    const [dupButton] = getAllByRole("button", { name: "experience_editor_duplicate" });
-    if (!dupButton) throw new Error("duplicate button missing");
-    fireEvent.click(dupButton);
-
-    fireEvent.click(await findByRole("button", { name: "save" }));
 
     await waitFor(() => {
       expect(createScript).toHaveBeenCalledWith({
-        name: "Existing Rules",
+        name: "Board",
         description: "",
-        code: EXISTING_CODE,
+        code: BOARD_SOURCE,
         scriptKind: "interactive",
         enabled: false,
         scopeType: "global",
@@ -468,10 +456,87 @@ describe("ExperienceEditor", () => {
     });
     expect(createScript).toHaveBeenCalledTimes(1);
 
-    // The buffer migrated to the server id and is clean (status + store).
+    // The editor view mounted in creation mode: the shell's 3-position toggle
+    // includes the sandbox position (i18n-labelled).
+    await waitFor(() => {
+      expect(getByRole("radio", { name: "experience_copilot_rules" })).toBeDefined();
+      expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
+      expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
+    });
+  });
+
+  it("persists the script immediately on a starter pick in a saved/idle state (server id, not local)", async () => {
+    // ER-13d-2a: the create happens on the starter pick (persist-on-create),
+    // NOT on the first save. The boundary is unchanged: createScript is called
+    // once with the right body and the script exists with a server id.
+    serverScripts = [{ ...baseScript }];
+    const { findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Board"));
+
+    await waitFor(() => {
+      expect(createScript).toHaveBeenCalledWith({
+        name: "Board",
+        description: "",
+        code: BOARD_SOURCE,
+        scriptKind: "interactive",
+        enabled: false,
+        scopeType: "global",
+      });
+    });
+    expect(createScript).toHaveBeenCalledTimes(1);
+
+    // The script exists immediately (server id, not local) and is clean.
     expect(await findByText("saved_state")).toBeTruthy();
     const drafts = rulesDraftEntries().filter(([id]) => !id.startsWith("local:"));
     expect(drafts.some(([id]) => id === "srv_2")).toBe(true);
+    // No local (unsaved) draft was ever created for the starter pick.
+    expect(rulesDraftEntries().filter(([id]) => id.startsWith("local:"))).toHaveLength(0);
+  });
+
+  it("the blank 'create new' button persists an empty script and opens creation mode", async () => {
+    const { findByText, getByRole } = render(<ExperienceEditor />);
+
+    fireEvent.click(await findByText("experience_editor_create_new"));
+
+    await waitFor(() => {
+      expect(createScript).toHaveBeenCalledWith({
+        name: "experience_editor_new_experience_name",
+        description: "",
+        code: "",
+        scriptKind: "interactive",
+        enabled: false,
+        scopeType: "global",
+      });
+    });
+    expect(createScript).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
+    });
+  });
+
+  it("navigating back to the picker clears creation mode (re-opening edits with a 2-position toggle)", async () => {
+    const { container, findByText, getByRole, queryByRole } = render(<ExperienceEditor />);
+
+    // Create via the blank button → creation mode (3-position toggle).
+    fireEvent.click(await findByText("experience_editor_create_new"));
+    await waitFor(() => {
+      expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
+    });
+
+    // Navigate back to the picker.
+    const backButton = [...container.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").includes("experience_editor_back"),
+    );
+    if (!backButton) throw new Error("back button missing");
+    fireEvent.click(backButton);
+    expect(await findByText("experience_editor_starters_label")).toBeTruthy();
+
+    // Re-open the same script → editing mode (2-position toggle, no sandbox).
+    fireEvent.click(await findByText("experience_editor_new_experience_name"));
+    await waitFor(() => {
+      expect(getByRole("radio", { name: "Visual" })).toBeDefined();
+      expect(queryByRole("radio", { name: "experience_copilot_sandbox" })).toBeNull();
+    });
   });
 
   it("patches one snapshot on later saves and keeps a failed save dirty + retryable", async () => {
@@ -513,9 +578,11 @@ describe("ExperienceEditor", () => {
     expect(await findByText("saved_state")).toBeTruthy();
   });
 
-  it("preserves edits made during an in-flight create", async () => {
-    // IR-90C: the create path is reached via duplication (the starter pick
-    // opens the wizard). The mid-flight-edit boundary is unchanged.
+  it("preserves edits made during an in-flight create (duplicate path — the remaining local-id create)", async () => {
+    // ER-13d-2a: persist-on-create gives the starter path a SERVER id (no local
+    // draft), so the mid-flight-edit boundary now lives ONLY on the duplicate
+    // path (local-id draft → createScript on first save). The boundary is
+    // unchanged: edits made while the create is in flight survive reconciliation.
     const gate = holdNextCreate();
     serverScripts = [{ ...baseScript }];
     const { container, findByText, findByRole, getAllByRole } = render(<ExperienceEditor />);
