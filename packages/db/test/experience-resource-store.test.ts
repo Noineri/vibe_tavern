@@ -186,6 +186,38 @@ describe("ExperienceResourceStore — chat configs (one per chat)", () => {
     expect(updated.capabilityGrants).toEqual(["participants", "deterministic_random"]);
     expect(updated.contextMode).toBe("current_branch");
   });
+
+  test("context-source columns round-trip (character + chat) and default null", async () => {
+    const created = await store.getOrCreateConfigForChat("chat_1");
+    expect(created.contextSourceCharacterId).toBeNull();
+    expect(created.contextSourceChatId).toBeNull();
+
+    const updated = await store.updateConfig("chat_1", {
+      contextSourceCharacterId: "char_1",
+      contextSourceChatId: "chat_1",
+    });
+    expect(updated.contextSourceCharacterId).toBe("char_1");
+    expect(updated.contextSourceChatId).toBe("chat_1");
+
+    // Explicit null clears the pointer.
+    const cleared = await store.updateConfig("chat_1", {
+      contextSourceCharacterId: null,
+      contextSourceChatId: null,
+    });
+    expect(cleared.contextSourceCharacterId).toBeNull();
+    expect(cleared.contextSourceChatId).toBeNull();
+  });
+
+  test("deleting a referenced source character sets the config pointer null (SET NULL)", async () => {
+    // A second character referenced ONLY by the config pointer — deleting it must
+    // NOT cascade the config away (the chat's own character has cascade via
+    // chats.character_id, which would take the config down with it).
+    await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_2', 'Side', '2026-01-01', '2026-01-01')`);
+    await store.updateConfig("chat_1", { contextSourceCharacterId: "char_2" });
+    await db.run(sql`DELETE FROM characters WHERE id = 'char_2'`);
+    const after = await store.getOrCreateConfigForChat("chat_1");
+    expect(after.contextSourceCharacterId).toBeNull();
+  });
 });
 
 describe("ExperienceResourceStore — prompt overrides (global + per-character)", () => {

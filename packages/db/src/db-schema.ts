@@ -978,6 +978,12 @@ export const experienceChatConfigs = sqliteTable('experience_chat_configs', {
   // User-approved capabilities (a subset of the package's declared set).
   capabilityGrantsJson: text('capability_grants_json').notNull().default('[]'),
   contextMode: text('context_mode').notNull().default('none'),
+  // User-chosen RP-context source (report item 6): an arbitrary character +
+  // optional chat to freeze into the session's context bundle, instead of the
+  // ambient host chat. Live pointers — SET NULL when the source is deleted (the
+  // config survives; the next capture falls back to ambient). NULL = ambient.
+  contextSourceCharacterId: text('context_source_character_id').references(() => characters.id, { onDelete: 'set null' }),
+  contextSourceChatId: text('context_source_chat_id').references(() => chats.id, { onDelete: 'set null' }),
   launcherVisible: integer('launcher_visible', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -1125,6 +1131,11 @@ export const experienceContextBundles = sqliteTable('experience_context_bundles'
   // provider-profile delete/rename, consistent with message_variants.model_id).
   providerProfileId: text('provider_profile_id'),
   modelId: text('model_id'),
+  // Provenance of the RP-context SOURCE this bundle was frozen from (report
+  // item 6). Plain text, no FK — a bundle is an immutable snapshot and must
+  // survive source deletion. NULL = captured from the ambient host chat.
+  sourceCharacterId: text('source_character_id'),
+  sourceChatId: text('source_chat_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({

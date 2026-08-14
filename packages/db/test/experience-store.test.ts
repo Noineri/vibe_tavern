@@ -369,6 +369,24 @@ describe("ExperienceStore — context bundle + attachments", () => {
     expect(all?.messageFrontierPosition).toBe(9);
   });
 
+  test("captureContextBundle persists source provenance when provided, nulls when omitted", async () => {
+    const withSource = await store.captureContextBundle("xs_test_1", {
+      mode: "recent",
+      sourceCharacterId: "char_1",
+      sourceChatId: "chat_1",
+    });
+    expect(withSource.sourceCharacterId).toBe("char_1");
+    expect(withSource.sourceChatId).toBe("chat_1");
+
+    // Re-capture without the fields nulls them (ambient source), not stale leftovers.
+    const withoutSource = await store.captureContextBundle("xs_test_1", {
+      mode: "recent",
+      messageFrontierPosition: 3,
+    });
+    expect(withoutSource.sourceCharacterId).toBeNull();
+    expect(withoutSource.sourceChatId).toBeNull();
+  });
+
   test("queue → bind → getForMessage; rollback releases back to queued", async () => {
     const queued = await store.queueAttachment({
       chatId: "chat_1",

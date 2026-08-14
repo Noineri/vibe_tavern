@@ -41,6 +41,8 @@ export interface ExperienceChatConfigRow {
   visualId: string | null;
   capabilityGrants: string[];
   contextMode: string;
+  contextSourceCharacterId: string | null;
+  contextSourceChatId: string | null;
   launcherVisible: boolean;
   createdAt: string;
   updatedAt: string;
@@ -87,6 +89,8 @@ export interface UpdateChatConfigData {
   visualId?: string | null;
   capabilityGrants?: string[];
   contextMode?: string;
+  contextSourceCharacterId?: string | null;
+  contextSourceChatId?: string | null;
   launcherVisible?: boolean;
 }
 
@@ -320,6 +324,8 @@ export class ExperienceResourceStore {
           visualId: null,
           capabilityGrantsJson: '[]',
           contextMode: 'none',
+          contextSourceCharacterId: null,
+          contextSourceChatId: null,
           launcherVisible: true,
           createdAt: now,
           updatedAt: now,
@@ -345,6 +351,8 @@ export class ExperienceResourceStore {
       values.capabilityGrantsJson = JSON.stringify(data.capabilityGrants);
     }
     if (data.contextMode !== undefined) values.contextMode = data.contextMode;
+    if (data.contextSourceCharacterId !== undefined) values.contextSourceCharacterId = data.contextSourceCharacterId;
+    if (data.contextSourceChatId !== undefined) values.contextSourceChatId = data.contextSourceChatId;
     if (data.launcherVisible !== undefined) values.launcherVisible = data.launcherVisible;
 
     const [row] = await this.db
@@ -502,6 +510,8 @@ export class ExperienceResourceStore {
       visualId: row.visualId,
       capabilityGrants: parseStringArray(row.capabilityGrantsJson),
       contextMode: row.contextMode,
+      contextSourceCharacterId: row.contextSourceCharacterId,
+      contextSourceChatId: row.contextSourceChatId,
       launcherVisible: row.launcherVisible,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

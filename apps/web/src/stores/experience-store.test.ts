@@ -123,6 +123,8 @@ function makeConfig(chatId: string): ExperienceChatConfigRow {
     visualId: "vis-1",
     capabilityGrants: [],
     contextMode: "none",
+    contextSourceCharacterId: null,
+    contextSourceChatId: null,
     launcherVisible: true,
     createdAt: T0,
     updatedAt: T0,

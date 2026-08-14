@@ -90,6 +90,8 @@ export interface ExperienceContextBundleRow {
   sourceHashesJson: string | null;
   providerProfileId: string | null;
   modelId: string | null;
+  sourceCharacterId: string | null;
+  sourceChatId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -175,6 +177,8 @@ export interface CaptureContextBundleData {
   sourceHashesJson?: string | null;
   providerProfileId?: string | null;
   modelId?: string | null;
+  sourceCharacterId?: string | null;
+  sourceChatId?: string | null;
 }
 
 export interface QueueAttachmentData {
@@ -838,6 +842,8 @@ export class ExperienceStore {
       sourceHashesJson: data.sourceHashesJson ?? null,
       providerProfileId: data.providerProfileId ?? null,
       modelId: data.modelId ?? null,
+      sourceCharacterId: data.sourceCharacterId ?? null,
+      sourceChatId: data.sourceChatId ?? null,
       updatedAt: now,
     };
     if (existing !== null) {
@@ -1510,6 +1516,8 @@ export class ExperienceStore {
       sourceHashesJson: row.sourceHashesJson,
       providerProfileId: row.providerProfileId,
       modelId: row.modelId,
+      sourceCharacterId: row.sourceCharacterId,
+      sourceChatId: row.sourceChatId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
