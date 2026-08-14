@@ -621,11 +621,13 @@ export type ExperienceEffectStatus =
 /**
  * Kind of durable effect a reducer may request. The host persists the request,
  * runs the capability work, and feeds the result back through the same
- * state-machine boundary. V1 ships `model` (atomic model generation); the set
- * is bounded and grows only as a capability introduces new durable work.
+ * state-machine boundary. V1 ships `model` (atomic model generation) and
+ * `timer` (a host-fired synthetic tick action after a delay); the set is
+ * bounded and grows only as a capability introduces new durable work.
  */
 export const EXPERIENCE_EFFECT_KIND = {
   model: "model",
+  timer: "timer",
 } as const;
 
 export type ExperienceEffectKind =

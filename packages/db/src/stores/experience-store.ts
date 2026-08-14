@@ -8,6 +8,7 @@ import {
 } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import { EXPERIENCE_EFFECT_KIND, type ExperienceEffectKind } from '@vibe-tavern/domain';
 
 // ─── Return types (store-level row shapes) ───────────────────────────────────
 
@@ -577,12 +578,26 @@ export class ExperienceStore {
       const effectRequests = parseJsonArray(data.emittedEffectsJson);
       for (let i = 0; i < effectRequests.length; i += 1) {
         const effectId = this.idGen.next('xe');
+        // Derive the row kind from the kernel-validated `{ kind, request }`
+        // envelope instead of hardcoding 'model'. A legacy/malformed element
+        // falls back to 'model' so a bad shape can never drop the row.
+        const element = effectRequests[i];
+        let effectKind: ExperienceEffectKind = 'model';
+        if (typeof element === 'object' && element !== null) {
+          const record = element as Record<string, unknown>;
+          if (
+            record.kind === EXPERIENCE_EFFECT_KIND.model ||
+            record.kind === EXPERIENCE_EFFECT_KIND.timer
+          ) {
+            effectKind = record.kind;
+          }
+        }
         tx
           .insert(experienceEffects)
           .values({
             id: effectId,
             sessionId: data.sessionId,
-            kind: 'model',
+            kind: effectKind,
             status: 'pending',
             originatingRevision: nextRevision,
             requestJson: JSON.stringify(effectRequests[i]),
@@ -660,6 +675,21 @@ export class ExperienceStore {
       .select()
       .from(experienceEffects)
       .where(eq(experienceEffects.sessionId, sessionId))
+      .all();
+    return rows.map((r) => this.mapRowEffect(r));
+  }
+
+  /**
+   * All pending effects of a given kind across every session, oldest first.
+   * The host timer scheduler uses this to discover fire-due ticks; a claimed
+   * (running) effect drops out because it is no longer `pending`.
+   */
+  async getPendingEffectsByKind(kind: ExperienceEffectKind): Promise<ExperienceEffectRow[]> {
+    const rows = await this.db
+      .select()
+      .from(experienceEffects)
+      .where(and(eq(experienceEffects.kind, kind), eq(experienceEffects.status, 'pending')))
+      .orderBy(asc(experienceEffects.createdAt), asc(experienceEffects.id))
       .all();
     return rows.map((r) => this.mapRowEffect(r));
   }

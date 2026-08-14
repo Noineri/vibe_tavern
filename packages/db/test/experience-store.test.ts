@@ -192,19 +192,22 @@ describe("ExperienceStore — CAS transition (the core write path)", () => {
     expect(await store.getSteps("xs_test_1")).toHaveLength(1);
   });
 
-  test("emitted effects become pending effect rows (persist before run)", async () => {
+  test("emitted effects become pending effect rows with the correct kind (persist before run)", async () => {
     const out = await store.applyTransition(
       baseTransition({
         requestId: "req_eff",
-        emittedEffectsJson: '[{"kind":"model","request":{"prompt":"reply"}}]',
+        emittedEffectsJson:
+          '[{"kind":"model","request":{"prompt":"reply"}},{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":5000}}]',
       }),
     );
     expect(out.ok).toBe(true);
     const effects = await store.getEffectsForSession("xs_test_1");
-    expect(effects).toHaveLength(1);
+    expect(effects).toHaveLength(2);
     expect(effects[0].status).toBe("pending");
     expect(effects[0].kind).toBe("model");
     expect(effects[0].originatingRevision).toBe(out.ok ? out.session.revision : -1);
+    expect(effects[1].status).toBe("pending");
+    expect(effects[1].kind).toBe("timer");
   });
 });
 
@@ -252,6 +255,46 @@ describe("ExperienceStore — durable-effect lifecycle", () => {
     const count = await store.reconcileUnknownEffects();
     expect(count).toBe(1);
     expect((await store.getEffectById(effectId))?.status).toBe("unknown");
+  });
+
+  test("getPendingEffectsByKind filters by kind across sessions and drops claimed rows", async () => {
+    // Session 1 (from beforeEach) already carries a pending model effect at rev 1.
+    // Add a timer effect to session 1.
+    await store.applyTransition(
+      baseTransition({
+        requestId: "req_timer_1",
+        expectedRevision: 1,
+        emittedEffectsJson: '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":1000}}]',
+      }),
+    );
+
+    // A second branch + session, with its own timer effect only.
+    await db.run(
+      sql`INSERT INTO chat_branches (id, chat_id, label, created_at) VALUES ('branch_2', 'chat_1', 'Second', '2026-01-01')`,
+    );
+    const second = await store.createSession({ ...baseSession(), branchId: "branch_2" });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    await store.applyTransition(
+      baseTransition({
+        sessionId: second.session.id,
+        requestId: "req_timer_2",
+        emittedEffectsJson: '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":2000}}]',
+      }),
+    );
+
+    // Kind + status filter: only pending timer rows, across both sessions.
+    const timers = await store.getPendingEffectsByKind("timer");
+    expect(timers).toHaveLength(2);
+    expect(timers.every((e) => e.kind === "timer" && e.status === "pending")).toBe(true);
+    // Model rows are NOT returned by the timer query.
+    const models = await store.getPendingEffectsByKind("model");
+    expect(models).toHaveLength(1);
+    expect(models[0].kind).toBe("model");
+
+    // Claiming a timer effect moves it pending → running, so it drops out.
+    await store.claimEffect(timers[0].id);
+    expect(await store.getPendingEffectsByKind("timer")).toHaveLength(1);
   });
 });
 

@@ -371,6 +371,15 @@ describe("experienceTransitionSchema", () => {
     ).toBe(true);
   });
 
+  it("accepts a timer effect transition", () => {
+    expect(
+      experienceTransitionSchema.safeParse({
+        ...validTransition(),
+        effects: [{ kind: "timer", request: { viewer: "model", actionType: "tick", afterMs: 5000 } }],
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects status 'interrupted' (host-only, not reducer output)", () => {
     expectReject(experienceTransitionSchema.safeParse({ ...validTransition(), status: "interrupted" }));
   });

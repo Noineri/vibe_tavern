@@ -65,7 +65,7 @@ export const experienceEffectStatusSchema = z.enum([
   "unknown",
 ]);
 
-export const experienceEffectKindSchema = z.enum(["model"]);
+export const experienceEffectKindSchema = z.enum(["model", "timer"]);
 
 export const experienceContextModeSchema = z.enum([
   "none",

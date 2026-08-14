@@ -145,3 +145,21 @@ export type ModelEffectResultPayload =
   | { mode: "action"; actionId: string; args?: unknown }
   | { mode: "text"; text: string };
 
+/**
+ * Request payload for a `timer` effect: the host fires a synthetic tick action
+ * on behalf of `viewer` after `afterMs` milliseconds (counted from when the
+ * host scheduler picks the effect up — the host owns the clock; game time does
+ * not advance while the server is down). The tick must be in the viewer's
+ * legal action set at fire time (the existing CAS rejects a stale tick).
+ */
+export interface TimerEffectRequestPayload {
+  /** The participantId the tick action is submitted for. */
+  viewer: string;
+  /** The action type of the synthetic tick action. */
+  actionType: string;
+  /** Positive delay in milliseconds. */
+  afterMs: number;
+  /** Optional fixed args carried by the tick action. */
+  args?: unknown;
+}
+

@@ -65,6 +65,7 @@ import {
   type ExperienceApiError,
   type ExperienceResult,
   type ModelEffectRequestPayload,
+  type TimerEffectRequestPayload,
   buildCapabilityContext,
   err,
   fromKernelError,
@@ -274,6 +275,41 @@ export function parseModelEffectRequest(requestJson: string): ModelEffectRequest
     mode: r.mode,
     ...(typeof r.actionType === "string" ? { actionType: r.actionType } : {}),
     ...(typeof r.instruction === "string" ? { instruction: r.instruction } : {}),
+  };
+}
+
+/** Parse + strictly validate a persisted effect's `{ kind, request }` envelope
+ *  into the timer-effect payload. Unlike the lenient model parser, this rejects
+ *  any unknown key and enforces the `afterMs` bound, so a malformed timer
+ *  request fails here (and later persists as a validation error) rather than
+ *  reaching the scheduler. */
+export function parseTimerEffectRequest(requestJson: string): TimerEffectRequestPayload | null {
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(requestJson);
+  } catch {
+    return null;
+  }
+  if (typeof envelope !== "object" || envelope === null) return null;
+  const env = envelope as Record<string, unknown>;
+  if (env.kind !== "timer") return null;
+  const req = env.request;
+  if (typeof req !== "object" || req === null) return null;
+  const r = req as Record<string, unknown>;
+  // Strict: exactly the known keys, nothing else.
+  const allowed = new Set(["viewer", "actionType", "afterMs", "args"]);
+  for (const key of Object.keys(r)) {
+    if (!allowed.has(key)) return null;
+  }
+  if (typeof r.viewer !== "string" || r.viewer.length === 0) return null;
+  if (typeof r.actionType !== "string" || r.actionType.length === 0) return null;
+  if (typeof r.afterMs !== "number" || !Number.isInteger(r.afterMs)) return null;
+  if (r.afterMs <= 0 || r.afterMs > 2_147_483_647) return null;
+  return {
+    viewer: r.viewer,
+    actionType: r.actionType,
+    afterMs: r.afterMs,
+    ...(r.args !== undefined ? { args: r.args } : {}),
   };
 }
 
