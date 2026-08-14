@@ -196,7 +196,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   // terminal effect row arrive without user interaction. Self-disarms when no
   // live timer remains. Runs BEFORE the visibility gate like every other hook
   // (Rules of Hooks: the gate's early return must never change hook count).
-  useExperienceTimerResync({ chatId, branchId, effects, active: visible && modalOpen && !detached && hasSession });
+  useExperienceTimerResync({ chatId, branchId, effects, view: session?.view ?? null, active: visible && modalOpen && !detached && hasSession });
 
   if (!visible) return null;
 

@@ -285,7 +285,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
   // timer is live, slowly rehydrate so the applied tick and the terminal
   // effect row arrive without user interaction. Self-disarms when no live
   // timer remains.
-  useExperienceTimerResync({ chatId, branchId, effects: storeEffects, active: session !== null });
+  useExperienceTimerResync({ chatId, branchId, effects: storeEffects, view: storeSession?.view ?? null, active: session !== null });
 
   // ── Run durable pending model effects one at a time (IR-73B) ─
   // Only `pending` MODEL rows auto-run (timer effects are host-scheduled,

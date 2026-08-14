@@ -132,4 +132,73 @@ describe("useExperienceTimerResync", () => {
     // The interval was cleared on the terminal rerender: no further calls.
     expect(rehydrateCalls()).toBe(beforeTerminal);
   });
+
+  // ── AC-3 (ASYNC_FLAVOR_CHATTER_PLAN): chatter-pending gate ──────────────
+
+  it("polls while the projected view's flavor is a pending chatter view (no timers needed)", async () => {
+    renderHook(() =>
+      useExperienceTimerResync({
+        chatId: "c1",
+        branchId: "b1",
+        effects: [],
+        view: { flavor: { status: "pending", seatId: "ai1" } },
+        active: true,
+        intervalMs: 5,
+      }),
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(rehydrateCalls()).toBeGreaterThan(0);
+  });
+
+  it("never polls for static or terminal flavor (only pending chatter arms the gate)", async () => {
+    for (const flavor of [
+      { hint: "static cosmetic data" },
+      { status: "resolved", seatId: "ai1", text: "line" },
+      { status: "failed", seatId: "ai1" },
+      undefined,
+    ]) {
+      rehydrateMock.mockClear();
+      renderHook(() =>
+        useExperienceTimerResync({
+          chatId: "c1",
+          branchId: "b1",
+          effects: [],
+          view: { flavor },
+          active: true,
+          intervalMs: 5,
+        }),
+      );
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      expect(rehydrateCalls()).toBe(0);
+    }
+  });
+
+  it("disarms once the chatter view leaves pending (resolved on rehydrate)", async () => {
+    const { rerender } = renderHook(
+      (props: { flavor: unknown }) =>
+        useExperienceTimerResync({
+          chatId: "c1",
+          branchId: "b1",
+          effects: [],
+          view: { flavor: props.flavor },
+          active: true,
+          intervalMs: 5,
+        }),
+      { initialProps: { flavor: { status: "pending", seatId: "ai1" } as unknown } },
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 15));
+    });
+    const beforeResolve = rehydrateCalls();
+    expect(beforeResolve).toBeGreaterThan(0);
+    rerender({ flavor: { status: "resolved", seatId: "ai1", text: "line" } });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(rehydrateCalls()).toBe(beforeResolve);
+  });
 });
