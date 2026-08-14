@@ -74,6 +74,10 @@ import {
 	err,
 	ok,
 } from "./experience-shared.js";
+import type {
+	StructuredActionChoiceInput,
+	StructuredActionChoiceResult,
+} from "./experience-model-effect-structured.js";
 import { validatePayloadValue } from "./experience-payload-schema.js";
 
 // ─── Public types ────────────────────────────────────────────────────────────
@@ -100,6 +104,10 @@ export interface ExperienceModelEffectServiceDeps {
 	providerProfiles: ProviderProfileService;
 	/** Provider execution seam — injected so tests can stub the model call. */
 	execute?: typeof nonstreamingProviderExecute;
+	/** Structured-generation seam (fix step 1c) — when absent, action mode uses
+	 * the text path only. Production wiring passes the real implementation;
+	 * tests opt in per-case. */
+	executeStructured?: (input: StructuredActionChoiceInput) => Promise<StructuredActionChoiceResult>;
 }
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -193,20 +201,47 @@ export class ExperienceModelEffectService {
 		// 4. Build the prompt (host protocol + overrides + character/persona + bundle + private view).
 		const prompt = await this.buildPrompt(effectiveProfile, model, vmCtx.data);
 
-		// 5. Execute the provider call.
-		let text: string;
-		try {
-			const result = await this.execute({ profile: effectiveProfile, model, prompt, signal });
-			text = result.text;
-		} catch (e) {
-			// Cancellation: an aborted signal (client cancel) persists `cancelled`.
-			if (signal?.aborted) {
-				await this.deps.stores.experiences.cancelEffect(effectId);
-				return ok({ effectId, status: "cancelled" });
+		// 5. Execute the provider call. For action mode with the structured seam
+		//    available, FIRST attempt native schema-constrained generation: the
+		//    reply arrives as a JSON object by construction. The result still goes
+		//    through the SAME validateOutput below — the native schema is a
+		//    generation-quality aid, never the validation authority. Any structured
+		//    failure (unsupported provider, call error, throwing seam) falls back
+		//    to the text path; there is no retry loop.
+		let text: string | null = null;
+		if (vmCtx.data.request.mode === "action" && this.deps.executeStructured) {
+			let structured: StructuredActionChoiceResult | null = null;
+			try {
+				structured = await this.deps.executeStructured({
+					profile: effectiveProfile,
+					model,
+					prompt,
+					legalActions: vmCtx.data.legalActions,
+					signal,
+				});
+			} catch {
+				// A throwing seam maps to "fall back" (the contract maps provider
+				// errors to `unsupported`; this guards a misbehaving stub/seam).
+				structured = null;
 			}
-			const message = describeError(e);
-			await this.deps.stores.experiences.failEffect(effectId, message);
-			return ok({ effectId, status: "failed", error: message });
+			if (structured !== null && structured.kind === "structured") {
+				text = structured.text;
+			}
+		}
+		if (text === null) {
+			try {
+				const result = await this.execute({ profile: effectiveProfile, model, prompt, signal });
+				text = result.text;
+			} catch (e) {
+				// Cancellation: an aborted signal (client cancel) persists `cancelled`.
+				if (signal?.aborted) {
+					await this.deps.stores.experiences.cancelEffect(effectId);
+					return ok({ effectId, status: "cancelled" });
+				}
+				const message = describeError(e);
+				await this.deps.stores.experiences.failEffect(effectId, message);
+				return ok({ effectId, status: "failed", error: message });
+			}
 		}
 		// Some providers resolve cleanly on abort rather than throwing — re-check.
 		if (signal?.aborted) {

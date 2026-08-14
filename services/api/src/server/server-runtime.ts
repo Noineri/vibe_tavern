@@ -36,6 +36,7 @@ import { ExperienceService } from "../domain/interactive/experience-service.js";
 import { ExperienceReplayService } from "../domain/interactive/experience-replay-service.js";
 import { ExperienceContextService } from "../domain/interactive/experience-context-service.js";
 import { ExperienceModelEffectService } from "../domain/interactive/experience-model-effect-service.js";
+import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
@@ -210,6 +211,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		experienceService,
 		contextService: experienceContextService,
 		providerProfiles: providerProfileService,
+		executeStructured: generateStructuredActionChoice,
 	});
 	const runtime = new RuntimeApiAdapter(
 		stores,

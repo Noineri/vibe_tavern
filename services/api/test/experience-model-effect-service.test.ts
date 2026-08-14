@@ -254,6 +254,10 @@ function makeServices(opts: {
 	profiles?: StoredProviderProfileRecord[];
 	modelSettings?: ProviderModelSettingsRecord | null;
 	executeReturn?: (spy: ExecuteSpy) => Promise<{ text: string }> | Promise<{ text: string }>;
+	/** When provided, passes an executeStructured seam returning this result
+	 * (kind "structured" feeds the JSON text; kind "unsupported" falls back). */
+	executeStructuredReturn?: { kind: "structured"; text: string } | { kind: "unsupported"; reason: string } | ((spy: ExecuteSpy) => Promise<{ kind: "structured"; text: string } | { kind: "unsupported"; reason: string }>);
+	structuredThrows?: boolean;
 } = {}) {
 	const profile = opts.profile === undefined ? makeProfile() : opts.profile;
 	const profiles = opts.profiles ?? (profile ? [profile] : []);
@@ -290,8 +294,25 @@ function makeServices(opts: {
 		contextService,
 		providerProfiles: providerProfiles as ProviderProfileService,
 		execute: execute as never,
+		...makeStructuredSeam(opts),
 	});
 	return { modelEffectService, contextService, spy, providerProfiles };
+}
+
+/** Build the optional executeStructured deps entry (absent → text path only). */
+function makeStructuredSeam(opts: {
+	executeStructuredReturn?: { kind: "structured"; text: string } | { kind: "unsupported"; reason: string } | ((spy: ExecuteSpy) => Promise<{ kind: "structured"; text: string } | { kind: "unsupported"; reason: string }>);
+	structuredThrows?: boolean;
+}): { executeStructured?: unknown } {
+	if (opts.structuredThrows) {
+		return { executeStructured: (async () => { throw new Error("structured seam blew up"); }) as never };
+	}
+	const ret = opts.executeStructuredReturn;
+	if (ret === undefined) return {};
+	if (typeof ret === "function") {
+		return { executeStructured: ret as never };
+	}
+	return { executeStructured: (async () => ret) as never };
 }
 
 // ─── Tests: success paths ────────────────────────────────────────────────────
@@ -871,6 +892,112 @@ async function rewriteModelParticipant(
 	}
 	stores.db.update(experienceSessions).set({ participantsJson: JSON.stringify(participants) }).run();
 }
+
+// ─── Tests: native structured generation (fix step 1c) ───────────────────────
+
+describe("ExperienceModelEffectService — structured action mode (1c)", () => {
+	test("structured success: generated object is validated + fed back; text path NOT called", async () => {
+		await setup();
+		const { sessionId } = await seedSession(ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "play");
+		let textCalls = 0;
+		const { modelEffectService } = makeServices({
+			executeReturn: async () => { textCalls += 1; return { text: "pass" }; },
+			executeStructuredReturn: { kind: "structured", text: JSON.stringify({ actionId: "play" }) },
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data.status).toBe("succeeded");
+		expect(result.data.result).toEqual({ mode: "action", actionId: "play" });
+		expect(result.data.delivered).toBe(true);
+		expect(textCalls).toBe(0); // structured answer used; no fallback call
+	});
+
+	test("structured success against a payloadSchema descriptor: args carried through", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		const { modelEffectService } = makeServices({
+			executeReturn: async () => ({ text: "pass" }),
+			executeStructuredReturn: { kind: "structured", text: JSON.stringify({ actionId: "play", args: { card: 7 } }) },
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("succeeded");
+		expect(result.ok && result.data.result).toEqual({ mode: "action", actionId: "play", args: { card: 7 } });
+	});
+
+	test("defense in depth: structured reply violating OUR subset validator fails invalid_payload with no fallback loop", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		let textCalls = 0;
+		const { modelEffectService } = makeServices({
+			executeReturn: async () => { textCalls += 1; return { text: "pass" }; },
+			executeStructuredReturn: { kind: "structured", text: JSON.stringify({ actionId: "play", args: { card: 1.5 } }) },
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data.status).toBe("failed");
+		expect(result.data.error).toBe("invalid_payload");
+		expect(textCalls).toBe(0); // a structured reply that fails OUR check is terminal — no text retry
+	});
+
+	test("structured unsupported: falls back to the text path (existing behavior)", async () => {
+		await setup();
+		const { sessionId } = await seedSession(ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "play");
+		let structuredCalls = 0;
+		const { modelEffectService } = makeServices({
+			executeReturn: async () => ({ text: "pass" }),
+			executeStructuredReturn: (async () => { structuredCalls += 1; return { kind: "unsupported", reason: "provider has no json mode" }; }) as never,
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(structuredCalls).toBe(1);
+		expect(result.ok && result.data.status).toBe("succeeded");
+		expect(result.ok && result.data.result).toEqual({ mode: "action", actionId: "pass" });
+	});
+
+	test("structured seam throws: falls back to the text path", async () => {
+		await setup();
+		const { sessionId } = await seedSession(ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "play");
+		const { modelEffectService } = makeServices({
+			executeReturn: async () => ({ text: "pass" }),
+			structuredThrows: true,
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("succeeded");
+		expect(result.ok && result.data.result).toEqual({ mode: "action", actionId: "pass" });
+	});
+
+	test("text mode never consults the structured seam (characterization)", async () => {
+		await setup();
+		const { sessionId } = await seedSession(TEXT_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "say");
+		let structuredCalls = 0;
+		const { modelEffectService } = makeServices({
+			executeReturn: async () => ({ text: "Greetings, traveler." }),
+			executeStructuredReturn: (async () => { structuredCalls += 1; return { kind: "structured", text: "{}" }; }) as never,
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(structuredCalls).toBe(0);
+		expect(result.ok && result.data.status).toBe("succeeded");
+	});
+});
 
 // Keep the imported type referenced for the cast boundaries above.
 export type { ExperienceEffectRow };
