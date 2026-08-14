@@ -90,7 +90,8 @@ type SetupField = ExperienceSetupFieldDto;
 type SeatController = "human" | "script" | "model";
 
 /** One editable participant row. The host owns the stable id; the label is
- *  user-editable free text. Model seats additionally pin a provider + model. */
+ *  user-editable free text. Model seats additionally pin a provider + model,
+ *  and may be backed by a library character (report item 6b). */
 interface RosterSeat {
   /** Stable host-generated participant id (seat_1, seat_2, …; never reassigned). */
   id: string;
@@ -100,6 +101,9 @@ interface RosterSeat {
   /** Model seats only — both required before Start (IR-70E). */
   providerProfileId?: string;
   modelId?: string;
+  /** Model seats only — a library character the seat answers as (report item
+   *  6b). Stripped when the seat switches away from a model controller. */
+  characterId?: string;
 }
 
 /** Modal phase — drives which controls render and which action is primary. */
@@ -217,6 +221,9 @@ export function ExperienceSetupModal({
   const seatCounterRef = useRef(1);
   const [roster, setRoster] = useState<RosterSeat[]>([{ id: "seat_1", label: "", controller: "human" }]);
   const [rosterError, setRosterError] = useState<string | null>(null);
+  // ── Character-backed seat picker (report item 6b) ──────────────────────
+  const [addCharOpen, setAddCharOpen] = useState(false);
+  const [pendingCharIds, setPendingCharIds] = useState<ReadonlySet<string>>(new Set());
 
   // ── Provider/model selection (model capability) ─────────────────────────
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[] | null>(null);
@@ -265,6 +272,8 @@ export function ExperienceSetupModal({
     seatCounterRef.current = 1;
     setRoster([{ id: "seat_1", label: "", controller: "human" }]);
     setRosterError(null);
+    setAddCharOpen(false);
+    setPendingCharIds(new Set());
     setProviderProfiles(null);
     setProviderLoadError(null);
     setModelsByProfile({});
@@ -307,6 +316,10 @@ export function ExperienceSetupModal({
   const allCharacters = useAllCharacters();
   const chatList = useChatList();
   const characterById = useMemo(() => new Map(allCharacters.map((c) => [c.id, c])), [allCharacters]);
+  const sortedAllCharacters = useMemo(
+    () => [...allCharacters].sort((a, b) => a.name.localeCompare(b.name)),
+    [allCharacters],
+  );
   const sourceCharacterOptions = useMemo(
     () =>
       [...allCharacters]
@@ -542,6 +555,51 @@ export function ExperienceSetupModal({
     setRosterError(null);
   }
 
+  // ── Character-backed seat picker (report item 6b) ──────────────────────
+
+  function openAddCharacter(): void {
+    if (roster.length >= INTERACTIVE_SCHEMA_MAX_PARTICIPANTS) return;
+    setPendingCharIds(new Set());
+    setAddCharOpen(true);
+    setRosterError(null);
+  }
+
+  function togglePendingCharacter(id: string): void {
+    setPendingCharIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** Confirmed: each selected character becomes a model seat with its name as
+   *  the (editable) label and its id pinned. Duplicates across seats are legal
+   *  (user decision — «same character, different model»); the participant
+   *  ceiling caps how many can be added at once. */
+  function confirmAddCharacters(): void {
+    const available = INTERACTIVE_SCHEMA_MAX_PARTICIPANTS - roster.length;
+    if (available <= 0) {
+      setAddCharOpen(false);
+      setPendingCharIds(new Set());
+      return;
+    }
+    const selected = sortedAllCharacters.filter((c) => pendingCharIds.has(c.id)).slice(0, available);
+    const newSeats: RosterSeat[] = selected.map((c) => {
+      seatCounterRef.current += 1;
+      return { id: `seat_${seatCounterRef.current}`, label: c.name, controller: "model", characterId: c.id };
+    });
+    setRoster((prev) => [...prev, ...newSeats]);
+    setAddCharOpen(false);
+    setPendingCharIds(new Set());
+    setRosterError(null);
+  }
+
+  function cancelAddCharacter(): void {
+    setAddCharOpen(false);
+    setPendingCharIds(new Set());
+  }
+
   function patchSeat(id: string, patch: Partial<RosterSeat>): void {
     setRoster((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
     setRosterError(null);
@@ -555,13 +613,13 @@ export function ExperienceSetupModal({
   }
 
   /** Changing a seat's controller: switching AWAY from model strips the
-   *  provider/model assignment; switching TO model leaves them unset (no
-   *  active-profile fallback for new sessions). */
+   *  provider/model assignment AND any character backing; switching TO model
+   *  leaves them unset (no active-profile fallback for new sessions). */
   function setSeatController(id: string, controller: SeatController): void {
     if (controller === "model") {
       patchSeat(id, { controller });
     } else {
-      patchSeat(id, { controller, providerProfileId: undefined, modelId: undefined });
+      patchSeat(id, { controller, providerProfileId: undefined, modelId: undefined, characterId: undefined });
     }
   }
 
@@ -685,7 +743,12 @@ export function ExperienceSetupModal({
     return roster.map((seat) => {
       const base = { id: seat.id, label: seat.label, controller: seat.controller };
       if (seat.controller === "model") {
-        return { ...base, providerProfileId: seat.providerProfileId!, modelId: seat.modelId! };
+        return {
+          ...base,
+          providerProfileId: seat.providerProfileId!,
+          modelId: seat.modelId!,
+          ...(seat.characterId !== undefined ? { characterId: seat.characterId } : {}),
+        };
       }
       return base;
     });
@@ -961,6 +1024,7 @@ export function ExperienceSetupModal({
                       key={seat.id}
                       seat={seat}
                       modelGranted={modelGranted}
+                      characterName={seat.characterId !== undefined ? (characterById.get(seat.characterId)?.name ?? seat.characterId) : null}
                       controllerOptions={controllerOptions()}
                       providerOptions={providerOptions}
                       modelOptions={seat.providerProfileId ? modelOptionsFor(seat.providerProfileId) : []}
@@ -976,15 +1040,70 @@ export function ExperienceSetupModal({
                   {roster.length >= INTERACTIVE_SCHEMA_MAX_PARTICIPANTS ? (
                     <p className="font-ui text-[11px] text-t4">{t("experience_setup_roster_full")}</p>
                   ) : (
-                    <button
-                      type="button"
-                      className="flex items-center gap-1.5 self-start rounded-md border border-dashed border-border px-2.5 py-1.5 font-ui text-[12px] text-t3 hover:border-accent hover:text-accent"
-                      onClick={addSeat}
-                      data-testid="experience-setup-add-seat"
-                    >
-                      <Ic.plus />
-                      {t("experience_setup_add_participant")}
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 self-start">
+                      <button
+                        type="button"
+                        className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 font-ui text-[12px] text-t3 hover:border-accent hover:text-accent"
+                        onClick={addSeat}
+                        data-testid="experience-setup-add-seat"
+                      >
+                        <Ic.plus />
+                        {t("experience_setup_add_participant")}
+                      </button>
+                      {modelGranted && (
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 font-ui text-[12px] text-t3 hover:border-accent hover:text-accent"
+                          onClick={openAddCharacter}
+                          data-testid="experience-setup-add-character"
+                        >
+                          <Ic.plus />
+                          {t("experience_setup_add_character")}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {addCharOpen && (
+                    <div className="flex flex-col gap-2 rounded-md border border-border bg-s2 px-2.5 py-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">
+                          {t("experience_setup_add_character_picker_title")}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-1 text-t4 hover:bg-s3 hover:text-t1"
+                          onClick={cancelAddCharacter}
+                          aria-label={t("experience_setup_remove_participant")}
+                        >
+                          <Ic.close />
+                        </button>
+                      </div>
+                      {sortedAllCharacters.length === 0 ? (
+                        <p className="font-ui text-[12px] text-t4">{t("experience_setup_add_character_empty")}</p>
+                      ) : (
+                        <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+                          {sortedAllCharacters.map((c) => (
+                            <Checkbox
+                              key={c.id}
+                              checked={pendingCharIds.has(c.id)}
+                              onChange={() => togglePendingCharacter(c.id)}
+                              label={c.name}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-end">
+                        <button
+                          type="button"
+                          className="rounded-md border border-accent px-2.5 py-1 font-ui text-[12px] text-accent hover:bg-accent/10 disabled:pointer-events-none disabled:opacity-40"
+                          onClick={confirmAddCharacters}
+                          disabled={pendingCharIds.size === 0}
+                          data-testid="experience-setup-add-character-confirm"
+                        >
+                          {t("experience_setup_add_character_confirm")}
+                        </button>
+                      </div>
+                    </div>
                   )}
                   {rosterError && <FieldError text={rosterError} />}
                   {noProvidersForModelSeat && <FieldError text={t("experience_setup_no_providers")} />}
@@ -1254,6 +1373,9 @@ function SetupFieldRow({ field, value, error, t, onText, onNumber, onToggle, onS
 interface RosterRowProps {
   seat: RosterSeat;
   modelGranted: boolean;
+  /** Resolved display name for a character-backed seat, or null (report item
+   *  6b). Falls back to the raw id when the source was deleted. */
+  characterName: string | null;
   controllerOptions: Array<{ value: SeatController; label: string }>;
   providerOptions: Array<{ id: string; label: string }>;
   modelOptions: Array<{ id: string; label: string }>;
@@ -1267,7 +1389,7 @@ interface RosterRowProps {
 }
 
 function RosterRow({
-  seat, modelGranted, controllerOptions, providerOptions, modelOptions, modelsLoading, t,
+  seat, modelGranted, characterName, controllerOptions, providerOptions, modelOptions, modelsLoading, t,
   onController, onLabel, onProvider, onModel, onRemove,
 }: RosterRowProps) {
   return (
@@ -1282,6 +1404,16 @@ function RosterRow({
           onChange={(e) => onLabel(e.target.value)}
           aria-label={t("experience_setup_participant_name_placeholder")}
         />
+        {seat.characterId !== undefined && (
+          <span
+            className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3"
+            title={t("experience_setup_seat_character_badge")}
+            data-testid="experience-setup-seat-character"
+          >
+            <Ic.user />
+            {characterName ?? seat.characterId}
+          </span>
+        )}
         <SegmentedControl
           value={seat.controller}
           options={controllerOptions.map((o) => ({ value: o.value, label: o.label }))}

@@ -528,6 +528,124 @@ describe("ExperienceSetupModal — participant roster", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 4b. Character-backed seats (report item 6b)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Click a multi-select character checkbox by its visible name (the Checkbox
+ *  labeled variant renders a `role=checkbox` div whose text includes the name). */
+function clickCharacterCheckbox(view: RenderResult, name: string): void {
+  const checkbox = [...view.baseElement.querySelectorAll('[role="checkbox"]')].find(
+    (c) => c.textContent?.includes(name),
+  ) as HTMLElement | undefined;
+  if (!checkbox) throw new Error(`no character checkbox "${name}"`);
+  fireEvent.click(checkbox);
+}
+
+describe("ExperienceSetupModal — character-backed seats", () => {
+  beforeEach(() => {
+    fakeAllCharacters = [
+      { id: "char_a", name: "Aria" },
+      { id: "char_b", name: "Bruno" },
+      { id: "char_c", name: "Cara" },
+    ];
+    fakeChatList = [];
+    setFakeState({ config: makeConfig({ capabilityGrants: ["participants", "model"] }) });
+    mocks.testScript.mockResolvedValue(interactiveOk(def([{ capability: "participants" }, { capability: "model" }])));
+  });
+
+  it("multi-adds characters as model seats with pinned characterIds and name labels", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    fireEvent.click(view.getByTestId("experience-setup-add-character"));
+    await waitFor(() => expect(view.getByText("experience_setup_add_character_picker_title")).toBeTruthy());
+    clickCharacterCheckbox(view, "Aria");
+    clickCharacterCheckbox(view, "Bruno");
+    fireEvent.click(view.getByTestId("experience-setup-add-character-confirm"));
+    await waitFor(() => expect(view.baseElement.querySelector('[data-seat-id="seat_3"]')).toBeTruthy());
+
+    const seat2 = view.baseElement.querySelector('[data-seat-id="seat_2"]')!;
+    const seat3 = view.baseElement.querySelector('[data-seat-id="seat_3"]')!;
+    // Label defaults to the character name; a character badge is shown.
+    expect((seat2.querySelector('input[type="text"]') as HTMLInputElement).value).toBe("Aria");
+    expect((seat3.querySelector('input[type="text"]') as HTMLInputElement).value).toBe("Bruno");
+    expect(seat2.querySelector('[data-testid="experience-setup-seat-character"]')).toBeTruthy();
+    expect(seat3.querySelector('[data-testid="experience-setup-seat-character"]')).toBeTruthy();
+    // Controller defaults to model.
+    expect([...seat2.querySelectorAll('[role="radio"]')].some((r) => r.getAttribute("data-state") === "checked" && r.textContent?.trim() === "experience_setup_controller_model")).toBe(true);
+  });
+
+  it("start payload includes characterId on character seats", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    setText(view.baseElement.querySelector('[data-seat-id="seat_1"] input[type="text"]')!, "Host");
+    fireEvent.click(view.getByTestId("experience-setup-add-character"));
+    await waitFor(() => expect(view.getByText("experience_setup_add_character_picker_title")).toBeTruthy());
+    clickCharacterCheckbox(view, "Aria");
+    fireEvent.click(view.getByTestId("experience-setup-add-character-confirm"));
+    await waitFor(() => expect(view.baseElement.querySelector('[data-seat-id="seat_2"]')).toBeTruthy());
+    const seat2 = view.baseElement.querySelector('[data-seat-id="seat_2"]')!;
+    await pickDropdown(view, seat2, "experience_setup_provider_placeholder", "Acme");
+    await pickDropdown(view, seat2, "experience_setup_model_placeholder", "Model A");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
+    const participants = mocks.startSession.mock.calls[0][1];
+    expect(participants).toEqual([
+      { id: "seat_1", label: "Host", controller: "human" },
+      { id: "seat_2", label: "Aria", controller: "model", providerProfileId: "p1", modelId: "model-a", characterId: "char_a" },
+    ]);
+  });
+
+  it("allows the same character on two seats (duplicates legal)", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    setText(view.baseElement.querySelector('[data-seat-id="seat_1"] input[type="text"]')!, "Host");
+    // First add.
+    fireEvent.click(view.getByTestId("experience-setup-add-character"));
+    await waitFor(() => expect(view.getByText("experience_setup_add_character_picker_title")).toBeTruthy());
+    clickCharacterCheckbox(view, "Aria");
+    fireEvent.click(view.getByTestId("experience-setup-add-character-confirm"));
+    await waitFor(() => expect(view.baseElement.querySelector('[data-seat-id="seat_2"]')).toBeTruthy());
+    // Second add — same character again.
+    fireEvent.click(view.getByTestId("experience-setup-add-character"));
+    await waitFor(() => expect(view.getByText("experience_setup_add_character_picker_title")).toBeTruthy());
+    clickCharacterCheckbox(view, "Aria");
+    fireEvent.click(view.getByTestId("experience-setup-add-character-confirm"));
+    await waitFor(() => expect(view.baseElement.querySelector('[data-seat-id="seat_3"]')).toBeTruthy());
+    expect(view.baseElement.querySelectorAll('[data-testid="experience-setup-seat-character"]').length).toBe(2);
+  });
+
+  it("switching a character seat's controller away from model strips characterId", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    setText(view.baseElement.querySelector('[data-seat-id="seat_1"] input[type="text"]')!, "Host");
+    fireEvent.click(view.getByTestId("experience-setup-add-character"));
+    await waitFor(() => expect(view.getByText("experience_setup_add_character_picker_title")).toBeTruthy());
+    clickCharacterCheckbox(view, "Aria");
+    fireEvent.click(view.getByTestId("experience-setup-add-character-confirm"));
+    await waitFor(() => expect(view.baseElement.querySelector('[data-seat-id="seat_2"]')).toBeTruthy());
+    expect(view.baseElement.querySelector('[data-seat-id="seat_2"] [data-testid="experience-setup-seat-character"]')).toBeTruthy();
+    // Switch to script → the badge disappears and characterId is dropped.
+    clickSegment(view.baseElement.querySelector('[data-seat-id="seat_2"]')!, "experience_setup_controller_script");
+    await waitFor(() => expect(view.baseElement.querySelector('[data-seat-id="seat_2"] [data-testid="experience-setup-seat-character"]')).toBeNull());
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
+    const seat2 = mocks.startSession.mock.calls[0][1].find((p: { id: string }) => p.id === "seat_2");
+    expect(seat2).toEqual({ id: "seat_2", label: "Aria", controller: "script" });
+  });
+
+  it("hides the add-character control at the participant ceiling", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    setText(view.baseElement.querySelector('[data-seat-id="seat_1"] input[type="text"]')!, "Host");
+    // 1 human + 15 script = 16 = the participant ceiling.
+    for (let i = 0; i < 15; i++) fireEvent.click(view.getByTestId("experience-setup-add-seat"));
+    await waitFor(() => expect(view.getByText("experience_setup_roster_full")).toBeTruthy());
+    expect(view.queryByTestId("experience-setup-add-character")).toBeNull();
+    expect(view.queryByTestId("experience-setup-add-seat")).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 5 + 6. Model seats / providers / no-provider failure
 // ═══════════════════════════════════════════════════════════════════════════
 
