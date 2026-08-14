@@ -395,8 +395,15 @@ describe("ExperienceSetupModal — setup fields", () => {
     const text = view.baseElement.querySelector('[data-field-id="name"] textarea') as HTMLTextAreaElement;
     expect(text).toBeTruthy();
     expect(text.value).toBe("Hero");
-    const num = view.baseElement.querySelector('[data-field-id="rounds"] input') as HTMLInputElement;
-    expect(num.value).toBe("5");
+    // NumberInput mirrors its value prop into internal state via useEffect, so
+    // the seeded default lands on the DOM one effect flush AFTER whenReady's
+    // Start-button condition — await it rather than racing the flush.
+    const num = await waitFor(() => {
+      const el = view.baseElement.querySelector('[data-field-id="rounds"] input') as HTMLInputElement;
+      expect(el.value).toBe("5");
+      return el;
+    });
+    expect(num).toBeTruthy();
     const checkbox = view.baseElement.querySelector('[data-field-id="hardcore"] [role="checkbox"]');
     expect(checkbox?.getAttribute("aria-checked")).toBe("false");
     // select default renders as the trigger's selected label
