@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import type { LanguageModel } from "ai";
+import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotThread,
@@ -453,5 +454,42 @@ describe("experience-copilot stream (ER-6)", () => {
 
     const finish = events.find((e) => e.event === "finish");
     expect(finish).toBeDefined();
+  });
+
+  it("honors a resolved profile's base prompt, toolSet, and maxSteps (CP-7)", async () => {
+    const store = createFakeStore(makeThread());
+    const customProfile: CopilotProfile = {
+      id: "custom",
+      name: "Custom",
+      isBuiltIn: false,
+      basePrompt: "CUSTOM STREAM PROMPT MARKER",
+      skillIds: [],
+      toolSet: { run_test: true },
+      maxSteps: 5,
+    };
+    let captured: Record<string, unknown> | null = null;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as Record<string, unknown>;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store, { resolveProfile: async () => customProfile }),
+      ),
+    );
+
+    expect(captured).toBeTruthy();
+    // The system message carries the profile's base prompt (not the built-in's).
+    const system = (captured!.messages as Array<{ role: string; content: string }>)[0];
+    expect(system.content).toContain("CUSTOM STREAM PROMPT MARKER");
+    // Only run_test + always-on read_skill_file survive the gated toolSet.
+    const toolKeys = Object.keys(captured!.tools as Record<string, unknown>).sort();
+    expect(toolKeys).toEqual(["read_skill_file", "run_test"]);
+    // maxSteps=5 flows into stopWhen: true at exactly 5 steps, false at 6.
+    const stopWhen = captured!.stopWhen as (r: { steps: unknown[] }) => boolean;
+    expect(stopWhen({ steps: [1, 2, 3, 4, 5] })).toBe(true);
+    expect(stopWhen({ steps: [1, 2, 3, 4, 5, 6] })).toBe(false);
   });
 });

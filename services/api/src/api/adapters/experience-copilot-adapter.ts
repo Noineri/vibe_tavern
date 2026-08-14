@@ -4,6 +4,8 @@ import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire } from "
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
+import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
+import { CopilotProfileResolver } from "../../domain/interactive/copilot/copilot-profile-resolver.js";
 import {
   streamExperienceCopilot,
   type ExperienceCopilotStreamDeps,
@@ -19,7 +21,17 @@ import { resolveEffectiveSettings } from "@vibe-tavern/domain";
  * the AI-assistant deps factory). No business logic lives here.
  */
 export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
-  constructor(private readonly stores: StoreContainer) {}
+  private readonly profileResolver: CopilotProfileResolver;
+
+  constructor(
+    private readonly stores: StoreContainer,
+    /** Copilot skill library (CP-5) — supplies the user-skill root for the
+     *  two-root catalog the stream's prompt assembler scans. Optional so the
+     *  lifecycle-only test harnesses can construct the adapter without it. */
+    private readonly copilotSkillService?: SkillLibraryService,
+  ) {
+    this.profileResolver = new CopilotProfileResolver(stores);
+  }
 
   experienceCopilotStream = async function* (
     this: ExperienceCopilotAdapter,
@@ -47,6 +59,13 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
         model,
         fetch,
       ) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
+      // Profile resolution (CP-6): thread → script → copilot_profile_id → row,
+      // falling back to the built-in seed. The stream already holds thread.scriptId.
+      resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),
+      // Two-root catalog user root (CP-4): absent → built-in root only.
+      ...(this.copilotSkillService !== undefined
+        ? { skillUserRoot: this.copilotSkillService.roots().userRoot }
+        : {}),
       // Skill roots are derived in the prompt assembler from the resolved skill
       // catalog (ER-16) and flow to the tool builder via `assembled.skillRoots`,
       // so no skill-root wiring is needed here.

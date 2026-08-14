@@ -25,6 +25,7 @@ import { streamText, isStepCount } from "ai";
 import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart } from "ai";
 import type { ToolSet } from "ai";
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow } from "@vibe-tavern/db";
+import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotMessage,
@@ -45,7 +46,7 @@ import {
   type ExperienceCopilotTestFeedback,
 } from "./experience-copilot-prompt.js";
 import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
-import { EXPERIENCE_COPILOT_MODULE } from "./experience-copilot-module.js";
+import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 
 // ─── Request / response types ────────────────────────────────────────────────
 
@@ -118,8 +119,14 @@ export interface ExperienceCopilotStreamDeps {
     model: string,
     fetch?: ProviderFetch,
   ) => LanguageModel;
+  /** Resolve the copilot profile for a script (CP-6/CP-7). Absent → the built-in
+   *  seed (the pre-plan ER-16 module). */
+  readonly resolveProfile?: (scriptId: string | null) => Promise<CopilotProfile>;
+  /** Optional copilot user-skill root for the two-root catalog (CP-4). Absent →
+   *  built-in root only. */
+  readonly skillUserRoot?: string;
   /** Max tool-loop steps for the multi-step loop (mirrors co-author maxSteps).
-   *  Default {@link EXPERIENCE_COPILOT_MODULE.maxSteps}. */
+   *  Defaults to the resolved profile's maxSteps (the built-in seed = 20). */
   readonly maxSteps?: number;
   /** The AI SDK streaming function. Defaults to the real `streamText` from "ai".
    *  Injectable so tests can substitute a fake WITHOUT `mock.module("ai")` —
@@ -130,8 +137,9 @@ export interface ExperienceCopilotStreamDeps {
   readonly streamText?: typeof streamText;
 }
 
-// DEFAULT_MAX_STEPS moved to EXPERIENCE_COPILOT_MODULE.maxSteps (ER-16) — the
-// module definition is the single declarative source for the tool-loop bound.
+// DEFAULT_MAX_STEPS moved to the built-in profile's maxSteps (ER-16 / CP-4) —
+// the profile is the single declarative source for the tool-loop bound; an
+// assigned profile overrides it via `deps.maxSteps ?? copilotProfile.maxSteps`.
 
 // ─── History conversion (store ↔ prompt ↔ SDK) ───────────────────────────────
 
@@ -307,7 +315,14 @@ export async function* streamExperienceCopilot(
     content: request.content,
   });
 
-  // ── 5. Assemble the prompt (ER-5) ──
+  // ── 5. Resolve the copilot profile (base prompt + skills + tools + budget) ──
+  // Defaults to the built-in seed (CP-4) — zero behavior change for an
+  // experience with no assigned profile (the pre-plan ER-16 module).
+  const copilotProfile = deps.resolveProfile
+    ? await deps.resolveProfile(thread.scriptId)
+    : await resolveBuiltinCopilotProfile();
+
+  // ── 6. Assemble the prompt (ER-5) ──
   // The new user message is appended to the prior history for assembly; it was
   // NOT in priorHistory (which is the pre-turn stored set).
   const history: ExperienceCopilotHistoryMessage[] = [
@@ -333,6 +348,8 @@ export async function* streamExperienceCopilot(
     model: modelName,
     contextBudget: effectiveProfile.contextBudget,
     responseReserve: effectiveProfile.maxTokens,
+    profile: copilotProfile,
+    ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
   });
 
   debug("prompt-assembled", {
@@ -342,22 +359,22 @@ export async function* streamExperienceCopilot(
     ...(assembled.compactionSummary ? { compaction: assembled.compactionSummary } : {}),
   });
 
-  // ── 6. Build tools (ER-4), seeded from the current rules/visual ──
+  // ── 7. Build tools (ER-4), seeded from the current rules/visual ──
   // Skill roots come from the resolved skill catalog (ER-16) — the prompt
   // assembler derives them from the same catalog it rendered, so read_skill_file
-  // resolves paths against the matching root. toolSet is the module's declarative
+  // resolves paths against the matching root. toolSet is the resolved profile's
   // set (read_skill_file is always added on top, mirroring Co-Author).
   const tools: ToolSet = buildExperienceCopilotTools({
     ...(rules ? { rules } : {}),
     ...(visual !== undefined ? { visual } : {}),
-    toolSet: EXPERIENCE_COPILOT_MODULE.toolSet,
+    toolSet: copilotProfile.toolSet,
     skillRoots: assembled.skillRoots,
   });
 
-  // ── 7. Resolve the model + start streaming ──
+  // ── 8. Resolve the model + start streaming ──
   const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
   const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
-  const maxSteps = deps.maxSteps ?? EXPERIENCE_COPILOT_MODULE.maxSteps;
+  const maxSteps = deps.maxSteps ?? copilotProfile.maxSteps;
 
   const modelMessages = toModelMessages(assembled.messages);
 
@@ -381,7 +398,7 @@ export async function* streamExperienceCopilot(
     return;
   }
 
-  // ── 8. Normalize + drain the stream, emitting SSE events ──
+  // ── 9. Normalize + drain the stream, emitting SSE events ──
   const { stream: mapped } = createMappedStream(result.stream);
 
   let textAccumulator = "";
@@ -453,7 +470,7 @@ export async function* streamExperienceCopilot(
     return;
   }
 
-  // ── 9. Finalize: resolve finish metadata + persist the turn ──
+  // ── 10. Finalize: resolve finish metadata + persist the turn ──
   let finishReason = "stop";
   let usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
   try {

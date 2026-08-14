@@ -40,6 +40,7 @@ import {
   setModelHint,
 } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
+import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import { runExperienceTest } from "../experience-tester.js";
 import type {
@@ -47,7 +48,7 @@ import type {
   ExperienceCopilotRunTestDigest,
 } from "./experience-copilot-tools.js";
 import {
-  resolveExperienceCopilotModule,
+  resolveBuiltinCopilotProfile,
   resolveExperienceCopilotSkillCatalog,
   renderExperienceCopilotSkillCatalog,
 } from "./experience-copilot-module.js";
@@ -118,6 +119,14 @@ export interface ExperienceCopilotAssembleInput {
   readonly testFeedback?: ExperienceCopilotTestFeedback | null;
   /** The current authoring step (inline 3-step creation flow). */
   readonly step: ExperienceCopilotStep;
+  /** The RESOLVED copilot profile for this experience (CP-7). When omitted,
+   *  the assembler resolves the built-in seed (CP-4) internally — the ER-16
+   *  fixed module, so an experience with no assigned profile behaves EXACTLY
+   *  as pre-plan (zero behavior change). */
+  readonly profile?: CopilotProfile;
+  /** Optional copilot user-skill root for the two-root catalog scan (CP-4).
+   *  When omitted, only the built-in root is scanned (the pre-plan behavior). */
+  readonly skillUserRoot?: string;
 }
 
 /** One message in the final assembled prompt (system + compacted history). */
@@ -168,11 +177,12 @@ function deriveContract(rules: string): ExperienceCopilotContract | null {
 
 // ─── System-message section renderers ────────────────────────────────────────
 
-// The role framing + tool mechanics + key constraints live in the module's
-// base-prompt asset (`experience-copilot/base.md`), loaded live each turn via
-// `resolveExperienceCopilotModule()` (ER-16) — the same live-edit-on-disk
-// property Co-Author modules have. The skill catalog (the on-demand
-// `read_skill_file` channel) is rendered by `renderExperienceCopilotSkillCatalog`.
+// The role framing + tool mechanics + key constraints live in the profile's
+// base prompt — the built-in seed loads `experience-copilot/base.md` live each
+// turn (ER-16/CP-4), the same live-edit-on-disk property Co-Author modules
+// have; an assigned profile supplies its own inline text. The skill catalog
+// (the on-demand `read_skill_file` channel) is rendered by
+// `renderExperienceCopilotSkillCatalog`.
 
 function renderContextPackage(
   rules: string,
@@ -274,19 +284,25 @@ export async function assembleExperienceCopilotPrompt(
   // ── Derive contract from current rules (pure create-only test) ─────────────
   const contract = deriveContract(input.rules);
 
-  // ── Load the module base prompt + skill catalog + the canonical API refs ──
-  // The module's base prompt (role + tool mechanics + key constraints) lives in
-  // a `.md` asset loaded live each turn (ER-16); the skill catalog drives the
-  // on-demand `read_skill_file` tool and is injected as the "Available skills"
-  // section. The two API references (rules DSL + visual bridge) are loaded
-  // alongside so all asset I/O fans out together.
-  const [module, { entries: skillCatalog }, rulesReference, visualReference] = await Promise.all([
-    resolveExperienceCopilotModule(),
-    resolveExperienceCopilotSkillCatalog(),
+  // ── Resolve profile + skill catalog + the canonical API refs ────────────────
+  // The profile supplies the base prompt (role + tool mechanics + key
+  // constraints, loaded live from its base-prompt source) and gates the skill
+  // catalog by its `skillIds`. Defaulting to the built-in seed keeps the
+  // no-profile path byte-identical to the ER-16 module. The catalog is scanned
+  // from the built-in root plus the optional user root (CP-4); the two API
+  // references (rules DSL + visual bridge) load alongside so all asset I/O fans
+  // out together.
+  const profile = input.profile ?? await resolveBuiltinCopilotProfile();
+  const [allSkills, rulesReference, visualReference] = await Promise.all([
+    resolveExperienceCopilotSkillCatalog(input.skillUserRoot),
     loadPromptAsset("interactive-rules.md"),
     loadPromptAsset("interactive-visual.md"),
   ]);
-  const basePrompt = module.basePrompt;
+  // The profile's skillIds GATE the catalog — only enabled skills are listed
+  // and only their roots are exposed to `read_skill_file`. The built-in seed
+  // enables ["experience-authoring"], so its catalog is unchanged.
+  const skillCatalog = allSkills.entries.filter((e) => profile.skillIds.includes(e.id));
+  const basePrompt = profile.basePrompt;
   const skillCatalogBlock = renderExperienceCopilotSkillCatalog(skillCatalog);
   // Derive the skill roots from the catalog entries' skill dirs so
   // `read_skill_file` (built in the stream from this result) resolves paths

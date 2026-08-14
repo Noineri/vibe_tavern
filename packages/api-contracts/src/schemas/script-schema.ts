@@ -29,6 +29,10 @@ export const updateScriptSchema = z.object({
    *  wizard after both assets exist; null clears it. Not a source revision —
    *  does not affect trust/enabled state. */
   defaultVisualId: z.string().nullable().optional(),
+  /** Copilot profile assigned to the experience (EXPERIENCE_COPILOT_PROFILES_PLAN,
+   *  CP-6). Null unassigns (reverts to the built-in seed). Soft link — the
+   *  resolver falls back to the built-in seed for a dangling id. */
+  copilotProfileId: z.string().nullable().optional(),
 });
 
 /** Reassign a script's scope atomically (PR-6 binding). Clears stale FKs.

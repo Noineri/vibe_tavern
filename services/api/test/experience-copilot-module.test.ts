@@ -9,11 +9,15 @@
  * renderer is a pure function exercised directly.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtemp, rm, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   EXPERIENCE_COPILOT_MODULE,
   resolveExperienceCopilotModule,
   resolveExperienceCopilotSkillCatalog,
+  resolveBuiltinCopilotProfile,
   renderExperienceCopilotSkillCatalog,
 } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 
@@ -63,5 +67,69 @@ describe("experience-copilot module (ER-16)", () => {
     expect(rendered).toContain("read_skill_file");
     expect(rendered).toContain("experience-authoring");
     expect(rendered).toContain("experience-authoring/SKILL.md");
+  });
+
+  test("resolveBuiltinCopilotProfile projects the module into a read-only seed (CP-4)", async () => {
+    const profile = await resolveBuiltinCopilotProfile();
+    expect(profile.id).toBe("builtin");
+    expect(profile.isBuiltIn).toBe(true);
+    expect(profile.name).toBe(EXPERIENCE_COPILOT_MODULE.name);
+    expect(profile.maxSteps).toBe(EXPERIENCE_COPILOT_MODULE.maxSteps);
+    expect(profile.skillIds).toEqual([...EXPERIENCE_COPILOT_MODULE.skillIds]);
+    // The loaded base-prompt asset carries the role framing.
+    expect(profile.basePrompt.trim().length).toBeGreaterThan(0);
+    expect(profile.basePrompt).toContain("EXPERIENCE ASSISTANT");
+    // toolSet projected through COPILOT_TOOL_KEYS → all 5 declared tools on.
+    expect(profile.toolSet).toEqual({
+      write_buffer: true,
+      edit_buffer: true,
+      run_test: true,
+      run_simulate: true,
+      suggest_visual_binding: true,
+    });
+  });
+});
+
+describe("experience-copilot two-root skill catalog (CP-4)", () => {
+  const tmpRoots: string[] = [];
+  let userRoot = "";
+
+  beforeEach(async () => {
+    userRoot = await mkdtemp(join(tmpdir(), "copilot-skill-catalog-user-"));
+    tmpRoots.push(userRoot);
+  });
+  afterEach(async () => {
+    await Promise.all(tmpRoots.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  });
+
+  const manifest = (name: string, desc: string) =>
+    `---\nname: ${name}\ndescription: ${desc}\n---\n\n# ${name}\n`;
+
+  test("merges the user root alongside the built-in root", async () => {
+    await mkdir(join(userRoot, "custom-skill"), { recursive: true });
+    await Bun.write(join(userRoot, "custom-skill", "SKILL.md"), manifest("custom-skill", "a user skill"));
+
+    const { entries } = await resolveExperienceCopilotSkillCatalog(userRoot);
+    const ids = entries.map((e) => e.id);
+    expect(ids).toContain("experience-authoring");
+    expect(ids).toContain("custom-skill");
+
+    const builtin = entries.find((e) => e.id === "experience-authoring");
+    expect(builtin?.source).toBe("builtin");
+    const user = entries.find((e) => e.id === "custom-skill");
+    expect(user?.source).toBe("user");
+    expect(user?.shadowsBuiltin).toBe(false);
+  });
+
+  test("a user skill with a built-in id shadows it (user precedence)", async () => {
+    await mkdir(join(userRoot, "experience-authoring"), { recursive: true });
+    await Bun.write(join(userRoot, "experience-authoring", "SKILL.md"), manifest("experience-authoring", "user override"));
+
+    const { entries } = await resolveExperienceCopilotSkillCatalog(userRoot);
+    const skill = entries.find((e) => e.id === "experience-authoring");
+    expect(skill).toBeDefined();
+    expect(skill?.source).toBe("user");
+    expect(skill?.shadowsBuiltin).toBe(true);
+    expect(skill?.description).toBe("user override");
   });
 });

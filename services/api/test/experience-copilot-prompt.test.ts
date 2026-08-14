@@ -11,10 +11,12 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
+import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import {
   assembleExperienceCopilotPrompt,
   type ExperienceCopilotHistoryMessage,
 } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
+import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -147,6 +149,42 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(result.systemMessage).toContain("vis_1");
     expect(result.systemMessage).toContain("test feedback");
     expect(result.systemMessage).toContain("increment"); // from the digest
+  });
+
+  test("explicit built-in profile is byte-identical to the default (CP-7 zero behavior change)", async () => {
+    const builtin = await resolveBuiltinCopilotProfile();
+    const defaultResult = await assembleExperienceCopilotPrompt({ history: [], rules: VALID_RULES, step: "rules" });
+    const explicitResult = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      profile: builtin,
+    });
+    expect(explicitResult.systemMessage).toBe(defaultResult.systemMessage);
+    expect(explicitResult.skillRoots).toEqual(defaultResult.skillRoots);
+  });
+
+  test("a custom profile overrides the base prompt and gates the skill catalog", async () => {
+    const custom: CopilotProfile = {
+      id: "custom",
+      name: "Custom",
+      isBuiltIn: false,
+      basePrompt: "CUSTOM SYSTEM PROMPT MARKER",
+      skillIds: [],
+      toolSet: {},
+      maxSteps: 5,
+    };
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      profile: custom,
+    });
+    expect(result.systemMessage).toContain("CUSTOM SYSTEM PROMPT MARKER");
+    expect(result.systemMessage).not.toContain("EXPERIENCE ASSISTANT");
+    // No enabled skills → no "Available skills" section and no skill roots.
+    expect(result.systemMessage).not.toContain("Available skills");
+    expect(result.skillRoots).toEqual([]);
   });
 });
 

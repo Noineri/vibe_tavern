@@ -28,6 +28,9 @@ export interface CreateScriptData {
   /** Default visual paired with this experience (interactive scripts only).
    *  Set by the creation wizard; null for non-interactive and legacy rows. */
   defaultVisualId?: string | null;
+  /** Optional copilot profile assigned to this experience (interactive scripts
+   *  only). Soft link — a plain stored id with NO FK. */
+  copilotProfileId?: string | null;
   extensions?: Record<string, unknown>;
 }
 
@@ -53,6 +56,7 @@ export interface Script {
   personaId: string | null;
   chatId: string | null;
   defaultVisualId: string | null;
+  copilotProfileId: string | null;
   extensions: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -200,6 +204,7 @@ export class ScriptStore {
         personaId: data.personaId ?? null,
         chatId: data.chatId ?? null,
         defaultVisualId: data.defaultVisualId ?? null,
+        copilotProfileId: data.copilotProfileId ?? null,
         extensionsJson: JSON.stringify(data.extensions ?? {}),
         createdAt: now,
         updatedAt: now,
@@ -232,6 +237,7 @@ export class ScriptStore {
     if (data.personaId !== undefined) values.personaId = data.personaId;
     if (data.chatId !== undefined) values.chatId = data.chatId;
     if (data.defaultVisualId !== undefined) values.defaultVisualId = data.defaultVisualId;
+    if (data.copilotProfileId !== undefined) values.copilotProfileId = data.copilotProfileId;
     if (data.extensions !== undefined) values.extensionsJson = JSON.stringify(data.extensions);
 
     const [row] = await this.db
@@ -642,6 +648,7 @@ export class ScriptStore {
       personaId: row.personaId,
       chatId: row.chatId,
       defaultVisualId: row.defaultVisualId,
+      copilotProfileId: row.copilotProfileId,
       extensions: JSON.parse(row.extensionsJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

@@ -30,6 +30,8 @@ import { SessionRuntime } from "../runtime/session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
 import { createRuntimeStore } from "../runtime/session/session-runtime-store.js";
 import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js";
+import { createCopilotSkillService } from "../domain/interactive/copilot/copilot-skill-service.js";
+import { resolveCopilotUserSkillsRoot, resolveExperienceCopilotSkillsRoot } from "../domain/interactive/copilot/experience-copilot-module.js";
 import { DiceService } from "../domain/dice/dice-service.js";
 import { ExperienceResourceService } from "../domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../domain/interactive/experience-service.js";
@@ -168,6 +170,12 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		resolveUserSkillsRoot(config.dataDir),
 		await resolveBuiltinSkillsRoot(),
 	);
+	// Copilot skill library (CP-5) — the SAME generic service over the copilot
+	// built-in + user roots (isolated from Co-Author character skills).
+	const copilotSkillService = createCopilotSkillService(
+		resolveCopilotUserSkillsRoot(config.dataDir),
+		await resolveExperienceCopilotSkillsRoot(),
+	);
 	const sessionRuntime = new SessionRuntime(stores, {
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
 		dataDir: config.dataDir,
@@ -253,6 +261,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		experienceReplayService,
 		experienceModelEffectService,
 		experienceContextService,
+		copilotSkillService,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

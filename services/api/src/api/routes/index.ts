@@ -17,6 +17,7 @@ import { createInsightsRoutes } from "./insights.js";
 import { createRuntimeRoutes } from "./runtime.js";
 import { createFsRoutes } from "./fs.js";
 import { createCoauthorSkillRoutes } from "./coauthor-skill.js";
+import { createCopilotSkillRoutes } from "./copilot-skill.js";
 import { createDiceRoutes } from "./dice.js";
 import { createExperienceRoutes } from "./experience.js";
 import { createExperienceCopilotRoutes } from "./experience-copilot.js";
@@ -45,6 +46,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createRuntimeRoutes())
     .route("/", createFsRoutes())
     .route("/", createCoauthorSkillRoutes(runtime.coauthorSkills))
+    .route("/", createCopilotSkillRoutes(runtime.copilotSkills))
   ;
 }
 

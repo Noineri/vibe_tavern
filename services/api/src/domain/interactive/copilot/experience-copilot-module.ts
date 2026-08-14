@@ -18,12 +18,18 @@
  * progressive disclosure, keeping the system prompt lean).
  */
 
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { resolvePromptAssetPath, loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import {
   buildSkillCatalog,
+  type ScanRoot,
   type SkillCatalogEntry,
 } from "../../coauthor/skills/skill-scanner.js";
+import {
+  COPILOT_TOOL_KEYS,
+  type CopilotProfile,
+  type CopilotToolSet,
+} from "@vibe-tavern/api-contracts";
 
 // ─── Module definition (metadata only — the prompt text is loaded lazily) ────
 
@@ -109,16 +115,60 @@ export async function resolveExperienceCopilotSkillsRoot(): Promise<string> {
 }
 
 /**
- * Scan the copilot skills root and return the merged catalog (built-in only for
- * now — there is no user-import flow for copilot skills, unlike Co-Author).
- * Reuses {@link buildSkillCatalog} (the same scanner + precedence merge).
+ * Resolve the copilot user (writable) skills root from a data directory:
+ * `<dataDir>/experience-copilot/skills` — the copilot analog of the scanner's
+ * `resolveUserSkillsRoot` (which points at `<dataDir>/coauthor/skills`). The
+ * directory is NOT created here — creation belongs to import (CP-5); a missing
+ * root simply scans as empty.
  */
-export async function resolveExperienceCopilotSkillCatalog(): Promise<{
+export function resolveCopilotUserSkillsRoot(dataDir: string): string {
+  return resolve(dataDir, "experience-copilot/skills");
+}
+
+/**
+ * Scan the copilot skill roots and return the merged catalog. Built-in root is
+ * always scanned; the optional user root (CP-4/CP-5 — imported user skills) is
+ * scanned when provided, with user > built-in precedence via
+ * {@link buildSkillCatalog} (the same scanner + precedence merge Co-Author uses).
+ */
+export async function resolveExperienceCopilotSkillCatalog(
+  userRoot?: string,
+): Promise<{
   readonly entries: readonly SkillCatalogEntry[];
 }> {
   const root = await resolveExperienceCopilotSkillsRoot();
-  const { entries } = await buildSkillCatalog([{ path: root, source: "builtin" }]);
+  const roots: ScanRoot[] = [{ path: root, source: "builtin" }];
+  if (userRoot !== undefined) roots.push({ path: userRoot, source: "user" });
+  const { entries } = await buildSkillCatalog(roots);
   return { entries };
+}
+
+// ─── Built-in profile seed (EXPERIENCE_COPILOT_PROFILES_PLAN, CP-4) ─────────
+
+/**
+ * Project the fixed {@link EXPERIENCE_COPILOT_MODULE} + its loaded `base.md`
+ * into a `CopilotProfile`-shaped READ-ONLY seed (the default profile for any
+ * experience with no profile assigned — zero behavior change vs. the ER-16
+ * module). `isBuiltIn: true` + a stable `"builtin"` id mark it as the seed the
+ * profile editor shows read-only and that users duplicate from (Wave 3). The
+ * tool set is projected through {@link COPILOT_TOOL_KEYS} so the wire contract
+ * stays the single source of truth for the toggleable-tool names.
+ */
+export async function resolveBuiltinCopilotProfile(): Promise<CopilotProfile> {
+  const basePrompt = await loadPromptAsset(EXPERIENCE_COPILOT_MODULE.basePromptFile);
+  const toolSet: CopilotToolSet = {};
+  for (const key of COPILOT_TOOL_KEYS) {
+    if (EXPERIENCE_COPILOT_MODULE.toolSet[key] === true) toolSet[key] = true;
+  }
+  return {
+    id: "builtin",
+    name: EXPERIENCE_COPILOT_MODULE.name,
+    isBuiltIn: true,
+    basePrompt,
+    skillIds: [...EXPERIENCE_COPILOT_MODULE.skillIds],
+    toolSet,
+    maxSteps: EXPERIENCE_COPILOT_MODULE.maxSteps,
+  };
 }
 
 /**

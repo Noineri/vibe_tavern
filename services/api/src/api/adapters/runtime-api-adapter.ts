@@ -25,6 +25,7 @@ import type { SceneTrackerService } from "../../domain/insights/tracker-service.
 import { SettingsAdapter } from "./settings-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
+import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
@@ -62,6 +63,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly mobileAccess: MobileAccessAdapter;
 	readonly insights: InsightsAdapter;
 	readonly coauthorSkills: CoauthorSkillAdapter;
+	readonly copilotSkills: CopilotSkillAdapter;
 	readonly dice: DiceAdapter;
 	readonly experience: ExperienceAdapter;
 	readonly experienceCopilot: ExperienceCopilotAdapter;
@@ -85,6 +87,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		experienceReplayService: ExperienceReplayService,
 		experienceModelEffectService: ExperienceModelEffectService,
 		experienceContextService: ExperienceContextService,
+		copilotSkillService: SkillLibraryService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -106,8 +109,9 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
+		this.copilotSkills = new CopilotSkillAdapter(copilotSkillService);
 		this.dice = new DiceAdapter(diceService);
 		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService, providerProfileService);
-		this.experienceCopilot = new ExperienceCopilotAdapter(stores);
+		this.experienceCopilot = new ExperienceCopilotAdapter(stores, copilotSkillService);
 	}
 }
