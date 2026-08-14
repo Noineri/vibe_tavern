@@ -30,6 +30,7 @@ import {
 	createDeck,
 	createGrid,
 	deal,
+	keepLast,
 	pickDistinct,
 	shuffle,
 	sumScores,
@@ -383,6 +384,206 @@ describe("validateSubmittedAction", () => {
 	});
 });
 
+// ─── payloadSchema enforcement (fix step 1a) ────────────────────────────────
+
+describe("validateSubmittedAction payloadSchema enforcement", () => {
+	const place: ExperienceActionDescriptor = {
+		type: "place",
+		participantId: "p1",
+		payloadSchema: {
+			type: "object",
+			properties: {
+				coord: { type: "string", minLength: 2, maxLength: 2 },
+				mark: { type: "string", enum: ["X", "O"] },
+			},
+			required: ["coord"],
+			additionalProperties: false,
+		},
+	};
+	const roll: ExperienceActionDescriptor = {
+		type: "roll",
+		payloadSchema: {
+			type: "object",
+			properties: { sides: { type: "integer", minimum: 2, maximum: 100 } },
+			required: ["sides"],
+			additionalProperties: false,
+		},
+	};
+	const collect: ExperienceActionDescriptor = {
+		type: "collect",
+		payloadSchema: {
+			type: "object",
+			properties: { tags: { type: "array", items: { type: "string" } } },
+			additionalProperties: false,
+		},
+	};
+	const pick: ExperienceActionDescriptor = {
+		type: "pick",
+		payloadSchema: { type: "string", enum: ["rock", "paper", "scissors"] },
+	};
+
+	test("characterization: a payload against a schema-less descriptor is accepted unchanged", () => {
+		const ok = validateSubmittedAction(
+			{ type: "reset", requestId: "r", expectedRevision: 0, payload: { anything: true } },
+			[{ type: "reset" }],
+		);
+		expect(ok.ok).toBe(true);
+	});
+
+	test("accepts a payload matching the schema", () => {
+		const ok = validateSubmittedAction(
+			{ type: "place", requestId: "r", expectedRevision: 0, participantId: "p1", payload: { coord: "b2", mark: "X" } },
+			[place],
+		);
+		expect(ok.ok).toBe(true);
+	});
+
+	test("rejects a top-level type mismatch with the path in the message", () => {
+		const result = validateSubmittedAction(
+			{ type: "pick", requestId: "r", expectedRevision: 0, payload: 42 },
+			[pick],
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.kind).toBe("illegal_action");
+		expect(result.message).toContain("payload");
+		expect(result.message).toContain("expected string");
+	});
+
+	test("rejects a nested type violation with a nested path", () => {
+		const result = validateSubmittedAction(
+			{ type: "place", requestId: "r", expectedRevision: 0, participantId: "p1", payload: { coord: 42 } },
+			[place],
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.message).toContain("payload.coord");
+		expect(result.message).toContain("expected string");
+	});
+
+	test("rejects a missing required property", () => {
+		const result = validateSubmittedAction(
+			{ type: "place", requestId: "r", expectedRevision: 0, participantId: "p1", payload: { mark: "X" } },
+			[place],
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.message).toContain("coord");
+	});
+
+	test("rejects an enum violation", () => {
+		const result = validateSubmittedAction(
+			{ type: "place", requestId: "r", expectedRevision: 0, participantId: "p1", payload: { coord: "b2", mark: "Z" } },
+			[place],
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.message).toContain("payload.mark");
+	});
+
+	test("rejects a non-integer where the schema declares integer", () => {
+		const result = validateSubmittedAction(
+			{ type: "roll", requestId: "r", expectedRevision: 0, payload: { sides: 2.5 } },
+			[roll],
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.message).toContain("payload.sides");
+		expect(result.message).toContain("expected integer");
+	});
+
+	test("rejects a wrong array item type", () => {
+		const result = validateSubmittedAction(
+			{ type: "collect", requestId: "r", expectedRevision: 0, payload: { tags: ["a", 7] } },
+			[collect],
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.message).toContain("payload.tags[1]");
+	});
+
+	test("rejects an extra property when additionalProperties is false", () => {
+		const result = validateSubmittedAction(
+			{ type: "place", requestId: "r", expectedRevision: 0, participantId: "p1", payload: { coord: "b2", extra: true } },
+			[place],
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.message).toContain("extra");
+	});
+
+	test("rejects a missing payload when the descriptor declares a schema", () => {
+		const result = validateSubmittedAction(
+			{ type: "place", requestId: "r", expectedRevision: 0, participantId: "p1" },
+			[place],
+		);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.kind).toBe("illegal_action");
+	});
+
+	test("numeric and string bounds are inclusive at the boundary", () => {
+		const atMinimum = validateSubmittedAction(
+			{ type: "roll", requestId: "r", expectedRevision: 0, payload: { sides: 2 } },
+			[roll],
+		);
+		expect(atMinimum.ok).toBe(true);
+		const atMaximum = validateSubmittedAction(
+			{ type: "roll", requestId: "r", expectedRevision: 0, payload: { sides: 100 } },
+			[roll],
+		);
+		expect(atMaximum.ok).toBe(true);
+		const atMinLength = validateSubmittedAction(
+			{ type: "place", requestId: "r", expectedRevision: 0, participantId: "p1", payload: { coord: "b2" } },
+			[place],
+		);
+		expect(atMinLength.ok).toBe(true);
+	});
+
+	test("rejects a value just outside a bound", () => {
+		const tooSmall = validateSubmittedAction(
+			{ type: "roll", requestId: "r", expectedRevision: 0, payload: { sides: 1 } },
+			[roll],
+		);
+		expect(tooSmall.ok).toBe(false);
+		if (tooSmall.ok) return;
+		expect(tooSmall.message).toContain("payload.sides");
+	});
+});
+
+describe("runActions payloadSchema vocabulary", () => {
+	test("rejects a descriptor whose payloadSchema uses an unknown keyword", () => {
+		const script = `
+			context.experience.register({
+				apiVersion: 1, manifest: { id: "uk", name: "UK" }, capabilities: [],
+				create(){return {};},
+				project(c){return c.state;},
+				actions(){ return [{ type: "move", payloadSchema: { type: "string", pattern: "^a" } }]; },
+				reduce(c){ return { state: c.state, status: "active", events: [] }; },
+			});
+		`;
+		const result = runActions(script, "uk.js", {}, HUMAN, NO_CAPS);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.kind).toBe("invalid_actions");
+		expect(result.message).toContain("pattern");
+	});
+
+	test("accepts a descriptor whose payloadSchema uses only supported keywords", () => {
+		const script = `
+			context.experience.register({
+				apiVersion: 1, manifest: { id: "ok", name: "OK" }, capabilities: [],
+				create(){return {};},
+				project(c){return c.state;},
+				actions(){ return [{ type: "move", payloadSchema: { type: "object", properties: { coord: { type: "string" } }, required: ["coord"] } }]; },
+				reduce(c){ return { state: c.state, status: "active", events: [] }; },
+			});
+		`;
+		const result = runActions(script, "ok.js", {}, HUMAN, NO_CAPS);
+		expect(result.ok).toBe(true);
+	});
+});
+
 // ─── choose / flavor (optional methods) ─────────────────────────────────────
 
 describe("runChoose / runFlavor (optional methods)", () => {
@@ -514,6 +715,24 @@ describe("experience helpers (deterministic given a fixed rng)", () => {
 			{ participantId: "p1", score: 4 },
 		]);
 		expect(totals).toEqual({ p1: 7, p2: 5 });
+	});
+
+	test("keepLast bounds a history-bearing array to its tail without mutating", () => {
+		const items = [1, 2, 3, 4, 5];
+		// Under max → full shallow copy, original untouched.
+		expect(keepLast(items, 10)).toEqual([1, 2, 3, 4, 5]);
+		// Over max → exact tail, original untouched.
+		expect(keepLast(items, 3)).toEqual([3, 4, 5]);
+		expect(items).toEqual([1, 2, 3, 4, 5]);
+		// Edge cases.
+		expect(keepLast(items, 0)).toEqual([]);
+		expect(keepLast([], 5)).toEqual([]);
+	});
+
+	test("keepLast rejects a non-integer or negative max", () => {
+		expect(() => keepLast([1], -1)).toThrow(RangeError);
+		expect(() => keepLast([1], 1.5)).toThrow(RangeError);
+		expect(() => keepLast([1], Number.NaN)).toThrow(RangeError);
 	});
 
 	test("helpers are available inside the VM as the frozen context.helpers namespace", () => {

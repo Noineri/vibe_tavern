@@ -72,6 +72,7 @@ import {
   type ExperienceSandboxErrorKind,
 } from "./experience-sandbox.js";
 import { experienceHelpers, shuffle } from "./experience-helpers.js";
+import { validatePayloadSchemaDefinition, validatePayloadValue } from "./experience-payload-schema.js";
 
 // ─── Deterministic random capability ─────────────────────────────────────────
 
@@ -578,6 +579,19 @@ export function validateSubmittedAction(
 			return kernelError("illegal_action", `payload ${payloadError}`, []);
 		}
 	}
+	if (candidate.payloadSchema !== undefined) {
+		if (action.payload === undefined) {
+			return kernelError(
+				"illegal_action",
+				`action "${action.type}" requires a payload (its payloadSchema is declared)`,
+				[],
+			);
+		}
+		const schemaResult = validatePayloadValue(action.payload, candidate.payloadSchema, "payload");
+		if (!schemaResult.ok) {
+			return kernelError("illegal_action", schemaResult.message, []);
+		}
+	}
 	return { ok: true };
 }
 
@@ -666,6 +680,17 @@ function validateActions(
 		.safeParse(raw);
 	if (!parsed.success) {
 		return kernelError("invalid_actions", describeZodError(parsed.error), console);
+	}
+	// Strict vocabulary check on declared payloadSchemas — fail loudly at
+	// descriptor time rather than silently ignoring keywords the kernel cannot
+	// honor (payloadSchema enforcement, fix step 1a).
+	for (const descriptor of parsed.data) {
+		if (descriptor.payloadSchema !== undefined) {
+			const schemaCheck = validatePayloadSchemaDefinition(descriptor.payloadSchema);
+			if (!schemaCheck.ok) {
+				return kernelError("invalid_actions", schemaCheck.message, console);
+			}
+		}
 	}
 	return { ok: true, value: parsed.data as ExperienceActionDescriptor[], console };
 }
