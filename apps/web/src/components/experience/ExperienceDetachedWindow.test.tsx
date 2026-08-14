@@ -43,6 +43,7 @@ afterEach(() => {
 const realStore = await import("../../stores/experience-store.js");
 let storeSessionValue: unknown = null;
 const storeMocks = {
+  rehydrate: mock(async () => {}),
   setScope: mock(),
   submitAction: mock(),
   runEffect: mock(),
@@ -58,6 +59,7 @@ mock.module("../../stores/experience-store.js", () => ({
   useExperienceStore: {
     getState: () => ({
       setScope: storeMocks.setScope,
+      rehydrate: storeMocks.rehydrate,
       submitAction: storeMocks.submitAction,
       runEffect: storeMocks.runEffect,
       queueReport: storeMocks.queueReport,

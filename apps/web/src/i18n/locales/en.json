@@ -1766,6 +1766,7 @@
   "experience_finish_confirm": "Finish this mini-app? It interrupts the session and freezes the final report for your next message.",
   "experience_detach_title": "Open in separate window",
   "experience_pending_typing": "typing…",
+  "experience_pending_timer": "waiting…",
   "experience_pending_effect": "thinking…",
   "experience_detach_unavailable": "This mini-app window is no longer connected.",
   "experience_detached_badge": "detached",

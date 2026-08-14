@@ -103,7 +103,10 @@ export interface ExperienceModalProps {
   readonly statusLabel?: string;
   /** Optional pending phase for a typing/effect indicator in the chrome AND
    *  the visual protocol (`sendPending`). */
-  readonly pendingPhase?: "idle" | "typing" | "effect";
+  /** Trusted-chrome pending phase. "timer" is a host-scheduled timer wait
+   *  (fix step 2d): badge copy distinguishes it, but the frame bridge still
+   *  receives "effect" — the visual protocol has no "timer" phase. */
+  readonly pendingPhase?: "idle" | "typing" | "effect" | "timer";
   /** Open the detached window. If absent, the Detach control is hidden. */
   readonly onDetach?: () => void;
   /**
@@ -267,7 +270,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
   // frame's `sendPending` so the visual protocol mirrors the trusted label.
   useEffect(() => {
     if (!frameReady || !open) return;
-    frameRef.current?.sendPending(pendingPhase ?? "idle");
+    frameRef.current?.sendPending(pendingPhase === "timer" ? "effect" : pendingPhase ?? "idle");
   }, [frameReady, open, pendingPhase]);
 
   const confirmFinish = () => {
@@ -289,7 +292,11 @@ export function ExperienceModal(props: ExperienceModalProps) {
               data-testid="experience-pending"
             >
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
-              {pendingPhase === "typing" ? t("experience_pending_typing") : t("experience_pending_effect")}
+              {pendingPhase === "typing"
+                ? t("experience_pending_typing")
+                : pendingPhase === "timer"
+                  ? t("experience_pending_timer")
+                  : t("experience_pending_effect")}
             </span>
           )}
           {statusLabel && (

@@ -679,6 +679,7 @@ export default interface Resources {
     "experience_launcher_start": "Start",
     "experience_launcher_title": "Mini-app",
     "experience_pending_effect": "thinking…",
+    "experience_pending_timer": "waiting…",
     "experience_pending_typing": "typing…",
     "experience_playground_diagnostics": "Developer diagnostics",
     "experience_playground_diagnostics_hint": "Raw state, actions, events, effects, revision, request id, payload JSON, and console output from the kernel.",

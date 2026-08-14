@@ -36,6 +36,7 @@ import {
 } from "./ExperienceFrame.js";
 import { ExperienceReportControls } from "./ExperienceReportControls.js";
 import { experienceActionOutcome } from "./ExperienceModal.js";
+import { useExperienceTimerResync } from "../../hooks/use-experience-timer-resync.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
 import { EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
@@ -278,6 +279,13 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
     if (!frameReady) return;
     frameRef.current?.sendPending(pendingPhase);
   }, [frameReady, pendingPhase]);
+
+  // ── Timer tick pickup (fix step 2d) ────────────────────────────────────────
+  // Host-fired ticks land server-side while this window may sit idle; while a
+  // timer is live, slowly rehydrate so the applied tick and the terminal
+  // effect row arrive without user interaction. Self-disarms when no live
+  // timer remains.
+  useExperienceTimerResync({ chatId, branchId, effects: storeEffects, active: session !== null });
 
   // ── Run durable pending model effects one at a time (IR-73B) ─
   // Only `pending` MODEL rows auto-run (timer effects are host-scheduled,

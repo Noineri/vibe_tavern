@@ -257,6 +257,26 @@ describe("ExperienceModal — live state + pending push (seams #2 + #5)", () => 
     expect(getByTestId("experience-pending")).toBeTruthy();
   });
 
+  it("renders the timer-wait label for a timer phase (fix step 2d)", () => {
+    installUrlSpy();
+    const { getByTestId } = render(
+      <ExperienceModal
+        open
+        onClose={() => {}}
+        title="Hearts"
+        visualSource={VISUAL}
+        sessionId="sess_t"
+        initialRevision={0}
+        view={{ state: {}, actions: [], revision: 0, status: "active" }}
+        onAction={onAction}
+        pendingPhase="timer"
+      />,
+    );
+    // t() returns keys verbatim — the badge text is the timer key, not the
+    // model "thinking" key.
+    expect(getByTestId("experience-pending").textContent).toContain("experience_pending_timer");
+  });
+
   it("hides the pending chrome indicator for an idle phase", () => {
     installUrlSpy();
     const { queryByTestId } = render(

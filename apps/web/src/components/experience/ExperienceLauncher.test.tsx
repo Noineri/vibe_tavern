@@ -53,7 +53,7 @@ interface FakeScopeState {
     view: { revision: number; status: string; state: unknown; actions: unknown[] };
     manifest: { name: string };
   } | null;
-  effects: Array<{ id: string; status: string }>;
+  effects: Array<{ id: string; kind?: string; status: string }>;
   queuedAttachment: {
     queueRevision: number;
     sessionRevision: number;
@@ -113,6 +113,7 @@ function setScopeState(key: string, patch: Partial<FakeScopeState>): void {
 }
 
 const storeMocks = {
+  rehydrate: mock(async () => {}),
   setScope: mock((_chatId: string, _branchId: string) => {}),
   openModal: mock(() => {}),
   closeModal: mock(() => {}),
@@ -196,6 +197,7 @@ mock.module("../../stores/experience-store.js", () => ({
         if (key) setScopeState(key, { detached: d });
       },
       submitAction: storeMocks.submitAction,
+      rehydrate: storeMocks.rehydrate,
       endSession: storeMocks.endSession,
       runEffect: storeMocks.runEffect,
       queueReport: storeMocks.queueReport,
@@ -464,6 +466,57 @@ describe("ExperienceLauncher — visual action contract", () => {
     const outcome = await onAction({ requestId: "rid", expectedRevision: 9, type: "move" });
     expect(outcome).toMatchObject({ ok: false });
     expect(["stale_revision", "invalid_action"]).toContain((outcome as { code: string }).code);
+  });
+});
+
+// ─── 7b. Timer pending phase (fix step 2d) ──────────────────────────────────
+describe("ExperienceLauncher — timer pending phase", () => {
+  it("shows the timer-wait phase (not effect) when only a timer is live, and never runs it", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_t", kind: "timer", status: "pending" }],
+      modalOpen: true,
+    });
+    render(<ExperienceLauncher />);
+    expect(modalProps.pendingPhase).toBe("timer");
+    expect(storeMocks.runEffect).not.toHaveBeenCalled();
+  });
+
+  it("model work outranks the timer wait when both are live", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [
+        { id: "eff_t", kind: "timer", status: "pending" },
+        { id: "eff_m", kind: "model", status: "pending" },
+      ],
+      modalOpen: true,
+    });
+    render(<ExperienceLauncher />);
+    expect(modalProps.pendingPhase).toBe("effect");
+  });
+
+  it("a running timer also shows the timer-wait phase", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_t", kind: "timer", status: "running" }],
+      modalOpen: true,
+    });
+    render(<ExperienceLauncher />);
+    expect(modalProps.pendingPhase).toBe("timer");
+  });
+
+  it("a terminal timer shows the idle phase", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_t", kind: "timer", status: "succeeded" }],
+      modalOpen: true,
+    });
+    render(<ExperienceLauncher />);
+    expect(modalProps.pendingPhase).toBe("idle");
   });
 });
 

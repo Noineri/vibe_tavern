@@ -23,10 +23,11 @@
  */
 import * as Popover from "@radix-ui/react-popover";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
+import { EXPERIENCE_EFFECT_KIND, EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
 import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
+import { useExperienceTimerResync } from "../../hooks/use-experience-timer-resync.js";
 import { useT } from "../../i18n/context.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import {
@@ -189,6 +190,14 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   // must additionally have non-null pinned visualSource; otherwise surface an
   // incompatible/error state rather than fetching live source.
   // `visible` was already computed before the effect-runner hooks above.
+  // ── Timer tick pickup (fix step 2d) ───────────────────────────────────────
+  // Host-fired ticks land server-side; while this surface is open and a timer
+  // is live, slowly rehydrate so the applied tick (new revision/view) and the
+  // terminal effect row arrive without user interaction. Self-disarms when no
+  // live timer remains. Runs BEFORE the visibility gate like every other hook
+  // (Rules of Hooks: the gate's early return must never change hook count).
+  useExperienceTimerResync({ chatId, branchId, effects, active: visible && modalOpen && !detached && hasSession });
+
   if (!visible) return null;
 
   const title = session?.manifest.name ?? config!.scriptId ?? "";
@@ -296,10 +305,15 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   }
 
   // ── Pending phase drives chrome + visual (pending/running rows) ───────────
-  const pendingPhase: "idle" | "effect" =
-    surfaceOwnsEffects && effects.some((e) => e.status === EXPERIENCE_EFFECT_STATUS.pending || e.status === EXPERIENCE_EFFECT_STATUS.running)
-      ? "effect"
-      : "idle";
+  // Model work wins when both kinds are in flight ("thinking…" outranks
+  // "waiting…"); a live timer alone shows the timer-wait chrome (fix step 2d).
+  const modelWork = surfaceOwnsEffects && effects.some(
+    (e) => e.kind === EXPERIENCE_EFFECT_KIND.model && (e.status === EXPERIENCE_EFFECT_STATUS.pending || e.status === EXPERIENCE_EFFECT_STATUS.running),
+  );
+  const timerWork = surfaceOwnsEffects && effects.some(
+    (e) => e.kind === EXPERIENCE_EFFECT_KIND.timer && (e.status === EXPERIENCE_EFFECT_STATUS.pending || e.status === EXPERIENCE_EFFECT_STATUS.running),
+  );
+  const pendingPhase: "idle" | "effect" | "timer" = modelWork ? "effect" : timerWork ? "timer" : "idle";
 
   // ── Pill label + body ────────────────────────────────────────────────────
   const pillLabel = incompatible

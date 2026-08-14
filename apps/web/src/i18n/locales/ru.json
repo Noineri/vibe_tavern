@@ -1784,6 +1784,7 @@
   "experience_finish_confirm": "Завершить это мини-приложение? Это прерывает сессию и замораживает итоговый отчёт для вашего следующего сообщения.",
   "experience_detach_title": "Открыть в отдельном окне",
   "experience_pending_typing": "печатает…",
+  "experience_pending_timer": "ожидает…",
   "experience_pending_effect": "обдумывает…",
   "experience_detach_unavailable": "Это окно мини-приложения больше не подключено.",
   "experience_detached_badge": "отдельно",
