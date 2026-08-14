@@ -3,6 +3,7 @@ import {
   experienceVisuals,
   experienceChatConfigs,
   experiencePromptOverrides,
+  builtinExperienceDismissals,
 } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -21,6 +22,8 @@ export interface ExperienceVisualRow {
   source: string;
   sourceHash: string;
   apiVersion: number;
+  /** Stable idempotency key (app-owned built-in visuals); null/absent for user-owned. */
+  stableKey?: string | null;
   compatibleManifestIds: string[];
   scopeType: string;
   characterId: string | null;
@@ -212,6 +215,43 @@ export class ExperienceResourceStore {
 
   async deleteVisual(id: string): Promise<void> {
     await this.db.delete(experienceVisuals).where(eq(experienceVisuals.id, id)).run();
+  }
+
+  // ─── Built-in dismissal tombstones (fix item 12) ──────────────────────────
+  // The built-in seed is create-or-return WITHOUT memory of deletion, so an
+  // absent built-in looks "not seeded yet" and would be re-created + re-bound
+  // on the next startup. These markers let the delete/unbind paths record a
+  // user's explicit removal and let the seed skip that built-in id.
+
+  /** Record a user's removal of a built-in (idempotent). */
+  async dismissBuiltinExperience(builtinId: string, visualStableKey: string): Promise<void> {
+    await this.db
+      .insert(builtinExperienceDismissals)
+      .values({
+        builtinId,
+        visualStableKey,
+        dismissedAt: this.clock.now(),
+      })
+      .onConflictDoNothing()
+      .run();
+  }
+
+  /** Whether a built-in id was explicitly dismissed (seed should skip it). */
+  async isBuiltinExperienceDismissed(builtinId: string): Promise<boolean> {
+    const row = await this.db
+      .select()
+      .from(builtinExperienceDismissals)
+      .where(eq(builtinExperienceDismissals.builtinId, builtinId))
+      .get();
+    return row !== undefined;
+  }
+
+  /** Remove the dismissal marker (future "restore builtins" affordance). */
+  async clearBuiltinExperienceDismissal(builtinId: string): Promise<void> {
+    await this.db
+      .delete(builtinExperienceDismissals)
+      .where(eq(builtinExperienceDismissals.builtinId, builtinId))
+      .run();
   }
 
   /**
@@ -442,6 +482,7 @@ export class ExperienceResourceStore {
       source: row.source,
       sourceHash: row.sourceHash,
       apiVersion: row.apiVersion,
+      stableKey: row.stableKey,
       compatibleManifestIds: parseStringArray(row.compatibleManifestIdsJson),
       scopeType: row.scopeType,
       characterId: row.characterId,

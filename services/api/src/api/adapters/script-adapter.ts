@@ -1,6 +1,7 @@
 import type { ScriptRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceVisualRow } from "@vibe-tavern/db";
 import { testScript, parseScriptImport } from "../../domain/scripts-engine/script-test-service.js";
+import { BUILTIN_EXPERIENCE_CATALOG } from "../../domain/interactive/builtin-experiences/index.js";
 
 export class ScriptAdapter implements ScriptRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}
@@ -39,7 +40,17 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		this.stores.scripts.setScope(scriptId, scopeType, ownerId);
 
 	deleteScript = async (scriptId: string) => {
+		// Fix item 12: deleting a built-in script records a dismissal so the seed
+		// never re-creates/re-binds what the user explicitly removed.
+		const existing = await this.stores.scripts.getById(scriptId);
+		const builtinId = existing?.extensions && typeof existing.extensions.builtinId === "string"
+			? existing.extensions.builtinId
+			: null;
+		const entry = builtinId === null ? undefined : BUILTIN_EXPERIENCE_CATALOG.find((e) => e.id === builtinId);
 		await this.stores.scripts.delete(scriptId);
+		if (entry !== undefined) {
+			await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visualStableKey);
+		}
 	};
 
 	testScript = (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }) => {
@@ -83,6 +94,14 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 	bindScriptVisual = (scriptId: string, visualId: string): Promise<void> =>
 		this.stores.scripts.bindVisual(scriptId, visualId);
 
-	unbindScriptVisual = (scriptId: string, visualId: string): Promise<void> =>
-		this.stores.scripts.unbindVisual(scriptId, visualId);
+	unbindScriptVisual = async (scriptId: string, visualId: string) => {
+		// Fix item 12: unbinding a built-in visual records a dismissal so the
+		// seed never re-binds it on the next startup.
+		const visual = await this.stores.experienceResources.getVisualById(visualId);
+		const entry = visual === null ? undefined : BUILTIN_EXPERIENCE_CATALOG.find((e) => e.visualStableKey === visual.stableKey);
+		await this.stores.scripts.unbindVisual(scriptId, visualId);
+		if (entry !== undefined) {
+			await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visualStableKey);
+		}
+	};
 }

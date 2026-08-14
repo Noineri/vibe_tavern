@@ -1256,3 +1256,17 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
 }, (table) => ({
   threadIdx: index('idx_experience_copilot_messages_thread').on(table.threadId),
 }));
+
+// ─── builtinExperienceDismissals ─────────────────────────────────────────────
+// Tombstone marker for a built-in experience the user explicitly deleted or
+// unlinked. `seedBuiltinExperiences` (BE-3) is create-or-return WITHOUT memory
+// of deletion: an absent built-in visual looks "not seeded yet", so a restart
+// would re-create and re-bind it (resurrecting what the user removed). Writing
+// a row here at delete/unbind time lets the seed skip ensure + re-bind for that
+// built-in id. `visualStableKey` is kept for reference / a future restore; the
+// authoritative dismissal key is `builtin_id` (the catalog id).
+export const builtinExperienceDismissals = sqliteTable('builtin_experience_dismissals', {
+  builtinId: text('builtin_id').primaryKey(),
+  visualStableKey: text('visual_stable_key').notNull(),
+  dismissedAt: text('dismissed_at').notNull(),
+});

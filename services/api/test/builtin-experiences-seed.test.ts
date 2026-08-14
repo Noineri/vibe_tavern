@@ -16,6 +16,8 @@ import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
 
 import { seedBuiltinExperiences } from "../src/domain/interactive/builtin-experiences/seed-service.js";
 import { BUILTIN_EXPERIENCE_CATALOG } from "../src/domain/interactive/builtin-experiences/index.js";
+import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
+import { ScriptAdapter } from "../src/api/adapters/script-adapter.js";
 
 async function setup(): Promise<StoreContainer> {
   const dataRoot = await mkdtemp(join(tmpdir(), "vt-builtin-seed-"));
@@ -23,6 +25,17 @@ async function setup(): Promise<StoreContainer> {
 }
 
 const CATALOG_IDS = BUILTIN_EXPERIENCE_CATALOG.map((entry) => entry.id);
+
+/** Seed and return the seeded Conversation script + visual (both non-null). */
+async function seedAndResolve(stores: StoreContainer) {
+  await seedBuiltinExperiences(stores);
+  const scripts = await stores.scripts.listAll();
+  const convo = scripts.find((s) => s.creationIntentId === "builtin:conversation");
+  if (!convo || convo.defaultVisualId === null) throw new Error("seed did not produce the Conversation pair");
+  const visual = await stores.experienceResources.getVisualById(convo.defaultVisualId);
+  if (visual === null) throw new Error("seed did not produce the Conversation visual");
+  return { script: convo, visual };
+}
 
 describe("seedBuiltinExperiences (BE-3)", () => {
   test("seeds the Conversation built-in: enabled + global + builtinId + defaultVisualId wired", async () => {
@@ -76,5 +89,95 @@ describe("seedBuiltinExperiences (BE-3)", () => {
     const visuals = await stores.experienceResources.listVisualsForScope("global", null);
     const convoVisuals = visuals.filter((v) => v.name === "Conversation");
     expect(convoVisuals).toHaveLength(1);
+  });
+});
+
+// ─── Built-in dismissal tombstones (fix item 12) ─────────────────────────────
+
+describe("built-in experience dismissal tombstones (fix item 12)", () => {
+  test("deleting the built-in visual records a dismissal; a re-seed does NOT recreate or rebind it", async () => {
+    const stores = await setup();
+    const { script, visual } = await seedAndResolve(stores);
+    const resources = new ExperienceResourceService(stores);
+
+    const deleted = await resources.deleteVisual(visual.id);
+    expect(deleted.ok).toBe(true);
+
+    const reseed = await seedBuiltinExperiences(stores);
+    expect(reseed.dismissed).toEqual(["conversation"]);
+    expect(reseed.seeded).toEqual([]);
+
+    // The visual was NOT recreated.
+    const visuals = await stores.experienceResources.listVisualsForScope("global", null);
+    expect(visuals.filter((v) => v.name === "Conversation")).toHaveLength(0);
+    // It was NOT re-bound to the surviving script.
+    expect(await stores.scripts.getBoundVisualIds(script.id)).not.toContain(visual.id);
+  });
+
+  test("deleting the built-in script records a dismissal; a re-seed recreates nothing", async () => {
+    const stores = await setup();
+    const { script } = await seedAndResolve(stores);
+    const adapter = new ScriptAdapter(stores);
+
+    await adapter.deleteScript(script.id);
+
+    const reseed = await seedBuiltinExperiences(stores);
+    expect(reseed.dismissed).toEqual(["conversation"]);
+    expect(reseed.seeded).toEqual([]);
+
+    // The script was NOT recreated (the surviving visual is the only artifact).
+    const scripts = await stores.scripts.listAll();
+    expect(scripts.filter((s) => s.creationIntentId === "builtin:conversation")).toHaveLength(0);
+  });
+
+  test("unbinding the built-in visual records a dismissal; a re-seed does NOT re-bind it", async () => {
+    const stores = await setup();
+    const { script, visual } = await seedAndResolve(stores);
+    const adapter = new ScriptAdapter(stores);
+
+    await adapter.unbindScriptVisual(script.id, visual.id);
+    expect(await stores.scripts.getBoundVisualIds(script.id)).toEqual([]);
+
+    const reseed = await seedBuiltinExperiences(stores);
+    expect(reseed.dismissed).toEqual(["conversation"]);
+    // The surviving script stays unbound.
+    expect(await stores.scripts.getBoundVisualIds(script.id)).toEqual([]);
+  });
+
+  test("clearing the dismissal restores seeding (visual + re-bind return)", async () => {
+    const stores = await setup();
+    const { script, visual } = await seedAndResolve(stores);
+    const resources = new ExperienceResourceService(stores);
+    expect((await resources.deleteVisual(visual.id)).ok).toBe(true);
+    expect((await seedBuiltinExperiences(stores)).dismissed).toEqual(["conversation"]);
+
+    await stores.experienceResources.clearBuiltinExperienceDismissal("conversation");
+    const reseed = await seedBuiltinExperiences(stores);
+    expect(reseed.dismissed).toEqual([]);
+    expect(reseed.seeded).toEqual(["conversation"]);
+
+    // The visual is recreated and re-bound to the surviving script.
+    const visuals = await stores.experienceResources.listVisualsForScope("global", null);
+    const convoVisuals = visuals.filter((v) => v.name === "Conversation");
+    expect(convoVisuals).toHaveLength(1);
+    expect(await stores.scripts.getBoundVisualIds(script.id)).toContain(convoVisuals[0]!.id);
+  });
+
+  test("dismissal is idempotent — double delete + double seed never error", async () => {
+    const stores = await setup();
+    const { visual } = await seedAndResolve(stores);
+    const resources = new ExperienceResourceService(stores);
+
+    // Deleting twice: the second returns visual_not_found (no tombstone write
+    // needed), and neither throws.
+    expect((await resources.deleteVisual(visual.id)).ok).toBe(true);
+    const secondDelete = await resources.deleteVisual(visual.id);
+    expect(secondDelete.ok).toBe(false);
+    if (!secondDelete.ok) expect(secondDelete.error.code).toBe("visual_not_found");
+
+    const first = await seedBuiltinExperiences(stores);
+    const second = await seedBuiltinExperiences(stores);
+    expect(first.dismissed).toEqual(["conversation"]);
+    expect(second.dismissed).toEqual(["conversation"]);
   });
 });

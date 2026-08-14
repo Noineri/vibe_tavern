@@ -40,6 +40,7 @@ import type {
   ExperienceSessionRow,
   ExperienceVisualRow,
 } from "@vibe-tavern/db";
+import { BUILTIN_EXPERIENCE_CATALOG } from "./builtin-experiences/index.js";
 
 // ─── Resolved setup (the lifecycle entry point) ─────────────────────────────
 
@@ -295,6 +296,12 @@ export class ExperienceResourceService {
       return err({ status: 404, code: "visual_not_found", message: `Visual '${id}' not found` });
     }
     await this.stores.experienceResources.deleteVisual(id);
+    // Fix item 12: deleting a built-in visual records a dismissal so the seed
+    // never re-creates/re-binds what the user explicitly removed.
+    const entry = BUILTIN_EXPERIENCE_CATALOG.find((e) => e.visualStableKey === existing.stableKey);
+    if (entry !== undefined) {
+      await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visualStableKey);
+    }
     return ok(undefined);
   }
 

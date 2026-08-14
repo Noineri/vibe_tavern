@@ -33,6 +33,8 @@ export interface BuiltinSeedResult {
   readonly seeded: readonly string[];
   /** Entry ids that threw, with the error message — never aborts the batch. */
   readonly skipped: readonly { readonly id: string; readonly error: string }[];
+  /** Entry ids skipped because the user dismissed the built-in (tombstone). */
+  readonly dismissed: readonly string[];
 }
 
 /**
@@ -42,9 +44,16 @@ export interface BuiltinSeedResult {
 export async function seedBuiltinExperiences(stores: StoreContainer): Promise<BuiltinSeedResult> {
   const seeded: string[] = [];
   const skipped: Array<{ id: string; error: string }> = [];
+  const dismissed: string[] = [];
 
   for (const entry of BUILTIN_EXPERIENCE_CATALOG) {
     try {
+      // Fix item 12: respect the user's explicit removal of a built-in — skip
+      // ensure + re-bind entirely so a restart never resurrects it.
+      if (await stores.experienceResources.isBuiltinExperienceDismissed(entry.id)) {
+        dismissed.push(entry.id);
+        continue;
+      }
       await seedOneBuiltin(stores, entry);
       seeded.push(entry.id);
     } catch (error) {
@@ -55,7 +64,7 @@ export async function seedBuiltinExperiences(stores: StoreContainer): Promise<Bu
     }
   }
 
-  return { seeded, skipped };
+  return { seeded, skipped, dismissed };
 }
 
 /** Ensure a single built-in's visual + script, wired via defaultVisualId. */
