@@ -430,6 +430,65 @@ context.experience.register({
 const mcHuman = { id: "you", label: "You", controller: "human" as const };
 const mcModel = { id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp_test", modelId: "gpt-test" };
 
+/** A two-model group-chat rules body (fix step 10): a human reply emits ONE
+ *  model effect per model seat (emission order = participant order); each model
+ *  reply clears that seat's pending slot. Mirrors the shipped messenger shape. */
+const GROUP_TWO_MODEL_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "gm", name: "GM" },
+  capabilities: [{ capability: 'participants' }, { capability: 'model' }],
+  create() { return { messages: [], pending: [] }; },
+  project(c) { return { messages: c.state.messages.slice(), pending: c.state.pending.slice() }; },
+  actions(c, viewer) {
+    if (viewer && viewer.kind === 'model') {
+      if (c.state.pending.length === 0) return [];
+      return [{ type: 'reply', allowsText: true }];
+    }
+    if (c.state.pending.length > 0) return [];
+    return [{ type: 'reply', allowsText: true }];
+  },
+  reduce(c, a) {
+    var text = (a.payload && a.payload.text) || '';
+    var ps = c.participants || [];
+    var isModel = false;
+    for (var i = 0; i < ps.length; i++) { if (ps[i].controller === 'model' && ps[i].id === a.participantId) isModel = true; }
+    var msgs = c.state.messages.slice();
+    var pending = c.state.pending.slice();
+    if (isModel) {
+      var idx = pending.indexOf(a.participantId);
+      if (idx === -1) return { state: c.state, status: 'active', events: [] };
+      pending.splice(idx, 1);
+      msgs.push({ from: a.participantId, text: text });
+      return { state: { messages: msgs, pending: pending }, status: 'active', events: [{ visibility: 'public', type: 'model_replied' }] };
+    }
+    msgs.push({ from: 'you', text: text });
+    var newPending = [];
+    var effects = [];
+    for (var j = 0; j < ps.length; j++) {
+      if (ps[j].controller === 'model') {
+        newPending.push(ps[j].id);
+        effects.push({ kind: 'model', request: { viewer: ps[j].id, mode: 'text', actionType: 'reply', instruction: 'Reply in character.' } });
+      }
+    }
+    return { state: { messages: msgs, pending: newPending }, status: 'active', events: [{ visibility: 'public', type: 'user_replied' }], effects: effects };
+  }
+});
+`;
+
+const gmHuman = { id: "you", label: "You", controller: "human" as const };
+const gmModel1 = { id: "ai1", label: "AI1", controller: "model" as const, providerProfileId: "pp1", modelId: "m1" };
+const gmModel2 = { id: "ai2", label: "AI2", controller: "model" as const, providerProfileId: "pp2", modelId: "m2" };
+
+/** A deterministic mock model seam that echoes the targeted seat id. */
+function mockEchoModelDeps(): PlaygroundModelDeps {
+  return {
+    async resolveModelReply(input: PlaygroundModelResolveInput): Promise<PlaygroundModelResolveResult> {
+      const req = input.request as { viewer?: unknown };
+      return { ok: true, mode: "text", text: `reply-${typeof req.viewer === "string" ? req.viewer : "?"}` };
+    },
+  };
+}
+
 /** A deterministic mock model seam: always returns a fixed reply text. */
 function mockModelDeps(replyText: string): PlaygroundModelDeps {
   return {
@@ -556,6 +615,98 @@ describe("executeModelTurnExperiencePlayground — ephemeral model continuation 
     if (!finish.ok) return;
     expect(finish.data.status).toBe("completed");
     expect(finish.data.stopReason).toBe("completed");
+  });
+
+  // ── Fix step 10: two-model drain ────────────────────────────────────────
+  test("two model effects from one transition are both delivered in emission order", async () => {
+    const started = startExperiencePlayground({
+      rulesCode: GROUP_TWO_MODEL_SOURCE,
+      participants: [gmHuman, gmModel1, gmModel2],
+      capabilityGrants: ["participants", "model"],
+      humanSeatId: "you",
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const id = started.data.playgroundSessionId;
+
+    advanceExperiencePlayground({ playgroundSessionId: id, humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hi" } } });
+
+    const turn = await executeModelTurnExperiencePlayground({ playgroundSessionId: id }, mockEchoModelDeps());
+    expect(turn.ok).toBe(true);
+    if (!turn.ok) return;
+    expect(turn.data.revision).toBe(3); // 1 human + 2 model steps
+    expect(turn.data.stopReason).toBe("awaiting_human");
+    const s = turn.data.state as { messages: Array<{ from: string; text: string }>; pending: string[] };
+    expect(s.messages).toEqual([
+      { from: "you", text: "Hi" },
+      { from: "ai1", text: "reply-ai1" },
+      { from: "ai2", text: "reply-ai2" },
+    ]);
+    expect(s.pending).toEqual([]);
+  });
+
+  test("a second drain call is a no-op (no re-execution of delivered effects)", async () => {
+    const started = startExperiencePlayground({
+      rulesCode: GROUP_TWO_MODEL_SOURCE,
+      participants: [gmHuman, gmModel1, gmModel2],
+      capabilityGrants: ["participants", "model"],
+      humanSeatId: "you",
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const id = started.data.playgroundSessionId;
+
+    advanceExperiencePlayground({ playgroundSessionId: id, humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hi" } } });
+    await executeModelTurnExperiencePlayground({ playgroundSessionId: id }, mockEchoModelDeps());
+
+    const again = await executeModelTurnExperiencePlayground({ playgroundSessionId: id }, mockEchoModelDeps());
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(again.data.revision).toBe(3); // unchanged
+    expect(again.data.events).toEqual([]);
+    const s = again.data.state as { messages: Array<{ from: string; text: string }> };
+    expect(s.messages).toHaveLength(3); // no duplicated model message
+  });
+
+  test("a mid-drain seam failure aborts after delivered effects; a later call drains the rest", async () => {
+    const started = startExperiencePlayground({
+      rulesCode: GROUP_TWO_MODEL_SOURCE,
+      participants: [gmHuman, gmModel1, gmModel2],
+      capabilityGrants: ["participants", "model"],
+      humanSeatId: "you",
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const id = started.data.playgroundSessionId;
+
+    advanceExperiencePlayground({ playgroundSessionId: id, humanAction: { type: "reply", requestId: "h1", expectedRevision: 0, payload: { text: "Hi" } } });
+
+    // First call: deliver ai1, then fail on ai2.
+    let calls = 0;
+    const failingSecondDeps: PlaygroundModelDeps = {
+      async resolveModelReply(): Promise<PlaygroundModelResolveResult> {
+        calls += 1;
+        if (calls === 1) return { ok: true, mode: "text", text: "reply-ai1" };
+        return { ok: false, code: "provider_failed", message: "boom" };
+      },
+    };
+    const turn = await executeModelTurnExperiencePlayground({ playgroundSessionId: id }, failingSecondDeps);
+    expect(turn.ok).toBe(false);
+    if (turn.ok) return;
+    expect(turn.error.code).toBe("provider_failed");
+
+    // The second call with a working deps drains the remaining effect only.
+    const rest = await executeModelTurnExperiencePlayground({ playgroundSessionId: id }, mockEchoModelDeps());
+    expect(rest.ok).toBe(true);
+    if (!rest.ok) return;
+    expect(rest.data.revision).toBe(3); // ai1 already applied (2) + ai2 now (3)
+    const s = rest.data.state as { messages: Array<{ from: string; text: string }>; pending: string[] };
+    expect(s.messages.map((m) => `${m.from}:${m.text}`)).toEqual([
+      "you:Hi",
+      "ai1:reply-ai1",
+      "ai2:reply-ai2",
+    ]);
+    expect(s.pending).toEqual([]);
   });
 });
 
