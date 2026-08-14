@@ -1,11 +1,107 @@
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { Database } from 'bun:sqlite';
-import { resolve } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as schema from './db-schema.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
+
+// ─── Test-only handle registry + temp-dir sweep ─────────────────────────
+//
+// createDb() registers its raw bun:sqlite handle here, and the test suites
+// (services/api + packages/db — each a single bun:test process spanning many
+// files) release EVERY handle in one process-global afterAll, then sweep the
+// temp dirs. Two reasons it's needed:
+//  1. Without closing, bun:sqlite keeps WAL/SHM handles open and `rm` of the
+//     temp dir fails with EBUSY/EPERM on Windows.
+//  2. Temp dirs are created all over the tests (mkdtemp for file stores, DB
+//     roots, scratch) — only a sweep of os.tmpdir() catches them all; tracking
+//     dbPath alone misses the `createDb(":memory:")` + separate-mkdtemp cases.
+// At peak 12,000+ orphaned dirs had accumulated under %TEMP% before this.
+// closeAllDbs() is wired in via a `bunfig.toml [test] preload` in each suite.
+const openedDatabases = new Set<Database>();
+
+/** Basenames a test temp root is allowed to have. The sweep only touches
+ *  os.tmpdir() children whose name matches one of these prefixes, so a real
+ *  data dir (or an unrelated temp file) is never removed. */
+const TEST_TEMP_PREFIX = /^(vt-|coauthor-|vibe-tavern-)/i;
+
+async function rmWithRetry(target: string): Promise<void> {
+  // Two quick retries only. The grace delay in closeAllDbs already lets Windows
+  // release WAL/SHM handles after sqlite.close(); a long per-dir backoff here
+  // would multiply across hundreds of dirs and blow the afterAll hook timeout.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await rm(target, { recursive: true, force: true });
+      return;
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if ((code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY') && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 30 * (attempt + 1)));
+        continue;
+      }
+      return;
+    }
+  }
+}
+
+/** Remove os.tmpdir() children that match a test prefix AND were created/touched
+ *  during this run (mtime >= since). The mtime bound + prefix guard make this
+ *  safe: it never touches dirs from before the run or with non-test names. */
+async function sweepTestTempDirs(since: number): Promise<void> {
+  const tmp = String(tmpdir());
+  let entries: string[];
+  try {
+    entries = await readdir(tmp);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries
+      .filter((name) => TEST_TEMP_PREFIX.test(name))
+      .map(async (name) => {
+        const full = join(tmp, name);
+        try {
+          const st = await stat(full);
+          if (st.isDirectory() && st.mtimeMs >= since) {
+            await rmWithRetry(full);
+          }
+        } catch {
+          /* skip unreadable entries */
+        }
+      }),
+  );
+}
+
+/** Close every opened SQLite handle and sweep the run's temp dirs. Called once
+ *  from a global afterAll registered via a `bunfig.toml [test] preload`. Pass
+ *  `sweepSince` = the timestamp the preload captured at import (before tests) so
+ *  only dirs created during THIS run are removed. Safe when empty; never throws. */
+export async function closeAllDbs(options?: { sweepSince?: number }): Promise<void> {
+  for (const sqlite of openedDatabases) {
+    try {
+      sqlite.close();
+    } catch (err: unknown) {
+      console.warn('[db] test cleanup: close failed:', err);
+    }
+  }
+  openedDatabases.clear();
+  if (options?.sweepSince !== undefined) {
+    // Windows releases bun:sqlite's WAL/SHM file handles ASYNCHRONOUSLY after
+    // sqlite.close() returns — measured ~700-1200ms before the OS lets rm
+    // through. A single long sleep would do, but sweeping a few times with a
+    // short grace between each clears most dirs fast and catches stragglers
+    // without a per-dir backoff that would blow the afterAll hook timeout when
+    // hundreds of dirs are involved (Bun's rm ignores Node's maxRetries, so the
+    // retry has to be manual and bounded).
+    for (let pass = 0; pass < 4; pass++) {
+      await new Promise((r) => setTimeout(r, 200));
+      await sweepTestTempDirs(options.sweepSince);
+    }
+  }
+}
 
 /**
  * A drizzle transaction client (the `tx` passed to `db.transaction(cb)`'s
@@ -702,6 +798,9 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
 export async function createDb(dbPath: string, migrationsFolderOverride?: string): Promise<AppDb> {
   await mkdir(resolve(dbPath, '..'), { recursive: true });
   const sqlite = new Database(dbPath);
+  // Register the raw handle so test suites can release it (and sweep the temp
+  // dirs) in a single global afterAll — see closeAllDbs. No-op for production.
+  openedDatabases.add(sqlite);
   sqlite.exec('PRAGMA journal_mode = WAL');
   sqlite.exec('PRAGMA foreign_keys = ON');
 
