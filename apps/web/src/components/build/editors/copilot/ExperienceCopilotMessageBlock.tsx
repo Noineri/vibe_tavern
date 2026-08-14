@@ -40,11 +40,20 @@ export const ExperienceCopilotMessageBlock = memo(function ExperienceCopilotMess
       </div>
       <div
         className={cn(
-          "max-w-[80%] rounded-lg px-3.5 py-2.5",
+          // min-w-0: the bubble is a flex item, so its automatic min-width is
+          // the content's min-content — for a code block that is the LONGEST
+          // line, which beat max-w-[80%] and blew the chat sideways (fix:
+          // code-block overflow). min-w-0 lets the bubble shrink; .md-pre then
+          // gets a bounded containing block and scrolls INTERNALLY as designed.
+          "max-w-[80%] min-w-0 rounded-lg px-3.5 py-2.5",
           isUser ? "bg-user-bg" : "bg-s2",
         )}
       >
-        <div className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal] [&_em]:italic [&_em]:text-msg-t2">
+          {/* overflow-wrap:anywhere — long unbreakable inline tokens (inline
+           * code, paths, ids) wrap instead of spilling past the bubble edge.
+           * Reset inside .md-pre: fenced code keeps its own overflow-x:auto
+           * internal scroll with preserved indentation (lib/markdown contract). */}
           <Markdown text={message.content} />
         </div>
       </div>
