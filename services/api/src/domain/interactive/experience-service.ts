@@ -247,6 +247,16 @@ export interface ModelEffectVmContext {
   characterId: string | null;
 }
 
+/** VM context the timer-effect service needs to fire a tick. */
+export interface TimerEffectVmContext {
+  effect: ExperienceEffectRow;
+  request: TimerEffectRequestPayload;
+  viewer: ExperienceViewer;
+  participant: ExperienceParticipant;
+  /** Legal actions for the viewer at claim time (the tick must be among them). */
+  legalActions: ExperienceActionDescriptor[];
+}
+
 /** Outcome of an effect-result feed-back (acceptance is the CAS). */
 export interface EffectDelivery {
   delivered: boolean;
@@ -812,6 +822,41 @@ export class ExperienceService {
   }
 
   /**
+   * Resolve the VM + legal-set context for a pending timer effect: the tick
+   * viewer's participant and the legal actions for that viewer at claim time.
+   * Pure VM reads — no network, no state mutation. The timer-effect service
+   * (fix step 2b) sleeps the declared delay, then calls {@link applyEffectResult}
+   * to fire the tick back through the reducer.
+   */
+  async resolveTimerEffectContext(effectId: string): Promise<ExperienceResult<TimerEffectVmContext>> {
+    const effect = await this.stores.experiences.getEffectById(effectId);
+    if (effect === null) {
+      return err({ status: 404, code: "effect_not_found", message: `Effect '${effectId}' not found` });
+    }
+    const request = parseTimerEffectRequest(effect.requestJson);
+    if (request === null) {
+      return err({ status: 422, code: "validation_error", message: `Effect '${effectId}' has a malformed timer-effect request payload` });
+    }
+    const ctx = await this.loadSessionForVm(effect.sessionId);
+    if (!ctx.ok) return ctx;
+    const participant = ctx.data.participants.find((p) => p.id === request.viewer) ?? null;
+    if (participant === null) {
+      return err({ status: 422, code: "validation_error", message: `Timer-effect viewer '${request.viewer}' is not a session participant` });
+    }
+    const viewer: ExperienceViewer = { kind: viewerKindForController(participant.controller), participantId: participant.id };
+    const viewCaps = this.buildCaps(ctx.data.grants, ctx.data.participants, undefined, createEphemeralRandom());
+    const legal = runActions(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, viewer, viewCaps);
+    if (!legal.ok) return err(fromKernelError(legal));
+    return ok({
+      effect,
+      request,
+      viewer,
+      participant,
+      legalActions: legal.value,
+    });
+  }
+
+  /**
    * Feed a completed effect's mapped action back into the reducer as an
    * `effect_result` transition. Acceptance is the CAS (`expectedRevision` =
    * `effect.originatingRevision`): if the session advanced past the originating
@@ -820,7 +865,7 @@ export class ExperienceService {
    * undelivered, and the session keeps its newer state. This is the IR-22
    * "delayed effect completions can never overwrite newer session state" rule.
    */
-  async applyEffectResult(effectId: string, action: ExperienceAction): Promise<ExperienceResult<EffectDelivery>> {
+  async applyEffectResult(effectId: string, action: ExperienceAction, opts?: { actorKind?: "model" | "timer" }): Promise<ExperienceResult<EffectDelivery>> {
     const effect = await this.stores.experiences.getEffectById(effectId);
     if (effect === null) {
       return err({ status: 404, code: "effect_not_found", message: `Effect '${effectId}' not found` });
@@ -841,7 +886,7 @@ export class ExperienceService {
       expectedRevision: effect.originatingRevision,
       requestId: action.requestId,
       kind: "effect_result",
-      actorSnapshotJson: safeStringify({ kind: "model", effectId, participantId: action.participantId ?? null }),
+      actorSnapshotJson: safeStringify({ kind: opts?.actorKind ?? "model", effectId, participantId: action.participantId ?? null }),
       inputJson: safeStringify(action),
       emittedEventsJson: safeStringify(transition.events),
       emittedEffectsJson: safeStringify(transition.effects ?? []),
