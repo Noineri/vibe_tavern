@@ -46,8 +46,10 @@ import {
 	type ExperiencePlaygroundData,
 	type ExperiencePlaygroundStartInput,
 	type PlaygroundModelDeps,
+	type PlaygroundChatter,
 } from "../../domain/interactive/experience-playground.js";
 import { createPlaygroundModelDeps } from "../../domain/interactive/experience-playground-model.js";
+import { ExperienceChatterService } from "../../domain/interactive/experience-chatter-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { DomainError } from "../../shared/errors.js";
 
@@ -68,15 +70,30 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		 * as before.
 		 */
 		explicitPlaygroundModelDeps?: PlaygroundModelDeps,
+		/**
+		 * AC-2b: explicit test-injection seam for {@link PlaygroundChatter}.
+		 * When supplied, used directly (so tests can inject a deterministic
+		 * chatter resolver without a real ProviderProfileService). When omitted,
+		 * the constructor derives it from `providerProfiles` via
+		 * {@link ExperienceChatterService} (a no-provider build leaves chatter
+		 * undefined — static flavor passes through unchanged).
+		 */
+		explicitPlaygroundChatter?: PlaygroundChatter,
 	) {
 		this.playgroundModelDeps = explicitPlaygroundModelDeps !== undefined
 			? explicitPlaygroundModelDeps
 			: providerProfiles !== undefined
 				? createPlaygroundModelDeps({ providerProfiles })
 				: undefined;
+		this.playgroundChatter = explicitPlaygroundChatter !== undefined
+			? explicitPlaygroundChatter
+			: providerProfiles !== undefined
+				? new ExperienceChatterService({ providerProfiles })
+				: undefined;
 	}
 
 	private readonly playgroundModelDeps?: PlaygroundModelDeps;
+	private readonly playgroundChatter?: PlaygroundChatter;
 
 	// ─── Response shaping ────────────────────────────────────────────────────
 
@@ -396,7 +413,10 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 	// same mapTestError renders it.
 
 	startExperiencePlayground = async (body: ExperiencePlaygroundStartInput) => {
-		const result = startExperiencePlayground(body);
+		const result = startExperiencePlayground(
+			body,
+			this.playgroundChatter !== undefined ? { chatter: this.playgroundChatter } : undefined,
+		);
 		if (!result.ok) throw mapTestError(result.error);
 		// IR-90E: if a model boundary was hit and a model seam is available,
 		// execute the ephemeral model continuation before returning.

@@ -59,6 +59,7 @@ import {
   runActions,
   runChoose,
   runCreate,
+  runFlavor,
   runProject,
   runReduce,
   validateSubmittedAction,
@@ -153,6 +154,28 @@ export interface PlaygroundModelDeps {
   resolveModelReply(input: PlaygroundModelResolveInput): Promise<PlaygroundModelResolveResult>;
 }
 
+/**
+ * Async flavor chatter seam (item 4 / AC-2b): a STRUCTURAL subset of the host's
+ * {@link ExperienceChatterService} so the playground can normalize a
+ * chatter-marked flavor WITHOUT importing the host service (this module's
+ * dependency graph stays kernel/sandbox/shared/domain/contracts only). The
+ * adapter injects the real service (or a deterministic test stub).
+ *
+ * `resolveChatterFlavor` is synchronous: a chatter-marked flavor returns a
+ * `pending` view immediately and fires the model call fire-and-forget; static
+ * flavor passes through unchanged. One attempt per (session, viewer,
+ * revision, request-hash).
+ */
+export interface PlaygroundChatter {
+  resolveChatterFlavor(
+    sessionId: string,
+    viewer: { kind: string; participantId?: string },
+    revision: number,
+    flavorOutput: unknown,
+    participants: readonly ExperienceParticipant[],
+  ): unknown;
+}
+
 // ─── Inputs / outputs ────────────────────────────────────────────────────────
 
 export interface ExperiencePlaygroundStartInput {
@@ -231,6 +254,10 @@ interface EphemeralPlaygroundSession {
   readonly grants: readonly ExperienceCapability[];
   readonly participants: readonly ExperienceParticipant[];
   readonly projectionViewer: ExperienceViewer;
+  /** Async flavor chatter resolver (item 4 / AC-2b): undefined = static flavor
+   *  passes through unchanged (the pre-AC-2b behavior). Injected by the adapter
+   *  at start; never a store write. */
+  readonly chatter?: PlaygroundChatter;
   /** Authoritative state immediately after `create` (revision 0). */
   initialState: unknown;
   state: unknown;
@@ -384,6 +411,12 @@ function fromKernel(
  * discarding the authoritative result). Matches the IR-81B tester's projection
  * exactly (state + legal actions; no random/chance) so playground parity against
  * `runExperienceTest` is byte-for-byte.
+ *
+ * AC-2b (async flavor, item 4): after both project + actions succeed, the
+ * optional `flavor` method is run (ephemeral chance only — never the
+ * deterministic cursor) and, when a chatter seam is wired on the session, a
+ * chatter-marked flavor is normalized through it. Flavor is best-effort: a
+ * kernel fault degrades to `undefined`, mirroring the persistent service.
  */
 function projectForResponse(
   session: EphemeralPlaygroundSession,
@@ -403,7 +436,25 @@ function projectForResponse(
     return { state: projected.value, actions: [] };
   }
   session.consoleBuf.push(...legal.console);
-  return { state: projected.value, actions: legal.value };
+
+  // AC-2b: flavor is computed only after project + actions both succeed (the
+  // same ordering as the persistent getProjectedView path). Ephemeral chance,
+  // never the deterministic cursor.
+  const flavorCaps = buildCapabilityContext(session.grants, session.participants, undefined, createEphemeralRandom());
+  const flavorRes = runFlavor(session.code, session.scriptName, state, viewer, flavorCaps);
+  session.consoleBuf.push(...flavorRes.console);
+  let flavor: unknown = flavorRes.ok ? flavorRes.value : undefined;
+  if (flavorRes.ok && session.chatter !== undefined) {
+    flavor = session.chatter.resolveChatterFlavor(
+      session.playgroundSessionId,
+      viewer,
+      session.revision,
+      flavor,
+      session.participants,
+    );
+  }
+
+  return { state: projected.value, actions: legal.value, ...(flavor !== undefined ? { flavor } : {}) };
 }
 
 // ─── Script-seat advancement (shared by start + advance) ────────────────────
@@ -532,7 +583,10 @@ function advanceScriptSeats(
  * revision, status, and the boundary stop-reason. The session is held in
  * process memory keyed by the returned playground session id.
  */
-export function startExperiencePlayground(input: ExperiencePlaygroundStartInput): ExperiencePlaygroundStartResult {
+export function startExperiencePlayground(
+  input: ExperiencePlaygroundStartInput,
+  deps?: { readonly chatter?: PlaygroundChatter },
+): ExperiencePlaygroundStartResult {
   const scriptName = input.scriptName ?? DEFAULT_SCRIPT_NAME;
 
   // 1. Discover + capability gate (granted ⊆ declared).
@@ -577,6 +631,7 @@ export function startExperiencePlayground(input: ExperiencePlaygroundStartInput)
     grants,
     participants,
     projectionViewer,
+    chatter: deps?.chatter,
     initialState: created.value,
     state: created.value,
     revision: 0,

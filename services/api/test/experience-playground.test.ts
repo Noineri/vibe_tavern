@@ -42,6 +42,9 @@ import {
   type PlaygroundModelResolveResult,
 } from "../src/domain/interactive/experience-playground.js";
 import { runExperienceTest } from "../src/domain/interactive/experience-tester.js";
+import { ExperienceChatterService } from "../src/domain/interactive/experience-chatter-service.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 // ─── Shared rules sources (real, runnable experience bodies) ─────────────────
 
@@ -1209,5 +1212,149 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── 7. Async flavor chatter (item 4 / AC-2b) ─────────────────────────────
+
+/** A rules body whose `flavor` returns a chatter marker (seat `ai1`). */
+const CHATTER_FLAVOR_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "chatter", name: "Chatter" },
+  capabilities: [{ capability: 'participants' }],
+  create() { return { count: 0 }; },
+  project(c) { return { count: c.state.count }; },
+  actions() { return [{ type: 'inc' }]; },
+  reduce(c) { return { state: { count: c.state.count + 1 }, status: 'active', events: [] }; },
+  flavor() { return { experienceChatter: { seatId: 'ai1', instructions: 'react in character', fallback: '...' } }; },
+});
+`;
+
+/** A rules body whose `flavor` returns static cosmetic data (no marker). */
+const STATIC_FLAVOR_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "sf", name: "SF" },
+  capabilities: [],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions() { return [{ type: 'tick' }]; },
+  reduce(c) { return { state: { n: c.state.n + 1 }, status: 'active', events: [] }; },
+  flavor() { return { hint: 'look at the board' }; },
+});
+`;
+
+const chatterHuman = { id: "you", label: "You", controller: "human" as const };
+const chatterModelSeat = {
+  id: "ai1", label: "AI", controller: "model" as const,
+  providerProfileId: "pp_chatter", modelId: "m_chatter",
+};
+
+function makeChatterProfile(): StoredProviderProfileRecord {
+  return {
+    id: "pp_chatter", name: "Chatter Test", providerPreset: "ollama", endpoint: "http://x", apiKey: null,
+    defaultModel: "m_chatter", contextBudget: 8000, pinContextBudget: false, bindPerModel: false,
+    modelFreeOnly: false, modelGroupByOwner: false, maxTokens: 4096, temperature: 1, topP: 1, topK: 0,
+    minP: 0, topA: 0, typicalP: 1, tfsZ: 1, repeatLastN: 0, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
+    dryMultiplier: 0, dryBase: 0, dryAllowedLength: 0, drySequenceBreakers: [], xtcThreshold: 0,
+    xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, stopSequences: [],
+    logitBias: [], seed: null, reasoningEffort: "medium", showReasoning: false, streamResponse: true,
+    customSamplers: false, proxyMode: "off", proxyId: null, isActive: true, visionModel: null,
+    createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z",
+  } as StoredProviderProfileRecord;
+}
+
+/** Build a REAL ExperienceChatterService with a mock provider-profile service +
+ *  a fixed-text executor seam (the same injection shape the chatter-service test
+ *  uses). Returns the service plus a call-count spy on the executor. */
+function makeChatterService(replyText: string): { service: ExperienceChatterService; executeCalls: () => number } {
+  const profile = makeChatterProfile();
+  const providerProfiles: Pick<ProviderProfileService, "resolveActiveProviderProfile" | "getProviderProfile" | "getProviderModelSettings"> = {
+    resolveActiveProviderProfile: async () => profile,
+    getProviderProfile: async (id: string) => (id === profile.id ? profile : null),
+    getProviderModelSettings: async () => null,
+  };
+  let calls = 0;
+  const service = new ExperienceChatterService({
+    providerProfiles: providerProfiles as unknown as ProviderProfileService,
+    execute: (async () => {
+      calls += 1;
+      return { text: replyText };
+    }) as never,
+  });
+  return { service, executeCalls: () => calls };
+}
+
+/** Let the chatter fire-and-forget promise land before asserting the resolved view. */
+async function settleChatter(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+
+describe("playground async flavor chatter (AC-2b)", () => {
+  test("static flavor passes through into the playground projection (no chatter dep)", () => {
+    const started = startExperiencePlayground({
+      rulesCode: STATIC_FLAVOR_SOURCE,
+      participants: [chatterHuman],
+      capabilityGrants: [],
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.projection.flavor).toEqual({ hint: "look at the board" });
+  });
+
+  test("a chatter marker returns pending on the first projection, then resolved after the model settles", async () => {
+    const { service, executeCalls } = makeChatterService("A cosmetic line.");
+    const started = startExperiencePlayground(
+      {
+        rulesCode: CHATTER_FLAVOR_SOURCE,
+        participants: [chatterHuman, chatterModelSeat],
+        capabilityGrants: ["participants"],
+        humanSeatId: "you",
+      },
+      { chatter: service },
+    );
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.projection.flavor).toEqual({ status: "pending", seatId: "ai1", fallback: "..." });
+
+    // Advance bumps the revision → a fresh attempt (pending again).
+    const advanced = advanceExperiencePlayground({
+      playgroundSessionId: started.data.playgroundSessionId,
+      humanAction: { type: "inc", requestId: "r1", expectedRevision: 0 },
+    });
+    expect(advanced.ok).toBe(true);
+    if (!advanced.ok) return;
+    expect(advanced.data.projection.flavor).toEqual({ status: "pending", seatId: "ai1", fallback: "..." });
+
+    await settleChatter();
+    // Re-project the SAME revision via the idempotent duplicate-requestId replay
+    // (no revision advance) — the cache now serves the resolved view.
+    const replay = advanceExperiencePlayground({
+      playgroundSessionId: started.data.playgroundSessionId,
+      humanAction: { type: "inc", requestId: "r1", expectedRevision: 0 },
+    });
+    expect(replay.ok).toBe(true);
+    if (!replay.ok) return;
+    expect(replay.data.projection.flavor).toEqual({ status: "resolved", seatId: "ai1", text: "A cosmetic line." });
+    // The executor ran exactly twice — one attempt for revision 0 (start) and
+    // one for revision 1 (advance). The duplicate-requestId replay above did NOT
+    // fire a third call (single-attempt-per-revision semantics).
+    expect(executeCalls()).toBe(2);
+  });
+
+  test("static flavor stays byte-identical when a chatter dep IS wired (no marker → no model call)", async () => {
+    const { service, executeCalls } = makeChatterService("never used");
+    const started = startExperiencePlayground(
+      {
+        rulesCode: STATIC_FLAVOR_SOURCE,
+        participants: [chatterHuman],
+        capabilityGrants: [],
+      },
+      { chatter: service },
+    );
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.projection.flavor).toEqual({ hint: "look at the board" });
+    await settleChatter();
+    expect(executeCalls()).toBe(0);
   });
 });

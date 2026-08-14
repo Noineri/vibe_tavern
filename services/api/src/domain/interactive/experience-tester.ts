@@ -140,6 +140,11 @@ export interface ExperienceTestStepTrace {
 export interface ExperienceTestProjection {
   readonly state: unknown;
   readonly actions: ExperienceActionDescriptor[];
+  /** Cosmetic display data from the optional `flavor` method (best-effort; may
+   *  be absent). The stateless tester never sets it; the playground driver
+   *  (IR-84A) computes it and, when a chatter service is wired, normalizes a
+   *  chatter-marked flavor through it (async flavor, item 4 / AC-2b). */
+  readonly flavor?: unknown;
 }
 
 export interface ExperienceTestRunData {
