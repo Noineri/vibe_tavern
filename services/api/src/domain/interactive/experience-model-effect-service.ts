@@ -74,6 +74,7 @@ import {
 	err,
 	ok,
 } from "./experience-shared.js";
+import { validatePayloadValue } from "./experience-payload-schema.js";
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -215,29 +216,29 @@ export class ExperienceModelEffectService {
 
 		// 6. Validate the output (structured legal-action choice OR free text).
 		const validated = validateOutput(text, vmCtx.data.request, vmCtx.data.legalActions);
-		if (validated === null) {
-			await this.deps.stores.experiences.failEffect(effectId, "invalid_output");
-			return ok({ effectId, status: "failed", error: "invalid_output" });
+		if (!validated.ok) {
+			await this.deps.stores.experiences.failEffect(effectId, validated.reason);
+			return ok({ effectId, status: "failed", error: validated.reason });
 		}
 
 		// 7. Persist the complete terminal result.
-		await this.deps.stores.experiences.completeEffect(effectId, JSON.stringify(validated));
+		await this.deps.stores.experiences.completeEffect(effectId, JSON.stringify(validated.value));
 
 		// 8. Feed the result back into the reducer. Acceptance is the CAS
 		//    (expectedRevision = originatingRevision): a stale session rejects
 		//    the feed-back and the effect stays succeeded-but-undelivered.
-		const action = mapResultToAction(effectId, vmCtx.data, validated);
+		const action = mapResultToAction(effectId, vmCtx.data, validated.value);
 		const delivery = await this.deps.experienceService.applyEffectResult(effectId, action);
 		if (!delivery.ok) {
 			// The reducer rejected the mapped action (illegal at the current state).
 			// The effect is already succeeded; surface the delivery failure without
 			// mutating the terminal result.
-			return ok({ effectId, status: "succeeded", result: validated, delivered: false, error: delivery.error.code });
+			return ok({ effectId, status: "succeeded", result: validated.value, delivered: false, error: delivery.error.code });
 		}
 		return ok({
 			effectId,
 			status: "succeeded",
-			result: validated,
+			result: validated.value,
 			delivered: delivery.data.delivered,
 			...(delivery.data.delivered ? { session: delivery.data.session, projection: delivery.data.projection } : {}),
 		});
@@ -349,37 +350,74 @@ function renderPrivateView(vmCtx: ModelEffectVmContext): string {
 }
 
 /**
+ * The outcome of validating model output. `ok` carries the terminal result to
+ * persist; `reason` is the short stable failure string persisted via
+ * `failEffect` ("invalid_output" for an unparseable/illegal reply,
+ * "invalid_payload" for a reply whose args violate the descriptor's
+ * `payloadSchema`).
+ */
+type ValidateOutputResult =
+	| { ok: true; value: ModelEffectResultPayload }
+	| { ok: false; reason: "invalid_output" | "invalid_payload" };
+
+/**
  * Validate the model output against the request mode. Action mode parses a JSON
  * object and requires the `actionId` to match one of the legal action types;
- * text mode requires a non-empty string. Returns null on any validation failure.
+ * when the chosen action's descriptor declares a `payloadSchema`, its `args`
+ * must satisfy it (mirroring the kernel's `validateSubmittedAction` rule).
+ * Text mode requires a non-empty string. Returns a typed failure on any
+ * validation failure (never a bare null).
  */
 function validateOutput(
 	text: string,
 	request: ModelEffectRequestPayload,
 	legalActions: ExperienceActionDescriptor[],
-): ModelEffectResultPayload | null {
+): ValidateOutputResult {
 	const trimmed = text.trim();
 	if (request.mode === "text") {
-		return trimmed.length > 0 ? { mode: "text", text: trimmed } : null;
+		return trimmed.length > 0 ? { ok: true, value: { mode: "text", text: trimmed } } : { ok: false, reason: "invalid_output" };
 	}
 	// Action mode: accept either a bare legal action type or a JSON object.
 	const legalTypes = new Set(legalActions.map((a) => a.type));
 	if (legalTypes.has(trimmed)) {
-		return { mode: "action", actionId: trimmed };
+		const descriptor = legalActions.find((a) => a.type === trimmed);
+		// Mirror the kernel rule: a schema-declaring action must carry a payload,
+		// so a bare actionId reply with no args is invalid_payload.
+		if (descriptor?.payloadSchema !== undefined) {
+			return { ok: false, reason: "invalid_payload" };
+		}
+		return { ok: true, value: { mode: "action", actionId: trimmed } };
 	}
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(trimmed);
 	} catch {
-		return null;
+		return { ok: false, reason: "invalid_output" };
 	}
-	if (parsed === null || typeof parsed !== "object") return null;
+	if (parsed === null || typeof parsed !== "object") {
+		return { ok: false, reason: "invalid_output" };
+	}
 	const obj = parsed as { actionId?: unknown; args?: unknown };
-	if (typeof obj.actionId !== "string" || !legalTypes.has(obj.actionId)) return null;
+	if (typeof obj.actionId !== "string" || !legalTypes.has(obj.actionId)) {
+		return { ok: false, reason: "invalid_output" };
+	}
+	const descriptor = legalActions.find((a) => a.type === obj.actionId);
+	if (descriptor?.payloadSchema !== undefined) {
+		if (obj.args === undefined) {
+			return { ok: false, reason: "invalid_payload" };
+		}
+		const schemaResult = validatePayloadValue(obj.args, descriptor.payloadSchema, "args");
+		if (!schemaResult.ok) {
+			return { ok: false, reason: "invalid_payload" };
+		}
+	}
 	return {
-		mode: "action",
-		actionId: obj.actionId,
-		...(obj.args !== undefined ? { args: obj.args } : {}),
+		ok: true,
+		value: {
+			mode: "action",
+			actionId: obj.actionId,
+			...(obj.args !== undefined ? { args: obj.args } : {}),
+		},
 	};
 }
 

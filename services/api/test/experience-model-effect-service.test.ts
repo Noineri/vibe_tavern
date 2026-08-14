@@ -99,6 +99,33 @@ context.experience.register({
 });
 `;
 
+/** Action-mode game whose `play` action declares a payloadSchema (fix step 1b). */
+const SCHEMA_ACTION_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "schema-game", name: "Schema Game" },
+  capabilities: [{ capability: "participants" }, { capability: "model" }],
+  create() { return { round: 0, moves: [] }; },
+  project(c) { return { round: c.state.round }; },
+  actions() {
+    return [
+      { type: "go", label: "Go" },
+      { type: "play", label: "Play", payloadSchema: { type: "object", properties: { card: { type: "integer" } }, required: ["card"], additionalProperties: false } },
+      { type: "pass", label: "Pass" },
+    ];
+  },
+  reduce(c, a) {
+    const isModel = a.participantId === "model";
+    const next = { round: c.state.round + 1, moves: [...c.state.moves, { who: a.participantId, move: a.type }] };
+    if (isModel) return { state: next, status: "active", events: [] };
+    return {
+      state: next, status: "active", events: [],
+      effects: [{ kind: "model", request: { viewer: "model", mode: "action" } }],
+    };
+  },
+});
+`;
+
 const GRANTS = ["participants", "model"];
 const PARTICIPANTS = [
 	{ id: "human", label: "You", controller: "human" as const },
@@ -743,6 +770,78 @@ describe("ExperienceModelEffectService — pinned seat binding (IR-70E)", () => 
 		// The executor was called with the ACTIVE profile + default model.
 		expect(spy.calls[0]!.profile.id).toBe("pp1");
 		expect(spy.calls[0]!.model).toBe("test-model");
+	});
+});
+
+// ─── Tests: payloadSchema enforcement on the model path (fix step 1b) ───────
+
+describe("ExperienceModelEffectService — action-mode payloadSchema enforcement", () => {
+	test("legal actionId + args satisfying the payloadSchema → succeeds and the mapped action carries args", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		const { modelEffectService } = makeServices({ executeReturn: async () => ({ text: '{"actionId":"play","args":{"card":7}}' }) });
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data.status).toBe("succeeded");
+		expect(result.data.result).toEqual({ mode: "action", actionId: "play", args: { card: 7 } });
+		expect(result.data.delivered).toBe(true);
+	});
+
+	test("args violating the payloadSchema → failed invalid_payload and no feed-back", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		const revBefore = (await stores.experiences.getSessionById(sessionId))!.revision;
+		const { modelEffectService } = makeServices({ executeReturn: async () => ({ text: '{"actionId":"play","args":{"card":1.5}}' }) });
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("failed");
+		expect(result.ok && result.data.error).toBe("invalid_payload");
+		expect((await stores.experiences.getEffectById(effectId))?.status).toBe("failed");
+		// No feed-back: session revision unchanged.
+		expect((await stores.experiences.getSessionById(sessionId))!.revision).toBe(revBefore);
+	});
+
+	test("descriptor declares payloadSchema but model omits args → invalid_payload", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		const { modelEffectService } = makeServices({ executeReturn: async () => ({ text: '{"actionId":"play"}' }) });
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("failed");
+		expect(result.ok && result.data.error).toBe("invalid_payload");
+	});
+
+	test("bare legal action type with a schema-declaring descriptor → invalid_payload (mirrors kernel)", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		const { modelEffectService } = makeServices({ executeReturn: async () => ({ text: "play" }) });
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("failed");
+		expect(result.ok && result.data.error).toBe("invalid_payload");
+	});
+
+	test("descriptor WITHOUT payloadSchema → args pass through unvalidated (characterization)", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		const { modelEffectService } = makeServices({ executeReturn: async () => ({ text: '{"actionId":"pass","args":{"anything":[1,2,3]}}' }) });
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data.result).toEqual({ mode: "action", actionId: "pass", args: { anything: [1, 2, 3] } });
 	});
 });
 
