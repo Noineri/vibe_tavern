@@ -414,3 +414,139 @@ async function chatIdForSession(sessionId: string): Promise<{ chatId: string }> 
 	if (!session) throw new Error("session not found");
 	return { chatId: session.chatId };
 }
+
+// ─── Tests: user-chosen RP-context source (report item 6) ────────────────────
+
+describe("ExperienceContextService — context source (report item 6)", () => {
+	/** A second character + chat with its own branch history and one summary. */
+	async function seedSourceChat(): Promise<{ characterId: string; chatId: string; branchId: string }> {
+		const character = await stores.characters.create({ name: "Mila", description: "Rival spy." } as never);
+		const chat = await stores.chats.createChat({ characterId: character.id, title: "Source" } as never);
+		const branchId = chat.activeBranchId as string;
+		for (let i = 0; i < 3; i++) {
+			await stores.messages.addMessage({
+				chatId: chat.id,
+				branchId,
+				role: i % 2 === 0 ? "user" : "assistant",
+				authorType: i % 2 === 0 ? "user" : "character",
+				content: `src-${i}`,
+			});
+		}
+		await stores.chatSummaries.create({
+			chatId: chat.id,
+			branchId,
+			label: "S0",
+			content: "source-recap",
+			summarizedFrom: 1,
+			summarizedTo: 2,
+			includeInContext: true,
+			excludeSummarized: false,
+			source: "manual",
+		} as never);
+		return { characterId: character.id, chatId: chat.id, branchId };
+	}
+
+	test("ambient capture: provenance null, host identity (baseline unchanged)", async () => {
+		const { sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		const row = await makeContextService().captureContext({ sessionId });
+		expect(row.sourceChatId).toBeNull();
+		expect(row.sourceCharacterId).toBeNull();
+		const character = row.characterSnapshotJson ? JSON.parse(row.characterSnapshotJson) : null;
+		expect(character?.name).toBe("Aria");
+		const persona = row.personaSnapshotJson ? JSON.parse(row.personaSnapshotJson) : null;
+		expect(persona?.name).toBe("Olya");
+	});
+
+	test("config-pinned chat source: source history + summaries + its character; persona stays host", async () => {
+		const source = await seedSourceChat();
+		const { chatId: hostChatId, sessionId } = await seedSession({ contextMode: "summaries_recent", messages: 4 });
+		await resources.updateConfig(hostChatId, { contextSourceChatId: source.chatId });
+		const row = await makeContextService().captureContext({ sessionId });
+		const variants = parseVariants(row.variantsJson);
+		expect(variants.messages.map((m) => m.content)).toEqual(["src-0", "src-1", "src-2"]);
+		expect(variants.summaries.some((s) => s.content === "source-recap")).toBe(true);
+		const character = row.characterSnapshotJson ? JSON.parse(row.characterSnapshotJson) : null;
+		expect(character?.name).toBe("Mila");
+		const persona = row.personaSnapshotJson ? JSON.parse(row.personaSnapshotJson) : null;
+		expect(persona?.name).toBe("Olya");
+		expect(row.sourceChatId).toBe(source.chatId);
+		expect(row.sourceCharacterId).toBe(source.characterId);
+	});
+
+	test("explicit capture override beats the config columns; explicit null clears back to ambient", async () => {
+		const source = await seedSourceChat();
+		const { chatId: hostChatId, sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		// Config pins a character-only source; the capture overrides with the chat source.
+		await resources.updateConfig(hostChatId, { contextSourceCharacterId: source.characterId });
+		const overridden = await makeContextService().captureContext({ sessionId, contextSourceChatId: source.chatId });
+		expect(parseVariants(overridden.variantsJson).messages.map((m) => m.content)).toEqual(["src-0", "src-1", "src-2"]);
+		expect(overridden.sourceChatId).toBe(source.chatId);
+
+		// Explicit null on the capture clears the config source → ambient host history.
+		const cleared = await makeContextService().captureContext({ sessionId, contextSourceChatId: null, contextSourceCharacterId: null });
+		expect(parseVariants(cleared.variantsJson).messages.map((m) => m.content)).toEqual(["msg-0", "msg-1", "msg-2", "msg-3"]);
+		expect(cleared.sourceChatId).toBeNull();
+		expect(cleared.sourceCharacterId).toBeNull();
+	});
+
+	test("character-only source: host history, overridden identity", async () => {
+		const source = await seedSourceChat();
+		const { sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		const row = await makeContextService().captureContext({ sessionId, contextSourceCharacterId: source.characterId });
+		expect(parseVariants(row.variantsJson).messages.map((m) => m.content)).toEqual(["msg-0", "msg-1", "msg-2", "msg-3"]);
+		const character = row.characterSnapshotJson ? JSON.parse(row.characterSnapshotJson) : null;
+		expect(character?.name).toBe("Mila");
+		expect(row.sourceChatId).toBeNull();
+		expect(row.sourceCharacterId).toBe(source.characterId);
+	});
+
+	test("explicit character beats the source chat's own card", async () => {
+		const source = await seedSourceChat();
+		const third = await stores.characters.create({ name: "Third", description: "Wildcard." } as never);
+		const { sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		const row = await makeContextService().captureContext({
+			sessionId,
+			contextSourceChatId: source.chatId,
+			contextSourceCharacterId: third.id,
+		});
+		expect(parseVariants(row.variantsJson).messages.map((m) => m.content)).toEqual(["src-0", "src-1", "src-2"]);
+		const character = row.characterSnapshotJson ? JSON.parse(row.characterSnapshotJson) : null;
+		expect(character?.name).toBe("Third");
+		expect(row.sourceCharacterId).toBe(third.id);
+	});
+
+	test("dangling explicit source chat: NotFound, previous bundle intact", async () => {
+		const { sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		const svc = makeContextService();
+		const first = await svc.captureContext({ sessionId });
+		let caught: unknown;
+		try {
+			await svc.captureContext({ sessionId, contextSourceChatId: "no-such-chat" });
+		} catch (e) {
+			caught = e;
+		}
+		expect(caught).toBeInstanceOf(DomainError);
+		expect((caught as DomainError).kind).toBe("NotFound");
+		const after = await stores.experiences.getContextBundle(sessionId);
+		expect(after?.sourceChatId).toBe(first.sourceChatId);
+		expect(after?.messageFrontierPosition).toBe(first.messageFrontierPosition);
+	});
+
+	test("compact_summary summarizes the SOURCE chat, not the host chat", async () => {
+		const source = await seedSourceChat();
+		const { sessionId } = await seedSession({ contextMode: "compact_summary", messages: 4 });
+		const seenChatIds: string[] = [];
+		const svc = makeContextService({
+			chatLifecycle: {
+				assembleSummaryPrompt: async (input) => {
+					seenChatIds.push(input.chatId);
+					return { prompt: minimalPrompt(), branchId: "b" as ChatBranchId };
+				},
+			},
+		});
+		const row = await svc.captureContext({ sessionId, contextSourceChatId: source.chatId });
+		expect(seenChatIds).toEqual([source.chatId]);
+		expect(row.compactSummaryJson).toBeTruthy();
+		expect(row.sourceChatId).toBe(source.chatId);
+	});
+});

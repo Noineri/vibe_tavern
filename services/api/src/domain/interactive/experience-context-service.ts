@@ -110,6 +110,11 @@ export interface CaptureContextInput {
 	model?: string;
 	/** Overrides the recent-message window for windowed modes. */
 	recentMessageLimit?: number;
+	/** Per-capture RP-context SOURCE override (report item 6). Present keys
+	 *  override the chat-config columns; `null` explicitly clears back to the
+	 *  ambient host chat. Resolution: explicit override → config → ambient. */
+	contextSourceCharacterId?: string | null;
+	contextSourceChatId?: string | null;
 	/** Cancellation for `compact_summary` generation. */
 	signal?: AbortSignal;
 }
@@ -184,26 +189,50 @@ export class ExperienceContextService {
 			throw notFound("Chat", `Chat '${chatId}' was not found.`);
 		}
 
+		// ── Source resolution (report item 6) ──
+		// Explicit per-capture override (a present `null` clears) → the chat-config
+		// columns → the ambient host chat. The RP history (messages, summaries,
+		// compact summary) follows the chosen source chat via its ACTIVE branch;
+		// the identity character is the explicit override, else the effective
+		// chat's own card; the persona ALWAYS stays the host chat's (it is the
+		// user's identity, not the source's). A dangling explicit source chat is a
+		// clean 404 BEFORE any persist, so the previous bundle stays intact.
+		const config = await this.deps.stores.experienceResources.getConfigForChat(session.chatId);
+		const sourceChatId =
+			input.contextSourceChatId !== undefined ? input.contextSourceChatId : (config?.contextSourceChatId ?? null);
+		const characterOverride =
+			input.contextSourceCharacterId !== undefined
+				? input.contextSourceCharacterId
+				: (config?.contextSourceCharacterId ?? null);
+		const sourceChat = sourceChatId ? await this.deps.stores.chats.getById(sourceChatId) : null;
+		if (sourceChatId && !sourceChat) {
+			throw notFound("Chat", `Context source chat '${sourceChatId}' was not found.`);
+		}
+		const historyChat = sourceChat ?? chat;
+		const historyChatId = brandId<ChatId>(historyChat.id);
+		const historyBranchId = sourceChat ? brandId<ChatBranchId>(sourceChat.activeBranchId) : branchId;
+		const effectiveCharacterId = characterOverride ?? historyChat.characterId ?? null;
+
 		// Resolve identity (mirrors buildPipelineContext: persona falls back to
 		// the default-for-new-chats persona, else the first persona).
-		const character = chat.characterId ? await this.loadCharacter(chat.characterId) : null;
+		const character = effectiveCharacterId ? await this.loadCharacter(effectiveCharacterId) : null;
 		const persona = await this.loadPersona(chat.personaId);
 
 		const includeSummaries = mode === "current_branch" || mode === "summaries_recent" || mode === "compact_summary";
 		const isFullBranch = mode === "current_branch";
-		const window = this.resolveWindow(chat.messageHistoryLimit, input.recentMessageLimit);
+		const window = this.resolveWindow(historyChat.messageHistoryLimit, input.recentMessageLimit);
 
-		const branchMessages = await this.deps.stores.messages.getMessages(branchId);
+		const branchMessages = await this.deps.stores.messages.getMessages(historyBranchId);
 		const windowed = isFullBranch ? branchMessages : branchMessages.slice(-window);
 		const messages = windowed.map((m) => normalizeMessage(m));
-		const summaries = includeSummaries ? await this.loadIncludedSummaries(chatId, branchId) : [];
+		const summaries = includeSummaries ? await this.loadIncludedSummaries(historyChatId, historyBranchId) : [];
 
 		// `compact_summary`: generate the ephemeral summary BEFORE persisting, so a
 		// cancellation or provider failure leaves the previous bundle intact.
 		let compactSummary: { content: string; providerProfileId: string; modelId: string } | null = null;
 		if (mode === "compact_summary") {
 			compactSummary = await this.generateCompactSummary({
-				chatId,
+				chatId: historyChatId,
 				providerProfileId: input.providerProfileId,
 				model: input.model,
 				recentMessageLimit: window,
@@ -242,6 +271,10 @@ export class ExperienceContextService {
 			}),
 			providerProfileId: compactSummary?.providerProfileId ?? null,
 			modelId: compactSummary?.modelId ?? null,
+			// Provenance of the chosen source (plain pointers, no content). Both
+			// null ⇔ ambient host-chat capture.
+			sourceChatId: sourceChat ? sourceChat.id : null,
+			sourceCharacterId: sourceChat === null && characterOverride === null ? null : effectiveCharacterId,
 		};
 		return this.deps.stores.experiences.captureContextBundle(input.sessionId, data);
 	}
