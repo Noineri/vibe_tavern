@@ -33,7 +33,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { render, fireEvent, waitFor, within, type RenderResult } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type ExperienceCapability } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceAssignmentProps } from "./ExperienceAssignment.js";
 
@@ -594,5 +594,42 @@ describe("ExperienceAssignment (IR-72A)", () => {
     await new Promise((r) => setTimeout(r, 30));
     // Only the initial not-ready report; nothing after unmount.
     expect(validityCalls()).toEqual([false]);
+  });
+});
+
+// ─── RP-context source row (report item 6) ─────────────────────────────────
+
+describe("ExperienceAssignment — RP-context source row", () => {
+  beforeEach(() => {
+    mocks.listAllScripts.mockResolvedValue([scriptRec("s1", "Echo", "interactive")]);
+    mocks.listExperienceVisuals.mockResolvedValue([]);
+    mocks.testScript.mockResolvedValue(interactiveOk("echo", "Echo", [{ capability: "rp_context" }]));
+    mocks.onPatch.mockReset();
+  });
+
+  it("shows the effective source (label-level) under the mode control; hidden when ambient", async () => {
+    const base = { scriptId: "s1", capabilityGrants: ["rp_context"] as ExperienceCapability[], contextMode: "recent" as const };
+
+    // Ambient → no row at all.
+    const view = renderAssignment({ ...base });
+    await view.findByRole("radiogroup");
+    expect(view.queryByTestId("experience-assign-source")).toBeNull();
+
+    // A chosen character + chat → the both-sources preview key (names resolve
+    // from the (empty here) snapshot lists, so the raw ids show as fallback).
+    view.rerender(
+      <ExperienceAssignment {...propsFor({ ...base, sourceCharacterId: "char_9", sourceChatId: "chat_7" })} />,
+    );
+    await view.findByRole("radiogroup");
+    const row = view.getByTestId("experience-assign-source");
+    expect(row.textContent).toBe("experience_setup_source_preview_both");
+
+    // Character-only keeps the row, chat-only switches to the chat-only key.
+    view.rerender(<ExperienceAssignment {...propsFor({ ...base, sourceCharacterId: "char_9" })} />);
+    await view.findByRole("radiogroup");
+    expect(view.getByTestId("experience-assign-source").textContent).toBe("experience_setup_source_preview_character");
+    view.rerender(<ExperienceAssignment {...propsFor({ ...base, sourceChatId: "chat_7" })} />);
+    await view.findByRole("radiogroup");
+    expect(view.getByTestId("experience-assign-source").textContent).toBe("experience_setup_source_preview_chat");
   });
 });

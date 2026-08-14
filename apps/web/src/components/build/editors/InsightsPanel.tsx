@@ -288,6 +288,8 @@ export function InsightsPanel() {
           visualId={assignVisualId}
           capabilityGrants={assignGrants}
           contextMode={assignContextMode}
+          sourceCharacterId={experienceConfig.contextSourceCharacterId}
+          sourceChatId={experienceConfig.contextSourceChatId}
           launcherVisible={assignLauncherVisible}
           onPatch={(p) => void persistExperience(p)}
           pending={pending !== null}

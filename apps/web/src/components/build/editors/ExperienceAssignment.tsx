@@ -46,6 +46,7 @@ import { Toggle } from "../../shared/Toggle.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { Ic } from "../../shared/icons.js";
 import { useT } from "../../../i18n/context.js";
+import { useAllCharacters, useChatList } from "../../../stores/snapshot-store.js";
 import type Resources from "../../../i18n/resources.js";
 import { listAllScripts, testScript } from "../../../api/script-api.js";
 import { listExperienceVisuals } from "../../../api/experience-api.js";
@@ -117,6 +118,12 @@ export interface ExperienceAssignmentProps {
   capabilityGrants: ExperienceCapability[];
   /** Current RP-context mode (meaningful only while `rp_context` is granted). */
   contextMode: ExperienceContextMode;
+  /** User-chosen RP-context source — character pointer (report item 6), or
+   *  null for ambient. Display-only here: the picker lives in the experience
+   *  setup modal; this row just shows what the confirmed config says. */
+  sourceCharacterId?: string | null;
+  /** User-chosen RP-context source — chat pointer, or null. */
+  sourceChatId?: string | null;
   /** Whether the chat surfaces the experience launcher. */
   launcherVisible: boolean;
   /** Partial config PATCH — the ONLY write channel; the component persists
@@ -139,12 +146,31 @@ export function ExperienceAssignment({
   visualId,
   capabilityGrants,
   contextMode,
+  sourceCharacterId = null,
+  sourceChatId = null,
   launcherVisible,
   onPatch,
   pending,
   onValidityChange,
 }: ExperienceAssignmentProps) {
   const { t } = useT();
+
+  // Source pointers → display labels (report item 6). Falls back to the raw id
+  // when the source was deleted (label-level, privacy-safe).
+  const allCharacters = useAllCharacters();
+  const chatList = useChatList();
+  const sourcePreviewText = (() => {
+    if (sourceCharacterId === null && sourceChatId === null) return null;
+    const charName =
+      sourceCharacterId !== null
+        ? (allCharacters.find((c) => c.id === sourceCharacterId)?.name ?? sourceCharacterId)
+        : null;
+    const chatTitle =
+      sourceChatId !== null ? (chatList.find((c) => c.id === sourceChatId)?.title ?? sourceChatId) : null;
+    if (charName !== null && chatTitle !== null) return t("experience_setup_source_preview_both", { character: charName, chat: chatTitle });
+    if (chatTitle !== null) return t("experience_setup_source_preview_chat", { chat: chatTitle });
+    return t("experience_setup_source_preview_character", { character: charName ?? "" });
+  })();
 
   const [scriptsLoad, setScriptsLoad] = useState<ListLoad<ScriptRecord>>({ status: "loading" });
   const [visualsLoad, setVisualsLoad] = useState<ListLoad<ExperienceVisualRow>>({ status: "loading" });
@@ -408,6 +434,11 @@ export function ExperienceAssignment({
                   wrap
                   disabled={pending}
                 />
+                {sourcePreviewText !== null && (
+                  <p className="font-ui text-[11px] leading-relaxed text-t3" data-testid="experience-assign-source">
+                    {sourcePreviewText}
+                  </p>
+                )}
               </div>
             )}
 

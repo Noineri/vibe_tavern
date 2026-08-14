@@ -143,6 +143,8 @@ mock.module("./ExperienceAssignment.js", () => ({
       <span data-prop="visualId">{String(props.visualId)}</span>
       <span data-prop="capabilityGrants">{JSON.stringify(props.capabilityGrants)}</span>
       <span data-prop="contextMode">{String(props.contextMode)}</span>
+      <span data-prop="sourceCharacterId">{String(props.sourceCharacterId ?? null)}</span>
+      <span data-prop="sourceChatId">{String(props.sourceChatId ?? null)}</span>
       <span data-prop="launcherVisible">{String(props.launcherVisible)}</span>
       <button
         data-act="patch"
@@ -538,6 +540,8 @@ describe("InsightsPanel (INS-2)", () => {
       visualId: "vis_2",
       capabilityGrants: ["model", "rp_context"],
       contextMode: "current_branch",
+      contextSourceCharacterId: "char_9",
+      contextSourceChatId: "chat_42",
       launcherVisible: true,
     });
 
@@ -553,6 +557,9 @@ describe("InsightsPanel (INS-2)", () => {
     expect(prop("visualId")).toBe("vis_2");
     expect(prop("capabilityGrants")).toBe(JSON.stringify(["model", "rp_context"]));
     expect(prop("contextMode")).toBe("current_branch");
+    // The confirmed context-source pointers flow through too (report item 6).
+    expect(prop("sourceCharacterId")).toBe("char_9");
+    expect(prop("sourceChatId")).toBe("chat_42");
     expect(prop("launcherVisible")).toBe("true");
   });
 
