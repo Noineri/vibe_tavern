@@ -217,6 +217,26 @@ export const coauthorModules = sqliteTable('coauthor_modules', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── copilotProfiles ──────────────────────────────────────────────────────────
+// User-created experience-copilot profiles (EXPERIENCE_COPILOT_PROFILES_PLAN,
+// CP-2). The built-in "Experience Authoring" profile is a code-defined read-only
+// seed (CP-4), never stored here; this table holds only user-authored profiles.
+// Mirrors `coauthor_modules` minus `description` and `openingMessage` (the
+// copilot is not a chat-mode and does not greet). `basePrompt` is inline text
+// (never a file path) so the editor works on one field for both built-in and
+// user profiles. `max_steps` defaults to 20 (the copilot tool-loop default,
+// NOT Co-Author's 5).
+export const copilotProfiles = sqliteTable('copilot_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  basePrompt: text('base_prompt').notNull(),
+  skillIdsJson: text('skill_ids_json').notNull().default('[]'),
+  toolSetJson: text('tool_set_json').notNull().default('{}'),
+  maxSteps: integer('max_steps').notNull().default(20),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── lorebooks ────────────────────────────────────────────────────────────────
 
 export const lorebooks = sqliteTable('lorebooks', {
@@ -359,6 +379,12 @@ export const scripts = sqliteTable('scripts', {
   // carry ON DELETE SET NULL, which would otherwise have blocked visual
   // deletion).
   defaultVisualId: text('default_visual_id'),
+  // Optional copilot profile assigned to this experience (EXPERIENCE_COPILOT_PROFILES_PLAN,
+  // CP-2). Soft link — a plain stored id with NO database FK (mirrors
+  // `coauthor_module_id` / `default_visual_id`): a deleted profile leaves a
+  // stale id here, which the resolver falls back to the built-in seed (CP-6).
+  // Null = no profile assigned ⇒ behavior identical to the built-in seed.
+  copilotProfileId: text('copilot_profile_id'),
   extensionsJson: text('extensions_json').notNull().default('{}'),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),

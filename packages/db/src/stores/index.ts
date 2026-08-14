@@ -75,6 +75,13 @@ export type {
   UpdateCoauthorModuleData,
 } from './coauthor-module-store.js';
 
+export { CopilotProfileStore } from './copilot-profile-store.js';
+export type {
+  CopilotProfileRow,
+  CreateCopilotProfileData,
+  UpdateCopilotProfileData,
+} from './copilot-profile-store.js';
+
 export { DiceRollStore } from './dice-roll-store.js';
 export type {
   DicePendingLane,

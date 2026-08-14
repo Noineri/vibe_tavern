@@ -137,3 +137,72 @@ export const experienceCopilotBoundVisualSchema = z.object({
   kind: z.string(),
 });
 export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBoundVisualSchema>;
+
+// ─── Copilot profiles (EXPERIENCE_COPILOT_PROFILES_PLAN, CP-1) ────────────────
+// A configurable, reusable copilot "personality" (system prompt + skills + tool
+// toggles + turn budget), mirroring Co-Author's module system. Unlike a
+// co-author module, a copilot profile has NO `description` and NO
+// `openingMessage` — the copilot is not a chat-mode and does not greet.
+
+/**
+ * Which tools a profile may toggle. A PARTIAL record over exactly the 5
+ * toggleable copilot tools (write_buffer, edit_buffer, run_test, run_simulate,
+ * suggest_visual_binding). `read_skill_file` is intentionally ABSENT — it is
+ * the always-on, read-only skill-access channel and is never gated by a
+ * toolSet (mirroring Co-Author's `coauthorToolSetSchema`, which excludes
+ * `read_skill_file` for the same reason). `.strict()` rejects any unknown key
+ * — including `read_skill_file` — rather than silently stripping it, so a
+ * client typo cannot silently disable/enable the wrong surface.
+ */
+export const copilotToolSetSchema = z
+  .object({
+    write_buffer: z.boolean().optional(),
+    edit_buffer: z.boolean().optional(),
+    run_test: z.boolean().optional(),
+    run_simulate: z.boolean().optional(),
+    suggest_visual_binding: z.boolean().optional(),
+  })
+  .strict();
+
+export type CopilotToolSet = z.infer<typeof copilotToolSetSchema>;
+
+/**
+ * Every tool a profile may toggle, in stable definition order. Derived from
+ * `copilotToolSetSchema` so the wire contract is the single source of truth
+ * (the profile editor's toggle list reads this — no parallel hardcoded array
+ * to drift out of sync). `read_skill_file` is intentionally absent (always-on).
+ */
+export const COPILOT_TOOL_KEYS = Object.keys(copilotToolSetSchema.shape) as (keyof CopilotToolSet)[];
+
+/**
+ * Bounds + default for a profile's `maxSteps` — the AI SDK multi-step tool-loop
+ * limit. Centralized so Zod validation, the editor input bounds, and the
+ * built-in seed default read one source (mirrors COAUTHOR_MAX_STEPS_*). The
+ * copilot default stays 20 (the ER-16 value), NOT Co-Author's 5 — the copilot
+ * tool-loop needs the headroom.
+ */
+export const COPILOT_MAX_STEPS_MIN = 1;
+export const COPILOT_MAX_STEPS_MAX = 50;
+export const COPILOT_MAX_STEPS_DEFAULT = 20;
+
+/**
+ * A resolved copilot profile as served to the client / consumed by the prompt
+ * assembler. `basePrompt` is INLINE prompt text (not a file reference): the
+ * built-in seed loads its `.md` at resolve time, user profiles store text
+ * directly in the DB. `isBuiltIn` marks the read-only "Experience Authoring"
+ * seed (users only edit their own copies). Leaner than `CoauthorModule` — no
+ * `description`, no `openingMessage`.
+ */
+export const copilotProfileSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  isBuiltIn: z.boolean(),
+  basePrompt: z.string().min(1),
+  skillIds: z.array(z.string().min(1)),
+  toolSet: copilotToolSetSchema,
+  maxSteps: z.number().int().min(COPILOT_MAX_STEPS_MIN).max(COPILOT_MAX_STEPS_MAX),
+});
+
+export type CopilotProfile = z.infer<typeof copilotProfileSchema>;
+
+export const copilotProfileListSchema = z.array(copilotProfileSchema);

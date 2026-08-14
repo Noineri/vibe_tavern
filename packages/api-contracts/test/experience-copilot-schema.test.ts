@@ -7,6 +7,9 @@ import {
   experienceCopilotThreadSchema,
   experienceCopilotMessageSchema,
   experienceCopilotBoundVisualSchema,
+  copilotToolSetSchema,
+  copilotProfileSchema,
+  COPILOT_TOOL_KEYS,
 } from "../src/schemas/experience-copilot-schema.js";
 
 // ─── ER-4 / ER-6 regression pin (existing schemas unchanged) ──────────────────
@@ -179,5 +182,84 @@ describe("experienceCopilotBoundVisualSchema (ER-7)", () => {
     expect(() =>
       experienceCopilotBoundVisualSchema.parse({ id: "vis_003", name: 42, kind: "visual" }),
     ).toThrow();
+  });
+});
+
+// ─── CP-1: copilot toolset + profile schemas ────────────────────────────────
+
+describe("copilotToolSetSchema (CP-1)", () => {
+  test("accepts all 5 toggleable tools", () => {
+    const payload = {
+      write_buffer: true,
+      edit_buffer: true,
+      run_test: false,
+      run_simulate: true,
+      suggest_visual_binding: false,
+    };
+    expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("accepts an empty toolSet (all tools off)", () => {
+    expect(copilotToolSetSchema.parse({})).toEqual({});
+  });
+
+  test("rejects an unknown key (typo safety)", () => {
+    expect(() => copilotToolSetSchema.parse({ writ_buffer: true })).toThrow();
+  });
+
+  test("rejects read_skill_file (always-on, not toggleable)", () => {
+    expect(() => copilotToolSetSchema.parse({ read_skill_file: true })).toThrow();
+  });
+
+  test("COPILOT_TOOL_KEYS lists exactly the 5 toggleable tools (no read_skill_file)", () => {
+    expect(COPILOT_TOOL_KEYS).toEqual([
+      "write_buffer",
+      "edit_buffer",
+      "run_test",
+      "run_simulate",
+      "suggest_visual_binding",
+    ]);
+  });
+});
+
+describe("copilotProfileSchema (CP-1)", () => {
+  test("accepts a valid profile (no description/openingMessage)", () => {
+    const payload = {
+      id: "profile_1",
+      name: "Card games",
+      isBuiltIn: false,
+      basePrompt: "You are a card-game experience author.",
+      skillIds: ["experience-authoring"],
+      toolSet: { edit_buffer: true, run_test: true },
+      maxSteps: 20,
+    };
+    expect(copilotProfileSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("rejects empty basePrompt (inline text required)", () => {
+    expect(() =>
+      copilotProfileSchema.parse({
+        id: "x",
+        name: "X",
+        isBuiltIn: false,
+        basePrompt: "",
+        skillIds: [],
+        toolSet: {},
+        maxSteps: 20,
+      }),
+    ).toThrow();
+  });
+
+  test("rejects maxSteps out of bounds", () => {
+    const base = {
+      id: "x",
+      name: "X",
+      isBuiltIn: false,
+      basePrompt: "p",
+      skillIds: [],
+      toolSet: {},
+    };
+    expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 0 })).toThrow();
+    expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 51 })).toThrow();
   });
 });
