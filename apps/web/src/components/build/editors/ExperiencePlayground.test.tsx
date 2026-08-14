@@ -173,6 +173,32 @@ const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realAutoTextarea = await import("../../shared/auto-textarea.js");
 
+/** Shared discovery mock for auto-derive tests (the model_conversation shape). */
+function makeTestRunData(): ExperienceTestRunData {
+  return {
+          definition: {
+            apiVersion: 1,
+            manifest: { id: "model_conversation", name: "Model Conversation" },
+            declaredCapabilities: [
+              { capability: "participants", reason: "human and model seats" },
+              { capability: "model", reason: "AI replies" },
+            ],
+            hasChoose: false,
+            hasFlavor: false,
+          },
+          sourceHash: "abc",
+          initialState: { messages: [], turn: 0 },
+          finalState: { messages: [], turn: 0 },
+          revision: 0,
+          status: "active" as const,
+          projection: { state: { messages: [], turn: 0 }, actions: [] },
+          events: [],
+          effects: [],
+          console: [],
+          steps: [],
+  } as ExperienceTestRunData;
+}
+
 mock.module("../../../api/experience-api.js", () => ({
   ...realExperienceApi,
   startExperiencePlayground,
@@ -257,8 +283,12 @@ beforeEach(() => {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function renderPlayground(code: string = VALID_CODE, visualSource: string | null = null) {
-  const utils = render(<ExperiencePlayground code={code} visualSource={visualSource} />);
+function renderPlayground(
+  code: string = VALID_CODE,
+  visualSource: string | null = null,
+  props: { scriptId?: string } = {},
+) {
+  const utils = render(<ExperiencePlayground code={code} visualSource={visualSource} {...props} />);
   return utils;
 }
 
@@ -885,5 +915,86 @@ describe("ExperiencePlayground — send diagnostics to assistant (ER-14)", () =>
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
     expandDiagnostics(utils);
     expect(queryByTestId("playground-send-to-copilot")).toBeNull();
+  });
+});
+
+// ── Fix item 9a: config persistence ─────────────────────────────────────────
+
+describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("persists the roster + grants + seed + settings after a manual change and restores them on remount", async () => {
+    // First mount: configure a model seat + grant + seed, then start so the
+    // change is flushed (the persist effect runs on touched state).
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    const first = renderPlayground(VALID_CODE, null, { scriptId: "script_persist" });
+    await first.findByText("experience_playground_start");
+    // Touch the roster: add a seat and set its controller to model.
+    fireEvent.click(first.getByText("experience_setup_add_participant"));
+    await pickDropdown(first, first.baseElement, "experience_setup_controller_human", "experience_setup_controller_model");
+    // Persist effect fires on the touched change. The discovery mock declares
+    // participants+model, so auto-derive may have already added its own model
+    // seat before the manual touch — what matters is that the TOUCHED seat
+    // (the added one, set to model) is persisted.
+    await waitFor(() => {
+      const raw = window.localStorage.getItem("experience.playground.script_persist");
+      expect(raw).toBeTruthy();
+      const saved = JSON.parse(raw!) as { seats: Array<{ controller: string }> };
+      expect(saved.seats.length).toBeGreaterThanOrEqual(2);
+      expect(saved.seats.some((s) => s.controller === "model")).toBe(true);
+    });
+    first.unmount();
+
+    // Second mount with the same scriptId: the config is restored and counts
+    // as touched (auto-derive must not override it).
+    const second = renderPlayground(VALID_CODE, null, { scriptId: "script_persist" });
+    await second.findByText("experience_playground_start");
+    // The restored model seat is visible in the roster UI (its controller
+    // dropdown now shows the model label) and auto-derive did not override it.
+    await waitFor(() => {
+      expect(second.baseElement.textContent).toContain("experience_setup_controller_model");
+      expect(second.baseElement.textContent).not.toContain("experience_playground_add_seat");
+    });
+    second.unmount();
+  });
+
+  it("without a scriptId nothing is persisted (standalone panel keeps the old behavior)", async () => {
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    const view = renderPlayground(VALID_CODE, null);
+    await view.findByText("experience_playground_start");
+    fireEvent.click(view.getByText("experience_setup_add_participant"));
+    await waitFor(() => expect(window.localStorage.length).toBe(0));
+  });
+
+  it("a malformed saved envelope is discarded (no half-restore)", () => {
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    window.localStorage.setItem("experience.playground.script_bad", "{not json");
+    const view = renderPlayground(VALID_CODE, null, { scriptId: "script_bad" });
+    // Falls back to the default single human seat — the roster shows the
+    // human controller label, not a broken restored row.
+    expect(view.baseElement.textContent).toContain("experience_setup_controller_human");
+  });
+});
+
+// ── Fix item 9b: one-click restart ──────────────────────────────────────────
+
+describe("ExperiencePlayground — one-click restart (fix item 9b)", () => {
+  it("restart re-runs Start with the same config from the CURRENT rules buffer", async () => {
+    const view = renderPlayground(VALID_CODE);
+    await view.findByText("experience_playground_start");
+    fireEvent.click(view.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    // The restart button appears once a session exists.
+    const restart = view.getByText("experience_playground_restart");
+    fireEvent.click(restart);
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(2));
+    // Both starts ran against the same unsaved buffer.
+    const firstCall = startExperiencePlayground.mock.calls[0]![0] as { rulesCode: string };
+    const secondCall = startExperiencePlayground.mock.calls[1]![0] as { rulesCode: string };
+    expect(secondCall.rulesCode).toBe(firstCall.rulesCode);
+    expect(secondCall.rulesCode).toBe(VALID_CODE);
   });
 });

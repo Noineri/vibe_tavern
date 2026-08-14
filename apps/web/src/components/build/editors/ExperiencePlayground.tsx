@@ -79,6 +79,10 @@ import {
   buildPlaygroundDigest,
   type CopilotDigest,
 } from "../../../lib/experience-copilot-digest.js";
+import {
+  loadPlaygroundConfig,
+  savePlaygroundConfig,
+} from "../../../lib/playground-config-persistence.js";
 
 // ─── Local types + constants ────────────────────────────────────────────────
 //
@@ -239,6 +243,11 @@ interface ExperiencePlaygroundProps {
   /** The CURRENT UNSAVED visual source, or null when no visual is selected.
    *  Rendered read-only inside the isolated frame; never edited here. */
   visualSource: string | null;
+  /** Owning script's id (fix item 9a): keys the localStorage persistence of
+   *  the test config (roster/models/grants/seed/settings/human seat). When
+   *  absent (the standalone panel use), nothing persists — the pre-9a
+   *  behavior. */
+  scriptId?: string;
   /** ER-14: when provided (by the copilot shell), a "Send diagnostics to
    *  assistant" button appears INSIDE the Developer-diagnostics disclosure and
    *  posts the live session digest into the copilot thread. Undefined outside
@@ -246,18 +255,36 @@ interface ExperiencePlaygroundProps {
   onSendToCopilot?: (digest: CopilotDigest) => void;
 }
 
-export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: ExperiencePlaygroundProps) {
+export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCopilot }: ExperiencePlaygroundProps) {
   const { t } = useT();
 
-  // Play context (local only).
-  const [seats, setSeats] = useState<PlaygroundSeat[]>([
-    { id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human },
-  ]);
-  const [grants, setGrants] = useState<readonly ExperienceCapability[]>([]);
-  const [seed, setSeed] = useState("");
-  const [settingsJson, setSettingsJson] = useState("");
+  // Play context (local only). Fix item 9a: lazily rehydrated from the
+  // localStorage persistence when a scriptId keys it — a restored config
+  // counts as "touched" so the auto-derive effect never overrides it.
+  const [seats, setSeats] = useState<PlaygroundSeat[]>(() => {
+    const persisted = scriptId === undefined ? null : loadPlaygroundConfig(scriptId);
+    if (persisted !== null && persisted.seats.length > 0) {
+      return persisted.seats.map((seat) => ({ ...seat }));
+    }
+    return [{ id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human }];
+  });
+  const [grants, setGrants] = useState<readonly ExperienceCapability[]>(() => {
+    const persisted = scriptId === undefined ? null : loadPlaygroundConfig(scriptId);
+    return persisted !== null ? [...persisted.grants] : [];
+  });
+  const [seed, setSeed] = useState(() => {
+    const persisted = scriptId === undefined ? null : loadPlaygroundConfig(scriptId);
+    return persisted !== null ? persisted.seed : "";
+  });
+  const [settingsJson, setSettingsJson] = useState(() => {
+    const persisted = scriptId === undefined ? null : loadPlaygroundConfig(scriptId);
+    return persisted !== null ? persisted.settingsJson : "";
+  });
   /** The seat the author drives; "" = the driver default (first human seat). */
-  const [humanSeatId, setHumanSeatId] = useState("");
+  const [humanSeatId, setHumanSeatId] = useState(() => {
+    const persisted = scriptId === undefined ? null : loadPlaygroundConfig(scriptId);
+    return persisted !== null ? persisted.humanSeatId : "";
+  });
 
   // Session + turn form (local only). requestId/expectedRevision are
   // author-editable (prefilled from the last envelope) so idempotent replays
@@ -279,8 +306,10 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
   // IR-90E: collapsed Developer diagnostics (novice-readable default).
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   // IR-90E: auto-derive tracks whether the user has manually modified the
-  // roster (once touched, auto-derive never overrides).
-  const [seatsTouched, setSeatsTouched] = useState(false);
+  // roster (once touched, auto-derive never overrides). A RESTORED config
+  // (fix item 9a) counts as touched — the persisted roster is the user's
+  // explicit choice and must not be re-derived away.
+  const [seatsTouched, setSeatsTouched] = useState(() => (scriptId !== undefined && loadPlaygroundConfig(scriptId) !== null));
   const [deriving, setDeriving] = useState(false);
 
   // Isolated frame wiring. The bridge captures its callbacks at creation, so
@@ -311,6 +340,29 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
     setSeatsTouched(true);
     setSeats((prev) => prev.map((seat, i) => (i === index ? { ...seat, ...patch } : seat)));
   };
+
+  // Fix item 9a: persist the test config on every manual change (the mount
+  // path above is the only restore point; the save is cheap — the envelope is
+  // tiny). Skipped while auto-derive is in flight (seatsTouched false): a
+  // derived-not-yet-touched config is not the user's choice yet. Saving on ANY
+  // touched change keeps the persisted row in lockstep with what the author
+  // sees, so an unmount mid-configuration loses nothing.
+  useEffect(() => {
+    if (scriptId === undefined || !seatsTouched) return;
+    savePlaygroundConfig(scriptId, {
+      seats: seats.map((seat) => ({
+        id: seat.id,
+        label: seat.label,
+        controller: seat.controller,
+        ...(seat.providerProfileId !== undefined ? { providerProfileId: seat.providerProfileId } : {}),
+        ...(seat.modelId !== undefined ? { modelId: seat.modelId } : {}),
+      })),
+      grants,
+      seed,
+      settingsJson,
+      humanSeatId,
+    });
+  }, [scriptId, seatsTouched, seats, grants, seed, settingsJson, humanSeatId]);
 
   const toggleGrant = (capability: ExperienceCapability, checked: boolean) => {
     setSeatsTouched(true);
@@ -463,6 +515,14 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
     setRequestId("pg-req-1");
     setExpectedRevision("0");
     setFrameReady(false);
+  };
+
+  /** Fix item 9b: one-click restart with the SAME settings — re-runs Start
+   *  from the CURRENT rules buffer with the CURRENT config, replacing the
+   *  Reset → Start → re-configure loop of iterative testing. */
+  const handleRestart = () => {
+    handleReset();
+    void handleStart();
   };
 
   /** Submit one action from the host chrome (legal-action button or the custom
@@ -706,14 +766,24 @@ export function ExperiencePlayground({ code, visualSource, onSendToCopilot }: Ex
               {t("experience_playground_start")}
             </button>
             {session !== null && (
-              <button
-                type="button"
-                className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                disabled={busy !== null}
-                onClick={handleReset}
-              >
-                {t("experience_playground_reset")}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                  disabled={busy !== null}
+                  onClick={handleRestart}
+                >
+                  {t("experience_playground_restart")}
+                </button>
+                <button
+                  type="button"
+                  className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                  disabled={busy !== null}
+                  onClick={handleReset}
+                >
+                  {t("experience_playground_reset")}
+                </button>
+              </>
             )}
             {busy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
           </div>

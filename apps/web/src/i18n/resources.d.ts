@@ -690,6 +690,7 @@ export default interface Resources {
     "experience_playground_no_session": "No active playground session.",
     "experience_playground_no_visual": "No visual selected — the frame is hidden.",
     "experience_playground_reset": "Reset",
+    "experience_playground_restart": "Restart (same settings)",
     "experience_playground_send_diagnostics": "Send diagnostics to assistant",
     "experience_playground_session_label": "Session",
     "experience_playground_start": "Start playground",

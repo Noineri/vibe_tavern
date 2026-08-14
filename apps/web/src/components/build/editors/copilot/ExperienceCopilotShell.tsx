@@ -309,7 +309,7 @@ export function ExperienceCopilotShell({
   // surfaces. In creation mode it renders INLINE on the `sandbox` position;
   // otherwise it renders inside the sandbox modal. The branches are mutually
   // exclusive, so a single instance ever mounts.
-  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} onSendToCopilot={handleSendToCopilot} />;
+  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={scriptId} onSendToCopilot={handleSendToCopilot} />;
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   const chatPane = (

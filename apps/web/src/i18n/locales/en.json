@@ -1929,6 +1929,7 @@
   "experience_tester_replayed": "replayed",
   "experience_playground_start": "Start playground",
   "experience_playground_reset": "Reset",
+  "experience_playground_restart": "Restart (same settings)",
   "experience_playground_human_seat_label": "Your seat",
   "experience_playground_human_seat_auto": "Auto (first human seat)",
   "experience_playground_session_label": "Session",
