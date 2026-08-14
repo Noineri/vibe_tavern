@@ -590,7 +590,8 @@ export type ExperienceQueuedAttachmentResponse = ExperienceQueuedAttachmentView 
 
 /** Privacy-safe context-bundle status (IR-70D). Strips all payload fields
  *  (variantsJson, compactSummaryJson, character/persona snapshots, source
- *  hashes) — only session-scoped metadata + provider/model ids. */
+ *  hashes) — only session-scoped metadata + provider/model/source ids (bare
+ *  provenance pointers, never content). */
 export interface ExperienceContextStatusDto {
   sessionId: string;
   mode: import("@vibe-tavern/domain").ExperienceContextMode;
@@ -598,6 +599,8 @@ export interface ExperienceContextStatusDto {
   messageFrontierPosition: number | null;
   providerProfileId: string | null;
   modelId: string | null;
+  sourceCharacterId: string | null;
+  sourceChatId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -626,6 +629,8 @@ export interface ExperienceRuntimeApi {
 		enabled?: boolean;
 		scriptId?: string | null;
 		visualId?: string | null;
+		contextSourceCharacterId?: string | null;
+		contextSourceChatId?: string | null;
 		capabilityGrants?: import("@vibe-tavern/domain").ExperienceCapability[];
 		contextMode?: import("@vibe-tavern/domain").ExperienceContextMode;
 		launcherVisible?: boolean;
@@ -690,7 +695,7 @@ export interface ExperienceRuntimeApi {
 	/** Explicit cancellable context capture. Requires immutable session grant
 	 *  `rp_context`. The signal passes through to the compact-summary generation
 	 *  so a client disconnect persists nothing and preserves the prior bundle. */
-	captureExperienceContext: (sessionId: string, body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number }, signal?: AbortSignal) => Promise<ExperienceContextStatusDto>;
+	captureExperienceContext: (sessionId: string, body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null }, signal?: AbortSignal) => Promise<ExperienceContextStatusDto>;
 	/** Read the session's current frozen context-bundle metadata, or null when
 	 *  never captured. Returns ONLY session metadata + provider/model ids — never
 	 *  payload fields (variants, compact summary, character/persona snapshots, RP

@@ -117,7 +117,8 @@ export interface CaptureContextInput {
 /** Privacy-safe context-bundle status DTO (IR-70D) — session-scoped metadata
  *  only; never carries payload fields. Mirrors the API contract's
  *  {@link ExperienceContextStatusDto} but lives in the domain layer so the
- *  service does not import from the API contract. */
+ *  service does not import from the API contract. Source ids are bare
+ *  provenance pointers (never content). */
 export interface ExperienceContextStatus {
   sessionId: string;
   mode: ExperienceContextMode;
@@ -125,6 +126,8 @@ export interface ExperienceContextStatus {
   messageFrontierPosition: number | null;
   providerProfileId: string | null;
   modelId: string | null;
+  sourceCharacterId: string | null;
+  sourceChatId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -268,6 +271,8 @@ export class ExperienceContextService {
 			messageFrontierPosition: row.messageFrontierPosition,
 			providerProfileId: row.providerProfileId,
 			modelId: row.modelId,
+			sourceCharacterId: row.sourceCharacterId,
+			sourceChatId: row.sourceChatId,
 			createdAt: row.createdAt,
 			updatedAt: row.updatedAt,
 		};

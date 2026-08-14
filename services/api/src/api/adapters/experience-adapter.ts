@@ -124,6 +124,8 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 			enabled?: boolean;
 			scriptId?: string | null;
 			visualId?: string | null;
+			contextSourceCharacterId?: string | null;
+			contextSourceChatId?: string | null;
 			capabilityGrants?: import("@vibe-tavern/domain").ExperienceCapability[];
 			contextMode?: import("@vibe-tavern/domain").ExperienceContextMode;
 			launcherVisible?: boolean;
@@ -342,9 +344,12 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 	 *  prior bundle. */
 	captureExperienceContext = async (
 		sessionId: string,
-		body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number },
+		body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null },
 		signal?: AbortSignal,
 	): Promise<ExperienceContextStatusDto> => {
+		// Source override fields are carried on the body but not resolved here —
+		// CS-3 wires them into `CaptureContextInput`. The spread below forwards
+		// them harmlessly (the domain input ignores unknown keys until then).
 		const row = await this.contextService.captureContext({ sessionId, ...body, signal });
 		return {
 			sessionId: row.sessionId,
@@ -353,6 +358,8 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 			messageFrontierPosition: row.messageFrontierPosition,
 			providerProfileId: row.providerProfileId,
 			modelId: row.modelId,
+			sourceCharacterId: row.sourceCharacterId,
+			sourceChatId: row.sourceChatId,
 			createdAt: row.createdAt,
 			updatedAt: row.updatedAt,
 		};

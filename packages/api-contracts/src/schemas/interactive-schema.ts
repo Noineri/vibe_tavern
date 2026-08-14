@@ -733,6 +733,9 @@ export const experienceConfigUpdateSchema = z.object({
   enabled: z.boolean().optional(),
   scriptId: boundedId.nullable().optional(),
   visualId: boundedId.nullable().optional(),
+  /** User-chosen RP-context source (report item 6). Null clears to ambient. */
+  contextSourceCharacterId: boundedId.nullable().optional(),
+  contextSourceChatId: boundedId.nullable().optional(),
   capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES).optional(),
   contextMode: experienceContextModeSchema.optional(),
   launcherVisible: z.boolean().optional(),
@@ -772,6 +775,10 @@ export const experienceContextCaptureRequestSchema = z.object({
   providerProfileId: boundedId.optional(),
   model: boundedString.min(1).optional(),
   recentMessageLimit: z.number().int().min(1).max(1000).optional(),
+  /** Per-capture source override (report item 6). Null explicitly opts back
+   *  into the ambient/config default. Resolution is CS-3. */
+  contextSourceCharacterId: boundedId.nullable().optional(),
+  contextSourceChatId: boundedId.nullable().optional(),
 }).strict();
 
 /**
