@@ -326,6 +326,12 @@ export function parseTimerEffectRequest(requestJson: string): TimerEffectRequest
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 const MAX_SCRIPT_TURNS = 200;
+/** Max delivery attempts for one completed effect (fix item 11): attempt 1 is
+ *  the IR-22 optimistic CAS at the originating revision; on stale_revision the
+ *  delivery re-originates against the current frontier (reload + reduce at the
+ *  current state + apply at the observed revision), bounded by this constant.
+ *  Timer effects keep the intentional stale-drop (2c) via a single attempt. */
+const EFFECT_DELIVERY_MAX_ATTEMPTS = 3;
 
 export class ExperienceService {
   private readonly stores: StoreContainer;
@@ -858,12 +864,23 @@ export class ExperienceService {
 
   /**
    * Feed a completed effect's mapped action back into the reducer as an
-   * `effect_result` transition. Acceptance is the CAS (`expectedRevision` =
-   * `effect.originatingRevision`): if the session advanced past the originating
-   * revision (stale completion), `applyTransition` returns `stale_revision` and
-   * the feed-back is NOT applied — the effect stays terminal (`succeeded`) but
-   * undelivered, and the session keeps its newer state. This is the IR-22
-   * "delayed effect completions can never overwrite newer session state" rule.
+   * `effect_result` transition, with bounded re-origination (fix item 11).
+   *
+   * The FIRST attempt keeps the IR-22 optimistic CAS (`expectedRevision` =
+   * `effect.originatingRevision`): a completion racing a genuinely newer
+   * transition is rejected with `stale_revision`. But one transition may emit
+   * SEVERAL effects (a group chat's per-character replies) and only the first
+   * lands on the originating revision — without re-origination the rest would
+   * stay terminal `succeeded` yet undelivered forever. So on `stale_revision`
+   * the delivery RE-ORIGINATES against the current frontier: reload the
+   * session, re-run the reducer against the CURRENT state (the author's rules
+   * stay the sole legality authority — a reply the rules no longer accept is
+   * rejected by `reduce`, not by the CAS), and retry at the observed revision,
+   * up to {@link EFFECT_DELIVERY_MAX_ATTEMPTS} attempts. IR-22 holds in
+   * substance: a completion never OVERWRITES newer state, it appends on top of
+   * it at the frontier with the reducer's consent. Timer effects keep the
+   * intentional stale-drop semantics (fix step 2c): a late tick does NOT
+   * re-originate.
    */
   async applyEffectResult(effectId: string, action: ExperienceAction, opts?: { actorKind?: "model" | "timer" }): Promise<ExperienceResult<EffectDelivery>> {
     const effect = await this.stores.experiences.getEffectById(effectId);
@@ -873,42 +890,51 @@ export class ExperienceService {
     if (effect.status !== "succeeded") {
       return err({ status: 409, code: "effect_not_retryable", message: `Effect '${effectId}' is ${effect.status}, not succeeded`, currentStatus: effect.status });
     }
-    const ctx = await this.loadSessionForVm(effect.sessionId);
-    if (!ctx.ok) return ctx;
-    const rng = createCountingRandom(seedToNumeric(ctx.data.seed), ctx.data.cursor);
-    const reduceCaps = this.buildCaps(ctx.data.grants, ctx.data.participants, rng.random);
-    const reduced = runReduce(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, action, reduceCaps);
-    if (!reduced.ok) return err(fromKernelError(reduced));
-    const transition = reduced.value;
-    const nextCursor = rng.totalDraws();
-    const applied = await this.stores.experiences.applyTransition({
-      sessionId: effect.sessionId,
-      expectedRevision: effect.originatingRevision,
-      requestId: action.requestId,
-      kind: "effect_result",
-      actorSnapshotJson: safeStringify({ kind: opts?.actorKind ?? "model", effectId, participantId: action.participantId ?? null }),
-      inputJson: safeStringify(action),
-      emittedEventsJson: safeStringify(transition.events),
-      emittedEffectsJson: safeStringify(transition.effects ?? []),
-      stateHash: null,
-      message: transition.message ?? null,
-      newCurrentStateJson: safeStringify(transition.state),
-      newStatus: transition.status,
-      newRandomCursor: nextCursor,
-    });
-    const session = applied.ok ? this.toSessionView(applied.session) : await this.viewById(effect.sessionId);
-    const projection = await this.projectForResponseById(
-      effect.sessionId,
-      ctx.data.rules,
-      applied.ok ? transition.state : ctx.data.state,
-      ctx.data.participants,
-    );
-    return ok({
-      delivered: applied.ok,
-      ...(applied.ok ? {} : { reason: "stale" as const }),
-      session,
-      projection,
-    });
+    const maxAttempts = opts?.actorKind === "timer" ? 1 : EFFECT_DELIVERY_MAX_ATTEMPTS;
+    for (let attempt = 1; ; attempt += 1) {
+      const ctx = await this.loadSessionForVm(effect.sessionId);
+      if (!ctx.ok) return ctx;
+      const rng = createCountingRandom(seedToNumeric(ctx.data.seed), ctx.data.cursor);
+      const reduceCaps = this.buildCaps(ctx.data.grants, ctx.data.participants, rng.random);
+      const reduced = runReduce(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, action, reduceCaps);
+      if (!reduced.ok) return err(fromKernelError(reduced));
+      const transition = reduced.value;
+      const nextCursor = rng.totalDraws();
+      const applied = await this.stores.experiences.applyTransition({
+        sessionId: effect.sessionId,
+        // Attempt 1 is the IR-22 optimistic CAS at the originating revision;
+        // re-origination retries land at the frontier revision observed by the
+        // reload above (the reduce already ran against that same reload's state).
+        expectedRevision: attempt === 1 ? effect.originatingRevision : ctx.data.revision,
+        requestId: action.requestId,
+        kind: "effect_result",
+        actorSnapshotJson: safeStringify({ kind: opts?.actorKind ?? "model", effectId, participantId: action.participantId ?? null }),
+        inputJson: safeStringify(action),
+        emittedEventsJson: safeStringify(transition.events),
+        emittedEffectsJson: safeStringify(transition.effects ?? []),
+        stateHash: null,
+        message: transition.message ?? null,
+        newCurrentStateJson: safeStringify(transition.state),
+        newStatus: transition.status,
+        newRandomCursor: nextCursor,
+      });
+      if (!applied.ok && applied.conflict === "stale_revision" && attempt < maxAttempts) {
+        continue; // re-originate against the moved frontier
+      }
+      const session = applied.ok ? this.toSessionView(applied.session) : await this.viewById(effect.sessionId);
+      const projection = await this.projectForResponseById(
+        effect.sessionId,
+        ctx.data.rules,
+        applied.ok ? transition.state : ctx.data.state,
+        ctx.data.participants,
+      );
+      return ok({
+        delivered: applied.ok,
+        ...(applied.ok ? {} : { reason: "stale" as const }),
+        session,
+        projection,
+      });
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

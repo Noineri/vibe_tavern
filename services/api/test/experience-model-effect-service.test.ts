@@ -156,6 +156,42 @@ context.experience.register({
 });
 `;
 
+/** Group-chat delivery: the human's "ask" emits one effect PER model seat;
+ *  model "say" replies append to the log (distinct legal actions per kind). */
+const GROUP_DELIVERY_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "group-delivery", name: "Group Delivery" },
+  capabilities: [{ capability: "participants" }, { capability: "model" }],
+  create() { return { log: [] }; },
+  project(c) { return { log: c.state.log }; },
+  actions(c, viewer) {
+    if (viewer && viewer.kind === "model") return [{ type: "say", label: "Say", allowsText: true }];
+    return [{ type: "ask", label: "Ask both", allowsText: true }];
+  },
+  reduce(c, a) {
+    if (a.type === "ask" && a.participantId === "human") {
+      return {
+        state: c.state, status: "active", events: [],
+        effects: [
+          { kind: "model", request: { viewer: "alice", mode: "text", actionType: "say", instruction: "Alice replies." } },
+          { kind: "model", request: { viewer: "bob", mode: "text", actionType: "say", instruction: "Bob replies." } },
+        ],
+      };
+    }
+    if (a.type === "say" && (a.participantId === "alice" || a.participantId === "bob")) {
+      return { state: { log: [...c.state.log, { who: a.participantId, text: a.payload?.text ?? "" }] }, status: "active", events: [] };
+    }
+    return { state: c.state, status: "active", events: [] };
+  },
+});
+`;
+
+const GROUP_DELIVERY_PARTICIPANTS = [
+	{ id: "human", label: "You", controller: "human" as const },
+	{ id: "alice", label: "Alice", controller: "model" as const, providerProfileId: "pp_alice", modelId: "model-a" },
+	{ id: "bob", label: "Bob", controller: "model" as const, providerProfileId: "pp_bob", modelId: "model-b" },
+];
+
 const TWO_MODEL_PARTICIPANTS = [
 	{ id: "human", label: "You", controller: "human" as const },
 	{ id: "alice", label: "Alice", controller: "model" as const, providerProfileId: "pp_alice", modelId: "model-a" },
@@ -552,12 +588,20 @@ describe("ExperienceModelEffectService — stale completion never overwrites", (
 		if (!result.ok) return;
 		expect(result.data.status).toBe("succeeded");
 		expect(result.data.result).toEqual({ mode: "text", text: "delayed reply" });
-		// The feed-back was REJECTED (stale): session is at 2 (the racing action),
-		// NOT 3 (which a successful feed-back would have produced).
-		expect(result.data.delivered).toBe(false);
+		// Fix item 11: the stale CAS no longer DROPS the completion — the
+		// delivery re-originates at the frontier and APPENDS on top of the
+		// racing action. IR-22 holds in substance: the newer state is never
+		// overwritten (the racing message survives), the reply lands after it.
+		expect(result.data.delivered).toBe(true);
 		const session = await stores.experiences.getSessionById(sessionId);
-		expect(session?.revision).toBe(2);
-		// The effect is terminal succeeded but undelivered.
+		expect(session?.revision).toBe(3);
+		const state = JSON.parse(session!.currentStateJson) as { log: Array<{ who: string; text: string }> };
+		expect(state.log.map((l) => [l.who, l.text])).toEqual([
+			["human", "hello"],
+			["human", "another"],
+			["model", "delayed reply"],
+		]);
+		// The effect is terminal succeeded and delivered.
 		const effect = await stores.experiences.getEffectById(effectId);
 		expect(effect?.status).toBe("succeeded");
 		expect(effect?.originatingRevision).toBe(1);
@@ -892,6 +936,45 @@ async function rewriteModelParticipant(
 	}
 	stores.db.update(experienceSessions).set({ participantsJson: JSON.stringify(participants) }).run();
 }
+
+// ─── Tests: multi-effect delivery (fix item 11) ──────────────────────────────
+
+describe("ExperienceModelEffectService — multi-effect delivery (fix item 11)", () => {
+	test("two model effects from one human transition BOTH deliver; the second re-originates at the frontier", async () => {
+		await setup();
+		const { sessionId } = await seedSession(GROUP_DELIVERY_SOURCE, GROUP_DELIVERY_PARTICIPANTS);
+		// The human's opening move emits exactly two pending effects (alice + bob).
+		const session = await stores.experiences.getSessionById(sessionId);
+		await experienceService.submitAction(sessionId, {
+			type: "ask", requestId: "h1", expectedRevision: session?.revision ?? 0,
+			participantId: "human", payload: { text: "hello" },
+		});
+		const byViewer = await pendingEffectsByViewer(sessionId);
+		expect(Object.keys(byViewer).sort()).toEqual(["alice", "bob"]);
+		const { modelEffectService } = makeServices({
+			profile: makeProfile({ id: "pp_active" }),
+			profiles: [makeProfile({ id: "pp_alice", defaultModel: "alice-default" }), makeProfile({ id: "pp_bob", defaultModel: "bob-default" })],
+			executeReturn: async () => ({ text: "reply" }),
+		});
+
+		// First delivery lands on the originating revision (optimistic CAS).
+		const first = await modelEffectService.runEffect(byViewer.alice!);
+		expect(first.ok && first.data.delivered).toBe(true);
+
+		// Second delivery is stale at the originating revision (the first bumped
+		// it) and must re-originate: reload + reduce at the current state + apply
+		// at the observed revision.
+		const second = await modelEffectService.runEffect(byViewer.bob!);
+		expect(second.ok && second.data.delivered).toBe(true);
+
+		// Both replies are in the authoritative state, in emission order.
+		const finalSession = await stores.experiences.getSessionById(sessionId);
+		const state = JSON.parse(finalSession!.currentStateJson) as { log: Array<{ who: string; text: string }> };
+		expect(state.log.map((l) => l.who)).toEqual(["alice", "bob"]);
+		// 1 human action + 2 effect_result steps.
+		expect(finalSession!.revision).toBe(3);
+	});
+});
 
 // ─── Tests: native structured generation (fix step 1c) ───────────────────────
 
