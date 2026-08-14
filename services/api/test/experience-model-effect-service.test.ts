@@ -999,5 +999,142 @@ describe("ExperienceModelEffectService — structured action mode (1c)", () => {
 	});
 });
 
+// ─── Tests: bounded corrective re-ask (fix step 1d) ───────────────────────────
+
+describe("ExperienceModelEffectService — corrective re-ask (1d)", () => {
+	test("first reply invalid, corrective second reply accepted: the re-ask prompt carries the rejected reply + reason", async () => {
+		await setup();
+		const { sessionId } = await seedSession(ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "play");
+		let call = 0;
+		const { modelEffectService, spy } = makeServices({
+			executeReturn: async () => {
+				call += 1;
+				return call === 1 ? { text: "I choose... definitely play. Or maybe pass?" } : { text: '{"actionId":"play"}' };
+			},
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(spy.calls).toHaveLength(2);
+		expect(result.ok && result.data.status).toBe("succeeded");
+		expect(result.ok && result.data.result).toEqual({ mode: "action", actionId: "play" });
+		// The corrective prompt keeps the rejected reply as an assistant turn...
+		const messages = spy.calls[1]?.prompt.finalPayload.messages as Array<{ role: string; content: string }>;
+		expect(messages.at(-2)).toEqual({ role: "assistant", content: "I choose... definitely play. Or maybe pass?" });
+		// ...and names the failure + the legal action types in the user turn.
+		const correction = messages.at(-1);
+		expect(correction?.role).toBe("user");
+		expect(correction?.content).toContain("invalid_output");
+		expect(correction?.content).toContain("play, pass");
+	});
+
+	test("re-ask exhausted: both replies invalid → failed with the reason, exactly two calls, no feed-back", async () => {
+		await setup();
+		const { sessionId } = await seedSession(ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "play");
+		const { modelEffectService, spy } = makeServices({ executeReturn: async () => ({ text: "still just prose" }) });
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(spy.calls).toHaveLength(2); // initial + ONE corrective re-ask, never more
+		expect(result.ok && result.data.status).toBe("failed");
+		expect(result.ok && result.data.error).toBe("invalid_output");
+		const session = await stores.experiences.getSessionById(sessionId);
+		expect(session?.revision).toBe(1); // no feed-back happened
+	});
+
+	test("text mode: an empty first reply is re-asked once and recovered", async () => {
+		await setup();
+		const { sessionId } = await seedSession(TEXT_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "say");
+		let call = 0;
+		const { modelEffectService, spy } = makeServices({
+			executeReturn: async () => {
+				call += 1;
+				return call === 1 ? { text: "   " } : { text: "Recovered reply." };
+			},
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(spy.calls).toHaveLength(2);
+		expect(result.ok && result.data.status).toBe("succeeded");
+		expect(result.ok && result.data.result).toEqual({ mode: "text", text: "Recovered reply." });
+	});
+
+	test("cancellation during the corrective re-ask persists cancelled (no third call)", async () => {
+		await setup();
+		const { sessionId } = await seedSession(ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "play");
+		const controller = new AbortController();
+		let call = 0;
+		const { modelEffectService, spy } = makeServices({
+			executeReturn: async () => {
+				call += 1;
+				if (call === 1) return { text: "prose, not JSON" };
+				controller.abort();
+				throw new Error("Request was aborted.");
+			},
+		});
+
+		const result = await modelEffectService.runEffect(effectId, controller.signal);
+
+		expect(spy.calls).toHaveLength(2);
+		expect(result.ok && result.data.status).toBe("cancelled");
+		const effect = await stores.experiences.getEffectById(effectId);
+		expect(effect?.status).toBe("cancelled");
+	});
+
+	test("invalid_payload detail reaches the corrective prompt (schema path)", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		let call = 0;
+		const { modelEffectService, spy } = makeServices({
+			executeReturn: async () => {
+				call += 1;
+				return call === 1 ? { text: '{"actionId":"play","args":{"card":"ace"}}' } : { text: '{"actionId":"play","args":{"card":3}}' };
+			},
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(spy.calls).toHaveLength(2);
+		expect(result.ok && result.data.status).toBe("succeeded");
+		expect(result.ok && result.data.result).toEqual({ mode: "action", actionId: "play", args: { card: 3 } });
+		const messages = spy.calls[1]?.prompt.finalPayload.messages as Array<{ role: string; content: string }>;
+		const correction = messages.at(-1)?.content ?? "";
+		expect(correction).toContain("invalid_payload");
+		expect(correction).toContain("args"); // the validator's path detail is included
+	});
+
+	test("structured reply failing OUR validator: the re-ask stays structured, the text path is never consulted", async () => {
+		await setup();
+		const { sessionId } = await seedSession(SCHEMA_ACTION_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "go");
+		let structuredCalls = 0;
+		let textCalls = 0;
+		const { modelEffectService } = makeServices({
+			executeReturn: async () => {
+				textCalls += 1;
+				return { text: "pass" };
+			},
+			executeStructuredReturn: (async () => {
+				structuredCalls += 1;
+				return { kind: "structured", text: JSON.stringify({ actionId: "play", args: { card: 1.5 } }) };
+			}) as never,
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		// One initial + one corrective re-ask, both structured; no path-crossing.
+		expect(structuredCalls).toBe(2);
+		expect(textCalls).toBe(0);
+		expect(result.ok && result.data.status).toBe("failed");
+		expect(result.ok && result.data.error).toBe("invalid_payload");
+	});
+});
+
 // Keep the imported type referenced for the cast boundaries above.
 export type { ExperienceEffectRow };

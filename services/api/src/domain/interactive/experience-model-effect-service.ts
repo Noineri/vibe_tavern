@@ -15,8 +15,11 @@
  *    run"), so a crash after claim leaves a `running` effect that restart
  *    reconciles to `unknown` (never silently re-run).
  *  - Client cancellation (aborted signal) persists `cancelled`.
- *  - Known executor failure / no-provider / no-model / invalid output persists
- *    `failed` with a reason; the effect is inspectable and retryable.
+ *  - Known executor failure / no-provider / no-model persists `failed` with a
+ *    reason; the effect is inspectable and retryable. An output that fails
+ *    validation gets ONE bounded corrective re-ask (the raw reply + the
+ *    validation reason appended to the prompt, same claimed run — fix step 1d)
+ *    before persisting `failed`.
  *  - Only an explicit user retry (retryEffect, Wave 3 store) creates a new
  *    attempt, preserving the original effect id + audit history.
  *
@@ -114,6 +117,9 @@ export interface ExperienceModelEffectServiceDeps {
 
 const NO_BUNDLE_FALLBACK_BUDGET = 8000;
 
+/** Bounded corrective re-asks after a validation failure (fix step 1d). */
+const MAX_CORRECTIVE_REASKS = 1;
+
 export class ExperienceModelEffectService {
 	private readonly deps: ExperienceModelEffectServiceDeps;
 	private readonly execute: typeof nonstreamingProviderExecute;
@@ -201,22 +207,82 @@ export class ExperienceModelEffectService {
 		// 4. Build the prompt (host protocol + overrides + character/persona + bundle + private view).
 		const prompt = await this.buildPrompt(effectiveProfile, model, vmCtx.data);
 
-		// 5. Execute the provider call. For action mode with the structured seam
-		//    available, FIRST attempt native schema-constrained generation: the
-		//    reply arrives as a JSON object by construction. The result still goes
-		//    through the SAME validateOutput below — the native schema is a
-		//    generation-quality aid, never the validation authority. Any structured
-		//    failure (unsupported provider, call error, throwing seam) falls back
-		//    to the text path; there is no retry loop.
+		// 5+6. Generate + validate, with ONE bounded corrective re-ask (fix step
+		//      1d): when a reply fails validation, the raw reply + the validation
+		//      reason are appended as a corrective exchange and the SAME generation
+		//      path (structured-first for action mode) runs once more. This is all
+		//      inside the already-claimed run, before any terminal persist — a
+		//      crash mid-re-ask leaves the effect `running` exactly like a crash
+		//      before it, and only an explicit user retry (retryEffect) creates a
+		//      new attempt. Provider failures (cancel/network) still persist their
+		//      terminal state immediately and are never re-asked.
+		let resultPayload: ModelEffectResultPayload | undefined;
+		let attemptPrompt: AssemblePromptResponse = prompt;
+		let reask = 0;
+		while (resultPayload === undefined) {
+			const generated = await this.generateAttempt(effectId, effectiveProfile, model, vmCtx.data, attemptPrompt, signal);
+			if (!generated.ok) return generated.result; // cancel/fail already persisted
+			const candidate = validateOutput(generated.text, vmCtx.data.request, vmCtx.data.legalActions);
+			if (candidate.ok) {
+				resultPayload = candidate.value;
+				break;
+			}
+			if (reask >= MAX_CORRECTIVE_REASKS) {
+				await this.deps.stores.experiences.failEffect(effectId, candidate.reason);
+				return ok({ effectId, status: "failed", error: candidate.reason });
+			}
+			attemptPrompt = appendCorrectiveExchange(attemptPrompt, generated.text, candidate, vmCtx.data.request, vmCtx.data.legalActions);
+			reask += 1;
+		}
+
+		// 7. Persist the complete terminal result.
+		await this.deps.stores.experiences.completeEffect(effectId, JSON.stringify(resultPayload));
+
+		// 8. Feed the result back into the reducer. Acceptance is the CAS
+		//    (expectedRevision = originatingRevision): a stale session rejects
+		//    the feed-back and the effect stays succeeded-but-undelivered.
+		const action = mapResultToAction(effectId, vmCtx.data, resultPayload);
+		const delivery = await this.deps.experienceService.applyEffectResult(effectId, action);
+		if (!delivery.ok) {
+			// The reducer rejected the mapped action (illegal at the current state).
+			// The effect is already succeeded; surface the delivery failure without
+			// mutating the terminal result.
+			return ok({ effectId, status: "succeeded", result: resultPayload, delivered: false, error: delivery.error.code });
+		}
+		return ok({
+			effectId,
+			status: "succeeded",
+			result: resultPayload,
+			delivered: delivery.data.delivered,
+			...(delivery.data.delivered ? { session: delivery.data.session, projection: delivery.data.projection } : {}),
+		});
+	}
+
+	// ─── Generation ─────────────────────────────────────────────────────────────
+
+	/**
+	 * One generation attempt (fix step 1c + 1d): structured-first for action
+	 * mode when the seam is available, then the text path as fallback. Terminal
+	 * cancel/fail outcomes are persisted HERE and returned as a ready outcome;
+	 * success returns the raw reply text (validation happens in the caller).
+	 */
+	private async generateAttempt(
+		effectId: string,
+		profile: StoredProviderProfileRecord,
+		model: string,
+		vmData: ModelEffectVmContext,
+		prompt: AssemblePromptResponse,
+		signal: AbortSignal | undefined,
+	): Promise<{ ok: true; text: string } | { ok: false; result: ExperienceResult<ModelEffectOutcome> }> {
 		let text: string | null = null;
-		if (vmCtx.data.request.mode === "action" && this.deps.executeStructured) {
+		if (vmData.request.mode === "action" && this.deps.executeStructured) {
 			let structured: StructuredActionChoiceResult | null = null;
 			try {
 				structured = await this.deps.executeStructured({
-					profile: effectiveProfile,
+					profile,
 					model,
 					prompt,
-					legalActions: vmCtx.data.legalActions,
+					legalActions: vmData.legalActions,
 					signal,
 				});
 			} catch {
@@ -230,53 +296,25 @@ export class ExperienceModelEffectService {
 		}
 		if (text === null) {
 			try {
-				const result = await this.execute({ profile: effectiveProfile, model, prompt, signal });
+				const result = await this.execute({ profile, model, prompt, signal });
 				text = result.text;
 			} catch (e) {
 				// Cancellation: an aborted signal (client cancel) persists `cancelled`.
 				if (signal?.aborted) {
 					await this.deps.stores.experiences.cancelEffect(effectId);
-					return ok({ effectId, status: "cancelled" });
+					return { ok: false, result: ok({ effectId, status: "cancelled" }) };
 				}
 				const message = describeError(e);
 				await this.deps.stores.experiences.failEffect(effectId, message);
-				return ok({ effectId, status: "failed", error: message });
+				return { ok: false, result: ok({ effectId, status: "failed", error: message }) };
 			}
 		}
 		// Some providers resolve cleanly on abort rather than throwing — re-check.
 		if (signal?.aborted) {
 			await this.deps.stores.experiences.cancelEffect(effectId);
-			return ok({ effectId, status: "cancelled" });
+			return { ok: false, result: ok({ effectId, status: "cancelled" }) };
 		}
-
-		// 6. Validate the output (structured legal-action choice OR free text).
-		const validated = validateOutput(text, vmCtx.data.request, vmCtx.data.legalActions);
-		if (!validated.ok) {
-			await this.deps.stores.experiences.failEffect(effectId, validated.reason);
-			return ok({ effectId, status: "failed", error: validated.reason });
-		}
-
-		// 7. Persist the complete terminal result.
-		await this.deps.stores.experiences.completeEffect(effectId, JSON.stringify(validated.value));
-
-		// 8. Feed the result back into the reducer. Acceptance is the CAS
-		//    (expectedRevision = originatingRevision): a stale session rejects
-		//    the feed-back and the effect stays succeeded-but-undelivered.
-		const action = mapResultToAction(effectId, vmCtx.data, validated.value);
-		const delivery = await this.deps.experienceService.applyEffectResult(effectId, action);
-		if (!delivery.ok) {
-			// The reducer rejected the mapped action (illegal at the current state).
-			// The effect is already succeeded; surface the delivery failure without
-			// mutating the terminal result.
-			return ok({ effectId, status: "succeeded", result: validated.value, delivered: false, error: delivery.error.code });
-		}
-		return ok({
-			effectId,
-			status: "succeeded",
-			result: validated.value,
-			delivered: delivery.data.delivered,
-			...(delivery.data.delivered ? { session: delivery.data.session, projection: delivery.data.projection } : {}),
-		});
+		return { ok: true, text };
 	}
 
 	// ─── Prompt construction ──────────────────────────────────────────────────
@@ -393,7 +431,7 @@ function renderPrivateView(vmCtx: ModelEffectVmContext): string {
  */
 type ValidateOutputResult =
 	| { ok: true; value: ModelEffectResultPayload }
-	| { ok: false; reason: "invalid_output" | "invalid_payload" };
+	| { ok: false; reason: "invalid_output" | "invalid_payload"; detail?: string };
 
 /**
  * Validate the model output against the request mode. Action mode parses a JSON
@@ -410,7 +448,9 @@ function validateOutput(
 ): ValidateOutputResult {
 	const trimmed = text.trim();
 	if (request.mode === "text") {
-		return trimmed.length > 0 ? { ok: true, value: { mode: "text", text: trimmed } } : { ok: false, reason: "invalid_output" };
+		return trimmed.length > 0
+			? { ok: true, value: { mode: "text", text: trimmed } }
+			: { ok: false, reason: "invalid_output", detail: "the reply was empty" };
 	}
 	// Action mode: accept either a bare legal action type or a JSON object.
 	const legalTypes = new Set(legalActions.map((a) => a.type));
@@ -419,7 +459,7 @@ function validateOutput(
 		// Mirror the kernel rule: a schema-declaring action must carry a payload,
 		// so a bare actionId reply with no args is invalid_payload.
 		if (descriptor?.payloadSchema !== undefined) {
-			return { ok: false, reason: "invalid_payload" };
+			return { ok: false, reason: "invalid_payload", detail: `action '${trimmed}' declares a payloadSchema, so the reply must be a JSON object carrying args` };
 		}
 		return { ok: true, value: { mode: "action", actionId: trimmed } };
 	}
@@ -427,23 +467,24 @@ function validateOutput(
 	try {
 		parsed = JSON.parse(trimmed);
 	} catch {
-		return { ok: false, reason: "invalid_output" };
+		return { ok: false, reason: "invalid_output", detail: "the reply is not valid JSON" };
 	}
 	if (parsed === null || typeof parsed !== "object") {
-		return { ok: false, reason: "invalid_output" };
+		return { ok: false, reason: "invalid_output", detail: "the reply is not a JSON object" };
 	}
 	const obj = parsed as { actionId?: unknown; args?: unknown };
 	if (typeof obj.actionId !== "string" || !legalTypes.has(obj.actionId)) {
-		return { ok: false, reason: "invalid_output" };
+		const legal = [...legalTypes].join(", ");
+		return { ok: false, reason: "invalid_output", detail: `actionId must be one of: ${legal}` };
 	}
 	const descriptor = legalActions.find((a) => a.type === obj.actionId);
 	if (descriptor?.payloadSchema !== undefined) {
 		if (obj.args === undefined) {
-			return { ok: false, reason: "invalid_payload" };
+			return { ok: false, reason: "invalid_payload", detail: "args is required by this action's payloadSchema" };
 		}
 		const schemaResult = validatePayloadValue(obj.args, descriptor.payloadSchema, "args");
 		if (!schemaResult.ok) {
-			return { ok: false, reason: "invalid_payload" };
+			return { ok: false, reason: "invalid_payload", detail: schemaResult.message };
 		}
 	}
 	return {
@@ -452,6 +493,38 @@ function validateOutput(
 			mode: "action",
 			actionId: obj.actionId,
 			...(obj.args !== undefined ? { args: obj.args } : {}),
+		},
+	};
+}
+
+/**
+ * Build the corrective follow-up prompt (fix step 1d): the rejected raw reply
+ * is kept as an assistant turn, and a user turn names the failure and the exact
+ * acceptance rule, so the model can correct itself. Pure — touches no state.
+ */
+function appendCorrectiveExchange(
+	prompt: AssemblePromptResponse,
+	rawReply: string,
+	failure: { reason: string; detail?: string },
+	request: ModelEffectRequestPayload,
+	legalActions: readonly ExperienceActionDescriptor[],
+): AssemblePromptResponse {
+	const previous = Array.isArray(prompt.finalPayload.messages)
+		? (prompt.finalPayload.messages as Array<{ role: string; content: string }>)
+		: [];
+	const guidance =
+		request.mode === "action"
+			? `Your previous reply was rejected by the game engine. Reason: ${failure.reason}${failure.detail ? ` (${failure.detail})` : ""}. Reply again with a single JSON object: {"actionId": "<action>"} where actionId is one of: ${legalActions.map((a) => a.type).join(", ")}. If the chosen action declares arguments, include them in "args" matching its schema. Output only the JSON object — no prose, no code fences.`
+			: `Your previous reply was rejected. Reason: ${failure.reason}${failure.detail ? ` (${failure.detail})` : ""}. Reply again with a non-empty reply.`;
+	return {
+		...prompt,
+		finalPayload: {
+			...prompt.finalPayload,
+			messages: [
+				...previous,
+				{ role: "assistant", content: rawReply },
+				{ role: "user", content: guidance },
+			],
 		},
 	};
 }
