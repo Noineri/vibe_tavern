@@ -318,6 +318,43 @@ describe("experienceParticipantSchema (IR-70E model-seat assignment)", () => {
     );
   });
 
+  it("accepts a model participant carrying a characterId (report item 6b)", () => {
+    expect(
+      experienceParticipantSchema.safeParse({ ...validModel(), characterId: "char_1" }).success,
+    ).toBe(true);
+  });
+
+  it("keeps a model participant WITHOUT characterId valid (character is optional)", () => {
+    expect(experienceParticipantSchema.safeParse(validModel()).success).toBe(true);
+  });
+
+  it("rejects a human participant carrying a characterId", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({ ...validHuman(), characterId: "char_1" }),
+    );
+  });
+
+  it("rejects a script participant carrying a characterId", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({ id: "bot", label: "Bot", controller: "script", characterId: "char_1" }),
+    );
+  });
+
+  it("allows two model seats with the SAME characterId (duplicates legal)", () => {
+    // User decision: the same character on two seats with different models.
+    const first = experienceParticipantSchema.safeParse({ ...validModel(), characterId: "char_1" });
+    const second = experienceParticipantSchema.safeParse({
+      id: "ai2",
+      label: "AI 2",
+      controller: "model",
+      providerProfileId: "pp_2",
+      modelId: "m_2",
+      characterId: "char_1",
+    });
+    expect(first.success).toBe(true);
+    expect(second.success).toBe(true);
+  });
+
   it("rejects a blank providerProfileId on a model seat", () => {
     expectReject(
       experienceParticipantSchema.safeParse({ ...validModel(), providerProfileId: "" }),

@@ -239,6 +239,10 @@ const experienceParticipantFields = {
   controller: experienceControllerSchema,
   providerProfileId: boundedId.optional(),
   modelId: boundedId.optional(),
+  /** User-pulled library character behind this seat (report item 6b). Optional
+   *  on every seat: a label-only seat stays legal, and a character seat is only
+   *  meaningful for model controllers (the strict start schema enforces that). */
+  characterId: boundedId.optional(),
 };
 
 /** Persisted/response participant shape. Optional assignment fields preserve
@@ -255,6 +259,7 @@ export const experienceStartParticipantSchema = z
     const isModel = p.controller === "model";
     const hasProvider = p.providerProfileId !== undefined;
     const hasModel = p.modelId !== undefined;
+    const hasCharacter = p.characterId !== undefined;
     if (isModel) {
       // A model-controlled seat must pin BOTH a provider profile and a model
       // (IR-70E). Neither may be blank — `boundedId` already enforces min(1).
@@ -272,14 +277,25 @@ export const experienceStartParticipantSchema = z
           message: "model participant requires a modelId",
         });
       }
-    } else if (hasProvider || hasModel) {
-      // A human/script seat must carry NEITHER assignment field — only model
-      // seats pin a provider/model (IR-70E).
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [hasProvider ? "providerProfileId" : "modelId"],
-        message: `${p.controller} participant must not carry a provider/model assignment`,
-      });
+    } else {
+      if (hasProvider || hasModel) {
+        // A human/script seat must carry NEITHER assignment field — only model
+        // seats pin a provider/model (IR-70E).
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [hasProvider ? "providerProfileId" : "modelId"],
+          message: `${p.controller} participant must not carry a provider/model assignment`,
+        });
+      }
+      if (hasCharacter) {
+        // A character card is a model-seat identity layer: human/script seats
+        // must not carry one (report item 6b).
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["characterId"],
+          message: `${p.controller} participant must not carry a characterId`,
+        });
+      }
     }
   });
 
