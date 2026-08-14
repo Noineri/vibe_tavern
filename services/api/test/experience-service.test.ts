@@ -1009,3 +1009,90 @@ describe("ExperienceService — pinned visual source snapshot (IR-70G)", () => {
     expect(result.data.session.visualId).toBe(visual.id);
   });
 });
+
+// ─── Report item 6b: character-backed seats (snapshot at start) ─────────────
+
+describe("ExperienceService — character-backed model seats (report item 6b)", () => {
+  test("start freezes the character card into the persisted seat; resume returns it", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const libChar = await stores.characters.create({
+      name: "Mila",
+      description: "Rival spy.",
+      defaultScenario: "Cold war Berlin.",
+      personalitySummary: "Sharp, guarded.",
+    } as never);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [
+        { id: "p1", label: "You", controller: "human" as const },
+        { id: "mila", label: "Mila", controller: "model" as const, providerProfileId: "pp_1", modelId: "m-1", characterId: libChar.id },
+        // Same character twice with different models — duplicates are legal.
+        { id: "mila2", label: "Mila (fast)", controller: "model" as const, providerProfileId: "pp_2", modelId: "m-2", characterId: libChar.id },
+      ],
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const seat = started.data.participants.find((p) => p.id === "mila");
+    expect(seat?.characterId).toBe(libChar.id);
+    expect(seat?.character).toEqual({
+      id: libChar.id,
+      name: "Mila",
+      description: "Rival spy.",
+      scenario: "Cold war Berlin.",
+      personality: "Sharp, guarded.",
+    });
+    const resumed = await service.resumeSession(started.data.sessionId);
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) return;
+    expect(resumed.data.participants.find((p) => p.id === "mila2")?.character?.name).toBe("Mila");
+  });
+
+  test("deleting the source character after start leaves the frozen snapshot intact", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const libChar = await stores.characters.create({ name: "Gone Soon", description: "Ephemeral." } as never);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp_1", modelId: "m-1", characterId: libChar.id }],
+    });
+    expect(started.ok).toBe(true);
+    await stores.characters.delete(libChar.id);
+    const resumed = await service.resumeSession(started.ok ? started.data.sessionId : "");
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) return;
+    const seat = resumed.data.participants.find((p) => p.id === "ai");
+    expect(seat?.character?.name).toBe("Gone Soon");
+    expect(seat?.characterId).toBe(libChar.id);
+  });
+
+  test("a dangling characterId at start is a clean 404 with no session", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp_1", modelId: "m-1", characterId: "no-such-char" }],
+    });
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.status).toBe(404);
+    expect(started.error.code).toBe("character_not_found");
+    // No session was created for the branch.
+    const active = await stores.experiences.getActiveSessionForBranch(branchId);
+    expect(active).toBeNull();
+  });
+
+  test("a human seat carrying characterId is rejected at the service boundary (schema mirror)", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const libChar = await stores.characters.create({ name: "X", description: "Y" } as never);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "p1", label: "You", controller: "human" as const, characterId: libChar.id }],
+    });
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.status).toBe(422);
+    expect(started.error.code).toBe("validation_error");
+  });
+});

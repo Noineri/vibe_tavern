@@ -247,7 +247,22 @@ const experienceParticipantFields = {
 
 /** Persisted/response participant shape. Optional assignment fields preserve
  * legacy session compatibility; NEW starts use the stricter schema below. */
-export const experienceParticipantSchema = z.object(experienceParticipantFields);
+export const experienceParticipantSchema = z.object({
+  ...experienceParticipantFields,
+  /** Frozen character-card snapshot (report item 6b) — server-authoritative,
+   * built at start; present on the response/persisted shape only, never
+   * accepted from a start request. Structurally mirrors the domain's
+   * ExperienceSeatCharacter. */
+  character: z
+    .object({
+      id: boundedId,
+      name: boundedLabel,
+      description: z.string(),
+      scenario: z.string().nullable().optional(),
+      personality: z.string().nullable().optional(),
+    })
+    .optional(),
+});
 
 /** NEW-session participant input: model seats pin both assignment fields while
  * human/script seats carry neither. Kept separate from the response schema so

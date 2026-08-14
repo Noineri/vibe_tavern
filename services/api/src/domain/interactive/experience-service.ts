@@ -401,11 +401,41 @@ export class ExperienceService {
     const participantError = validateParticipantsForStart(input.participants, grants);
     if (participantError !== null) return err(participantError);
 
+    // Report item 6b: freeze each character-backed model seat's card into the
+    // persisted roster. The card must exist at start (a clean 404 beats a silent
+    // label-only seat); after start, deleting the source character cannot
+    // corrupt the session — the snapshot is frozen inside participantsJson.
+    const enrichedParticipants: ExperienceParticipant[] = [];
+    for (const seat of input.participants) {
+      if (seat.characterId === undefined) {
+        enrichedParticipants.push(seat);
+        continue;
+      }
+      const characterRow = await this.stores.characters.getById(seat.characterId);
+      if (characterRow === null) {
+        return err({
+          status: 404,
+          code: "character_not_found",
+          message: `Participant '${seat.label || seat.id}' references character '${seat.characterId}' that was not found`,
+        });
+      }
+      enrichedParticipants.push({
+        ...seat,
+        character: {
+          id: characterRow.id,
+          name: characterRow.name,
+          description: characterRow.description,
+          scenario: characterRow.defaultScenario,
+          personality: characterRow.personalitySummary,
+        },
+      });
+    }
+
     // Run create under the real VM, with random injected only if granted.
     const seed = this.generateSeed();
     const numericSeed = seedToNumeric(seed);
     const createRng = createCountingRandom(numericSeed, 0);
-    const caps = this.buildCaps(grants, input.participants, createRng.random);
+    const caps = this.buildCaps(grants, enrichedParticipants, createRng.random);
     const created = runCreate(rules.code, rules.scriptName, input.settings, caps);
     if (!created.ok) return err(fromKernelError(created));
     const initialState = created.value;
@@ -415,7 +445,7 @@ export class ExperienceService {
     // attachment therefore records only an explicit public setup projection,
     // never the authoritative state supplied to the store below.
     const startViewer: ExperienceViewer = { kind: EXPERIENCE_VIEWER_KIND.observer };
-    const startCaps = this.buildCaps(grants, input.participants, undefined, createEphemeralRandom());
+    const startCaps = this.buildCaps(grants, enrichedParticipants, undefined, createEphemeralRandom());
     const startProjection = runProject(rules.code, rules.scriptName, initialState, startViewer, startCaps);
     if (!startProjection.ok) return err(fromKernelError(startProjection));
     const startActions = runActions(rules.code, rules.scriptName, initialState, startViewer, startCaps);
@@ -439,7 +469,7 @@ export class ExperienceService {
       manifestName: rules.definition.manifest.name,
       initialSettingsJson: safeStringify(input.settings),
       currentStateJson: safeStringify(initialState),
-      participantsJson: safeStringify(input.participants),
+      participantsJson: safeStringify(enrichedParticipants),
       capabilityGrantsJson: safeStringify(grants),
       contextMode: setup.data.contextMode,
       randomSeed: seed,
@@ -447,7 +477,7 @@ export class ExperienceService {
     }, (session) => this.reports.buildStartReport(session, {
       projection: startProjection.value,
       legalActions: startActions.value,
-      participants: input.participants,
+      participants: enrichedParticipants,
     }));
     if (!created_row.ok) {
       return err({
@@ -1164,6 +1194,14 @@ function validateParticipantsForStart(
         status: 422,
         code: "validation_error",
         message: `A ${p.controller}-controlled participant must not carry a providerProfileId or modelId`,
+      };
+    } else if (p.characterId !== undefined) {
+      // Mirror of the start schema: a character card is a model-seat identity
+      // layer only (report item 6b).
+      return {
+        status: 422,
+        code: "validation_error",
+        message: `A ${p.controller}-controlled participant must not carry a characterId`,
       };
     }
   }

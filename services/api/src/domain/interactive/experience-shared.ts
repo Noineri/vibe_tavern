@@ -28,6 +28,7 @@ export type ExperienceApiError =
   | { status: 404; code: "no_active_session"; message: string }
   | { status: 404; code: "script_not_found"; message: string }
   | { status: 404; code: "visual_not_found"; message: string }
+  | { status: 404; code: "character_not_found"; message: string }
   | { status: 404; code: "effect_not_found"; message: string }
   // 409 — conflict with current state
   | { status: 409; code: "stale_revision"; message: string; currentRevision: number }

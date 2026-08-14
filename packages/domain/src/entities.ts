@@ -593,6 +593,32 @@ export interface ExperienceParticipant {
    * field for the legacy-fallback + malformed-rejection semantics.
    */
   modelId?: string;
+  /**
+   * User-pulled library character behind this seat (report item 6b). Present
+   * only on model-controlled seats (the start schema enforces that). The live
+   * id rides along for per-character prompt-override lookup at effect time;
+   * the frozen card snapshot lives in {@link character}.
+   */
+  characterId?: string;
+  /**
+   * Frozen character-card snapshot captured at session start (report item
+   * 6b). The session keeps answering with this identity even after the source
+   * character is deleted from the library. Server-authoritative: built by the
+   * lifecycle at start, never accepted from a client start request.
+   */
+  character?: ExperienceSeatCharacter;
+}
+
+/** A frozen character-card snapshot for a model seat (report item 6b).
+ * Structurally compatible with the prompt-pipeline's context character
+ * snapshot (defined there because prompt-pipeline imports DOWN into domain —
+ * the domain copy is the authority for the persisted participant shape). */
+export interface ExperienceSeatCharacter {
+  id: string;
+  name: string;
+  description: string;
+  scenario?: string | null;
+  personality?: string | null;
 }
 
 /**
