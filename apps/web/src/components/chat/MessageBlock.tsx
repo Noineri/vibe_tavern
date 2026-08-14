@@ -54,8 +54,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const [variantControlsOverlay, setVariantControlsOverlay] = useState<VariantControlsOverlayState | null>(null);
   const variantControlsRef = useRef<HTMLSpanElement>(null);
   const variantOverlayTimerRef = useRef<number | undefined>(undefined);
-  const bottomPinRafRef = useRef<number | undefined>(undefined);
-  const bottomPinUntilRef = useRef(0);
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
   const msg = useDisplayMessage(input.messageId);
@@ -108,24 +106,27 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // -- Variant slide: direction derived locally to prevent phantom renders --
   const prevVariantIndexRef = useRef(selectedVariantIndex);
   const directionRef = useRef(1);
+  const hasMountedVariantRef = useRef(false);
 
   if (selectedVariantIndex !== prevVariantIndexRef.current) {
     directionRef.current = selectedVariantIndex > prevVariantIndexRef.current ? 1 : -1;
     prevVariantIndexRef.current = selectedVariantIndex;
   }
   const direction = directionRef.current;
+  const shouldAnimateVariant = hasMountedVariantRef.current;
+  useEffect(() => {
+    hasMountedVariantRef.current = true;
+  }, []);
 
   useEffect(() => {
     return () => {
       if (variantOverlayTimerRef.current !== undefined) window.clearTimeout(variantOverlayTimerRef.current);
-      if (bottomPinRafRef.current !== undefined) window.cancelAnimationFrame(bottomPinRafRef.current);
     };
   }, []);
 
   // Streaming text — only populated for the streaming-target block (see
   // useStreamingRevealedFor). Non-target blocks receive the stable EMPTY
   // sentinel, so these are "" and never trigger downstream re-renders.
-  const globalStreamingText = streamingReveal.streamingText;
   const globalStreamingRevealedText = streamingReveal.revealedText;
   const globalStreamingReasoning = streamingReveal.reasoningText;
 
@@ -207,39 +208,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const renderContent = activeContent;
   const greetingActive = isGreeting && !isUser && variantCount > 1;
 
-  const isStreamingHere = !isUser && isStreamingTarget && (globalStreamingText || globalStreamingReasoning);
-  const activeStreamingText = isStreamingHere ? globalStreamingText : null;
+  const isStreamingHere = !isUser && isStreamingTarget && !!(globalStreamingRevealedText || globalStreamingReasoning);
   const activeStreamingRevealedText = isStreamingHere ? globalStreamingRevealedText : "";
   const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
 
   // Reasoning from persisted variant data only (not streaming)
   const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
-
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // ⚠️  FRAGILE — Variant Switch Bottom Pinning
-  // ⚠️  DO NOT REMOVE OR "SIMPLIFY" without manually testing long↔short swipes.
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  const pinVirtuosoToBottomDuringVariantSwitch = () => {
-    bottomPinUntilRef.current = Math.max(bottomPinUntilRef.current, performance.now() + 900);
-    if (bottomPinRafRef.current !== undefined) return;
-
-    const pin = () => {
-      const scroller = document.querySelector<HTMLElement>('[data-virtuoso-scroller="true"]');
-      if (scroller) {
-        scroller.scrollTop = scroller.scrollHeight;
-      }
-
-      if (performance.now() < bottomPinUntilRef.current) {
-        bottomPinRafRef.current = window.requestAnimationFrame(pin);
-      } else {
-        if (scroller) scroller.scrollTop = scroller.scrollHeight;
-        bottomPinRafRef.current = undefined;
-      }
-    };
-
-    pin();
-  };
 
   const handleSelectVariant = (targetIndex: number, swipeDirection: SwipeDirection) => {
     const controlsRect = variantControlsOverlay?.rect ?? variantControlsRef.current?.getBoundingClientRect();
@@ -252,7 +227,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       }, 450);
     }
 
-    if (!isMobile && !isGreeting) pinVirtuosoToBottomDuringVariantSwitch();
     const targetVariant = variants[targetIndex];
     if (!targetVariant) return;
     useSnapshotStore.getState().selectVariant(msg.id, targetVariant.variantIndex, swipeDirection);
@@ -356,8 +330,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   ) : isStreamingHere ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-        {activeStreamingText ? <StreamingMarkdown text={activeStreamingRevealedText} /> : null}
-        <GenerationDots label={t("generating_response")} />
+        <StreamingMarkdown
+          text={activeStreamingRevealedText}
+          indicator={<GenerationDots label={t("generating_response")} />}
+        />
       </div>
     </div>
   ) : (
@@ -373,7 +349,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           <AnimatePresence initial={false}>
             <motion.div
               key={`v-${selectedVariantIndex}`}
-              initial={{ x: direction * 40, opacity: 0 }}
+              initial={shouldAnimateVariant ? { x: direction * 40, opacity: 0 } : false}
               animate={{ x: 0, opacity: 1 }}
               transition={{ type: "spring", stiffness: 400, damping: 35 }}
               translate="yes"
@@ -528,4 +504,3 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 function isBreakoutRole(role: string): boolean {
   return role === "tool";
 }
-

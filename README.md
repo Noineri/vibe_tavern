@@ -12,7 +12,7 @@
 ![GitHub Downloads](https://shieldcn.dev/github/downloads/Noineri/vibe_tavern.svg?variant=secondary)
 ![GitHub Stars](https://www.shieldcn.dev/github/stars/Noineri/vibe_tavern.svg?variant=secondary&size=sm&theme=zinc)
 
-[Русский](./README_NEXT.ru.md) · **English**
+[Русский](./README.ru.md) · **English**
 
 ---
 
