@@ -122,6 +122,15 @@ mock.module("../../../../hooks/use-mobile.js", () => ({
   useIsMobile: () => mobileOverride,
 }));
 
+// The copilot profile modal (opened by the session-line gear) is tested in its
+// own suite — stub it here so the gear test only pins the gear → modal wiring
+// (click sets profileModalOpen → the modal mounts). SAFE: capture real first.
+const realCopilotProfileModal = await import("./CopilotProfileModal.js");
+mock.module("./CopilotProfileModal.js", () => ({
+  ...realCopilotProfileModal,
+  CopilotProfileModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="copilot-profile-modal-stub" /> : null),
+}));
+
 // Radix Popover.Content never mounts under happy-dom (Popper anchors via a 0x0
 // getBoundingClientRect — see LinkBindingPopover.test.tsx). Render it inline so
 // the ExperienceSessionSwitcher's session list is clickable here.
@@ -426,6 +435,21 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
     expect(getByTestId("copilot-sandbox-modal")).toBeDefined();
     // The shared playground element mounts inside the modal.
     expect(getByTestId("experience-playground")).toBeDefined();
+  });
+});
+
+describe("ExperienceCopilotShell — copilot profile gear (CP-8)", () => {
+  it("opens the profile modal from the session-line gear button", async () => {
+    const { getByTestId, queryByTestId } = renderShell();
+    await flushSessionLoad();
+
+    // The gear lives on the session line (rendered once a thread exists).
+    expect(getByTestId("copilot-profile-gear-btn")).toBeDefined();
+    expect(queryByTestId("copilot-profile-modal-stub")).toBeNull();
+
+    fireEvent.click(getByTestId("copilot-profile-gear-btn"));
+
+    expect(getByTestId("copilot-profile-modal-stub")).toBeDefined();
   });
 });
 

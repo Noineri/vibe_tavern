@@ -73,6 +73,7 @@ const seamScript: ScriptRecord = {
   enabled: false,
   sortOrder: 0,
   defaultVisualId: null,
+  copilotProfileId: null,
 };
 
 const seamVisual: ExperienceVisualRow = {

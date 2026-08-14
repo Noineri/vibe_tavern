@@ -88,6 +88,7 @@ const baseScript: ScriptRecord = {
   enabled: false,
   sortOrder: 0,
   defaultVisualId: null,
+  copilotProfileId: null,
 };
 
 const baseVisual: ExperienceVisualRow = {

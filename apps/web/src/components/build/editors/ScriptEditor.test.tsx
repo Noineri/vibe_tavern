@@ -135,6 +135,7 @@ const baseScript: ScriptRecord = {
   enabled: true,
   sortOrder: 0,
   defaultVisualId: null,
+  copilotProfileId: null,
 };
 
 let serverScript: ScriptRecord;

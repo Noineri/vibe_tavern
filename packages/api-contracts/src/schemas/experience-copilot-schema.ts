@@ -206,3 +206,24 @@ export const copilotProfileSchema = z.object({
 export type CopilotProfile = z.infer<typeof copilotProfileSchema>;
 
 export const copilotProfileListSchema = z.array(copilotProfileSchema);
+
+/**
+ * Input for creating a user profile. `id` is assigned by the store; `isBuiltIn`
+ * is always `false` for user-created profiles (enforced server-side, never
+ * accepted from the client). Leaner than `CoauthorModuleCreate` — no
+ * `description`, no `openingMessage`.
+ */
+export const copilotProfileCreateSchema = z.object({
+  name: z.string().min(1),
+  basePrompt: z.string().min(1),
+  skillIds: z.array(z.string().min(1)),
+  toolSet: copilotToolSetSchema,
+  maxSteps: z.number().int().min(COPILOT_MAX_STEPS_MIN).max(COPILOT_MAX_STEPS_MAX),
+});
+
+export type CopilotProfileCreate = z.infer<typeof copilotProfileCreateSchema>;
+
+/** Partial update for a user profile. Every field is optional. */
+export const copilotProfileUpdateSchema = copilotProfileCreateSchema.partial();
+
+export type CopilotProfileUpdate = z.infer<typeof copilotProfileUpdateSchema>;

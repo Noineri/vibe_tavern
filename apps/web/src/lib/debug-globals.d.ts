@@ -17,6 +17,8 @@ declare global {
     __useSessionStore: typeof import("../stores/session-store").useSessionStore;
     __useSceneRenderStore: typeof import("../stores/scene-render-store").useSceneRenderStore;
     __useCoauthorSkillStore: typeof import("../stores/coauthor-skill-store").useCoauthorSkillStore;
+    __useCopilotProfileStore: typeof import("../stores/copilot-profile-store").useCopilotProfileStore;
+    __useCopilotSkillStore: typeof import("../stores/copilot-skill-store").useCopilotSkillStore;
     __useMessageAiEditorStore: typeof import("../stores/message-ai-editor-store").useMessageAiEditorStore;
     __setLorebookView: (view: "pick" | "list" | "editor") => void;
     __setLorebookTab: (tab: "lorebooks" | "scripts") => void;

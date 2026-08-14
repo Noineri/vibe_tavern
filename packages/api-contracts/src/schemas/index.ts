@@ -203,6 +203,8 @@ export {
   copilotToolSetSchema,
   copilotProfileSchema,
   copilotProfileListSchema,
+  copilotProfileCreateSchema,
+  copilotProfileUpdateSchema,
   COPILOT_TOOL_KEYS,
   COPILOT_MAX_STEPS_MIN,
   COPILOT_MAX_STEPS_MAX,
@@ -218,6 +220,8 @@ export type {
   ExperienceCopilotBoundVisual,
   CopilotToolSet,
   CopilotProfile,
+  CopilotProfileCreate,
+  CopilotProfileUpdate,
 } from "./experience-copilot-schema.js";
 
 export {

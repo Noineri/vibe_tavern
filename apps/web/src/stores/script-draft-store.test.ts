@@ -23,6 +23,7 @@ const script: ScriptRecord = {
   enabled: true,
   sortOrder: 0,
   defaultVisualId: null,
+  copilotProfileId: null,
 };
 
 describe("script draft store", () => {

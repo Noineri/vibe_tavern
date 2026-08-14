@@ -61,6 +61,7 @@ export function pendingScriptRecord(id: string, values: InteractiveRulesDraftVal
     personaId: null,
     chatId: null,
     defaultVisualId: null,
+    copilotProfileId: null,
     sortOrder: 0,
   };
 }

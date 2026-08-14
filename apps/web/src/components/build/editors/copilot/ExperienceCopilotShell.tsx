@@ -27,6 +27,7 @@ import {
   activateExperienceCopilotSession,
 } from "../../../../api/experience-copilot-api.js";
 import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
+import { CopilotProfileModal } from "./CopilotProfileModal.js";
 import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
 import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
 import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
@@ -82,6 +83,10 @@ export interface ExperienceCopilotShellProps {
    *  Defaults to false — the shell is byte-identical to the ER-13b′ surface
    *  (2-position toggle + tester/preview/sandbox modals). */
   creationMode?: boolean;
+  /** The copilot profile currently assigned to this experience
+   *  (`scripts.copilotProfileId`), or null (built-in seed). Drives the gear
+   *  button's profile modal highlight + assignment (CP-8/CP-9). */
+  assignedProfileId?: string | null;
 }
 
 type MobileTab = "chat" | "edit";
@@ -97,6 +102,7 @@ export function ExperienceCopilotShell({
   rulesToolbar,
   visualToolbar,
   creationMode = false,
+  assignedProfileId = null,
 }: ExperienceCopilotShellProps) {
   const isMobile = useIsMobile();
   const { t } = useT();
@@ -122,6 +128,7 @@ export function ExperienceCopilotShell({
   const [testerOpen, setTesterOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [sandboxOpen, setSandboxOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // ER-14: the latest test/simulate digest the user sent back from the test
   // panel (set by `handleSendToCopilot`). Carried on EVERY subsequent copilot
@@ -341,6 +348,16 @@ export function ExperienceCopilotShell({
               onActivate={handleActivate}
               onNew={handleNewSession}
             />
+            <button
+              type="button"
+              data-testid="copilot-profile-gear-btn"
+              aria-label={t("copilot_profile_title")}
+              title={t("copilot_profile_title")}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1"
+              onClick={() => setProfileModalOpen(true)}
+            >
+              <Icons.Settings className="h-3.5 w-3.5" />
+            </button>
           </div>
           <ExperienceCopilotMessageList
             threadId={threadId}
@@ -510,6 +527,13 @@ export function ExperienceCopilotShell({
           {playground}
         </ShellModal>
       )}
+
+      <CopilotProfileModal
+        scriptId={scriptId}
+        assignedProfileId={assignedProfileId}
+        isOpen={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+      />
     </>
   );
 

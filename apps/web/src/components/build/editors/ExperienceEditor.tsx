@@ -774,6 +774,7 @@ export function ExperienceEditor() {
       <div className="flex min-h-0 flex-1">
         <ExperienceCopilotShell
           scriptId={activeScript.id}
+          assignedProfileId={activeScript.copilotProfileId ?? null}
           creationMode={creationMode}
           rulesCode={activeScript.code}
           onRulesChange={(code) => updateScriptDraft({ code })}

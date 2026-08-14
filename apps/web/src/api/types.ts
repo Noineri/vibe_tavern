@@ -533,6 +533,9 @@ export interface ScriptRecord {
   /** Default visual paired with this experience (interactive scripts only).
    *  Null for non-interactive and pre-existing rows. */
   defaultVisualId: string | null;
+  /** Copilot profile assigned to this experience (interactive scripts only).
+   *  Soft link; null = use the built-in seed. */
+  copilotProfileId: string | null;
 }
 
 export interface ScriptLinkRecord {

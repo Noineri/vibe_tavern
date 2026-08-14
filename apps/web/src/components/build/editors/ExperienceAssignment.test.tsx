@@ -104,6 +104,7 @@ function scriptRec(id: string, name: string, scriptKind: string, defaultVisualId
     enabled: true,
     sortOrder: 0,
     defaultVisualId,
+    copilotProfileId: null,
   };
 }
 
