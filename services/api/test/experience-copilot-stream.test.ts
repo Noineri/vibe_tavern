@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
+import { describe, expect, it, beforeEach } from "bun:test";
 import type { LanguageModel } from "ai";
 import type {
   ExperienceCopilotStore,
@@ -8,28 +8,22 @@ import type {
 } from "@vibe-tavern/db";
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow } from "@vibe-tavern/db";
 
-// ─── Mock streamText before importing the module under test ──────────────────
-//
-// The safe mock.module pattern (see AGENTS.md gotcha): capture the REAL module
-// first via `await import`, then spread `...real` in the factory so every other
-// export stays intact for any other test file in the same `bun test` process.
-// `streamText` delegates to a mutable `streamTextImpl` that defaults to the real
-// implementation and is overridden per-test then restored in afterEach.
-const real = await import("ai");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let streamTextImpl: any = real.streamText;
-mock.module("ai", () => ({
-  ...real,
-  streamText: (opts: unknown) => streamTextImpl(opts),
-}));
-
-const { streamExperienceCopilot } = await import(
-  "../src/domain/interactive/copilot/experience-copilot-stream.js"
-);
+import { streamExperienceCopilot } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
 import type {
   ExperienceCopilotStreamDeps,
   ExperienceCopilotStreamEvent,
 } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
+
+// ─── Fake streamText (injected via deps; no mock.module) ─────────────────────
+//
+// `mock.module("ai", …)` under bun:test is process-global AND permanent:
+// neither `mock.restore()` nor re-registering a real-returning factory undoes
+// it (verified with a two-file experiment). Its `streamText` override leaked
+// into later files and hung `provider-proxy-traversal`'s real AI SDK test.
+// `streamText` is now a deps field that defaults to the real one (see
+// ExperienceCopilotStreamDeps.streamText); each test sets `streamTextImpl`
+// here and makeDeps injects it. `undefined` → production uses the real function.
+let streamTextImpl: ((opts: unknown) => unknown) | undefined;
 
 // ─── Fake store ──────────────────────────────────────────────────────────────
 
@@ -157,6 +151,11 @@ function makeDeps(
     getProviderProfile: async () => profile,
     getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
+    // Inject the per-test fake; undefined falls through to the real streamText
+    // (the deps default). Cast at this type-erased seam: the fake returns a
+    // partial FullStream shape (see makeFakeStreamTextResult), not the SDK's
+    // full StreamTextResult, but production only reads `.stream`.
+    streamText: streamTextImpl as unknown as ExperienceCopilotStreamDeps["streamText"],
     ...overrides,
   };
 }
@@ -197,10 +196,7 @@ const toolResult = (toolCallId: string, toolName: string, output: unknown) =>
 
 describe("experience-copilot stream (ER-6)", () => {
   beforeEach(() => {
-    streamTextImpl = real.streamText;
-  });
-  afterEach(() => {
-    streamTextImpl = real.streamText;
+    streamTextImpl = undefined;
   });
 
   it("emits text-delta + finish for a plain text turn", async () => {

@@ -121,6 +121,13 @@ export interface ExperienceCopilotStreamDeps {
   /** Max tool-loop steps for the multi-step loop (mirrors co-author maxSteps).
    *  Default {@link EXPERIENCE_COPILOT_MODULE.maxSteps}. */
   readonly maxSteps?: number;
+  /** The AI SDK streaming function. Defaults to the real `streamText` from "ai".
+   *  Injectable so tests can substitute a fake WITHOUT `mock.module("ai")` —
+   *  under bun:test that mock is process-global and permanent (neither
+   *  `mock.restore()` nor re-registration undoes it; see AGENTS.md gotcha), and
+   *  its `streamText` override leaks into later files, hanging their real AI
+   *  SDK usage. Production wiring omits this field and gets the real function. */
+  readonly streamText?: typeof streamText;
 }
 
 // DEFAULT_MAX_STEPS moved to EXPERIENCE_COPILOT_MODULE.maxSteps (ER-16) — the
@@ -354,9 +361,10 @@ export async function* streamExperienceCopilot(
 
   const modelMessages = toModelMessages(assembled.messages);
 
+  const stream = deps.streamText ?? streamText;
   let result: ReturnType<typeof streamText>;
   try {
-    result = streamText({
+    result = stream({
       model: aiModel,
       messages: modelMessages,
       allowSystemInMessages: true,
