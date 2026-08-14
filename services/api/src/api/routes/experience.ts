@@ -133,9 +133,12 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     })
     // Run one pending model effect to a terminal state and feed the result
     // back into the reducer. The request signal wires client-disconnect →
-    // `cancelled` (Wave 4 durable interruption policy).
+    // `cancelled` (Wave 4 durable interruption policy). Timer effects are
+    // host-scheduled (fix step 2c): the adapter refuses to run them and flags
+    // `hostScheduled`, answered 202 — the host scheduler owns their firing.
     .post("/api/experience/effects/:effectId/run", async (c) => {
-      return c.json(await runtime.runExperienceEffect(c.req.param("effectId"), c.req.raw.signal));
+      const result = await runtime.runExperienceEffect(c.req.param("effectId"), c.req.raw.signal);
+      return c.json(result, result.hostScheduled ? 202 : 200);
     })
 
     // ── Context capture + status (IR-70D) ────────────────────────────────────

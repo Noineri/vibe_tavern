@@ -389,6 +389,55 @@ async function seedChatAndScript(
 }
 
 describe("Experience routes — integration (real services + DB)", () => {
+	test("a timer effect run via HTTP is 202 host-scheduled and NOT executed", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		// A timer game with participants so the model-viewer tick resolves.
+		const timerSource = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "timer-routes", name: "Timer Routes" },
+  capabilities: [{ capability: "participants" }, { capability: "model" }],
+  create() { return { rounds: 0 }; },
+  project(c) { return { rounds: c.state.rounds }; },
+  actions() { return [{ type: "arm" }, { type: "tick" }]; },
+  reduce(c, a) {
+    if (a.type === "arm") {
+      return { state: c.state, status: "active", events: [], effects: [{ kind: "timer", request: { viewer: "model", actionType: "tick", afterMs: 60000 } }] };
+    }
+    return { state: c.state, status: "active", events: [] };
+  },
+});
+`;
+		const grants: ExperienceCapability[] = ["participants", "model"];
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, timerSource, grants);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [
+				{ id: "human", label: "You", controller: "human" },
+				{ id: "model", label: "AI", controller: "model", providerProfileId: "pp1", modelId: "m" },
+			], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+		const arm = await app.request(`/api/experience/sessions/${sid}/actions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ type: "arm", requestId: "r1", expectedRevision: 0, participantId: "human" }),
+		});
+		expect(arm.status).toBe(200);
+		const effects = await app.request(`/api/experience/sessions/${sid}/effects`);
+		const rows = await jsonBody(effects);
+		const timer = (rows as { id: string; kind: string; status: string }[]).find((e) => e.kind === "timer");
+		expect(timer).toBeDefined();
+
+		// The HTTP path never runs a timer: 202, hostScheduled flag, row untouched.
+		const run = await app.request(`/api/experience/effects/${timer.id}/run`, { method: "POST" });
+		expect(run.status).toBe(202);
+		const body = await jsonBody(run);
+		expect(body.hostScheduled).toBe(true);
+		expect(body.delivered).toBe(false);
+		expect(body.effect.status).toBe("pending");
+	});
+
 	test("start on an unknown chat is 404 chat_not_found", async () => {
 		const { app } = await setupIntegration();
 		const res = await app.request("/api/chats/unknown/experience/sessions", {

@@ -1,4 +1,4 @@
-import { eq, and, isNull, isNotNull, asc, desc, inArray } from 'drizzle-orm';
+import { eq, and, isNull, isNotNull, asc, desc, inArray, gt } from 'drizzle-orm';
 import {
   experienceSessions,
   experienceSteps,
@@ -755,6 +755,34 @@ export class ExperienceStore {
       .where(eq(experienceEffects.status, 'running'))
       .returning();
     return rows.length;
+  }
+
+  /**
+   * Bulk-cancel the pending effects of one kind in a session whose
+   * `originatingRevision` is strictly above `revision` — the undo path uses this
+   * so timers spawned by steps that no longer exist in the rewound timeline
+   * never fire (undo appends a new revision, so their feed-back CAS would be
+   * stale anyway; cancelling keeps the scheduler from doing pointless work and
+   * reads as `cancelled` instead of a fake `succeeded`-but-undelivered).
+   * Returns the ids of the effects actually cancelled.
+   */
+  async cancelPendingEffectsAboveRevision(
+    sessionId: string,
+    revision: number,
+    kind: ExperienceEffectKind,
+  ): Promise<string[]> {
+    const now = this.clock.now();
+    const rows = await this.db
+      .update(experienceEffects)
+      .set({ status: 'cancelled', updatedAt: now })
+      .where(and(
+        eq(experienceEffects.sessionId, sessionId),
+        eq(experienceEffects.kind, kind),
+        eq(experienceEffects.status, 'pending'),
+        gt(experienceEffects.originatingRevision, revision),
+      ))
+      .returning({ id: experienceEffects.id });
+    return rows.map((r) => r.id);
   }
 
   /**

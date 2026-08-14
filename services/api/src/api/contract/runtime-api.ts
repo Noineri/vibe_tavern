@@ -571,6 +571,10 @@ export type ExperienceActionResponse = ExperienceSessionResponse & {
 export interface ExperienceEffectRunResponse {
 	effect: ExperienceEffectRow;
 	delivered: boolean;
+	/** Present when this path did NOT run the effect because the host owns it:
+	 *  `timer` effects are scheduler-driven (fix step 2c) — the route answers
+	 *  202 and the row stays whatever the scheduler made it. */
+	hostScheduled?: boolean;
 	/** Machine-readable failure reason when status is `failed`. */
 	error?: string;
 	session?: ExperienceSessionResponse;

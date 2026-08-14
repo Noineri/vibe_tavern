@@ -473,7 +473,7 @@ describe("ExperienceLauncher — durable pending effects", () => {
     setScopeState(SCOPE_KEY, {
       config: makeConfig(),
       session: makeSession(),
-      effects: [{ id: "eff_1", status: "pending" }],
+      effects: [{ id: "eff_1", kind: "model", status: "pending" }],
       modalOpen: true,
     });
     storeMocks.runEffect.mockResolvedValue({ effect: { id: "eff_1", status: "succeeded" }, delivered: true });
@@ -504,7 +504,7 @@ describe("ExperienceLauncher — durable pending effects", () => {
     setScopeState(SCOPE_KEY, {
       config: makeConfig(),
       session: makeSession(),
-      effects: [{ id: "eff_1", status: "pending" }],
+      effects: [{ id: "eff_1", kind: "model", status: "pending" }],
       modalOpen: false,
       detached: true,
     });
@@ -700,7 +700,7 @@ describe("ExperienceLauncher — defect #2: config change resets local UI + invi
     setScopeState(SCOPE_KEY, {
       config: makeConfig({ launcherVisible: false }),
       session: makeSession(),
-      effects: [{ id: "eff_1", status: "pending" }],
+      effects: [{ id: "eff_1", kind: "model", status: "pending" }],
       modalOpen: true,
     });
     render(<ExperienceLauncher />);

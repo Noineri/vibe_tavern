@@ -153,14 +153,17 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   const sessionId = session?.sessionId ?? null;
 
   // ── Durable model effect runner (only while the modal surface owns effects) ─
-  // Runs only `pending` rows, one at a time, through an abortable
-  // store.runEffect. Never auto-repeats running/unknown/failed. The store
-  // rehydrates after each run, re-triggering for the next pending row. A
-  // genuine session change aborts the in-flight run.
+  // Runs only `pending` MODEL rows, one at a time, through an abortable
+  // store.runEffect. Timer effects are host-scheduled (fix step 2c): the
+  // server answers 202 without running them, so they MUST be skipped here or
+  // this loop would re-call the route forever. Never auto-repeats
+  // running/unknown/failed. The store rehydrates after each run, re-triggering
+  // for the next pending row. A genuine session change aborts the in-flight
+  // run.
   useEffect(() => {
     if (!surfaceOwnsEffects) return;
     if (effectRunRef.current) return; // one at a time
-    const pending = effects.find((e) => e.status === EXPERIENCE_EFFECT_STATUS.pending);
+    const pending = effects.find((e) => e.status === EXPERIENCE_EFFECT_STATUS.pending && e.kind === "model");
     if (!pending) return;
     const controller = new AbortController();
     effectRunRef.current = controller;

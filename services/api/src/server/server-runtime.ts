@@ -36,6 +36,8 @@ import { ExperienceService } from "../domain/interactive/experience-service.js";
 import { ExperienceReplayService } from "../domain/interactive/experience-replay-service.js";
 import { ExperienceContextService } from "../domain/interactive/experience-context-service.js";
 import { ExperienceModelEffectService } from "../domain/interactive/experience-model-effect-service.js";
+import { ExperienceTimerEffectService } from "../domain/interactive/experience-timer-effect-service.js";
+import { ExperienceTimerScheduler } from "../domain/interactive/experience-timer-scheduler.js";
 import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import type { RandomSource } from "@vibe-tavern/domain";
@@ -213,6 +215,18 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		providerProfiles: providerProfileService,
 		executeStructured: generateStructuredActionChoice,
 	});
+	// Timer effects are host-driven (they must fire with the page closed): the
+	// service owns the claim → sleep → tick lifecycle, the scheduler owns
+	// discovery. afterMs counts from claim — restart restarts the countdown.
+	const experienceTimerEffectService = new ExperienceTimerEffectService({
+		stores,
+		experienceService,
+	});
+	const experienceTimerScheduler = new ExperienceTimerScheduler({
+		stores,
+		timerEffects: experienceTimerEffectService,
+		onError: (error) => console.error("[experience] timer scheduler:", error),
+	});
 	const runtime = new RuntimeApiAdapter(
 		stores,
 		providerProfileService,
@@ -260,6 +274,16 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 
 	addRuntimeTeardown(() => quotaService.stop());
 	await quotaService.start();
+
+	// Durable-effect reconciliation + the host timer loop. `reconcileUnknownEffects`
+	// folds `running` rows left by the previous process (crash or shutdown — the
+	// scheduler's stop() deliberately does NOT abort in-flight sleeps) into
+	// `unknown`, the same recovery the model-effect path documents. The
+	// scheduler then picks up every still-`pending` timer across all sessions.
+	const reconciled = await stores.experiences.reconcileUnknownEffects();
+	if (reconciled > 0) console.log(`${tag} Reconciled ${reconciled} interrupted experience effect(s) to unknown.`);
+	addRuntimeTeardown(() => experienceTimerScheduler.stop());
+	experienceTimerScheduler.start();
 
 	console.log(`${tag} Application ready.`);
 	return app;

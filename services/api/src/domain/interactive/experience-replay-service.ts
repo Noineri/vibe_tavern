@@ -183,6 +183,15 @@ export class ExperienceReplayService {
       });
     }
 
+    // Undo cancels pending timer effects whose spawn steps (revisions above
+    // the target) no longer exist in the rewound timeline — otherwise the host
+    // scheduler would still fire them into a CAS that must reject (undo
+    // appended a revision, so `originatingRevision` can never match again) and
+    // they would read as a fake `succeeded`-but-undelivered. Model effects are
+    // left to their existing stale-completion semantics (their run is
+    // user-awaited; the feed-back CAS already guards correctness).
+    await this.stores.experiences.cancelPendingEffectsAboveRevision(sessionId, targetRevision, "timer");
+
     const session = this.toView(applied.session);
     return ok({
       session,

@@ -290,11 +290,21 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 
 	/** Run one model effect to a terminal state and feed the result back into the
 	 *  reducer. The route passes the HTTP request signal so a client disconnect
-	 *  persists `cancelled` (Wave 4 durable interruption policy). */
+	 *  persists `cancelled` (Wave 4 durable interruption policy).
+	 *
+	 *  `timer` effects are HOST-scheduled (fix step 2c): they must fire with the
+	 *  page closed, so this path never runs them — it returns the row with
+	 *  `hostScheduled: true` and the route answers 202. The frontend learns about
+	 *  applied ticks through its existing session resync. */
 	runExperienceEffect = async (
 		effectId: string,
 		signal?: AbortSignal,
 	): Promise<import("../contract/runtime-api.js").ExperienceEffectRunResponse> => {
+		const existing = await this.lifecycle.getEffect(effectId);
+		if (!existing.ok) throw mapError(existing.error);
+		if (existing.data.kind === "timer") {
+			return { effect: existing.data, delivered: false, hostScheduled: true };
+		}
 		const run = await this.modelEffect.runEffect(effectId, signal);
 		if (!run.ok) throw mapError(run.error);
 		const outcome = run.data;

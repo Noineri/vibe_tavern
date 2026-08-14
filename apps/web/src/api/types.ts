@@ -768,6 +768,9 @@ export interface ExperienceRecalculationPreview {
 export interface ExperienceEffectRunResponse {
   effect: ExperienceEffectRow;
   delivered: boolean;
+  /** Present when the host owns this effect's execution (timer effects are
+   *  host-scheduled; the route answered 202 and ran nothing). */
+  hostScheduled?: boolean;
   /** Machine-readable failure reason when status is `failed`. */
   error?: string;
   session?: ExperienceSessionResponse;

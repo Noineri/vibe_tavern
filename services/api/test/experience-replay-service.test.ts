@@ -67,6 +67,28 @@ context.experience.register({
 });
 `;
 
+// A timer game for the undo→cancel interplay (fix step 2c): every "arm"
+// spawns a pending tick 5s out.
+const TIMER_UNDO_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "timer-undo", name: "Timer Undo" },
+  capabilities: [],
+  create() { return { rounds: 0 }; },
+  project(c) { return { rounds: c.state.rounds }; },
+  actions() { return [{ type: "arm" }, { type: "tick" }]; },
+  reduce(c, a) {
+    if (a.type === "arm") {
+      return { state: { rounds: c.state.rounds }, status: "active", events: [], effects: [{ kind: "timer", request: { viewer: "model", actionType: "tick", afterMs: 5000 } }] };
+    }
+    if (a.type === "tick") {
+      return { state: { rounds: c.state.rounds + 1 }, status: "active", events: [] };
+    }
+    return { state: c.state, status: "active", events: [] };
+  },
+});
+`;
+
 // ─── Setup ───────────────────────────────────────────────────────────────────
 
 let stores: StoreContainer;
@@ -182,6 +204,37 @@ describe("ExperienceReplayService — append-only undo", () => {
     expect(same.error.code).toBe("validation_error");
     const future = await replay.undoToRevision(sid, 5);
     expect(future.ok).toBe(false);
+  });
+});
+
+describe("ExperienceReplayService — undo cancels pending timers above the target (fix step 2c)", () => {
+  test("undo below the timer's spawn revision cancels it; undo above keeps it pending", async () => {
+    // rev 1: arm (spawns a pending timer at originatingRevision 1); rev 2: arm again (timer at rev 2).
+    const sid = await playSession(TIMER_UNDO_SOURCE, [{ type: "arm" }, { type: "arm" }]);
+    let effects = await stores.experiences.getEffectsForSession(sid);
+    expect(effects).toHaveLength(2);
+    expect(effects.every((e) => e.kind === "timer" && e.status === "pending")).toBe(true);
+
+    // Undo to rev 0 (below both spawns): both timers are cancelled — their
+    // spawn steps no longer exist in the rewound timeline.
+    const undo = await replay.undoToRevision(sid, 0);
+    expect(undo.ok).toBe(true);
+    effects = await stores.experiences.getEffectsForSession(sid);
+    expect(effects.every((e) => e.status === "cancelled")).toBe(true);
+  });
+
+  test("undo to a revision at or above the spawn keeps the timer pending", async () => {
+    // rev 1: arm (timer spawns at rev 1); rev 2: arm again (timer at rev 2).
+    const sid = await playSession(TIMER_UNDO_SOURCE, [{ type: "arm" }, { type: "arm" }]);
+    // Undo to rev 1 — at the first timer's spawn revision (still in the
+    // timeline): timer@1 stays pending, timer@2 cancels.
+    const undo = await replay.undoToRevision(sid, 1);
+    expect(undo.ok).toBe(true);
+    const effects = await stores.experiences.getEffectsForSession(sid);
+    expect(effects).toHaveLength(2);
+    const byRev = new Map(effects.map((e) => [e.originatingRevision, e.status]));
+    expect(byRev.get(1)).toBe("pending");
+    expect(byRev.get(2)).toBe("cancelled");
   });
 });
 

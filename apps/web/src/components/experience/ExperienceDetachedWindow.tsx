@@ -279,15 +279,18 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
     frameRef.current?.sendPending(pendingPhase);
   }, [frameReady, pendingPhase]);
 
-  // ── Run durable pending model effects one at a time (IR-73B) ──────────────
-  // Only `pending` rows auto-run; `running`/`unknown`/`failed`/`succeeded`
-  // never repeat. An in-flight run blocks a new start; the store rehydrates
-  // after each run, re-triggering this effect for the next pending row. A
-  // genuine session change aborts the in-flight run.
+  // ── Run durable pending model effects one at a time (IR-73B) ─
+  // Only `pending` MODEL rows auto-run (timer effects are host-scheduled,
+  // fix step 2c — the server answers 202 without running them, so they MUST
+  // be skipped here or this loop would re-call the route forever);
+  // `running`/`unknown`/`failed`/`succeeded` never repeat. An in-flight run
+  // blocks a new start; the store rehydrates after each run, re-triggering
+  // this effect for the next pending row. A genuine session change aborts
+  // the in-flight run.
   useEffect(() => {
     if (!session) return;
     if (effectRunRef.current) return; // one at a time
-    const pending = storeEffects.find((e) => e.status === EXPERIENCE_EFFECT_STATUS.pending);
+    const pending = storeEffects.find((e) => e.status === EXPERIENCE_EFFECT_STATUS.pending && e.kind === "model");
     if (!pending) return;
     const controller = new AbortController();
     effectRunRef.current = controller;

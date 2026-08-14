@@ -296,6 +296,50 @@ describe("ExperienceStore — durable-effect lifecycle", () => {
     await store.claimEffect(timers[0].id);
     expect(await store.getPendingEffectsByKind("timer")).toHaveLength(1);
   });
+
+  test("cancelPendingEffectsAboveRevision cancels only pending rows of the kind above the revision", async () => {
+    // beforeEach left a pending model effect at rev 1; the timer test above ran
+    // in its own beforeEach world: this test builds its own rows from scratch.
+    // Session state: rev 0 → three transitions → timers at revs 1, 2, 3.
+    await store.applyTransition(
+      baseTransition({
+        requestId: "req_t_low",
+        expectedRevision: 1,
+        emittedEffectsJson: '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":1000}}]',
+      }),
+    );
+    await store.applyTransition(
+      baseTransition({
+        requestId: "req_t_mid",
+        expectedRevision: 2,
+        emittedEffectsJson: '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":1000}}]',
+      }),
+    );
+    await store.applyTransition(
+      baseTransition({
+        requestId: "req_t_high",
+        expectedRevision: 3,
+        emittedEffectsJson:
+          '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":1000}},{"kind":"model","request":{"prompt":"reply"}}]',
+      }),
+    );
+
+    // Undo to rev 1: timers at revs 2, 3, 4 must cancel (their spawn steps no
+    // longer exist in the rewound timeline); the beforeEach model effect at
+    // rev 1 and the model effect at rev 4 are untouched (kind filter).
+    const cancelled = await store.cancelPendingEffectsAboveRevision("xs_test_1", 1, "timer");
+    expect(cancelled).toHaveLength(3);
+    const effects = await store.getEffectsForSession("xs_test_1");
+    const byKindRev = new Map(effects.map((e) => [`${e.kind}:${e.originatingRevision}`, e.status]));
+    expect(byKindRev.get("model:1")).toBe("pending");
+    expect(byKindRev.get("timer:2")).toBe("cancelled");
+    expect(byKindRev.get("timer:3")).toBe("cancelled");
+    expect(byKindRev.get("timer:4")).toBe("cancelled");
+    expect(byKindRev.get("model:4")).toBe("pending");
+
+    // Re-running is idempotent: nothing pending above rev 1 remains.
+    expect(await store.cancelPendingEffectsAboveRevision("xs_test_1", 1, "timer")).toHaveLength(0);
+  });
 });
 
 describe("ExperienceStore — context bundle + attachments", () => {
