@@ -75,6 +75,7 @@ import {
 } from "../../../api/experience-api.js";
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { InteractiveApiReference } from "./interactive-api-reference.js";
+import { VisualApiReference } from "./visual-api-reference.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import {
   isLocalId,
@@ -123,6 +124,7 @@ export function ExperienceEditor() {
   const [activeScriptId, setActiveScriptId] = useState<string | null>(null);
   const [activeVisualId, setActiveVisualId] = useState<string | null>(null);
   const [apiRefOpen, setApiRefOpen] = useState(false);
+  const [visualApiRefOpen, setVisualApiRefOpen] = useState(false);
   // IR-90E: compact friendly validation result (reuses the wizard's pattern).
   const [rulesValid, setRulesValid] = useState<boolean | null>(null);
   const [rulesValidationError, setRulesValidationError] = useState<string | null>(null);
@@ -975,6 +977,17 @@ export function ExperienceEditor() {
                   {t("experience_editor_visual_none")}
                 </div>
               )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", visualApiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  onClick={() => setVisualApiRefOpen((v) => !v)}
+                >
+                  <Ic.book /> {t("script_api_reference")}
+                </button>
+              </div>
+              {visualApiRefOpen && <VisualApiReference />}
             </div>
           }
         />

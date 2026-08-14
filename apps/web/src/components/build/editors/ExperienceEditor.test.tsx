@@ -891,6 +891,18 @@ describe("ExperienceEditor", () => {
     expect(await findByText("experience_api_events")).toBeTruthy();
   });
 
+  it("mounts the visual API reference from the visual toolbar", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("button", { name: "script_api_reference" }));
+
+    expect(await findByText("experience_visual_api_title")).toBeTruthy();
+    expect(await findByText("experience_visual_api_methods_title")).toBeTruthy();
+    expect(await findByText("experience_visual_api_callbacks_title")).toBeTruthy();
+  });
+
   // ── IR-90A: above-the-fold playground launcher + explicit visual delete ──
   it("opens the draft-bound playground from the shell sandbox button in a modal (single instance, no persistent write)", async () => {
     serverScripts = [{ ...baseScript }];
