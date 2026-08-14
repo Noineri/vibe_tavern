@@ -77,6 +77,7 @@ import {
   ExperienceResourceService,
 } from "./experience-resource-service.js";
 import { ExperienceReportService, toQueuedAttachmentView, type ExperienceReportStatus } from "./experience-report-service.js";
+import { ExperienceChatterService } from "./experience-chatter-service.js";
 
 // ─── Counting RNG (cursor tracking) ─────────────────────────────────────────
 
@@ -338,16 +339,20 @@ export class ExperienceService {
   private readonly resources: ExperienceResourceService;
   private readonly generateSeed: () => string;
   private readonly reports: ExperienceReportService;
+  /** Async flavor chatter (item 4): null = flavor passes through unchanged
+   *  (the pre-AC-2 behavior — playgrounds/tests without provider access). */
+  private readonly chatter: ExperienceChatterService | null;
 
   constructor(
     stores: StoreContainer,
     resources: ExperienceResourceService,
-    deps: { generateSeed?: () => string; reportService?: ExperienceReportService } = {},
+    deps: { generateSeed?: () => string; reportService?: ExperienceReportService; chatter?: ExperienceChatterService } = {},
   ) {
     this.stores = stores;
     this.resources = resources;
     this.generateSeed = deps.generateSeed ?? defaultGenerateSeed;
     this.reports = deps.reportService ?? new ExperienceReportService(stores);
+    this.chatter = deps.chatter ?? null;
   }
 
   // ─── Session lifecycle ────────────────────────────────────────────────────
@@ -515,7 +520,9 @@ export class ExperienceService {
     return ok({
       state: projected.value,
       actions: legal.value,
-      flavor: flavorRes.ok ? flavorRes.value : undefined,
+      flavor: this.chatter === null
+        ? (flavorRes.ok ? flavorRes.value : undefined)
+        : this.chatter.resolveChatterFlavor(sessionId, viewer, ctx.data.revision, flavorRes.ok ? flavorRes.value : undefined, ctx.data.participants),
       revision: ctx.data.revision,
       status: ctx.data.status,
     });
@@ -1008,7 +1015,9 @@ export class ExperienceService {
     return {
       state: projected.ok ? projected.value : null,
       actions: legal.ok ? legal.value : [],
-      flavor: flavorRes.ok ? flavorRes.value : undefined,
+      flavor: this.chatter === null
+        ? (flavorRes.ok ? flavorRes.value : undefined)
+        : this.chatter.resolveChatterFlavor(session.sessionId, viewer, session.revision, flavorRes.ok ? flavorRes.value : undefined, session.participants),
       revision: session.revision,
       status: session.status,
     };

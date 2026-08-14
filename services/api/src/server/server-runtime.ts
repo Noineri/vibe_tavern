@@ -33,6 +33,7 @@ import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js"
 import { DiceService } from "../domain/dice/dice-service.js";
 import { ExperienceResourceService } from "../domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../domain/interactive/experience-service.js";
+import { ExperienceChatterService } from "../domain/interactive/experience-chatter-service.js";
 import { ExperienceReplayService } from "../domain/interactive/experience-replay-service.js";
 import { ExperienceContextService } from "../domain/interactive/experience-context-service.js";
 import { ExperienceModelEffectService } from "../domain/interactive/experience-model-effect-service.js";
@@ -206,7 +207,8 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	};
 	const diceService = new DiceService(stores, cryptoRng);
 	const experienceResourceService = new ExperienceResourceService(stores);
-	const experienceService = new ExperienceService(stores, experienceResourceService);
+	const experienceChatterService = new ExperienceChatterService({ providerProfiles: providerProfileService });
+	const experienceService = new ExperienceService(stores, experienceResourceService, { chatter: experienceChatterService });
 	const experienceReplayService = new ExperienceReplayService(stores, experienceResourceService);
 	const experienceContextService = new ExperienceContextService({
 		stores,

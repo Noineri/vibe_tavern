@@ -369,7 +369,12 @@ type SeatAssignment =
 	| { kind: "malformed" }
 	| { kind: "legacy" };
 
-function resolveSeatAssignment(participant: ExperienceParticipant): SeatAssignment {
+/** Exported for the chatter service (async flavor, item 4): cosmetic chatter
+ *  resolves its model through the SAME seat-pinning rule as model effects —
+ *  one resolution path, no fork (IR-70E). */
+export type { SeatAssignment };
+
+export function resolveSeatAssignment(participant: ExperienceParticipant): SeatAssignment {
 	const hasProviderField = participant.providerProfileId !== undefined;
 	const hasModelField = participant.modelId !== undefined;
 	if (!hasProviderField && !hasModelField) return { kind: "legacy" };
