@@ -20,6 +20,7 @@
  */
 
 export const CONVERSATION_RULES_SOURCE = [
+  "var MAX_MESSAGES = 200;",
   "context.experience.register({",
   "  apiVersion: 1,",
   '  manifest: { id: "model_conversation", name: "Model Conversation" },',
@@ -56,9 +57,11 @@ export const CONVERSATION_RULES_SOURCE = [
   "    var turn = context.state.turn + 1;",
   "    if (isModelReply) {",
   "      messages.push({ from: 'them', text: text });",
+  "      messages = context.helpers.keepLast(messages, MAX_MESSAGES);",
   "      return { state: { messages: messages, turn: turn }, status: 'active', events: [{ visibility: 'public', type: 'model_replied', detail: { text: text } }] };",
   "    }",
   "    messages.push({ from: 'you', text: text });",
+  "    messages = context.helpers.keepLast(messages, MAX_MESSAGES);",
   "    var transition = {",
   "      state: { messages: messages, turn: turn },",
   "      status: 'active',",

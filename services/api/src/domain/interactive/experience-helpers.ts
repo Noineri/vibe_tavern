@@ -226,6 +226,24 @@ export function range(count: number): number[] {
 	return out;
 }
 
+// ─── Bounded history ─────────────────────────────────────────────────────────
+
+/**
+ * Keep only the most recent `max` items (the tail) of `items`, returning a NEW
+ * array. Pure — never mutates `items`; deterministic (no `rng`). `max = 0`
+ * yields an empty array; `max >= items.length` yields a full shallow copy.
+ * Throws if `max` is not a non-negative integer (a negative/NaN bound is a
+ * package bug, not a runtime value). Long-form authors use this to bound
+ * history-bearing state (messenger messages, campaign journals) against the
+ * kernel's bounded-JSON state limits.
+ */
+export function keepLast<T>(items: readonly T[], max: number): T[] {
+	if (!Number.isInteger(max) || max < 0) {
+		throw new RangeError("keepLast: max must be a non-negative integer");
+	}
+	return items.slice(Math.max(0, items.length - max));
+}
+
 // ─── Frozen namespace for VM injection ───────────────────────────────────────
 
 /**
@@ -247,6 +265,7 @@ export const experienceHelpers = Object.freeze({
 	pickDistinct,
 	clamp,
 	range,
+	keepLast,
 });
 
 export type ExperienceHelpers = typeof experienceHelpers;
