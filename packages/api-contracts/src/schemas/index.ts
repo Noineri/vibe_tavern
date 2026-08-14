@@ -236,6 +236,9 @@ export {
   experienceEffectRequestSchema,
   experienceTransitionSchema,
   experienceProjectedViewSchema,
+  // Async flavor chatter (item 4)
+  experienceChatterRequestSchema,
+  experienceChatterViewSchema,
   experienceSetupFieldSchema,
   experienceSetupFieldOptionSchema,
   experienceSetupDefinitionSchema,
@@ -284,6 +287,7 @@ export {
   INTERACTIVE_SCHEMA_MAX_REVISION,
   INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
   INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
+  INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT,
   INTERACTIVE_SCHEMA_MAX_TEST_STEPS,
   // DTO types
   type ExperienceStartRequestDto,
@@ -299,6 +303,8 @@ export {
   type ExperienceSetupFieldOptionDto,
   type ExperienceSetupFieldDto,
   type ExperienceSetupDefinitionDto,
+  type ExperienceChatterRequestDto,
+  type ExperienceChatterViewDto,
 } from "./interactive-schema.js";
 
 export {

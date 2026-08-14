@@ -11,14 +11,18 @@ import {
   EXPERIENCE_VIEWER_KIND,
 } from "@vibe-tavern/domain";
 import {
+  INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT,
   INTERACTIVE_SCHEMA_MAX_DEPTH,
   INTERACTIVE_SCHEMA_MAX_ID,
   INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
   INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
   INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
+  INTERACTIVE_SCHEMA_MAX_STRING,
   boundedJsonValue,
   experienceActionSchema,
   experienceCapabilitySchema,
+  experienceChatterRequestSchema,
+  experienceChatterViewSchema,
   experienceContextModeSchema,
   experienceControllerSchema,
   experienceDefinitionSchema,
@@ -813,6 +817,73 @@ describe("experienceDefinitionSchema setup (IR-70F)", () => {
             { kind: "text", id: "dup", label: "B" },
           ],
         },
+      }),
+    );
+  });
+});
+
+describe("experienceChatterRequestSchema / experienceChatterViewSchema (async flavor chatter, item 4)", () => {
+  it("accepts a valid chatter request with optional fallback", () => {
+    const data = expectData(
+      experienceChatterRequestSchema.safeParse({
+        seatId: "ai1",
+        instructions: "short reaction",
+        fallback: "…thinking…",
+      }),
+    );
+    expect(data).toEqual({ seatId: "ai1", instructions: "short reaction", fallback: "…thinking…" });
+  });
+
+  it("accepts a chatter request without fallback", () => {
+    const data = expectData(
+      experienceChatterRequestSchema.safeParse({ seatId: "ai1", instructions: "react" }),
+    );
+    expect(data).toEqual({ seatId: "ai1", instructions: "react" });
+  });
+
+  it("rejects a chatter request missing seatId or instructions", () => {
+    expectReject(experienceChatterRequestSchema.safeParse({ instructions: "react" }));
+    expectReject(experienceChatterRequestSchema.safeParse({ seatId: "ai1" }));
+    expectReject(experienceChatterRequestSchema.safeParse({}));
+  });
+
+  it("rejects a chatter request with blank seatId", () => {
+    expectReject(experienceChatterRequestSchema.safeParse({ seatId: "", instructions: "react" }));
+  });
+
+  it("rejects instructions exceeding the bounded string limit", () => {
+    expectReject(
+      experienceChatterRequestSchema.safeParse({
+        seatId: "ai1",
+        instructions: "x".repeat(INTERACTIVE_SCHEMA_MAX_STRING + 1),
+      }),
+    );
+  });
+
+  it("accepts a resolved chatter view with text and a failed view with fallback", () => {
+    expectData(
+      experienceChatterViewSchema.safeParse({
+        status: "resolved",
+        seatId: "ai1",
+        text: "nice move!",
+      }),
+    );
+    expectData(
+      experienceChatterViewSchema.safeParse({
+        status: "failed",
+        seatId: "ai1",
+        fallback: "…",
+      }),
+    );
+  });
+
+  it("rejects a chatter view with an unknown status or oversized text", () => {
+    expectReject(experienceChatterViewSchema.safeParse({ status: "done", seatId: "ai1" }));
+    expectReject(
+      experienceChatterViewSchema.safeParse({
+        status: "resolved",
+        seatId: "ai1",
+        text: "x".repeat(INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT + 1),
       }),
     );
   });

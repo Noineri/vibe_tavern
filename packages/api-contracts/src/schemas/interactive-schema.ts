@@ -117,10 +117,13 @@ export const INTERACTIVE_SCHEMA_MAX_REVISION = 1_000_000_000;
 export const INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS = 32;
 /** Max options in one select setup field (IR-70F). */
 export const INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS = 64;
+/** Max serialized length of a resolved chatter text (one model reply). */
+export const INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT = 4000;
 
 const boundedId = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_ID);
 const boundedLabel = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_LABEL);
 const boundedString = z.string().max(INTERACTIVE_SCHEMA_MAX_STRING);
+const boundedChatterText = z.string().max(INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT);
 const boundedRequestId = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_REQUEST_ID);
 const boundedRevision = z.number().int().min(0).max(INTERACTIVE_SCHEMA_MAX_REVISION);
 
@@ -374,6 +377,46 @@ export const experienceProjectedViewSchema = z.object({
   flavor: boundedPayload.optional(),
   revision: boundedRevision,
   status: experienceSessionStatusSchema,
+});
+
+// ─── Async flavor chatter (item 4 / ASYNC_FLAVOR_CHATTER_PLAN) ──────────────
+//
+// The optional `flavor(context, viewer)` method may return a declarative
+// model-chatter REQUEST instead of (or alongside) static cosmetic data. This is
+// the contract the HOST interprets; the kernel (`runFlavor`) stays pure — it
+// only bounds the returned JSON and never inspects the marker's meaning.
+//
+// Parse rule: flavor output is chatter IFF it is a plain object whose top level
+// carries the single meaningful key `experienceChatter` whose value matches
+// `experienceChatterRequestSchema`. A plain object WITHOUT that key remains
+// free-form static flavor (fully backward compatible). The host fires at most
+// ONE model attempt per (session, viewer, revision) and degrades to `fallback`
+// (or a host default) on any failure — chatter is cosmetic best-effort, never
+// an error surface, and never touches authoritative state or the deterministic
+// cursor.
+
+/**
+ * The author-authored chatter request nested under the `experienceChatter` key
+ * of a flavor return. `seatId` selects the pinned model seat (IR-70E) whose
+ * provider/model answers; `instructions` is the prompt hint; `fallback` is the
+ * text shown while pending and on failure. The seat's provider/model are
+ * resolved host-side, never trusted from the author. */
+export const experienceChatterRequestSchema = z.object({
+  seatId: boundedId,
+  instructions: boundedString,
+  fallback: boundedString.optional(),
+});
+
+/**
+ * The host-normalized chatter payload carried in `flavor` once a chatter
+ * request is detected. `pending` → the model call is in flight; `resolved` →
+ * `text` carries the model's reply; `failed` → the call errored and `fallback`
+ * (or the host default) is shown. Host-produced: never carries unknown keys. */
+export const experienceChatterViewSchema = z.object({
+  status: z.enum(["pending", "resolved", "failed"]),
+  seatId: boundedId,
+  text: boundedChatterText.optional(),
+  fallback: boundedString.optional(),
 });
 
 // ─── Setup descriptor (IR-70F) ───────────────────────────────────────────────
@@ -842,3 +885,5 @@ export type ExperiencePlaygroundAdvanceRequestDto = z.infer<typeof experiencePla
 export type ExperienceSetupFieldOptionDto = z.infer<typeof experienceSetupFieldOptionSchema>;
 export type ExperienceSetupFieldDto = z.infer<typeof experienceSetupFieldSchema>;
 export type ExperienceSetupDefinitionDto = z.infer<typeof experienceSetupDefinitionSchema>;
+export type ExperienceChatterRequestDto = z.infer<typeof experienceChatterRequestSchema>;
+export type ExperienceChatterViewDto = z.infer<typeof experienceChatterViewSchema>;
