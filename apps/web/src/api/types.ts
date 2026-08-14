@@ -788,6 +788,10 @@ export interface ExperienceContextStatusDto {
   messageFrontierPosition: number | null;
   providerProfileId: string | null;
   modelId: string | null;
+  /** Provenance of the captured RP-context source (report item 6): bare ids,
+   *  never content. Both null ⇔ captured from the ambient host chat. */
+  sourceCharacterId: string | null;
+  sourceChatId: string | null;
   createdAt: string;
   updatedAt: string;
 }

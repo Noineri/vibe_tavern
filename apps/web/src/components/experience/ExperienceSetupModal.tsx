@@ -54,6 +54,7 @@ import { Ic } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import type Resources from "../../i18n/resources.js";
+import { useAllCharacters, useChatList } from "../../stores/snapshot-store.js";
 import {
   useExperienceConfig,
   useExperienceLoading,
@@ -225,6 +226,9 @@ export function ExperienceSetupModal({
 
   // ── Context mode + phase machine ────────────────────────────────────────
   const [localContextMode, setLocalContextMode] = useState<ExperienceContextMode | null>(null);
+  // ── User-chosen RP-context source (report item 6): null = uninitialized,
+  //  mirrors the localContextMode init-once pattern. ───────────────────────
+  const [localSource, setLocalSource] = useState<{ characterId: string | null; chatId: string | null } | null>(null);
   const [phase, setPhase] = useState<Phase>("config");
   const [phaseError, setPhaseError] = useState<string | null>(null);
   const [pendingStart, setPendingStart] = useState(false);
@@ -266,6 +270,7 @@ export function ExperienceSetupModal({
     setModelsByProfile({});
     setLoadingProfiles(new Set());
     setLocalContextMode(null);
+    setLocalSource(null);
     setPhase("config");
     setPhaseError(null);
     setPendingStart(false);
@@ -288,6 +293,60 @@ export function ExperienceSetupModal({
   useEffect(() => {
     if (localContextMode === null) setLocalContextMode(configContextMode);
   }, [configContextMode, localContextMode]);
+
+  // Same init-once pattern for the RP-context source (report item 6).
+  const configSourceCharacterId = config?.contextSourceCharacterId ?? null;
+  const configSourceChatId = config?.contextSourceChatId ?? null;
+  useEffect(() => {
+    if (localSource === null) setLocalSource({ characterId: configSourceCharacterId, chatId: configSourceChatId });
+  }, [configSourceCharacterId, configSourceChatId, localSource]);
+  const sourceCharacterId = localSource?.characterId ?? configSourceCharacterId;
+  const sourceChatId = localSource?.chatId ?? configSourceChatId;
+
+  // ── Source picker data (report item 6) ──
+  const allCharacters = useAllCharacters();
+  const chatList = useChatList();
+  const characterById = useMemo(() => new Map(allCharacters.map((c) => [c.id, c])), [allCharacters]);
+  const sourceCharacterOptions = useMemo(
+    () =>
+      [...allCharacters]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((c) => ({ id: c.id, label: c.name })),
+    [allCharacters],
+  );
+  const sourceChatOptions = useMemo(() => {
+    const scoped = sourceCharacterId ? chatList.filter((c) => c.characterId === sourceCharacterId) : chatList;
+    return [...scoped]
+      .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
+      .map((c) => ({ id: c.id, label: c.title }));
+  }, [chatList, sourceCharacterId]);
+
+  /** Pick a source character; "" selects the ambient default. A chat that
+   *  does not belong to the newly chosen character is dropped. */
+  function pickSourceCharacter(id: string): void {
+    const characterId = id === "" ? null : id;
+    const chatStillFits =
+      sourceChatId !== null && chatList.some((c) => c.id === sourceChatId && c.characterId === characterId);
+    setLocalSource({ characterId, chatId: chatStillFits ? sourceChatId : null });
+  }
+
+  /** Pick a source chat; "" clears it. Picking a chat auto-substitutes its
+   *  character (an explicit re-pick can still override afterwards). */
+  function pickSourceChat(id: string): void {
+    const chatId = id === "" ? null : id;
+    const chat = chatId !== null ? chatList.find((c) => c.id === chatId) : undefined;
+    const characterId = chat ? (chat.characterId as string) : sourceCharacterId;
+    setLocalSource({ characterId, chatId });
+  }
+
+  const sourcePreviewText = (() => {
+    const charName = sourceCharacterId ? (characterById.get(sourceCharacterId)?.name ?? sourceCharacterId) : null;
+    const chatTitle = sourceChatId ? (chatList.find((c) => c.id === sourceChatId)?.title ?? sourceChatId) : null;
+    if (charName !== null && chatTitle !== null) return t("experience_setup_source_preview_both", { character: charName, chat: chatTitle });
+    if (chatTitle !== null) return t("experience_setup_source_preview_chat", { chat: chatTitle });
+    if (charName !== null) return t("experience_setup_source_preview_character", { character: charName });
+    return t("experience_setup_source_preview_ambient");
+  })();
 
   // Effective capabilities: declared AND granted. Derived only from a clean ok
   // discovery so a stale/loading/error discovery never paints capability chrome.
@@ -709,12 +768,19 @@ export function ExperienceSetupModal({
     setPhaseError(null);
 
     try {
-      // 3. If the local context mode differs from the confirmed config, persist
-      //    it first (backend config remains authority), then await an exact-
-      //    scope rehydrate, THEN start. Never widen the start request.
+      // 3. If the local context mode / source differ from the confirmed config,
+      //    persist them first (backend config remains authority), then await an
+      //    exact-scope rehydrate, THEN start. Never widen the start request.
+      //    The capture that follows start-up reads the persisted config — one
+      //    source of truth, no per-capture override needed on this path.
       const mode = localContextMode ?? configContextMode;
-      if (rpContextGranted && mode !== configContextMode) {
-        await updateExperienceConfig(chatId, { contextMode: mode });
+      const sourceDirty = sourceCharacterId !== configSourceCharacterId || sourceChatId !== configSourceChatId;
+      if (rpContextGranted && (mode !== configContextMode || sourceDirty)) {
+        await updateExperienceConfig(chatId, {
+          ...(mode !== configContextMode ? { contextMode: mode } : {}),
+          contextSourceCharacterId: sourceCharacterId,
+          contextSourceChatId: sourceChatId,
+        });
         if (scopeRef.current !== gen) return;
         await useExperienceStore.getState().rehydrate(chatId, branchId);
         if (scopeRef.current !== gen) return;
@@ -941,6 +1007,34 @@ export function ExperienceSetupModal({
                   wrap
                   disabled={pendingStart}
                 />
+                {/* User-chosen RP-context source (report item 6) */}
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 sm:flex-row">
+                    <div className="flex-1">
+                      <DropdownSelect
+                        value={sourceCharacterId ?? ""}
+                        options={sourceCharacterOptions}
+                        defaultOption={t("experience_setup_source_ambient")}
+                        placeholder={t("experience_setup_source_character_placeholder")}
+                        onChange={pickSourceCharacter}
+                        disabled={pendingStart}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <DropdownSelect
+                        value={sourceChatId ?? ""}
+                        options={sourceChatOptions}
+                        defaultOption={t("experience_setup_source_no_chat")}
+                        placeholder={t("experience_setup_source_chat_placeholder")}
+                        onChange={pickSourceChat}
+                        disabled={pendingStart}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-text-secondary" data-testid="experience-setup-source-preview">
+                    {sourcePreviewText}
+                  </p>
+                </div>
               </Section>
             )}
           </>

@@ -92,11 +92,22 @@ const mocks = {
 
 const realI18n = await import("../../i18n/context.js");
 const realStore = await import("../../stores/experience-store.js");
+const realSnapshotStore = await import("../../stores/snapshot-store.js");
 const realScriptApi = await import("../../api/script-api.js");
 const realExperienceApi = await import("../../api/experience-api.js");
 const realProviderApi = await import("../../api/provider-api.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realMobile = await import("../../hooks/use-mobile.js");
+
+// RP-context source picker data (report item 6): mutable fakes consumed by the
+// (otherwise real) snapshot-store hooks the modal subscribes to.
+let fakeAllCharacters: Array<{ id: string; name: string }> = [];
+let fakeChatList: Array<{ id: string; title: string; characterId: string; lastMessageAt: string }> = [];
+mock.module("../../stores/snapshot-store.js", () => ({
+  ...realSnapshotStore,
+  useAllCharacters: () => fakeAllCharacters,
+  useChatList: () => fakeChatList,
+}));
 
 // Stable `t` object so its identity is preserved across renders — the modal's
 // discovery effect depends on `t`, and a per-render closure would loop.
@@ -669,7 +680,15 @@ describe("ExperienceSetupModal — context mode", () => {
     await whenReady(view);
     clickSegment(view.baseElement, "experience_context_current_branch");
     fireEvent.click(view.getByTestId("experience-setup-start"));
-    await waitFor(() => expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, { contextMode: "current_branch" }));
+    // The source fields always ride along (nulls = ambient) — one patch, one
+    // source of truth for the capture that follows start.
+    await waitFor(() =>
+      expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
+        contextMode: "current_branch",
+        contextSourceCharacterId: null,
+        contextSourceChatId: null,
+      }),
+    );
     await waitFor(() => expect(mocks.rehydrate).toHaveBeenCalledWith(CHAT_ID, BRANCH_ID));
     await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
     // config update precedes start
@@ -923,5 +942,84 @@ describe("ExperienceSetupModal — layout", () => {
     const desktopPanel = desktopView.getByTestId("experience-setup-modal");
     expect(desktopPanel.className).toContain("bg-surface");
     expect(desktopPanel.className).not.toContain("bg-s1");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. RP-context source picker (report item 6)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("ExperienceSetupModal — context source picker", () => {
+  beforeEach(() => {
+    fakeAllCharacters = [
+      { id: "char_a", name: "Aria" },
+      { id: "char_b", name: "Bruno" },
+    ];
+    fakeChatList = [
+      { id: "chat_b1", title: "Bruno thread", characterId: "char_b", lastMessageAt: "2026-01-02T00:00:00Z" },
+      { id: "chat_b2", title: "Bruno older", characterId: "char_b", lastMessageAt: "2026-01-01T00:00:00Z" },
+    ];
+    setFakeState({ config: makeConfig({ capabilityGrants: ["rp_context"], contextMode: "recent" }) });
+    mocks.testScript.mockResolvedValue(interactiveOk(def([{ capability: "rp_context" }])));
+  });
+
+  it("shows the ambient preview when nothing is chosen; no config write at start", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_ambient");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
+    expect(mocks.updateExperienceConfig).not.toHaveBeenCalled();
+  });
+
+  it("picking a chat auto-substitutes its character; both persist at start", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    await pickDropdown(view, view.baseElement, "experience_setup_source_chat_placeholder", "Bruno thread");
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_both");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() =>
+      expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
+        contextSourceCharacterId: "char_b",
+        contextSourceChatId: "chat_b1",
+      }),
+    );
+  });
+
+  it("picking a character scopes the chat list; switching character drops the mismatched chat", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    // Pick the character first — the chat list is then scoped to his chats.
+    await pickDropdown(view, view.baseElement, "experience_setup_source_character_placeholder", "Bruno");
+    await pickDropdown(view, view.baseElement, "experience_setup_source_chat_placeholder", "Bruno older");
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_both");
+    // Switch to Aria — the Bruno chat no longer fits and is dropped.
+    await pickDropdown(view, view.baseElement, "Bruno", "Aria");
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_character");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() =>
+      expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
+        contextSourceCharacterId: "char_a",
+        contextSourceChatId: null,
+      }),
+    );
+  });
+
+  it("initializes from the confirmed config source (init-once)", async () => {
+    setFakeState({
+      config: makeConfig({
+        capabilityGrants: ["rp_context"],
+        contextMode: "recent",
+        contextSourceCharacterId: "char_b",
+        contextSourceChatId: "chat_b2",
+      }),
+    });
+    const view = renderModal();
+    await whenReady(view);
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_both");
+    // No config write happens when nothing differs.
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
+    expect(mocks.updateExperienceConfig).not.toHaveBeenCalled();
   });
 });

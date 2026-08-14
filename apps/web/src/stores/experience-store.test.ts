@@ -205,6 +205,8 @@ function makeContextStatus(overrides: Partial<ExperienceContextStatusDto> = {}):
     messageFrontierPosition: 5,
     providerProfileId: "prof-1",
     modelId: "model-1",
+    sourceCharacterId: null,
+    sourceChatId: null,
     createdAt: T0,
     updatedAt: T0,
     ...overrides,
