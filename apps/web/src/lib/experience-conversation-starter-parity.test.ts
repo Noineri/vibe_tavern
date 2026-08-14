@@ -79,6 +79,19 @@ describe("Model Conversation starter ↔ Conversation visual — contract parity
     expect(CONVERSATION_VISUAL_SOURCE).toContain("hasAction(view,'finish')");
   });
 
+  it("the REAL visual source consumes the chatter tokens (flavor.status/text/seatId/fallback + .chatter placeholder)", () => {
+    // AC-4 (ASYNC_FLAVOR_CHATTER_PLAN): the host-normalized chatter view rides
+    // `view.flavor`; the visual reads the status gate + resolved text/seat + the
+    // pending/failed fallback, and draws the transient placeholder as a dedicated
+    // `.chatter` class (NOT a `.msg` history message). A future edit that
+    // silently changes any of these tokens fails HERE, not in production.
+    expect(CONVERSATION_VISUAL_SOURCE).toContain("flavor.status");
+    expect(CONVERSATION_VISUAL_SOURCE).toContain("flavor.text");
+    expect(CONVERSATION_VISUAL_SOURCE).toContain("flavor.seatId");
+    expect(CONVERSATION_VISUAL_SOURCE).toContain("flavor.fallback");
+    expect(CONVERSATION_VISUAL_SOURCE).toContain("className='chatter'");
+  });
+
   it("the REAL rules source declares BOTH participants and model capabilities", () => {
     // discoverExperienceDefinition returns {ok, definition} (not {ok, value}),
     // so it is handled inline rather than through the value-based unwrap().

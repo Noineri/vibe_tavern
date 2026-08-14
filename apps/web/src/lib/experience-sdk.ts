@@ -26,6 +26,16 @@
  *   experience.finish() -> void — request the privileged finish op.
  *   experience.session -> { sessionId, revision } (after handshake).
  *
+ *   view.flavor may carry a host-normalized chatter view — { status:
+ *   "pending"|"resolved"|"failed", seatId, text?, fallback? } — when the
+ *   author's flavor method returns an experienceChatter marker. "pending"
+ *   means the host model call is still in flight (the visual may show a
+ *   placeholder, e.g. flavor.fallback); "resolved" carries the model's
+ *   cosmetic text in flavor.text; "failed" carries flavor.fallback (if any).
+ *   Resolved chatter is cosmetic-only: the visual must render it transiently
+ *   and must NOT persist it into message history or authoritative state. Any
+ *   other flavor shape is free-form author data with no host interpretation.
+ *
  * Trust posture: the SDK trusts the host for state/result/error (it is the
  * authority) but still refuses a protocol-version mismatch or an unrecognized
  * nonce, so a stale host message to a freshly-bound frame fails closed.
