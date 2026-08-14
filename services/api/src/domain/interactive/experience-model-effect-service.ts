@@ -326,15 +326,22 @@ export class ExperienceModelEffectService {
 	): Promise<AssemblePromptResponse> {
 		const bundle = await this.loadContextBundle(vmCtx.effect.sessionId);
 		const globalOverride = (await this.deps.stores.experienceResources.getGlobalOverride())?.content ?? null;
-		const characterOverride = vmCtx.characterId
-			? (await this.deps.stores.experienceResources.getOverrideForCharacter(vmCtx.characterId))?.content ?? null
+		// Report item 6b: a character-backed seat answers with ITS OWN frozen card
+		// (the bundle's host-chat character steps aside) and resolves the
+		// per-character prompt override through the seat's character. Plain seats
+		// keep today's behavior exactly (host-chat character + its override).
+		const seatCharacter = vmCtx.participant.character ?? null;
+		const effectiveContext = seatCharacter !== null ? { ...bundle, character: seatCharacter } : bundle;
+		const overrideCharacterId = vmCtx.participant.characterId ?? vmCtx.characterId;
+		const characterOverride = overrideCharacterId
+			? (await this.deps.stores.experienceResources.getOverrideForCharacter(overrideCharacterId))?.content ?? null
 			: null;
 		return buildExperienceModelPrompt({
 			hostProtocol: hostProtocolForMode(vmCtx.request.mode),
 			packagePrompt: vmCtx.request.instruction ?? null,
 			globalOverride,
 			characterOverride,
-			context: bundle,
+			context: effectiveContext,
 			privateView: renderPrivateView(vmCtx),
 			budget: {
 				contextBudget: profile.contextBudget ?? NO_BUNDLE_FALLBACK_BUDGET,

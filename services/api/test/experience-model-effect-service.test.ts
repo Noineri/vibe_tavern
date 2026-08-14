@@ -198,6 +198,30 @@ const TWO_MODEL_PARTICIPANTS = [
 	{ id: "bob", label: "Bob", controller: "model" as const, providerProfileId: "pp_bob", modelId: "model-b" },
 ];
 
+/** Messenger that ALSO declares rp_context (report item 6b tests): the seat
+ * identity assertions need a captured context bundle carrying the HOST card. */
+const SEAT_TEXT_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "msg6b", name: "Messenger 6b" },
+  capabilities: [{ capability: "participants" }, { capability: "model" }, { capability: "rp_context" }],
+  create() { return { log: [] }; },
+  project(c) { return { log: c.state.log }; },
+  actions() { return [{ type: "ask", label: "Ask", allowsText: true }]; },
+  reduce(c, a) {
+    if (a.type === "ask" && a.participantId !== "mila" && a.participantId !== "bruno") {
+      const next = { log: [...c.state.log, { who: a.participantId, text: a.payload?.text ?? "" }] };
+      return {
+        state: next, status: "active", events: [],
+        // Exactly ONE effect, for Mila's seat — deterministic for assertions.
+        effects: [{ kind: "model", request: { viewer: "mila", mode: "text", actionType: "say", instruction: "Reply in character." } }],
+      };
+    }
+    return { state: { log: [...c.state.log, { who: a.participantId, text: a.payload?.text ?? "" }] }, status: "active", events: [] };
+  },
+});
+`;
+
 // ─── Setup ───────────────────────────────────────────────────────────────────
 
 let stores: StoreContainer;
@@ -212,13 +236,13 @@ async function setup() {
 	return stores;
 }
 
-async function seedSession(source: string, participants = PARTICIPANTS) {
+async function seedSession(source: string, participants = PARTICIPANTS, grants: string[] = GRANTS) {
 	const character = await stores.characters.create({ name: "Aria", description: "Mage." } as never);
 	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" } as never);
 	const branchId = chat.activeBranchId as string;
 	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true } as never);
 	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source } as never);
-	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS as never } as never);
+	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants as never } as never);
 	const started = await experienceService.startSession({ chatId: chat.id, branchId, settings: {}, participants });
 	if (!started.ok) throw new Error(`startSession failed: ${started.error.code}`);
 	return { chatId: chat.id, branchId, sessionId: started.data.sessionId };
@@ -1221,3 +1245,114 @@ describe("ExperienceModelEffectService — corrective re-ask (1d)", () => {
 
 // Keep the imported type referenced for the cast boundaries above.
 export type { ExperienceEffectRow };
+
+// ─── Tests: character-backed seats (report item 6b) ──────────────────────────
+
+describe("ExperienceModelEffectService — seat character identity (report item 6b)", () => {
+	/** Messenger roster with two character-backed model seats (same card, different models). */
+	async function seedCharacterSeatSession(): Promise<{
+		sessionId: string;
+		chatId: string;
+		libCharId: string;
+		libChar2Id: string;
+	}> {
+		const libChar = await stores.characters.create({ name: "Mila", description: "Rival spy with a limp." } as never);
+		const libChar2 = await stores.characters.create({ name: "Bruno", description: "Cheerful bard." } as never);
+		const participants = [
+			{ id: "human", label: "You", controller: "human" as const },
+			{ id: "mila", label: "Mila", controller: "model" as const, providerProfileId: "pp_mila", modelId: "model-a", characterId: libChar.id },
+			{ id: "bruno", label: "Bruno", controller: "model" as const, providerProfileId: "pp_bruno", modelId: "model-b", characterId: libChar2.id },
+		];
+		// rp_context granted + a bundle captured, so the HOST-chat card ("Aria")
+		// is present in the bundle — the assertions prove the seat card wins over it.
+		const seeded = await seedSession(SEAT_TEXT_SOURCE, participants, [...GRANTS, "rp_context"]);
+		const contextService = new ExperienceContextService({
+			stores,
+			providerProfiles: {
+				resolveActiveProviderProfile: async () => makeProfile(),
+				getProviderProfile: async () => makeProfile(),
+				getProviderModelSettings: async () => null,
+			} as ProviderProfileService,
+			chatLifecycle: { assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }) },
+			execute: (async () => ({ text: "" })) as never,
+		});
+		const captured = await contextService.captureContext({ sessionId: seeded.sessionId, mode: "recent" });
+		expect(captured.characterSnapshotJson).toContain("Aria");
+		return { ...seeded, libCharId: libChar.id, libChar2Id: libChar2.id };
+	}
+
+	test("a character-backed seat's prompt carries ITS card, not the host-chat card", async () => {
+		await setup();
+		const { sessionId, libCharId, libChar2Id } = await seedCharacterSeatSession();
+		const effectId = await emitModelEffect(sessionId, "ask");
+		// The emitted effect belongs to whichever seat the reduce targeted — the
+		// roster's viewer mapping picks it; run once and inspect the character block.
+		const { modelEffectService, spy } = makeServices({
+			profiles: [makeProfile({ id: "pp_mila" }), makeProfile({ id: "pp_bruno" })],
+			executeReturn: async () => ({ text: "hi" }),
+		});
+		await modelEffectService.runEffect(effectId);
+		expect(spy.calls.length).toBe(1);
+
+		const prompt = spy.calls[0].prompt;
+		const characterLayer = prompt.layers.find((l) => l.id === "xp_character");
+		expect(characterLayer).toBeTruthy();
+		// Mila answers first in this source (the "model" viewer maps to the first
+		// character seat encountered) — either way the block must be a SEAT card,
+		// never the host chat's "Aria".
+		expect(characterLayer?.text).toContain("Rival spy with a limp.");
+		expect(characterLayer?.text).not.toContain("Aria");
+
+		// The seat-scoped per-character override applies (set for Mila's card).
+		await stores.experienceResources.setOverrideForCharacter(libCharId, "Speak tersely.");
+		await stores.experienceResources.setOverrideForCharacter(libChar2Id, "Speak verbosely.");
+		const effect2 = await emitModelEffect(sessionId, "ask");
+		await modelEffectService.runEffect(effect2);
+		const overrideLayer = spy.calls[1].prompt.layers.find((l) => l.id === "xp_character_override");
+		expect(overrideLayer?.text).toContain("Speak tersely.");
+	});
+
+	test("deleting the seat's source character after start still answers with the frozen card", async () => {
+		await setup();
+		const { sessionId, libCharId } = await seedCharacterSeatSession();
+		await stores.characters.delete(libCharId);
+		const effectId = await emitModelEffect(sessionId, "ask");
+		const { modelEffectService, spy } = makeServices({
+			profiles: [makeProfile({ id: "pp_mila" }), makeProfile({ id: "pp_bruno" })],
+			executeReturn: async () => ({ text: "hi" }),
+		});
+		const result = await modelEffectService.runEffect(effectId);
+		expect(result.ok).toBe(true);
+		const characterLayer = spy.calls[0].prompt.layers.find((l) => l.id === "xp_character");
+		expect(characterLayer?.text).toContain("Rival spy with a limp.");
+	});
+
+	test("a plain model seat (no character) keeps the host-chat card exactly", async () => {
+		await setup();
+		// Grant rp_context + capture so the bundle carries the host card — without
+		// a capture there is no xp_character layer at all (empty-bundle fallback).
+		// The plain roster's model seat is id "model" — retarget the source's
+		// seat ids so the emitted effect resolves to THAT seat.
+		const seeded = await seedSession(
+			SEAT_TEXT_SOURCE.replaceAll("\"mila\"", "\"model\"").replaceAll("\"bruno\"", "\"model\""),
+			PARTICIPANTS,
+			[...GRANTS, "rp_context"],
+		);
+		const contextService = new ExperienceContextService({
+			stores,
+			providerProfiles: {
+				resolveActiveProviderProfile: async () => makeProfile(),
+				getProviderProfile: async () => makeProfile(),
+				getProviderModelSettings: async () => null,
+			} as ProviderProfileService,
+			chatLifecycle: { assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }) },
+			execute: (async () => ({ text: "" })) as never,
+		});
+		await contextService.captureContext({ sessionId: seeded.sessionId, mode: "recent" });
+		const effectId = await emitModelEffect(seeded.sessionId, "ask");
+		const { modelEffectService, spy } = makeServices({ executeReturn: async () => ({ text: "hi" }) });
+		await modelEffectService.runEffect(effectId);
+		const characterLayer = spy.calls[0].prompt.layers.find((l) => l.id === "xp_character");
+		expect(characterLayer?.text).toContain("Aria");
+	});
+});
