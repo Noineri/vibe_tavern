@@ -4,6 +4,7 @@ import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
+import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
 import type { ProviderProfileRecord } from "../../../../api/types.js";
 
 useDomEnv();
@@ -215,6 +216,11 @@ beforeEach(() => {
   mobileOverride = false;
   useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
   useProviderDataStore.setState({ profiles: PROFILES });
+  // Reset the persisted copilot binding between tests (the shell restores it).
+  const current = useBootstrapStore.getState().data;
+  if (current) {
+    useBootstrapStore.setState({ data: { ...current, uiSettings: { ...current.uiSettings, copilotProviderId: null, copilotModelName: null } } });
+  }
   getExperienceCopilotActive.mockReset();
   getExperienceCopilotActive.mockResolvedValue(null);
   listExperienceCopilotMessages.mockReset();
@@ -626,6 +632,87 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     fireEvent.click(getByTestId("copilot-toolbar-preview"));
     expect(getByTestId("copilot-preview-modal")).toBeDefined();
     expect(getByTestId("experience-frame-stub")).toBeDefined();
+  });
+});
+
+describe("ExperienceCopilotShell — provider binding persistence", () => {
+  /** Seed the persisted uiSettings copilot binding. The bootstrap store starts
+   * empty in tests (no bootstrap fetch), so synthesize a minimal data record
+   * when needed — the shell only reads `data.uiSettings` from it. */
+  function seedBinding(providerId: string | null, modelName: string | null): void {
+    const current = useBootstrapStore.getState().data;
+    const base = current ?? {
+      initialChatId: null,
+      snapshot: null,
+      isFirstRun: false,
+      allCharacters: [],
+      promptPresets: [],
+      uiSettings: {
+        id: "default",
+        theme: "coffee",
+        chatFontSize: 15,
+        uiFontSize: 14,
+        messageWidth: 700,
+        language: "en",
+        activePromptPresetId: null,
+        aiAssistantProviderId: null,
+        aiAssistantModelName: null,
+        coauthorProviderId: null,
+        coauthorModelName: null,
+        copilotProviderId: null,
+        copilotModelName: null,
+        updatedAt: "",
+      },
+      isArmServer: false,
+    };
+    useBootstrapStore.setState({
+      data: {
+        ...base,
+        uiSettings: { ...base.uiSettings, copilotProviderId: providerId, copilotModelName: modelName },
+      },
+    });
+  }
+
+  /** Send a message through the REAL controller path and return the stream body. */
+  async function sendAndCaptureBody(container: HTMLElement, text: string): Promise<Record<string, unknown>> {
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: text } });
+    fireEvent.click(getBySendBtn());
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    return streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+  }
+
+  function getBySendBtn(): HTMLElement {
+    const btn = document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement | null;
+    if (!btn) throw new Error("copilot-send-btn not found");
+    return btn;
+  }
+
+  it("restores the saved copilot binding (provider + model) instead of defaulting to the first profile", async () => {
+    seedBinding("p2", "m2");
+    const { container } = renderShell();
+    await flushSessionLoad();
+    const body = await sendAndCaptureBody(container, "hello from the restored binding");
+    expect(body.providerProfileId).toBe("p2");
+    expect(body.model).toBe("m2");
+  });
+
+  it("a dangling saved profile id falls back to the first available profile", async () => {
+    seedBinding("deleted-profile", "m2");
+    const { container } = renderShell();
+    await flushSessionLoad();
+    const body = await sendAndCaptureBody(container, "hello from the dangling fallback");
+    expect(body.providerProfileId).toBe("p1");
+    expect(body.model).toBe("m1");
+  });
+
+  it("no saved binding defaults to the first profile (pre-fix behavior preserved)", async () => {
+    seedBinding(null, null);
+    const { container } = renderShell();
+    await flushSessionLoad();
+    const body = await sendAndCaptureBody(container, "hello from the default");
+    expect(body.providerProfileId).toBe("p1");
+    expect(body.model).toBe("m1");
   });
 });
 

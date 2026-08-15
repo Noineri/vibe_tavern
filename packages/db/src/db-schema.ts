@@ -815,6 +815,11 @@ export const uiSettings = sqliteTable('ui_settings', {
   // profile/model effective values so RP configuration remains untouched.
   coauthorMaxTokens: integer('coauthor_max_tokens'),
   coauthorContextBudget: integer('coauthor_context_budget'),
+  // Experience-copilot generation binding — app-wide, same semantics as the
+  // Co-Author binding above (null/dangling → the shell falls back to the first
+  // available profile; no DB-level FK).
+  copilotProviderId: text('copilot_provider_id'),
+  copilotModelName: text('copilot_model_name'),
   updatedAt: text('updated_at').notNull(),
 });
 

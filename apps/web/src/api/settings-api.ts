@@ -50,13 +50,15 @@ export async function bootstrapApp(): Promise<{
       coauthorModelName: null,
       coauthorMaxTokens: null,
       coauthorContextBudget: null,
+      copilotProviderId: null,
+      copilotModelName: null,
       updatedAt: "",
     },
     isArmServer: data.isArmServer ?? false,
   };
 }
 
-export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorMaxTokens" | "coauthorContextBudget">>): Promise<UiSettingsRecord> {
+export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorMaxTokens" | "coauthorContextBudget" | "copilotProviderId" | "copilotModelName">>): Promise<UiSettingsRecord> {
   const response = await client.api.settings.ui.$patch({ json: input });
   return unwrapRpc<UiSettingsRecord>(response);
 }

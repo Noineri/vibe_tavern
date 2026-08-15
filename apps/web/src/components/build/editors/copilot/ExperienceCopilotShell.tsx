@@ -16,6 +16,7 @@ import { useExperienceCopilotController } from "../../../../hooks/use-experience
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
+import { useBootstrapStore, patchUiSettingsAction } from "../../../../stores/api-actions/bootstrap-actions.js";
 import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
 import type { ExperienceCopilotApplyPatch } from "../../../../lib/experience-copilot-apply.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
@@ -114,7 +115,13 @@ export function ExperienceCopilotShell({
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
-  // ── Provider / model selection (defaulted, then controlled) ──────────────
+  // ── Provider / model selection (persisted binding, then controlled) ───────
+  // The selection lives in server-side uiSettings (copilotProviderId /
+  // copilotModelName — the Co-Author binding pattern) so it survives leaving
+  // the editor and reloads. A dangling id (deleted profile) is ignored → the
+  // first-available default below takes over, mirroring resolveCoauthorBinding's
+  // dangling-fallback semantics.
+  const savedCopilotBinding = useBootstrapStore((s) => s.data?.uiSettings);
   const profiles = useProviderDataStore((s) => s.profiles);
   const [providerProfileId, setProviderProfileId] = useState<string | null>(null);
   const [model, setModel] = useState<string | undefined>(undefined);
@@ -137,26 +144,48 @@ export function ExperienceCopilotShell({
   // compaction as a system-level JSON context section).
   const [testFeedback, setTestFeedback] = useState<Record<string, unknown> | undefined>(undefined);
 
-  // Default the provider to the first available profile once known.
+  // Resolve the provider ONCE per pass: the saved binding wins when it still
+  // exists; a dangling/absent saved id falls back to the first available
+  // profile. (One effect — a separate "default" effect would race the restore
+  // in the same commit and the last setState would win, clobbering the saved
+  // binding — exactly the bug this persistence fixes.)
+  const savedProviderId = savedCopilotBinding?.copilotProviderId ?? null;
   useEffect(() => {
     if (providerProfileId !== null) return;
+    if (savedProviderId && profiles.some((p) => p.id === savedProviderId)) {
+      setProviderProfileId(savedProviderId);
+      return;
+    }
     const first = profiles[0];
-    if (!first) return;
-    setProviderProfileId(first.id);
-  }, [profiles, providerProfileId]);
+    if (first) setProviderProfileId(first.id);
+  }, [profiles, providerProfileId, savedProviderId]);
 
-  // Default the model to the first available model once known.
+  // Same one-shot resolution for the model: the saved model when it is still
+  // offered by the (restored) profile, else the first available model. A
+  // dangling model id (deleted/renamed upstream) falls through to the default.
+  const savedModelName = savedCopilotBinding?.copilotModelName ?? null;
   useEffect(() => {
     if (model !== undefined) return;
+    if (savedModelName && models.some((m) => m.id === savedModelName)) {
+      setModel(savedModelName);
+      return;
+    }
     const first = models[0];
-    if (!first) return;
-    setModel(first.id);
-  }, [models, model]);
+    if (first) setModel(first.id);
+  }, [models, model, savedModelName]);
 
   const handleProviderChange = useCallback((profileId: string, nextModel?: string) => {
     setProviderProfileId(profileId);
     setModel(nextModel);
-  }, []);
+    // Persist the explicit selection (fire-and-forget; a failure only means the
+    // next entry defaults again — surfaced via toast for transparency).
+    void patchUiSettingsAction({
+      ...(profileId ? { copilotProviderId: profileId } : { copilotProviderId: null }),
+      ...(nextModel ? { copilotModelName: nextModel } : { copilotModelName: null }),
+    }).catch(() => {
+      toast.error(t("experience_copilot_binding_save_error"));
+    });
+  }, [t]);
 
   // ── Session load (mount + retry) ─────────────────────────────────────────
   const loadSession = useCallback(async () => {

@@ -417,6 +417,10 @@ export interface UiSettingsRecord {
   /** Optional for compatibility with bootstrap snapshots predating token overrides. */
   coauthorMaxTokens?: number | null;
   coauthorContextBudget?: number | null;
+  /** Optional for compatibility with bootstrap snapshots predating the
+   *  copilot binding. Null → the copilot shell defaults to the first profile. */
+  copilotProviderId?: string | null;
+  copilotModelName?: string | null;
   updatedAt: string;
 }
 

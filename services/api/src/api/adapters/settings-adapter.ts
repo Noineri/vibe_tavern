@@ -19,6 +19,8 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.coauthorModelName === "string" || body.coauthorModelName === null ? { coauthorModelName: body.coauthorModelName } : {}),
 		...(isPositiveIntegerOrNull(body.coauthorMaxTokens) ? { coauthorMaxTokens: body.coauthorMaxTokens } : {}),
 		...(isPositiveIntegerOrNull(body.coauthorContextBudget) ? { coauthorContextBudget: body.coauthorContextBudget } : {}),
+		...(typeof body.copilotProviderId === "string" || body.copilotProviderId === null ? { copilotProviderId: body.copilotProviderId } : {}),
+		...(typeof body.copilotModelName === "string" || body.copilotModelName === null ? { copilotModelName: body.copilotModelName } : {}),
 	});
 }
 

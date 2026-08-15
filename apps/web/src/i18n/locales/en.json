@@ -1869,6 +1869,7 @@
   "experience_copilot_subtitle": "Ask the AI assistant to propose rules or visual edits.",
   "experience_copilot_loading": "Loading AI assistant…",
   "experience_copilot_load_error": "Couldn't load the AI assistant",
+  "experience_copilot_binding_save_error": "Couldn't save the model selection — it may reset next time",
   "experience_copilot_load_session_error": "Failed to load AI assistant session",
   "experience_copilot_retry": "Retry",
   "experience_copilot_editor_aria": "AI assistant editor",

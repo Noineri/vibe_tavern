@@ -661,6 +661,7 @@ export default interface Resources {
     "experience_copilot_applied": "Applied",
     "experience_copilot_apply": "Apply",
     "experience_copilot_archived": "Archived",
+    "experience_copilot_binding_save_error": "Couldn't save the model selection — it may reset next time",
     "experience_copilot_cancel": "Cancel",
     "experience_copilot_diff_too_large": "Diff too large to preview",
     "experience_copilot_editor_aria": "AI assistant editor",

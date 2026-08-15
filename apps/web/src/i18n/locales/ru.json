@@ -1887,6 +1887,7 @@
   "experience_copilot_subtitle": "Попросите ИИ-помощника предложить правила или изменения визуала.",
   "experience_copilot_loading": "Загрузка ИИ-помощника…",
   "experience_copilot_load_error": "Не удалось загрузить ИИ-помощника",
+  "experience_copilot_binding_save_error": "Не удалось сохранить выбранную модель — выбор может сброситься в следующий раз",
   "experience_copilot_load_session_error": "Не удалось загрузить сессию ИИ-помощника",
   "experience_copilot_retry": "Повторить",
   "experience_copilot_editor_aria": "Редактор ИИ-помощника",
