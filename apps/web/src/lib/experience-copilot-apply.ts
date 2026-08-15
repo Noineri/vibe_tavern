@@ -60,7 +60,7 @@ export interface ExperienceCopilotApplyPatch {
  * which never propose a buffer edit. Deduped by `toolCallId` (later wins,
  * mirroring the store's upsert-merge semantics).
  */
-function finalizedActivities(activities: ExperienceCopilotToolActivity[]): ProposedActivity[] {
+function finalizedActivities(activities: ReadonlyArray<ExperienceCopilotToolActivity>): ProposedActivity[] {
 	const byId = new Map<string, ProposedActivity>();
 	for (const a of activities) {
 		if (a.status !== "done") continue;
@@ -84,7 +84,7 @@ function finalizedActivities(activities: ExperienceCopilotToolActivity[]): Propo
  * `write_buffer`/`edit_buffer` result is the complete cumulative buffer).
  */
 export function aggregateExperienceCopilotProposal(
-	activities: ExperienceCopilotToolActivity[],
+	activities: ReadonlyArray<ExperienceCopilotToolActivity>,
 ): ExperienceCopilotProposal {
 	const finalized = finalizedActivities(activities);
 	const summaries = finalized.map((a) => a.summary).filter((s): s is string => typeof s === "string" && s.length > 0);

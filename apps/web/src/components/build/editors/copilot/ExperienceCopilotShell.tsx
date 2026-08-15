@@ -14,9 +14,11 @@ import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useT } from "../../../../i18n/context.js";
 import { useExperienceCopilotController } from "../../../../hooks/use-experience-copilot-controller.js";
 import { useCopilotContext } from "../../../../hooks/use-copilot-context.js";
+import { useCopilotReviewState } from "../../../../hooks/use-copilot-review-state.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
+import type { ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
 import { useBootstrapStore, patchUiSettingsAction } from "../../../../stores/api-actions/bootstrap-actions.js";
 import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
 import type { ExperienceCopilotApplyPatch } from "../../../../lib/experience-copilot-apply.js";
@@ -34,6 +36,7 @@ import { CopilotProfileModal } from "./CopilotProfileModal.js";
 import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
 import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
 import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
+import { useShallow } from "zustand/react/shallow";
 
 /**
  * ExperienceCopilotShell (ER-11d / ER-13b′) — the visible 2-pane copilot
@@ -93,6 +96,10 @@ export interface ExperienceCopilotShellProps {
 }
 
 type MobileTab = "chat" | "edit";
+
+/** Stable empty fallback for the turn-store selector (a fresh `[]` per call
+ *  would break useShallow's reference equality and re-render every keystroke). */
+const EMPTY_ACTIVITIES: readonly ExperienceCopilotToolActivity[] = [];
 type EditorBuffer = "rules" | "visual" | "sandbox";
 
 export function ExperienceCopilotShell({
@@ -261,6 +268,32 @@ export function ExperienceCopilotShell({
     model,
     onTurnSettled: handleTurnSettled,
     onMetrics: copilotContext.applyMetrics,
+  });
+
+  // ── Review state (CD-2/CD-3): freeze, snapshots, revert ────────────────
+  // The live turn's activities feed the review hook (proposal aggregation);
+  // the SAME store read the MessageList does, subscribed here so the shell
+  // doesn't reach into the store from inside the toolbar render.
+  const turnActivities = useExperienceCopilotTurnStore(
+    useShallow((s) => (threadId ? s.turnsByThread[threadId] ?? EMPTY_ACTIVITIES : EMPTY_ACTIVITIES)),
+  );
+  const handleRevertBuffers = useCallback(
+    (buffers: { rules: string; visual: string }) => {
+      // Only write the buffer that actually drifted — a no-op onChange would
+      // mark a clean (saved) buffer dirty with its own current text.
+      if (buffers.rules !== rulesCode) onRulesChange(buffers.rules);
+      if (buffers.visual !== visualSource) onVisualChange(buffers.visual);
+    },
+    [rulesCode, visualSource, onRulesChange, onVisualChange],
+  );
+  const review = useCopilotReviewState({
+    resetKey: scriptId,
+    threadId: threadId ?? "",
+    isSending: ctrl.isSending,
+    rulesCode,
+    visualSource,
+    activities: turnActivities,
+    onRevert: handleRevertBuffers,
   });
 
   // ER-14: post a test/simulate/playground digest into the copilot thread. The
@@ -490,6 +523,17 @@ export function ExperienceCopilotShell({
         />
         {editorBuffer !== "sandbox" && (
           <div className="flex items-center gap-1.5">
+            {review.canRevert && (
+              <ToolbarButton
+                label={t("copilot_review_revert")}
+                icon={<Icons.Undo />}
+                onClick={() => {
+                  review.revertLastTurn();
+                  toast.success(t("copilot_review_reverted"));
+                }}
+                testId="copilot-toolbar-revert"
+              />
+            )}
             <ToolbarButton
               label={t("experience_copilot_tester")}
               icon={<Icons.Terminal />}
@@ -519,14 +563,32 @@ export function ExperienceCopilotShell({
         <>
           {editorBuffer === "rules" ? rulesToolbar : visualToolbar}
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <div className="relative h-full min-h-0 rounded-md border border-border bg-bg">
+            {/* CD-3: while the model works, the editor is FROZEN (read-only +
+                dimmed + badge) so the user cannot fork the unified model
+                context mid-turn; it thaws for the human review right after. */}
+            <div
+              data-testid="copilot-editor-frame"
+              className={cn(
+                "relative h-full min-h-0 rounded-md border border-border bg-bg transition-opacity duration-150",
+                ctrl.isSending && "opacity-60",
+              )}
+            >
               <CodeEditor
                 className="h-full"
                 value={editorBuffer === "rules" ? rulesCode : visualSource}
                 onChange={editorBuffer === "rules" ? onRulesChange : onVisualChange}
                 minHeight="300px"
                 scrollMode="inner"
+                readOnly={ctrl.isSending}
               />
+              {ctrl.isSending && (
+                <div
+                  data-testid="copilot-editor-frozen"
+                  className="pointer-events-none absolute left-2 top-2 z-10 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t2"
+                >
+                  {t("copilot_review_model_editing")}
+                </div>
+              )}
             </div>
           </div>
         </>

@@ -211,10 +211,12 @@ let waitFor: typeof import("@testing-library/react").waitFor;
 let act: typeof import("@testing-library/react").act;
 let ExperienceCopilotShell: typeof import("./ExperienceCopilotShell.js").ExperienceCopilotShell;
 let EditorView: typeof import("@codemirror/view").EditorView;
+let EditorState: typeof import("@codemirror/state").EditorState;
 
 beforeAll(async () => {
   ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
   ({ EditorView } = await import("@codemirror/view"));
+  ({ EditorState } = await import("@codemirror/state"));
   ({ ExperienceCopilotShell } = await import("./ExperienceCopilotShell.js"));
 });
 
@@ -870,5 +872,98 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
     expect(body.testFeedback).toMatchObject({ ok: true, status: "active", revision: 0 });
     expect(body.step).toBe("test");
+  });
+});
+
+describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
+  it("freezes the editor (read-only + badge) while the model is generating and thaws after settle", async () => {
+    // Hang the stream so isSending stays true while we assert the frozen state.
+    let resolveStream!: (v: { finishReason: string }) => void;
+    streamExperienceCopilot.mockImplementationOnce(
+      () => new Promise<{ finishReason: string }>((res) => { resolveStream = res; }),
+    );
+
+    const { container } = renderShell();
+    await flushSessionLoad();
+
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+
+    // Frozen: the badge shows and the CM view is read-only.
+    await waitFor(() => expect(document.querySelector('[data-testid="copilot-editor-frozen"]')).not.toBeNull());
+    const frozenView = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
+    expect(frozenView!.state.facet(EditorState.readOnly)).toBe(true);
+
+    // Settle: the badge disappears and the editor becomes writable again.
+    await act(async () => { resolveStream({ finishReason: "stop" }); });
+    await waitFor(() => expect(document.querySelector('[data-testid="copilot-editor-frozen"]')).toBeNull());
+    const thawedView = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
+    expect(thawedView!.state.facet(EditorState.readOnly)).toBe(false);
+  });
+
+  it("shows the revert button after buffer drift and restores the turn-start snapshot", async () => {
+    const onRulesChange = mock();
+    const { rerender, getByTestId, queryByTestId } = renderShell({ onRulesChange });
+
+    await flushSessionLoad();
+    // No turn yet → no revert affordance.
+    expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
+
+    // A full turn against the v1 buffers (the stream mock resolves immediately).
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    // Drain the settle → refetch chain.
+    await waitFor(() => expect(listExperienceCopilotMessages).toHaveBeenCalled());
+
+    // Buffers still equal the snapshot → revert stays hidden.
+    expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
+
+    // The parent applies a change (e.g. the user accepted a proposal / edited
+    // by hand): the buffer drifted from the turn-start snapshot.
+    rerender(
+      <ExperienceCopilotShell
+        scriptId="script-1"
+        rulesCode="// rules buffer v2"
+        visualSource="// visual buffer"
+        onRulesChange={onRulesChange}
+        onVisualChange={mock()}
+        onApply={mock()}
+      />,
+    );
+    expect(getByTestId("copilot-toolbar-revert")).toBeDefined();
+
+    // Revert: the parent receives the snapshot's rules text back.
+    fireEvent.click(getByTestId("copilot-toolbar-revert"));
+    expect(onRulesChange).toHaveBeenCalledWith("// rules buffer");
+  });
+
+  it("keeps the revert button off the sandbox position", async () => {
+    const { rerender, getByRole, queryByTestId } = renderShell({ creationMode: true });
+    await flushSessionLoad();
+
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "go" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+
+    // Drift the rules buffer while on the rules position: revert visible…
+    rerender(
+      <ExperienceCopilotShell
+        scriptId="script-1"
+        rulesCode="// rules buffer v2"
+        visualSource="// visual buffer"
+        onRulesChange={mock()}
+        onVisualChange={mock()}
+        onApply={mock()}
+        creationMode
+      />,
+    );
+    expect(queryByTestId("copilot-toolbar-revert")).not.toBeNull();
+    // …but the sandbox position has no code editor / review affordances.
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_sandbox" }));
+    expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
   });
 });
