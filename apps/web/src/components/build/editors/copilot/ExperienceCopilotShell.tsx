@@ -19,7 +19,8 @@ import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
 import type { ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
 import { useBootstrapStore, patchUiSettingsAction } from "../../../../stores/api-actions/bootstrap-actions.js";
-import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
+import { rehydrateExperienceCopilotDrafts, syncPersistedCopilotRound } from "../../../../lib/experience-copilot-draft.js";
+import { EMPTY_REVIEW_ROUND, useCopilotReviewRoundStore } from "../../../../stores/experience-copilot-review-store.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
 import {
   getExperienceCopilotActive,
@@ -292,7 +293,6 @@ export function ExperienceCopilotShell({
     [rulesCode, visualSource, onRulesChange, onVisualChange],
   );
   const review = useCopilotReviewState({
-    resetKey: scriptId,
     threadId: threadId ?? "",
     isSending: ctrl.isSending,
     rulesCode,
@@ -302,16 +302,48 @@ export function ExperienceCopilotShell({
   });
 
   // ── Hunk accept-selection (CD-6) + dangling proposals (CD-8) ────────────
-  // Accept-selection lives HERE (not in the editor panel) so it survives
-  // buffer-tab switches. Reset whenever the proposal CONTENT changes (a new
-  // turn's proposal) or the thread changes — including the revert path, which
-  // clears the live turn and therefore flips the key to null.
-  const [acceptedRulesHunks, setAcceptedRulesHunks] = useState<Set<number>>(() => new Set());
-  const [acceptedVisualHunks, setAcceptedVisualHunks] = useState<Set<number>>(() => new Set());
+  // Accept-selection lives in the per-thread review-round STORE (not local
+  // state, not the editor panel) so it survives buffer-tab switches AND shell
+  // unmounts — a hanging, unaccepted diff must reappear exactly as it was
+  // when the user returns from another pane (prompt tracing, tester, …).
+  // Resetting on a NEW proposal is `ensureReviewKey` below: it clears a
+  // buffer's sets only when the review key (base+proposed) actually changed,
+  // so a remount with the same proposal keeps the progress.
+  const round = useCopilotReviewRoundStore(
+    useShallow((s) => (threadId ? s.roundsByThread[threadId] ?? EMPTY_REVIEW_ROUND : EMPTY_REVIEW_ROUND)),
+  );
+  const acceptedRulesHunks = useMemo(() => new Set(round.acceptedRules), [round.acceptedRules]);
+  const acceptedVisualHunks = useMemo(() => new Set(round.acceptedVisual), [round.acceptedVisual]);
   // RV-2: per-buffer dismissed sets — a dismissed hunk leaves the round (no
   // decoration, no pending count, not in accept-all) without touching the buffer.
-  const [dismissedRulesHunks, setDismissedRulesHunks] = useState<Set<number>>(() => new Set());
-  const [dismissedVisualHunks, setDismissedVisualHunks] = useState<Set<number>>(() => new Set());
+  const dismissedRulesHunks = useMemo(() => new Set(round.dismissedRules), [round.dismissedRules]);
+  const dismissedVisualHunks = useMemo(() => new Set(round.dismissedVisual), [round.dismissedVisual]);
+  // Store-backed replacements for the old useState setters — same callback
+  // shape the accept/cancel helpers take, writing through to the round store.
+  const setAcceptedRulesHunks = useCallback(
+    (next: Set<number>) => {
+      if (threadId) useCopilotReviewRoundStore.getState().setAcceptedHunks(threadId, "rules", [...next]);
+    },
+    [threadId],
+  );
+  const setAcceptedVisualHunks = useCallback(
+    (next: Set<number>) => {
+      if (threadId) useCopilotReviewRoundStore.getState().setAcceptedHunks(threadId, "visual", [...next]);
+    },
+    [threadId],
+  );
+  const setDismissedRulesHunks = useCallback(
+    (next: Set<number>) => {
+      if (threadId) useCopilotReviewRoundStore.getState().setDismissedHunks(threadId, "rules", [...next]);
+    },
+    [threadId],
+  );
+  const setDismissedVisualHunks = useCallback(
+    (next: Set<number>) => {
+      if (threadId) useCopilotReviewRoundStore.getState().setDismissedHunks(threadId, "visual", [...next]);
+    },
+    [threadId],
+  );
 
   // CD-8 dangling semantics: a new chat turn must NOT kill an unresolved
   // review. The controller clears the live turn store at send start (the
@@ -319,25 +351,21 @@ export function ExperienceCopilotShell({
   // proposal is captured here before the send — it keeps hanging until the
   // model revises it (the live proposal wins per buffer, last-wins) or the
   // user resolves it by hand (accept / revert). Nothing is auto-applied.
-  const [dangling, setDangling] = useState<{
-    rules?: string;
-    visual?: string;
-    baseRules: string;
-    baseVisual: string;
-  } | null>(null);
+  const dangling = round.dangling;
   const proposalRef = useRef(review.proposal);
   const proposalBaseRef = useRef(review.proposalBase);
   proposalRef.current = review.proposal;
   proposalBaseRef.current = review.proposalBase;
   const captureDangling = useCallback(() => {
+    if (!threadId) return;
     if (!proposalRef.current.hasProposal) return;
-    setDangling({
+    useCopilotReviewRoundStore.getState().captureDangling(threadId, {
       rules: proposalRef.current.proposedRules,
       visual: proposalRef.current.proposedVisual,
       baseRules: proposalBaseRef.current?.rules ?? rulesCode,
       baseVisual: proposalBaseRef.current?.visual ?? visualSource,
     });
-  }, [rulesCode, visualSource]);
+  }, [rulesCode, visualSource, threadId]);
 
   // Effective per-buffer inputs: the LIVE proposal wins its buffers; a buffer
   // the live turn did not touch falls back to the dangling capture.
@@ -366,17 +394,27 @@ export function ExperienceCopilotShell({
   const visualReviewKey = effVisual.proposed !== undefined
     ? `${effVisual.base ?? ""}\u0000${effVisual.proposed}`
     : null;
+  // RV-1 per-buffer key reset, store edition: a REMOUNT with the same proposal
+  // keeps the accept/dismiss progress (ensureReviewKey no-ops on a matching
+  // key); only a genuinely new proposal (changed base/proposed — including the
+  // revert path flipping the key to null) restarts the buffer's sets. There is
+  // deliberately NO mount-time reset of `dangling`: per-thread slices already
+  // isolate threads, and wiping on the "" → threadId transition would destroy
+  // the restored round — the exact bug this store exists to fix.
   useEffect(() => {
-    setAcceptedRulesHunks(new Set());
-    setDismissedRulesHunks(new Set());
-  }, [rulesReviewKey, threadId]);
+    if (threadId) useCopilotReviewRoundStore.getState().ensureReviewKey(threadId, "rules", rulesReviewKey);
+  }, [threadId, rulesReviewKey]);
   useEffect(() => {
-    setAcceptedVisualHunks(new Set());
-    setDismissedVisualHunks(new Set());
-  }, [visualReviewKey, threadId]);
+    if (threadId) useCopilotReviewRoundStore.getState().ensureReviewKey(threadId, "visual", visualReviewKey);
+  }, [threadId, visualReviewKey]);
+  // Envelope-v2 persistence (the write side of ER-10): keep the localStorage
+  // draft (finalized activities + the round) in sync on every mutation. The
+  // last write before an unmount/reload captures the hanging state that
+  // `rehydrateExperienceCopilotDrafts` seeds both stores from on the next mount.
   useEffect(() => {
-    setDangling(null);
-  }, [threadId, scriptId]);
+    if (!threadId) return;
+    syncPersistedCopilotRound(threadId);
+  }, [threadId, round, turnActivities]);
 
   const rulesReview = useMemo(
     () => buildBufferReview(effRules.base, effRules.proposed, acceptedRulesHunks, !ctrl.isSending, dismissedRulesHunks),
@@ -453,15 +491,23 @@ export function ExperienceCopilotShell({
   // RV-2: dismiss (✕) — the hunk leaves the round; the buffer is untouched.
   const dismissRulesHunk = useCallback(
     (hunkId: number) => {
-      setDismissedRulesHunks((prev) => new Set(prev).add(hunkId));
+      if (!threadId) return;
+      const state = useCopilotReviewRoundStore.getState();
+      const current = state.roundsByThread[threadId];
+      if (!current) return;
+      state.setDismissedHunks(threadId, "rules", [...new Set([...current.dismissedRules, hunkId])]);
     },
-    [],
+    [threadId],
   );
   const dismissVisualHunk = useCallback(
     (hunkId: number) => {
-      setDismissedVisualHunks((prev) => new Set(prev).add(hunkId));
+      if (!threadId) return;
+      const state = useCopilotReviewRoundStore.getState();
+      const current = state.roundsByThread[threadId];
+      if (!current) return;
+      state.setDismissedHunks(threadId, "visual", [...new Set([...current.dismissedVisual, hunkId])]);
     },
-    [],
+    [threadId],
   );
   const acceptVisualHunk = useCallback(
     (hunkId: number) => {
@@ -480,21 +526,27 @@ export function ExperienceCopilotShell({
   // buffer only (accepted hunks stay accepted, the other buffer and the text
   // are untouched). The round resolves once nothing is pending.
   const dismissPendingRules = useCallback(() => {
-    if (!rulesReview) return;
+    if (!rulesReview || !threadId) return;
     const pending = [...allReviewHunkIds(rulesReview)].filter(
       (id) => !acceptedRulesHunks.has(id) && !dismissedRulesHunks.has(id),
     );
     if (pending.length === 0) return;
-    setDismissedRulesHunks((prev) => new Set([...prev, ...pending]));
-  }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks]);
+    const state = useCopilotReviewRoundStore.getState();
+    const current = state.roundsByThread[threadId];
+    if (!current) return;
+    state.setDismissedHunks(threadId, "rules", [...new Set([...current.dismissedRules, ...pending])]);
+  }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks, threadId]);
   const dismissPendingVisual = useCallback(() => {
-    if (!visualReview) return;
+    if (!visualReview || !threadId) return;
     const pending = [...allReviewHunkIds(visualReview)].filter(
       (id) => !acceptedVisualHunks.has(id) && !dismissedVisualHunks.has(id),
     );
     if (pending.length === 0) return;
-    setDismissedVisualHunks((prev) => new Set([...prev, ...pending]));
-  }, [visualReview, acceptedVisualHunks, dismissedVisualHunks]);
+    const state = useCopilotReviewRoundStore.getState();
+    const current = state.roundsByThread[threadId];
+    if (!current) return;
+    state.setDismissedHunks(threadId, "visual", [...new Set([...current.dismissedVisual, ...pending])]);
+  }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, threadId]);
 
   // RV-3: «Отменить все» — kill the whole round for THIS buffer: every hunk
   // (pending AND accepted) leaves the round (dismissed), and the hunks already
@@ -552,10 +604,10 @@ export function ExperienceCopilotShell({
   }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, cancelRoundHunks]);
 
   const handleToolbarRevert = useCallback(() => {
-    setDangling(null);
+    if (threadId) useCopilotReviewRoundStore.getState().clearDangling(threadId);
     review.revertLastTurn();
     toast.success(t("copilot_review_reverted"));
-  }, [review, t]);
+  }, [review, t, threadId]);
 
   // ER-14: post a test/simulate/playground digest into the copilot thread. The
   // digest's human-readable `text` becomes a user message (the model responds);

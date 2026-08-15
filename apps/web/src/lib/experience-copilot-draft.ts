@@ -6,10 +6,29 @@
  * deliberately ephemeral: it holds a turn's tool activities in memory with no
  * `persist` middleware, because the backend does not persist tool calls onto
  * the message record. The consequence is that a page reload wipes any in-review
- * proposal, so the user loses the diff + Apply affordance and has to re-run the
- * turn. ER-10 persists just the FINALIZED proposed-producing activities (the
+ * proposal, so the user loses the diff + review affordance and has to re-run
+ * the turn. ER-10 persists the FINALIZED proposed-producing activities (the
  * subset `aggregateExperienceCopilotProposal` derives from) to localStorage,
  * keyed by threadId, and rehydrates them on boot.
+ *
+ * ENVELOPE V2 — THE WHOLE ROUND. A review is more than its activities: the
+ * turn-start snapshot (the diff "before" side), the per-buffer accepted /
+ * dismissed hunk ids and the CD-8 dangling capture all live in the review-round
+ * store (`experience-copilot-review-store.ts`) and are needed to rebuild the
+ * SAME review after a reload — without the round the rehydrated activities
+ * would have `base === undefined` and render nothing. V2 therefore persists
+ * `{ activities, round }` together; a V1 envelope (activities only) still
+ * loads, degraded (no review anchor).
+ *
+ * WRITE SIDE. `syncPersistedCopilotRound(threadId)` is the single entry point
+ * the copilot shell calls from an effect on every round/activity mutation: it
+ * reads both stores and either saves or CLEARS the key. The key survives while
+ * anything reviewable remains (finalized activities OR a dangling capture);
+ * a fully resolved / reverted round removes it. Unsaved buffer edits and
+ * accepted-hunk text do NOT survive a reload (the draft buffers are in-memory),
+ * so a rehydrated review may diff against a base the current buffer drifted
+ * from — the standard CD-8 conflict semantics (anchor-or-skip, toast) handle
+ * exactly that, on purpose, with no silent rebase.
  *
  * TWO PLAIN-TEXT BUFFERS. The copilot edits exactly two buffers — `rules` (the
  * script's code) and `visual` (the active visual's source) — and nothing else.
@@ -23,10 +42,7 @@
  * transient and carry no reviewable content. Persisting them would rehydrate a
  * dead "AI is editing…" state pointing at a stream that no longer exists. The
  * persisted set is exactly what `aggregateExperienceCopilotProposal` consumes,
- * so rehydration reconstructs the same two-buffer diff + Apply request with ZERO
- * new UI — Apply/Reject (which already clear the turn store via `clearTurn`)
- * also clear the persisted draft via the `clearTurn` → `clearDraft` hook wired
- * in Wave 4.
+ * so rehydration reconstructs the same two-buffer diff with zero new UI.
  *
  * VERSIONING. The envelope carries `_v`. A version mismatch on load (e.g.
  * after a schema change) discards the entry rather than seeding incompatible
@@ -34,24 +50,29 @@
  * is likewise discarded (best-effort: persistence is a convenience, never a
  * correctness constraint — the canonical buffers are the script/visual draft
  * stores' source of truth).
- *
- * REHYDRATION CORRECTNESS. The reviewing diff is `canonical → proposed`, where
- * `canonical` is read LIVE from the freshly-loaded script/visual buffers. If the
- * buffer changed between the proposal and the reload, the diff base shifts —
- * which is the honest behavior (review the proposal against the current
- * buffer). Apply sends the full proposed buffer text regardless, so it is
- * self-contained.
  */
 import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
 import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn-store.js";
+import type { CopilotReviewRound } from "../stores/experience-copilot-review-store.js";
+import { useCopilotReviewRoundStore } from "../stores/experience-copilot-review-store.js";
 
 const DRAFT_PREFIX = "vt:experience-copilot-draft:";
-const DRAFT_VERSION = 1;
+const DRAFT_VERSION = 2;
 
 /** localStorage envelope — versioned so a future schema change can migrate/discard. */
 interface DraftEnvelope {
   _v: number;
   activities: unknown[];
+  /** V2: the review round (snapshots / hunk selections / dangling). */
+  round: CopilotReviewRound | null;
+}
+
+/** What a parsed envelope yields: the finalized activities plus (V2 only) the
+ *  review round. `round` is null for V1 envelopes and for a malformed round —
+ *  the activities still load, degraded. */
+export interface ParsedCopilotDraft {
+  activities: ExperienceCopilotToolActivity[];
+  round: CopilotReviewRound | null;
 }
 
 /**
@@ -75,6 +96,34 @@ export function isFinalizedActivity(x: unknown): x is ExperienceCopilotToolActiv
   return true;
 }
 
+/** Type guard for the V2 review-round payload. Mirrors the round store's
+ *  `CopilotReviewRound` shape field by field — a value that fails any clause
+ *  degrades to `round: null` while the activities still load. */
+export function isReviewRound(x: unknown): x is CopilotReviewRound {
+  if (typeof x !== "object" || x === null) return false;
+  const r = x as Record<string, unknown>;
+  if (!Array.isArray(r.snapshots) || typeof r.nextSnapshotId !== "number") return false;
+  for (const s of r.snapshots) {
+    if (typeof s !== "object" || s === null) return false;
+    const sn = s as Record<string, unknown>;
+    if (typeof sn.id !== "number" || typeof sn.rules !== "string" || typeof sn.visual !== "string") return false;
+  }
+  for (const arr of [r.acceptedRules, r.acceptedVisual, r.dismissedRules, r.dismissedVisual]) {
+    if (!Array.isArray(arr) || arr.some((v) => typeof v !== "number" || !Number.isInteger(v))) return false;
+  }
+  if (!(typeof r.rulesKey === "string" || r.rulesKey === null)) return false;
+  if (!(typeof r.visualKey === "string" || r.visualKey === null)) return false;
+  const d = r.dangling;
+  if (d != null) {
+    if (typeof d !== "object") return false;
+    const dd = d as Record<string, unknown>;
+    if (typeof dd.baseRules !== "string" || typeof dd.baseVisual !== "string") return false;
+    if (!(dd.rules === undefined || typeof dd.rules === "string")) return false;
+    if (!(dd.visual === undefined || typeof dd.visual === "string")) return false;
+  }
+  return true;
+}
+
 /**
  * Reduce a thread's activities to the persistable finalized-proposed subset,
  * deduped by `toolCallId` (later wins) in insertion order — mirroring the
@@ -94,22 +143,27 @@ export function finalizeForPersistence(activities: ExperienceCopilotToolActivity
 }
 
 /**
- * Serialize a thread's activities to the versioned persistence envelope. Returns
- * `null` when there is nothing to persist (no finalized proposal) — the caller
- * treats null as "clear the key". Pure: no I/O.
+ * Serialize a thread's activities + review round to the versioned persistence
+ * envelope. Returns `null` when nothing reviewable remains (no finalized
+ * proposal AND no dangling capture — snapshots alone rehydrate nothing without
+ * a proposal source, so a resolved/reverted round clears the key). Pure: no I/O.
  */
-export function serializeDraft(activities: ExperienceCopilotToolActivity[]): string | null {
+export function serializeDraft(
+  activities: ExperienceCopilotToolActivity[],
+  round: CopilotReviewRound | null,
+): string | null {
   const finalized = finalizeForPersistence(activities);
-  if (finalized.length === 0) return null;
-  const envelope: DraftEnvelope = { _v: DRAFT_VERSION, activities: finalized };
+  if (finalized.length === 0 && round?.dangling == null) return null;
+  const envelope: DraftEnvelope = { _v: DRAFT_VERSION, activities: finalized, round };
   return JSON.stringify(envelope);
 }
 
 /**
- * Parse + validate a persisted envelope. Returns the finalized activities, or
- * `null` if absent / malformed / version-skewed / empty-after-filter. Pure: no I/O.
+ * Parse + validate a persisted envelope (V2: activities + round; V1: activities
+ * only, round degrades to null). Returns null if absent / malformed /
+ * version-skewed / nothing-reviewable-after-filter. Pure: no I/O.
  */
-export function parseDraft(raw: string | null): ExperienceCopilotToolActivity[] | null {
+export function parseDraft(raw: string | null): ParsedCopilotDraft | null {
   if (raw == null) return null;
   let parsed: unknown;
   try {
@@ -119,10 +173,12 @@ export function parseDraft(raw: string | null): ExperienceCopilotToolActivity[] 
   }
   if (typeof parsed !== "object" || parsed === null) return null;
   const env = parsed as DraftEnvelope;
-  if (env._v !== DRAFT_VERSION) return null; // version skew — discard
+  if (env._v !== DRAFT_VERSION && env._v !== 1) return null; // version skew — discard
   if (!Array.isArray(env.activities)) return null;
   const finalized = env.activities.filter(isFinalizedActivity);
-  return finalized.length > 0 ? finalized : null;
+  const round = env._v >= 2 && isReviewRound(env.round) ? env.round : null;
+  if (finalized.length === 0 && round === null) return null;
+  return { activities: finalized, round };
 }
 
 function key(threadId: string): string {
@@ -130,14 +186,19 @@ function key(threadId: string): string {
 }
 
 /**
- * Persist a thread's activities (filtered to the finalized subset). If none
- * qualify, the key is removed instead. Best-effort: any localStorage failure
- * (quota / disabled / absent) is swallowed — the in-memory proposal still
- * works for the current session. No-op without localStorage.
+ * Persist a thread's activities (filtered to the finalized subset) + review
+ * round. When nothing reviewable remains the key is removed instead.
+ * Best-effort: any localStorage failure (quota / disabled / absent) is
+ * swallowed — the in-memory proposal still works for the current session.
+ * No-op without localStorage.
  */
-export function saveDraft(threadId: string, activities: ExperienceCopilotToolActivity[]): void {
+export function saveDraft(
+  threadId: string,
+  activities: ExperienceCopilotToolActivity[],
+  round: CopilotReviewRound | null,
+): void {
   if (typeof localStorage === "undefined") return;
-  const json = serializeDraft(activities);
+  const json = serializeDraft(activities, round);
   try {
     if (json === null) {
       localStorage.removeItem(key(threadId));
@@ -149,8 +210,9 @@ export function saveDraft(threadId: string, activities: ExperienceCopilotToolAct
   }
 }
 
-/** Load + validate a thread's persisted draft. `null` if absent/malformed. No-op without localStorage. */
-export function loadDraft(threadId: string): ExperienceCopilotToolActivity[] | null {
+/** Load + validate a thread's persisted draft (activities + round).
+ *  `null` if absent/malformed. No-op without localStorage. */
+export function loadDraft(threadId: string): ParsedCopilotDraft | null {
   if (typeof localStorage === "undefined") return null;
   let raw: string | null;
   try {
@@ -176,9 +238,9 @@ export function clearDraft(threadId: string): void {
  * with the draft prefix; returns a map keyed by threadId. Malformed / versioned /
  * empty entries are pruned so they don't linger. No-op without localStorage.
  */
-export function loadAllDrafts(): Record<string, ExperienceCopilotToolActivity[]> {
+export function loadAllDrafts(): Record<string, ParsedCopilotDraft> {
   if (typeof localStorage === "undefined") return {};
-  const out: Record<string, ExperienceCopilotToolActivity[]> = {};
+  const out: Record<string, ParsedCopilotDraft> = {};
   // Snapshot the draft keys first: removing items during a forward index loop
   // shifts subsequent keys down, so i++ would skip the shifted entry. Collect,
   // then process.
@@ -201,7 +263,7 @@ export function loadAllDrafts(): Record<string, ExperienceCopilotToolActivity[]>
       continue;
     }
     const acts = parseDraft(raw);
-    if (acts && acts.length > 0) {
+    if (acts && (acts.activities.length > 0 || acts.round !== null)) {
       out[threadId] = acts;
     } else {
       // prune empty/invalid entry in-place
@@ -216,13 +278,39 @@ export function loadAllDrafts(): Record<string, ExperienceCopilotToolActivity[]>
 }
 
 /**
- * Boot rehydration: seed the turn store with any persisted drafts from a
- * previous session. Merges into the existing dict (additive; on a fresh page
- * load the store is empty). Safe to call multiple times. No-op without
- * localStorage. Called once from app bootstrap in Wave 4.
+ * The WRITE side of the persistence contract (envelope v2): read both stores'
+ * current state for the thread and save/clear the localStorage key. Called by
+ * the copilot shell from an effect on every round/activity mutation — the
+ * single funnel that keeps the key in sync without wiring localStorage into
+ * the stores themselves. Idempotent; no-op without localStorage.
+ */
+export function syncPersistedCopilotRound(threadId: string): void {
+  const activities = useExperienceCopilotTurnStore.getState().turnsByThread[threadId] ?? [];
+  const round = useCopilotReviewRoundStore.getState().roundsByThread[threadId] ?? null;
+  saveDraft(threadId, activities, round);
+}
+
+/**
+ * Boot rehydration: seed the turn store (activities) AND the review-round
+ * store (round) with any persisted drafts from a previous session. Merges into
+ * the existing dicts (additive; on a fresh page load both stores are empty).
+ * Safe to call multiple times. No-op without localStorage. Called from the
+ * copilot shell's mount effect.
  */
 export function rehydrateExperienceCopilotDrafts(): void {
   const drafts = loadAllDrafts();
   if (Object.keys(drafts).length === 0) return;
-  useExperienceCopilotTurnStore.setState((s) => ({ turnsByThread: { ...s.turnsByThread, ...drafts } }));
+  useExperienceCopilotTurnStore.setState((s) => ({
+    turnsByThread: {
+      ...s.turnsByThread,
+      ...Object.fromEntries(Object.entries(drafts).map(([tid, d]) => [tid, d.activities])),
+    },
+  }));
+  const rounds = Object.fromEntries(
+    Object
+      .entries(drafts)
+      .flatMap(([tid, d]) => (d.round !== null ? [[tid, d.round] as const] : [])),
+  );
+  if (Object.keys(rounds).length === 0) return;
+  useCopilotReviewRoundStore.setState((s) => ({ roundsByThread: { ...s.roundsByThread, ...rounds } }));
 }

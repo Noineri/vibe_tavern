@@ -14,6 +14,7 @@ declare global {
     __useSnapshotStore: typeof import("../stores/snapshot-store").useSnapshotStore;
     __useCoauthorTurnStore: typeof import("../stores/coauthor-turn-store").useCoauthorTurnStore;
     __useExperienceCopilotTurnStore: typeof import("../stores/experience-copilot-turn-store").useExperienceCopilotTurnStore;
+    __useCopilotReviewRoundStore: typeof import("../stores/experience-copilot-review-store").useCopilotReviewRoundStore;
     __useSessionStore: typeof import("../stores/session-store").useSessionStore;
     __useSceneRenderStore: typeof import("../stores/scene-render-store").useSceneRenderStore;
     __useCoauthorSkillStore: typeof import("../stores/coauthor-skill-store").useCoauthorSkillStore;

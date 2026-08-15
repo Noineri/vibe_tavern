@@ -8,16 +8,25 @@
  * corresponding buffer has a pending proposal AND drifted from the snapshot.
  */
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { act, renderHook } from "@testing-library/react";
 import { useDomEnv } from "../../test/dom-env.js";
 import { useCopilotReviewState, type UseCopilotReviewStateArgs } from "./use-copilot-review-state.js";
 import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn-store.js";
+import { useCopilotReviewRoundStore } from "../stores/experience-copilot-review-store.js";
 
 useDomEnv();
 
+// RTL MUST be imported dynamically BELOW useDomEnv() (the dom-env contract):
+// bun does not evaluate static imports in source order, so a static
+// `import { renderHook }` can evaluate @testing-library/react before the
+// global happy-dom window registers. In the per-file runner that is harmless
+// (one file per process), but in a shared-process combined run it breaks the
+// NEXT file's fireEvent-driven updates (reproduced: this file + InputArea's
+// test in one process — InputArea's send-button tests fail). Mirrors the
+// load-bearing ordering inside dom-env.ts itself.
+const { act, renderHook } = await import("@testing-library/react");
+
 function baseArgs(over: Partial<UseCopilotReviewStateArgs> = {}): UseCopilotReviewStateArgs {
   return {
-    resetKey: "script-1",
     threadId: "thread-1",
     isSending: false,
     rulesCode: "RULES v1",
@@ -39,6 +48,7 @@ function setup(over: Partial<UseCopilotReviewStateArgs> = {}) {
 
 beforeEach(() => {
   useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+  useCopilotReviewRoundStore.setState({ roundsByThread: {} });
 });
 
 describe("useCopilotReviewState", () => {
@@ -136,11 +146,42 @@ describe("useCopilotReviewState", () => {
     expect(result.current.visualConflict).toBe(false);
   });
 
-  it("resets the snapshot stack when the resetKey (script) changes", () => {
+  it("keeps the snapshot stack across unmount/remount — the round store owns it", () => {
+    // The whole point of the store refactor: a hanging review must survive the
+    // shell unmounting (user navigates to prompt tracing / the tester and
+    // returns). The first mount takes a snapshot; the remount reads it back.
+    const first = renderHook((props: UseCopilotReviewStateArgs) => useCopilotReviewState(props), {
+      initialProps: baseArgs(),
+    });
+    act(() => first.rerender(baseArgs({ isSending: true })));
+    act(() => first.rerender(baseArgs({ isSending: false })));
+    expect(first.result.current.snapshots).toHaveLength(1);
+    first.unmount();
+
+    const second = renderHook((props: UseCopilotReviewStateArgs) => useCopilotReviewState(props), {
+      initialProps: baseArgs(),
+    });
+    expect(second.result.current.snapshots).toHaveLength(1);
+    expect(second.result.current.lastSnapshot).toMatchObject({ id: 1, rules: "RULES v1", visual: "VISUAL v1" });
+    expect(second.result.current.proposalBase).toEqual({ rules: "RULES v1", visual: "VISUAL v1" });
+    // canRevert is derived from the restored snapshot against the CURRENT
+    // buffers — the review bar reappears exactly as it was.
+    act(() => second.rerender(baseArgs({ rulesCode: "RULES accepted-hybrid" })));
+    expect(second.result.current.canRevert).toBe(true);
+  });
+
+  it("switching threadId reads the OTHER thread's slice (per-thread keying, no script reset)", () => {
     const { result, rerender } = setup();
     act(() => rerender(baseArgs({ isSending: true })));
     expect(result.current.snapshots).toHaveLength(1);
-    act(() => rerender(baseArgs({ resetKey: "script-2", isSending: false })));
+
+    // A different thread is a different (empty) round — and going back does
+    // not wipe it: per-thread slices replaced the old resetKey (script) reset,
+    // which would have destroyed the restored round on the "" → threadId
+    // mount transition.
+    act(() => rerender(baseArgs({ threadId: "thread-2", isSending: false })));
     expect(result.current.snapshots).toEqual([]);
+    act(() => rerender(baseArgs({ threadId: "thread-1", isSending: false })));
+    expect(result.current.snapshots).toHaveLength(1);
   });
 });

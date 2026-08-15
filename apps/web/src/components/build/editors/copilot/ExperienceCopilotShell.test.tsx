@@ -4,6 +4,7 @@ import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
+import { useCopilotReviewRoundStore } from "../../../../stores/experience-copilot-review-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
 import type { ProviderProfileRecord } from "../../../../api/types.js";
 
@@ -345,6 +346,11 @@ function hasHiddenClass(el: HTMLElement): boolean {
 beforeEach(() => {
   mobileOverride = false;
   useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+  // The review round + the persisted localStorage draft now SURVIVE shell
+  // unmounts (the whole point of the round store) — reset both, or a
+  // previous test's hanging review leaks into the next mount.
+  useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+  localStorage.clear();
   useProviderDataStore.setState({ profiles: PROFILES });
   // Reset the persisted copilot binding between tests (the shell restores it).
   const current = useBootstrapStore.getState().data;
@@ -1447,5 +1453,111 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     expect(onRulesChange).toHaveBeenCalledTimes(1);
     expect(onRulesChange).toHaveBeenCalledWith("// RULES v2\nconst keep = 999;\nconst tail = 22;");
     expect(toastWarning).not.toHaveBeenCalled();
+  });
+});
+
+describe("ExperienceCopilotShell — round survives unmount/remount (the hanging-diff contract)", () => {
+  const BASE = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
+  const PROPOSED = "// RULES v2\nconst keep = 1;\nconst tail = 22.";
+  // Hunk 0 (the header) accepted, hunk 1 (the tail) still pending.
+  const HYBRID = "// RULES v2\nconst keep = 1;\nconst tail = 2.";
+
+  it("restores the pending review and the accept progress after navigating away and back", async () => {
+    const onRulesChange = mock();
+    const first = renderShell({ rulesCode: BASE, onRulesChange });
+    await flushSessionLoad();
+
+    // A real turn (snapshot) against the BASE buffers, then a two-hunk proposal.
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await flushSessionLoad();
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "header + tail",
+              target: "rules",
+              proposed: PROPOSED,
+            },
+          ],
+        },
+      });
+    });
+    await waitFor(() => expect(first.getByTestId("copilot-review-bar")).toBeDefined());
+    await waitFor(() => expect(first.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+
+    // Accept the FIRST hunk (the header): the hybrid lands in the draft…
+    fireEvent.click(first.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(onRulesChange).toHaveBeenCalledWith(HYBRID));
+    // …and only the tail hunk remains pending.
+    await waitFor(() => expect(first.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    // The user navigates away (prompt tracing, the tester, another pane)…
+    first.unmount();
+
+    // …and comes back. The parent editor's draft now holds the hybrid text
+    // (accepted-hunk text is ordinary draft state).
+    const second = renderShell({ rulesCode: HYBRID, onRulesChange: mock() });
+    await flushSessionLoad();
+
+    // The review reappears — with ONLY the still-pending hunk: the previously
+    // accepted header is not re-lit (accept progress survived the remount).
+    await waitFor(() => expect(second.getByTestId("copilot-review-bar")).toBeDefined());
+    await waitFor(() => expect(second.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    expect(second.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!.dataset.hunkId).toBe("1");
+  });
+
+  it("restores the round after a full reload path (localStorage envelope v2)", async () => {
+    // Session 1: proposal lands, one hunk accepted.
+    const onRulesChange = mock();
+    const first = renderShell({ rulesCode: BASE, onRulesChange });
+    await flushSessionLoad();
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await flushSessionLoad();
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "header + tail",
+              target: "rules",
+              proposed: PROPOSED,
+            },
+          ],
+        },
+      });
+    });
+    await waitFor(() => expect(first.getByTestId("copilot-review-bar")).toBeDefined());
+    fireEvent.click(first.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(onRulesChange).toHaveBeenCalledWith(HYBRID));
+
+    // F5: the shell unmounts first, THEN both in-memory stores die with the
+    // page; only the localStorage draft remains. (Unmounting before the wipe
+    // matters: a still-mounted shell's sync effect would see the emptied
+    // stores and CLEAR the persisted key — on a real reload nothing is
+    // mounted when the stores die.)
+    first.unmount();
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+    useCopilotReviewRoundStore.setState({ roundsByThread: {} });
+
+    // Fresh page load: the shell's mount effect rehydrates from localStorage.
+    const second = renderShell({ rulesCode: HYBRID, onRulesChange: mock() });
+    await flushSessionLoad();
+
+    await waitFor(() => expect(second.getByTestId("copilot-review-bar")).toBeDefined());
+    await waitFor(() => expect(second.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    expect(second.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!.dataset.hunkId).toBe("1");
   });
 });
