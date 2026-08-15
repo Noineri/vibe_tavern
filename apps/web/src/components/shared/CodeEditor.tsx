@@ -1,6 +1,6 @@
 import { javascript } from "@codemirror/lang-javascript";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import { EditorView, basicSetup } from "codemirror";
 import { useCallback, useEffect, useRef } from "react";
@@ -98,6 +98,13 @@ interface CodeEditorProps {
   className?: string;
   readOnly?: boolean;
   scrollMode?: "inner" | "page";
+  /** Extra CM6 extensions (CD-4: the copilot inline diff decorations), applied
+   *  AFTER the built-ins so callers can override styling. Changing the array
+   *  RECONFIGURES the editor in place via a Compartment — the view never
+   *  remounts (scroll/cursor survive), unlike the `readOnly`/`scrollMode` props
+   *  which rebuild the extension set. Callers should still memoize; identity
+   *  churn only costs a reconfigure dispatch. */
+  extensions?: Extension[];
 }
 
 export function CodeEditor({
@@ -107,6 +114,7 @@ export function CodeEditor({
   className,
   readOnly = false,
   scrollMode = "inner",
+  extensions,
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -114,6 +122,13 @@ export function CodeEditor({
   onChangeRef.current = onChange;
 
   const externalValueRef = useRef(value);
+
+  // CD-4: caller extensions live in a Compartment so a new array identity
+  // reconfigures in place instead of remounting the editor (the mount effect
+  // below keys on buildExtensions, which must NOT depend on `extensions`).
+  const userExtensionsCompartment = useRef(new Compartment());
+  const userExtensionsRef = useRef(extensions);
+  userExtensionsRef.current = extensions;
 
   const buildExtensions = useCallback(
     () => [
@@ -124,6 +139,7 @@ export function CodeEditor({
       ...(scrollMode === "page" ? [pageScrollTheme] : []),
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),
+      userExtensionsCompartment.current.of(userExtensionsRef.current ?? []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           const doc = update.state.doc.toString();
@@ -162,6 +178,13 @@ export function CodeEditor({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildExtensions]);
+
+  // Reconfigure caller extensions without remounting (see compartment above).
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: userExtensionsCompartment.current.reconfigure(extensions ?? []),
+    });
+  }, [extensions]);
 
   // Sync external value into editor without clobbering cursor
   useEffect(() => {
