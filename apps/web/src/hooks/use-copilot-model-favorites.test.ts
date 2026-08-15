@@ -8,13 +8,16 @@
  * SAFE pattern: real captured first, only the two favorites fns overridden).
  */
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { renderHook, waitFor, act } from "@testing-library/react";
 import { useDomEnv } from "../../test/dom-env.js";
 import { useCopilotModelFavorites } from "./use-copilot-model-favorites.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { MODEL_FAVORITE_SCOPE } from "@vibe-tavern/domain";
 
 useDomEnv();
+
+// RTL dynamic + below useDomEnv() (the dom-env contract — see the comment in
+// use-copilot-review-state.test.ts for the shared-process poisoning mechanism).
+const { renderHook, waitFor, act } = await import("@testing-library/react");
 
 const realProviderActions = await import("../stores/api-actions/provider-actions.js");
 const loadFavoriteModelsAction = mock(async (_profileId: string, _scope: string) => {});
