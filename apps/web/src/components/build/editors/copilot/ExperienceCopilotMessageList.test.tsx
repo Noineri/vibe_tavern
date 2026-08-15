@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
@@ -8,23 +8,6 @@ useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
 let ExperienceCopilotMessageList: typeof import("./ExperienceCopilotMessageList.js").ExperienceCopilotMessageList;
-
-// Mock the two heavy/boundary leaves so the list test pins the LIST contract
-// (message/pending/turn-shell rendering), not markdown or the turn shell's
-// internal diff chrome (each pinned in its own test).
-const realMarkdown = await import("../../../../lib/markdown.js");
-mock.module("../../../../lib/markdown.js", () => ({
-  ...realMarkdown,
-  Markdown: ({ text }: { text: string }) => <div>{text}</div>,
-}));
-
-const realTurnShell = await import("./ExperienceCopilotTurnShell.js");
-mock.module("./ExperienceCopilotTurnShell.js", () => ({
-  ...realTurnShell,
-  ExperienceCopilotTurnShell: ({ activities }: { activities: unknown[] }) => (
-    <div data-testid="copilot-turn-shell">{activities.length} activities</div>
-  ),
-}));
 
 beforeAll(async () => {
   ({ render } = await import("@testing-library/react"));
@@ -114,7 +97,7 @@ describe("ExperienceCopilotMessageList", () => {
       />,
     );
 
-    expect(getByTestId("copilot-turn-shell").textContent).toBe("2 activities");
+    expect(getByTestId("copilot-turn-shell-block")).toBeDefined();
   });
 
   it("persists historical turns' tool audit cards at their turns' positions (CD-1)", () => {
@@ -193,7 +176,7 @@ describe("ExperienceCopilotMessageList", () => {
       },
     });
 
-    const { getAllByTestId, getByTestId } = render(
+    const { getAllByTestId } = render(
       <ExperienceCopilotMessageList
         threadId="thread-1"
         messages={[
@@ -229,7 +212,7 @@ describe("ExperienceCopilotMessageList", () => {
     const blocks = getAllByTestId("copilot-history-cards");
     expect(blocks).toHaveLength(1);
     expect(blocks[0]!.getAttribute("data-anchor")).toBe("a1");
-    expect(getByTestId("copilot-turn-shell").textContent).toBe("1 activities");
+    expect(getAllByTestId("copilot-activity-card").map((card) => card.getAttribute("data-tool"))).toEqual(["edit_buffer"]);
   });
 
   it("renders the empty state when there is nothing to show", () => {

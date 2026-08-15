@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
@@ -12,64 +12,134 @@ useDomEnv();
 // ── Mutable viewport override (mock `use-mobile` reads this) ────────────────
 let mobileOverride = false;
 
-// ── SAFE mock.module stubs (capture real first, spread `...real`) ──────────
-const getExperienceCopilotActive = mock(
-  async (_scriptId: string): Promise<ExperienceCopilotThreadWire | null> => null,
-);
-const listExperienceCopilotMessages = mock(
-  async (_threadId: string): Promise<ExperienceCopilotMessageWire[]> => [],
-);
-const startExperienceCopilotSession = mock(
-  async (_scriptId: string): Promise<ExperienceCopilotThreadWire> => thread("thread-new"),
-);
-const listExperienceCopilotSessions = mock(
-  async (_scriptId: string): Promise<ExperienceCopilotThreadWire[]> => [],
-);
-const activateExperienceCopilotSession = mock(
-  async (_threadId: string): Promise<ExperienceCopilotThreadWire | null> => null,
-);
-const streamExperienceCopilot = mock(
-  async (_threadId: string, _body: unknown, _opts: unknown): Promise<{ finishReason: string }> => ({
-    finishReason: "stop",
-  }),
-);
-const getExperienceCopilotContext = mock(
-  async (_threadId: string): Promise<{ metrics: null; autoCompact: boolean }> => ({ metrics: null, autoCompact: true }),
-);
-const patchExperienceCopilotContext = mock(
-  async (_threadId: string, _body: { autoCompact: boolean }): Promise<{ metrics: null; autoCompact: boolean }> => ({
-    metrics: null,
-    autoCompact: _body.autoCompact,
-  }),
-);
-const compactExperienceCopilot = mock(
-  async (_threadId: string): Promise<{ digest: ExperienceCopilotMessageWire; metrics: null }> => ({
-    digest: {
-      id: "digest-1",
-      threadId: _threadId,
-      role: "digest",
-      content: "summary",
-      toolCallsJson: null,
-      toolCallId: "u1",
-      createdAt: "",
-    },
-    metrics: null,
-  }),
-);
+// ── Fetch-level API router ───────────────────────────────────────────────
+// RV follow-up: mock.module on the api modules is process-global and silently
+// stops applying when another test file shares the bun process (the shell then
+// holds the REAL clients → real fetch → ECONNREFUSED, tests red in a combined
+// run). The api seam is faked at the FETCH level instead: the REAL hono / SSE
+// clients run against a router serving canned payloads. globalThis.fetch is
+// swapped in beforeAll and restored in afterAll — no module registry is
+// touched, so this file coexists with any other test file in one process.
+interface RouterState {
+  activeThread: ExperienceCopilotThreadWire | null;
+  messages: ExperienceCopilotMessageWire[];
+  sessions: ExperienceCopilotThreadWire[];
+  newSession: ExperienceCopilotThreadWire;
+  activateReturns: ExperienceCopilotThreadWire | null;
+  streamEvents: string[];
+  /** Per-thread messages override (session-switcher test); falls back to `messages`. */
+  messagesFor?: (threadId: string) => ExperienceCopilotMessageWire[];
+  /** Hold the SSE stream open (freeze test): no events until `releaseStream()`. */
+  holdStreamOpen: boolean;
+  releaseStream: (() => void) | null;
+}
+let router: RouterState;
 
-const realApi = await import("../../../../api/experience-copilot-api.js");
-mock.module("../../../../api/experience-copilot-api.js", () => ({
-  ...realApi,
-  getExperienceCopilotActive,
-  listExperienceCopilotMessages,
-  startExperienceCopilotSession,
-  listExperienceCopilotSessions,
-  activateExperienceCopilotSession,
-  streamExperienceCopilot,
-  getExperienceCopilotContext,
-  patchExperienceCopilotContext,
-  compactExperienceCopilot,
-}));
+const jsonResponse = (payload: unknown) =>
+  new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+
+const FINISH_STOP = 'event: finish\ndata: {"finishReason":"stop"}\n\n';
+
+const sseResponse = (events: readonly string[]) =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const chunk of events) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    }),
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  );
+
+function makeDigest(threadId: string): ExperienceCopilotMessageWire {
+  return {
+    id: "digest-1",
+    threadId,
+    role: "digest",
+    content: "summary",
+    toolCallsJson: null,
+    toolCallId: "u1",
+    createdAt: "",
+  };
+}
+
+const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const path = new URL(String(input), "http://gateway.test").pathname;
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
+    return jsonResponse(router.activeThread);
+  }
+  if (method === "GET" && /\/api\/experience-copilot\/([^/]+)\/messages$/.test(path)) {
+    const threadId = path.match(/\/api\/experience-copilot\/([^/]+)\/messages$/)?.[1] ?? "";
+    return jsonResponse(router.messagesFor ? router.messagesFor(threadId) : router.messages);
+  }
+  if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
+    return jsonResponse(router.newSession);
+  }
+  if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) {
+    return jsonResponse(router.sessions);
+  }
+  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/activate$/.test(path)) {
+    return jsonResponse(router.activateReturns);
+  }
+  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
+    return jsonResponse({ metrics: null, autoCompact: true });
+  }
+  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { autoCompact?: boolean };
+    return jsonResponse({ metrics: null, autoCompact: body.autoCompact ?? true });
+  }
+  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/compact$/.test(path)) {
+    const threadId = path.match(/\/api\/experience-copilot\/([^/]+)\/compact$/)?.[1] ?? "";
+    return jsonResponse({ digest: makeDigest(threadId), metrics: null });
+  }
+  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+    if (router.holdStreamOpen) {
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            const encoder = new TextEncoder();
+            router.releaseStream = () => {
+              controller.enqueue(encoder.encode(FINISH_STOP));
+              controller.close();
+            };
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    return sseResponse(router.streamEvents);
+  }
+  // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
+  // falls back to `String(null)` in build-config) — route on path SUFFIXES,
+  // never exact equality.
+  if (method === "POST" && path.endsWith("/api/experience/test/run")) return jsonResponse(TEST_RUN_DATA);
+  if (method === "POST" && path.endsWith("/api/experience/playground/start")) return jsonResponse(PLAYGROUND_DATA);
+  // Unmodeled endpoints (e.g. best-effort model-favorites) get a 404 body —
+  // callers treat it like any RPC failure and swallow it.
+  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
+  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 404 });
+});
+
+/** Router fetch calls matching method + path pattern, with parsed JSON bodies. */
+function apiCalls(
+  method: string,
+  pattern: RegExp,
+): Array<{ path: string; body: Record<string, unknown> | null }> {
+  return fetchRouter.mock.calls
+    .map(([input, init]) => {
+      const path = new URL(String(input), "http://gateway.test").pathname;
+      return {
+        method: (init?.method ?? "GET").toUpperCase(),
+        path,
+        body: init?.body !== undefined ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null,
+      };
+    })
+    .filter((call) => call.method === method && pattern.test(call.path));
+}
+
+const streamCalls = () => apiCalls("POST", /\/api\/experience-copilot\/[^/]+\/stream$/);
 
 // Markdown is heavy and its internals are pinned elsewhere; the shell test
 // cares only that message text reaches the list.
@@ -132,51 +202,41 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
 
 // The InteractiveTester (inside the tester modal) drives runExperienceTest;
 // the ExperiencePlayground (inside the sandbox modal) drives
-// startExperiencePlayground. Both are mocked at the client-function boundary
-// so the ER-14 send-to-copilot flow is observable through the REAL shell →
-// child → callback → controller → stream wiring. (SAFE: capture real first,
-// spread `...real` so every other export stays available.)
-const realExperienceApi = await import("../../../../api/experience-api.js");
-const runExperienceTest = mock((_body: Record<string, unknown>) =>
-  Promise.resolve({
-    definition: {
-      apiVersion: 1,
-      manifest: { id: "round", name: "Round" },
-      declaredCapabilities: [{ capability: "participants", reason: "x" }],
-      hasChoose: false,
-      hasFlavor: false,
-    },
-    sourceHash: "h",
-    initialState: {},
-    finalState: {},
-    revision: 0,
-    status: "active",
-    projection: { state: { round: 1 }, actions: [{ type: "score", label: "Score" }] },
-    events: [],
-    effects: [],
-    console: [],
-    steps: [],
-  } as Awaited<ReturnType<typeof realExperienceApi.runExperienceTest>>),
-);
-const startExperiencePlayground = mock((_body: Record<string, unknown>) =>
-  Promise.resolve({
-    playgroundSessionId: "pg-shell-1",
-    initialState: {},
-    state: { round: 1 },
-    projection: { state: { round: 1 }, actions: [{ type: "score", label: "Score" }] },
-    events: [],
-    effects: [],
-    console: [],
-    revision: 0,
-    status: "active",
-    stopReason: "awaiting_human",
-  } as Awaited<ReturnType<typeof realExperienceApi.startExperiencePlayground>>),
-);
-mock.module("../../../../api/experience-api.js", () => ({
-  ...realExperienceApi,
-  runExperienceTest,
-  startExperiencePlayground,
-}));
+// startExperiencePlayground. Both are served by the fetch router above
+// (POST /api/experience/test/run and /api/experience/playground/start), so the
+// ER-14 send-to-copilot flow is observable through the REAL shell → child →
+// callback → controller → client → router wiring — with no module mocks.
+const TEST_RUN_DATA: Awaited<ReturnType<typeof import("../../../../api/experience-api.js").runExperienceTest>> = {
+  definition: {
+    apiVersion: 1,
+    manifest: { id: "round", name: "Round" },
+    declaredCapabilities: [{ capability: "participants", reason: "x" }],
+    hasChoose: false,
+    hasFlavor: false,
+  },
+  sourceHash: "h",
+  initialState: {},
+  finalState: {},
+  revision: 0,
+  status: "active",
+  projection: { state: { round: 1 }, actions: [{ type: "score", label: "Score" }] },
+  events: [],
+  effects: [],
+  console: [],
+  steps: [],
+};
+const PLAYGROUND_DATA: Awaited<ReturnType<typeof import("../../../../api/experience-api.js").startExperiencePlayground>> = {
+  playgroundSessionId: "pg-shell-1",
+  initialState: {},
+  state: { round: 1 },
+  projection: { state: { round: 1 }, actions: [{ type: "score", label: "Score" }] },
+  events: [],
+  effects: [],
+  console: [],
+  revision: 0,
+  status: "active",
+  stopReason: "awaiting_human",
+};
 
 // The shell reads `useIsMobile` (matchMedia). Mock it to a controllable flag.
 const realMobile = await import("../../../../hooks/use-mobile.js");
@@ -223,11 +283,16 @@ let ExperienceCopilotShell: typeof import("./ExperienceCopilotShell.js").Experie
 let EditorView: typeof import("@codemirror/view").EditorView;
 let EditorState: typeof import("@codemirror/state").EditorState;
 
+const realFetch = globalThis.fetch;
 beforeAll(async () => {
+  globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
   ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
   ({ EditorView } = await import("@codemirror/view"));
   ({ EditorState } = await import("@codemirror/state"));
   ({ ExperienceCopilotShell } = await import("./ExperienceCopilotShell.js"));
+});
+afterAll(() => {
+  globalThis.fetch = realFetch;
 });
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -286,37 +351,17 @@ beforeEach(() => {
   if (current) {
     useBootstrapStore.setState({ data: { ...current, uiSettings: { ...current.uiSettings, copilotProviderId: null, copilotModelName: null } } });
   }
-  getExperienceCopilotActive.mockReset();
-  getExperienceCopilotActive.mockResolvedValue(null);
-  listExperienceCopilotMessages.mockReset();
-  listExperienceCopilotMessages.mockResolvedValue([]);
-  startExperienceCopilotSession.mockReset();
-  startExperienceCopilotSession.mockResolvedValue(thread("thread-new"));
-  listExperienceCopilotSessions.mockReset();
-  listExperienceCopilotSessions.mockResolvedValue([]);
-  activateExperienceCopilotSession.mockReset();
-  activateExperienceCopilotSession.mockResolvedValue(null);
-  streamExperienceCopilot.mockReset();
-  streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
-  getExperienceCopilotContext.mockReset();
-  getExperienceCopilotContext.mockResolvedValue({ metrics: null, autoCompact: true });
-  patchExperienceCopilotContext.mockReset();
-  patchExperienceCopilotContext.mockImplementation(async (_t, body) => ({ metrics: null, autoCompact: body.autoCompact }));
-  compactExperienceCopilot.mockReset();
-  compactExperienceCopilot.mockImplementation(async (t) => ({
-    digest: {
-      id: "digest-1",
-      threadId: t,
-      role: "digest",
-      content: "summary",
-      toolCallsJson: null,
-      toolCallId: "u1",
-      createdAt: "",
-    },
-    metrics: null,
-  }));
-  runExperienceTest.mockClear();
-  startExperiencePlayground.mockClear();
+  router = {
+    activeThread: null,
+    messages: [],
+    sessions: [],
+    newSession: thread("thread-new"),
+    activateReturns: null,
+    streamEvents: [FINISH_STOP],
+    holdStreamOpen: false,
+    releaseStream: null,
+  };
+  fetchRouter.mockClear();
 });
 
 function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]> = {}) {
@@ -348,11 +393,11 @@ async function flushSessionLoad() {
 
 describe("ExperienceCopilotShell — session lifecycle", () => {
   it("loads an ACTIVE session and renders its messages", async () => {
-    getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
-    listExperienceCopilotMessages.mockResolvedValue([
+    router.activeThread = thread("thread-1");
+    router.messages = [
       msg({ id: "u1", role: "user", content: "Make it scarier" }),
       msg({ id: "a1", role: "assistant", content: "Here are the rules" }),
-    ]);
+    ];
 
     const { getByText, getByTestId } = renderShell();
 
@@ -360,8 +405,8 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
 
     expect(getByText("Make it scarier")).toBeDefined();
     expect(getByText("Here are the rules")).toBeDefined();
-    expect(getExperienceCopilotActive).toHaveBeenCalledWith("script-1");
-    expect(listExperienceCopilotMessages).toHaveBeenCalledWith("thread-1");
+    expect(apiCalls("GET", /\/script\/script-1\/active$/)).toHaveLength(1);
+    expect(apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/)).toHaveLength(1);
     // threadId is set → the chat input area is mounted (only rendered past the
     // loading/error/threadId branch).
     expect(getByTestId("copilot-send-btn")).toBeDefined();
@@ -374,43 +419,43 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
 
     // MessageList's empty state (thread exists but no messages/activities).
     expect(getByText("experience_copilot_subtitle")).toBeDefined();
-    expect(getExperienceCopilotActive).toHaveBeenCalledWith("script-1");
-    expect(startExperienceCopilotSession).toHaveBeenCalledWith("script-1");
-    expect(listExperienceCopilotMessages).not.toHaveBeenCalled();
+    expect(apiCalls("GET", /\/script\/script-1\/active$/)).toHaveLength(1);
+    expect(apiCalls("POST", /\/script\/script-1\/session$/)).toHaveLength(1);
+    expect(apiCalls("GET", /messages$/)).toHaveLength(0);
   });
 });
 
 describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", () => {
   it("mounts the meter once a thread is loaded and compacts on click (POST → refetch)", async () => {
-    getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
-    listExperienceCopilotMessages.mockResolvedValue([
+    router.activeThread = thread("thread-1");
+    router.messages = [
       msg({ id: "u1", role: "user", content: "Make it scarier" }),
-    ]);
+    ];
 
     const { getByTestId } = renderShell();
     await flushSessionLoad();
 
     expect(getByTestId("copilot-context-meter")).toBeDefined();
-    const callsBefore = listExperienceCopilotMessages.mock.calls.length;
+    const callsBefore = apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/).length;
 
     fireEvent.click(getByTestId("copilot-context-compact-btn"));
     await flushSessionLoad();
 
     // The compact call forwards the shell's current provider/model selection
     // (restored binding p1/m1 from the persisted uiSettings in this test).
-    expect(compactExperienceCopilot).toHaveBeenCalledWith("thread-1", { providerProfileId: "p1", model: "m1" });
+    expect(apiCalls("POST", /\/experience-copilot\/thread-1\/compact$/)[0]?.body).toMatchObject({ providerProfileId: "p1", model: "m1" });
     // onCompacted → handleTurnSettled → refetch messages so the digest card appears.
-    expect(listExperienceCopilotMessages.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/).length).toBeGreaterThan(callsBefore);
   });
 });
 
 describe("ExperienceCopilotShell — session switcher (ER-12b)", () => {
   it("wires the switcher with the fetched sessions + active thread", async () => {
-    getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
-    listExperienceCopilotSessions.mockResolvedValue([
+    router.activeThread = thread("thread-1");
+    router.sessions = [
       { ...thread("thread-1"), title: "Active" },
       { ...thread("thread-2"), title: "Older", archivedAt: "2026-08-10T00:00:00Z" },
-    ]);
+    ];
 
     const { getByTestId } = renderShell();
     await flushSessionLoad();
@@ -424,18 +469,16 @@ describe("ExperienceCopilotShell — session switcher (ER-12b)", () => {
   });
 
   it("switch happy path: activating an archived session rehydrates messages + refetches sessions", async () => {
-    getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
-    listExperienceCopilotSessions.mockResolvedValue([
+    router.activeThread = thread("thread-1");
+    router.sessions = [
       { ...thread("thread-1"), title: "Active" },
       { ...thread("thread-2"), title: "Older", archivedAt: "2026-08-10T00:00:00Z" },
-    ]);
-    listExperienceCopilotMessages.mockImplementation(async (threadId: string) => {
-      if (threadId === "thread-1") {
-        return [msg({ id: "m-active", content: "active message", threadId })];
-      }
-      return [msg({ id: "m-archived", content: "archived message", threadId })];
-    });
-    activateExperienceCopilotSession.mockResolvedValue({ ...thread("thread-2"), archivedAt: null });
+    ];
+    router.messagesFor = (threadId) =>
+      threadId === "thread-1"
+        ? [msg({ id: "m-active", content: "active message", threadId })]
+        : [msg({ id: "m-archived", content: "archived message", threadId })];
+    router.activateReturns = { ...thread("thread-2"), archivedAt: null };
 
     const { getByTestId, getByText } = renderShell();
     await flushSessionLoad();
@@ -445,18 +488,18 @@ describe("ExperienceCopilotShell — session switcher (ER-12b)", () => {
     fireEvent.click(getByTestId("copilot-session-thread-2"));
     await flushSessionLoad();
 
-    expect(activateExperienceCopilotSession).toHaveBeenCalledWith("thread-2");
-    expect(listExperienceCopilotMessages).toHaveBeenCalledWith("thread-2");
+    expect(apiCalls("POST", /\/experience-copilot\/thread-2\/activate$/)).toHaveLength(1);
+    expect(apiCalls("GET", /\/experience-copilot\/thread-2\/messages$/)).toHaveLength(1);
     expect(getByText("archived message")).toBeDefined();
     // Fetched once on mount, refetched once after the switch.
-    expect(listExperienceCopilotSessions).toHaveBeenCalledTimes(2);
+    expect(apiCalls("GET", /\/script\/script-1\/sessions$/)).toHaveLength(2);
   });
 
   it("new-session path: archives the current and resets messages", async () => {
-    getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
-    listExperienceCopilotSessions.mockResolvedValue([thread("thread-1")]);
-    listExperienceCopilotMessages.mockResolvedValue([msg({ content: "old message", threadId: "thread-1" })]);
-    startExperienceCopilotSession.mockResolvedValue(thread("thread-new"));
+    router.activeThread = thread("thread-1");
+    router.sessions = [thread("thread-1")];
+    router.messages = [msg({ content: "old message", threadId: "thread-1" })];
+    router.newSession = thread("thread-new");
 
     const { getByTestId } = renderShell();
     await flushSessionLoad();
@@ -464,10 +507,10 @@ describe("ExperienceCopilotShell — session switcher (ER-12b)", () => {
     fireEvent.click(getByTestId("copilot-session-new"));
     await flushSessionLoad();
 
-    expect(startExperienceCopilotSession).toHaveBeenCalledWith("script-1");
+    expect(apiCalls("POST", /\/script\/script-1\/session$/)).toHaveLength(1);
     // Messages are cleared (no thread rehydration for a brand-new thread).
-    expect(listExperienceCopilotMessages).toHaveBeenCalledTimes(1); // only the initial mount fetch
-    expect(listExperienceCopilotSessions).toHaveBeenCalledTimes(2); // mount + refetch
+    expect(apiCalls("GET", /messages$/)).toHaveLength(1); // only the initial mount fetch
+    expect(apiCalls("GET", /\/script\/script-1\/sessions$/)).toHaveLength(2); // mount + refetch
   });
 });
 
@@ -567,7 +610,7 @@ describe("ExperienceCopilotShell — copilot profile gear (CP-8)", () => {
 describe("ExperienceCopilotShell — mobile tabs", () => {
   it("keeps both panes mounted and toggles visibility on a 2-tab switch", async () => {
     mobileOverride = true;
-    getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
+    router.activeThread = thread("thread-1");
 
     const { getByTestId, getByRole, queryByTestId, queryByRole } = renderShell();
 
@@ -752,8 +795,8 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: text } });
     fireEvent.click(getBySendBtn());
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
-    return streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    await waitFor(() => expect(streamCalls().length).toBeGreaterThan(0));
+    return streamCalls()[0]!.body!;
   }
 
   function getBySendBtn(): HTMLElement {
@@ -798,7 +841,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     // Open the tester modal + run a create-only test.
     fireEvent.click(getByTestId("copilot-toolbar-tester"));
     fireEvent.click(getByText("experience_tester_run"));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/run$/)).toHaveLength(1));
     // Wait for the result to render (the definition block appears after setResult).
     await findByText("experience_tester_definition");
 
@@ -806,9 +849,9 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     const sendBtn = await findByText("experience_tester_send_to_copilot");
     fireEvent.click(sendBtn);
 
-    // handleSendToCopilot → ctrl.handleSend → streamExperienceCopilot body carries testFeedback.
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
-    const firstBody = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    // handleSendToCopilot → ctrl.handleSend → the stream POST body carries testFeedback.
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    const firstBody = streamCalls()[0]!.body!;
     expect(firstBody.testFeedback).toMatchObject({ ok: true, status: "active" });
     expect(firstBody.step).toBe("test");
     // The digest text was posted as the user message content.
@@ -824,8 +867,8 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     fireEvent.change(textarea, { target: { value: "can you fix the rules?" } });
     fireEvent.click(getByTestId("copilot-send-btn"));
 
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(2));
-    const secondBody = streamExperienceCopilot.mock.calls[1][1] as Record<string, unknown>;
+    await waitFor(() => expect(streamCalls()).toHaveLength(2));
+    const secondBody = streamCalls()[1]!.body!;
     expect(secondBody.content).toBe("can you fix the rules?");
     expect(secondBody.testFeedback).toMatchObject({ ok: true, status: "active" });
   });
@@ -837,7 +880,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     // Open the sandbox modal + start a session.
     fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
     fireEvent.click(getByText("experience_playground_start"));
-    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/playground\/start$/)).toHaveLength(1));
     // Wait for the session to render (the turn title appears after setSession).
     await findByText("experience_playground_turn_title");
 
@@ -846,8 +889,8 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     const sendBtn = await findByText("experience_playground_send_diagnostics");
     fireEvent.click(sendBtn);
 
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
-    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    const body = streamCalls()[0]!.body!;
     expect(body.testFeedback).toMatchObject({ ok: true, status: "active", revision: 0 });
     expect(body.step).toBe("test");
   });
@@ -856,10 +899,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
 describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
   it("freezes the editor (read-only + badge) while the model is generating and thaws after settle", async () => {
     // Hang the stream so isSending stays true while we assert the frozen state.
-    let resolveStream!: (v: { finishReason: string }) => void;
-    streamExperienceCopilot.mockImplementationOnce(
-      () => new Promise<{ finishReason: string }>((res) => { resolveStream = res; }),
-    );
+    router.holdStreamOpen = true;
 
     const { container } = renderShell();
     await flushSessionLoad();
@@ -874,7 +914,7 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     expect(frozenView!.state.facet(EditorState.readOnly)).toBe(true);
 
     // Settle: the badge disappears and the editor becomes writable again.
-    await act(async () => { resolveStream({ finishReason: "stop" }); });
+    await act(async () => { router.releaseStream?.(); });
     await waitFor(() => expect(document.querySelector('[data-testid="copilot-editor-frozen"]')).toBeNull());
     const thawedView = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
     expect(thawedView!.state.facet(EditorState.readOnly)).toBe(false);
@@ -892,9 +932,9 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "edit the rules" } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
     // Drain the settle → refetch chain.
-    await waitFor(() => expect(listExperienceCopilotMessages).toHaveBeenCalled());
+    await waitFor(() => expect(apiCalls("GET", /messages$/).length).toBeGreaterThan(0));
 
     // Buffers still equal the snapshot → revert stays hidden.
     expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
@@ -924,7 +964,7 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "go" } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
 
     // Drift the rules buffer while on the rules position: revert visible…
     rerender(
@@ -954,8 +994,8 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "edit the rules" } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(listExperienceCopilotMessages).toHaveBeenCalled());
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await waitFor(() => expect(apiCalls("GET", /messages$/).length).toBeGreaterThan(0));
 
     // The turn's write_buffer proposal lands in the live store (as the SSE
     // tool-result path would fill it).
@@ -995,7 +1035,7 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "edit the rules" } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
     useExperienceCopilotTurnStore.setState({
       turnsByThread: {
@@ -1032,8 +1072,8 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: content } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalled());
-    streamExperienceCopilot.mockClear();
+    await waitFor(() => expect(streamCalls().length).toBeGreaterThan(0));
+    fetchRouter.mockClear();
     await flushSessionLoad();
   }
 
@@ -1151,7 +1191,7 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "edit the rules" } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
 
     useExperienceCopilotTurnStore.setState({
@@ -1195,7 +1235,7 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "edit the rules" } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
-    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
 
     useExperienceCopilotTurnStore.setState({

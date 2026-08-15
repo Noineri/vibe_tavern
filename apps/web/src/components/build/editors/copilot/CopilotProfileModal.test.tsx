@@ -31,7 +31,6 @@ const realProfileApi = await import("../../../../api/copilot-profile-api.js");
 const realSkillApi = await import("../../../../api/copilot-skill-api.js");
 const realMasterDetailModal = await import("../../../shared/MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../../../shared/destructive-confirm-modal.js");
-const realCopilotSkillModal = await import("./CopilotSkillModal.js");
 
 mock.module("../../../../i18n/context.js", () => ({
 	...realI18nContext,
@@ -129,12 +128,6 @@ mock.module("../../../shared/destructive-confirm-modal.js", () => ({
 			<button type="button" data-testid="confirm-ok" onClick={onConfirm}>{confirmLabel}</button>
 		</div>
 	),
-}));
-
-// The nested skill manager is tested separately — stub it out here.
-mock.module("./CopilotSkillModal.js", () => ({
-	...realCopilotSkillModal,
-	CopilotSkillModal: () => <div data-testid="copilot-skill-modal-stub" />,
 }));
 
 let CopilotProfileModal: typeof import("./CopilotProfileModal.js").CopilotProfileModal;
