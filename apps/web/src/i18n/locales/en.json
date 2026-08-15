@@ -1904,6 +1904,7 @@
   "copilot_context_source_provider": "provider-measured",
   "copilot_context_total": "Total",
   "copilot_context_unmetered": "No context budget",
+  "copilot_context_no_metrics": "Context usage appears after the first reply",
   "copilot_profile_title": "Copilot profiles",
   "copilot_profile_subtitle": "Assign and edit copilot profiles. The built-in profile is read-only; create your own to customize the system prompt, skills, tools, and turn budget.",
   "copilot_profile_active": "Active",

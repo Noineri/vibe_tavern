@@ -399,6 +399,7 @@ export default interface Resources {
     "copilot_context_digest_caption_one": "copilot_context_digest_caption",
     "copilot_context_digest_caption_other": "copilot_context_digest_caption",
     "copilot_context_digest_title": "Context compacted",
+    "copilot_context_no_metrics": "Context usage appears after the first reply",
     "copilot_context_segment_digest": "Digest",
     "copilot_context_segment_history": "History",
     "copilot_context_segment_reserve": "Reserve",

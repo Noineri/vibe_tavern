@@ -126,7 +126,9 @@ export function ExperienceContextMeter({
             </div>
           ) : (
             <div className="min-w-0 flex-1 truncate font-ui text-[11px] text-t4">
-              {t("copilot_context_unmetered")}
+              {metrics === null
+                ? t("copilot_context_no_metrics")
+                : t("copilot_context_unmetered")}
             </div>
           )}
         </div>

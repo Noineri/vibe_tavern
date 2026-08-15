@@ -1922,6 +1922,7 @@
   "copilot_context_source_provider": "данные провайдера",
   "copilot_context_total": "Всего",
   "copilot_context_unmetered": "Без бюджета контекста",
+  "copilot_context_no_metrics": "Контекст появится после первого ответа",
   "copilot_profile_title": "Профили копайлота",
   "copilot_profile_subtitle": "Назначение и редактирование профилей копайлота. Встроенный профиль доступен только для чтения; создайте свой, чтобы настроить системный промпт, навыки, инструменты и бюджет ходов.",
   "copilot_profile_active": "Активен",

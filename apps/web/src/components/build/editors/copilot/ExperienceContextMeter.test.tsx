@@ -95,10 +95,10 @@ describe("ExperienceContextMeter", () => {
     expect(queryByTestId("copilot-context-track")).toBeNull();
   });
 
-  it("renders the unmetered label when there are no metrics yet", () => {
+  it("renders the no-metrics label (distinct from unmetered) when there is no measurement yet", () => {
     const { getByText, queryByTestId } = renderMeter({ metrics: null });
 
-    expect(getByText("copilot_context_unmetered")).toBeDefined();
+    expect(getByText("copilot_context_no_metrics")).toBeDefined();
     expect(queryByTestId("copilot-context-track")).toBeNull();
   });
 
