@@ -59,9 +59,6 @@ describe("ExperienceCopilotMessageList", () => {
         ]}
         pendingText=""
         pendingUserContent=""
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
       />,
     );
 
@@ -76,9 +73,6 @@ describe("ExperienceCopilotMessageList", () => {
         messages={[]}
         pendingText="streaming reply…"
         pendingUserContent=""
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
       />,
     );
 
@@ -95,9 +89,6 @@ describe("ExperienceCopilotMessageList", () => {
         messages={[]}
         pendingText=""
         pendingUserContent="make the visual darker"
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
       />,
     );
 
@@ -120,9 +111,6 @@ describe("ExperienceCopilotMessageList", () => {
         messages={[]}
         pendingText=""
         pendingUserContent=""
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
       />,
     );
 
@@ -167,9 +155,6 @@ describe("ExperienceCopilotMessageList", () => {
         ]}
         pendingText=""
         pendingUserContent=""
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
       />,
     );
 
@@ -237,9 +222,6 @@ describe("ExperienceCopilotMessageList", () => {
         ]}
         pendingText=""
         pendingUserContent=""
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
       />,
     );
 
@@ -257,9 +239,6 @@ describe("ExperienceCopilotMessageList", () => {
         messages={[]}
         pendingText=""
         pendingUserContent=""
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
       />,
     );
 
@@ -279,9 +258,6 @@ describe("ExperienceCopilotMessageList", () => {
         ]}
         pendingText=""
         pendingUserContent=""
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
       />,
     );
 

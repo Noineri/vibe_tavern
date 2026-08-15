@@ -46,7 +46,6 @@ import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { inputCls } from "../fields/field-styles.js";
 import { cn } from "../../../lib/cn.js";
-import type { ExperienceCopilotApplyPatch } from "../../../lib/experience-copilot-apply.js";
 import { useT } from "../../../i18n/context.js";
 import {
   isScriptDraftDirty,
@@ -276,13 +275,6 @@ export function ExperienceEditor() {
     if (!activeVisualRecord) return;
     ensureVisualDraft(activeVisualRecord);
     patchVisualDraft(activeVisualRecord.id, patch);
-  };
-
-  // IR-13c: wire the shell's Apply to the two draft stores — proposed rules
-  // text → the script draft, proposed visual text → the visual draft.
-  const handleCopilotApply = (patch: ExperienceCopilotApplyPatch) => {
-    if (patch.rules !== undefined) updateScriptDraft({ code: patch.rules });
-    if (patch.visual !== undefined) updateVisualDraft({ source: patch.visual });
   };
 
   // ── Trust model (IR-81A) ─────────────────────────────────────────────────
@@ -780,7 +772,6 @@ export function ExperienceEditor() {
           onRulesChange={(code) => updateScriptDraft({ code })}
           visualSource={activeVisual?.source ?? ""}
           onVisualChange={(source) => updateVisualDraft({ source })}
-          onApply={handleCopilotApply}
           rulesToolbar={
             <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
               {creationMode && (

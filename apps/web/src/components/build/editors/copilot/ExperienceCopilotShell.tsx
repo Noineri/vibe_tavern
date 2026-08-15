@@ -20,7 +20,6 @@ import { useExperienceCopilotTurnStore } from "../../../../stores/experience-cop
 import type { ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
 import { useBootstrapStore, patchUiSettingsAction } from "../../../../stores/api-actions/bootstrap-actions.js";
 import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
-import type { ExperienceCopilotApplyPatch } from "../../../../lib/experience-copilot-apply.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
 import {
   getExperienceCopilotActive,
@@ -80,8 +79,6 @@ export interface ExperienceCopilotShellProps {
   /** Canonical visual buffer (the active visual's source). Controlled. */
   visualSource: string;
   onVisualChange: (source: string) => void;
-  /** Copilot Apply: parent writes the proposed buffers to the draft stores. */
-  onApply: (patch: ExperienceCopilotApplyPatch) => void;
   /** Contextual toolbar rendered BELOW the editor toolbar when the Rules
    *  buffer is active. Optional — undefined renders nothing (no gap). */
   rulesToolbar?: ReactNode;
@@ -113,7 +110,6 @@ export function ExperienceCopilotShell({
   onRulesChange,
   visualSource,
   onVisualChange,
-  onApply,
   rulesToolbar,
   visualToolbar,
   creationMode = false,
@@ -556,9 +552,6 @@ export function ExperienceCopilotShell({
             messages={messages}
             pendingText={ctrl.pendingText}
             pendingUserContent={ctrl.pendingUserContent}
-            baseRules={rulesCode}
-            baseVisual={visualSource}
-            onApply={onApply}
           />
           {isMobile ? (
             <ExperienceCopilotMobileInputArea

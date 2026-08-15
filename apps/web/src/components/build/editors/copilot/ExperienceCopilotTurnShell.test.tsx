@@ -1,15 +1,24 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+/**
+ * ExperienceCopilotTurnShell — the live turn's audit feed (ER-11c; CD-7).
+ *
+ * Pins the audit-card contract after the review moved to the editor: read /
+ * write_buffer / run_test cards with their copilot shapes (path label, summary
+ * + target chip, informational digest), streaming placeholders, and error
+ * rows. The word-diff disclosure and the Apply button are GONE — the inline
+ * diff review lives in ExperienceCopilotEditorPanel (CD-5/CD-6) and is pinned
+ * there; this surface is glanceable live progress only.
+ */
+import { beforeAll, describe, expect, it } from "bun:test";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
 
 useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
-let fireEvent: typeof import("@testing-library/react").fireEvent;
 let ExperienceCopilotTurnShell: typeof import("./ExperienceCopilotTurnShell.js").ExperienceCopilotTurnShell;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render } = await import("@testing-library/react"));
   ({ ExperienceCopilotTurnShell } = await import("./ExperienceCopilotTurnShell.js"));
 });
 
@@ -23,24 +32,19 @@ function activity(over: Partial<ExperienceCopilotToolActivity>): ExperienceCopil
   };
 }
 
-describe("ExperienceCopilotTurnShell — activity card shapes", () => {
+describe("ExperienceCopilotTurnShell — live audit cards (CD-7)", () => {
   it("renders read / write_buffer / run_test cards with their copilot shapes", () => {
-    const activities: ExperienceCopilotToolActivity[] = [
-      activity({ toolCallId: "read1", toolName: "read_skill_file", status: "done", summary: undefined, readPath: "/skills/combat.md" }),
-      activity({ toolCallId: "write1", toolName: "write_buffer", status: "done", summary: "wrote rules", target: "rules", proposed: "proposed buffer" }),
-      activity({ toolCallId: "run1", toolName: "run_test", status: "done", summary: "2 passed" }),
-    ];
-
-    const { getByText, getByTestId, container } = render(
+    const { getByText, getByTestId, queryByTestId } = render(
       <ExperienceCopilotTurnShell
-        activities={activities}
-        baseRules="old rules"
-        baseVisual=""
-        onApply={mock()}
+        activities={[
+          activity({ toolCallId: "read1", toolName: "read_skill_file", status: "done", summary: undefined, readPath: "/skills/combat.md" }),
+          activity({ toolCallId: "write1", toolName: "write_buffer", status: "done", summary: "wrote rules", target: "rules", proposed: "proposed buffer" }),
+          activity({ toolCallId: "run1", toolName: "run_test", status: "done", summary: "2 passed" }),
+        ]}
       />,
     );
 
-    // read_skill_file → the path is the card label, no diff.
+    // read_skill_file → the path is the card label.
     expect(getByText("/skills/combat.md")).toBeDefined();
     // write_buffer → summary + target chip (copilot target is "rules"|"visual").
     expect(getByText("wrote rules")).toBeDefined();
@@ -49,16 +53,8 @@ describe("ExperienceCopilotTurnShell — activity card shapes", () => {
     expect(getByTestId("copilot-activity-target").textContent).toBe("experience_copilot_rules");
     // run_test → informational summary.
     expect(getByText("2 passed")).toBeDefined();
-
-    // Expand the write_buffer card → base → proposed word diff renders. The
-    // word diff splits on token boundaries, so assert the changed tokens.
-    const writeCard = container.querySelector<HTMLElement>('[data-tool="write_buffer"]');
-    expect(writeCard).not.toBeNull();
-    fireEvent.click(writeCard!);
-    expect(getByText("proposed")).toBeDefined();
-    expect(getByText("buffer")).toBeDefined();
-    expect(getByText("old")).toBeDefined();
-    expect(getByText("rules")).toBeDefined();
+    // The reviewing affordances live in the editor now, not here.
+    expect(queryByTestId("copilot-apply-btn")).toBeNull();
   });
 
   it("renders a visual-target write_buffer card with a Visual label", () => {
@@ -67,67 +63,27 @@ describe("ExperienceCopilotTurnShell — activity card shapes", () => {
         activities={[
           activity({ toolCallId: "v1", toolName: "edit_buffer", status: "done", summary: "tweaked visual", target: "visual", proposed: "new visual" }),
         ]}
-        baseRules=""
-        baseVisual="old visual"
-        onApply={mock()}
       />,
     );
 
     expect(getByTestId("copilot-activity-target").textContent).toBe("experience_copilot_visual");
   });
-});
 
-describe("ExperienceCopilotTurnShell — Apply", () => {
-  beforeEach(() => {
-    // no shared state
-  });
-
-  it("Apply is disabled when no activity produced a proposal", () => {
-    const { getByTestId } = render(
-      <ExperienceCopilotTurnShell
-        activities={[activity({ toolCallId: "run1", toolName: "run_test", status: "done", summary: "2 passed" })]}
-        baseRules=""
-        baseVisual=""
-        onApply={mock()}
-      />,
-    );
-
-    expect((getByTestId("copilot-apply-btn") as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("clicking Apply (after a write_buffer) calls onApply with the proposed buffer", () => {
-    const onApply = mock();
-    const { getByTestId } = render(
+  it("renders a streaming placeholder and an error row", () => {
+    const { getByText, container } = render(
       <ExperienceCopilotTurnShell
         activities={[
-          activity({ toolCallId: "w1", toolName: "write_buffer", status: "done", summary: "wrote rules", target: "rules", proposed: "new rules" }),
+          activity({ toolCallId: "s1", toolName: "write_buffer", status: "streaming", summary: undefined }),
+          activity({ toolCallId: "e1", toolName: "run_test", status: "error", summary: undefined }),
         ]}
-        baseRules="old rules"
-        baseVisual=""
-        onApply={onApply}
       />,
     );
-
-    fireEvent.click(getByTestId("copilot-apply-btn"));
-    expect(onApply).toHaveBeenCalledTimes(1);
-    expect(onApply).toHaveBeenCalledWith({ rules: "new rules" });
+    expect(container.querySelectorAll('[data-tool="write_buffer"]').length).toBe(1);
+    expect(getByText("experience_copilot_tool_failed")).toBeDefined();
   });
 
-  it("routes both buffers into the patch when both were proposed", () => {
-    const onApply = mock();
-    const { getByTestId } = render(
-      <ExperienceCopilotTurnShell
-        activities={[
-          activity({ toolCallId: "w1", toolName: "write_buffer", status: "done", summary: "rules", target: "rules", proposed: "R" }),
-          activity({ toolCallId: "w2", toolName: "edit_buffer", status: "done", summary: "visual", target: "visual", proposed: "V" }),
-        ]}
-        baseRules=""
-        baseVisual=""
-        onApply={onApply}
-      />,
-    );
-
-    fireEvent.click(getByTestId("copilot-apply-btn"));
-    expect(onApply).toHaveBeenCalledWith({ rules: "R", visual: "V" });
+  it("renders nothing without activities", () => {
+    const { container } = render(<ExperienceCopilotTurnShell activities={[]} />);
+    expect(container.querySelector('[data-testid="copilot-turn-shell-block"]')).toBeNull();
   });
 });

@@ -316,7 +316,6 @@ function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]>
     visualSource: "// visual buffer",
     onRulesChange: mock(),
     onVisualChange: mock(),
-    onApply: mock(),
     ...over,
   };
   const utils = render(<ExperienceCopilotShell {...props} />);
@@ -586,37 +585,6 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
     expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
     expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
-  });
-});
-
-describe("ExperienceCopilotShell — Apply forwarding", () => {
-  it("forwards the message-list Apply to the onApply prop", async () => {
-    getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
-    listExperienceCopilotMessages.mockResolvedValue([]);
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-1": [
-          {
-            toolCallId: "w1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "wrote rules",
-            target: "rules",
-            proposed: "new rules",
-          },
-        ],
-      },
-    });
-
-    const onApply = mock();
-    const { getByTestId } = renderShell({ onApply });
-
-    await flushSessionLoad();
-
-    fireEvent.click(getByTestId("copilot-apply-btn"));
-
-    expect(onApply).toHaveBeenCalledTimes(1);
-    expect(onApply).toHaveBeenCalledWith({ rules: "new rules" });
   });
 });
 
@@ -930,7 +898,6 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
         visualSource="// visual buffer"
         onRulesChange={onRulesChange}
         onVisualChange={mock()}
-        onApply={mock()}
       />,
     );
     expect(getByTestId("copilot-toolbar-revert")).toBeDefined();
@@ -957,7 +924,6 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
         visualSource="// visual buffer"
         onRulesChange={mock()}
         onVisualChange={mock()}
-        onApply={mock()}
         creationMode
       />,
     );

@@ -7,7 +7,6 @@ import {
   type ExperienceCopilotToolActivity,
   type HistoricalCopilotTurnActivities,
 } from "../../../../stores/experience-copilot-turn-store.js";
-import type { ExperienceCopilotApplyPatch } from "../../../../lib/experience-copilot-apply.js";
 import { orderMessagesWithDigests } from "../../../../lib/copilot-context.js";
 import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.js";
 import { ExperienceCopilotTurnShell } from "./ExperienceCopilotTurnShell.js";
@@ -39,12 +38,6 @@ export interface ExperienceCopilotMessageListProps {
   /** The user's just-sent message, shown optimistically while the model
    *  generates (the persisted user row only lands after the turn settles). */
   pendingUserContent: string;
-  /** Forwarded to the turn shell's diff view ("before" side). */
-  baseRules: string;
-  /** Forwarded to the turn shell's diff view ("before" side). */
-  baseVisual: string;
-  /** Forwarded to the turn shell's Apply button. */
-  onApply: (patch: ExperienceCopilotApplyPatch) => void;
 }
 
 export function ExperienceCopilotMessageList({
@@ -52,9 +45,6 @@ export function ExperienceCopilotMessageList({
   messages,
   pendingText,
   pendingUserContent,
-  baseRules,
-  baseVisual,
-  onApply,
 }: ExperienceCopilotMessageListProps) {
   const { t } = useT();
   const activities = useExperienceCopilotTurnStore(
@@ -163,14 +153,7 @@ export function ExperienceCopilotMessageList({
             />
           )}
 
-          {activities.length > 0 && (
-            <ExperienceCopilotTurnShell
-              activities={activities}
-              baseRules={baseRules}
-              baseVisual={baseVisual}
-              onApply={onApply}
-            />
-          )}
+          {activities.length > 0 && <ExperienceCopilotTurnShell activities={activities} />}
 
           {hasPendingText && (
             <ExperienceCopilotMessageBlock

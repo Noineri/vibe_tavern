@@ -2,22 +2,19 @@
  * ER-9.1 — experience-copilot-apply (pure).
  *
  * Pins the aggregation that turns an experience-copilot turn's tool activities
- * into (a) a two-buffer proposal (`rules`/`visual`, last-wins per buffer) and
- * (b) the draft-store patch the Wave 4 Apply flow consumes. The two-buffer
- * last-wins semantics are the load-bearing contract: a wrong aggregation means
- * a wrong buffer gets committed, or a buffer the model never touched gets
- * overwritten.
+ * into a two-buffer proposal (`rules`/`visual`, last-wins per buffer) — the
+ * contract the editor review flow (CD-2/CD-6) consumes. The two-buffer
+ * last-wins semantics are load-bearing: a wrong aggregation means a wrong
+ * buffer gets committed, or a buffer the model never touched gets overwritten.
  *
  * Covers: empty/streaming/error exclusion, rules-only and visual-only
  * proposals, both-buffer turns, last-wins per buffer (cumulative checkpoints),
- * read-only tool isolation (read_skill_file / run_test never count as a
- * proposal), and `buildExperienceCopilotApplyPatch` only shipping the buffers
- * the turn actually proposed.
+ * and read-only tool isolation (read_skill_file / run_test never count as a
+ * proposal).
  */
 import { describe, it, expect } from "bun:test";
 import {
 	aggregateExperienceCopilotProposal,
-	buildExperienceCopilotApplyPatch,
 } from "./experience-copilot-apply.js";
 import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot-turn-store.js";
 
@@ -141,55 +138,5 @@ describe("aggregateExperienceCopilotProposal — read-only tool isolation", () =
 		expect(result.hasProposal).toBe(true);
 		expect(result.proposedRules).toBe("new rules");
 		expect(result.summaries).toEqual(["Rewrote rules."]);
-	});
-});
-
-describe("buildExperienceCopilotApplyPatch — hunk-level patch rebuild", () => {
-	it("ships only the proposed buffer(s) from `merged`", () => {
-		// The turn proposed BOTH buffers; the merged patch carries both.
-		const base = aggregateExperienceCopilotProposal([
-			bufferActivity("t1", "rules", "rules text"),
-			bufferActivity("t2", "visual", "visual text"),
-		]);
-		const patch = buildExperienceCopilotApplyPatch(
-			{ rules: "merged rules", visual: "merged visual" },
-			base,
-		);
-		expect(patch).toEqual({ rules: "merged rules", visual: "merged visual" });
-	});
-
-	it("rules-only turn omits visual from the patch", () => {
-		const base = aggregateExperienceCopilotProposal([
-			bufferActivity("t1", "rules", "rules text"),
-		]);
-		const patch = buildExperienceCopilotApplyPatch(
-			{ rules: "merged rules", visual: "merged visual" },
-			base,
-		);
-		expect(patch).toEqual({ rules: "merged rules" });
-		expect(patch.visual).toBeUndefined();
-	});
-
-	it("visual-only turn omits rules from the patch", () => {
-		const base = aggregateExperienceCopilotProposal([
-			bufferActivity("t1", "visual", "visual text"),
-		]);
-		const patch = buildExperienceCopilotApplyPatch(
-			{ rules: "merged rules", visual: "merged visual" },
-			base,
-		);
-		expect(patch).toEqual({ visual: "merged visual" });
-		expect(patch.rules).toBeUndefined();
-	});
-
-	it("no-proposal turn produces an empty patch", () => {
-		const base = aggregateExperienceCopilotProposal([
-			readActivity("r1", "experience-authoring/SKILL.md"),
-		]);
-		const patch = buildExperienceCopilotApplyPatch(
-			{ rules: "merged rules", visual: "merged visual" },
-			base,
-		);
-		expect(patch).toEqual({});
 	});
 });
