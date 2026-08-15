@@ -131,7 +131,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
             triggerTestId="copilot-model-pill"
             triggerLeading={<Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />}
             triggerClassName={cn(
-              "h-8 min-w-0 max-w-[140px] shrink rounded-[5px] bg-s2 px-2.5 text-[12.5px] text-t1 transition-colors hover:bg-s3",
+              "h-8 min-w-0 shrink rounded-[5px] bg-s2 px-2.5 text-[12.5px] text-t1 transition-colors hover:bg-s3",
               model ? "" : "text-t3",
             )}
             options={models.map((m) => ({ id: m.id, label: m.label }))}
