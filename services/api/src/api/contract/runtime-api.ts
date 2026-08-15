@@ -756,6 +756,14 @@ export interface ExperienceCopilotContextState {
   autoCompact: boolean;
 }
 
+/** POST `/compact` response (CM-5): the new digest message + the recomputed
+ *  post-compaction metrics (source always "estimate" — the provider only
+ *  reports usage on an actual turn; the next turn refines it). */
+export interface ExperienceCopilotCompactResult {
+  digest: ExperienceCopilotMessageWire;
+  metrics: ExperienceCopilotContextMetrics;
+}
+
 /** The experience-copilot streaming subsystem — a standalone, editor-embedded
  *  pair-editor (own endpoint, own tables — ER-3) that proposes rules/visual
  *  edits via tools (ER-4) and streams one turn at a time. NOT a chat-mode and
@@ -803,6 +811,13 @@ export interface ExperienceCopilotRuntimeApi {
 	/** Toggle the thread's auto-compact flag (CM-4). Returns the full context
 	 *  state (`{ metrics, autoCompact }`) so the client can replace its local copy. */
 	experienceCopilotPatchContext: (threadId: string, body: { autoCompact?: boolean }) => Promise<ExperienceCopilotContextState>;
+
+	/** Manually compact a thread (CM-5): LLM-summarize everything older than the
+	 *  keep-window into a new `role: "digest"` message (anchor in `toolCallId`).
+	 *  `providerProfileId`/`model` are required when the thread has no last-used
+	 *  pair. Rejects 400 when there is nothing to compact; 409 when a compaction
+	 *  is already in-flight; provider errors surface as 502 via the global handler. */
+	experienceCopilotCompact: (threadId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ExperienceCopilotCompactResult>;
 }
 
 /** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The

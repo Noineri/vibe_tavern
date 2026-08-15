@@ -15,6 +15,7 @@ import type { ToolCallPart, ToolResultPart } from "ai";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import {
   assembleExperienceCopilotPrompt,
+  resolveDigestBoundary,
   type ExperienceCopilotHistoryMessage,
 } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
@@ -409,5 +410,64 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
 
     expect(result.systemMessage).toContain('{"digest":"NEW DIGEST TEXT SURVIVES"}');
     expect(result.systemMessage).not.toContain("OLD DIGEST TEXT SHOULD BE DROPPED");
+  });
+});
+
+// ─── (e) Digest boundary resolution (CM-5) ────────────────────────────────────
+
+describe("resolveDigestBoundary (CM-5)", () => {
+  test("no digest → everything is kept, nothing covered", () => {
+    const messages = [
+      { id: "m1", role: "user", content: "a", toolCallId: null },
+      { id: "m2", role: "assistant", content: "b", toolCallId: null },
+    ];
+    expect(resolveDigestBoundary(messages)).toEqual({
+      lastDigest: null,
+      covered: [],
+      kept: messages,
+    });
+  });
+
+  test("anchor found → splits at the anchor (covered = strictly before, kept = anchor onward)", () => {
+    const messages = [
+      { id: "m1", role: "user", content: "a", toolCallId: null },
+      { id: "m2", role: "assistant", content: "b", toolCallId: null },
+      { id: "d1", role: "digest", content: "summary", toolCallId: "m3" },
+      { id: "m3", role: "user", content: "c", toolCallId: null },
+      { id: "m4", role: "assistant", content: "d", toolCallId: null },
+    ];
+    const result = resolveDigestBoundary(messages);
+    expect(result.lastDigest?.id).toBe("d1");
+    expect(result.covered.map((m) => m.id)).toEqual(["m1", "m2"]);
+    expect(result.kept.map((m) => m.id)).toEqual(["m3", "m4"]);
+  });
+
+  test("dangling anchor → degrades to no-drop (kept = all non-digest, covered empty)", () => {
+    const messages = [
+      { id: "m1", role: "user", content: "a", toolCallId: null },
+      { id: "m2", role: "assistant", content: "b", toolCallId: null },
+      // The anchor points at a message that no longer exists in the loaded set.
+      { id: "d1", role: "digest", content: "summary", toolCallId: "gone" },
+      { id: "m3", role: "user", content: "c", toolCallId: null },
+    ];
+    const result = resolveDigestBoundary(messages);
+    expect(result.lastDigest?.id).toBe("d1");
+    expect(result.covered).toEqual([]);
+    expect(result.kept.map((m) => m.id)).toEqual(["m1", "m2", "m3"]);
+  });
+
+  test("older digests are part of the covered prefix, never kept", () => {
+    const messages = [
+      { id: "m1", role: "user", content: "a", toolCallId: null },
+      { id: "d0", role: "digest", content: "old summary", toolCallId: "m1" },
+      { id: "m2", role: "assistant", content: "b", toolCallId: null },
+      { id: "d1", role: "digest", content: "new summary", toolCallId: "m3" },
+      { id: "m3", role: "user", content: "c", toolCallId: null },
+    ];
+    const result = resolveDigestBoundary(messages);
+    expect(result.lastDigest?.id).toBe("d1");
+    // d0 (older digest) sits before the anchor and is dropped with the covered prefix.
+    expect(result.covered.map((m) => m.id)).toEqual(["m1", "d0", "m2"]);
+    expect(result.kept.map((m) => m.id)).toEqual(["m3"]);
   });
 });

@@ -75,3 +75,54 @@ describe("GET/PATCH /api/experience-copilot/:threadId/context (CM-4)", () => {
     expect(await res.json()).toEqual(state);
   });
 });
+
+describe("POST /api/experience-copilot/:threadId/compact (CM-5)", () => {
+  function makeCompactApp() {
+    const calls: Array<{ threadId: string; body: { providerProfileId?: string; model?: string } }> = [];
+    const result = {
+      digest: { id: "digest_1", threadId: "thread_1", role: "digest", content: "summary", toolCallsJson: null, toolCallId: "m3", createdAt: "2025-01-01T00:00:00.000Z" },
+      metrics: { systemTokens: 1, digestTokens: 2, historyTokens: 3, totalTokens: 6, budgetTokens: 100, reserveTokens: 10, source: "estimate", measuredAt: "2025-01-01T00:00:00.000Z" },
+    };
+    const runtime = {
+      experienceCopilotCompact: async (threadId: string, body: { providerProfileId?: string; model?: string }) => {
+        calls.push({ threadId, body });
+        return result;
+      },
+    } as unknown as ExperienceCopilotRuntimeApi;
+    return { app: createExperienceCopilotRoutes(runtime), calls, result };
+  }
+
+  test("POST forwards the body to the runtime and returns digest + metrics", async () => {
+    const { app, calls, result } = makeCompactApp();
+    const res = await app.request("/api/experience-copilot/thread_1/compact", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ providerProfileId: "prov_1", model: "model_1" }),
+    });
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ threadId: "thread_1", body: { providerProfileId: "prov_1", model: "model_1" } }]);
+    expect(await res.json()).toEqual(result);
+  });
+
+  test("POST with an empty body is allowed (provider/model optional)", async () => {
+    const { app, calls } = makeCompactApp();
+    const res = await app.request("/api/experience-copilot/thread_1/compact", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ threadId: "thread_1", body: {} }]);
+  });
+
+  test("POST with a non-string providerProfileId is rejected with 400", async () => {
+    const { app, calls } = makeCompactApp();
+    const res = await app.request("/api/experience-copilot/thread_1/compact", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ providerProfileId: 42 }),
+    });
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0); // rejected before reaching the adapter
+  });
+});

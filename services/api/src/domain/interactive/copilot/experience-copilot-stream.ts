@@ -40,6 +40,7 @@ import { logSendDebug } from "../../../shared/send-debug-log.js";
 import { notFound } from "../../../shared/errors.js";
 import {
   assembleExperienceCopilotPrompt,
+  resolveDigestBoundary,
   type ExperienceCopilotHistoryMessage,
   type ExperienceCopilotPromptMessage,
   type ExperienceCopilotStep,
@@ -135,6 +136,12 @@ export interface ExperienceCopilotStreamDeps {
    *  its `streamText` override leaks into later files, hanging their real AI
    *  SDK usage. Production wiring omits this field and gets the real function. */
   readonly streamText?: typeof streamText;
+  /** CM-6 fire-and-forget auto-compaction trigger. Called AFTER the turn's
+   *  metrics are persisted (so the service reads the fresh `lastProviderProfileId`
+   *  / `lastModel` + `contextMetrics`). The stream does NOT await it — the
+   *  compaction runs under its own per-thread background lock and must never
+   *  block or fail the stream. Absent → no auto-compaction (tests, legacy). */
+  readonly autoCompact?: (threadId: string) => Promise<void>;
 }
 
 // DEFAULT_MAX_STEPS moved to the built-in profile's maxSteps (ER-16 / CP-4) —
@@ -145,8 +152,10 @@ export interface ExperienceCopilotStreamDeps {
 
 /** Convert stored copilot messages (ER-3) into the history shape ER-5 expects.
  *  Round-trips the {@link storeHistoryToSdk} serialization: assistant rows carry
- *  parsed `toolCalls`; tool rows carry a reconstructed `ToolResultPart`. */
-function storeMessagesToHistory(
+ *  parsed `toolCalls`; tool rows carry a reconstructed `ToolResultPart`.
+ *  Exported (CM-5) so the compaction service reuses the SAME conversion for its
+ *  tool-pair-safe boundary walk and post-compaction token estimate. */
+export function storeMessagesToHistory(
   messages: readonly ExperienceCopilotMessage[],
 ): ExperienceCopilotHistoryMessage[] {
   return messages.map((m): ExperienceCopilotHistoryMessage => {
@@ -304,7 +313,17 @@ export async function* streamExperienceCopilot(
     loadCopilotContext(thread.scriptId, deps),
   ]);
 
-  const priorHistory = storeMessagesToHistory(priorMessages);
+  // ── Pre-split at the digest boundary (CM-5) ──────────────────────────────
+  // A digest REPLACES older messages in the MODEL window only. Before assembly,
+  // resolve the boundary: the LAST digest is re-placed at the front (so the
+  // assembler's CM-3 lifting renders it as a system section) and every message
+  // strictly before its anchor is dropped. Zero-digest threads pass through
+  // unchanged (byte-identical assembly preserved).
+  const boundary = resolveDigestBoundary(priorMessages);
+  const priorHistory: ExperienceCopilotHistoryMessage[] = [
+    ...(boundary.lastDigest ? storeMessagesToHistory([boundary.lastDigest]) : []),
+    ...storeMessagesToHistory(boundary.kept),
+  ];
 
   // ── 3. Resolve provider + model ──
   const profile = await deps.getProviderProfile(request.providerProfileId);
@@ -537,6 +556,12 @@ export async function* streamExperienceCopilot(
       message: extractProviderErrorMessage(err),
     });
   }
+
+  // ── CM-6 fire-and-forget auto-compaction ──────────────────────────────────
+  // Trigger AFTER the metrics (and thus lastProviderProfileId/lastModel) are
+  // persisted. Deliberately NOT awaited — the compaction service runs under its
+  // own per-thread lock and must never block or fail the stream.
+  void deps.autoCompact?.(request.threadId);
 
   yield {
     event: "finish",

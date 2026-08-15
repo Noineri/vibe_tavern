@@ -560,3 +560,64 @@ describe("experience-copilot stream — context metrics (CM-4)", () => {
     expect(data.metrics.reserveTokens).toBe(2000);
   });
 });
+
+describe("experience-copilot stream — digest pre-split + auto-compact (CM-5/CM-6)", () => {
+  it("pre-splits history at the digest boundary: assembly sees digest + kept, never the covered prefix", async () => {
+    const thread = makeThread();
+    const store = createFakeStore(thread);
+
+    // Seed prior messages: covered prefix (m1,m2) + digest (anchor=m3) + kept (m3,m4).
+    store.messages.push(
+      { id: "m1", threadId: thread.id, role: "user", content: "covered-1", toolCallsJson: null, toolCallId: null, createdAt: "2025-01-01T00:00:00.000Z" },
+      { id: "m2", threadId: thread.id, role: "assistant", content: "covered-2", toolCallsJson: null, toolCallId: null, createdAt: "2025-01-01T00:00:00.000Z" },
+      { id: "d1", threadId: thread.id, role: "digest", content: "the-summary", toolCallsJson: null, toolCallId: "m3", createdAt: "2025-01-01T00:00:00.000Z" },
+      { id: "m3", threadId: thread.id, role: "user", content: "kept-1", toolCallsJson: null, toolCallId: null, createdAt: "2025-01-01T00:00:00.000Z" },
+      { id: "m4", threadId: thread.id, role: "assistant", content: "kept-2", toolCallsJson: null, toolCallId: null, createdAt: "2025-01-01T00:00:00.000Z" },
+    );
+
+    let capturedMessages: Array<{ role: string; content: string }> = [];
+    streamTextImpl = (opts: { messages: Array<{ role: string; content: string }> }) => {
+      capturedMessages = opts.messages;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "new user msg", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // The system message carries the digest section.
+    expect(capturedMessages[0].role).toBe("system");
+    expect(capturedMessages[0].content).toContain("the-summary");
+
+    // Non-system = kept window + the new user message, in order.
+    expect(capturedMessages.slice(1).map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(capturedMessages.slice(1).map((m) => m.content)).toEqual(["kept-1", "kept-2", "new user msg"]);
+
+    // The covered prefix never reaches the model window.
+    const serialized = JSON.stringify(capturedMessages);
+    expect(serialized).not.toContain("covered-1");
+    expect(serialized).not.toContain("covered-2");
+  });
+
+  it("fires the auto-compact trigger (fire-and-forget) after metrics are persisted", async () => {
+    const store = createFakeStore(makeThread());
+    const autoCompactCalls: string[] = [];
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({ parts: [textDelta("hi")], usage: { inputTokens: 1234 } });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store, { autoCompact: async (threadId: string) => { autoCompactCalls.push(threadId); } }),
+      ),
+    );
+
+    // Triggered exactly once with the thread id, AFTER metrics were persisted
+    // (so the service reads fresh lastProviderProfileId/lastModel/contextMetrics).
+    expect(autoCompactCalls).toEqual(["thread_1"]);
+    expect(store.metricsCalls).toHaveLength(1);
+  });
+});

@@ -75,6 +75,95 @@ export type ExperienceCopilotHistoryMessage =
  *  this narrower type. */
 export type ExperienceCopilotFlowMessage = Exclude<ExperienceCopilotHistoryMessage, { role: "digest" }>;
 
+// ─── Digest boundary (CM-5) ──────────────────────────────────────────────────
+//
+// A compaction digest REPLACES older messages in the MODEL window only — the
+// UI keeps rendering the full history. The digest message (role === "digest")
+// stores the id of the FIRST KEPT message in its `toolCallId` column (a
+// soft-link overload — that column is otherwise only used for tool-result
+// correlation). `resolveDigestBoundary` is the SINGLE source of truth for the
+// split: everything strictly before the anchor is covered (dropped from the
+// model window), the anchor and everything after it is kept. Both the stream
+// (pre-split before assembly) and the compaction service (what to summarize)
+// consume this helper.
+
+/** The message column that carries the digest's boundary anchor. On a digest
+ *  message (role === "digest"), `toolCallId` holds the id of the FIRST KEPT
+ *  message; a dangling anchor (kept message deleted) degrades to no-drop, never
+ *  wrong-side. See `resolveDigestBoundary`. */
+export const COPILOT_DIGEST_ANCHOR_FIELD = "toolCallId" as const;
+
+/** Structural view of a stored message sufficient to resolve the digest
+ *  boundary. Accepts the store's `ExperienceCopilotMessage` and the wire shape
+ *  — only `id`/`role`/`content`/`toolCallId` are read. */
+export interface DigestBoundaryMessage {
+  readonly id: string;
+  readonly role: string;
+  readonly content: string;
+  readonly toolCallId: string | null;
+}
+
+/** Result of resolving the digest boundary over a thread's message list.
+ *  Generic so the caller's concrete message type (store `ExperienceCopilotMessage`)
+ *  survives — the stream and compaction service both need it to feed the history
+ *  converter unchanged. */
+export interface CopilotDigestBoundary<T extends DigestBoundaryMessage = DigestBoundaryMessage> {
+  /** The LAST digest message, or null when the thread has never compacted. */
+  readonly lastDigest: T | null;
+  /** Messages strictly before the last digest's anchor — the covered prefix to
+   *  DROP from the model window. Excludes the last digest itself; older digest
+   *  messages are simply part of this dropped prefix. */
+  readonly covered: readonly T[];
+  /** Messages from the anchor onward — the keep-window that survives into the
+   *  model window. Excludes the last digest itself. */
+  readonly kept: readonly T[];
+}
+
+/** Resolve the digest boundary (CM-5): find the LAST digest message and split
+ *  the list at its anchor. See the module comment above for the semantics.
+ *
+ *  - No digest → `{ lastDigest: null, covered: [], kept: all }`.
+ *  - Anchor found → everything strictly before the anchor is `covered`; the
+ *    anchor onward is `kept` (both exclude the last digest itself).
+ *  - Anchor DANGLING (id not in the loaded set) → degrade to no-drop: `covered`
+ *    is empty, `kept` is every non-digest message (never wrong-side; logged).
+ *
+ *  Pure — no store access; the caller supplies the loaded message list. */
+export function resolveDigestBoundary<T extends DigestBoundaryMessage>(
+  messages: readonly T[],
+): CopilotDigestBoundary<T> {
+  let lastDigestIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "digest") {
+      lastDigestIdx = i;
+      break;
+    }
+  }
+  if (lastDigestIdx === -1) {
+    return { lastDigest: null, covered: [], kept: [...messages] };
+  }
+
+  const lastDigest = messages[lastDigestIdx];
+  const anchor = lastDigest.toolCallId;
+  // Default (dangling / no anchor) = drop nothing — the digest still renders,
+  // but every non-digest message stays in the window (degraded, never wrong-side).
+  let keepFrom = 0;
+  if (anchor) {
+    const anchorIdx = messages.findIndex((m) => m.id === anchor);
+    if (anchorIdx >= 0) {
+      keepFrom = anchorIdx;
+    } else {
+      console.error(
+        `[experience-copilot-prompt] dangling digest anchor '${anchor}' on digest '${lastDigest.id}' — treating as no-drop`,
+      );
+    }
+  }
+
+  const covered = messages.slice(0, keepFrom).filter((m) => m.id !== lastDigest.id);
+  const kept = messages.slice(keepFrom).filter((m) => m.id !== lastDigest.id);
+  return { lastDigest, covered, kept };
+}
+
 // ─── Context-package types ───────────────────────────────────────────────────
 
 /** Metadata-only view of a visual bound to this experience (the caller supplies
@@ -266,8 +355,10 @@ function renderContextPackage(
  *  Mirrors the Co-Author compaction pattern: a compact `{"digest": "..."}`
  *  block the model reads as a single fact — the digest is a summary, NOT a
  *  chat message, so it is injected into the system message (after the context
- *  package), never into the history flow. */
-function renderDigestSection(digest: string): string {
+ *  package), never into the history flow. Exported (CM-5) so the compaction
+ *  service estimates the post-compaction digest token count with the SAME
+ *  rendering the assembler emits. */
+export function renderDigestSection(digest: string): string {
   return [
     "# Compacted context (digest)",
     "```json",
@@ -287,7 +378,10 @@ function formatHistoryMessages(messages: ReadonlyArray<ExperienceCopilotFlowMess
   }).join("\n\n");
 }
 
-function estimateHistoryTokens(messages: ReadonlyArray<ExperienceCopilotFlowMessage>): number {
+/** Estimate the token count of a list of flow messages using the SAME
+ *  formatter the assembler's budget trim uses. Exported (CM-5) so the
+ *  compaction service estimates the post-compaction history segment identically. */
+export function estimateHistoryTokens(messages: ReadonlyArray<ExperienceCopilotFlowMessage>): number {
   return estimateTokens(formatHistoryMessages(messages));
 }
 

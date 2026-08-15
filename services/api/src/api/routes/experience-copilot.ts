@@ -139,5 +139,14 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
         const body = c.req.valid("json");
         return c.json(await runtime.experienceCopilotPatchContext(threadId, body));
       },
+    )
+    .post(
+      "/api/experience-copilot/:threadId/compact",
+      zValidator("json", z.object({ providerProfileId: z.string().optional(), model: z.string().optional() })),
+      async (c) => {
+        const threadId = c.req.param("threadId");
+        const body = c.req.valid("json");
+        return c.json(await runtime.experienceCopilotCompact(threadId, body, c.req.raw.signal));
+      },
     );
 }

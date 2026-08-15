@@ -1,4 +1,4 @@
-import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState } from "../contract/runtime-api.js";
+import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics } from "@vibe-tavern/db";
 import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
@@ -10,6 +10,8 @@ import {
   streamExperienceCopilot,
   type ExperienceCopilotStreamDeps,
 } from "../../domain/interactive/copilot/experience-copilot-stream.js";
+import { ExperienceCopilotCompactionService } from "../../domain/interactive/copilot/experience-copilot-compaction.js";
+import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { resolveEffectiveSettings } from "@vibe-tavern/domain";
 
 /**
@@ -22,15 +24,23 @@ import { resolveEffectiveSettings } from "@vibe-tavern/domain";
  */
 export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   private readonly profileResolver: CopilotProfileResolver;
+  private readonly compaction: ExperienceCopilotCompactionService | null;
 
   constructor(
     private readonly stores: StoreContainer,
+    /** Provider profile service for the compaction service (CM-5). Nullable so
+     *  the lifecycle-only test harnesses can construct the adapter without it;
+     *  the compaction method throws if absent. */
+    private readonly providerProfileService?: ProviderProfileService,
     /** Copilot skill library (CP-5) — supplies the user-skill root for the
      *  two-root catalog the stream's prompt assembler scans. Optional so the
      *  lifecycle-only test harnesses can construct the adapter without it. */
     private readonly copilotSkillService?: SkillLibraryService,
   ) {
     this.profileResolver = new CopilotProfileResolver(stores);
+    this.compaction = providerProfileService
+      ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService)
+      : null;
   }
 
   experienceCopilotStream = async function* (
@@ -65,6 +75,11 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       // Two-root catalog user root (CP-4): absent → built-in root only.
       ...(this.copilotSkillService !== undefined
         ? { skillUserRoot: this.copilotSkillService.roots().userRoot }
+        : {}),
+      // CM-6: fire-and-forget auto-compaction trigger (absent when the adapter
+      // has no provider profile service — legacy/lifecycle-only harnesses).
+      ...(this.compaction !== null
+        ? { autoCompact: (threadId: string) => this.compaction!.autoCompactAfterTurn(threadId) }
         : {}),
       // Skill roots are derived in the prompt assembler from the resolved skill
       // catalog (ER-16) and flow to the tool builder via `assembled.skillRoots`,
@@ -134,6 +149,23 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       metrics: refreshed?.contextMetrics ? this.toMetricsWire(refreshed.contextMetrics) : null,
       autoCompact: refreshed?.autoCompact ?? true,
     };
+  };
+
+  experienceCopilotCompact = async (
+    threadId: string,
+    body: { providerProfileId?: string; model?: string },
+    signal?: AbortSignal,
+  ): Promise<ExperienceCopilotCompactResult> => {
+    if (!this.compaction) {
+      throw notFound("ProviderProfileService", "Copilot compaction is unavailable (no provider profile service).");
+    }
+    const { digest, metrics } = await this.compaction.compact({
+      threadId,
+      ...(body.providerProfileId !== undefined ? { providerProfileId: body.providerProfileId } : {}),
+      ...(body.model !== undefined ? { model: body.model } : {}),
+      ...(signal ? { signal } : {}),
+    });
+    return { digest: this.toMessageWire(digest), metrics: this.toMetricsWire(metrics) };
   };
 
   // ─── Domain → wire mappers (ER-7) ────────────────────────────────────────
