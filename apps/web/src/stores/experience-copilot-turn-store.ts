@@ -2,9 +2,9 @@ import { create } from "zustand";
 import {
   experienceCopilotToolOutputSchema,
   coauthorSkillReadOutputSchema,
+  type ExperienceCopilotMessageWire,
   type ExperienceCopilotTarget,
 } from "@vibe-tavern/api-contracts";
-import type { AppMessage } from "../api/types.js";
 
 /**
  * Experience-Copilot turn store (ER-8) — ephemeral, per-thread accumulation of
@@ -57,12 +57,37 @@ export interface ExperienceCopilotToolActivity {
   readPath?: string;
 }
 
-/** Selected-variant metadata is the real chat-snapshot wire shape. Some older
- * callers/tests still provide the same fields flattened on AppMessage, so keep
- * those as the first-choice compatibility source. */
-function selectedVariant(message: AppMessage) {
-  // `variants` is required on the current AppMessage wire type, but legacy
-  // snapshots and lightweight callers may omit it; keep extraction total.
+/** Minimal structural message shape the persisted-activity extraction reads
+ *  (CD-1). Satisfied by `AppMessage` (whose tool calls may hide behind the
+ *  variant indirection) and by the wire adapter `wireToToolSource` below (the
+ *  copilot thread's `toolCallsJson`, parsed — never has variants). Structural
+ *  on purpose: the extraction is a pure function over message SOURCES, not
+ *  over one UI type. */
+export interface CopilotToolSourceMessage {
+  id?: string;
+  role: string;
+  content: string;
+  toolCalls?: ReadonlyArray<{ id: string; name: string; args?: unknown }>;
+  toolCallId?: string | null;
+  /** Variant indirection (AppMessage-shaped sources only). */
+  variants?: ReadonlyArray<CopilotToolSourceVariant>;
+  selectedVariantIndex?: number | null;
+}
+
+/** The variant part of `CopilotToolSourceMessage`. */
+interface CopilotToolSourceVariant {
+  variantIndex?: number;
+  isSelected?: boolean;
+  toolCalls?: { id: string; name: string; args?: unknown }[];
+  toolCallId?: string | null;
+}
+
+/** Selected-variant metadata is the real chat-snapshot wire shape (AppMessage
+ *  sources). Some older callers/tests still provide the same fields flattened
+ *  on the source message, so keep those as the first-choice compatibility
+ *  source. Wire-adapter sources have no variants — the helpers degrade to the
+ *  flattened fields. */
+function selectedVariant(message: CopilotToolSourceMessage) {
   const variants = message.variants ?? [];
   const selectedIndex = message.selectedVariantIndex;
   if (typeof selectedIndex === "number") {
@@ -72,22 +97,31 @@ function selectedVariant(message: AppMessage) {
   return variants.find((variant) => variant.isSelected);
 }
 
-function messageToolCalls(message: AppMessage) {
+function messageToolCalls(message: CopilotToolSourceMessage) {
   if (message.toolCalls && message.toolCalls.length > 0) return message.toolCalls;
   return selectedVariant(message)?.toolCalls ?? [];
 }
 
-function messageToolCallId(message: AppMessage): string | null | undefined {
+function messageToolCallId(message: CopilotToolSourceMessage): string | null | undefined {
   return message.toolCallId ?? selectedVariant(message)?.toolCallId;
 }
 
-/**
- * Rebuild the latest turn's activities from a committed non-streaming response.
- * Streaming turns fill the same store incrementally through SSE callbacks;
- * non-streaming turns only expose tool results after snapshot commit.
- */
+/** Rebuild a turn's activities from committed tool rows (CD-1 generalizes
+ *  this from "the latest turn" to any turn slice — the message-list history
+ *  renderer and the non-streaming hydration path share this one reconstruction
+ *  contract). The slice's tool RESULT rows are correlated with their carrier
+ *  assistant toolCall entries to recover the canonical tool name and the
+ *  operation INPUT (args); when the slice contains no user row the whole slice
+ *  is treated as the turn (mirroring the co-author extractor's contract).
+ *
+ *  Tool-row `content` on the wire is the `{toolName, output}` wrapper written
+ *  by `persistTurn` (services/api …/experience-copilot-stream.ts). Legacy
+ *  fixtures also feed the RAW output shape (`{target, proposed, summary}`);
+ *  both are unwrapped — see `unwrapPersistedToolContent`.
+ *
+ *  Pure: no I/O, no React, no store reads. */
 export function extractPersistedExperienceCopilotActivities(
-  messages: ReadonlyArray<AppMessage>,
+  messages: ReadonlyArray<CopilotToolSourceMessage>,
 ): ExperienceCopilotToolActivity[] {
   let latestUserIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -112,23 +146,28 @@ export function extractPersistedExperienceCopilotActivities(
   const activities: ExperienceCopilotToolActivity[] = [];
   for (const message of turnMessages) {
     if (message.role !== "tool") continue;
-    const toolCallId = messageToolCallId(message) ?? message.id;
+    const toolCallId = messageToolCallId(message) ?? message.id ?? "";
     const info = toolCallInfoById.get(toolCallId);
-    let rawOutput: unknown;
+    let rawContent: unknown;
     try {
-      rawOutput = JSON.parse(message.content);
+      rawContent = JSON.parse(message.content);
     } catch (error) {
-      rawOutput = { parseError: error instanceof Error ? error.message : String(error) };
+      rawContent = { parseError: error instanceof Error ? error.message : String(error) };
     }
+    // The real persisted shape wraps the tool output: `{toolName, output}`
+    // (persistTurn). Unwrap it; a raw (unwrapped) output — the legacy fixture
+    // shape — passes through unchanged.
+    const { output: rawOutput, toolName: wrappedToolName } = unwrapPersistedToolContent(rawContent);
+    const toolName = info?.name ?? wrappedToolName ?? "";
     // A read_skill_file result is {path, content} — NOT a proposal, so it must
     // not be flagged as an error (the proposal-schema parse below would).
     // Recognize it first so the card renders as a normal done read.
-    if (info?.name === "read_skill_file") {
+    if (toolName === "read_skill_file") {
       const read = coauthorSkillReadOutputSchema.safeParse(rawOutput);
       activities.push({
         toolCallId,
-        toolName: info.name,
-        args: info.args,
+        toolName,
+        args: info?.args,
         status: read.success ? "done" : "error",
         ...(read.success ? { readPath: read.data.path } : { summary: message.content }),
       });
@@ -137,12 +176,12 @@ export function extractPersistedExperienceCopilotActivities(
     // A write_buffer/edit_buffer result is {target, proposed, summary} — a
     // PROPOSAL over one of the two named buffers. Parse it with the copilot
     // tool-output schema (no greetingIndex/isAdd — those are co-author-only).
-    if (info?.name === "write_buffer" || info?.name === "edit_buffer") {
+    if (toolName === "write_buffer" || toolName === "edit_buffer") {
       const output = experienceCopilotToolOutputSchema.safeParse(rawOutput);
       activities.push({
         toolCallId,
-        toolName: info.name,
-        args: info.args,
+        toolName,
+        args: info?.args,
         status: output.success ? "done" : "error",
         ...(output.success
           ? {
@@ -159,13 +198,133 @@ export function extractPersistedExperienceCopilotActivities(
     // graceful done-with-raw-content card.
     activities.push({
       toolCallId,
-      toolName: info?.name ?? "",
+      toolName,
       args: info?.args,
       status: "done",
       summary: message.content,
     });
   }
   return activities;
+}
+
+/** The `{toolName, output}` wrapper `persistTurn` serializes into tool-row
+ *  `content`. Structural (no zod): the wrapper predates any schema and only
+ *  this shape matters for unwrapping. */
+interface PersistedToolResultWrapper {
+  toolName: unknown;
+  output: unknown;
+}
+
+function isPersistedToolResultWrapper(value: unknown): value is PersistedToolResultWrapper {
+  return typeof value === "object" && value !== null && "toolName" in value && "output" in value;
+}
+
+/** Unwrap the persisted `{toolName, output}` wrapper around a tool result
+ *  payload. A value that is not the wrapper (the legacy raw-output fixture
+ *  shape, or a JSON parse-error object) passes through as-is with no name. */
+function unwrapPersistedToolContent(rawContent: unknown): { output: unknown; toolName?: string } {
+  if (isPersistedToolResultWrapper(rawContent)) {
+    return {
+      output: rawContent.output,
+      ...(typeof rawContent.toolName === "string" ? { toolName: rawContent.toolName } : {}),
+    };
+  }
+  return { output: rawContent };
+}
+
+/** One historical turn's audit cards for the chat-history renderer (CD-1).
+ *  `placement` is relative to the anchor FLOW message (user/assistant — tool
+ *  rows are not rendered): `"before"` renders the cards above the turn's final
+ *  assistant reply (matching the live turn shell's card-above-reply order);
+ *  `"after"` handles a turn that ended with no assistant text (e.g. failed
+ *  mid-tools) by attaching the cards below the turn's user bubble. */
+export interface HistoricalCopilotTurnActivities {
+  anchorId: string;
+  placement: "before" | "after";
+  activities: ExperienceCopilotToolActivity[];
+}
+
+/** Adapter: the copilot wire message → the structural extraction source. The
+ *  wire carries tool calls as `toolCallsJson` (a `[{type: "tool-call",
+ *  toolCallId, toolName, input}]` array serialized by `persistTurn`), which is
+ *  mapped to the flattened `{id, name, args}` shape the extractor correlates.
+ *  Invalid JSON degrades to no tool calls (the tool rows still render, just
+ *  without name/args recovery — mirroring a missing carrier assistant row). */
+export function wireToToolSource(message: ExperienceCopilotMessageWire): CopilotToolSourceMessage {
+  let toolCalls: { id: string; name: string; args?: unknown }[] | undefined;
+  if (message.toolCallsJson) {
+    try {
+      const parsed: unknown = JSON.parse(message.toolCallsJson);
+      if (Array.isArray(parsed)) {
+        toolCalls = parsed.flatMap((entry) => {
+          if (typeof entry !== "object" || entry === null) return [];
+          const e = entry as Record<string, unknown>;
+          const id = typeof e.toolCallId === "string" ? e.toolCallId : undefined;
+          const name = typeof e.toolName === "string" ? e.toolName : undefined;
+          if (id === undefined || name === undefined) return [];
+          return [{ id, name, args: e.input }];
+        });
+        if (toolCalls.length === 0) toolCalls = undefined;
+      }
+    } catch {
+      // Invalid toolCallsJson — degrade to no carrier info (documented above).
+    }
+  }
+  return {
+    ...(message.id ? { id: message.id } : {}),
+    role: message.role,
+    content: message.content,
+    ...(toolCalls ? { toolCalls } : {}),
+    ...(message.toolCallId != null ? { toolCallId: message.toolCallId } : {}),
+  };
+}
+
+/** Rebuild EVERY turn's audit activities from a thread's persisted wire
+ *  messages (CD-1): history cards persist visually instead of being dropped
+ *  when a new turn starts. One entry per turn that produced ≥1 tool activity;
+ *  turns are delimited by user rows (a leading segment before the first user
+ *  row is treated as its own turn, defensive against manual DB edits).
+ *  Excludes nothing — deduping against the LIVE turn store (which holds the
+ *  still-unreviewed latest turn after settle+refetch) is the caller's job, by
+ *  `toolCallId` (the live block renders those cards below the list instead).
+ *
+ *  Pure: no I/O, no React, no store reads. */
+export function extractHistoricalTurnActivities(
+  messages: ReadonlyArray<ExperienceCopilotMessageWire>,
+): HistoricalCopilotTurnActivities[] {
+  const turns: ExperienceCopilotMessageWire[][] = [];
+  let current: ExperienceCopilotMessageWire[] = [];
+  for (const message of messages) {
+    if (message.role === "user" && current.length > 0) {
+      turns.push(current);
+      current = [];
+    }
+    current.push(message);
+  }
+  if (current.length > 0) turns.push(current);
+
+  const out: HistoricalCopilotTurnActivities[] = [];
+  for (const turn of turns) {
+    const activities = extractPersistedExperienceCopilotActivities(turn.map(wireToToolSource));
+    if (activities.length === 0) continue;
+    // Anchor on the turn's LAST flow (rendered) message: the final assistant
+    // reply when present, else the user bubble (cards render after it).
+    let anchor: ExperienceCopilotMessageWire | undefined;
+    for (let i = turn.length - 1; i >= 0; i--) {
+      const role = turn[i]!.role;
+      if (role === "user" || role === "assistant") {
+        anchor = turn[i];
+        break;
+      }
+    }
+    if (!anchor) continue; // No renderable position — nothing to anchor to.
+    out.push({
+      anchorId: anchor.id,
+      placement: anchor.role === "assistant" ? "before" : "after",
+      activities,
+    });
+  }
+  return out;
 }
 
 interface ExperienceCopilotTurnState {

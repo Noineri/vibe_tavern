@@ -1,6 +1,12 @@
 import { describe, expect, it, beforeEach } from "bun:test";
-import { extractPersistedExperienceCopilotActivities, useExperienceCopilotTurnStore } from "./experience-copilot-turn-store.js";
+import {
+  extractHistoricalTurnActivities,
+  extractPersistedExperienceCopilotActivities,
+  useExperienceCopilotTurnStore,
+  wireToToolSource,
+} from "./experience-copilot-turn-store.js";
 import type { AppMessage } from "../api/types.js";
+import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 
 describe("useExperienceCopilotTurnStore", () => {
   beforeEach(() => {
@@ -290,5 +296,183 @@ describe("useExperienceCopilotTurnStore", () => {
 
   it("getActivities returns [] for an unknown thread", () => {
     expect(useExperienceCopilotTurnStore.getState().getActivities("never")).toEqual([]);
+  });
+});
+
+// ─── CD-1: real persisted wrapper + historical turn extraction ────────────────
+
+function wire(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilotMessageWire {
+  return {
+    id: "w1",
+    threadId: "thread-1",
+    role: "user",
+    content: "hello",
+    toolCallsJson: null,
+    toolCallId: null,
+    createdAt: "",
+    ...over,
+  };
+}
+
+describe("persisted tool-content wrapper (persistTurn shape)", () => {
+  it("unwraps the {toolName, output} wrapper the backend actually persists", () => {
+    // persistTurn serializes {toolName, output} into the tool row's content.
+    // The extractor must parse the INNER output, not the wrapper (a wrapper
+    // fed to the proposal schema would flag every real proposal as an error).
+    const messages = [
+      { id: "user_new", role: "user", content: "edit the rules" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_new", name: "write_buffer", args: { buffer: "rules" } }],
+      },
+      {
+        id: "tool_new",
+        role: "tool",
+        toolCallId: "call_new",
+        content: JSON.stringify({
+          toolName: "write_buffer",
+          output: { target: "rules", proposed: "# RULES v2", summary: "rewrote" },
+        }),
+      },
+      { id: "assistant_final", role: "assistant", content: "Done" },
+    ] as AppMessage[];
+
+    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+      toolCallId: "call_new",
+      toolName: "write_buffer",
+      args: { buffer: "rules" },
+      status: "done",
+      target: "rules",
+      proposed: "# RULES v2",
+      summary: "rewrote",
+    }]);
+  });
+
+  it("recovers the tool name from the wrapper when the carrier assistant row is missing", () => {
+    const messages = [
+      { id: "user_new", role: "user", content: "go" },
+      {
+        id: "tool_orphan",
+        role: "tool",
+        toolCallId: "call_orphan",
+        content: JSON.stringify({
+          toolName: "read_skill_file",
+          output: { path: "general-writing/SKILL.md", content: "# write" },
+        }),
+      },
+    ] as AppMessage[];
+
+    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+      toolCallId: "call_orphan",
+      toolName: "read_skill_file",
+      args: undefined,
+      status: "done",
+      readPath: "general-writing/SKILL.md",
+    }]);
+  });
+});
+
+describe("wireToToolSource", () => {
+  it("maps toolCallsJson entries {toolCallId, toolName, input} to {id, name, args}", () => {
+    const source = wireToToolSource(
+      wire({
+        role: "assistant",
+        content: "",
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId: "c1", toolName: "edit_buffer", input: { buffer: "rules" } },
+        ]),
+      }),
+    );
+    expect(source.toolCalls).toEqual([{ id: "c1", name: "edit_buffer", args: { buffer: "rules" } }]);
+  });
+
+  it("degrades to no toolCalls on invalid JSON", () => {
+    const source = wireToToolSource(wire({ role: "assistant", toolCallsJson: "{not json" }));
+    expect(source.toolCalls).toBeUndefined();
+  });
+});
+
+describe("extractHistoricalTurnActivities", () => {
+  it("returns one audit entry per turn, anchored before each turn's final assistant reply", () => {
+    const messages = [
+      wire({ id: "u1", role: "user", content: "first request" }),
+      wire({
+        id: "carrier1",
+        role: "assistant",
+        content: "",
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+        ]),
+      }),
+      wire({
+        id: "tool1",
+        role: "tool",
+        toolCallId: "c1",
+        content: JSON.stringify({
+          toolName: "write_buffer",
+          output: { target: "rules", proposed: "# R1", summary: "first pass" },
+        }),
+      }),
+      wire({ id: "a1", role: "assistant", content: "first reply" }),
+      wire({ id: "u2", role: "user", content: "second request" }),
+      wire({
+        id: "carrier2",
+        role: "assistant",
+        content: "",
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId: "c2", toolName: "edit_buffer", input: { buffer: "visual" } },
+        ]),
+      }),
+      wire({
+        id: "tool2",
+        role: "tool",
+        toolCallId: "c2",
+        content: JSON.stringify({
+          toolName: "edit_buffer",
+          output: { target: "visual", proposed: "# V2", summary: "second pass" },
+        }),
+      }),
+      wire({ id: "a2", role: "assistant", content: "second reply" }),
+    ];
+
+    const turns = extractHistoricalTurnActivities(messages);
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toMatchObject({ anchorId: "a1", placement: "before" });
+    expect(turns[0]!.activities).toHaveLength(1);
+    expect(turns[0]!.activities[0]).toMatchObject({ toolCallId: "c1", toolName: "write_buffer", status: "done", target: "rules" });
+    expect(turns[1]).toMatchObject({ anchorId: "a2", placement: "before" });
+    expect(turns[1]!.activities[0]).toMatchObject({ toolCallId: "c2", toolName: "edit_buffer", target: "visual" });
+  });
+
+  it("anchors after the user bubble when the turn ended without an assistant reply", () => {
+    const messages = [
+      wire({ id: "u1", role: "user", content: "do it" }),
+      wire({
+        id: "tool1",
+        role: "tool",
+        toolCallId: "c1",
+        content: JSON.stringify({
+          toolName: "run_test",
+          output: { passed: false, failures: ["x"] },
+        }),
+      }),
+      // No final assistant row (the turn failed mid-tools).
+    ];
+
+    const turns = extractHistoricalTurnActivities(messages);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ anchorId: "u1", placement: "after" });
+    expect(turns[0]!.activities[0]).toMatchObject({ toolCallId: "c1", toolName: "run_test", status: "done" });
+  });
+
+  it("emits nothing for toolless turns and skips digest rows as anchors", () => {
+    const messages = [
+      wire({ id: "u1", role: "user", content: "hi" }),
+      wire({ id: "a1", role: "assistant", content: "hello" }),
+      wire({ id: "d1", role: "digest", content: "compacted", toolCallId: "u1" }),
+    ];
+    expect(extractHistoricalTurnActivities(messages)).toEqual([]);
   });
 });

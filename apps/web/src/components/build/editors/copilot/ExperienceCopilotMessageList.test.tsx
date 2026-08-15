@@ -129,6 +129,127 @@ describe("ExperienceCopilotMessageList", () => {
     expect(getByTestId("copilot-turn-shell").textContent).toBe("2 activities");
   });
 
+  it("persists historical turns' tool audit cards at their turns' positions (CD-1)", () => {
+    const { container, getAllByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "first request" }),
+          message({
+            id: "carrier1",
+            role: "assistant",
+            content: "",
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules" } },
+            ]),
+          }),
+          message({
+            id: "tool1",
+            role: "tool",
+            toolCallId: "c1",
+            content: JSON.stringify({
+              toolName: "write_buffer",
+              output: { target: "rules", proposed: "# R1", summary: "first pass" },
+            }),
+          }),
+          message({ id: "a1", role: "assistant", content: "first reply" }),
+          message({ id: "u2", role: "user", content: "second request" }),
+          message({
+            id: "tool2",
+            role: "tool",
+            toolCallId: "c2",
+            content: JSON.stringify({
+              toolName: "edit_buffer",
+              output: { target: "visual", proposed: "# V2", summary: "second pass" },
+            }),
+          }),
+          message({ id: "a2", role: "assistant", content: "second reply" }),
+        ]}
+        pendingText=""
+        pendingUserContent=""
+        baseRules=""
+        baseVisual=""
+        onApply={mock()}
+      />,
+    );
+
+    // Two persisted turns with tools → two audit blocks, one per turn.
+    const blocks = getAllByTestId("copilot-history-cards");
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]!.getAttribute("data-anchor")).toBe("a1");
+    expect(blocks[1]!.getAttribute("data-anchor")).toBe("a2");
+    // Each card carries the tool name + summary as glanceable audit.
+    expect(getAllByTestId("copilot-history-activity").map((el) => el.getAttribute("data-tool"))).toEqual([
+      "write_buffer",
+      "edit_buffer",
+    ]);
+    expect(blocks[0]!.textContent).toContain("first pass");
+    expect(blocks[1]!.textContent).toContain("second pass");
+    // Order in the flow: the audit block renders ABOVE its turn's final reply.
+    const order = Array.from(container.querySelectorAll("[data-testid='copilot-history-cards'], [data-role='user'], [data-role='assistant']"));
+    expect(order.map((el) => el.getAttribute("data-anchor") ?? el.getAttribute("data-role"))).toEqual([
+      "user",
+      "a1",
+      "assistant",
+      "user",
+      "a2",
+      "assistant",
+    ]);
+  });
+
+  it("dedupes the latest turn's history cards against the live turn store (CD-1)", () => {
+    // After settle+refetch the latest turn exists BOTH in the persisted history
+    // and in the ephemeral live store (which renders it as the turn shell below
+    // the list). The live block owns those toolCallIds — history must not
+    // duplicate them.
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-1": [{ toolCallId: "c2", toolName: "edit_buffer", status: "done", target: "visual" }],
+      },
+    });
+
+    const { getAllByTestId, getByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "first request" }),
+          message({
+            id: "tool1",
+            role: "tool",
+            toolCallId: "c1",
+            content: JSON.stringify({
+              toolName: "write_buffer",
+              output: { target: "rules", proposed: "# R1", summary: "first pass" },
+            }),
+          }),
+          message({ id: "a1", role: "assistant", content: "first reply" }),
+          message({ id: "u2", role: "user", content: "second request" }),
+          message({
+            id: "tool2",
+            role: "tool",
+            toolCallId: "c2",
+            content: JSON.stringify({
+              toolName: "edit_buffer",
+              output: { target: "visual", proposed: "# V2", summary: "second pass" },
+            }),
+          }),
+          message({ id: "a2", role: "assistant", content: "second reply" }),
+        ]}
+        pendingText=""
+        pendingUserContent=""
+        baseRules=""
+        baseVisual=""
+        onApply={mock()}
+      />,
+    );
+
+    // Only turn 1's cards come from history; turn 2 stays in the live shell.
+    const blocks = getAllByTestId("copilot-history-cards");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.getAttribute("data-anchor")).toBe("a1");
+    expect(getByTestId("copilot-turn-shell").textContent).toBe("1 activities");
+  });
+
   it("renders the empty state when there is nothing to show", () => {
     const { getByText } = render(
       <ExperienceCopilotMessageList

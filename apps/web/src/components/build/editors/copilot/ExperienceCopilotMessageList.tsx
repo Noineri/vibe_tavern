@@ -1,7 +1,12 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
-import { useExperienceCopilotTurnStore, type ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
+import {
+  extractHistoricalTurnActivities,
+  useExperienceCopilotTurnStore,
+  type ExperienceCopilotToolActivity,
+  type HistoricalCopilotTurnActivities,
+} from "../../../../stores/experience-copilot-turn-store.js";
 import type { ExperienceCopilotApplyPatch } from "../../../../lib/experience-copilot-apply.js";
 import { orderMessagesWithDigests } from "../../../../lib/copilot-context.js";
 import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.js";
@@ -55,6 +60,26 @@ export function ExperienceCopilotMessageList({
   const activities = useExperienceCopilotTurnStore(
     useShallow((s) => s.turnsByThread[threadId] ?? EMPTY),
   );
+
+  // CD-1: persisted model turns (tools) render as compact audit cards in the
+  // history, at their turn's position — not only on the live turn. Rebuilt
+  // purely from the wire messages; the live turn store keeps feeding ONLY the
+  // current/last turn's block below (dedupe by toolCallId: after settle+refetch
+  // the latest turn exists in BOTH sources — the live block owns it until
+  // cleared by the next turn / Apply / Reject, then history takes over).
+  const historyTurns = useMemo(() => extractHistoricalTurnActivities(messages), [messages]);
+  const liveToolCallIds = useMemo(
+    () => new Set(activities.map((activity) => activity.toolCallId)),
+    [activities],
+  );
+  const cardsByAnchor = useMemo(() => {
+    const map = new Map<string, HistoricalCopilotTurnActivities>();
+    for (const turn of historyTurns) {
+      const owned = turn.activities.filter((a) => !liveToolCallIds.has(a.toolCallId));
+      if (owned.length > 0) map.set(turn.anchorId, { ...turn, activities: owned });
+    }
+    return map;
+  }, [historyTurns, liveToolCallIds]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
@@ -114,11 +139,14 @@ export function ExperienceCopilotMessageList({
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="flex flex-col gap-3">
           {visibleMessages.map((entry) => (
-            <ExperienceCopilotMessageBlock
-              key={entry.message.id}
-              message={entry.message}
-              coveredCount={entry.coveredCount}
-            />
+            <Fragment key={entry.message.id}>
+              <HistoryTurnCards turn={cardsByAnchor.get(entry.message.id)} placement="before" />
+              <ExperienceCopilotMessageBlock
+                message={entry.message}
+                coveredCount={entry.coveredCount}
+              />
+              <HistoryTurnCards turn={cardsByAnchor.get(entry.message.id)} placement="after" />
+            </Fragment>
           ))}
 
           {hasPendingUserContent && (
@@ -172,6 +200,61 @@ export function ExperienceCopilotMessageList({
           <Icons.Caret direction="d" />
         </button>
       )}
+    </div>
+  );
+}
+
+/** CD-1: one historical turn's audit cards. Compact, non-expandable — the
+ *  reviewing DIFF lives in the editor (the plan's vision: diffs moved out of
+ *  the chat), so history keeps only the glanceable audit row per tool call:
+ *  status icon + summary + target badge (the same visual language as the live
+ *  turn shell's cards, minus the diff disclosure and the Apply footer). */
+function HistoryTurnCards({
+  turn,
+  placement,
+}: {
+  turn: HistoricalCopilotTurnActivities | undefined;
+  placement: "before" | "after";
+}) {
+  const { t } = useT();
+  if (!turn || turn.placement !== placement) return null;
+  return (
+    <div
+      data-testid="copilot-history-cards"
+      data-anchor={turn.anchorId}
+      className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-surface p-2"
+    >
+      {turn.activities.map((activity) => {
+        const isRead = activity.readPath !== undefined;
+        const isProposal = activity.target !== undefined && activity.proposed !== undefined;
+        const errored = activity.status === "error";
+        const targetText =
+          activity.target === "rules"
+            ? t("experience_copilot_rules")
+            : t("experience_copilot_visual");
+        const title = isRead
+          ? activity.readPath!
+          : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
+        return (
+          <div
+            key={activity.toolCallId}
+            data-testid="copilot-history-activity"
+            data-tool={activity.toolName}
+            {...(activity.target ? { "data-target": activity.target } : {})}
+            className="flex min-w-0 items-center gap-1.5 px-2 py-1 font-ui text-[11px] font-medium tracking-[0.03em] text-t2"
+          >
+            <span className={errored ? "text-danger-text" : "text-success-text"}>
+              {isRead ? <Icons.FileText /> : errored ? <Icons.Close /> : <Icons.Check />}
+            </span>
+            <span className="min-w-0 truncate">{title}</span>
+            {isProposal && (
+              <span className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent">
+                {targetText}
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
