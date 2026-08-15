@@ -278,6 +278,81 @@ describe("experience-copilot stream (ER-6)", () => {
     expect(roles.filter((r) => r === "assistant").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("persists a multi-step turn in arrival order: text → tool-call → tool-result → text (TF-3)", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          textDelta("Let me read the skill first."),
+          toolCall("tc_1", "read_skill_file", { path: "visual.md" }),
+          toolResult("tc_1", "read_skill_file", { path: "visual.md", content: "…" }),
+          textDelta("Now writing the buffer."),
+          toolCall("tc_2", "write_buffer", { target: "visual", source: "<html>" }),
+          toolResult("tc_2", "write_buffer", { summary: "wrote", target: "visual", proposed: "<html>" }),
+          textDelta("Done."),
+        ],
+      });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "build a dice roller", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // The stored rows preserve the model's real sequence — the old
+    // accumulator flattened this into one toolCalls row + all tool rows + ONE
+    // final text row, losing the interleaving.
+    const shape = store.messages.map((m) => ({
+      role: m.role,
+      content: m.role === "assistant" && m.toolCallsJson ? null : m.content,
+      toolCallId: m.toolCallId,
+      toolCallIds: m.toolCallsJson
+        ? (JSON.parse(m.toolCallsJson) as Array<{ toolCallId: string }>).map((tc) => tc.toolCallId)
+        : null,
+    }));
+    expect(shape).toEqual([
+      { role: "user", content: "build a dice roller", toolCallId: null, toolCallIds: null },
+      { role: "assistant", content: "Let me read the skill first.", toolCallId: null, toolCallIds: null },
+      { role: "assistant", content: null, toolCallId: null, toolCallIds: ["tc_1"] },
+      { role: "tool", content: expect.stringContaining("read_skill_file"), toolCallId: "tc_1", toolCallIds: null },
+      { role: "assistant", content: "Now writing the buffer.", toolCallId: null, toolCallIds: null },
+      { role: "assistant", content: null, toolCallId: null, toolCallIds: ["tc_2"] },
+      { role: "tool", content: expect.stringContaining("write_buffer"), toolCallId: "tc_2", toolCallIds: null },
+      { role: "assistant", content: "Done.", toolCallId: null, toolCallIds: null },
+    ]);
+  });
+
+  it("groups a run of consecutive tool calls into ONE assistant toolCalls row (TF-3)", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          toolCall("tc_1", "read_skill_file", { path: "a.md" }),
+          toolCall("tc_2", "read_skill_file", { path: "b.md" }),
+          toolResult("tc_1", "read_skill_file", { path: "a.md", content: "…" }),
+          toolResult("tc_2", "read_skill_file", { path: "b.md", content: "…" }),
+        ],
+      });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "read two files", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // Parallel calls in one step share a single assistant row (same shape the
+    // legacy accumulator produced), then one tool row per result in order.
+    const assistantToolRows = store.messages.filter((m) => m.role === "assistant" && m.toolCallsJson);
+    expect(assistantToolRows).toHaveLength(1);
+    const ids = (JSON.parse(assistantToolRows[0].toolCallsJson!) as Array<{ toolCallId: string }>).map(
+      (tc) => tc.toolCallId,
+    );
+    expect(ids).toEqual(["tc_1", "tc_2"]);
+    expect(store.messages.filter((m) => m.role === "tool").map((m) => m.toolCallId)).toEqual(["tc_1", "tc_2"]);
+  });
+
   it("emits an error event when the provider fails mid-stream", async () => {
     const store = createFakeStore(makeThread());
     streamTextImpl = () =>

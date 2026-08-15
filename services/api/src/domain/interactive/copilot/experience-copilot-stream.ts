@@ -429,24 +429,34 @@ export async function* streamExperienceCopilot(
 
   let textAccumulator = "";
   let reasoningAccumulator = "";
-  const extractedToolCalls: Array<{ toolCallId: string; toolName: string; args: Record<string, unknown> }> = [];
-  const extractedToolResults: Array<{ toolCallId: string; toolName: string; output: unknown; isError: boolean }> = [];
+  // TF-3: the turn's pieces in ARRIVAL order. Consecutive text-deltas coalesce
+  // into one open text segment; a tool-call chunk closes the open text segment
+  // (the next text-delta opens a new one), so the stored rows preserve the
+  // model's real sequence: text → tool-call → tool-result → text → …
+  const segments: TurnSegment[] = [];
+  const appendTextDelta = (delta: string) => {
+    const last = segments[segments.length - 1];
+    if (last && last.kind === "text") last.text += delta;
+    else segments.push({ kind: "text", text: delta });
+  };
 
   try {
     for await (const chunk of mapped as AsyncIterable<ProviderStreamChunk>) {
       if (signal?.aborted) {
         yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-        await persistTurn(deps, request.threadId, textAccumulator, extractedToolCalls, extractedToolResults);
+        await persistTurn(deps, request.threadId, segments);
         return;
       }
       if (chunk.type === "text-delta" && chunk.delta) {
         textAccumulator += chunk.delta;
+        appendTextDelta(chunk.delta);
         yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
       } else if (chunk.type === "reasoning-delta") {
         reasoningAccumulator += chunk.textDelta;
         yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
       } else if (chunk.type === "tool-call") {
-        extractedToolCalls.push({
+        segments.push({
+          kind: "toolCall",
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: chunk.args,
@@ -458,7 +468,8 @@ export async function* streamExperienceCopilot(
         };
       } else if (chunk.type === "tool-result") {
         const isError = chunk.isError ?? false;
-        extractedToolResults.push({
+        segments.push({
+          kind: "toolResult",
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           output: chunk.output,
@@ -478,7 +489,7 @@ export async function* streamExperienceCopilot(
   } catch (err) {
     if (signal?.aborted) {
       yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-      await persistTurn(deps, request.threadId, textAccumulator, extractedToolCalls, extractedToolResults);
+      await persistTurn(deps, request.threadId, segments);
       return;
     }
     const message = extractProviderErrorMessage(err);
@@ -486,13 +497,13 @@ export async function* streamExperienceCopilot(
     debug("provider-error", { threadId: request.threadId, message, category });
     yield { event: "error", data: JSON.stringify({ message, category }) };
     // Still persist whatever was accumulated so far (partial turn).
-    await persistTurn(deps, request.threadId, textAccumulator, extractedToolCalls, extractedToolResults);
+    await persistTurn(deps, request.threadId, segments);
     return;
   }
 
   if (signal?.aborted) {
     yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-    await persistTurn(deps, request.threadId, textAccumulator, extractedToolCalls, extractedToolResults);
+    await persistTurn(deps, request.threadId, segments);
     return;
   }
 
@@ -507,7 +518,7 @@ export async function* streamExperienceCopilot(
     finishReason = "error";
   }
 
-  await persistTurn(deps, request.threadId, textAccumulator, extractedToolCalls, extractedToolResults);
+  await persistTurn(deps, request.threadId, segments);
 
   if (reasoningAccumulator) {
     yield { event: "reasoning-done", data: JSON.stringify({}) };
@@ -582,48 +593,68 @@ export async function* streamExperienceCopilot(
 
 // ─── Turn persistence ────────────────────────────────────────────────────────
 
-/** Persist the assistant half of the turn: tool-call messages, tool-result
- *  messages, and the final assistant text (when non-empty). The user message
- *  was already persisted before streaming. Each write is independent (no
- *  transaction) so a failure on one does not lose the others — the messages are
- *  append-only and ordered by createdAt. */
+/** One chronologically ordered piece of the assistant turn (TF-3). The stream
+ *  loop records segments in arrival order; persistTurn walks them so stored
+ *  rows preserve the model's text → tool-call → tool-result → text sequence
+ *  (the old accumulator flattened the whole turn into tool rows + ONE final
+ *  text row, losing the interleaving). */
+type TurnSegment =
+  | { kind: "text"; text: string }
+  | { kind: "toolCall"; toolCallId: string; toolName: string; args: Record<string, unknown> }
+  | { kind: "toolResult"; toolCallId: string; toolName: string; output: unknown; isError: boolean };
+
+/** Persist the assistant half of the turn as chronologically ordered rows: a
+ *  non-empty text segment → an assistant text row; a RUN of consecutive
+ *  tool-call segments (parallel calls in one step) → one assistant row
+ *  carrying them in `toolCallsJson`; a tool-result segment → one tool row.
+ *  The user message was already persisted before streaming. Each write is
+ *  independent (no transaction) so a failure on one does not lose the others —
+ *  the messages are append-only and ordered by createdAt. */
 async function persistTurn(
   deps: ExperienceCopilotStreamDeps,
   threadId: string,
-  text: string,
-  toolCalls: Array<{ toolCallId: string; toolName: string; args: Record<string, unknown> }>,
-  toolResults: Array<{ toolCallId: string; toolName: string; output: unknown; isError: boolean }>,
+  segments: readonly TurnSegment[],
 ): Promise<void> {
-  // Assistant tool-call proposals (one assistant row carrying all calls).
-  if (toolCalls.length > 0) {
-    const persisted: PersistedToolCall[] = toolCalls.map((tc) => ({
-      type: "tool-call",
-      toolCallId: tc.toolCallId,
-      toolName: tc.toolName,
-      input: tc.args,
-    }));
+  let pendingToolCalls: PersistedToolCall[] = [];
+  const flushToolCalls = async () => {
+    if (pendingToolCalls.length === 0) return;
+    const persisted = pendingToolCalls;
+    pendingToolCalls = [];
     await deps.store.appendMessage(threadId, {
       role: "assistant",
       content: "",
       toolCallsJson: JSON.stringify(persisted),
     });
-  }
+  };
 
-  // Tool results (one tool row per result, carrying toolName + output).
-  for (const tr of toolResults) {
-    const payload: PersistedToolResult = { toolName: tr.toolName, output: tr.output };
-    await deps.store.appendMessage(threadId, {
-      role: "tool",
-      content: JSON.stringify(payload),
-      toolCallId: tr.toolCallId,
-    });
+  for (const seg of segments) {
+    if (seg.kind === "toolCall") {
+      // Consecutive tool calls stay in ONE assistant row until any other
+      // segment kind arrives (mirrors parallel calls in a single step).
+      pendingToolCalls.push({
+        type: "tool-call",
+        toolCallId: seg.toolCallId,
+        toolName: seg.toolName,
+        input: seg.args,
+      });
+      continue;
+    }
+    await flushToolCalls();
+    if (seg.kind === "toolResult") {
+      const payload: PersistedToolResult = { toolName: seg.toolName, output: seg.output };
+      await deps.store.appendMessage(threadId, {
+        role: "tool",
+        content: JSON.stringify(payload),
+        toolCallId: seg.toolCallId,
+      });
+    } else if (seg.text.trim()) {
+      // Assistant text (the model's explanation), only when non-empty — a
+      // whitespace-only segment stays unpersisted, same as the old accumulator.
+      await deps.store.appendMessage(threadId, {
+        role: "assistant",
+        content: seg.text,
+      });
+    }
   }
-
-  // Final assistant text (the model's explanation), only when non-empty.
-  if (text.trim()) {
-    await deps.store.appendMessage(threadId, {
-      role: "assistant",
-      content: text,
-    });
-  }
+  await flushToolCalls();
 }
