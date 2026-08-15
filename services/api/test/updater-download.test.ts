@@ -450,8 +450,8 @@ describe("downloadAndSwap against a mock release server", () => {
 		expect(outcome.bytes).toBe(payloadSize);
 		expect(outcome.sha256).toBe(expectedDigest);
 		expect((await stat(join(root, "big.bin"))).size).toBe(payloadSize);
-		// The old buffer-everything path needed >2x the payload here; a quarter
-		// of it is a wide margin that still fails loudly on a regression.
+		// The old buffer-everything path needed >2x the payload here; the budget
+		// below (see the inline note) still fails loudly on such a regression.
 		//
 		// RSS is only a usable proxy for that on Linux. Windows reports the
 		// process working set, which counts the file-cache pages backing the
@@ -461,7 +461,12 @@ describe("downloadAndSwap against a mock release server", () => {
 		// downloader. The rest of the test — that 128 MB streams to disk and
 		// hashes correctly in one pass — runs on both platforms.
 		if (process.platform !== "win32") {
-			expect(peak - before).toBeLessThan(payloadSize / 4);
+			// Half the payload still fails loudly on a buffer-everything regression
+			// (that path needs >2x), while leaving room for allocator/runner variance:
+			// measured peaks — 17 MB warm on a 201 MB payload locally; 33.5 MB on a
+			// 128 MB payload on the GitHub Linux runner (which clipped the old
+			// payload/4 = 32 MB budget by ~5% without any buffering regression).
+			expect(peak - before).toBeLessThan(payloadSize / 2);
 		}
 	});
 });
