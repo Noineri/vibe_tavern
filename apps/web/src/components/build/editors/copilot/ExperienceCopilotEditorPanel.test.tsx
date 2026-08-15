@@ -11,6 +11,7 @@ import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import {
   allReviewHunkIds,
+  applyHunksToBuffer,
   buildBufferReview,
   ExperienceCopilotEditorPanel,
   mergedReviewText,
@@ -167,5 +168,44 @@ describe("ExperienceCopilotEditorPanel", () => {
     expect(onAcceptAll).toHaveBeenCalledTimes(1);
     fireEvent.click(getByTestId("copilot-review-revert"));
     expect(onRevert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("applyHunksToBuffer (pure, CD-8 conflict path)", () => {
+  // Drifted buffer: the second line was hand-edited after the diff was built.
+  const base = "a\nb\nc\nd";
+  const proposed = "a\nB\nc\nD";
+  const diff = buildLineDiff(base, proposed);
+  const hunks = groupHunks(diff);
+
+  it("splices cleanly-anchored hunks onto the drifted buffer", () => {
+    // Line "d" is untouched by the drift → hunk 1 anchors; "b" was replaced by
+    // hand with "x" → hunk 0 cannot anchor and is skipped.
+    const drifted = "a\nx\nc\nd";
+    const result = applyHunksToBuffer(drifted, diff, hunks, new Set(hunks.map((h) => h.id)));
+    expect(result.text).toBe("a\nx\nc\nD");
+    expect(result.skippedHunkIds).toEqual([0]);
+  });
+
+  it("a skipped hunk never blocks the remaining hunks", () => {
+    const result = applyHunksToBuffer("a\nx\nc\nd", diff, hunks, new Set([0, 1]));
+    expect(result.skippedHunkIds).toEqual([0]);
+    expect(result.text).toContain("D");
+  });
+
+  it("an anchor never matches mid-line", () => {
+    // "b" appears only INSIDE the word "abc" — that is not a whole-line run,
+    // so the hunk is conflicting, not spliced into the middle of "abc".
+    const result = applyHunksToBuffer("abc\nc\nd", diff, hunks, new Set([0]));
+    expect(result.skippedHunkIds).toEqual([0]);
+    expect(result.text).toBe("abc\nc\nd");
+  });
+
+  it("pure-insertion hunks have no anchor and are always skipped", () => {
+    const insDiff = buildLineDiff("a\nb", "a\nNEW\nb");
+    const insHunks = groupHunks(insDiff);
+    const result = applyHunksToBuffer("a\nb", insDiff, insHunks, new Set(insHunks.map((h) => h.id)));
+    expect(result.skippedHunkIds).toEqual(insHunks.map((h) => h.id));
+    expect(result.text).toBe("a\nb");
   });
 });

@@ -73,6 +73,16 @@ mock.module("../../../../api/experience-copilot-api.js", () => ({
 
 // Markdown is heavy and its internals are pinned elsewhere; the shell test
 // cares only that message text reaches the list.
+// CD-8: capture the conflict toast (safe pattern — spread real sonner first).
+const toastWarning = mock();
+const realSonner = await import("sonner");
+mock.module("sonner", () => ({
+  ...realSonner,
+  toast: Object.assign((...a: Parameters<typeof realSonner.toast>) => realSonner.toast(...a), realSonner.toast, {
+    warning: toastWarning,
+  }),
+}));
+
 const realMarkdown = await import("../../../../lib/markdown.js");
 mock.module("../../../../lib/markdown.js", () => ({
   ...realMarkdown,
@@ -973,5 +983,165 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     // Accept-all writes the proposed buffer into the rules draft.
     fireEvent.click(getByTestId("copilot-accept-all"));
     expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v2");
+  });
+});
+
+describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn", () => {
+  async function sendOne(content: string) {
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: content } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalled());
+    streamExperienceCopilot.mockClear();
+    await flushSessionLoad();
+  }
+
+  function seedProposal(text: string) {
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-new": [
+          {
+            toolCallId: `w-${text.length}`,
+            toolName: "write_buffer",
+            status: "done",
+            summary: "wrote rules",
+            target: "rules",
+            proposed: text,
+          },
+        ],
+      },
+    });
+  }
+
+  it("a chat-only follow-up turn does not kill the unresolved review (nothing auto-applied)", async () => {
+    const onRulesChange = mock();
+    const { getByTestId } = renderShell({ onRulesChange });
+    await flushSessionLoad();
+
+    // Turn 1 (real send → snapshot), then its proposal lands in the live store.
+    await sendOne("edit the rules");
+    seedProposal("// rules buffer v2");
+    await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
+
+    // Turn 2: a plain chat message with NO tools. The live store is cleared at
+    // send start (audit feed + history cards), but the capture keeps the
+    // proposal hanging — not applied, not dropped.
+    await sendOne("a question, no tools");
+    await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
+    expect(onRulesChange).not.toHaveBeenCalled();
+
+    // Still resolvable by hand: accept-all writes the dangling proposal.
+    fireEvent.click(getByTestId("copilot-accept-all"));
+    expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v2");
+  });
+
+  it("a revising turn's live proposal REPLACES the dangling one (last-wins)", async () => {
+    const onRulesChange = mock();
+    const { getByTestId } = renderShell({ onRulesChange });
+    await flushSessionLoad();
+
+    await sendOne("edit the rules");
+    seedProposal("// rules buffer v2");
+    await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
+
+    // The new turn revises the same buffer — its live proposal wins.
+    await sendOne("revise it again");
+    seedProposal("// rules buffer v3");
+    await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
+
+    fireEvent.click(getByTestId("copilot-accept-all"));
+    expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v3");
+    expect(onRulesChange).not.toHaveBeenCalledWith("// rules buffer v2");
+  });
+});
+
+describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", () => {
+  it("a hunk whose anchor text is gone is skipped with a toast; no silent rebase", async () => {
+    toastWarning.mockClear();
+    const onRulesChange = mock();
+    const utils = renderShell({ onRulesChange });
+    await flushSessionLoad();
+
+    // Real send (snapshot), then a two-hunk proposal over a multi-line buffer.
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await flushSessionLoad();
+
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-new": [
+          {
+            toolCallId: "w1",
+            toolName: "write_buffer",
+            status: "done",
+            summary: "two edits",
+            target: "rules",
+            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 2;",
+          },
+        ],
+      },
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    // External drift: the template tool rewrote the whole buffer — no hunk can
+    // anchor. Accept-all must skip BOTH hunks, warn, and write NOTHING.
+    utils.rerender(
+      <ExperienceCopilotShell
+        {...utils.props}
+        rulesCode="// HAND-EDITED BUFFER"
+        onRulesChange={onRulesChange}
+      />,
+    );
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+
+    expect(onRulesChange).not.toHaveBeenCalled();
+    expect(toastWarning).toHaveBeenCalledTimes(1);
+  });
+
+  it("a cleanly-anchored hunk still applies onto the drifted buffer", async () => {
+    toastWarning.mockClear();
+    const onRulesChange = mock();
+    const base = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
+    const utils = renderShell({ onRulesChange, rulesCode: base });
+    await flushSessionLoad();
+
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await flushSessionLoad();
+
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-new": [
+          {
+            toolCallId: "w1",
+            toolName: "write_buffer",
+            status: "done",
+            summary: "header + tail",
+            target: "rules",
+            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22;",
+          },
+        ],
+      },
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    // Drift away from the MIDDLE line only: the header hunk and the tail hunk
+    // still anchor; they splice onto the drifted text (no clobber of the edit).
+    utils.rerender(
+      <ExperienceCopilotShell
+        {...utils.props}
+        rulesCode={base.replace("const keep = 1;", "const keep = 999;")}
+        onRulesChange={onRulesChange}
+      />,
+    );
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+
+    expect(onRulesChange).toHaveBeenCalledTimes(1);
+    expect(onRulesChange).toHaveBeenCalledWith("// RULES v2\nconst keep = 999;\nconst tail = 22;");
+    expect(toastWarning).not.toHaveBeenCalled();
   });
 });

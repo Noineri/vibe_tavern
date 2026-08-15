@@ -454,6 +454,7 @@ export default interface Resources {
     "copilot_review_accept_all": "Accept all",
     "copilot_review_accept_hunk": "Accept",
     "copilot_review_hunks_count": "{n} hunks pending",
+    "copilot_review_hunks_skipped": "Skipped {n} hunks: the text has changed",
     "copilot_review_model_editing": "AI is editing…",
     "copilot_review_pending_badge": "Unaccepted changes",
     "copilot_review_revert": "Undo changes",

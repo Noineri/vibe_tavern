@@ -67,6 +67,68 @@ export function allReviewHunkIds(review: CopilotBufferReview): Set<number> {
   return allHunkIds(review.hunks);
 }
 
+/** Result of applying hunks onto a drifted buffer (the conflict path). */
+export interface HunkSpliceResult {
+  /** The buffer with every CLEANLY anchored hunk applied. */
+  text: string;
+  /** Hunks that no longer anchor onto the buffer (skipped, still pending). */
+  skippedHunkIds: number[];
+}
+
+/**
+ * CD-8 conflict path: apply the selected hunks onto the CURRENT buffer text
+ * (not the snapshot base) by locating each hunk's removed-line block verbatim
+ * and splicing in its added lines. A hunk whose removed lines no longer appear
+ * contiguously in the buffer (the text changed under it — an external edit
+ * during review) is CONFLICTING: it is skipped and stays pending, and it never
+ * blocks the remaining hunks. No silent rebase: what cannot be anchored is
+ * reported (`skippedHunkIds` → the shell's «N hunks skipped» toast), never
+ * guessed into position. Pure insertion hunks (nothing removed → no anchor)
+ * are treated as conflicting by the same rule.
+ *
+ * Only called when the buffer has drifted from the accept flow's expected
+ * hybrid; the clean path (`mergeSelectedBody`) rebuilds from the snapshot.
+ */
+export function applyHunksToBuffer(
+  buffer: string,
+  diff: TextDiffSummary,
+  hunks: readonly DiffHunk[],
+  selectedHunkIds: ReadonlySet<number>,
+): HunkSpliceResult {
+  const lines = buffer.split("\n");
+  const skippedHunkIds: number[] = [];
+  const byId = new Map(hunks.map((h) => [h.id, h]));
+  for (const id of selectedHunkIds) {
+    const hunk = byId.get(id);
+    if (!hunk) continue;
+    const removedTexts: string[] = [];
+    const addedTexts: string[] = [];
+    for (let k = hunk.start; k < hunk.end; k++) {
+      const line = diff.lines[k]!;
+      if (line.kind === "remove") removedTexts.push(line.text);
+      else if (line.kind === "add") addedTexts.push(line.text);
+    }
+    // Anchor = the hunk's removed lines as a contiguous whole-line run.
+    // indexOf on a joined needle would match MID-LINE, so scan line runs.
+    let at = -1;
+    if (removedTexts.length > 0) {
+      outer: for (let i = 0; i + removedTexts.length <= lines.length; i++) {
+        for (let k = 0; k < removedTexts.length; k++) {
+          if (lines[i + k] !== removedTexts[k]) continue outer;
+        }
+        at = i;
+        break;
+      }
+    }
+    if (at < 0) {
+      skippedHunkIds.push(id); // pure insertion (no anchor) or text changed under it
+      continue;
+    }
+    lines.splice(at, removedTexts.length, ...addedTexts);
+  }
+  return { text: lines.join("\n"), skippedHunkIds };
+}
+
 export interface ExperienceCopilotEditorPanelProps {
   /** The draft buffer text (the free-mode document). */
   value: string;

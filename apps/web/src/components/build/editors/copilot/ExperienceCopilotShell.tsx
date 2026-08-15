@@ -36,9 +36,11 @@ import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
 import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
 import {
   allReviewHunkIds,
+  applyHunksToBuffer,
   buildBufferReview,
   ExperienceCopilotEditorPanel,
   mergedReviewText,
+  type CopilotBufferReview,
 } from "./ExperienceCopilotEditorPanel.js";
 import { useShallow } from "zustand/react/shallow";
 
@@ -297,74 +299,141 @@ export function ExperienceCopilotShell({
     onRevert: handleRevertBuffers,
   });
 
-  // ── Hunk accept-selection (CD-6) ─────────────────────────────────────────
-  // Lives HERE (not in the editor panel) so it survives buffer-tab switches.
-  // Reset whenever the proposal CONTENT changes (a new turn's proposal) or the
-  // thread changes — including the revert path, which clears the live turn and
-  // therefore flips the key to null.
+  // ── Hunk accept-selection (CD-6) + dangling proposals (CD-8) ────────────
+  // Accept-selection lives HERE (not in the editor panel) so it survives
+  // buffer-tab switches. Reset whenever the proposal CONTENT changes (a new
+  // turn's proposal) or the thread changes — including the revert path, which
+  // clears the live turn and therefore flips the key to null.
   const [acceptedRulesHunks, setAcceptedRulesHunks] = useState<Set<number>>(() => new Set());
   const [acceptedVisualHunks, setAcceptedVisualHunks] = useState<Set<number>>(() => new Set());
-  const proposalKey = review.proposal.hasProposal
-    ? `${review.proposal.proposedRules ?? ""}\u0000${review.proposal.proposedVisual ?? ""}`
+
+  // CD-8 dangling semantics: a new chat turn must NOT kill an unresolved
+  // review. The controller clears the live turn store at send start (the
+  // audit feed stays per-turn, and history cards un-hide), so the still-pending
+  // proposal is captured here before the send — it keeps hanging until the
+  // model revises it (the live proposal wins per buffer, last-wins) or the
+  // user resolves it by hand (accept / revert). Nothing is auto-applied.
+  const [dangling, setDangling] = useState<{
+    rules?: string;
+    visual?: string;
+    baseRules: string;
+    baseVisual: string;
+  } | null>(null);
+  const proposalRef = useRef(review.proposal);
+  const proposalBaseRef = useRef(review.proposalBase);
+  proposalRef.current = review.proposal;
+  proposalBaseRef.current = review.proposalBase;
+  const captureDangling = useCallback(() => {
+    if (!proposalRef.current.hasProposal) return;
+    setDangling({
+      rules: proposalRef.current.proposedRules,
+      visual: proposalRef.current.proposedVisual,
+      baseRules: proposalBaseRef.current?.rules ?? rulesCode,
+      baseVisual: proposalBaseRef.current?.visual ?? visualSource,
+    });
+  }, [rulesCode, visualSource]);
+
+  // Effective per-buffer inputs: the LIVE proposal wins its buffers; a buffer
+  // the live turn did not touch falls back to the dangling capture.
+  const effRules = useMemo(() => {
+    if (review.proposal.proposedRules !== undefined)
+      return { proposed: review.proposal.proposedRules, base: review.proposalBase?.rules };
+    if (dangling?.rules !== undefined) return { proposed: dangling.rules, base: dangling.baseRules };
+    return {};
+  }, [review.proposal.proposedRules, review.proposalBase, dangling]);
+  const effVisual = useMemo(() => {
+    if (review.proposal.proposedVisual !== undefined)
+      return { proposed: review.proposal.proposedVisual, base: review.proposalBase?.visual };
+    if (dangling?.visual !== undefined) return { proposed: dangling.visual, base: dangling.baseVisual };
+    return {};
+  }, [review.proposal.proposedVisual, review.proposalBase, dangling]);
+
+  const proposalKey = review.proposal.hasProposal || dangling
+    ? `${effRules.proposed ?? ""}\u0000${effVisual.proposed ?? ""}`
     : null;
   useEffect(() => {
     setAcceptedRulesHunks(new Set());
     setAcceptedVisualHunks(new Set());
   }, [proposalKey, threadId]);
+  useEffect(() => {
+    setDangling(null);
+  }, [threadId, scriptId]);
 
   const rulesReview = useMemo(
-    () =>
-      buildBufferReview(
-        review.proposalBase?.rules,
-        review.proposal.proposedRules,
-        acceptedRulesHunks,
-        !ctrl.isSending,
-      ),
-    [review, acceptedRulesHunks, ctrl.isSending],
+    () => buildBufferReview(effRules.base, effRules.proposed, acceptedRulesHunks, !ctrl.isSending),
+    [effRules, acceptedRulesHunks, ctrl.isSending],
   );
   const visualReview = useMemo(
-    () =>
-      buildBufferReview(
-        review.proposalBase?.visual,
-        review.proposal.proposedVisual,
-        acceptedVisualHunks,
-        !ctrl.isSending,
-      ),
-    [review, acceptedVisualHunks, ctrl.isSending],
+    () => buildBufferReview(effVisual.base, effVisual.proposed, acceptedVisualHunks, !ctrl.isSending),
+    [effVisual, acceptedVisualHunks, ctrl.isSending],
+  );
+
+  // CD-8 conflict semantics. Clean path: the buffer is exactly the hybrid the
+  // accept flow expects → rebuild from the snapshot base (mergeSelectedBody).
+  // Drift path (the buffer changed outside the review — e.g. a template tool):
+  // anchor the clicked hunks onto the CURRENT buffer; hunks whose old text no
+  // longer appears are CONFLICTING — skipped (stay pending), never blocking
+  // the rest, announced with a toast. No silent rebase, ever.
+  const acceptHunks = useCallback(
+    (
+      bufferReview: CopilotBufferReview,
+      prevAccepted: ReadonlySet<number>,
+      clickedIds: readonly number[],
+      bufferText: string,
+      setAccepted: (next: Set<number>) => void,
+      onChange: (text: string) => void,
+    ) => {
+      const expected = bufferReview.diff
+        ? mergedReviewText(bufferReview, prevAccepted)
+        : bufferReview.proposed;
+      if (bufferText !== expected) {
+        const { text, skippedHunkIds } = bufferReview.diff
+          ? applyHunksToBuffer(bufferText, bufferReview.diff, bufferReview.hunks, new Set(clickedIds))
+          : { text: bufferText, skippedHunkIds: [...clickedIds] };
+        const applied = clickedIds.filter((id) => !skippedHunkIds.includes(id));
+        const next = new Set(prevAccepted);
+        for (const id of applied) next.add(id);
+        setAccepted(next);
+        if (applied.length > 0) onChange(text);
+        if (skippedHunkIds.length > 0)
+          toast.warning(t("copilot_review_hunks_skipped", { n: skippedHunkIds.length }));
+        return;
+      }
+      const next = new Set(prevAccepted);
+      for (const id of clickedIds) next.add(id);
+      setAccepted(next);
+      onChange(mergedReviewText(bufferReview, next));
+    },
+    [t],
   );
 
   const acceptRulesHunk = useCallback(
     (hunkId: number) => {
       if (!rulesReview) return;
-      const next = new Set(acceptedRulesHunks);
-      next.add(hunkId);
-      setAcceptedRulesHunks(next);
-      onRulesChange(mergedReviewText(rulesReview, next));
+      acceptHunks(rulesReview, acceptedRulesHunks, [hunkId], rulesCode, setAcceptedRulesHunks, onRulesChange);
     },
-    [rulesReview, acceptedRulesHunks, onRulesChange],
+    [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks],
   );
   const acceptAllRules = useCallback(() => {
     if (!rulesReview) return;
-    setAcceptedRulesHunks(allReviewHunkIds(rulesReview));
-    onRulesChange(mergedReviewText(rulesReview, allReviewHunkIds(rulesReview)));
-  }, [rulesReview, onRulesChange]);
+    const pending = [...allReviewHunkIds(rulesReview)].filter((id) => !acceptedRulesHunks.has(id));
+    acceptHunks(rulesReview, acceptedRulesHunks, pending, rulesCode, setAcceptedRulesHunks, onRulesChange);
+  }, [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks]);
   const acceptVisualHunk = useCallback(
     (hunkId: number) => {
       if (!visualReview) return;
-      const next = new Set(acceptedVisualHunks);
-      next.add(hunkId);
-      setAcceptedVisualHunks(next);
-      onVisualChange(mergedReviewText(visualReview, next));
+      acceptHunks(visualReview, acceptedVisualHunks, [hunkId], visualSource, setAcceptedVisualHunks, onVisualChange);
     },
-    [visualReview, acceptedVisualHunks, onVisualChange],
+    [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks],
   );
   const acceptAllVisual = useCallback(() => {
     if (!visualReview) return;
-    setAcceptedVisualHunks(allReviewHunkIds(visualReview));
-    onVisualChange(mergedReviewText(visualReview, allReviewHunkIds(visualReview)));
-  }, [visualReview, onVisualChange]);
+    const pending = [...allReviewHunkIds(visualReview)].filter((id) => !acceptedVisualHunks.has(id));
+    acceptHunks(visualReview, acceptedVisualHunks, pending, visualSource, setAcceptedVisualHunks, onVisualChange);
+  }, [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks]);
 
   const handleToolbarRevert = useCallback(() => {
+    setDangling(null);
     review.revertLastTurn();
     toast.success(t("copilot_review_reverted"));
   }, [review, t]);
@@ -377,6 +446,7 @@ export function ExperienceCopilotShell({
   const handleSendToCopilot = useCallback(
     (digest: CopilotDigest) => {
       setTestFeedback(digest.feedback);
+      captureDangling();
       void ctrl.handleSend(digest.text, {
         rules: rulesCode,
         visual: visualSource,
@@ -556,14 +626,15 @@ export function ExperienceCopilotShell({
           {isMobile ? (
             <ExperienceCopilotMobileInputArea
               isSending={ctrl.isSending}
-              onSend={(content) =>
+              onSend={(content) => {
+                captureDangling();
                 void ctrl.handleSend(content, {
                   rules: rulesCode,
                   visual: visualSource,
                   step: editorBuffer === "visual" ? "visual" : editorBuffer === "sandbox" ? "test" : "rules",
                   ...(testFeedback !== undefined ? { testFeedback } : {}),
-                })
-              }
+                });
+              }}
               onCancel={ctrl.handleCancel}
               providerProfileId={providerProfileId}
               model={model}
@@ -572,14 +643,15 @@ export function ExperienceCopilotShell({
           ) : (
             <ExperienceCopilotInputArea
               isSending={ctrl.isSending}
-              onSend={(content) =>
+              onSend={(content) => {
+                captureDangling();
                 void ctrl.handleSend(content, {
                   rules: rulesCode,
                   visual: visualSource,
                   step: editorBuffer === "visual" ? "visual" : editorBuffer === "sandbox" ? "test" : "rules",
                   ...(testFeedback !== undefined ? { testFeedback } : {}),
-                })
-              }
+                });
+              }}
               onCancel={ctrl.handleCancel}
               providerProfileId={providerProfileId}
               model={model}
