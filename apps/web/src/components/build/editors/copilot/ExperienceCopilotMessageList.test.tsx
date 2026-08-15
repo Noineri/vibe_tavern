@@ -144,4 +144,35 @@ describe("ExperienceCopilotMessageList", () => {
 
     expect(getByText("experience_copilot_title")).toBeDefined();
   });
+
+  it("places a compaction digest card immediately before its anchor message (CM-9)", () => {
+    const { container } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "First question" }),
+          message({ id: "a1", role: "assistant", content: "First answer" }),
+          message({ id: "u2", role: "user", content: "Second question" }),
+          message({ id: "a2", role: "assistant", content: "Second answer" }),
+          message({ id: "d1", role: "digest", content: "summarized", toolCallId: "u2" }),
+        ]}
+        pendingText=""
+        pendingUserContent=""
+        baseRules=""
+        baseVisual=""
+        onApply={mock()}
+      />,
+    );
+
+    // The rendered order of roles (user/assistant/digest) must be:
+    // user → assistant → DIGEST → user → assistant (digest moved before its anchor u2).
+    const roles = Array.from(container.querySelectorAll("[data-role]"));
+    expect(roles.map((el) => el.getAttribute("data-role"))).toEqual([
+      "user",
+      "assistant",
+      "digest",
+      "user",
+      "assistant",
+    ]);
+  });
 });

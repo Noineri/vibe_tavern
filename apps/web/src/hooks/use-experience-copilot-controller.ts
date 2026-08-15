@@ -6,7 +6,9 @@ import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn
 import {
   coauthorSkillReadOutputSchema,
   experienceCopilotToolOutputSchema,
+  experienceCopilotContextMetricsSchema,
   type ExperienceCopilotStep,
+  type ExperienceCopilotContextMetrics,
 } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
@@ -34,6 +36,10 @@ export interface UseExperienceCopilotControllerArgs {
   model?: string;
   /** Called after a turn settles (done/cancelled/failed) so the shell can refetch persisted messages. */
   onTurnSettled?: () => void;
+  /** CM-7: feed the segmented context metrics from the `finish` SSE event to
+   *  the shell's meter immediately (before any context refetch round-trips).
+   *  Null when the finish event carried no/ill-formed metrics. */
+  onMetrics?: (metrics: ExperienceCopilotContextMetrics | null) => void;
 }
 
 /** Live draft buffers + active authoring step to send with a copilot message so
@@ -108,7 +114,7 @@ function summarizeToolOutput(output: unknown): string {
 export function useExperienceCopilotController(
   args: UseExperienceCopilotControllerArgs,
 ): ExperienceCopilotController {
-  const { threadId, providerProfileId, model, onTurnSettled } = args;
+  const { threadId, providerProfileId, model, onTurnSettled, onMetrics } = args;
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
@@ -147,7 +153,7 @@ export function useExperienceCopilotController(
       setPendingUserContent(trimmed);
 
       try {
-        await streamExperienceCopilot(
+        const streamResult = await streamExperienceCopilot(
           threadId,
           {
             content: trimmed,
@@ -222,6 +228,15 @@ export function useExperienceCopilotController(
           },
         );
 
+        // CM-7: surface the finish event's segmented metrics to the meter.
+        // The stream return value carries `metrics` (unknown from the parser);
+        // validate once here so the hook only ever sees the wire shape.
+        const rawMetrics = streamResult.metrics;
+        const parsedMetrics = rawMetrics != null
+          ? experienceCopilotContextMetricsSchema.safeParse(rawMetrics)
+          : null;
+        onMetrics?.(parsedMetrics?.success ? parsedMetrics.data : null);
+
         setPendingText("");
         setIsSending(false);
         isSendingRef.current = false;
@@ -241,7 +256,7 @@ export function useExperienceCopilotController(
         setPendingUserContent("");
       }
     },
-    [threadId, providerProfileId, model, onTurnSettled],
+    [threadId, providerProfileId, model, onTurnSettled, onMetrics],
   );
 
   const handleCancel = useCallback((): void => {

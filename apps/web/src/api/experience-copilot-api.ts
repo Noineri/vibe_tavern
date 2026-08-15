@@ -20,6 +20,7 @@ import type {
   ExperienceCopilotStreamRequest,
   ExperienceCopilotThreadWire,
   ExperienceCopilotMessageWire,
+  ExperienceCopilotContextMetrics,
 } from "@vibe-tavern/api-contracts";
 
 /** Stream opts for the copilot endpoint — `StreamOpts` without the co-author
@@ -102,4 +103,54 @@ export async function archiveExperienceCopilotSession(
     param: { threadId },
   });
   return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+}
+
+// ─── Context meter + compaction (CM-4/CM-5) ─────────────────────────────────
+
+export interface ExperienceCopilotContextState {
+  metrics: ExperienceCopilotContextMetrics | null;
+  autoCompact: boolean;
+}
+
+export interface ExperienceCopilotCompactResult {
+  digest: ExperienceCopilotMessageWire;
+  metrics: ExperienceCopilotContextMetrics;
+}
+
+/** Read a thread's last-turn metrics + auto-compact toggle (`metrics` is null
+ *  before the first turn). */
+export async function getExperienceCopilotContext(
+  threadId: string,
+): Promise<ExperienceCopilotContextState> {
+  const response = await client.api["experience-copilot"][":threadId"].context.$get({
+    param: { threadId },
+  });
+  return unwrapRpc<ExperienceCopilotContextState>(response);
+}
+
+/** Toggle the thread's auto-compact flag. Returns the full context state. */
+export async function patchExperienceCopilotContext(
+  threadId: string,
+  body: { autoCompact: boolean },
+): Promise<ExperienceCopilotContextState> {
+  const response = await client.api["experience-copilot"][":threadId"].context.$patch({
+    param: { threadId },
+    json: body,
+  });
+  return unwrapRpc<ExperienceCopilotContextState>(response);
+}
+
+/** Manually compact a thread (LLM summarize-and-replace). The digest message is
+ *  appended at the end with its anchor in `toolCallId`; the caller refetches
+ *  messages so the digest card appears at the boundary. Rejects with a 400 when
+ *  there is nothing to compact, 409 when in-flight, 502 on provider error. */
+export async function compactExperienceCopilot(
+  threadId: string,
+  body?: { providerProfileId?: string; model?: string },
+): Promise<ExperienceCopilotCompactResult> {
+  const response = await client.api["experience-copilot"][":threadId"].compact.$post({
+    param: { threadId },
+    json: body ?? {},
+  });
+  return unwrapRpc<ExperienceCopilotCompactResult>(response);
 }

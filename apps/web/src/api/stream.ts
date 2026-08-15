@@ -29,7 +29,7 @@ export async function streamChatEndpoint(
   url: string,
   body: unknown,
   opts: StreamOpts,
-): Promise<{ finishReason: string; usage?: Record<string, number> }> {
+): Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown }> {
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
   opts.onStatus("preparing");

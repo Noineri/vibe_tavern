@@ -13,6 +13,7 @@ import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useT } from "../../../../i18n/context.js";
 import { useExperienceCopilotController } from "../../../../hooks/use-experience-copilot-controller.js";
+import { useCopilotContext } from "../../../../hooks/use-copilot-context.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
@@ -28,6 +29,7 @@ import {
   activateExperienceCopilotSession,
 } from "../../../../api/experience-copilot-api.js";
 import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
+import { ExperienceContextMeter } from "./ExperienceContextMeter.js";
 import { CopilotProfileModal } from "./CopilotProfileModal.js";
 import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
 import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
@@ -241,11 +243,17 @@ export function ExperienceCopilotShell({
       });
   }, [threadId]);
 
+  // CM-8: context meter state per thread (metrics / auto-compact / compact).
+  // `onCompacted` refetches messages so the newly appended digest message
+  // renders as a card at its anchor boundary.
+  const copilotContext = useCopilotContext({ threadId, onCompacted: handleTurnSettled });
+
   const ctrl = useExperienceCopilotController({
     threadId,
     providerProfileId,
     model,
     onTurnSettled: handleTurnSettled,
+    onMetrics: copilotContext.applyMetrics,
   });
 
   // ER-14: post a test/simulate/playground digest into the copilot thread. The
@@ -388,6 +396,22 @@ export function ExperienceCopilotShell({
               <Icons.Settings className="h-3.5 w-3.5" />
             </button>
           </div>
+          <ExperienceContextMeter
+            metrics={copilotContext.metrics}
+            autoCompact={copilotContext.autoCompact}
+            isCompacting={copilotContext.isCompacting}
+            isSending={ctrl.isSending}
+            onCompact={() =>
+              void copilotContext.compact().catch(() => {
+                toast.error(t("copilot_context_compact_error"));
+              })
+            }
+            onToggleAutoCompact={(enabled) =>
+              void copilotContext.setAutoCompact(enabled).catch(() => {
+                toast.error(t("copilot_context_auto_toggle_error"));
+              })
+            }
+          />
           <ExperienceCopilotMessageList
             threadId={threadId}
             messages={messages}

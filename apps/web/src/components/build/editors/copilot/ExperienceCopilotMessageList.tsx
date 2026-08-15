@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { useExperienceCopilotTurnStore, type ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
 import type { ExperienceCopilotApplyPatch } from "../../../../lib/experience-copilot-apply.js";
+import { orderMessagesWithDigests } from "../../../../lib/copilot-context.js";
 import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.js";
 import { ExperienceCopilotTurnShell } from "./ExperienceCopilotTurnShell.js";
 import { Icons } from "../../../shared/icons.js";
@@ -59,7 +60,11 @@ export function ExperienceCopilotMessageList({
   const pinnedRef = useRef(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
-  const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  // CM-9: digest messages are APPENDED at the end by the backend (anchor in
+  // `toolCallId`), so reorder each digest to sit immediately before its anchor
+  // message and derive its covered-count caption. Tool-role rows are excluded
+  // (their activity is surfaced through the turn store), same as before.
+  const visibleMessages = orderMessagesWithDigests(messages);
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
 
@@ -108,8 +113,12 @@ export function ExperienceCopilotMessageList({
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="flex flex-col gap-3">
-          {visibleMessages.map((message) => (
-            <ExperienceCopilotMessageBlock key={message.id} message={message} />
+          {visibleMessages.map((entry) => (
+            <ExperienceCopilotMessageBlock
+              key={entry.message.id}
+              message={entry.message}
+              coveredCount={entry.coveredCount}
+            />
           ))}
 
           {hasPendingUserContent && (

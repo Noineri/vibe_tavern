@@ -28,7 +28,34 @@ const listExperienceCopilotSessions = mock(
 const activateExperienceCopilotSession = mock(
   async (_threadId: string): Promise<ExperienceCopilotThreadWire | null> => null,
 );
-const streamExperienceCopilot = mock(async (_threadId: string, _body: unknown, _opts: unknown): Promise<void> => {});
+const streamExperienceCopilot = mock(
+  async (_threadId: string, _body: unknown, _opts: unknown): Promise<{ finishReason: string }> => ({
+    finishReason: "stop",
+  }),
+);
+const getExperienceCopilotContext = mock(
+  async (_threadId: string): Promise<{ metrics: null; autoCompact: boolean }> => ({ metrics: null, autoCompact: true }),
+);
+const patchExperienceCopilotContext = mock(
+  async (_threadId: string, _body: { autoCompact: boolean }): Promise<{ metrics: null; autoCompact: boolean }> => ({
+    metrics: null,
+    autoCompact: _body.autoCompact,
+  }),
+);
+const compactExperienceCopilot = mock(
+  async (_threadId: string): Promise<{ digest: ExperienceCopilotMessageWire; metrics: null }> => ({
+    digest: {
+      id: "digest-1",
+      threadId: _threadId,
+      role: "digest",
+      content: "summary",
+      toolCallsJson: null,
+      toolCallId: "u1",
+      createdAt: "",
+    },
+    metrics: null,
+  }),
+);
 
 const realApi = await import("../../../../api/experience-copilot-api.js");
 mock.module("../../../../api/experience-copilot-api.js", () => ({
@@ -39,6 +66,9 @@ mock.module("../../../../api/experience-copilot-api.js", () => ({
   listExperienceCopilotSessions,
   activateExperienceCopilotSession,
   streamExperienceCopilot,
+  getExperienceCopilotContext,
+  patchExperienceCopilotContext,
+  compactExperienceCopilot,
 }));
 
 // Markdown is heavy and its internals are pinned elsewhere; the shell test
@@ -55,6 +85,28 @@ mock.module("../../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+// The shared Toggle wraps Radix Switch (no happy-dom anchor); the shell test
+// renders the REAL meter (so its compact button is clickable) — stub the switch
+// to a plain button (Toggle's own behaviour is pinned in Toggle.test.tsx).
+const realToggle = await import("../../../shared/Toggle.js");
+mock.module("../../../shared/Toggle.js", () => ({
+  ...realToggle,
+  Toggle: ({
+    checked,
+    onChange,
+  }: {
+    checked: boolean;
+    onChange: (v: boolean) => void;
+  }) => (
+    <button
+      type="button"
+      data-testid="copilot-context-autocompact-toggle"
+      data-checked={checked ? "true" : "false"}
+      onClick={() => onChange(!checked)}
+    />
+  ),
 }));
 
 // Radix Select.Content / BottomSheet (vaul) do not mount under happy-dom, and
@@ -233,7 +285,24 @@ beforeEach(() => {
   activateExperienceCopilotSession.mockReset();
   activateExperienceCopilotSession.mockResolvedValue(null);
   streamExperienceCopilot.mockReset();
-  streamExperienceCopilot.mockResolvedValue(undefined);
+  streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+  getExperienceCopilotContext.mockReset();
+  getExperienceCopilotContext.mockResolvedValue({ metrics: null, autoCompact: true });
+  patchExperienceCopilotContext.mockReset();
+  patchExperienceCopilotContext.mockImplementation(async (_t, body) => ({ metrics: null, autoCompact: body.autoCompact }));
+  compactExperienceCopilot.mockReset();
+  compactExperienceCopilot.mockImplementation(async (t) => ({
+    digest: {
+      id: "digest-1",
+      threadId: t,
+      role: "digest",
+      content: "summary",
+      toolCallsJson: null,
+      toolCallId: "u1",
+      createdAt: "",
+    },
+    metrics: null,
+  }));
   runExperienceTest.mockClear();
   startExperiencePlayground.mockClear();
 });
@@ -297,6 +366,28 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
     expect(getExperienceCopilotActive).toHaveBeenCalledWith("script-1");
     expect(startExperienceCopilotSession).toHaveBeenCalledWith("script-1");
     expect(listExperienceCopilotMessages).not.toHaveBeenCalled();
+  });
+});
+
+describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", () => {
+  it("mounts the meter once a thread is loaded and compacts on click (POST → refetch)", async () => {
+    getExperienceCopilotActive.mockResolvedValue(thread("thread-1"));
+    listExperienceCopilotMessages.mockResolvedValue([
+      msg({ id: "u1", role: "user", content: "Make it scarier" }),
+    ]);
+
+    const { getByTestId } = renderShell();
+    await flushSessionLoad();
+
+    expect(getByTestId("copilot-context-meter")).toBeDefined();
+    const callsBefore = listExperienceCopilotMessages.mock.calls.length;
+
+    fireEvent.click(getByTestId("copilot-context-compact-btn"));
+    await flushSessionLoad();
+
+    expect(compactExperienceCopilot).toHaveBeenCalledWith("thread-1");
+    // onCompacted → handleTurnSettled → refetch messages so the digest card appears.
+    expect(listExperienceCopilotMessages.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 });
 
