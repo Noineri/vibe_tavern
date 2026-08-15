@@ -57,6 +57,22 @@ describe("useExperienceTimerResync", () => {
     return rehydrateMock.mock.calls.length;
   }
 
+  /** Real-timer wait for the interval contract: yield to the event loop
+   *  (bounded by `deadlineMs`) until the rehydrate spy has fired at least
+   *  `min` times. The old fixed `setTimeout(25)` windows could expire before
+   *  even two 5ms ticks landed under a busy event loop (full-gate runs 8 test
+   *  processes in parallel), which flaked these tests without ever changing
+   *  the hook contract — this keeps the same boundary (the REAL interval
+   *  must fire) with a wide, early-exit margin instead. */
+  async function waitForCalls(min: number, deadlineMs = 500): Promise<void> {
+    await act(async () => {
+      const deadline = Date.now() + deadlineMs;
+      while (rehydrateCalls() < min && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    });
+  }
+
   it("polls rehydrate on the cadence while an active surface has a pending timer", async () => {
     const { rerender } = renderHook(
       (props: { effects: ExperienceEffectRow[] }) =>
@@ -69,9 +85,7 @@ describe("useExperienceTimerResync", () => {
         }),
       { initialProps: { effects: [makeEffect()] } },
     );
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 25));
-    });
+    await waitForCalls(2);
     expect(rehydrateCalls()).toBeGreaterThan(1);
     rerender({ effects: [makeEffect()] });
   });
@@ -120,9 +134,7 @@ describe("useExperienceTimerResync", () => {
         }),
       { initialProps: { effects: [makeEffect()] } },
     );
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 15));
-    });
+    await waitForCalls(1);
     const beforeTerminal = rehydrateCalls();
     expect(beforeTerminal).toBeGreaterThan(0);
     rerender({ effects: [makeEffect({ status: "succeeded" })] });
@@ -146,9 +158,7 @@ describe("useExperienceTimerResync", () => {
         intervalMs: 5,
       }),
     );
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
+    await waitForCalls(1);
     expect(rehydrateCalls()).toBeGreaterThan(0);
   });
 
@@ -190,9 +200,7 @@ describe("useExperienceTimerResync", () => {
         }),
       { initialProps: { flavor: { status: "pending", seatId: "ai1" } as unknown } },
     );
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 15));
-    });
+    await waitForCalls(1);
     const beforeResolve = rehydrateCalls();
     expect(beforeResolve).toBeGreaterThan(0);
     rerender({ flavor: { status: "resolved", seatId: "ai1", text: "line" } });
