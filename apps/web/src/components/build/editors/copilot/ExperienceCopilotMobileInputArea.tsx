@@ -5,6 +5,7 @@ import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { ToolbarSelect } from "../../../shared/ToolbarSelect.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useProviderModels } from "../../../../hooks/use-provider-models.js";
+import { useCopilotModelFavorites } from "../../../../hooks/use-copilot-model-favorites.js";
 import { useT } from "../../../../i18n/context.js";
 import type { ExperienceCopilotInputAreaProps } from "./ExperienceCopilotInputArea.js";
 
@@ -27,6 +28,24 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
 
   const profiles = useProviderDataStore((s) => s.profiles);
   const { models } = useProviderModels(providerProfileId);
+  const { favorites, isFavorite, toggleFavorite } = useCopilotModelFavorites(providerProfileId);
+
+  /** Inline star toggle — the mobile sheet's per-row trailing action. Tapping
+   * it toggles the copilot-scoped favorite without selecting the row. */
+  const favoriteStar = (modelId: string, label: string, contextLength: number | null, favored: boolean) => (
+    <button
+      type="button"
+      data-testid={`copilot-model-star-${modelId}`}
+      aria-label={favored ? t("copilot_model_unstar") : t("copilot_model_star")}
+      className={cn(
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-t4 active:bg-s2",
+        favored && "text-warning-text",
+      )}
+      onClick={() => toggleFavorite({ id: modelId, label, contextLength })}
+    >
+      {favored ? <Icons.starFilled className="h-4 w-4" /> : <Icons.star className="h-4 w-4" />}
+    </button>
+  );
 
   const activeProfile = profiles.find((p) => p.id === providerProfileId) ?? null;
   const activeModelLabel = models.find((m) => m.id === model)?.label ?? model ?? "";
@@ -74,14 +93,31 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
 
           <ToolbarSelect
             mobile
+            searchable
             title={t("experience_copilot_model")}
             emptyText={t("experience_copilot_no_models")}
-            items={models.map((m) => ({ value: m.id, label: m.label }))}
             value={model ?? null}
             onSelect={(modelId) => {
               if (providerProfileId) onProviderChange(providerProfileId, modelId);
             }}
             itemTestId={(v) => `copilot-model-option-${v}`}
+            items={[
+              ...favorites.map((f, i) => ({
+                value: f.modelId,
+                label: f.label || f.modelId,
+                ...(i === 0 ? { sectionLabel: t("copilot_model_favorites_section") } : {}),
+                leading: <Icons.starFilled className="h-3.5 w-3.5 shrink-0 text-warning-text" />,
+                trailing: favoriteStar(f.modelId, f.label || f.modelId, f.contextLength, true),
+              })),
+              ...models
+                .filter((m) => !isFavorite(m.id))
+                .map((m, i) => ({
+                  value: m.id,
+                  label: m.label,
+                  ...(favorites.length > 0 && i === 0 ? { sectionLabel: t("copilot_model_all_section") } : {}),
+                  trailing: favoriteStar(m.id, m.label, m.contextLength ?? null, false),
+                })),
+            ]}
             trigger={
               <button
                 type="button"

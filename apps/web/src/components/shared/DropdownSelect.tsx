@@ -23,6 +23,11 @@ interface DropdownOption {
 interface DropdownSelectProps {
   value: string;
   options: DropdownOption[];
+  /** Optional grouped rendering (e.g. "Favorites" above "All models"). When
+ *  provided, the list renders one section per group with an optional label
+ *  header; `options` continues to drive the trigger's display value. Search
+ *  filters within every group and hides empty groups. */
+  groups?: Array<{ id: string; label?: string; options: DropdownOption[] }>;
   placeholder?: string;
   searchPlaceholder?: string;
   defaultOption?: string;
@@ -30,6 +35,18 @@ interface DropdownSelectProps {
   className?: string;
   disabled?: boolean;
   searchable?: boolean;
+  /** When provided, REPLACES the default trigger chrome entirely (the caller
+ *  owns the full class string — cn is a plain join, so conflicting utilities
+ *  cannot be "overridden"; a full replacement avoids that fight). */
+  triggerClassName?: string;
+  /** Optional data-testid for the trigger button (matching ToolbarSelect's
+ *  caller-owned trigger testid convention). */
+  triggerTestId?: string;
+  /** Optional node rendered before the display label (e.g. a leading icon). */
+  triggerLeading?: ReactNode;
+  /** Popover side relative to the trigger. Defaults to "bottom"; sites whose
+ *  trigger sits at the bottom of a panel (chat input bars) pass "top". */
+  side?: "top" | "bottom";
 }
 
 // Built on cmdk (Command) + Radix Popover: a real searchable combobox.
@@ -42,6 +59,7 @@ interface DropdownSelectProps {
 export function DropdownSelect({
   value,
   options,
+  groups,
   placeholder = "Select…",
   searchPlaceholder = "Search…",
   defaultOption,
@@ -49,19 +67,30 @@ export function DropdownSelect({
   className,
   disabled,
   searchable = true,
+  triggerClassName,
+  triggerTestId,
+  triggerLeading,
+  side = "bottom",
 }: DropdownSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const commandRef = useRef<HTMLDivElement>(null);
 
-  const selected = options.find((o) => o.id === value);
+  const selected = (groups ? groups.flatMap((g) => g.options) : options).find((o) => o.id === value);
   const display = selected?.label || value || placeholder;
+
+  const matches = (o: DropdownOption) =>
+    !searchable || o.label.toLowerCase().includes(search.toLowerCase());
 
   const filtered = options
     .filter((o) => o.id !== "") // empty-id options rendered as defaultOption below
-    .filter((o) =>
-      !searchable || o.label.toLowerCase().includes(search.toLowerCase()),
-    );
+    .filter(matches);
+
+  const filteredGroups = groups?.map((g) => ({
+    ...g,
+    options: g.options.filter((o) => o.id !== "").filter(matches),
+  }));
+  const flatGroupedCount = filteredGroups?.reduce((n, g) => n + g.options.length, 0) ?? 0;
 
   function handleSelect(id: string) {
     onChange(id);
@@ -87,25 +116,71 @@ export function DropdownSelect({
   // stays within Dialog's focus trap. When outside a Modal, portal to body.
   const portalContainer = getModalPortal() ?? undefined;
 
+  function renderOption(o: DropdownOption) {
+    return (
+      <Command.Item
+        key={o.id}
+        value={o.id}
+        onSelect={() => handleSelect(o.id)}
+        className={cn(
+          "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
+          // cmdk sets data-selected="true"|"false" on every item, so the
+          // selector must pin the value (=true) — bare data-[selected]
+          // (presence) matches both and hides the active highlight.
+          o.id === value
+            ? "bg-accent-dim font-medium text-accent-t"
+            : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate">{o.label}</span>
+          {o.detail && (
+            <span className="shrink-0 text-[11px] text-t2">
+              {o.detail}
+            </span>
+          )}
+        </span>
+        {o.trailing && (
+          // Stop pointer events so clicking a trailing action (rename /
+          // delete) does NOT fire the cmdk item's onSelect.
+          <span
+            className="ml-auto flex shrink-0 items-center gap-0.5"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {o.trailing}
+          </span>
+        )}
+      </Command.Item>
+    );
+  }
+
   return (
     <Popover.Root open={open} onOpenChange={handleOpenChange}>
       <Popover.Trigger asChild>
         <button
           type="button"
+          data-testid={triggerTestId}
           className={cn(
-            "flex w-full items-center justify-between rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-[border-color] duration-150 hover:border-accent",
+            "flex items-center justify-between gap-2 font-ui transition-colors duration-150",
+            triggerClassName ??
+              "w-full rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] text-[13px] text-t1 hover:border-accent" +
+                (open ? " border-accent" : ""),
             disabled && "pointer-events-none opacity-40",
-            open && "border-accent",
             className,
           )}
         >
-          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
-            {display}
-            {selected?.detail && (
-              <span className="ml-2 text-[11px] font-medium text-t2">
-                {selected.detail}
-              </span>
-            )}
+          <span className="flex min-w-0 items-center gap-1.5">
+            {triggerLeading}
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
+              {display}
+              {selected?.detail && (
+                <span className="ml-2 text-[11px] font-medium text-t2">
+                  {selected.detail}
+                </span>
+              )}
+            </span>
           </span>
           <span className="ml-2 shrink-0 text-t3">{Ic.caret("d")}</span>
         </button>
@@ -113,6 +188,7 @@ export function DropdownSelect({
 
       <Popover.Portal container={portalContainer}>
         <Popover.Content
+          side={side}
           sideOffset={4}
           align="start"
           onOpenAutoFocus={handleOpenAutoFocus}
@@ -159,44 +235,21 @@ export function DropdownSelect({
                   {defaultOption}
                 </Command.Item>
               )}
-              {filtered.map((o) => (
-                <Command.Item
-                  key={o.id}
-                  value={o.id}
-                  onSelect={() => handleSelect(o.id)}
-                  className={cn(
-                    "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
-                    // cmdk sets data-selected="true"|"false" on every item, so the
-                    // selector must pin the value (=true) — bare data-[selected]
-                    // (presence) matches both and hides the active highlight.
-                    o.id === value
-                      ? "bg-accent-dim font-medium text-accent-t"
-                      : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
-                  )}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 truncate">{o.label}</span>
-                    {o.detail && (
-                      <span className="shrink-0 text-[11px] text-t2">
-                        {o.detail}
-                      </span>
-                    )}
-                  </span>
-                  {o.trailing && (
-                    // Stop pointer events so clicking a trailing action (rename /
-                    // delete) does NOT fire the cmdk item's onSelect.
-                    <span
-                      className="ml-auto flex shrink-0 items-center gap-0.5"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onPointerUp={(e) => e.stopPropagation()}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {o.trailing}
-                    </span>
-                  )}
-                </Command.Item>
-              ))}
-              {filtered.length === 0 && (
+              {filteredGroups
+                ? filteredGroups.map((g) =>
+                    g.options.length > 0 ? (
+                      <div key={g.id}>
+                        {g.label && (
+                          <div className="px-2.5 pb-0.5 pt-1.5 font-ui text-[10.5px] font-medium uppercase tracking-wide text-t3">
+                            {g.label}
+                          </div>
+                        )}
+                        {g.options.map(renderOption)}
+                      </div>
+                    ) : null,
+                  )
+                : filtered.map(renderOption)}
+              {(filteredGroups ? flatGroupedCount === 0 : filtered.length === 0) && (
                 <div className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4">
                   —
                 </div>

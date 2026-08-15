@@ -59,6 +59,59 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
   ToolbarSelect: FakeToolbarSelect,
 }));
 
+// Radix Popover.Content (DropdownSelect's substrate) does not mount under
+// happy-dom either (0x0 layout — see DropdownSelect.test.tsx header), so the
+// model picker gets the same treatment: a stub that renders the trigger plus
+// one button per option across groups, so the controlled onChange wiring and
+// the favorites-section construction are exercised directly.
+interface FakeDropdownSelectProps {
+  value: string;
+  options: Array<{ id: string; label: string }>;
+  groups?: Array<{ id: string; label?: string; options: Array<{ id: string; label: string; trailing?: ReactNode }> }>;
+  placeholder?: string;
+  triggerTestId?: string;
+  triggerLeading?: ReactNode;
+  onChange: (value: string) => void;
+}
+
+function FakeDropdownSelect(props: FakeDropdownSelectProps) {
+  return (
+    <div>
+      <button type="button" data-testid={props.triggerTestId} onClick={() => {}}>
+        {props.triggerLeading}
+        {props.options.find((o) => o.id === props.value)?.label ?? props.placeholder}
+      </button>
+      {(props.groups ?? []).map((g) => (
+        <div key={g.id} data-testid={`dropdown-group-${g.id}`}>
+          {g.label && <div data-testid={`dropdown-group-label-${g.id}`}>{g.label}</div>}
+          {g.options.map((o) => (
+            <div key={o.id} data-testid={`dropdown-option-${o.id}`} onClick={() => props.onChange(o.id)}>
+              {o.label}
+              {o.trailing}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const realDropdownSelect = await import("../../../shared/DropdownSelect.js");
+mock.module("../../../shared/DropdownSelect.js", () => ({
+  ...realDropdownSelect,
+  DropdownSelect: FakeDropdownSelect,
+}));
+
+// Favorites actions hit the RPC client — stub them at the module boundary
+// (SAFE: real captured first, only the two favorites fns overridden). The
+// hook's data path (store read) stays real: tests seed the store directly.
+const realProviderActions = await import("../../../../stores/api-actions/provider-actions.js");
+mock.module("../../../../stores/api-actions/provider-actions.js", () => ({
+  ...realProviderActions,
+  loadFavoriteModelsAction: async () => {},
+  toggleFavoriteModelAction: async () => {},
+}));
+
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
   ({ ExperienceCopilotInputArea } = await import("./ExperienceCopilotInputArea.js"));
@@ -80,7 +133,7 @@ const PROFILES = [
 ] as unknown as ProviderProfileRecord[];
 
 function seedStores() {
-  useProviderDataStore.setState({ profiles: PROFILES });
+  useProviderDataStore.setState({ profiles: PROFILES, copilotFavoritesByProfile: {} });
 }
 
 beforeEach(() => {
@@ -142,8 +195,35 @@ describe("ExperienceCopilotInputArea", () => {
   it("changing the model calls onProviderChange with the profile id + model id", () => {
     const { getByTestId, props } = renderInput();
 
-    fireEvent.click(getByTestId("copilot-model-option-m1"));
+    fireEvent.click(getByTestId("dropdown-option-m1"));
 
     expect(props.onProviderChange).toHaveBeenCalledWith("p1", "m1");
+  });
+
+  it("renders the profile's copilot favorites as a pinned top section", () => {
+    useProviderDataStore.setState({
+      copilotFavoritesByProfile: {
+        p1: [
+          { id: "fav1", providerProfileId: "p1", modelId: "m9", label: "Favored Nine", contextLength: 64000, scope: "copilot", createdAt: "" },
+        ],
+      },
+    });
+    const { getByTestId } = renderInput();
+
+    // Favorites section renders above the all-models section, with the stored
+    // label and an UNSTAR (filled) star trailing on the row.
+    expect(getByTestId("dropdown-group-copilot-model-favorites")).toBeDefined();
+    expect(getByTestId("dropdown-option-m9").textContent).toContain("Favored Nine");
+    expect(getByTestId("copilot-model-star-m9")).toBeDefined();
+    // All-models section still carries every live model with an UNFILLED star.
+    expect(getByTestId("dropdown-option-m1")).toBeDefined();
+    expect(getByTestId("copilot-model-star-m1")).toBeDefined();
+  });
+
+  it("without favorites there is no favorites group and no all-section header", () => {
+    const { queryByTestId, getByTestId } = renderInput();
+
+    expect(queryByTestId("dropdown-group-copilot-model-favorites")).toBeNull();
+    expect(getByTestId("dropdown-group-copilot-model-all")).toBeDefined();
   });
 });

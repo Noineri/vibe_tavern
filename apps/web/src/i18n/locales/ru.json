@@ -2220,5 +2220,9 @@
   "copilot_context_digest_caption_few": "",
   "copilot_context_digest_caption_many": "",
   "copilot_context_digest_caption_one": "",
-  "copilot_context_digest_caption_other": ""
+  "copilot_context_digest_caption_other": "",
+  "copilot_model_favorites_section": "Избранное",
+  "copilot_model_all_section": "Все модели",
+  "copilot_model_star": "В избранное",
+  "copilot_model_unstar": "Убрать из избранного"
 }

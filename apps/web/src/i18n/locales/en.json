@@ -2200,5 +2200,9 @@
   "quota_balance_voucher": "Voucher",
   "quota_balance_cash": "Cash",
   "copilot_context_digest_caption_one": "copilot_context_digest_caption",
-  "copilot_context_digest_caption_other": "copilot_context_digest_caption"
+  "copilot_context_digest_caption_other": "copilot_context_digest_caption",
+  "copilot_model_favorites_section": "Favorites",
+  "copilot_model_all_section": "All models",
+  "copilot_model_star": "Add to favorites",
+  "copilot_model_unstar": "Remove from favorites"
 }
