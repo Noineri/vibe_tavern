@@ -4,25 +4,26 @@ import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import {
   extractHistoricalTurnActivities,
   useExperienceCopilotTurnStore,
+  type CopilotFeedEntry,
   type ExperienceCopilotToolActivity,
-  type HistoricalCopilotTurnActivities,
 } from "../../../../stores/experience-copilot-turn-store.js";
 import { orderMessagesWithDigests } from "../../../../lib/copilot-context.js";
 import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.js";
-import { ExperienceCopilotTurnShell } from "./ExperienceCopilotTurnShell.js";
+import { CopilotActivityCard } from "./CopilotActivityCard.js";
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { useT } from "../../../../i18n/context.js";
 
 const EMPTY: ExperienceCopilotToolActivity[] = [];
+const EMPTY_FEED: CopilotFeedEntry[] = [];
 
 /**
  * Experience-copilot message surface (ER-11c). Props-driven: the shell (ER-11d)
  * owns the persisted message list and the two-buffer state; this component
  * reads ONLY the ephemeral turn store (the one store read allowed inside these
  * presentation components, mirroring how `CoauthorMessageList` reads its turn
- * store) and renders the current turn's activity cards + Apply via
- * `ExperienceCopilotTurnShell`.
+ * store) and renders the current turn's ordered feed (text segments + tool
+ * activity cards, TF-4/TF-5) inline.
  *
  * Auto-scroll mirrors the co-author surface's bottom-pinning intent (stick to
  * the bottom while the user is already there; a jump-to-bottom button appears
@@ -50,26 +51,56 @@ export function ExperienceCopilotMessageList({
   const activities = useExperienceCopilotTurnStore(
     useShallow((s) => s.turnsByThread[threadId] ?? EMPTY),
   );
+  const feed = useExperienceCopilotTurnStore(
+    useShallow((s) => s.feedByThread[threadId] ?? EMPTY_FEED),
+  );
 
-  // CD-1: persisted model turns (tools) render as compact audit cards in the
-  // history, at their turn's position — not only on the live turn. Rebuilt
-  // purely from the wire messages; the live turn store keeps feeding ONLY the
-  // current/last turn's block below (dedupe by toolCallId: after settle+refetch
-  // the latest turn exists in BOTH sources — the live block owns it until
-  // cleared by the next turn / Apply / Reject, then history takes over).
-  const historyTurns = useMemo(() => extractHistoricalTurnActivities(messages), [messages]);
+  // CD-1 (TF-5 inline form): persisted tool rows render as audit cards at their
+  // chronological position, not anchored before/after a turn's final reply.
+  // Rebuilt purely from the wire messages; the live turn store keeps feeding
+  // ONLY the current/last turn's feed below (dedupe by toolCallId: after
+  // settle+refetch the latest turn exists in BOTH sources — the live feed owns
+  // it until cleared by the next turn / Apply / Reject, then history takes over).
   const liveToolCallIds = useMemo(
     () => new Set(activities.map((activity) => activity.toolCallId)),
     [activities],
   );
-  const cardsByAnchor = useMemo(() => {
-    const map = new Map<string, HistoricalCopilotTurnActivities>();
-    for (const turn of historyTurns) {
-      const owned = turn.activities.filter((a) => !liveToolCallIds.has(a.toolCallId));
-      if (owned.length > 0) map.set(turn.anchorId, { ...turn, activities: owned });
+  const historyActivities = useMemo(() => {
+    const map = new Map<string, ExperienceCopilotToolActivity>();
+    for (const turn of extractHistoricalTurnActivities(messages)) {
+      for (const activity of turn.activities) map.set(activity.toolCallId, activity);
     }
     return map;
-  }, [historyTurns, liveToolCallIds]);
+  }, [messages]);
+
+  // Each tool row's card attaches to the NEXT flow message (user/assistant,
+  // carriers included — they render as null, so the position is identical);
+  // tool rows with no following flow message trail at the list's end. Digest
+  // rows do NOT flush the accumulator (CM-9 moves them; cards keep their
+  // chronological neighbors).
+  const { anchorCards, trailingCards } = useMemo(() => {
+    const anchor = new Map<string, ExperienceCopilotToolActivity[]>();
+    let pending: ExperienceCopilotToolActivity[] = [];
+    for (const m of messages) {
+      if (m.role === "tool") {
+        const activity = historyActivities.get(m.toolCallId ?? m.id);
+        if (activity && !liveToolCallIds.has(activity.toolCallId)) pending.push(activity);
+        continue;
+      }
+      if (m.role === "user" || m.role === "assistant") {
+        if (pending.length > 0) {
+          anchor.set(m.id, pending);
+          pending = [];
+        }
+      }
+    }
+    return { anchorCards: anchor, trailingCards: pending };
+  }, [messages, historyActivities, liveToolCallIds]);
+
+  const activityById = useMemo(
+    () => new Map(activities.map((a) => [a.toolCallId, a])),
+    [activities],
+  );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
@@ -77,8 +108,9 @@ export function ExperienceCopilotMessageList({
 
   // CM-9: digest messages are APPENDED at the end by the backend (anchor in
   // `toolCallId`), so reorder each digest to sit immediately before its anchor
-  // message and derive its covered-count caption. Tool-role rows are excluded
-  // (their activity is surfaced through the turn store), same as before.
+  // message and derive its covered-count caption. Tool-role rows are not part
+  // of this flow ordering — they render inline via `anchorCards`/`trailingCards`
+  // (TF-5).
   const visibleMessages = orderMessagesWithDigests(messages);
   const hasPendingText = pendingText.trim().length > 0;
   const hasPendingUserContent = pendingUserContent.trim().length > 0;
@@ -99,18 +131,17 @@ export function ExperienceCopilotMessageList({
   const contentCount =
     visibleMessages.length +
     (hasPendingUserContent ? 1 : 0) +
-    (hasPendingText ? 1 : 0) +
-    (activities.length > 0 ? 1 : 0);
+    feed.length;
 
   useLayoutEffect(() => {
     if (pinnedRef.current) scrollToBottom();
-  }, [contentCount, pendingText, activities.length]);
+  }, [contentCount, pendingText, feed.length]);
 
   const isEmpty =
     visibleMessages.length === 0 &&
     !hasPendingUserContent &&
     !hasPendingText &&
-    activities.length === 0;
+    feed.length === 0;
 
   if (isEmpty) {
     return (
@@ -130,13 +161,18 @@ export function ExperienceCopilotMessageList({
         <div className="flex flex-col gap-3">
           {visibleMessages.map((entry) => (
             <Fragment key={entry.message.id}>
-              <HistoryTurnCards turn={cardsByAnchor.get(entry.message.id)} placement="before" />
+              {anchorCards.get(entry.message.id)?.map((activity) => (
+                <CopilotActivityCard key={activity.toolCallId} activity={activity} />
+              ))}
               <ExperienceCopilotMessageBlock
                 message={entry.message}
                 coveredCount={entry.coveredCount}
               />
-              <HistoryTurnCards turn={cardsByAnchor.get(entry.message.id)} placement="after" />
             </Fragment>
+          ))}
+
+          {trailingCards.map((activity) => (
+            <CopilotActivityCard key={activity.toolCallId} activity={activity} />
           ))}
 
           {hasPendingUserContent && (
@@ -153,9 +189,34 @@ export function ExperienceCopilotMessageList({
             />
           )}
 
-          {activities.length > 0 && <ExperienceCopilotTurnShell activities={activities} />}
+          {feed.map((entry) => {
+            if (entry.kind === "activity") {
+              const activity = activityById.get(entry.id);
+              return activity ? (
+                <CopilotActivityCard key={entry.id} activity={activity} />
+              ) : null;
+            }
+            // Post-settle: the controller clears `pendingText`, so feed text is
+            // suppressed while the refetched history owns the persisted rows;
+            // the open text segment renders as the pending bubble below.
+            if (!hasPendingText) return null;
+            return (
+              <ExperienceCopilotMessageBlock
+                key={entry.id}
+                message={{
+                  id: entry.id,
+                  threadId,
+                  role: "assistant",
+                  content: entry.text,
+                  toolCallsJson: null,
+                  toolCallId: null,
+                  createdAt: "",
+                }}
+              />
+            );
+          })}
 
-          {hasPendingText && (
+          {hasPendingText && feed.length === 0 && (
             <ExperienceCopilotMessageBlock
               message={{
                 id: "__pending-assistant",
@@ -187,57 +248,4 @@ export function ExperienceCopilotMessageList({
   );
 }
 
-/** CD-1: one historical turn's audit cards. Compact, non-expandable — the
- *  reviewing DIFF lives in the editor (the plan's vision: diffs moved out of
- *  the chat), so history keeps only the glanceable audit row per tool call:
- *  status icon + summary + target badge (the same visual language as the live
- *  turn shell's cards, minus the diff disclosure and the Apply footer). */
-function HistoryTurnCards({
-  turn,
-  placement,
-}: {
-  turn: HistoricalCopilotTurnActivities | undefined;
-  placement: "before" | "after";
-}) {
-  const { t } = useT();
-  if (!turn || turn.placement !== placement) return null;
-  return (
-    <div
-      data-testid="copilot-history-cards"
-      data-anchor={turn.anchorId}
-      className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-surface p-2"
-    >
-      {turn.activities.map((activity) => {
-        const isRead = activity.readPath !== undefined;
-        const isProposal = activity.target !== undefined && activity.proposed !== undefined;
-        const errored = activity.status === "error";
-        const targetText =
-          activity.target === "rules"
-            ? t("experience_copilot_rules")
-            : t("experience_copilot_visual");
-        const title = isRead
-          ? activity.readPath!
-          : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
-        return (
-          <div
-            key={activity.toolCallId}
-            data-testid="copilot-history-activity"
-            data-tool={activity.toolName}
-            {...(activity.target ? { "data-target": activity.target } : {})}
-            className="flex min-w-0 items-center gap-1.5 px-2 py-1 font-ui text-[11px] font-medium tracking-[0.03em] text-t2"
-          >
-            <span className={errored ? "text-danger-text" : "text-success-text"}>
-              {isRead ? <Icons.FileText /> : errored ? <Icons.Close /> : <Icons.Check />}
-            </span>
-            <span className="min-w-0 truncate">{title}</span>
-            {isProposal && (
-              <span className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent">
-                {targetText}
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+

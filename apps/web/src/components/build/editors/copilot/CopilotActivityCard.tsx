@@ -1,49 +1,20 @@
-import { memo } from "react";
 import { cn } from "../../../../lib/cn.js";
 import type { ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
 import { Icons } from "../../../shared/icons.js";
 import { useT } from "../../../../i18n/context.js";
 
 /**
- * Experience-copilot turn shell (ER-11c; CD-7 simplified to a live audit
- * feed). Props-driven: the shell (ER-11d) owns the two-buffer state; this
- * component renders the ACTIVE turn's tool-activity cards as compact audit
- * rows (status icon + summary + target badge) while the turn streams.
+ * CopilotActivityCard (TF-5): one tool-activity card row — the ex-TurnShell
+ * `LiveActivityRow`, extracted so a single activity can render anywhere the
+ * feed (TF-4) or the persisted history (inline tool rows, TF-5) needs it.
  *
- * The REVIEWING surface moved to the editor (CD-5/CD-6): the word-diff preview
- * and the Apply button that used to live here are gone — the inline diff with
- * per-hunk accept lives in `ExperienceCopilotEditorPanel` now, and settled
- * turns persist as history audit cards (CD-1,
- * `ExperienceCopilotMessageList`). This component keeps only the glanceable
- * live progress of the current turn.
- *
- * Fork of `CoauthorTurnShell`'s card chrome, adapted to the copilot's
- * two-buffer data shapes. Copilot activity has NO `greetingIndex` / `isAdd` /
- * `loreBundle` (those are co-author-only); the proposal triple is
- * `target ∈ {"rules", "visual"}` + `proposed` + `summary`.
+ * Chrome = status icon (read → FileText, error → Close, streaming → Wrench,
+ * done → Check) + title (readPath / summary / target / toolName) + target chip
+ * for proposals + streaming ellipsis + an error sub-row. No reviewing
+ * affordances — the diff review lives in `ExperienceCopilotEditorPanel`
+ * (CD-5/CD-6).
  */
-export interface ExperienceCopilotTurnShellProps {
-  activities: ExperienceCopilotToolActivity[];
-}
-
-export const ExperienceCopilotTurnShell = memo(function ExperienceCopilotTurnShell({
-  activities,
-}: ExperienceCopilotTurnShellProps) {
-  if (activities.length === 0) return null;
-
-  return (
-    <div
-      data-testid="copilot-turn-shell-block"
-      className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-surface p-2"
-    >
-      {activities.map((activity) => (
-        <LiveActivityRow key={activity.toolCallId} activity={activity} />
-      ))}
-    </div>
-  );
-});
-
-function LiveActivityRow({ activity }: { activity: ExperienceCopilotToolActivity }) {
+export function CopilotActivityCard({ activity }: { activity: ExperienceCopilotToolActivity }) {
   const { t } = useT();
   const isRead = activity.readPath !== undefined;
   const isProposal = activity.target !== undefined && activity.proposed !== undefined;

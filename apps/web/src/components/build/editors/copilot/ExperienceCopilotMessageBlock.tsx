@@ -37,8 +37,8 @@ export const ExperienceCopilotMessageBlock = memo(function ExperienceCopilotMess
   const isUser = message.role === "user";
 
   // Tool-call carrier assistant turns have empty `content`; their activity is
-  // surfaced by `ExperienceCopilotTurnShell`, so render nothing here (a
-  // zero-height bubble would be visually orphaned).
+  // surfaced inline by the message list (`CopilotActivityCard`), so render
+  // nothing here (a zero-height bubble would be visually orphaned).
   if (message.content.trim().length === 0) return null;
 
   return (
