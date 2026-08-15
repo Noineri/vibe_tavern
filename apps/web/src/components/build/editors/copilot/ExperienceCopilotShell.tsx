@@ -306,6 +306,10 @@ export function ExperienceCopilotShell({
   // clears the live turn and therefore flips the key to null.
   const [acceptedRulesHunks, setAcceptedRulesHunks] = useState<Set<number>>(() => new Set());
   const [acceptedVisualHunks, setAcceptedVisualHunks] = useState<Set<number>>(() => new Set());
+  // RV-2: per-buffer dismissed sets — a dismissed hunk leaves the round (no
+  // decoration, no pending count, not in accept-all) without touching the buffer.
+  const [dismissedRulesHunks, setDismissedRulesHunks] = useState<Set<number>>(() => new Set());
+  const [dismissedVisualHunks, setDismissedVisualHunks] = useState<Set<number>>(() => new Set());
 
   // CD-8 dangling semantics: a new chat turn must NOT kill an unresolved
   // review. The controller clears the live turn store at send start (the
@@ -362,21 +366,23 @@ export function ExperienceCopilotShell({
     : null;
   useEffect(() => {
     setAcceptedRulesHunks(new Set());
+    setDismissedRulesHunks(new Set());
   }, [rulesReviewKey, threadId]);
   useEffect(() => {
     setAcceptedVisualHunks(new Set());
+    setDismissedVisualHunks(new Set());
   }, [visualReviewKey, threadId]);
   useEffect(() => {
     setDangling(null);
   }, [threadId, scriptId]);
 
   const rulesReview = useMemo(
-    () => buildBufferReview(effRules.base, effRules.proposed, acceptedRulesHunks, !ctrl.isSending),
-    [effRules, acceptedRulesHunks, ctrl.isSending],
+    () => buildBufferReview(effRules.base, effRules.proposed, acceptedRulesHunks, !ctrl.isSending, dismissedRulesHunks),
+    [effRules, acceptedRulesHunks, dismissedRulesHunks, ctrl.isSending],
   );
   const visualReview = useMemo(
-    () => buildBufferReview(effVisual.base, effVisual.proposed, acceptedVisualHunks, !ctrl.isSending),
-    [effVisual, acceptedVisualHunks, ctrl.isSending],
+    () => buildBufferReview(effVisual.base, effVisual.proposed, acceptedVisualHunks, !ctrl.isSending, dismissedVisualHunks),
+    [effVisual, acceptedVisualHunks, dismissedVisualHunks, ctrl.isSending],
   );
 
   // CD-8 conflict semantics. Clean path: the buffer is exactly the hybrid the
@@ -441,6 +447,20 @@ export function ExperienceCopilotShell({
     const pending = [...allReviewHunkIds(rulesReview)].filter((id) => !acceptedRulesHunks.has(id));
     acceptHunks(rulesReview, acceptedRulesHunks, pending, rulesCode, setAcceptedRulesHunks, onRulesChange);
   }, [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks]);
+
+  // RV-2: dismiss (✕) — the hunk leaves the round; the buffer is untouched.
+  const dismissRulesHunk = useCallback(
+    (hunkId: number) => {
+      setDismissedRulesHunks((prev) => new Set(prev).add(hunkId));
+    },
+    [],
+  );
+  const dismissVisualHunk = useCallback(
+    (hunkId: number) => {
+      setDismissedVisualHunks((prev) => new Set(prev).add(hunkId));
+    },
+    [],
+  );
   const acceptVisualHunk = useCallback(
     (hunkId: number) => {
       if (!visualReview) return;
@@ -751,8 +771,10 @@ export function ExperienceCopilotShell({
             isSending={ctrl.isSending}
             review={editorBuffer === "rules" ? rulesReview : visualReview}
             acceptedHunkIds={editorBuffer === "rules" ? acceptedRulesHunks : acceptedVisualHunks}
+            dismissedHunkIds={editorBuffer === "rules" ? dismissedRulesHunks : dismissedVisualHunks}
             onAcceptHunk={editorBuffer === "rules" ? acceptRulesHunk : acceptVisualHunk}
             onAcceptAll={editorBuffer === "rules" ? acceptAllRules : acceptAllVisual}
+            onDismissHunk={editorBuffer === "rules" ? dismissRulesHunk : dismissVisualHunk}
             onRevert={handleToolbarRevert}
             canRevert={review.canRevert}
           />

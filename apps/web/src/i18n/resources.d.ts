@@ -453,6 +453,7 @@ export default interface Resources {
     "copilot_profile_user": "Custom",
     "copilot_review_accept_all": "Accept all",
     "copilot_review_accept_hunk": "Accept",
+    "copilot_review_dismiss_hunk": "Discard",
     "copilot_review_hunks_count": "{n} hunks pending",
     "copilot_review_hunks_skipped": "Skipped {n} hunks: the text has changed",
     "copilot_review_model_editing": "AI is editing…",

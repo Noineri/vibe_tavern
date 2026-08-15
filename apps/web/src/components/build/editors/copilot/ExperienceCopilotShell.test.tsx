@@ -984,6 +984,47 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     fireEvent.click(getByTestId("copilot-accept-all"));
     expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v2");
   });
+
+  it("per-hunk dismiss (✕) drops hunks from the round without touching the buffer (RV-2)", async () => {
+    const onRulesChange = mock();
+    const base = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
+    const { container, getByTestId, queryByTestId } = renderShell({ onRulesChange, rulesCode: base });
+    await flushSessionLoad();
+
+    // Real send (snapshot), then a two-hunk rules proposal (header + tail).
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await flushSessionLoad();
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-new": [
+          {
+            toolCallId: "w1",
+            toolName: "write_buffer",
+            status: "done",
+            summary: "header + tail",
+            target: "rules",
+            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22.",
+          },
+        ],
+      },
+    });
+    await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
+    await waitFor(() => expect(container.querySelectorAll(".cm-copilotDiffDismiss")).toHaveLength(2));
+
+    // Dismiss the first hunk: it leaves the round, the buffer is untouched.
+    fireEvent.click(container.querySelector<HTMLButtonElement>(".cm-copilotDiffDismiss")!);
+    await waitFor(() => expect(container.querySelectorAll(".cm-copilotDiffDismiss")).toHaveLength(1));
+    expect(getByTestId("copilot-review-bar")).toBeDefined();
+    expect(onRulesChange).not.toHaveBeenCalled();
+
+    // Dismiss the last hunk: the round resolves and the bar disappears.
+    fireEvent.click(container.querySelector<HTMLButtonElement>(".cm-copilotDiffDismiss")!);
+    await waitFor(() => expect(queryByTestId("copilot-review-bar")).toBeNull());
+    expect(onRulesChange).not.toHaveBeenCalled();
+  });
 });
 
 describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn", () => {

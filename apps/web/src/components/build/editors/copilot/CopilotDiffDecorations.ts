@@ -102,7 +102,7 @@ export function computeDiffDecorationSpecs(
 const ADD_LINE_CLASS = "cm-copilotDiffAdd";
 
 /** Block widget above an unaccepted hunk: struck-through ghost of the removed
- *  lines (when any) + the hunk's accept button. */
+ *  lines (when any) + the hunk's accept and dismiss buttons (RV-2). */
 class HunkHeaderWidget extends WidgetType {
 	constructor(
 		readonly hunkId: number,
@@ -110,6 +110,9 @@ class HunkHeaderWidget extends WidgetType {
 		readonly buttonLabel: string,
 		readonly buttonTestLabel: string,
 		readonly onAccept: (hunkId: number) => void,
+		readonly dismissLabel: string,
+		readonly dismissAriaLabel: string,
+		readonly onDismiss: (hunkId: number) => void,
 	) {
 		super();
 	}
@@ -118,6 +121,7 @@ class HunkHeaderWidget extends WidgetType {
 		return (
 			this.hunkId === other.hunkId &&
 			this.buttonLabel === other.buttonLabel &&
+			this.dismissLabel === other.dismissLabel &&
 			this.removedTexts.join("\u0000") === other.removedTexts.join("\u0000")
 		);
 	}
@@ -148,6 +152,21 @@ class HunkHeaderWidget extends WidgetType {
 			this.onAccept(this.hunkId);
 		});
 		wrap.appendChild(btn);
+		// RV-2: per-hunk dismiss (✕) next to accept — the hunk is excluded from
+		// the round (no decoration, no pending count, no accept-all) without
+		// touching the buffer.
+		const dismiss = document.createElement("button");
+		dismiss.type = "button";
+		dismiss.className = "cm-copilotDiffDismiss";
+		dismiss.textContent = this.dismissLabel;
+		dismiss.setAttribute("aria-label", this.dismissAriaLabel);
+		dismiss.dataset.hunkId = String(this.hunkId);
+		dismiss.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			this.onDismiss(this.hunkId);
+		});
+		wrap.appendChild(dismiss);
 		return wrap;
 	}
 
@@ -224,6 +243,19 @@ const diffTheme = EditorView.theme({
 		whiteSpace: "pre-wrap",
 		overflowWrap: "break-word",
 	},
+	".cm-copilotDiffDismiss": {
+		flex: "none",
+		minHeight: "26px",
+		padding: "0 10px",
+		marginLeft: "2px",
+		border: "1px solid var(--border)",
+		borderRadius: "5px",
+		backgroundColor: "var(--s2)",
+		color: "var(--t2)",
+		fontFamily: "var(--font-ui)",
+		fontSize: "12px",
+		cursor: "pointer",
+	},
 	".cm-copilotDiffAccept": {
 		flex: "none",
 		minHeight: "26px",
@@ -248,6 +280,11 @@ export interface CopilotDiffExtensionsOptions {
 	buttonAriaLabel: string;
 	/** Invoked when a hunk's accept button is clicked. */
 	onAcceptHunk: (hunkId: number) => void;
+	/** Dismiss-button label + accessible name (RV-2, already i18n-resolved). */
+	dismissLabel: string;
+	dismissAriaLabel: string;
+	/** Invoked when a hunk's dismiss (✕) button is clicked (RV-2). */
+	onDismissHunk: (hunkId: number) => void;
 }
 
 /** The CM6 extension bundle: green add-lines + hunk-header block widgets.
@@ -268,6 +305,9 @@ export function copilotDiffExtensions(options: CopilotDiffExtensionsOptions): Ex
 					options.buttonLabel,
 					options.buttonAriaLabel,
 					options.onAcceptHunk,
+					options.dismissLabel,
+					options.dismissAriaLabel,
+					options.onDismissHunk,
 				),
 			),
 		update: (decorations, tr) =>
@@ -279,6 +319,9 @@ export function copilotDiffExtensions(options: CopilotDiffExtensionsOptions): Ex
 							options.buttonLabel,
 							options.buttonAriaLabel,
 							options.onAcceptHunk,
+							options.dismissLabel,
+							options.dismissAriaLabel,
+							options.onDismissHunk,
 						),
 					)
 				: decorations.map(tr.changes),

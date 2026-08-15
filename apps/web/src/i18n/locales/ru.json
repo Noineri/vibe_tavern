@@ -1908,6 +1908,7 @@
   "copilot_review_hunks_skipped": "Пропущено ханков: {n} — текст изменился",
   "copilot_review_reverted": "Изменения отменены",
   "copilot_review_accept_hunk": "Принять",
+  "copilot_review_dismiss_hunk": "Отменить",
   "copilot_review_accept_all": "Принять все",
   "copilot_review_hunks_count": "Непринятых изменений: {n}",
   "copilot_review_pending_badge": "Есть непринятые изменения",

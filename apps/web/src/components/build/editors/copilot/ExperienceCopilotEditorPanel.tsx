@@ -152,8 +152,12 @@ export interface ExperienceCopilotEditorPanelProps {
   review: CopilotBufferReview | null;
   /** Hunk ids already accepted this review. */
   acceptedHunkIds: ReadonlySet<number>;
+  /** Hunk ids dismissed this review (RV-2) — no decoration, not pending. */
+  dismissedHunkIds: ReadonlySet<number>;
   onAcceptHunk: (hunkId: number) => void;
   onAcceptAll: () => void;
+  /** RV-2: dismiss a single hunk (✕) — excluded from the round, buffer untouched. */
+  onDismissHunk: (hunkId: number) => void;
   /** Draft-level revert (turn-start snapshot), shared across buffers. */
   onRevert: () => void;
   canRevert: boolean;
@@ -165,22 +169,33 @@ export function ExperienceCopilotEditorPanel({
   isSending,
   review,
   acceptedHunkIds,
+  dismissedHunkIds,
   onAcceptHunk,
   onAcceptAll,
+  onDismissHunk,
   onRevert,
   canRevert,
 }: ExperienceCopilotEditorPanelProps) {
   const { t } = useT();
 
+  // Dismissed hunks decorate like accepted ones (nothing) — the resolved set
+  // drives the decoration engine (RV-2).
+  const resolvedHunkIds = useMemo(() => {
+    const resolved = new Set(acceptedHunkIds);
+    for (const id of dismissedHunkIds) resolved.add(id);
+    return resolved;
+  }, [acceptedHunkIds, dismissedHunkIds]);
+
   const specs = useMemo(
     () =>
       review?.diff
-        ? computeDiffDecorationSpecs(review.diff, review.hunks, acceptedHunkIds)
+        ? computeDiffDecorationSpecs(review.diff, review.hunks, resolvedHunkIds)
         : [],
-    [review, acceptedHunkIds],
+    [review, resolvedHunkIds],
   );
-  // Fresh identity per (specs, accepted) change so CodeEditor's compartment
-  // (CD-4) reconfigures — the only way an accept repaints without a doc change.
+  // Fresh identity per (specs, resolved) change so CodeEditor's compartment
+  // (CD-4) reconfigures — the only way an accept/dismiss repaints without a
+  // doc change.
   const extensions = useMemo(
     () =>
       review !== null && specs.length > 0
@@ -189,9 +204,12 @@ export function ExperienceCopilotEditorPanel({
             buttonLabel: t("copilot_review_accept_hunk"),
             buttonAriaLabel: t("copilot_review_accept_hunk"),
             onAcceptHunk,
+            dismissLabel: t("copilot_review_dismiss_hunk"),
+            dismissAriaLabel: t("copilot_review_dismiss_hunk"),
+            onDismissHunk,
           })
         : [],
-    [review, specs, acceptedHunkIds, onAcceptHunk, t],
+    [review, specs, resolvedHunkIds, onAcceptHunk, onDismissHunk, t],
   );
 
   const docValue = review !== null ? review.proposed : value;

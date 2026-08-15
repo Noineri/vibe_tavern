@@ -51,8 +51,10 @@ function renderPanel(over: Partial<Parameters<typeof ExperienceCopilotEditorPane
     isSending: false,
     review: oneHunkReview(),
     acceptedHunkIds: new Set<number>(),
+    dismissedHunkIds: new Set<number>(),
     onAcceptHunk: mock(),
     onAcceptAll: mock(),
+    onDismissHunk: mock(),
     onRevert: mock(),
     canRevert: true,
     ...over,
@@ -155,8 +157,10 @@ describe("ExperienceCopilotEditorPanel", () => {
         isSending={false}
         review={null}
         acceptedHunkIds={new Set<number>()}
+        dismissedHunkIds={new Set<number>()}
         onAcceptHunk={() => {}}
         onAcceptAll={() => {}}
+        onDismissHunk={() => {}}
         onRevert={() => {}}
         canRevert={false}
       />,
@@ -174,6 +178,16 @@ describe("ExperienceCopilotEditorPanel", () => {
     expect(btn!.dataset.hunkId).toBe("0");
     fireEvent.click(btn!);
     expect(onAcceptHunk).toHaveBeenCalledWith(0);
+  });
+
+  it("dismisses a single hunk through the real CodeMirror widget button (RV-2)", () => {
+    const onDismissHunk = mock();
+    const { container } = renderPanel({ onDismissHunk });
+    const btn = container.querySelector<HTMLButtonElement>(".cm-copilotDiffDismiss");
+    expect(btn).not.toBeNull();
+    expect(btn!.dataset.hunkId).toBe("0");
+    fireEvent.click(btn!);
+    expect(onDismissHunk).toHaveBeenCalledWith(0);
   });
 
   it("accept-all routes to the handler and revert button fires onRevert", () => {
