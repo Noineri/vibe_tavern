@@ -15,6 +15,7 @@ import {
   buildBufferReview,
   ExperienceCopilotEditorPanel,
   mergedReviewText,
+  revertHunksFromBuffer,
   WHOLE_BUFFER_HUNK_ID,
   type CopilotBufferReview,
 } from "./ExperienceCopilotEditorPanel.js";
@@ -55,8 +56,8 @@ function renderPanel(over: Partial<Parameters<typeof ExperienceCopilotEditorPane
     onAcceptHunk: mock(),
     onAcceptAll: mock(),
     onDismissHunk: mock(),
-    onRevert: mock(),
-    canRevert: true,
+    onDismissPending: mock(),
+    onCancelRound: mock(),
     ...over,
   };
   return render(<ExperienceCopilotEditorPanel {...props} />);
@@ -130,10 +131,14 @@ describe("mergedReviewText (pure)", () => {
 
 describe("ExperienceCopilotEditorPanel", () => {
   it("renders the review bar with the pending count and switches the document to the proposal", () => {
-    const { getByTestId, container } = renderPanel();
+    const { getByTestId, queryByTestId, container } = renderPanel();
     expect(getByTestId("copilot-review-count").textContent).toContain("copilot_review_hunks_count");
     expect(getByTestId("copilot-accept-all")).toBeDefined();
-    expect(getByTestId("copilot-review-revert")).toBeDefined();
+    expect(getByTestId("copilot-dismiss-pending")).toBeDefined();
+    expect(getByTestId("copilot-cancel-all")).toBeDefined();
+    // The draft-level revert no longer lives in the review bar (RV-3) — it is
+    // the toolbar's whole-turn revert (CD-3), not a per-tab action.
+    expect(queryByTestId("copilot-review-revert")).toBeNull();
     // The document is the PROPOSED text, and the add line is green-marked.
     const cmEl = container.querySelector<HTMLElement>(".cm-editor");
     expect(cmEl).not.toBeNull();
@@ -161,8 +166,8 @@ describe("ExperienceCopilotEditorPanel", () => {
         onAcceptHunk={() => {}}
         onAcceptAll={() => {}}
         onDismissHunk={() => {}}
-        onRevert={() => {}}
-        canRevert={false}
+        onDismissPending={() => {}}
+        onCancelRound={() => {}}
       />,
     );
     view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
@@ -190,14 +195,19 @@ describe("ExperienceCopilotEditorPanel", () => {
     expect(onDismissHunk).toHaveBeenCalledWith(0);
   });
 
-  it("accept-all routes to the handler and revert button fires onRevert", () => {
+  it("accept-all routes to the handler and the cancel buttons fire their handlers (RV-3)", () => {
     const onAcceptAll = mock();
-    const onRevert = mock();
-    const { getByTestId } = renderPanel({ onAcceptAll, onRevert });
+    const onDismissPending = mock();
+    const onCancelRound = mock();
+    const { getByTestId, queryByTestId } = renderPanel({ onAcceptAll, onDismissPending, onCancelRound });
     fireEvent.click(getByTestId("copilot-accept-all"));
     expect(onAcceptAll).toHaveBeenCalledTimes(1);
-    fireEvent.click(getByTestId("copilot-review-revert"));
-    expect(onRevert).toHaveBeenCalledTimes(1);
+    fireEvent.click(getByTestId("copilot-dismiss-pending"));
+    expect(onDismissPending).toHaveBeenCalledTimes(1);
+    fireEvent.click(getByTestId("copilot-cancel-all"));
+    expect(onCancelRound).toHaveBeenCalledTimes(1);
+    // The draft-level revert button is gone from the review bar.
+    expect(queryByTestId("copilot-review-revert")).toBeNull();
   });
 });
 
@@ -236,6 +246,47 @@ describe("applyHunksToBuffer (pure, CD-8 conflict path)", () => {
     const insHunks = groupHunks(insDiff);
     const result = applyHunksToBuffer("a\nb", insDiff, insHunks, new Set(insHunks.map((h) => h.id)));
     expect(result.skippedHunkIds).toEqual(insHunks.map((h) => h.id));
+    expect(result.text).toBe("a\nb");
+  });
+});
+
+describe("revertHunksFromBuffer (pure, RV-3 rollback path)", () => {
+  // The accepted buffer for `a\nb\nc\nd` → `a\nB\nc\nD`: hunk 0 replaced `b`
+  // with `B`, hunk 1 replaced `d` with `D`. Reverting splices the added lines
+  // back to their removed (original) lines.
+  const base = "a\nb\nc\nd";
+  const proposed = "a\nB\nc\nD";
+  const diff = buildLineDiff(base, proposed);
+  const hunks = groupHunks(diff);
+
+  it("replaces a cleanly-anchored added block with its removed lines", () => {
+    // The ACCEPTED buffer (both hunks applied).
+    const result = revertHunksFromBuffer(proposed, diff, hunks, new Set(hunks.map((h) => h.id)));
+    expect(result.text).toBe(base);
+    expect(result.skippedHunkIds).toEqual([]);
+  });
+
+  it("a hunk whose added lines drifted is skipped; the rest still revert", () => {
+    // Hunk 1 (D) drifted to "Z" by an external edit; hunk 0 (B) is intact.
+    const drifted = "a\nB\nc\nZ";
+    const result = revertHunksFromBuffer(drifted, diff, hunks, new Set(hunks.map((h) => h.id)));
+    expect(result.skippedHunkIds).toEqual([1]);
+    expect(result.text).toBe("a\nb\nc\nZ");
+  });
+
+  it("an added-block anchor never matches mid-line", () => {
+    // "B" appears only INSIDE "aB" — not a whole-line run, so the hunk is
+    // skipped rather than spliced into the middle of the word.
+    const result = revertHunksFromBuffer("aB\nc\nD", diff, hunks, new Set([0]));
+    expect(result.skippedHunkIds).toEqual([0]);
+    expect(result.text).toBe("aB\nc\nD");
+  });
+
+  it("pure-deletion hunks have no added anchor and are always skipped", () => {
+    const delDiff = buildLineDiff("a\nGONE\nb", "a\nb");
+    const delHunks = groupHunks(delDiff);
+    const result = revertHunksFromBuffer("a\nb", delDiff, delHunks, new Set(delHunks.map((h) => h.id)));
+    expect(result.skippedHunkIds).toEqual(delHunks.map((h) => h.id));
     expect(result.text).toBe("a\nb");
   });
 });

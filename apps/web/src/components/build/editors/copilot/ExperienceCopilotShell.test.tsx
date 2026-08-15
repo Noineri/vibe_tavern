@@ -1067,6 +1067,185 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
   });
 });
 
+describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
+  const BASE = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
+  const PROPOSED = "// RULES v2\nconst keep = 1;\nconst tail = 22.";
+  // Hunk 0 (the header) accepted, hunk 1 (the tail) still pending.
+  const HYBRID = "// RULES v2\nconst keep = 1;\nconst tail = 2.";
+
+  async function startReview(utils: ReturnType<typeof renderShell>) {
+    await flushSessionLoad();
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await flushSessionLoad();
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "header + tail",
+              target: "rules",
+              proposed: PROPOSED,
+            },
+          ],
+        },
+      });
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+  }
+
+  it("«Отменить все непринятые» dismisses only THIS tab's pending hunks (buffer + accepted untouched)", async () => {
+    const onRulesChange = mock();
+    const onVisualChange = mock();
+    const utils = renderShell({ onRulesChange, onVisualChange, rulesCode: BASE });
+    await startReview(utils);
+
+    // Accept hunk 0 → hunk 1 is the only pending hunk.
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    expect(onRulesChange).toHaveBeenCalledWith(HYBRID);
+    const callsAfterAccept = onRulesChange.mock.calls.length;
+
+    // «Отменить все непринятые»: hunk 1 leaves the round; nothing else moves.
+    fireEvent.click(utils.getByTestId("copilot-dismiss-pending"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    expect(onRulesChange.mock.calls.length).toBe(callsAfterAccept);
+    expect(onVisualChange).not.toHaveBeenCalled();
+    expect(utils.queryByTestId("copilot-buffer-dot-visual")).toBeNull();
+  });
+
+  it("«Отменить все» (clean) rolls accepted hunks back to the snapshot base without clearTurn", async () => {
+    toastWarning.mockClear();
+    const onRulesChange = mock();
+    const utils = renderShell({ onRulesChange, rulesCode: BASE });
+    await startReview(utils);
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    expect(onRulesChange).toHaveBeenCalledWith(HYBRID);
+    // The parent applies the accept → the draft becomes the hybrid.
+    utils.rerender(<ExperienceCopilotShell {...utils.props} rulesCode={HYBRID} onRulesChange={onRulesChange} />);
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    expect(onRulesChange).toHaveBeenLastCalledWith(BASE);
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    // RV-3: the round is cancelled WITHOUT popping the snapshot / clearTurn —
+    // the live turn's activities survive (the toolbar revert is a separate path).
+    expect(useExperienceCopilotTurnStore.getState().turnsByThread["thread-new"]?.length).toBeGreaterThan(0);
+  });
+
+  it("«Отменить все» (drift) reverses anchored accepted hunks and toasts nothing when all anchor", async () => {
+    toastWarning.mockClear();
+    const onRulesChange = mock();
+    const utils = renderShell({ onRulesChange, rulesCode: BASE });
+    await startReview(utils);
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    expect(onRulesChange).toHaveBeenCalledWith(HYBRID);
+    // Drift the MIDDLE context line (not part of hunk 0's added/removed lines),
+    // so hunk 0 still anchors onto the drifted buffer.
+    utils.rerender(
+      <ExperienceCopilotShell
+        {...utils.props}
+        rulesCode={HYBRID.replace("const keep = 1;", "const keep = 999;")}
+        onRulesChange={onRulesChange}
+      />,
+    );
+
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    expect(onRulesChange).toHaveBeenLastCalledWith("// rules buffer\nconst keep = 999;\nconst tail = 2.");
+    expect(toastWarning).not.toHaveBeenCalled();
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+  });
+
+  it("tooLarge: «Отменить все» on a pending wholesale proposal dismisses it (buffer untouched)", async () => {
+    toastWarning.mockClear();
+    const onRulesChange = mock();
+    const bigBase = Array.from({ length: 900 }, (_, i) => `line-${i}`).join("\n");
+    const bigProposed = Array.from({ length: 900 }, (_, i) => `other-${i}`).join("\n");
+    const utils = renderShell({ onRulesChange, rulesCode: bigBase });
+    await flushSessionLoad();
+
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await flushSessionLoad();
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-new": [
+          {
+            toolCallId: "w-big",
+            toolName: "write_buffer",
+            status: "done",
+            summary: "rewrote",
+            target: "rules",
+            proposed: bigProposed,
+          },
+        ],
+      },
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+
+    // The tooLarge fallback has no hunk decomposition; the only reachable
+    // cancel is «Отменить все» on the still-pending sentinel (accept-all
+    // resolves the round immediately, RV-1). It leaves the buffer untouched.
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    expect(onRulesChange).not.toHaveBeenCalled();
+    expect(toastWarning).not.toHaveBeenCalled();
+  });
+
+  it("cancelling the rules tab leaves a live VISUAL round untouched (per-tab scoping)", async () => {
+    const onRulesChange = mock();
+    const onVisualChange = mock();
+    const utils = renderShell({ onRulesChange, onVisualChange, rulesCode: BASE });
+    await startReview(utils);
+
+    // A SECOND proposal lands on the visual buffer while the rules round is
+    // still open — both rounds are live at once (CD-8: they hang until resolved).
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "header + tail",
+              target: "rules",
+              proposed: PROPOSED,
+            },
+            {
+              toolCallId: "w2",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "visual edit",
+              target: "visual",
+              proposed: "// visual buffer v2",
+            },
+          ],
+        },
+      });
+    });
+
+    // Cancel the RULES round from the rules tab.
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    // The rules round is gone (its review bar disappears — nothing was
+    // accepted, so the buffer is never touched)…
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    expect(onRulesChange).not.toHaveBeenCalled();
+    // …but the VISUAL round is NOT cancelled: its buffer is untouched and its
+    // tab dot stays lit (the cancel is per-tab by design, RV-3).
+    expect(onVisualChange).not.toHaveBeenCalled();
+    await waitFor(() => expect(utils.getByTestId("copilot-buffer-dot-visual")).not.toBeNull());
+  });
+});
+
 describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn", () => {
   async function sendOne(content: string) {
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;

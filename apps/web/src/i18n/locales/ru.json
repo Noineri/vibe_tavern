@@ -1910,6 +1910,8 @@
   "copilot_review_accept_hunk": "Принять",
   "copilot_review_dismiss_hunk": "Отменить",
   "copilot_review_accept_all": "Принять все",
+  "copilot_review_cancel_all": "Отменить все",
+  "copilot_review_dismiss_pending": "Отменить все непринятые",
   "copilot_review_hunks_count": "Непринятых изменений: {n}",
   "copilot_review_pending_badge": "Есть непринятые изменения",
   "copilot_context_auto": "Авто",

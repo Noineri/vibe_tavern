@@ -40,9 +40,11 @@ import {
   buildBufferReview,
   ExperienceCopilotEditorPanel,
   mergedReviewText,
+  revertHunksFromBuffer,
   type CopilotBufferReview,
 } from "./ExperienceCopilotEditorPanel.js";
 import { useShallow } from "zustand/react/shallow";
+import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
 
 /**
  * ExperienceCopilotShell (ER-11d / ER-13b′) — the visible 2-pane copilot
@@ -474,6 +476,81 @@ export function ExperienceCopilotShell({
     acceptHunks(visualReview, acceptedVisualHunks, pending, visualSource, setAcceptedVisualHunks, onVisualChange);
   }, [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks]);
 
+  // RV-3: «Отменить все непринятые» — dismiss the PENDING hunks of THIS
+  // buffer only (accepted hunks stay accepted, the other buffer and the text
+  // are untouched). The round resolves once nothing is pending.
+  const dismissPendingRules = useCallback(() => {
+    if (!rulesReview) return;
+    const pending = [...allReviewHunkIds(rulesReview)].filter(
+      (id) => !acceptedRulesHunks.has(id) && !dismissedRulesHunks.has(id),
+    );
+    if (pending.length === 0) return;
+    setDismissedRulesHunks((prev) => new Set([...prev, ...pending]));
+  }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks]);
+  const dismissPendingVisual = useCallback(() => {
+    if (!visualReview) return;
+    const pending = [...allReviewHunkIds(visualReview)].filter(
+      (id) => !acceptedVisualHunks.has(id) && !dismissedVisualHunks.has(id),
+    );
+    if (pending.length === 0) return;
+    setDismissedVisualHunks((prev) => new Set([...prev, ...pending]));
+  }, [visualReview, acceptedVisualHunks, dismissedVisualHunks]);
+
+  // RV-3: «Отменить все» — kill the whole round for THIS buffer: every hunk
+  // (pending AND accepted) leaves the round (dismissed), and the hunks already
+  // accepted into the buffer are rolled back — from the snapshot base on the
+  // clean path, or by reverse-splicing their added lines off the drifted
+  // buffer (non-anchoring hunks are skipped + toasted, never guessed). No
+  // clearTurn, no snapshot pop, no setDangling — that is the toolbar revert's
+  // job (CD-3).
+  const cancelRoundHunks = useCallback(
+    (
+      bufferReview: CopilotBufferReview,
+      prevAccepted: ReadonlySet<number>,
+      prevDismissed: ReadonlySet<number>,
+      bufferText: string,
+      setDismissed: (next: Set<number>) => void,
+      onChange: (text: string) => void,
+    ) => {
+      // tooLarge wholesale (RV-1): the round is only reachable while the
+      // sentinel is PENDING (an accepted sentinel resolves the round and the
+      // bar disappears), so cancelling just dismisses it — the buffer was
+      // never touched by a pending proposal.
+      if (!bufferReview.diff) {
+        setDismissed(new Set([...prevDismissed, ...allReviewHunkIds(bufferReview)]));
+        return;
+      }
+      const acceptedIds = [...allReviewHunkIds(bufferReview)].filter((id) => prevAccepted.has(id));
+      const expected = mergedReviewText(bufferReview, prevAccepted);
+      if (bufferText === expected) {
+        // Clean path: rebuild from the snapshot base (no accepted hunks left).
+        if (acceptedIds.length > 0) onChange(mergeSelectedBody(bufferReview.diff, new Set()));
+      } else {
+        const { text, skippedHunkIds } = revertHunksFromBuffer(
+          bufferText,
+          bufferReview.diff,
+          bufferReview.hunks,
+          new Set(acceptedIds),
+        );
+        const reverted = acceptedIds.filter((id) => !skippedHunkIds.includes(id));
+        if (reverted.length > 0) onChange(text);
+        if (skippedHunkIds.length > 0)
+          toast.warning(t("copilot_review_hunks_skipped", { n: skippedHunkIds.length }));
+      }
+      setDismissed(new Set([...prevDismissed, ...allReviewHunkIds(bufferReview)]));
+    },
+    [t],
+  );
+
+  const cancelRoundRules = useCallback(() => {
+    if (!rulesReview) return;
+    cancelRoundHunks(rulesReview, acceptedRulesHunks, dismissedRulesHunks, rulesCode, setDismissedRulesHunks, onRulesChange);
+  }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks, rulesCode, onRulesChange, cancelRoundHunks]);
+  const cancelRoundVisual = useCallback(() => {
+    if (!visualReview) return;
+    cancelRoundHunks(visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, setDismissedVisualHunks, onVisualChange);
+  }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, cancelRoundHunks]);
+
   const handleToolbarRevert = useCallback(() => {
     setDangling(null);
     review.revertLastTurn();
@@ -775,8 +852,8 @@ export function ExperienceCopilotShell({
             onAcceptHunk={editorBuffer === "rules" ? acceptRulesHunk : acceptVisualHunk}
             onAcceptAll={editorBuffer === "rules" ? acceptAllRules : acceptAllVisual}
             onDismissHunk={editorBuffer === "rules" ? dismissRulesHunk : dismissVisualHunk}
-            onRevert={handleToolbarRevert}
-            canRevert={review.canRevert}
+            onDismissPending={editorBuffer === "rules" ? dismissPendingRules : dismissPendingVisual}
+            onCancelRound={editorBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
           />
         </>
       )}

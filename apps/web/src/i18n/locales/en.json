@@ -1892,6 +1892,8 @@
   "copilot_review_accept_hunk": "Accept",
   "copilot_review_dismiss_hunk": "Discard",
   "copilot_review_accept_all": "Accept all",
+  "copilot_review_cancel_all": "Discard all",
+  "copilot_review_dismiss_pending": "Discard unaccepted",
   "copilot_review_hunks_count": "{n} hunks pending",
   "copilot_review_pending_badge": "Unaccepted changes",
   "copilot_context_auto": "Auto",

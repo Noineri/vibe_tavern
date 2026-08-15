@@ -9,7 +9,7 @@ import { useT } from "../../../../i18n/context.js";
 /**
  * CD-6: the copilot editor pane's content area in review mode — the inline-diff
  * document (green hunks + accept buttons, CD-5) plus the review bar
- * («принять все / N ханков / отменить изменения»).
+ * («принять все / N ханков / отменить все непринятые / отменить все»).
  *
  * The panel is PROPS-DRIVEN and stateless by design: the accept-selection
  * state lives in the shell (it must survive buffer-tab switches, which remount
@@ -142,6 +142,57 @@ export function applyHunksToBuffer(
   return { text: lines.join("\n"), skippedHunkIds };
 }
 
+/**
+ * RV-3 conflict path (reverse of {@link applyHunksToBuffer}): roll ACCEPTED
+ * hunks back off the CURRENT buffer by locating each hunk's ADDED lines as a
+ * contiguous whole-line run and splicing its REMOVED lines back in. Used by
+ * «Отменить все» when the buffer has drifted since the accept — the clean
+ * path rebuilds from the snapshot base instead. A hunk whose added lines no
+ * longer appear contiguously (a pure deletion — no added anchor — or an
+ * external edit under it) is skipped and stays in the round's skipped list;
+ * it never blocks the remaining hunks and is reported, never guessed.
+ */
+export function revertHunksFromBuffer(
+  buffer: string,
+  diff: TextDiffSummary,
+  hunks: readonly DiffHunk[],
+  selectedHunkIds: ReadonlySet<number>,
+): HunkSpliceResult {
+  const lines = buffer.split("\n");
+  const skippedHunkIds: number[] = [];
+  const byId = new Map(hunks.map((h) => [h.id, h]));
+  for (const id of selectedHunkIds) {
+    const hunk = byId.get(id);
+    if (!hunk) continue;
+    const removedTexts: string[] = [];
+    const addedTexts: string[] = [];
+    for (let k = hunk.start; k < hunk.end; k++) {
+      const line = diff.lines[k]!;
+      if (line.kind === "remove") removedTexts.push(line.text);
+      else if (line.kind === "add") addedTexts.push(line.text);
+    }
+    // Anchor = the hunk's ADDED lines as a contiguous whole-line run (the
+    // reverse of applyHunksToBuffer's removed-line anchor). Scan line runs —
+    // indexOf on a joined needle would match MID-LINE.
+    let at = -1;
+    if (addedTexts.length > 0) {
+      outer: for (let i = 0; i + addedTexts.length <= lines.length; i++) {
+        for (let k = 0; k < addedTexts.length; k++) {
+          if (lines[i + k] !== addedTexts[k]) continue outer;
+        }
+        at = i;
+        break;
+      }
+    }
+    if (at < 0) {
+      skippedHunkIds.push(id); // pure deletion (no added anchor) or text changed under it
+      continue;
+    }
+    lines.splice(at, addedTexts.length, ...removedTexts);
+  }
+  return { text: lines.join("\n"), skippedHunkIds };
+}
+
 export interface ExperienceCopilotEditorPanelProps {
   /** The draft buffer text (the free-mode document). */
   value: string;
@@ -158,9 +209,10 @@ export interface ExperienceCopilotEditorPanelProps {
   onAcceptAll: () => void;
   /** RV-2: dismiss a single hunk (✕) — excluded from the round, buffer untouched. */
   onDismissHunk: (hunkId: number) => void;
-  /** Draft-level revert (turn-start snapshot), shared across buffers. */
-  onRevert: () => void;
-  canRevert: boolean;
+  /** RV-3: dismiss the PENDING hunks of this tab (buffer + accepted untouched). */
+  onDismissPending: () => void;
+  /** RV-3: cancel the whole round for this tab (accepted hunks rolled back). */
+  onCancelRound: () => void;
 }
 
 export function ExperienceCopilotEditorPanel({
@@ -173,8 +225,8 @@ export function ExperienceCopilotEditorPanel({
   onAcceptHunk,
   onAcceptAll,
   onDismissHunk,
-  onRevert,
-  canRevert,
+  onDismissPending,
+  onCancelRound,
 }: ExperienceCopilotEditorPanelProps) {
   const { t } = useT();
 
@@ -237,16 +289,22 @@ export function ExperienceCopilotEditorPanel({
             >
               {t("copilot_review_accept_all")}
             </button>
-            {canRevert && (
-              <button
-                type="button"
-                data-testid="copilot-review-revert"
-                onClick={onRevert}
-                className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
-              >
-                {t("copilot_review_revert")}
-              </button>
-            )}
+            <button
+              type="button"
+              data-testid="copilot-dismiss-pending"
+              onClick={onDismissPending}
+              className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
+            >
+              {t("copilot_review_dismiss_pending")}
+            </button>
+            <button
+              type="button"
+              data-testid="copilot-cancel-all"
+              onClick={onCancelRound}
+              className="min-h-9 cursor-pointer rounded-[5px] border border-border bg-s2 px-3 font-ui text-xs font-medium text-t2 transition-colors duration-100 hover:text-t1"
+            >
+              {t("copilot_review_cancel_all")}
+            </button>
           </div>
         </div>
       )}
