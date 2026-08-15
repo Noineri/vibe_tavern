@@ -559,6 +559,59 @@ describe("experience-copilot stream — context metrics (CM-4)", () => {
     expect(data.metrics.budgetTokens).toBe(0);
     expect(data.metrics.reserveTokens).toBe(2000);
   });
+
+  it("multi-step tool turn: totalTokens = the LAST step's input, not the summed aggregate usage", async () => {
+    // Regression: a 3-step tool turn re-sends the whole context per step; the
+    // SDK's aggregate usage.inputTokens SUMS steps (3 × ~63k ≈ 190k against a
+    // 100k budget → false 190% urgency). The true final context is the LAST
+    // step's input.
+    const store = createFakeStore(makeThread());
+    // Feed finish-step parts through the REAL createMappedStream so the trace
+    // state collects per-step usage exactly as production does.
+    streamTextImpl = () => makeFakeStreamTextResult({
+      parts: [
+        textDelta("hi"),
+        { type: "start-step" },
+        { type: "finish-step", response: {}, usage: { inputTokens: 63000, outputTokens: 500, totalTokens: 63500 }, finishReason: "tool-calls" },
+        { type: "start-step" },
+        { type: "finish-step", response: {}, usage: { inputTokens: 64100, outputTokens: 400, totalTokens: 64500 }, finishReason: "tool-calls" },
+        { type: "start-step" },
+        { type: "finish-step", response: {}, usage: { inputTokens: 64500, outputTokens: 300, totalTokens: 64800 }, finishReason: "stop" },
+      ],
+      // The aggregate the SDK resolves — the SUM across steps.
+      usage: { inputTokens: 191600, outputTokens: 1200, totalTokens: 192800 },
+    });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const finish = events.find((e) => e.event === "finish");
+    const data = finish!.data as { metrics: { source: string; totalTokens: number } };
+    expect(data.metrics.source).toBe("provider");
+    expect(data.metrics.totalTokens).toBe(64500);
+  });
+
+  it("maxTokens -1 (\"model decides\") clamps reserveTokens to 0, never a -1 reserve", async () => {
+    const store = createFakeStore(makeThread());
+    const profile = makeProfile();
+    profile.maxTokens = -1;
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("hi")] });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store, { getProviderProfile: async () => profile, getEffectiveProviderProfile: async () => profile }),
+      ),
+    );
+
+    const finish = events.find((e) => e.event === "finish");
+    const data = finish!.data as { metrics: { reserveTokens: number } };
+    expect(data.metrics.reserveTokens).toBe(0);
+  });
 });
 
 describe("experience-copilot stream — digest pre-split + auto-compact (CM-5/CM-6)", () => {

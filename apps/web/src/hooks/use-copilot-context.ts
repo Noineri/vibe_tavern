@@ -32,6 +32,11 @@ export interface UseCopilotContextArgs {
   /** Called after a successful manual compact so the shell can refetch messages
    *  (the newly appended digest message must appear as a card at the boundary). */
   onCompacted?: () => void;
+  /** The copilot input's CURRENT provider/model selection, forwarded to the
+   *  compact call — WITHOUT it the backend falls back to the thread's LAST-USED
+   *  pair (the provider of the previous turn), which silently compacts with a
+   *  different profile than the user sees selected. */
+  compactProvider?: { providerProfileId?: string; model?: string };
 }
 
 export interface CopilotContextController {
@@ -46,7 +51,7 @@ export interface CopilotContextController {
   setAutoCompact: (enabled: boolean) => Promise<void>;
 }
 
-export function useCopilotContext({ threadId, onCompacted }: UseCopilotContextArgs): CopilotContextController {
+export function useCopilotContext({ threadId, onCompacted, compactProvider }: UseCopilotContextArgs): CopilotContextController {
   const [metrics, setMetrics] = useState<ExperienceCopilotContextMetrics | null>(null);
   const [autoCompact, setAutoCompactState] = useState(true);
   const [isCompacting, setIsCompacting] = useState(false);
@@ -54,6 +59,9 @@ export function useCopilotContext({ threadId, onCompacted }: UseCopilotContextAr
 
   const onCompactedRef = useRef(onCompacted);
   onCompactedRef.current = onCompacted;
+
+  const compactProviderRef = useRef(compactProvider);
+  compactProviderRef.current = compactProvider;
 
   useEffect(() => {
     // Reset first so a sibling thread's metrics never flash on the new thread,
@@ -88,7 +96,11 @@ export function useCopilotContext({ threadId, onCompacted }: UseCopilotContextAr
     isCompactingRef.current = true;
     setIsCompacting(true);
     try {
-      const result = await compactExperienceCopilot(threadId);
+      const sel = compactProviderRef.current ?? {};
+      const result = await compactExperienceCopilot(threadId, {
+        ...(sel.providerProfileId ? { providerProfileId: sel.providerProfileId } : {}),
+        ...(sel.model ? { model: sel.model } : {}),
+      });
       setMetrics(result.metrics);
       onCompactedRef.current?.();
     } finally {

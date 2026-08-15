@@ -208,7 +208,7 @@ export class ExperienceCopilotCompactionService {
     if (!profile) {
       throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
     }
-    if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
+    if (providerRequiresApiKey(profile.providerPreset) && !isLoopbackEndpoint(profile.endpoint) && !profile.apiKey?.trim()) {
       throw validation("Selected provider has no saved API key.");
     }
     const model = (input.model ?? thread.lastModel ?? profile.defaultModel ?? "").trim();
@@ -277,6 +277,16 @@ export class ExperienceCopilotCompactionService {
 
     return { digest, metrics };
   }
+}
+
+/** True when the endpoint points at a loopback host (localhost / 127.0.0.1 /
+ *  [::1]) — a local gateway (e.g. a self-hosted proxy on 127.0.0.1) injects
+ *  its own credentials, so an empty profile API key is legitimate there and
+ *  must NOT block compaction (mirrors provider-support's local-endpoint
+ *  inference). */
+function isLoopbackEndpoint(endpoint: string | null | undefined): boolean {
+  const value = (endpoint ?? "").toLowerCase();
+  return value.includes("localhost") || value.includes("127.0.0.1") || value.includes("[::1]");
 }
 
 /** Build the minimal `AssemblePromptResponse` the non-streaming executor

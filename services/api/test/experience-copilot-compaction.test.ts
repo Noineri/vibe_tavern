@@ -327,6 +327,39 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     expect(error).toBeInstanceOf(ProviderExecutionError);
     expect((error as Error).message).toBe("upstream 502");
   });
+
+  it("a loopback endpoint without a saved API key passes the key check (local gateway injects credentials)", async () => {
+    // Regression: a self-hosted gateway profile (e.g. http://127.0.0.1:8090/v1,
+    // openaiCompat preset, empty apiKey) was rejected with "Selected provider
+    // has no saved API key" even though generation through it works fine — the
+    // gateway adds auth itself. Only non-loopback endpoints require a key.
+    const profiles = makeProviderProfiles();
+    const profile = {
+      id: "prov_local",
+      name: "Local gateway",
+      providerPreset: "openai",
+      endpoint: "http://127.0.0.1:8090/v1/",
+      apiKey: "",
+      defaultModel: "model_1",
+      bindPerModel: false,
+    };
+    (profiles as { profile: unknown }).profile = profile;
+    profiles.getProviderProfile = async () => profile;
+
+    const { store, appended } = makeStore(makeTurnSequence(20));
+    const executor = makeExecutor({ text: "summary via gateway" });
+    const service = new ExperienceCopilotCompactionService(
+      store,
+      profiles as never,
+      executor.execute as never,
+    );
+
+    await service.compact({ threadId: "thread_1" });
+
+    // The compaction RAN (executor called, digest appended) — no key rejection.
+    expect(executor.calls.length).toBe(1);
+    expect(appended[0].role).toBe("digest");
+  });
 });
 
 describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {

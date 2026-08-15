@@ -385,7 +385,9 @@ describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", 
     fireEvent.click(getByTestId("copilot-context-compact-btn"));
     await flushSessionLoad();
 
-    expect(compactExperienceCopilot).toHaveBeenCalledWith("thread-1");
+    // The compact call forwards the shell's current provider/model selection
+    // (restored binding p1/m1 from the persisted uiSettings in this test).
+    expect(compactExperienceCopilot).toHaveBeenCalledWith("thread-1", { providerProfileId: "p1", model: "m1" });
     // onCompacted → handleTurnSettled → refetch messages so the digest card appears.
     expect(listExperienceCopilotMessages.mock.calls.length).toBeGreaterThan(callsBefore);
   });

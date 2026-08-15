@@ -110,9 +110,32 @@ describe("useCopilotContext", () => {
       await result.current.compact();
     });
 
-    expect(compactExperienceCopilot).toHaveBeenCalledWith("t1");
+    expect(compactExperienceCopilot).toHaveBeenCalledWith("t1", {});
     expect(result.current.metrics).toEqual(metrics(500));
     expect(onCompacted).toHaveBeenCalledTimes(1);
+  });
+
+  it("compact forwards the current provider/model selection (not the thread's last-used pair)", async () => {
+    // Regression: without the forwarding, the backend silently compacted with
+    // the provider of the PREVIOUS turn while the user had another selected.
+    const { result, rerender } = renderHook(
+      ({ sel }: { sel?: { providerProfileId?: string; model?: string } }) =>
+        useCopilotContext({ threadId: "t1", compactProvider: sel }),
+      { initialProps: { sel: { providerProfileId: "p9", model: "m9" } as { providerProfileId?: string; model?: string } } },
+    );
+    await waitFor(() => expect(getExperienceCopilotContext).toHaveBeenCalled());
+
+    await act(async () => {
+      await result.current.compact();
+    });
+    expect(compactExperienceCopilot).toHaveBeenCalledWith("t1", { providerProfileId: "p9", model: "m9" });
+
+    // A later compact after the selection changed picks up the NEW pair (ref, not stale closure).
+    rerender({ sel: { providerProfileId: "p10" } });
+    await act(async () => {
+      await result.current.compact();
+    });
+    expect(compactExperienceCopilot).toHaveBeenLastCalledWith("t1", { providerProfileId: "p10" });
   });
 
   it("compact propagates the error and clears the compacting flag", async () => {

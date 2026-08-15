@@ -423,7 +423,9 @@ export async function* streamExperienceCopilot(
   }
 
   // ── 9. Normalize + drain the stream, emitting SSE events ──
-  const { stream: mapped } = createMappedStream(result.stream);
+  // `state.providerResponse.steps` collects PER-STEP usage from finish-step
+  // parts — the metrics path reads the LAST step's input (see CM-4 block below).
+  const { stream: mapped, state: mappedState } = createMappedStream(result.stream);
 
   let textAccumulator = "";
   let reasoningAccumulator = "";
@@ -513,13 +515,22 @@ export async function* streamExperienceCopilot(
 
   // ── Context metrics (CM-4) ─────────────────────────────────────────────────
   // Per-segment values are ALWAYS the assembler's estimate (the provider only
-  // reports an aggregate). `totalTokens` prefers the provider's actual
-  // `usage.inputTokens` when present and plausible (a positive finite number),
-  // else the assembler's estimate — metrics honesty: never blend the two and
+  // reports an aggregate). `totalTokens` prefers the provider's ACTUAL input
+  // size of the FINAL request — read from the live provider-response trace's
+  // LAST step (multi-step tool turns re-send the whole context per step, so the
+  // aggregate `usage.inputTokens` SUMS steps: 3 steps × ~63k ≈ 190k reported
+  // against a 100k budget — a false 190% reading. The last step's input is the
+  // true final context size; for single-step turns it equals the aggregate).
+  // Else the assembler's estimate — metrics honesty: never blend the two and
   // claim it was measured. `budgetTokens` is 0 when the profile has no explicit
-  // context budget (the meter renders an unmetered bar). Persisting is
-  // best-effort: a failure logs and never fails the turn.
-  const providerInputTokens = usage?.inputTokens;
+  // context budget (the meter renders an unmetered bar). `reserveTokens` clamps
+  // negatives to 0 (maxTokens -1 = "model decides" = no explicit reserve).
+  // Persisting is best-effort: a failure logs and never fails the turn.
+  const traceSteps = mappedState.providerResponse.steps;
+  const lastStepInputTokens = traceSteps.length > 0
+    ? traceSteps[traceSteps.length - 1]?.usage?.inputTokens
+    : undefined;
+  const providerInputTokens = lastStepInputTokens ?? usage?.inputTokens;
   let metricsSource: "estimate" | "provider";
   let metricsTotalTokens: number;
   if (
@@ -539,7 +550,7 @@ export async function* streamExperienceCopilot(
     historyTokens: assembled.tokenAccounting.history,
     totalTokens: metricsTotalTokens,
     budgetTokens: effectiveProfile.contextBudget ?? 0,
-    reserveTokens: effectiveProfile.maxTokens ?? 0,
+    reserveTokens: Math.max(0, effectiveProfile.maxTokens ?? 0),
     source: metricsSource,
     measuredAt: new Date().toISOString(),
   };

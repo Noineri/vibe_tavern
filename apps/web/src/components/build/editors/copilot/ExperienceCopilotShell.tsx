@@ -246,7 +246,14 @@ export function ExperienceCopilotShell({
   // CM-8: context meter state per thread (metrics / auto-compact / compact).
   // `onCompacted` refetches messages so the newly appended digest message
   // renders as a card at its anchor boundary.
-  const copilotContext = useCopilotContext({ threadId, onCompacted: handleTurnSettled });
+  const copilotContext = useCopilotContext({
+    threadId,
+    onCompacted: handleTurnSettled,
+    compactProvider: {
+      ...(providerProfileId ? { providerProfileId } : {}),
+      ...(model ? { model } : {}),
+    },
+  });
 
   const ctrl = useExperienceCopilotController({
     threadId,
@@ -402,8 +409,11 @@ export function ExperienceCopilotShell({
             isCompacting={copilotContext.isCompacting}
             isSending={ctrl.isSending}
             onCompact={() =>
-              void copilotContext.compact().catch(() => {
-                toast.error(t("copilot_context_compact_error"));
+              void copilotContext.compact().catch((err: unknown) => {
+                // Surface the server's reason (typed 400s carry a meaningful
+                // message, e.g. "Nothing to compact…") instead of a generic label.
+                const message = err instanceof Error && err.message ? err.message : "";
+                toast.error(message || t("copilot_context_compact_error"));
               })
             }
             onToggleAutoCompact={(enabled) =>
