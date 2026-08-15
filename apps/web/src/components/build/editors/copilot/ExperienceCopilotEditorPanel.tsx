@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { buildLineDiff, type TextDiffSummary } from "../../../shared/TextDiffPreview.js";
 import { allHunkIds, groupHunks, mergeSelectedBody, type DiffHunk } from "../../../../lib/coauthor-hunk-merge.js";
 import { CodeEditor } from "../../../shared/CodeEditor.js";
+import { GeneratingScrim } from "../../../shared/generation-feedback.js";
 import { computeDiffDecorationSpecs, copilotDiffExtensions } from "./CopilotDiffDecorations.js";
-import { cn } from "../../../../lib/cn.js";
 import { useT } from "../../../../i18n/context.js";
 
 /**
@@ -309,13 +309,12 @@ export function ExperienceCopilotEditorPanel({
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {/* CD-3: frozen (read-only + dimmed + badge) while the model works. */}
+        {/* CD-3: frozen (read-only + shared GeneratingScrim dim) while the model
+            works — the scrim alone dims the surface (same as the coauthor
+            editor); no extra frame opacity, which would double-darken. */}
         <div
           data-testid="copilot-editor-frame"
-          className={cn(
-            "relative h-full min-h-0 rounded-md border border-border bg-bg transition-opacity duration-150",
-            isSending && "opacity-60",
-          )}
+          className="relative h-full min-h-0 rounded-md border border-border bg-bg"
         >
           <CodeEditor
             className="h-full"
@@ -327,12 +326,12 @@ export function ExperienceCopilotEditorPanel({
             extensions={extensions}
           />
           {isSending && (
-            <div
-              data-testid="copilot-editor-frozen"
-              className="pointer-events-none absolute left-2 top-2 z-10 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t2"
-            >
-              {t("copilot_review_model_editing")}
-            </div>
+            <GeneratingScrim
+              variant="dim"
+              label={t("copilot_review_model_editing")}
+              pointerEvents="auto"
+              testId="copilot-editor-frozen"
+            />
           )}
         </div>
       </div>
