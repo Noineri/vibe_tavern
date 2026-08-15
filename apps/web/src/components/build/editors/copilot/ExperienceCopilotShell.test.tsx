@@ -1053,6 +1053,50 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
     expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v3");
     expect(onRulesChange).not.toHaveBeenCalledWith("// rules buffer v2");
   });
+
+  it("a visual-only follow-up proposal does not re-light the resolved rules review (RV-1)", async () => {
+    const onRulesChange = mock();
+    const onVisualChange = mock();
+    const { getByTestId, queryByTestId, getByRole } = renderShell({ onRulesChange, onVisualChange });
+    await flushSessionLoad();
+
+    // Turn 1: a rules proposal the user FULLY accepts — the round resolves
+    // and the review bar disappears.
+    await sendOne("edit the rules");
+    seedProposal("// rules buffer v2");
+    await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
+    fireEvent.click(getByTestId("copilot-accept-all"));
+    expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v2");
+    await waitFor(() => expect(queryByTestId("copilot-review-bar")).toBeNull());
+
+    // Turn 2: the model proposes ONLY a visual (rules untouched).
+    await sendOne("now write the visual");
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-new": [
+          {
+            toolCallId: "v1",
+            toolName: "write_buffer",
+            status: "done",
+            summary: "wrote visual",
+            target: "visual",
+            proposed: "<!doctype html><html><body>v2</body></html>",
+          },
+        ],
+      },
+    });
+
+    // The visual round shows on the visual tab…
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
+
+    // …while the rules tab stays RESOLVED: no re-lit review bar, no dot. The
+    // old combined proposalKey reset BOTH accepted sets on any buffer change,
+    // re-lighting hunks the user had already accepted (and saved).
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_rules" }));
+    await waitFor(() => expect(queryByTestId("copilot-review-bar")).toBeNull());
+    expect(queryByTestId("copilot-buffer-dot-rules")).toBeNull();
+  });
 });
 
 describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", () => {

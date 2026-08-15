@@ -348,13 +348,24 @@ export function ExperienceCopilotShell({
     return {};
   }, [review.proposal.proposedVisual, review.proposalBase, dangling]);
 
-  const proposalKey = review.proposal.hasProposal || dangling
-    ? `${effRules.proposed ?? ""}\u0000${effVisual.proposed ?? ""}`
+  // RV-1: per-buffer review keys (base + proposed of THIS buffer only). The
+  // old COMBINED key reset BOTH accepted sets whenever either buffer's
+  // proposal changed — a visual-only follow-up turn re-lit rules hunks the
+  // user had already accepted (and saved). The base is part of the key because
+  // hunk ids index into the diff: a changed base changes the diff (and ids),
+  // so a stale id set must not survive it.
+  const rulesReviewKey = effRules.proposed !== undefined
+    ? `${effRules.base ?? ""}\u0000${effRules.proposed}`
+    : null;
+  const visualReviewKey = effVisual.proposed !== undefined
+    ? `${effVisual.base ?? ""}\u0000${effVisual.proposed}`
     : null;
   useEffect(() => {
     setAcceptedRulesHunks(new Set());
+  }, [rulesReviewKey, threadId]);
+  useEffect(() => {
     setAcceptedVisualHunks(new Set());
-  }, [proposalKey, threadId]);
+  }, [visualReviewKey, threadId]);
   useEffect(() => {
     setDangling(null);
   }, [threadId, scriptId]);
@@ -383,13 +394,24 @@ export function ExperienceCopilotShell({
       setAccepted: (next: Set<number>) => void,
       onChange: (text: string) => void,
     ) => {
-      const expected = bufferReview.diff
-        ? mergedReviewText(bufferReview, prevAccepted)
-        : bufferReview.proposed;
+      // tooLarge wholesale (RV-1): no hunk decomposition — accept applies the
+      // whole proposal and resolves the sentinel id. (Before this branch the
+      // drift path silently skipped every id and accept-all was a no-op.)
+      if (!bufferReview.diff) {
+        const nextWhole = new Set(prevAccepted);
+        for (const id of clickedIds) nextWhole.add(id);
+        setAccepted(nextWhole);
+        if (bufferText !== bufferReview.proposed) onChange(bufferReview.proposed);
+        return;
+      }
+      const expected = mergedReviewText(bufferReview, prevAccepted);
       if (bufferText !== expected) {
-        const { text, skippedHunkIds } = bufferReview.diff
-          ? applyHunksToBuffer(bufferText, bufferReview.diff, bufferReview.hunks, new Set(clickedIds))
-          : { text: bufferText, skippedHunkIds: [...clickedIds] };
+        const { text, skippedHunkIds } = applyHunksToBuffer(
+          bufferText,
+          bufferReview.diff,
+          bufferReview.hunks,
+          new Set(clickedIds),
+        );
         const applied = clickedIds.filter((id) => !skippedHunkIds.includes(id));
         const next = new Set(prevAccepted);
         for (const id of applied) next.add(id);

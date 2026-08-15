@@ -31,6 +31,11 @@ export interface CopilotBufferReview {
   hunks: DiffHunk[];
 }
 
+/** Sentinel hunk id for the tooLarge whole-buffer fallback (RV-1): the
+ *  review has no hunk decomposition, so the single wholesale action resolves
+ *  this id. -1 can never collide with real hunk ids (diff line indices ≥ 0). */
+export const WHOLE_BUFFER_HUNK_ID = -1;
+
 /** Derive the per-buffer review from the proposal + snapshot + accepted set.
  *  Pure. Returns null when there is nothing to review (no pending proposal for
  *  this buffer, everything accepted, or generation in flight). */
@@ -39,17 +44,23 @@ export function buildBufferReview(
   proposed: string | undefined,
   acceptedHunkIds: ReadonlySet<number>,
   enabled: boolean,
+  dismissedHunkIds: ReadonlySet<number> = new Set(),
 ): CopilotBufferReview | null {
   if (!enabled || base === undefined || proposed === undefined) return null;
   const diff = buildLineDiff(base, proposed);
   if (diff.tooLarge) {
     // The whole-buffer fallback: no hunk decomposition (the diff engine's line
     // budget gave up), so the review bar offers wholesale accept-all only —
-    // the buffer is never left without an explicit resolution path.
+    // the buffer is never left without an explicit resolution path. The
+    // sentinel id resolves the round (RV-1): before it, accept-all was a NO-OP
+    // (the empty hunk set yields no ids) and the round never resolved.
+    if (acceptedHunkIds.has(WHOLE_BUFFER_HUNK_ID) || dismissedHunkIds.has(WHOLE_BUFFER_HUNK_ID)) {
+      return null;
+    }
     return { pendingCount: 1, proposed, base, diff: null, hunks: [] };
   }
   const hunks = groupHunks(diff);
-  const pending = hunks.filter((h) => !acceptedHunkIds.has(h.id)).length;
+  const pending = hunks.filter((h) => !acceptedHunkIds.has(h.id) && !dismissedHunkIds.has(h.id)).length;
   if (pending === 0) return null;
   return { pendingCount: pending, proposed, base, diff, hunks };
 }
@@ -62,8 +73,10 @@ export function mergedReviewText(review: CopilotBufferReview, acceptedHunkIds: R
   return mergeSelectedBody(review.diff, acceptedHunkIds);
 }
 
-/** Every hunk id of the review (the accept-all selection). Pure. */
+/** Every hunk id of the review (the accept-all selection). The tooLarge
+ *  fallback resolves the single sentinel id (RV-1). Pure. */
 export function allReviewHunkIds(review: CopilotBufferReview): Set<number> {
+  if (review.diff === null) return new Set([WHOLE_BUFFER_HUNK_ID]);
   return allHunkIds(review.hunks);
 }
 

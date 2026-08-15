@@ -15,6 +15,7 @@ import {
   buildBufferReview,
   ExperienceCopilotEditorPanel,
   mergedReviewText,
+  WHOLE_BUFFER_HUNK_ID,
   type CopilotBufferReview,
 } from "./ExperienceCopilotEditorPanel.js";
 import { buildLineDiff } from "../../../shared/TextDiffPreview.js";
@@ -90,6 +91,21 @@ describe("buildBufferReview (pure)", () => {
     expect(review!.pendingCount).toBe(1);
     // mergedReviewText in the fallback is the wholesale proposal.
     expect(mergedReviewText(review!, new Set())).toBe(other);
+  });
+
+  it("the tooLarge fallback resolves via the WHOLE_BUFFER_HUNK_ID sentinel (RV-1)", () => {
+    const big = Array.from({ length: 900 }, (_, i) => `line-${i}`).join("\n");
+    const other = Array.from({ length: 900 }, (_, i) => `other-${i}`).join("\n");
+
+    // The fallback's accept-all selection is the single sentinel id — not an
+    // empty set (the old shape made accept-all a silent no-op).
+    const review = buildBufferReview(big, other, new Set(), true)!;
+    const ids = allReviewHunkIds(review);
+    expect([...ids]).toEqual([WHOLE_BUFFER_HUNK_ID]);
+
+    // Accepting (or dismissing) the sentinel resolves the round: no more bar.
+    expect(buildBufferReview(big, other, new Set([WHOLE_BUFFER_HUNK_ID]), true)).toBeNull();
+    expect(buildBufferReview(big, other, new Set(), true, new Set([WHOLE_BUFFER_HUNK_ID]))).toBeNull();
   });
 });
 
