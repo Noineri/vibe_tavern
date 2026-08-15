@@ -11,7 +11,7 @@ import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 describe("useExperienceCopilotTurnStore", () => {
   beforeEach(() => {
     // Reset to a clean state before each case (the store is process-global).
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
   });
 
   it("rebuilds only the latest committed non-streaming turn with tool names and proposals", () => {
@@ -474,5 +474,96 @@ describe("extractHistoricalTurnActivities", () => {
       wire({ id: "d1", role: "digest", content: "compacted", toolCallId: "u1" }),
     ];
     expect(extractHistoricalTurnActivities(messages)).toEqual([]);
+  });
+});
+
+describe("feed (TF-4)", () => {
+  beforeEach(() => {
+    // This describe lives outside the first describe's reset — restore here.
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+  });
+
+  const feedOf = (threadId: string) =>
+    useExperienceCopilotTurnStore.getState().feedByThread[threadId] ?? [];
+
+  it("accumulates deltas into one open text segment (id is a fresh text-N)", () => {
+    const { appendTextDelta } = useExperienceCopilotTurnStore.getState();
+    appendTextDelta("t1", "He");
+    appendTextDelta("t1", "llo");
+    const feed = feedOf("t1");
+    expect(feed).toHaveLength(1);
+    expect(feed[0]).toMatchObject({ kind: "text", text: "Hello", closed: false });
+    expect(feed[0]!.id).toMatch(/^text-\d+$/);
+  });
+
+  it("closeTextSegment closes the open segment; repeat close and close-without-open are noops", () => {
+    const s = () => useExperienceCopilotTurnStore.getState();
+    s().closeTextSegment("t1"); // noop — nothing open
+    expect(feedOf("t1")).toEqual([]);
+    s().appendTextDelta("t1", "Hi");
+    const opened = feedOf("t1")[0]!;
+    expect(opened).toMatchObject({ kind: "text", text: "Hi", closed: false });
+    s().closeTextSegment("t1");
+    expect(feedOf("t1")).toEqual([{ kind: "text", id: opened.id, text: "Hi", closed: true }]);
+    // repeat close — noop (nothing open now)
+    const before = feedOf("t1");
+    s().closeTextSegment("t1");
+    expect(feedOf("t1")).toEqual(before);
+  });
+
+  it("appendActivityRef appends once per toolCallId (idempotent) and adds new ids", () => {
+    const s = () => useExperienceCopilotTurnStore.getState();
+    s().appendTextDelta("t1", "a");
+    s().appendActivityRef("t1", "c1");
+    s().appendActivityRef("t1", "c1"); // duplicate — noop
+    s().appendActivityRef("t1", "c2");
+    const feed = feedOf("t1");
+    expect(feed.filter((e) => e.kind === "activity").map((e) => e.id)).toEqual(["c1", "c2"]);
+    expect(feed[feed.length - 1]).toEqual({ kind: "activity", id: "c2" });
+  });
+
+  it("text after an activity opens a NEW segment (the old one is not written into)", () => {
+    const s = () => useExperienceCopilotTurnStore.getState();
+    s().appendTextDelta("t1", "first");
+    s().appendActivityRef("t1", "c1");
+    s().appendTextDelta("t1", "second");
+    const feed = feedOf("t1");
+    expect(feed).toHaveLength(3);
+    expect(feed[0]).toMatchObject({ kind: "text", text: "first", closed: false });
+    expect(feed[1]).toEqual({ kind: "activity", id: "c1" });
+    expect(feed[2]).toMatchObject({ kind: "text", text: "second", closed: false });
+    expect(feed[0]!.id).not.toBe(feed[2]!.id);
+  });
+
+  it("an empty delta is a noop (no empty segment)", () => {
+    const s = () => useExperienceCopilotTurnStore.getState();
+    s().appendTextDelta("t1", "");
+    expect(feedOf("t1")).toEqual([]);
+    s().appendTextDelta("t1", "x");
+    s().appendTextDelta("t1", "");
+    expect(feedOf("t1")).toHaveLength(1);
+    expect(feedOf("t1")[0]).toMatchObject({ kind: "text", text: "x", closed: false });
+  });
+
+  it("clearTurn drops both feed and activities for one thread only", () => {
+    const s = () => useExperienceCopilotTurnStore.getState();
+    s().upsertActivity("t1", { toolCallId: "c1", toolName: "write_buffer", status: "done" });
+    s().appendTextDelta("t1", "text");
+    s().appendTextDelta("t2", "other");
+    s().clearTurn("t1");
+    expect(useExperienceCopilotTurnStore.getState().turnsByThread["t1"]).toBeUndefined();
+    expect(feedOf("t1")).toEqual([]);
+    expect(feedOf("t2")).toHaveLength(1);
+    expect(feedOf("t2")[0]).toMatchObject({ kind: "text", text: "other" });
+  });
+
+  it("two threads keep independent feeds", () => {
+    const s = () => useExperienceCopilotTurnStore.getState();
+    s().appendTextDelta("t1", "one");
+    s().appendTextDelta("t2", "two");
+    expect(feedOf("t1")).toHaveLength(1);
+    expect(feedOf("t2")).toHaveLength(1);
+    expect(feedOf("t1")[0]).toMatchObject({ kind: "text", text: "one" });
+    expect(feedOf("t2")[0]).toMatchObject({ kind: "text", text: "two" });
   });
 });

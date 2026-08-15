@@ -83,7 +83,7 @@ beforeEach(() => {
   streamExperienceCopilot.mockReset();
   toastError.mockClear();
   toastInfo.mockClear();
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
 });
 
 describe("useExperienceCopilotController — handleSend stream lifecycle", () => {
@@ -333,5 +333,93 @@ describe("useExperienceCopilotController — cancel and error", () => {
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
     // server_error is a transient category → transient description toast.
     expect(toastError).toHaveBeenCalledWith("boom", { description: "provider_error_transient_desc" });
+  });
+});
+
+describe("feed wiring (TF-4)", () => {
+  test("writes text deltas into ordered feed segments around tool events", async () => {
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("edit the rules");
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      captured.onChunk("I'll ");
+      captured.onToolInputStart!({ toolCallId: "t1", toolName: "write_buffer" });
+      captured.onChunk("Done ");
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+
+    const feed = useExperienceCopilotTurnStore.getState().feedByThread[THREAD];
+    expect(feed).toHaveLength(3);
+    expect(feed[0]).toMatchObject({ kind: "text", text: "I'll ", closed: true });
+    expect(feed[1]).toEqual({ kind: "activity", id: "t1" });
+    expect(feed[2]).toMatchObject({ kind: "text", text: "Done ", closed: false });
+  });
+
+  test("tool-input-start + tool-call + tool-result collapse to one activity ref", async () => {
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("hi");
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      captured.onChunk("x");
+      captured.onToolInputStart!({ toolCallId: "t1", toolName: "write_buffer" });
+      captured.onToolCall!({ toolCallId: "t1", toolName: "write_buffer", args: { buffer: "rules" } });
+      captured.onToolResult!({
+        toolCallId: "t1",
+        toolName: "write_buffer",
+        output: { target: "rules", proposed: "v2", summary: "wrote" },
+        isError: false,
+      });
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+
+    const feed = useExperienceCopilotTurnStore.getState().feedByThread[THREAD];
+    expect(feed.filter((e) => e.kind === "activity").map((e) => e.id)).toEqual(["t1"]);
+  });
+
+  test("handleSend clears the prior turn's feed (clearTurn at start)", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    // Seed a prior turn's feed.
+    useExperienceCopilotTurnStore.getState().appendTextDelta(THREAD, "old text");
+    expect(useExperienceCopilotTurnStore.getState().feedByThread[THREAD]).toHaveLength(1);
+
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleSend("new turn");
+    });
+
+    expect(useExperienceCopilotTurnStore.getState().feedByThread[THREAD]).toBeUndefined();
   });
 });

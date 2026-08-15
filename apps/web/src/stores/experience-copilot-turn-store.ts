@@ -57,6 +57,13 @@ export interface ExperienceCopilotToolActivity {
   readPath?: string;
 }
 
+/** TF-4: one ordered feed entry of the active turn — a closed-or-open TEXT
+ *  segment or a reference to a tool activity (rendered by id via the
+ *  activities map). Order = arrival order. */
+export type CopilotFeedEntry =
+  | { kind: "text"; id: string; text: string; closed: boolean }
+  | { kind: "activity"; id: string };
+
 /** Minimal structural message shape the persisted-activity extraction reads
  *  (CD-1). Satisfied by `AppMessage` (whose tool calls may hide behind the
  *  variant indirection) and by the wire adapter `wireToToolSource` below (the
@@ -329,16 +336,29 @@ export function extractHistoricalTurnActivities(
 
 interface ExperienceCopilotTurnState {
   turnsByThread: Record<string, ExperienceCopilotToolActivity[]>;
+  /** TF-4: ordered arrival feed per thread (text segments + activity refs). */
+  feedByThread: Record<string, CopilotFeedEntry[]>;
   /** Insert or merge (by toolCallId) an activity for a thread. */
   upsertActivity: (threadId: string, activity: ExperienceCopilotToolActivity) => void;
   /** Drop the active turn's activities for a thread (turn start / switch / Apply / Reject). */
   clearTurn: (threadId: string) => void;
   /** Read the activities for a thread (empty array if none). */
   getActivities: (threadId: string) => ExperienceCopilotToolActivity[];
+  /** TF-4: append a text delta into the OPEN text segment (or open one). */
+  appendTextDelta: (threadId: string, delta: string) => void;
+  /** TF-4: close the OPEN text segment (noop when none is open). */
+  closeTextSegment: (threadId: string) => void;
+  /** TF-4: append an activity ref (idempotent per toolCallId). */
+  appendActivityRef: (threadId: string, toolCallId: string) => void;
 }
+
+// TF-4: monotonic feed text-segment id. Never reset (clearTurn drops the
+// entries, not the counter) so ids stay unique within any rendered list.
+let nextFeedTextId = 1;
 
 export const useExperienceCopilotTurnStore = create<ExperienceCopilotTurnState>((set, get) => ({
   turnsByThread: {},
+  feedByThread: {},
   upsertActivity: (threadId, activity) => {
     set((s) => {
       const list = s.turnsByThread[threadId] ?? [];
@@ -355,14 +375,55 @@ export const useExperienceCopilotTurnStore = create<ExperienceCopilotTurnState>(
   },
   clearTurn: (threadId) => {
     set((s) => {
-      if (!s.turnsByThread[threadId]) return s;
-      const next = { ...s.turnsByThread };
-      delete next[threadId];
-      return { turnsByThread: next };
+      const hasActivities = s.turnsByThread[threadId] !== undefined;
+      const hasFeed = s.feedByThread[threadId] !== undefined;
+      if (!hasActivities && !hasFeed) return s;
+      const nextActivities = { ...s.turnsByThread };
+      delete nextActivities[threadId];
+      const nextFeed = { ...s.feedByThread };
+      delete nextFeed[threadId];
+      return { turnsByThread: nextActivities, feedByThread: nextFeed };
     });
     // ER-10 wires draft persistence (experience-copilot-draft.ts) — not yet available.
   },
   getActivities: (threadId) => get().turnsByThread[threadId] ?? [],
+  appendTextDelta: (threadId, delta) => {
+    if (delta === "") return;
+    set((s) => {
+      const feed = s.feedByThread[threadId] ?? [];
+      const last = feed[feed.length - 1];
+      if (last !== undefined && last.kind === "text" && !last.closed) {
+        const nextEntry: CopilotFeedEntry = { ...last, text: last.text + delta };
+        const nextFeed = [...feed.slice(0, -1), nextEntry];
+        return { feedByThread: { ...s.feedByThread, [threadId]: nextFeed } };
+      }
+      const entry: CopilotFeedEntry = {
+        kind: "text",
+        id: `text-${nextFeedTextId++}`,
+        text: delta,
+        closed: false,
+      };
+      return { feedByThread: { ...s.feedByThread, [threadId]: [...feed, entry] } };
+    });
+  },
+  closeTextSegment: (threadId) => {
+    set((s) => {
+      const feed = s.feedByThread[threadId] ?? [];
+      const last = feed[feed.length - 1];
+      if (last === undefined || last.kind !== "text" || last.closed) return s;
+      const nextEntry: CopilotFeedEntry = { ...last, closed: true };
+      const nextFeed = [...feed.slice(0, -1), nextEntry];
+      return { feedByThread: { ...s.feedByThread, [threadId]: nextFeed } };
+    });
+  },
+  appendActivityRef: (threadId, toolCallId) => {
+    set((s) => {
+      const feed = s.feedByThread[threadId] ?? [];
+      if (feed.some((e) => e.kind === "activity" && e.id === toolCallId)) return s;
+      const entry: CopilotFeedEntry = { kind: "activity", id: toolCallId };
+      return { feedByThread: { ...s.feedByThread, [threadId]: [...feed, entry] } };
+    });
+  },
 }));
 
 // Debug helper — mirrors the window.__ exposure pattern in chat-store /

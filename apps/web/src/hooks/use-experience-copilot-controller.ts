@@ -167,9 +167,14 @@ export function useExperienceCopilotController(
           {
             signal: controller.signal,
             onStatus: () => {},
-            onChunk: (delta) => setPendingText((p) => p + delta),
+            onChunk: (delta) => {
+              setPendingText((p) => p + delta);
+              useExperienceCopilotTurnStore.getState().appendTextDelta(threadId, delta);
+            },
             onReasoningChunk: () => {},
             onToolCall: (info) => {
+              useExperienceCopilotTurnStore.getState().closeTextSegment(threadId);
+              useExperienceCopilotTurnStore.getState().appendActivityRef(threadId, info.toolCallId);
               useExperienceCopilotTurnStore.getState().upsertActivity(threadId, {
                 toolCallId: info.toolCallId,
                 toolName: info.toolName,
@@ -178,6 +183,8 @@ export function useExperienceCopilotController(
               });
             },
             onToolInputStart: (info) => {
+              useExperienceCopilotTurnStore.getState().closeTextSegment(threadId);
+              useExperienceCopilotTurnStore.getState().appendActivityRef(threadId, info.toolCallId);
               useExperienceCopilotTurnStore.getState().upsertActivity(threadId, {
                 toolCallId: info.toolCallId,
                 toolName: info.toolName,
@@ -185,6 +192,8 @@ export function useExperienceCopilotController(
               });
             },
             onToolResult: (info) => {
+              useExperienceCopilotTurnStore.getState().closeTextSegment(threadId);
+              useExperienceCopilotTurnStore.getState().appendActivityRef(threadId, info.toolCallId);
               // This routing MUST stay field-for-field with ER-8's
               // `extractPersistedExperienceCopilotActivities` so live activities
               // === persisted activities on snapshot refetch. The only addition
