@@ -16,6 +16,10 @@ function makeThread(overrides: Partial<ExperienceCopilotThread> = {}): Experienc
     draftSessionId: null,
     title: "Draft",
     archivedAt: null,
+    contextMetrics: null,
+    lastProviderProfileId: null,
+    lastModel: null,
+    autoCompact: true,
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
     ...overrides,
@@ -82,6 +86,7 @@ describe("ExperienceCopilotAdapter lifecycle (ER-11a)", () => {
       archivedAt: null,
       createdAt: "2025-01-01T00:00:00.000Z",
       updatedAt: "2025-01-01T00:00:00.000Z",
+      metrics: null,
     });
   });
 

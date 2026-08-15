@@ -83,6 +83,34 @@ export const experienceCopilotStreamRequestSchema = z.object({
 export type ExperienceCopilotStreamRequest = z.infer<typeof experienceCopilotStreamRequestSchema>;
 
 /**
+ * Segmented context-usage metrics for a copilot thread (CM-1). The meter draws
+ * three segments (system / digest / history) against `budgetTokens`, with the
+ * response reserve zone marked at the tail. Every field is a plain integer:
+ * when the effective provider profile has no explicit context budget
+ * (`contextBudget: null`), `budgetTokens` is `0` (the meter renders an unmetered
+ * bar — the frontend, Wave 3, decides how to draw that). `source` records
+ * whether `totalTokens` came from the provider's actual `usage.inputTokens`
+ * ("provider") or the assembler's local estimate ("estimate") — metrics honesty:
+ * never blend the two and claim it was measured. Per-segment values
+ * (`systemTokens`/`digestTokens`/`historyTokens`) are always the assembler's
+ * estimate (the provider only reports an aggregate). `.strict()` rejects unknown
+ * keys so a client/server typo cannot silently widen the shape.
+ */
+export const experienceCopilotContextMetricsSchema = z
+  .object({
+    systemTokens: z.number().int(),
+    digestTokens: z.number().int(),
+    historyTokens: z.number().int(),
+    totalTokens: z.number().int(),
+    budgetTokens: z.number().int(),
+    reserveTokens: z.number().int(),
+    source: z.enum(["estimate", "provider"]),
+    measuredAt: z.string(),
+  })
+  .strict();
+export type ExperienceCopilotContextMetrics = z.infer<typeof experienceCopilotContextMetricsSchema>;
+
+/**
  * Wire shape of an experience-copilot thread (ER-7). Mirrors
  * `ExperienceCopilotThread` (packages/db/src/stores/experience-copilot-store.ts)
  * field-for-field. The thread's branded `ExperienceCopilotThreadId` and the
@@ -100,6 +128,9 @@ export const experienceCopilotThreadSchema = z.object({
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** Nullable context metrics (null until the thread's first turn reports
+   *  usage). Mirrors the store's parsed `contextMetrics` (CM-2). */
+  metrics: experienceCopilotContextMetricsSchema.nullable(),
 });
 export type ExperienceCopilotThreadWire = z.infer<typeof experienceCopilotThreadSchema>;
 
@@ -114,6 +145,12 @@ export type ExperienceCopilotThreadWire = z.infer<typeof experienceCopilotThread
 export const experienceCopilotMessageSchema = z.object({
   id: z.string(),
   threadId: z.string(),
+  // Free-text role mirroring the store column. The value `"digest"` marks a
+  // compaction digest message (CM-3): it is lifted out of the history flow by
+  // the prompt assembler (the LAST digest becomes a system-level JSON context
+  // section; older digests are dropped) and rendered by the frontend as a
+  // collapsed «Context compacted» card (CM-9). No migration is needed for the
+  // digest itself — it is just another role value.
   role: z.string(),
   content: z.string(),
   toolCallsJson: z.string().nullable(),

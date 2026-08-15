@@ -25,7 +25,7 @@ import { streamText, isStepCount } from "ai";
 import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart } from "ai";
 import type { ToolSet } from "ai";
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow } from "@vibe-tavern/db";
-import type { CopilotProfile } from "@vibe-tavern/api-contracts";
+import type { CopilotProfile, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotMessage,
@@ -150,6 +150,11 @@ function storeMessagesToHistory(
   messages: readonly ExperienceCopilotMessage[],
 ): ExperienceCopilotHistoryMessage[] {
   return messages.map((m): ExperienceCopilotHistoryMessage => {
+    if (m.role === "digest") {
+      // A compaction digest (CM-3) round-trips as a plain digest message — the
+      // assembler lifts it out of the history flow.
+      return { role: "digest", content: m.content };
+    }
     if (m.role === "tool") {
       // Reconstruct the ToolResultPart from the stored payload. The store row
       // carries the serialized `{ toolName, output }` wrapper in `content` +
@@ -487,9 +492,55 @@ export async function* streamExperienceCopilot(
     yield { event: "reasoning-done", data: JSON.stringify({}) };
   }
 
+  // ── Context metrics (CM-4) ─────────────────────────────────────────────────
+  // Per-segment values are ALWAYS the assembler's estimate (the provider only
+  // reports an aggregate). `totalTokens` prefers the provider's actual
+  // `usage.inputTokens` when present and plausible (a positive finite number),
+  // else the assembler's estimate — metrics honesty: never blend the two and
+  // claim it was measured. `budgetTokens` is 0 when the profile has no explicit
+  // context budget (the meter renders an unmetered bar). Persisting is
+  // best-effort: a failure logs and never fails the turn.
+  const providerInputTokens = usage?.inputTokens;
+  let metricsSource: "estimate" | "provider";
+  let metricsTotalTokens: number;
+  if (
+    typeof providerInputTokens === "number" &&
+    Number.isFinite(providerInputTokens) &&
+    providerInputTokens > 0
+  ) {
+    metricsSource = "provider";
+    metricsTotalTokens = providerInputTokens;
+  } else {
+    metricsSource = "estimate";
+    metricsTotalTokens = assembled.tokenAccounting.total;
+  }
+  const contextMetrics: ExperienceCopilotContextMetrics = {
+    systemTokens: assembled.tokenAccounting.system,
+    digestTokens: assembled.tokenAccounting.digest,
+    historyTokens: assembled.tokenAccounting.history,
+    totalTokens: metricsTotalTokens,
+    budgetTokens: effectiveProfile.contextBudget ?? 0,
+    reserveTokens: effectiveProfile.maxTokens ?? 0,
+    source: metricsSource,
+    measuredAt: new Date().toISOString(),
+  };
+  try {
+    await deps.store.updateContextMetrics(
+      request.threadId,
+      contextMetrics,
+      request.providerProfileId,
+      modelName,
+    );
+  } catch (err) {
+    debug("metrics-persist-failed", {
+      threadId: request.threadId,
+      message: extractProviderErrorMessage(err),
+    });
+  }
+
   yield {
     event: "finish",
-    data: JSON.stringify({ finishReason, usage, modelId: modelName }),
+    data: JSON.stringify({ finishReason, usage, modelId: modelName, metrics: contextMetrics }),
   };
 }
 

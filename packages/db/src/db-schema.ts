@@ -1267,6 +1267,19 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // archived (resumable). The partial unique index below guarantees at most one
   // NULL-archived_at row per script_id.
   archivedAt: text('archived_at'),
+  // Segmented context-usage metrics from the LAST turn (CM-2). JSON of the
+  // `experienceCopilotContextMetricsSchema` shape (system/digest/history/total/
+  // budget/reserve tokens + source + measuredAt). Nullable: null until the first
+  // turn reports usage. Malformed JSON on read → null (logged), never fatal.
+  contextMetricsJson: text('context_metrics_json'),
+  // The provider/model the thread LAST used (persisted from the stream finish
+  // path) — the compaction service (CM-5) reuses this pair when the manual
+  // compact endpoint omits one. Nullable: null before the first turn.
+  lastProviderProfileId: text('last_provider_profile_id'),
+  lastModel: text('last_model'),
+  // Auto-compact toggle (CM-6): 1 = on (default), 0 = off. Stored as int 0/1
+  // (SQLite has no native boolean) and exposed as a boolean on the store row.
+  autoCompact: integer('auto_compact').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({

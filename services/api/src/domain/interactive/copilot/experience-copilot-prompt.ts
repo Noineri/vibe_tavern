@@ -60,10 +60,20 @@ const HISTORY_LIMIT = 20;
 
 /** One copilot history message in the AI SDK message shape. Mirrors
  *  coauthor-prompt's `CoauthorHistoryMessage`: tool calls carry `input` (the
- *  parsed args), tool results carry `output` (the SDK v6 discriminated union). */
+ *  parsed args), tool results carry `output` (the SDK v6 discriminated union).
+ *  A `digest` message is a compaction digest (CM-3): it is lifted out of the
+ *  history flow during assembly — the LAST digest becomes a system-level JSON
+ *  context section, older digests are dropped. */
 export type ExperienceCopilotHistoryMessage =
   | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[] }
-  | { role: "tool"; content: ToolResultPart[] };
+  | { role: "tool"; content: ToolResultPart[] }
+  | { role: "digest"; content: string };
+
+/** A history message that is NOT a digest. Digests are lifted out of the
+ *  history flow during assembly and rendered into the system message, so the
+ *  windowing/budget trim — and the final `messages` array — only ever carry
+ *  this narrower type. */
+export type ExperienceCopilotFlowMessage = Exclude<ExperienceCopilotHistoryMessage, { role: "digest" }>;
 
 // ─── Context-package types ───────────────────────────────────────────────────
 
@@ -132,7 +142,7 @@ export interface ExperienceCopilotAssembleInput {
 /** One message in the final assembled prompt (system + compacted history). */
 export type ExperienceCopilotPromptMessage =
   | { role: "system"; content: string }
-  | ExperienceCopilotHistoryMessage;
+  | ExperienceCopilotFlowMessage;
 
 export interface ExperienceCopilotAssembleResult {
   /** The full system message (module base prompt + skill catalog + context package + SDK API references). */
@@ -140,10 +150,14 @@ export interface ExperienceCopilotAssembleResult {
   /** Messages to pass to the AI SDK `streamText`/`generateText`:
    *  `[systemMessage, ...compactedHistory]`. */
   readonly messages: ReadonlyArray<ExperienceCopilotPromptMessage>;
-  /** Token accounting for budget tracking. */
+  /** Segmented token accounting for the context meter (CM-3): `system` (the
+   *  system message without the digest section), `digest` (the digest section,
+   *  0 when none), `history` (the compacted history), and `total` (their sum). */
   readonly tokenAccounting: {
+    readonly system: number;
+    readonly digest: number;
+    readonly history: number;
     readonly total: number;
-    readonly recentHistory: number;
   };
   /** Compaction summary when history was windowed or budget-trimmed; undefined
    *  when no history was dropped. */
@@ -248,9 +262,23 @@ function renderContextPackage(
   return sections.join("\n");
 }
 
+/** Render the compaction digest as a system-level JSON context section (CM-3).
+ *  Mirrors the Co-Author compaction pattern: a compact `{"digest": "..."}`
+ *  block the model reads as a single fact — the digest is a summary, NOT a
+ *  chat message, so it is injected into the system message (after the context
+ *  package), never into the history flow. */
+function renderDigestSection(digest: string): string {
+  return [
+    "# Compacted context (digest)",
+    "```json",
+    JSON.stringify({ digest }),
+    "```",
+  ].join("\n");
+}
+
 // ─── History token estimation ────────────────────────────────────────────────
 
-function formatHistoryMessages(messages: ReadonlyArray<ExperienceCopilotHistoryMessage>): string {
+function formatHistoryMessages(messages: ReadonlyArray<ExperienceCopilotFlowMessage>): string {
   return messages.map((message) => {
     const content = message.role === "tool"
       ? JSON.stringify(message.content)
@@ -259,7 +287,7 @@ function formatHistoryMessages(messages: ReadonlyArray<ExperienceCopilotHistoryM
   }).join("\n\n");
 }
 
-function estimateHistoryTokens(messages: ReadonlyArray<ExperienceCopilotHistoryMessage>): number {
+function estimateHistoryTokens(messages: ReadonlyArray<ExperienceCopilotFlowMessage>): number {
   return estimateTokens(formatHistoryMessages(messages));
 }
 
@@ -320,14 +348,30 @@ export async function assembleExperienceCopilotPrompt(
     input.step,
   );
 
+  // ── Lift digest messages out of the history flow (CM-3) ───────────────────
+  // A `digest` message is a compaction summary, not a chat turn. The LAST digest
+  // becomes a system-level JSON context section (after the context package); any
+  // older digests are dropped entirely (the latest digest already folds their
+  // content). The non-digest messages form the history flow for windowing/budget.
+  const digestMessages = input.history.filter((m) => m.role === "digest");
+  const lastDigest = digestMessages.length > 0 ? digestMessages[digestMessages.length - 1] : null;
+  const digestText = lastDigest !== null && lastDigest.role === "digest" ? lastDigest.content : null;
+  const historyFlow: ExperienceCopilotFlowMessage[] = input.history.filter(
+    (m): m is ExperienceCopilotFlowMessage => m.role !== "digest",
+  );
+  const digestSectionText = digestText !== null ? renderDigestSection(digestText) : "";
+
   // ── Assemble the system message ────────────────────────────────────────────
-  const sections: string[] = [basePrompt];
+  // The base/head sections (role framing + skill catalog + context package) are
+  // joined FIRST, then the digest section (if any), then the API references —
+  // so a zero-digest thread produces a byte-identical system message to the
+  // pre-CM-3 assembly (pinned by test).
+  const headSections: string[] = [basePrompt];
   if (skillCatalogBlock) {
-    sections.push("", skillCatalogBlock);
+    headSections.push("", skillCatalogBlock);
   }
-  sections.push(
-    "",
-    contextPackage,
+  headSections.push("", contextPackage);
+  const tailSections: string[] = [
     "",
     "# Experience rules API reference (the `context.experience.register({...})` DSL — reference material; use the tools above to propose edits, do NOT output raw code in chat)",
     "",
@@ -336,18 +380,29 @@ export async function assembleExperienceCopilotPrompt(
     "# Experience visual API reference (the host↔visual `VibeExperience` bridge — reference material for the `visual` buffer; use `write_buffer`/`edit_buffer` to propose, do NOT output raw code in chat)",
     "",
     visualReference,
-  );
-  const systemMessage = sections.join("\n");
+  ];
+  const systemMessage = [
+    ...headSections,
+    ...(digestSectionText ? ["", digestSectionText] : []),
+    ...tailSections,
+  ].join("\n");
+
+  // Segmented token accounting: `system` = the system message WITHOUT the digest
+  // section; `digest` = the digest section alone (0 when none). Digest tokens
+  // count toward `nonHistoryTokens` for the budget trim (the digest is part of
+  // the system message, so the model pays for it against the history budget).
+  const systemTokens = estimateTokens([...headSections, ...tailSections].join("\n"));
+  const digestTokens = digestSectionText ? estimateTokens(digestSectionText) : 0;
 
   // ── Window to HISTORY_LIMIT (tool-pair-safe) ───────────────────────────────
-  const fullHistory = [...input.history];
+  const fullHistory = [...historyFlow];
   const windowedFrom = fullHistory.length > HISTORY_LIMIT
     ? findSafeCompactionBoundary(fullHistory, HISTORY_LIMIT)
     : 0;
   const windowed = fullHistory.slice(windowedFrom);
 
   // ── Budget-based compaction within the window ──────────────────────────────
-  const nonHistoryTokens = estimateTokens(systemMessage);
+  const nonHistoryTokens = systemTokens + digestTokens;
   const plan = planHistoryCompaction({
     messages: windowed,
     nonHistoryTokens,
@@ -358,7 +413,7 @@ export async function assembleExperienceCopilotPrompt(
   const recentMessages = plan ? plan.messages : windowed;
 
   const recentHistoryTokens = estimateHistoryTokens(recentMessages);
-  const totalTokenEstimate = nonHistoryTokens + recentHistoryTokens;
+  const totalTokenEstimate = systemTokens + digestTokens + recentHistoryTokens;
 
   // ── Compaction summary ─────────────────────────────────────────────────────
   let compactionSummary: string | undefined;
@@ -387,8 +442,10 @@ export async function assembleExperienceCopilotPrompt(
     systemMessage,
     messages,
     tokenAccounting: {
+      system: systemTokens,
+      digest: digestTokens,
+      history: recentHistoryTokens,
       total: totalTokenEstimate,
-      recentHistory: recentMessages.length,
     },
     ...(compactionSummary !== undefined ? { compactionSummary } : {}),
     skillRoots,

@@ -120,6 +120,7 @@ export type {
   ExperienceCopilotThread,
   ExperienceCopilotMessage,
   AppendMessageInput,
+  CopilotContextMetrics,
 } from './experience-copilot-store.js';
 
 export { QuotaStore, defaultQuotaConfigForKind } from './quota-store.js';

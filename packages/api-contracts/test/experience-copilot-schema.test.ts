@@ -7,6 +7,7 @@ import {
   experienceCopilotThreadSchema,
   experienceCopilotMessageSchema,
   experienceCopilotBoundVisualSchema,
+  experienceCopilotContextMetricsSchema,
   copilotToolSetSchema,
   copilotProfileSchema,
   COPILOT_TOOL_KEYS,
@@ -66,6 +67,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       archivedAt: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
+      metrics: null,
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
@@ -79,6 +81,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       archivedAt: "2026-01-03T00:00:00.000Z",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-03T00:00:00.000Z",
+      metrics: null,
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
@@ -92,6 +95,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
         archivedAt: null,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
+        metrics: null,
       }),
     ).toThrow();
   });
@@ -106,8 +110,44 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
         archivedAt: null,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
+        metrics: null,
       }),
     ).toThrow();
+  });
+});
+
+// ─── CM-1: segmented context metrics schema ────────────────────────────────
+
+describe("experienceCopilotContextMetricsSchema (CM-1)", () => {
+  const valid = {
+    systemTokens: 1000,
+    digestTokens: 0,
+    historyTokens: 500,
+    totalTokens: 1500,
+    budgetTokens: 16000,
+    reserveTokens: 1000,
+    source: "estimate" as const,
+    measuredAt: "2026-06-15T00:00:00.000Z",
+  };
+
+  test("accepts a valid estimate-sourced metrics object", () => {
+    expect(experienceCopilotContextMetricsSchema.parse(valid)).toEqual(valid);
+  });
+
+  test("accepts source: provider", () => {
+    expect(experienceCopilotContextMetricsSchema.parse({ ...valid, source: "provider" }).source).toBe("provider");
+  });
+
+  test("rejects an unknown source (source union is closed)", () => {
+    expect(() => experienceCopilotContextMetricsSchema.parse({ ...valid, source: "measured" })).toThrow();
+  });
+
+  test("rejects an unknown key (strict)", () => {
+    expect(() => experienceCopilotContextMetricsSchema.parse({ ...valid, extra: 1 })).toThrow();
+  });
+
+  test("rejects a fractional token count (all plain ints)", () => {
+    expect(() => experienceCopilotContextMetricsSchema.parse({ ...valid, totalTokens: 1.5 })).toThrow();
   });
 });
 

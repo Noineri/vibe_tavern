@@ -126,5 +126,18 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
     .post("/api/experience-copilot/:threadId/archive", async (c) => {
       const threadId = c.req.param("threadId");
       return c.json(await runtime.experienceCopilotArchive(threadId));
-    });
+    })
+    .get("/api/experience-copilot/:threadId/context", async (c) => {
+      const threadId = c.req.param("threadId");
+      return c.json(await runtime.experienceCopilotGetContext(threadId));
+    })
+    .patch(
+      "/api/experience-copilot/:threadId/context",
+      zValidator("json", z.object({ autoCompact: z.boolean().optional() })),
+      async (c) => {
+        const threadId = c.req.param("threadId");
+        const body = c.req.valid("json");
+        return c.json(await runtime.experienceCopilotPatchContext(threadId, body));
+      },
+    );
 }

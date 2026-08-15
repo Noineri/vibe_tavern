@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createDb, ExperienceCopilotStore, type StoreClock, type StoreIdGenerator, type StoreContainer } from "@vibe-tavern/db";
+import { createDb, ExperienceCopilotStore, type StoreClock, type StoreIdGenerator, type StoreContainer, type CopilotContextMetrics } from "@vibe-tavern/db";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 
 // ─── Real store + adapter wiring ─────────────────────────────────────────────
@@ -62,6 +62,7 @@ describe("ExperienceCopilotAdapter session lifecycle (ER-12a)", () => {
       archivedAt: null,
       createdAt: newer.createdAt,
       updatedAt: newer.updatedAt,
+      metrics: null,
     });
   });
 
@@ -115,5 +116,63 @@ describe("ExperienceCopilotAdapter session lifecycle (ER-12a)", () => {
 
     expect(await adapter.experienceCopilotActivate("nope")).toBeNull();
     expect(await adapter.experienceCopilotArchive("nope")).toBeNull();
+  });
+});
+
+// ─── CM-4: context metrics + auto-compact read/toggle ────────────────────────
+
+describe("ExperienceCopilotAdapter context (CM-4)", () => {
+  const metrics: CopilotContextMetrics = {
+    systemTokens: 1000,
+    digestTokens: 0,
+    historyTokens: 500,
+    totalTokens: 1500,
+    budgetTokens: 16000,
+    reserveTokens: 1000,
+    source: "estimate",
+    measuredAt: "2026-06-15T00:00:00.000Z",
+  };
+
+  it("GET context returns null metrics + autoCompact default (on) before the first turn", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+
+    expect(await adapter.experienceCopilotGetContext(thread.id)).toEqual({
+      metrics: null,
+      autoCompact: true,
+    });
+  });
+
+  it("GET context returns the persisted metrics (wire-mapped) after updateContextMetrics", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+    await store.updateContextMetrics(thread.id, metrics, "prov_1", "model_x");
+
+    const state = await adapter.experienceCopilotGetContext(thread.id);
+    expect(state.metrics).toEqual(metrics);
+    expect(state.autoCompact).toBe(true);
+  });
+
+  it("PATCH toggles autoCompact and returns the full state (metrics unchanged)", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+    await store.updateContextMetrics(thread.id, metrics, "prov_1", "model_x");
+
+    const patched = await adapter.experienceCopilotPatchContext(thread.id, { autoCompact: false });
+    expect(patched.autoCompact).toBe(false);
+    expect(patched.metrics).toEqual(metrics);
+
+    // The store reflects the toggle too.
+    expect((await store.getById(thread.id))?.autoCompact).toBe(false);
+    expect(await adapter.experienceCopilotGetContext(thread.id)).toEqual({
+      metrics,
+      autoCompact: false,
+    });
+  });
+
+  it("GET / PATCH context on a missing thread reject (notFound)", async () => {
+    const { adapter } = await setup();
+    await expect(adapter.experienceCopilotGetContext("nope")).rejects.toThrow();
+    await expect(adapter.experienceCopilotPatchContext("nope", { autoCompact: false })).rejects.toThrow();
   });
 });

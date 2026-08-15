@@ -19,6 +19,25 @@ export interface AppendMessageInput {
 // ─── Return types ─────────────────────────────────────────────────────────────
 
 /**
+ * Parsed segmented context-usage metrics for a copilot thread (CM-2). Mirrors
+ * the `experienceCopilotContextMetricsSchema` wire shape (api-contracts)
+ * field-for-field — the db package cannot import api-contracts (dependency
+ * direction), so this local structural type is the store's read projection. The
+ * stream finish path (services/api) builds the object; this store only
+ * serializes it into `context_metrics_json` and parses it back out.
+ */
+export interface CopilotContextMetrics {
+  systemTokens: number;
+  digestTokens: number;
+  historyTokens: number;
+  totalTokens: number;
+  budgetTokens: number;
+  reserveTokens: number;
+  source: "estimate" | "provider";
+  measuredAt: string;
+}
+
+/**
  * Store-level copilot thread — domain projection of an
  * `experience_copilot_threads` row. `scriptId` is a plain string (a cross-domain
  * soft link, kept unbranded to stay local/minimal per ER-3); the thread's own
@@ -31,6 +50,15 @@ export interface ExperienceCopilotThread {
   title: string;
   /** NULL = the active session for this script_id; non-null ISO = archived. */
   archivedAt: string | null;
+  /** Parsed context metrics from the last turn, or null before the first turn
+   *  (or when the stored JSON is malformed — logged, never fatal). */
+  contextMetrics: CopilotContextMetrics | null;
+  /** The provider/model the thread last used (persisted from the stream finish
+   *  path); null before the first turn. */
+  lastProviderProfileId: string | null;
+  lastModel: string | null;
+  /** Auto-compact toggle (default on). */
+  autoCompact: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -247,6 +275,54 @@ export class ExperienceCopilotStore {
     return this.mapMessage(row!);
   }
 
+  // ─── Context metrics / auto-compact (CM-2) ─────────────────────────────────
+
+  /**
+   * Persist the segmented context metrics from the just-finished turn, plus the
+   * provider/model that produced them (the compaction service reuses this pair
+   * when the manual compact endpoint omits one — CM-5). Bumps updated_at so the
+   * thread surfaces as touched.
+   */
+  async updateContextMetrics(
+    threadId: string,
+    metrics: CopilotContextMetrics,
+    providerProfileId: string,
+    model: string,
+  ): Promise<void> {
+    const now = this.clock.now();
+    await this.db
+      .update(experienceCopilotThreads)
+      .set({
+        contextMetricsJson: JSON.stringify(metrics),
+        lastProviderProfileId: providerProfileId,
+        lastModel: model,
+        updatedAt: now,
+      })
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .run();
+  }
+
+  /** Read the auto-compact toggle (default on when the row is missing — the
+   *  auto-compaction gate, CM-6, treats a missing row as a fresh thread). */
+  async getAutoCompact(threadId: string): Promise<boolean> {
+    const row = await this.db
+      .select({ autoCompact: experienceCopilotThreads.autoCompact })
+      .from(experienceCopilotThreads)
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .get();
+    return row ? row.autoCompact === 1 : true;
+  }
+
+  /** Set the auto-compact toggle (0/1). Bumps updated_at. */
+  async setAutoCompact(threadId: string, enabled: boolean): Promise<void> {
+    const now = this.clock.now();
+    await this.db
+      .update(experienceCopilotThreads)
+      .set({ autoCompact: enabled ? 1 : 0, updatedAt: now })
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .run();
+  }
+
   // ─── Row mappers (brandId at the DB edge only) ─────────────────────────────
 
   private mapThread(row: typeof experienceCopilotThreads.$inferSelect): ExperienceCopilotThread {
@@ -256,6 +332,10 @@ export class ExperienceCopilotStore {
       draftSessionId: row.draftSessionId,
       title: row.title,
       archivedAt: row.archivedAt,
+      contextMetrics: parseContextMetrics(row.contextMetricsJson, row.id),
+      lastProviderProfileId: row.lastProviderProfileId,
+      lastModel: row.lastModel,
+      autoCompact: row.autoCompact === 1,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -272,4 +352,44 @@ export class ExperienceCopilotStore {
       createdAt: row.createdAt,
     };
   }
+}
+
+// ─── Row-parse helpers (defensive, never fatal) ───────────────────────────
+
+/** Type guard for the parsed metrics JSON shape. */
+function isCopilotContextMetrics(value: unknown): value is CopilotContextMetrics {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.systemTokens === "number" &&
+    typeof v.digestTokens === "number" &&
+    typeof v.historyTokens === "number" &&
+    typeof v.totalTokens === "number" &&
+    typeof v.budgetTokens === "number" &&
+    typeof v.reserveTokens === "number" &&
+    (v.source === "estimate" || v.source === "provider") &&
+    typeof v.measuredAt === "string"
+  );
+}
+
+/** Parse `context_metrics_json` into a validated {@link CopilotContextMetrics},
+ *  or null when absent/malformed/wrong-shape. The column is always written via
+ *  JSON.stringify of a valid object, so a failure indicates corruption — fall
+ *  back to null (treated identically to "no metrics yet") and log it. */
+function parseContextMetrics(text: string | null, threadId: string): CopilotContextMetrics | null {
+  if (!text) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (isCopilotContextMetrics(parsed)) return parsed;
+  } catch (err) {
+    console.error(
+      `[experience-copilot-store] malformed context_metrics_json for thread '${threadId}':`,
+      err,
+    );
+    return null;
+  }
+  console.error(
+    `[experience-copilot-store] invalid context_metrics_json shape for thread '${threadId}'`,
+  );
+  return null;
 }

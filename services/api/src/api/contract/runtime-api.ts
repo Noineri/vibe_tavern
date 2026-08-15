@@ -747,7 +747,14 @@ export interface ExperienceRuntimeApi {
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
+
+/** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
+ *  first turn) plus its auto-compact toggle (CM-4). */
+export interface ExperienceCopilotContextState {
+  metrics: ExperienceCopilotContextMetrics | null;
+  autoCompact: boolean;
+}
 
 /** The experience-copilot streaming subsystem — a standalone, editor-embedded
  *  pair-editor (own endpoint, own tables — ER-3) that proposes rules/visual
@@ -788,6 +795,14 @@ export interface ExperienceCopilotRuntimeApi {
 	/** Archive a single session (idempotent). Delegates to the ER-3 store's
 	 *  `archive`. Returns null when the thread does not exist. */
 	experienceCopilotArchive: (sessionId: string) => Promise<ExperienceCopilotThreadWire | null>;
+
+	/** Read a thread's last-turn context metrics + auto-compact toggle (CM-4).
+	 *  `metrics` is null before the first turn. */
+	experienceCopilotGetContext: (threadId: string) => Promise<ExperienceCopilotContextState>;
+
+	/** Toggle the thread's auto-compact flag (CM-4). Returns the full context
+	 *  state (`{ metrics, autoCompact }`) so the client can replace its local copy. */
+	experienceCopilotPatchContext: (threadId: string, body: { autoCompact?: boolean }) => Promise<ExperienceCopilotContextState>;
 }
 
 /** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The

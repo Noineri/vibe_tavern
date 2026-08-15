@@ -30,12 +30,14 @@ let streamTextImpl: ((opts: unknown) => unknown) | undefined;
 
 function createFakeStore(
   thread: ExperienceCopilotThread,
-): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[] } {
+): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> } {
   const messages: ExperienceCopilotMessage[] = [];
+  const metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> = [];
   let counter = 0;
   const now = () => new Date(Date.now() + counter++ * 1000).toISOString();
   return {
     messages,
+    metricsCalls,
     async getActive() { return null; },
     async getById() { return thread; },
     async listSessions() { return [thread]; },
@@ -56,7 +58,12 @@ function createFakeStore(
       messages.push(msg);
       return msg;
     },
-  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[] };
+    async updateContextMetrics(threadId: string, metrics: unknown, providerProfileId: string, model: string) {
+      metricsCalls.push({ threadId, metrics, providerProfileId, model });
+    },
+    async getAutoCompact() { return true; },
+    async setAutoCompact() {},
+  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> };
 }
 
 // ─── Fake streamText result ──────────────────────────────────────────────────
@@ -72,6 +79,8 @@ interface FakeStreamOptions {
   throwDuringStream?: Error;
   /** Finish reason resolved by `mapFinish`. */
   finishReason?: string;
+  /** Provider usage resolved by `mapFinish` (undefined → no usage reported). */
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
 }
 
 function makeFakeStreamTextResult(opts: FakeStreamOptions): Record<string, unknown> {
@@ -82,7 +91,7 @@ function makeFakeStreamTextResult(opts: FakeStreamOptions): Record<string, unkno
   return {
     stream: gen(),
     finishReason: Promise.resolve(opts.finishReason ?? "stop"),
-    usage: Promise.resolve(undefined),
+    usage: Promise.resolve(opts.usage),
   };
 }
 
@@ -168,6 +177,10 @@ function makeThread(scriptId: string | null = null): ExperienceCopilotThread {
     draftSessionId: null,
     title: "Test thread",
     archivedAt: null,
+    contextMetrics: null,
+    lastProviderProfileId: null,
+    lastModel: null,
+    autoCompact: true,
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
   };
@@ -491,5 +504,59 @@ describe("experience-copilot stream (ER-6)", () => {
     const stopWhen = captured!.stopWhen as (r: { steps: unknown[] }) => boolean;
     expect(stopWhen({ steps: [1, 2, 3, 4, 5] })).toBe(true);
     expect(stopWhen({ steps: [1, 2, 3, 4, 5, 6] })).toBe(false);
+  });
+});
+
+describe("experience-copilot stream — context metrics (CM-4)", () => {
+  it("finish carries estimate-sourced metrics and persists them with the provider/model", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({ parts: [textDelta("hi")] }); // no usage → estimate source
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const finish = events.find((e) => e.event === "finish");
+    expect(finish).toBeDefined();
+    const data = finish!.data as { metrics: Record<string, unknown> };
+    expect(data.metrics).toBeDefined();
+    expect(data.metrics.source).toBe("estimate");
+    expect(typeof data.metrics.totalTokens).toBe("number");
+
+    // Persisted exactly once, with the request's provider/model.
+    expect(store.metricsCalls).toHaveLength(1);
+    expect(store.metricsCalls[0].threadId).toBe("thread_1");
+    expect(store.metricsCalls[0].providerProfileId).toBe("prov_1");
+    expect(store.metricsCalls[0].model).toBe("test-model");
+    expect(store.metricsCalls[0].metrics).toEqual(data.metrics);
+  });
+
+  it("prefers the provider's usage.inputTokens as totalTokens with source: provider", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [textDelta("hi")],
+        usage: { inputTokens: 1234, outputTokens: 50, totalTokens: 1284 },
+      });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const finish = events.find((e) => e.event === "finish");
+    const data = finish!.data as { metrics: { source: string; totalTokens: number; budgetTokens: number; reserveTokens: number } };
+    expect(data.metrics.source).toBe("provider");
+    expect(data.metrics.totalTokens).toBe(1234);
+    // Per-segment values remain the assembler's estimate; budget/reserve derive
+    // from the effective profile (contextBudget null → 0, maxTokens 2000).
+    expect(data.metrics.budgetTokens).toBe(0);
+    expect(data.metrics.reserveTokens).toBe(2000);
   });
 });

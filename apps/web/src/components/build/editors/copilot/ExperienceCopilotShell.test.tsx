@@ -177,6 +177,7 @@ function thread(id: string): ExperienceCopilotThreadWire {
     archivedAt: null,
     createdAt: "",
     updatedAt: "",
+    metrics: null,
   };
 }
 

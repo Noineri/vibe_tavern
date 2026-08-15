@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { createDb } from "../src/db-connection.js";
 import { experienceCopilotThreads } from "../src/db-schema.js";
-import { ExperienceCopilotStore } from "../src/stores/experience-copilot-store.js";
+import { ExperienceCopilotStore, type CopilotContextMetrics } from "../src/stores/experience-copilot-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
 // Advancing clock so timestamps differ between sessions/messages (the fixed
@@ -214,5 +215,81 @@ describe("ExperienceCopilotStore", () => {
     expect(messages.map((m) => m.content)).toEqual(["first", "second", "{}"]);
     expect(messages[1].toolCallsJson).toBe("[{\"type\":\"tool-call\"}]");
     expect(messages[2].toolCallId).toBe("tc_1");
+  });
+});
+
+// ─── CM-2: context metrics + auto-compact ────────────────────────────────────
+
+describe("ExperienceCopilotStore — context metrics (CM-2)", () => {
+  const metrics: CopilotContextMetrics = {
+    systemTokens: 1000,
+    digestTokens: 0,
+    historyTokens: 500,
+    totalTokens: 1500,
+    budgetTokens: 16000,
+    reserveTokens: 1000,
+    source: "estimate",
+    measuredAt: "2026-06-15T00:00:00.000Z",
+  };
+
+  test("updateContextMetrics persists metrics + provider/model; getById round-trips", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_metrics", "T");
+
+    await store.updateContextMetrics(thread.id, metrics, "prov_1", "model_x");
+
+    const reloaded = await store.getById(thread.id);
+    expect(reloaded?.contextMetrics).toEqual(metrics);
+    expect(reloaded?.lastProviderProfileId).toBe("prov_1");
+    expect(reloaded?.lastModel).toBe("model_x");
+  });
+
+  test("before the first turn, metrics + provider/model are null", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_metrics_fresh", "T");
+
+    const reloaded = await store.getById(thread.id);
+    expect(reloaded?.contextMetrics).toBeNull();
+    expect(reloaded?.lastProviderProfileId).toBeNull();
+    expect(reloaded?.lastModel).toBeNull();
+  });
+
+  test("malformed context_metrics_json → null metrics (never fatal)", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession("script_malformed", "T");
+
+    // Corrupt the column directly (simulating a bad write).
+    await db.update(experienceCopilotThreads)
+      .set({ contextMetricsJson: "not-json{" })
+      .where(eq(experienceCopilotThreads.id, thread.id))
+      .run();
+
+    const reloaded = await store.getById(thread.id);
+    expect(reloaded?.contextMetrics).toBeNull();
+  });
+
+  test("wrong-shape metrics JSON → null metrics (defensive type guard)", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession("script_wrongshape", "T");
+
+    await db.update(experienceCopilotThreads)
+      .set({ contextMetricsJson: JSON.stringify({ totalTokens: "not-a-number" }) })
+      .where(eq(experienceCopilotThreads.id, thread.id))
+      .run();
+
+    const reloaded = await store.getById(thread.id);
+    expect(reloaded?.contextMetrics).toBeNull();
+  });
+
+  test("autoCompact defaults on; setAutoCompact/getAutoCompact round-trip", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_autocompact", "T");
+
+    expect(thread.autoCompact).toBe(true);
+    expect(await store.getAutoCompact(thread.id)).toBe(true);
+
+    await store.setAutoCompact(thread.id, false);
+    expect(await store.getAutoCompact(thread.id)).toBe(false);
+    expect((await store.getById(thread.id))?.autoCompact).toBe(false);
   });
 });

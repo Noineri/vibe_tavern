@@ -30,7 +30,7 @@ beforeAll(async () => {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
-function session(id: string, over: Partial<ExperienceCopilotThreadWire> = {}): ExperienceCopilotThreadWire {
+function session(id: string, over: Partial<Omit<ExperienceCopilotThreadWire, "metrics">> = {}): ExperienceCopilotThreadWire {
   return {
     id,
     scriptId: "script-1",
@@ -39,6 +39,7 @@ function session(id: string, over: Partial<ExperienceCopilotThreadWire> = {}): E
     archivedAt: null,
     createdAt: "",
     updatedAt: "",
+    metrics: null,
     ...over,
   };
 }

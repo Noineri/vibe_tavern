@@ -1,6 +1,6 @@
-import type { ExperienceCopilotRuntimeApi } from "../contract/runtime-api.js";
-import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage } from "@vibe-tavern/db";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState } from "../contract/runtime-api.js";
+import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics } from "@vibe-tavern/db";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
@@ -106,6 +106,36 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     return thread ? this.toThreadWire(thread) : null;
   };
 
+  experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {
+    const thread = await this.stores.experienceCopilot.getById(threadId);
+    if (!thread) {
+      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
+    }
+    return {
+      metrics: thread.contextMetrics ? this.toMetricsWire(thread.contextMetrics) : null,
+      autoCompact: thread.autoCompact,
+    };
+  };
+
+  experienceCopilotPatchContext = async (
+    threadId: string,
+    body: { autoCompact?: boolean },
+  ): Promise<ExperienceCopilotContextState> => {
+    const thread = await this.stores.experienceCopilot.getById(threadId);
+    if (!thread) {
+      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
+    }
+    if (body.autoCompact !== undefined) {
+      await this.stores.experienceCopilot.setAutoCompact(threadId, body.autoCompact);
+    }
+    // Re-read so the response reflects the persisted toggle (metrics unchanged).
+    const refreshed = await this.stores.experienceCopilot.getById(threadId);
+    return {
+      metrics: refreshed?.contextMetrics ? this.toMetricsWire(refreshed.contextMetrics) : null,
+      autoCompact: refreshed?.autoCompact ?? true,
+    };
+  };
+
   // ─── Domain → wire mappers (ER-7) ────────────────────────────────────────
   //
   // Field-for-field: the store's branded ids are phantom string brands (already
@@ -122,6 +152,23 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       archivedAt: t.archivedAt,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
+      metrics: t.contextMetrics ? this.toMetricsWire(t.contextMetrics) : null,
+    };
+  }
+
+  /** Map the store's parsed metrics (structurally identical to the wire shape)
+   *  into the api-contracts type. Field-for-field so the nullability/union
+   *  contract is explicit (never `undefined`). */
+  private toMetricsWire(m: CopilotContextMetrics): ExperienceCopilotContextMetrics {
+    return {
+      systemTokens: m.systemTokens,
+      digestTokens: m.digestTokens,
+      historyTokens: m.historyTokens,
+      totalTokens: m.totalTokens,
+      budgetTokens: m.budgetTokens,
+      reserveTokens: m.reserveTokens,
+      source: m.source,
+      measuredAt: m.measuredAt,
     };
   }
 

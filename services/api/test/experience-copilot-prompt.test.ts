@@ -9,6 +9,7 @@
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
+import { createHash } from "node:crypto";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
@@ -86,7 +87,9 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     // Messages array starts with the system message
     expect(result.messages.length).toBe(1);
     expect(result.messages[0].role).toBe("system");
-    expect(result.tokenAccounting.recentHistory).toBe(0);
+    expect(result.tokenAccounting.history).toBe(0);
+    expect(result.tokenAccounting.digest).toBe(0);
+    expect(result.tokenAccounting.total).toBe(result.tokenAccounting.system);
   });
 
   test("system message carries the skill catalog and result exposes skill roots (ER-16)", async () => {
@@ -204,7 +207,10 @@ describe("assembleExperienceCopilotPrompt — history compaction", () => {
     expect(historyCount).toBeLessThan(30);
     expect(result.compactionSummary).toBeDefined();
     expect(result.compactionSummary).toContain("windowed");
-    expect(result.tokenAccounting.recentHistory).toBe(historyCount);
+    expect(result.tokenAccounting.history).toBeGreaterThan(0);
+    expect(result.tokenAccounting.total).toBe(
+      result.tokenAccounting.system + result.tokenAccounting.digest + result.tokenAccounting.history,
+    );
   });
 
   test("history <= HISTORY_LIMIT is not windowed (no summary)", async () => {
@@ -340,5 +346,68 @@ describe("assembleExperienceCopilotPrompt — tool-pair safety", () => {
     expect(hasToolResult).toBe(true);
     // 21 preserved (not 20) because boundary safety pulled in the parent assistant.
     expect(historyMessages.length).toBe(21);
+  });
+});
+
+// ─── (d) Digest messages (CM-3) ──────────────────────────────────────────────
+
+describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
+  test("zero-digest assembly is byte-identical to the pre-CM-3 assembly", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "Hi! I can help author your experience." },
+      ],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    // SHA-256 of the system message captured BEFORE the digest refactor — pins
+    // that lifting digest messages out of the history flow changed nothing for
+    // a thread that never compacted (zero behavior change without a digest).
+    expect(createHash("sha256").update(result.systemMessage).digest("hex"))
+      .toBe("1233dc436186884f02adfeb546561130d9d25564759d288ae0f049f444925998");
+    expect(result.messages).toHaveLength(3);
+  });
+
+  test("the LAST digest renders as a system-level JSON section and leaves the history flow", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [
+        { role: "user", content: "First question" },
+        { role: "assistant", content: "First answer" },
+        { role: "digest", content: "Earlier context was compacted." },
+        { role: "user", content: "Second question" },
+        { role: "assistant", content: "Second answer" },
+      ],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+
+    // The digest is injected as a system-level JSON section, NOT a history message.
+    expect(result.systemMessage).toContain("# Compacted context (digest)");
+    expect(result.systemMessage).toContain('{"digest":"Earlier context was compacted."}');
+    // system + the 4 non-digest turns only (the digest is not a message).
+    expect(result.messages).toHaveLength(5);
+    expect(result.messages.some((m) => m.role === "digest")).toBe(false);
+    // Segmented accounting: digest > 0 and total is the sum.
+    expect(result.tokenAccounting.digest).toBeGreaterThan(0);
+    expect(result.tokenAccounting.total).toBe(
+      result.tokenAccounting.system + result.tokenAccounting.digest + result.tokenAccounting.history,
+    );
+  });
+
+  test("older digests are dropped entirely — only the last digest's text survives", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [
+        { role: "digest", content: "OLD DIGEST TEXT SHOULD BE DROPPED" },
+        { role: "user", content: "question" },
+        { role: "digest", content: "NEW DIGEST TEXT SURVIVES" },
+        { role: "assistant", content: "answer" },
+      ],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+
+    expect(result.systemMessage).toContain('{"digest":"NEW DIGEST TEXT SURVIVES"}');
+    expect(result.systemMessage).not.toContain("OLD DIGEST TEXT SHOULD BE DROPPED");
   });
 });
