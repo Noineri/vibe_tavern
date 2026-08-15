@@ -1850,6 +1850,7 @@
   "experience_editor_validate_rules": "Проверить правила",
   "experience_editor_rules_template": "Шаблон правил",
   "experience_editor_visual_new": "Новое представление из заготовки:",
+  "experience_editor_visual_new_blank": "Новый визуал с нуля",
   "experience_editor_visual_none": "Представление не выбрано — выберите существующее или начните с заготовки.",
   "experience_editor_visual_paired": "Парный",
   "experience_editor_visual_save": "Сохранить представление",

@@ -756,6 +756,7 @@ export default interface Resources {
     "experience_editor_visual_manifests": "Compatible manifests",
     "experience_editor_visual_name_ph": "Visual name",
     "experience_editor_visual_new": "New visual from a starter:",
+    "experience_editor_visual_new_blank": "New visual from scratch",
     "experience_editor_visual_none": "No visual selected — pick an existing one or start from a visual starter.",
     "experience_editor_visual_paired": "Paired",
     "experience_editor_visual_save": "Save visual",

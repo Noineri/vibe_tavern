@@ -394,6 +394,18 @@ export function ExperienceEditor() {
     }));
   };
 
+  /** Create a completely blank visual (empty name + source) — the «+ Новый
+   *  визуал» path. Unlike the starters it seeds no skeleton: the copilot
+   *  (write_buffer target=visual) or the user fills it by hand. */
+  const handleNewBlankVisual = () => {
+    setActiveVisualId(createPendingVisual({
+      name: "",
+      source: "",
+      apiVersion: VISUAL_API_VERSION,
+      compatibleManifestIds: [],
+    }));
+  };
+
   // ER-13d-2b: applying a rules template in step 1 fills the EXISTING rules
   // buffer (the script was already persisted on create) via the draft store —
   // NOT a direct createScript (template application is a buffer edit the user
@@ -906,6 +918,15 @@ export function ExperienceEditor() {
                   </>
                 ) : null}
               </div>
+
+              <button
+                type="button"
+                className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-accent bg-accent/10 px-3 py-2 text-left transition-all hover:bg-accent/20"
+                onClick={handleNewBlankVisual}
+              >
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-on-accent"><Ic.plus /></span>
+                <span className="font-ui text-[12px] font-semibold text-accent-t">{t("experience_editor_visual_new_blank")}</span>
+              </button>
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-ui text-[11px] text-t3">{t("experience_editor_visual_new")}</span>

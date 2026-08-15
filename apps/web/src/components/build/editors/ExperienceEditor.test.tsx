@@ -34,7 +34,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import type { ExperienceTestRunData, ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
-import { getVisualStarter } from "../../experience/starters/index.js";
+import { getVisualStarter, VISUAL_STARTERS } from "../../experience/starters/index.js";
 import { RULES_STARTERS } from "../../../lib/experience-rules-starters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
@@ -810,6 +810,37 @@ describe("ExperienceEditor", () => {
     });
     const migrated = visualDraftEntries().filter(([id]) => !id.startsWith("local:"));
     expect(migrated.some(([id]) => id === "vis_1")).toBe(true);
+  });
+
+  it("adds a completely blank visual from the '+' button (TF-2)", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+
+    // The '+' button creates a pending visual with an EMPTY name + source (no
+    // starter skeleton) — the blank visual the copilot/user fills by hand.
+    fireEvent.click(await findByText("experience_editor_visual_new_blank"));
+    await waitFor(() => {
+      const blank = visualDraftEntries().find(
+        ([, draft]) => draft.values.name === "" && draft.values.source === "",
+      );
+      expect(blank).toBeDefined();
+      if (blank) {
+        expect(blank[1].values.apiVersion).toBe(1);
+        expect(blank[1].values.compatibleManifestIds).toEqual([]);
+      }
+    });
+
+    // The blank visual is active: the buffer renders as an empty editor.
+    const [view] = await codeViews(container);
+    expect(view.state.doc.toString()).toBe("");
+
+    // Starter chips are untouched — all five still render.
+    for (const starter of VISUAL_STARTERS) {
+      expect(await findByText(starter.label)).toBeTruthy();
+    }
   });
 
   it("locks enabling while the source is changed and allows it after saving the exact reviewed source", async () => {
