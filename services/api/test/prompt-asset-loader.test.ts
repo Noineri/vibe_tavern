@@ -82,6 +82,32 @@ describe("prompt-asset-loader — shared resolver", () => {
 			expect(path.endsWith("nonexistent-prompt-xyz-9f3c.md")).toBe(true);
 			expect(await Bun.file(path).exists()).toBe(false);
 		});
+
+		test("normalizes CRLF line endings to LF (platform-deterministic prompt bytes)", async () => {
+			// A Windows checkout with core.autocrlf=true (CI runners) or a user
+			// override saved by a CRLF editor puts \r\n on disk; the loaded prompt
+			// must not leak \r — the LLM sees byte-identical prompts on every
+			// platform and the SHA pins in experience-copilot-prompt.test.ts hold.
+			const tmp = await mkdtemp(join(tmpdir(), "vt-prompts-"));
+			try {
+				const filename = getModeConfig("script").defaultPromptFile;
+				const overridePath = join(tmp, filename);
+				await Bun.write(overridePath, "# CRLF HEADER\r\nmarker line 1\r\nmarker lone-cr\r\r\n");
+
+				const prev = process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
+				process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = tmp;
+				try {
+					const loaded = await loadPromptAsset(filename);
+				expect(loaded.includes("\r")).toBe(false);
+				expect(loaded).toBe("# CRLF HEADER\nmarker line 1\nmarker lone-cr\n\n");
+				} finally {
+					if (prev === undefined) delete process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
+					else process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = prev;
+				}
+			} finally {
+				await rm(tmp, { recursive: true, force: true });
+			}
+		});
 	});
 
 	describe("loadPromptAsset — freshness (no process cache)", () => {
