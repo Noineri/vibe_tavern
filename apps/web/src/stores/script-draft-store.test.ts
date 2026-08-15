@@ -141,6 +141,83 @@ describe("script draft store", () => {
     expect(useScriptDraftStore.getState().drafts[interactive.id]?.values.enabled).toBe(true);
   });
 
+  it("regains trust on Save when the script was trusted before the edit (IR-81A restoration)", () => {
+    const interactive = { ...script, scriptKind: "interactive" as const, enabled: true };
+    const store = useScriptDraftStore.getState();
+    store.ensure(interactive);
+
+    // Accept the copilot's diff hunks: the buffer changes, trust is locally
+    // invalidated (forced false) while unsaved.
+    store.patch(interactive.id, { code: "changed by assistant" });
+    expect(useScriptDraftStore.getState().drafts[interactive.id]?.values.enabled).toBe(false);
+
+    // Save: the submitted snapshot re-enables the previously-trusted source…
+    const submitted = useScriptDraftStore.getState().prepareSave(interactive.id);
+    if (!submitted) throw new Error("expected dirty snapshot");
+    expect(submitted.enabled).toBe(true);
+
+    // …and the persisted record makes the editor trusted again.
+    useScriptDraftStore.getState().completeSave(interactive.id, submitted, {
+      ...interactive,
+      code: "changed by assistant",
+      enabled: true,
+    });
+    const saved = useScriptDraftStore.getState().drafts[interactive.id];
+    expect(saved?.values.enabled).toBe(true);
+    expect(saved?.values.code).toBe("changed by assistant");
+    expect(isScriptDraftDirty(saved)).toBe(false);
+  });
+
+  it("keeps an untrusted-before-edit script untrusted on Save (fail-closed)", () => {
+    const untrusted = { ...script, scriptKind: "interactive" as const, enabled: false };
+    useScriptDraftStore.getState().ensure(untrusted);
+    useScriptDraftStore.getState().patch(untrusted.id, { code: "changed" });
+
+    const submitted = useScriptDraftStore.getState().prepareSave(untrusted.id);
+    expect(submitted?.enabled).toBe(false);
+  });
+
+  it("toggling trust OFF while clean suppresses the restoration", () => {
+    const interactive = { ...script, scriptKind: "interactive" as const, enabled: true };
+    const store = useScriptDraftStore.getState();
+    store.ensure(interactive);
+
+    // Explicit disable with a clean code buffer refreshes the pre-edit stash…
+    store.patch(interactive.id, { enabled: false });
+    // …so a later code edit + Save must NOT silently re-enable.
+    store.patch(interactive.id, { code: "changed" });
+    const submitted = useScriptDraftStore.getState().prepareSave(interactive.id);
+    expect(submitted?.enabled).toBe(false);
+  });
+
+  it("never applies the restoration to non-interactive kinds", () => {
+    useScriptDraftStore.getState().ensure({ ...script, enabled: false });
+    useScriptDraftStore.getState().patch(script.id, { code: "changed" });
+    const submitted = useScriptDraftStore.getState().prepareSave(script.id);
+    expect(submitted?.enabled).toBe(false);
+  });
+
+  it("an edit made while Save is in flight keeps the pre-edit trust for the next Save", () => {
+    const interactive = { ...script, scriptKind: "interactive" as const, enabled: true };
+    const store = useScriptDraftStore.getState();
+    store.ensure(interactive);
+    store.patch(interactive.id, { code: "v2" });
+    const submitted = useScriptDraftStore.getState().prepareSave(interactive.id);
+    if (!submitted) throw new Error("expected dirty snapshot");
+
+    // Type more while the save is in flight.
+    useScriptDraftStore.getState().patch(interactive.id, { code: "v3" });
+    useScriptDraftStore.getState().completeSave(interactive.id, submitted, {
+      ...interactive,
+      code: "v2",
+      enabled: true,
+    });
+
+    // The buffer is dirty again; the NEXT save still restores trust.
+    const resubmitted = useScriptDraftStore.getState().prepareSave(interactive.id);
+    expect(resubmitted?.enabled).toBe(true);
+  });
+
   it("does not change Prompt or Dice enabled state when their source changes", () => {
     for (const scriptKind of ["prompt", "dice"] as const) {
       const record = { ...script, id: `script_${scriptKind}`, scriptKind };

@@ -175,14 +175,14 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
                   type="button"
                   data-testid="copilot-send-btn"
                   className={cn(
-                    "flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110",
+                    "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[5px] bg-accent text-on-accent transition-all duration-150 hover:brightness-110",
                     "disabled:cursor-default disabled:opacity-45 disabled:filter-none",
                   )}
                   disabled={!canSend}
                   onClick={handleSend}
                   aria-label={t("experience_copilot_send")}
                 >
-                  {t("experience_copilot_send")}
+                  <Icons.Caret direction="r" />
                 </button>
               </CustomTooltip>
             )}
