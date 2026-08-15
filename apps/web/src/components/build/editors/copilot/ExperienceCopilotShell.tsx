@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../../lib/cn.js";
@@ -6,7 +6,6 @@ import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { Modal } from "../../../shared/Modal.js";
-import { CodeEditor } from "../../../shared/CodeEditor.js";
 import { InteractiveTester } from "../InteractiveTester.js";
 import { ExperiencePlayground } from "../ExperiencePlayground.js";
 import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
@@ -36,6 +35,12 @@ import { CopilotProfileModal } from "./CopilotProfileModal.js";
 import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
 import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
 import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
+import {
+  allReviewHunkIds,
+  buildBufferReview,
+  ExperienceCopilotEditorPanel,
+  mergedReviewText,
+} from "./ExperienceCopilotEditorPanel.js";
 import { useShallow } from "zustand/react/shallow";
 
 /**
@@ -296,6 +301,78 @@ export function ExperienceCopilotShell({
     onRevert: handleRevertBuffers,
   });
 
+  // ── Hunk accept-selection (CD-6) ─────────────────────────────────────────
+  // Lives HERE (not in the editor panel) so it survives buffer-tab switches.
+  // Reset whenever the proposal CONTENT changes (a new turn's proposal) or the
+  // thread changes — including the revert path, which clears the live turn and
+  // therefore flips the key to null.
+  const [acceptedRulesHunks, setAcceptedRulesHunks] = useState<Set<number>>(() => new Set());
+  const [acceptedVisualHunks, setAcceptedVisualHunks] = useState<Set<number>>(() => new Set());
+  const proposalKey = review.proposal.hasProposal
+    ? `${review.proposal.proposedRules ?? ""}\u0000${review.proposal.proposedVisual ?? ""}`
+    : null;
+  useEffect(() => {
+    setAcceptedRulesHunks(new Set());
+    setAcceptedVisualHunks(new Set());
+  }, [proposalKey, threadId]);
+
+  const rulesReview = useMemo(
+    () =>
+      buildBufferReview(
+        review.proposalBase?.rules,
+        review.proposal.proposedRules,
+        acceptedRulesHunks,
+        !ctrl.isSending,
+      ),
+    [review, acceptedRulesHunks, ctrl.isSending],
+  );
+  const visualReview = useMemo(
+    () =>
+      buildBufferReview(
+        review.proposalBase?.visual,
+        review.proposal.proposedVisual,
+        acceptedVisualHunks,
+        !ctrl.isSending,
+      ),
+    [review, acceptedVisualHunks, ctrl.isSending],
+  );
+
+  const acceptRulesHunk = useCallback(
+    (hunkId: number) => {
+      if (!rulesReview) return;
+      const next = new Set(acceptedRulesHunks);
+      next.add(hunkId);
+      setAcceptedRulesHunks(next);
+      onRulesChange(mergedReviewText(rulesReview, next));
+    },
+    [rulesReview, acceptedRulesHunks, onRulesChange],
+  );
+  const acceptAllRules = useCallback(() => {
+    if (!rulesReview) return;
+    setAcceptedRulesHunks(allReviewHunkIds(rulesReview));
+    onRulesChange(mergedReviewText(rulesReview, allReviewHunkIds(rulesReview)));
+  }, [rulesReview, onRulesChange]);
+  const acceptVisualHunk = useCallback(
+    (hunkId: number) => {
+      if (!visualReview) return;
+      const next = new Set(acceptedVisualHunks);
+      next.add(hunkId);
+      setAcceptedVisualHunks(next);
+      onVisualChange(mergedReviewText(visualReview, next));
+    },
+    [visualReview, acceptedVisualHunks, onVisualChange],
+  );
+  const acceptAllVisual = useCallback(() => {
+    if (!visualReview) return;
+    setAcceptedVisualHunks(allReviewHunkIds(visualReview));
+    onVisualChange(mergedReviewText(visualReview, allReviewHunkIds(visualReview)));
+  }, [visualReview, onVisualChange]);
+
+  const handleToolbarRevert = useCallback(() => {
+    review.revertLastTurn();
+    toast.success(t("copilot_review_reverted"));
+  }, [review, t]);
+
   // ER-14: post a test/simulate/playground digest into the copilot thread. The
   // digest's human-readable `text` becomes a user message (the model responds);
   // its structured `feedback` is set as `testFeedback` and carried on every
@@ -378,15 +455,34 @@ export function ExperienceCopilotShell({
   // Non-creation keeps the original inline-English 2-option constant; creation
   // adds the i18n-labelled `sandbox` position (ER-13d-1). Built here because
   // the creation labels resolve through `t`.
+  // Buffer-tab labels with the pending-review dot (CD-6): a tab whose buffer
+  // has unaccepted hunks carries an accent dot (per the settled vision: the
+  // OTHER tab must signal pending diffs; showing it on both tabs is harmless
+  // and simpler than hiding the active one's).
+  const tabLabel = (value: "rules" | "visual", label: string) => {
+    const pending = value === "rules" ? rulesReview !== null : visualReview !== null;
+    if (!pending) return label;
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        {label}
+        <span
+          data-testid={`copilot-buffer-dot-${value}`}
+          title={t("copilot_review_pending_badge")}
+          className="h-1.5 w-1.5 rounded-full bg-accent"
+        />
+      </span>
+    );
+  };
+
   const bufferOptions = creationMode
     ? [
-        { value: "rules", label: t("experience_copilot_rules") },
-        { value: "visual", label: t("experience_copilot_visual") },
+        { value: "rules", label: tabLabel("rules", t("experience_copilot_rules")) },
+        { value: "visual", label: tabLabel("visual", t("experience_copilot_visual")) },
         { value: "sandbox", label: t("experience_copilot_sandbox") },
       ]
     : [
-        { value: "rules", label: t("experience_copilot_rules") },
-        { value: "visual", label: t("experience_copilot_visual") },
+        { value: "rules", label: tabLabel("rules", t("experience_copilot_rules")) },
+        { value: "visual", label: tabLabel("visual", t("experience_copilot_visual")) },
       ];
 
   // IR-90A: exactly one ExperiencePlayground element is shared by the two
@@ -527,10 +623,7 @@ export function ExperienceCopilotShell({
               <ToolbarButton
                 label={t("copilot_review_revert")}
                 icon={<Icons.Undo />}
-                onClick={() => {
-                  review.revertLastTurn();
-                  toast.success(t("copilot_review_reverted"));
-                }}
+                onClick={handleToolbarRevert}
                 testId="copilot-toolbar-revert"
               />
             )}
@@ -562,35 +655,20 @@ export function ExperienceCopilotShell({
       ) : (
         <>
           {editorBuffer === "rules" ? rulesToolbar : visualToolbar}
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {/* CD-3: while the model works, the editor is FROZEN (read-only +
-                dimmed + badge) so the user cannot fork the unified model
-                context mid-turn; it thaws for the human review right after. */}
-            <div
-              data-testid="copilot-editor-frame"
-              className={cn(
-                "relative h-full min-h-0 rounded-md border border-border bg-bg transition-opacity duration-150",
-                ctrl.isSending && "opacity-60",
-              )}
-            >
-              <CodeEditor
-                className="h-full"
-                value={editorBuffer === "rules" ? rulesCode : visualSource}
-                onChange={editorBuffer === "rules" ? onRulesChange : onVisualChange}
-                minHeight="300px"
-                scrollMode="inner"
-                readOnly={ctrl.isSending}
-              />
-              {ctrl.isSending && (
-                <div
-                  data-testid="copilot-editor-frozen"
-                  className="pointer-events-none absolute left-2 top-2 z-10 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t2"
-                >
-                  {t("copilot_review_model_editing")}
-                </div>
-              )}
-            </div>
-          </div>
+          {/* CD-6: the review-mode editor (inline diff + review bar). The
+              accept-selection state lives here in the shell so it survives
+              buffer-tab switches (the panel remounts per tab). */}
+          <ExperienceCopilotEditorPanel
+            value={editorBuffer === "rules" ? rulesCode : visualSource}
+            onChange={editorBuffer === "rules" ? onRulesChange : onVisualChange}
+            isSending={ctrl.isSending}
+            review={editorBuffer === "rules" ? rulesReview : visualReview}
+            acceptedHunkIds={editorBuffer === "rules" ? acceptedRulesHunks : acceptedVisualHunks}
+            onAcceptHunk={editorBuffer === "rules" ? acceptRulesHunk : acceptVisualHunk}
+            onAcceptAll={editorBuffer === "rules" ? acceptAllRules : acceptAllVisual}
+            onRevert={handleToolbarRevert}
+            canRevert={review.canRevert}
+          />
         </>
       )}
     </div>

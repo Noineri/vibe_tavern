@@ -1,12 +1,5 @@
-import { type Extension } from "@codemirror/state";
-import {
-	Decoration,
-	type DecorationSet,
-	EditorView,
-	ViewPlugin,
-	type ViewUpdate,
-	WidgetType,
-} from "@codemirror/view";
+import { StateField, type Extension, type Text } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import type { TextDiffSummary } from "../../../shared/TextDiffPreview.js";
 import type { DiffHunk } from "../../../../lib/coauthor-hunk-merge.js";
 import { groupHunks } from "../../../../lib/coauthor-hunk-merge.js";
@@ -165,12 +158,11 @@ class HunkHeaderWidget extends WidgetType {
 }
 
 function buildDecorations(
-	view: EditorView,
+	doc: Text,
 	specs: readonly CopilotDiffSpec[],
 	factory: (spec: Extract<CopilotDiffSpec, { type: "hunk-header" }>) => HunkHeaderWidget,
 ): DecorationSet {
 	const decorations: { from: number; to: number; deco: Decoration; order: number }[] = [];
-	const doc = view.state.doc;
 	for (const spec of specs) {
 		if (spec.type === "add-line") {
 			const line = doc.line(Math.min(spec.line + 1, doc.lines));
@@ -259,30 +251,28 @@ export interface CopilotDiffExtensionsOptions {
 }
 
 /** The CM6 extension bundle: green add-lines + hunk-header block widgets.
- *  The plugin captures `options` (specs included) at construction; passing a
- *  NEW array identity through this function makes CodeEditor's extensions
- *  compartment RECONFIGURE — the plugin is recreated with the fresh specs, so
- *  an accept (which changes the specs but not the document) is reflected
- *  without any docChanged. Callers therefore rebuild the array on every
- *  selection change, not on a timer. */
+ *  The decorations live in a STATE FIELD, not a ViewPlugin — CodeMirror
+ *  requires block decorations to come from state ("Block decorations may not
+ *  be specified via plugins"). The field is created per extension identity:
+ *  passing a NEW array through this function makes CodeEditor's extensions
+ *  compartment (CD-4) reconfigure — the field is recreated with the fresh
+ *  specs, so an accept (which changes the specs but not the document) is
+ *  reflected without any doc change. */
 export function copilotDiffExtensions(options: CopilotDiffExtensionsOptions): Extension[] {
-	const plugin = ViewPlugin.fromClass(
-		class {
-			decorations: DecorationSet;
-			constructor(view: EditorView) {
-				this.decorations = buildDecorations(view, options.specs, (spec) =>
-					new HunkHeaderWidget(
-						spec.hunkId,
-						spec.removedTexts,
-						options.buttonLabel,
-						options.buttonAriaLabel,
-						options.onAcceptHunk,
-					),
-				);
-			}
-			update(update: ViewUpdate) {
-				if (update.docChanged || update.viewportChanged) {
-					this.decorations = buildDecorations(update.view, options.specs, (spec) =>
+	const field = StateField.define<DecorationSet>({
+		create: (state) =>
+			buildDecorations(state.doc, options.specs, (spec) =>
+				new HunkHeaderWidget(
+					spec.hunkId,
+					spec.removedTexts,
+					options.buttonLabel,
+					options.buttonAriaLabel,
+					options.onAcceptHunk,
+				),
+			),
+		update: (decorations, tr) =>
+			tr.docChanged
+				? buildDecorations(tr.state.doc, options.specs, (spec) =>
 						new HunkHeaderWidget(
 							spec.hunkId,
 							spec.removedTexts,
@@ -290,11 +280,10 @@ export function copilotDiffExtensions(options: CopilotDiffExtensionsOptions): Ex
 							options.buttonAriaLabel,
 							options.onAcceptHunk,
 						),
-					);
-				}
-			}
-		},
-		{ decorations: (v) => v.decorations },
-	);
-	return [diffTheme, plugin];
+					)
+				: decorations.map(tr.changes),
+	});
+	// StateFields are NOT auto-collected as decorations (only ViewPlugins
+	// with a `decorations` property are) — wire the field into the facet.
+	return [diffTheme, field, EditorView.decorations.from(field)];
 }

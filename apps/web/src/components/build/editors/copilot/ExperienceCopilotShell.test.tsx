@@ -967,3 +967,45 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
   });
 });
+
+describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
+  it("shows the review bar + tab dot after a proposal and accepts all into the buffer", async () => {
+    const onRulesChange = mock();
+    const { getByTestId, queryByTestId } = renderShell({ onRulesChange });
+    await flushSessionLoad();
+
+    // A real turn (snapshot) against the v1 buffers.
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamExperienceCopilot).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listExperienceCopilotMessages).toHaveBeenCalled());
+
+    // The turn's write_buffer proposal lands in the live store (as the SSE
+    // tool-result path would fill it).
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-new": [
+          {
+            toolCallId: "c1",
+            toolName: "write_buffer",
+            status: "done",
+            target: "rules",
+            proposed: "// rules buffer v2",
+            summary: "rewrote",
+          },
+        ],
+      },
+    });
+
+    // The review bar appears with the pending count and the rules tab dot.
+    await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
+    expect(getByTestId("copilot-review-count").textContent).toContain("copilot_review_hunks_count");
+    expect(queryByTestId("copilot-buffer-dot-rules")).not.toBeNull();
+    expect(queryByTestId("copilot-buffer-dot-visual")).toBeNull();
+
+    // Accept-all writes the proposed buffer into the rules draft.
+    fireEvent.click(getByTestId("copilot-accept-all"));
+    expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v2");
+  });
+});
