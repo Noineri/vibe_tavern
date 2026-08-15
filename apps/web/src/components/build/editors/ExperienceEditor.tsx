@@ -331,6 +331,9 @@ export function ExperienceEditor() {
       });
       setScripts((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
       setActiveScriptId(created.id);
+      // TF-1: a brand-new experience binds nothing — drop the previously open
+      // experience's visual so it cannot leak into the fresh Visual buffer.
+      setActiveVisualId(null);
       setCreatingScriptId(created.id);
       setChosenRulesStarterId(null);
     } catch (error) {
@@ -689,7 +692,14 @@ export function ExperienceEditor() {
           type="button"
           aria-label={t("experience_editor_back")}
           className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
-          onClick={() => { setActiveScriptId(null); setCreatingScriptId(null); setChosenRulesStarterId(null); }}
+          onClick={() => {
+            setActiveScriptId(null);
+            // TF-1: leaving the editor must also drop the visual selection —
+            // otherwise persist-on-create inherits it into a NEW experience.
+            setActiveVisualId(null);
+            setCreatingScriptId(null);
+            setChosenRulesStarterId(null);
+          }}
         >
           {Ic.caret("l")} {t("experience_editor_back")}
         </button>

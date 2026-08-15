@@ -642,6 +642,53 @@ describe("ExperienceEditor", () => {
     });
   });
 
+  it("back → create-new resets the visual selection: a fresh experience opens with an empty Visual buffer (TF-1)", async () => {
+    // TF-1: neither the back button nor persist-on-create reset activeVisualId,
+    // so the previous experience's bound visual leaked into the brand-new one
+    // (its source landed in the Visual buffer of a script that never bound it).
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]); // vis_1 bound to srv_1
+
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+
+    // Open the existing experience — ER-18b auto-selects its bound visual.
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    await waitFor(() => {
+      const trigger = [...container.querySelectorAll("button")].find((b) =>
+        (b.textContent ?? "").includes("Existing Visual"),
+      );
+      expect(trigger).toBeTruthy();
+    });
+
+    // Back to the picker, then create a NEW experience (persist-on-create).
+    const backButton = [...container.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").includes("experience_editor_back"),
+    );
+    if (!backButton) throw new Error("back button missing");
+    fireEvent.click(backButton);
+    fireEvent.click(await findByText("experience_editor_create_new"));
+    await waitFor(() => {
+      expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
+    });
+
+    // Creation mode's Visual buffer must NOT carry the previous experience's
+    // visual: the dropdown shows the placeholder, not "Existing Visual".
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    await waitFor(() => {
+      const stale = [...container.querySelectorAll("button")].find((b) =>
+        (b.textContent ?? "").includes("Existing Visual"),
+      );
+      expect(stale).toBeUndefined();
+    });
+    const trigger = [...container.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").includes("experience_assign_visual_placeholder"),
+    );
+    expect(trigger).toBeTruthy();
+  });
+
   it("patches one snapshot on later saves and keeps a failed save dirty + retryable", async () => {
     serverScripts = [{ ...baseScript }];
     const { container, findByText, getByRole, findByRole } = render(<ExperienceEditor />);
