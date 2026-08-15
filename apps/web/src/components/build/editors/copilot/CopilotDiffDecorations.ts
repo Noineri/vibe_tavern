@@ -1,8 +1,9 @@
 import { StateField, type Extension, type Text } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
-import type { TextDiffSummary } from "../../../shared/TextDiffPreview.js";
+import type { TextDiffLine, TextDiffSummary } from "../../../shared/TextDiffPreview.js";
 import type { DiffHunk } from "../../../../lib/coauthor-hunk-merge.js";
 import { groupHunks } from "../../../../lib/coauthor-hunk-merge.js";
+import { annotateHunkLines, type LineSegment } from "../../../../lib/intra-line-diff.js";
 
 /**
  * CD-5: inline diff decorations for the copilot editor's review mode.
@@ -17,6 +18,13 @@ import { groupHunks } from "../../../../lib/coauthor-hunk-merge.js";
  * `mergeSelectedHunks`). This is a review surface, not a merge editor: the
  * ghost lines are read-only context, never editable text.
  *
+ * WORD-DELTA (GitHub-style): within a paired remove/add line the CHANGED word
+ * tokens get a stronger stamp — red (`--danger-strong`) on the ghost rows,
+ * green (`--success-strong`) via mark decorations on the added lines — while
+ * the shared substrings keep the plain/dim treatment. The pairing reuses
+ * `annotateHunkLines` from `lib/intra-line-diff.js` (the same word diff the
+ * co-author reviewing overlay renders), so both surfaces stay consistent.
+ *
  * Two layers, deliberately split:
  *  1. `computeDiffDecorationSpecs` — PURE: diff + hunks + accepted-set → a
  *     positional spec list (0-based document line numbers). Unit-tested
@@ -30,7 +38,8 @@ import { groupHunks } from "../../../../lib/coauthor-hunk-merge.js";
  *  (past EOF) belongs to a hunk whose changes sit at the document tail. */
 export type CopilotDiffSpec =
 	| { type: "add-line"; line: number }
-	| { type: "hunk-header"; line: number; hunkId: number; removedTexts: string[] };
+	| { type: "add-delta"; line: number; from: number; to: number }
+	| { type: "hunk-header"; line: number; hunkId: number; removedTexts: string[]; removedSegments: (LineSegment[] | null)[] };
 
 /**
  * Compute the decoration specs for the unaccepted hunks of a line diff.
@@ -51,16 +60,33 @@ export function computeDiffDecorationSpecs(
 		for (let k = hunk.start; k < hunk.end; k++) lineHunk[k] = hunk.id;
 	}
 
+	// Intra-line (word-delta) annotations, computed ONCE per hunk — the same
+	// annotateHunkLines the co-author's HunkSelectionDiff uses, so both review
+	// surfaces share one word diff. Keyed by diff-line index for the main loop.
+	const segmentsByDiffIdx = new Map<number, LineSegment[] | null>();
+	for (const hunk of hunks) {
+		const hunkLines: readonly TextDiffLine[] = diff.lines.slice(hunk.start, hunk.end);
+		annotateHunkLines(hunkLines).forEach(({ segments }, li) => {
+			segmentsByDiffIdx.set(hunk.start + li, segments);
+		});
+	}
+
 	const specs: CopilotDiffSpec[] = [];
 	let docLine = 0; // 0-based line number of the NEXT document (proposed) line
-	let header: { line: number; hunkId: number; removedTexts: string[] } | null = null;
+	let header: {
+		line: number;
+		hunkId: number;
+		removedTexts: string[];
+		removedSegments: (LineSegment[] | null)[];
+	} | null = null;
 
 	/** Open the hunk's header spec (once) at the given anchor line. The spec's
-	 *  `removedTexts` array is shared by reference, so later remove lines of
-	 *  the same hunk still accumulate into the already-emitted spec. */
+	 *  `removedTexts` and `removedSegments` arrays are shared by reference, so
+	 *  later remove lines of the same hunk still accumulate into the
+	 *  already-emitted spec. */
 	const openHeader = (line: number, hunkId: number) => {
 		if (header) return;
-		header = { line, hunkId, removedTexts: [] };
+		header = { line, hunkId, removedTexts: [], removedSegments: [] };
 		specs.push({ type: "hunk-header", ...header });
 	};
 
@@ -77,6 +103,19 @@ export function computeDiffDecorationSpecs(
 				// anchors above it, BEFORE its highlighted lines.
 				openHeader(docLine, hunkId!);
 				specs.push({ type: "add-line", line: docLine });
+				// Word-delta marks: only the changed substrings of a PAIRED add
+				// line get a stronger green stamp (character offsets within the
+				// line's text, accumulated over the segments).
+				const segs = segmentsByDiffIdx.get(k) ?? null;
+				if (segs) {
+					let offset = 0;
+					for (const segment of segs) {
+						if (!segment.common) {
+							specs.push({ type: "add-delta", line: docLine, from: offset, to: offset + segment.text.length });
+						}
+						offset += segment.text.length;
+					}
+				}
 			} else {
 				header = null;
 			}
@@ -90,6 +129,7 @@ export function computeDiffDecorationSpecs(
 				// header anchors above the NEXT document line.
 				openHeader(docLine, hunkId!);
 				header!.removedTexts.push(line.text);
+				header!.removedSegments.push(segmentsByDiffIdx.get(k) ?? null);
 			}
 		}
 	}
@@ -100,6 +140,8 @@ export function computeDiffDecorationSpecs(
 // ─── CM6 layer ──────────────────────────────────────────────────────────────
 
 const ADD_LINE_CLASS = "cm-copilotDiffAdd";
+const ADD_DELTA_CLASS = "cm-copilotDiffAddDelta";
+const GHOST_DELTA_CLASS = "cm-copilotDiffGhostDelta";
 
 /** Block widget above an unaccepted hunk: struck-through ghost of the removed
  *  lines (when any) + the hunk's accept and dismiss buttons (RV-2). */
@@ -107,6 +149,7 @@ class HunkHeaderWidget extends WidgetType {
 	constructor(
 		readonly hunkId: number,
 		readonly removedTexts: string[],
+		readonly removedSegments: (LineSegment[] | null)[],
 		readonly buttonLabel: string,
 		readonly buttonTestLabel: string,
 		readonly onAccept: (hunkId: number) => void,
@@ -117,12 +160,19 @@ class HunkHeaderWidget extends WidgetType {
 		super();
 	}
 
+	private segmentsSignature(): string {
+		return this.removedSegments
+			.map((s) => (s ? s.map((x) => (x.common ? "1" : "0") + x.text).join("\u0001") : "N"))
+			.join("\u0002");
+	}
+
 	override eq(other: HunkHeaderWidget): boolean {
 		return (
 			this.hunkId === other.hunkId &&
 			this.buttonLabel === other.buttonLabel &&
 			this.dismissLabel === other.dismissLabel &&
-			this.removedTexts.join("\u0000") === other.removedTexts.join("\u0000")
+			this.removedTexts.join("\u0000") === other.removedTexts.join("\u0000") &&
+			this.segmentsSignature() === other.segmentsSignature()
 		);
 	}
 
@@ -133,9 +183,27 @@ class HunkHeaderWidget extends WidgetType {
 		if (this.removedTexts.length > 0) {
 			const ghost = document.createElement("div");
 			ghost.className = "cm-copilotDiffGhost";
-			for (const text of this.removedTexts) {
+			for (let i = 0; i < this.removedTexts.length; i++) {
+				const text = this.removedTexts[i]!;
+				const segments = this.removedSegments[i] ?? null;
 				const row = document.createElement("div");
-				row.textContent = text.length > 0 ? `− ${text}` : "−";
+				if (text.length === 0) {
+					row.textContent = "−";
+				} else if (segments && segments.length > 0) {
+					// Mixed spans: the changed word-tokens get a red delta stamp,
+					// the shared substrings stay plain. The `− ` prefix rides the
+					// FIRST segment so the ghost line still reads as a removal.
+					let first = true;
+					for (const segment of segments) {
+						const span = document.createElement("span");
+						span.textContent = (first ? "− " : "") + segment.text;
+						if (!segment.common) span.className = GHOST_DELTA_CLASS;
+						row.appendChild(span);
+						first = false;
+					}
+				} else {
+					row.textContent = `− ${text}`;
+				}
 				ghost.appendChild(row);
 			}
 			wrap.appendChild(ghost);
@@ -194,6 +262,21 @@ function buildDecorations(
 				// renders ABOVE the first highlighted line.
 				order: 0,
 			});
+		} else if (spec.type === "add-delta") {
+			// Word-delta mark over a changed substring of an add line (a stronger
+			// green than the line's dim background). Offsets are character
+			// positions within the line; clamp against the line end.
+			if (spec.line >= doc.lines) continue;
+			const line = doc.line(spec.line + 1);
+			const from = line.from + spec.from;
+			const to = Math.min(line.to, line.from + spec.to);
+			if (from >= to) continue;
+			decorations.push({
+				from,
+				to,
+				deco: Decoration.mark({ class: ADD_DELTA_CLASS }),
+				order: 0,
+			});
 		} else {
 			const atEof = spec.line >= doc.lines;
 			const line = atEof ? doc.line(doc.lines) : doc.line(spec.line + 1);
@@ -226,6 +309,13 @@ function buildDecorations(
 const diffTheme = EditorView.theme({
 	[`.${ADD_LINE_CLASS}`]: {
 		backgroundColor: "var(--success-dim)",
+	},
+	[`.${ADD_DELTA_CLASS}`]: {
+		backgroundColor: "var(--success-strong)",
+	},
+	[`.${GHOST_DELTA_CLASS}`]: {
+		backgroundColor: "var(--danger-strong)",
+		borderRadius: "2px",
 	},
 	".cm-copilotDiffHunk": {
 		display: "flex",
@@ -302,6 +392,7 @@ export function copilotDiffExtensions(options: CopilotDiffExtensionsOptions): Ex
 				new HunkHeaderWidget(
 					spec.hunkId,
 					spec.removedTexts,
+					spec.removedSegments,
 					options.buttonLabel,
 					options.buttonAriaLabel,
 					options.onAcceptHunk,
@@ -316,6 +407,7 @@ export function copilotDiffExtensions(options: CopilotDiffExtensionsOptions): Ex
 						new HunkHeaderWidget(
 							spec.hunkId,
 							spec.removedTexts,
+							spec.removedSegments,
 							options.buttonLabel,
 							options.buttonAriaLabel,
 							options.onAcceptHunk,
