@@ -157,6 +157,7 @@ export function pickBootstrapChatId<T extends string>(
 			traces: stores.traces,
 			chatApp: this.chatApp,
 			diceRolls: stores.diceRolls,
+			uiSettings: stores.uiSettings,
 			experiences: stores.experiences,
 			assemblePrompt: (chatId, branchId, opts) =>
 				this.assemblePrompt(chatId, branchId, opts),

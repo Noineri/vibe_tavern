@@ -8,7 +8,8 @@ import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
+import { useBootstrapStore, fetchPersonasAction, patchUiSettingsAction } from "../../stores/api-actions/bootstrap-actions.js";
+import { repoWebUrl } from "../../lib/star-prompt.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { ProviderForm } from "../settings/provider/ProviderForm.js";
@@ -33,10 +34,22 @@ type PathBStep = 0 | 1;
 function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
   const { t } = useT();
   const isMobile = useIsMobile();
+  const githubStarred = useBootstrapStore((s) => s.data?.uiSettings.githubStarred ?? false);
 
   const cardBase = "flex flex-col items-center gap-1.5 rounded-[10px] border border-border2 bg-s2 px-4 py-5 text-center text-t1 transition-all hover:border-accent hover:bg-surface cursor-pointer";
 
+  // The star request opens GitHub and records the ask as answered. The write is
+  // fire-and-forget: the user reaches GitHub either way, and a failed write only
+  // means they get asked again later.
+  const onStar = () => {
+    window.open(repoWebUrl(), "_blank", "noopener,noreferrer");
+    void patchUiSettingsAction({ githubStarred: true }).catch((error: unknown) => {
+      console.error("Failed to persist the GitHub star flag", error);
+    });
+  };
+
   return (
+    <>
     <div className={cn("flex flex-col gap-3", isMobile ? "px-4 pb-5" : "px-7 pb-7")}>
       <button type="button" className={cardBase} onClick={() => onSelect("a")}>
         <div className="text-[1.4rem] text-accent"><Icons.Edit /></div>
@@ -52,6 +65,29 @@ function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
         {t("wizard_skip_all")}
       </button>
     </div>
+    {/* Star request. Lives here rather than in the wizard's shared header or
+        panel wrapper because PathSelector renders ONLY for path === "choose" —
+        that placement is the guard that keeps the strip off the provider /
+        persona / character steps. */}
+    {!githubStarred && (
+      <div className={cn(
+        "flex items-center gap-3 border-t border-border2 bg-s2 py-3 text-left",
+        isMobile ? "px-4" : "px-7",
+      )}>
+        <span className="shrink-0 text-accent-t"><Icons.star /></span>
+        <span className="min-w-0 flex-1 font-ui text-[0.78rem] leading-snug text-t1">
+          {t("star_prompt_welcome_line")}
+        </span>
+        <button
+          type="button"
+          className="shrink-0 cursor-pointer rounded-lg border-0 bg-accent px-3 py-1.5 font-ui text-[0.75rem] font-semibold text-on-accent transition-[filter] hover:brightness-110"
+          onClick={onStar}
+        >
+          {t("star_prompt_cta")}
+        </button>
+      </div>
+    )}
+    </>
   );
 }
 

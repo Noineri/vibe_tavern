@@ -417,6 +417,12 @@ export interface UiSettingsRecord {
   /** Optional for compatibility with bootstrap snapshots predating token overrides. */
   coauthorMaxTokens?: number | null;
   coauthorContextBudget?: number | null;
+  /** Star-prompt state. Optional for the same reason as the coauthor token
+   * overrides above — a client can be newer than the server it talks to. */
+  githubStarred?: boolean;
+  userMessageCount?: number;
+  nextStarPromptAt?: number;
+  starPromptDeferrals?: number;
   /** Optional for compatibility with bootstrap snapshots predating the
    *  copilot binding. Null → the copilot shell defaults to the first profile. */
   copilotProviderId?: string | null;

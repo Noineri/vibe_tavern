@@ -17,6 +17,7 @@ export interface ModalState {
   mobileAccessOpen: boolean;
   isProxyManagerOpen: boolean;
   isUpdateModalOpen: boolean;
+  isStarPromptOpen: boolean;
 }
 
 export interface ModalActions {
@@ -37,6 +38,7 @@ export interface ModalActions {
   setMobileAccessOpen: (open: boolean) => void;
   setIsProxyManagerOpen: (open: boolean) => void;
   setUpdateModalOpen: (open: boolean) => void;
+  setStarPromptOpen: (open: boolean) => void;
 }
 
 export type ModalStore = ModalState & ModalActions;
@@ -57,6 +59,7 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   mobileAccessOpen: false,
   isProxyManagerOpen: false,
   isUpdateModalOpen: false,
+  isStarPromptOpen: false,
   setIsProviderModalOpen: (open) => set(open ? { isProviderModalOpen: true, providerModalOrigin: null } : { isProviderModalOpen: false, providerModalOrigin: null }),
   setCoauthorProviderModalOpen: (open) => set({ isCoauthorProviderModalOpen: open }),
   openProviderModalFromCoauthor: () => set({ isCoauthorProviderModalOpen: false, isProviderModalOpen: true, providerModalOrigin: "coauthor" }),
@@ -78,6 +81,7 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),
   setIsProxyManagerOpen: (open) => set({ isProxyManagerOpen: open }),
   setUpdateModalOpen: (open) => set({ isUpdateModalOpen: open }),
+  setStarPromptOpen: (open) => set({ isStarPromptOpen: open }),
 }));
 
 if (typeof window !== "undefined") window.__useModalStore = useModalStore;

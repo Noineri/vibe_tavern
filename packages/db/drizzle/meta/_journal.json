@@ -302,6 +302,13 @@
       "when": 1786778074209,
       "tag": "0042_loving_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1786877161136,
+      "tag": "0043_zippy_mauler",
+      "breakpoints": true
     }
   ]
 }

@@ -24,6 +24,14 @@ export interface UiSettings {
   coauthorMaxTokens: number | null;
   /** Null inherits the bound profile/model's effective context budget. */
   coauthorContextBudget: number | null;
+  /** True once the user starred the repo or opted out — silences both prompts. */
+  githubStarred: boolean;
+  /** Monotonic count of user messages ever sent. Server-owned. */
+  userMessageCount: number;
+  /** Value of userMessageCount at which the star modal becomes due. */
+  nextStarPromptAt: number;
+  /** How many times "Later" was chosen — selects the backoff interval. */
+  starPromptDeferrals: number;
   /** Experience-copilot binding (provider + model). Null/dangling → the shell
    *  falls back to the first available provider profile (the pre-fix default). */
   copilotProviderId: string | null;
@@ -46,6 +54,10 @@ export interface UiSettingsUpdate {
   coauthorModelName?: string | null;
   coauthorMaxTokens?: number | null;
   coauthorContextBudget?: number | null;
+  githubStarred?: boolean;
+  userMessageCount?: number;
+  nextStarPromptAt?: number;
+  starPromptDeferrals?: number;
   copilotProviderId?: string | null;
   copilotModelName?: string | null;
 }
@@ -66,6 +78,10 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   coauthorModelName: null,
   coauthorMaxTokens: null,
   coauthorContextBudget: null,
+  githubStarred: false,
+  userMessageCount: 0,
+  nextStarPromptAt: 10,
+  starPromptDeferrals: 0,
   copilotProviderId: null,
   copilotModelName: null,
 };
@@ -117,6 +133,10 @@ export class UiSettingsStore {
       coauthorModelName: partial.coauthorModelName ?? UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: partial.coauthorMaxTokens ?? UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
       coauthorContextBudget: partial.coauthorContextBudget ?? UI_SETTINGS_DEFAULTS.coauthorContextBudget,
+      githubStarred: partial.githubStarred ?? UI_SETTINGS_DEFAULTS.githubStarred,
+      userMessageCount: partial.userMessageCount ?? UI_SETTINGS_DEFAULTS.userMessageCount,
+      nextStarPromptAt: partial.nextStarPromptAt ?? UI_SETTINGS_DEFAULTS.nextStarPromptAt,
+      starPromptDeferrals: partial.starPromptDeferrals ?? UI_SETTINGS_DEFAULTS.starPromptDeferrals,
       copilotProviderId: partial.copilotProviderId ?? UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
       updatedAt: this.clock.now(),
@@ -144,6 +164,10 @@ export class UiSettingsStore {
       coauthorModelName: UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
       coauthorContextBudget: UI_SETTINGS_DEFAULTS.coauthorContextBudget,
+      githubStarred: UI_SETTINGS_DEFAULTS.githubStarred,
+      userMessageCount: UI_SETTINGS_DEFAULTS.userMessageCount,
+      nextStarPromptAt: UI_SETTINGS_DEFAULTS.nextStarPromptAt,
+      starPromptDeferrals: UI_SETTINGS_DEFAULTS.starPromptDeferrals,
       copilotProviderId: UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
       updatedAt: this.clock.now(),
@@ -169,6 +193,10 @@ export class UiSettingsStore {
       coauthorModelName: row.coauthorModelName ?? null,
       coauthorMaxTokens: row.coauthorMaxTokens ?? null,
       coauthorContextBudget: row.coauthorContextBudget ?? null,
+      githubStarred: row.githubStarred,
+      userMessageCount: row.userMessageCount,
+      nextStarPromptAt: row.nextStarPromptAt,
+      starPromptDeferrals: row.starPromptDeferrals,
       copilotProviderId: row.copilotProviderId ?? null,
       copilotModelName: row.copilotModelName ?? null,
       updatedAt: row.updatedAt,

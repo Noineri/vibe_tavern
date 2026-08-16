@@ -815,11 +815,22 @@ export const uiSettings = sqliteTable('ui_settings', {
   // profile/model effective values so RP configuration remains untouched.
   coauthorMaxTokens: integer('coauthor_max_tokens'),
   coauthorContextBudget: integer('coauthor_context_budget'),
+  // ─── GitHub star prompt ───
+  // One flag silences both the first-run welcome strip and the periodic modal.
+  // userMessageCount is server-owned and monotonic; nextStarPromptAt is the
+  // count at which the modal is due; starPromptDeferrals selects the backoff
+  // interval and is stored rather than derived, because a suppression guard can
+  // let the count run past the due point before the modal ever opens.
+  githubStarred: integer('github_starred', { mode: 'boolean' }).notNull().default(false),
+  userMessageCount: integer('user_message_count').notNull().default(0),
+  nextStarPromptAt: integer('next_star_prompt_at').notNull().default(10),
+  starPromptDeferrals: integer('star_prompt_deferrals').notNull().default(0),
   // Experience-copilot generation binding — app-wide, same semantics as the
   // Co-Author binding above (null/dangling → the shell falls back to the first
   // available profile; no DB-level FK).
   copilotProviderId: text('copilot_provider_id'),
   copilotModelName: text('copilot_model_name'),
+
   updatedAt: text('updated_at').notNull(),
 });
 

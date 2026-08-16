@@ -19,6 +19,12 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.coauthorModelName === "string" || body.coauthorModelName === null ? { coauthorModelName: body.coauthorModelName } : {}),
 		...(isPositiveIntegerOrNull(body.coauthorMaxTokens) ? { coauthorMaxTokens: body.coauthorMaxTokens } : {}),
 		...(isPositiveIntegerOrNull(body.coauthorContextBudget) ? { coauthorContextBudget: body.coauthorContextBudget } : {}),
+		// Star prompt. `userMessageCount` is deliberately absent: it is
+		// server-owned (bumped in ChatRuntime.prepareLiveTurn), and its omission
+		// from this allowlist is the whole enforcement mechanism.
+		...(typeof body.githubStarred === "boolean" ? { githubStarred: body.githubStarred } : {}),
+		...(isNonNegativeInteger(body.nextStarPromptAt) ? { nextStarPromptAt: body.nextStarPromptAt } : {}),
+		...(isNonNegativeInteger(body.starPromptDeferrals) ? { starPromptDeferrals: body.starPromptDeferrals } : {}),
 		...(typeof body.copilotProviderId === "string" || body.copilotProviderId === null ? { copilotProviderId: body.copilotProviderId } : {}),
 		...(typeof body.copilotModelName === "string" || body.copilotModelName === null ? { copilotModelName: body.copilotModelName } : {}),
 	});
@@ -26,5 +32,9 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 
 function isPositiveIntegerOrNull(value: unknown): value is number | null {
 	return value === null || (typeof value === "number" && Number.isInteger(value) && value > 0);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
