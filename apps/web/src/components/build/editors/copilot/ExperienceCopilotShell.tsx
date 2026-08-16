@@ -7,7 +7,6 @@ import { validateVisualSource } from "../../../../lib/visual-source-validator.js
 import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { Modal } from "../../../shared/Modal.js";
-import { InteractiveTester } from "../InteractiveTester.js";
 import { ExperiencePlayground } from "../ExperiencePlayground.js";
 import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
@@ -52,10 +51,11 @@ import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
  * ExperienceCopilotShell (ER-11d / ER-13b′) — the visible 2-pane copilot
  * editor surface: chat-left (propose rules/visual edits → review activity
  * cards → Apply) and editor-right (manually edit the two canonical buffers via
- * CodeEditor). The tester / preview / sandbox surfaces are NO LONGER a bottom
- * panel (ER-13b): they are top-of-editor toolbar buttons that open modals
- * (Tester → InteractiveTester, Preview → ExperienceFrame, Sandbox →
- * ExperiencePlayground). On mobile it collapses to a 2-tab `[Chat][Edit]` bar.
+ * CodeEditor). The preview / sandbox surfaces are NO LONGER a bottom panel
+ * (ER-13b): they are top-of-editor toolbar buttons that open modals (Preview
+ * → ExperienceFrame, Test it → ExperiencePlayground). The rules tester was
+ * ABSORBED into the sandbox's diagnostics (XU-4). On mobile it collapses to a
+ * 2-tab `[Chat][Edit]` bar.
  *
  * CONTROLLED. This component owns NO canonical buffer text — `rulesCode` /
  * `visualSource` are props from the parent (ER-13 wires this into
@@ -147,8 +147,7 @@ export function ExperienceCopilotShell({
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
   const [editorBuffer, setEditorBuffer] = useState<EditorBuffer>("rules");
 
-  // ── Toolbar modal open state (tester / preview / sandbox) ────────────────
-  const [testerOpen, setTesterOpen] = useState(false);
+  // ── Toolbar modal open state (preview / sandbox) ─────────────────────────
   const [previewOpen, setPreviewOpen] = useState(false);
   const [sandboxOpen, setSandboxOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -873,12 +872,6 @@ export function ExperienceCopilotShell({
               />
             )}
             <ToolbarButton
-              label={t("experience_copilot_tester")}
-              icon={<Icons.Terminal />}
-              onClick={() => setTesterOpen(true)}
-              testId="copilot-toolbar-tester"
-            />
-            <ToolbarButton
               label={t("experience_copilot_preview")}
               icon={<Icons.Eye />}
               onClick={() => setPreviewOpen(true)}
@@ -886,7 +879,7 @@ export function ExperienceCopilotShell({
             />
             {!creationMode && (
               <ToolbarButton
-                label={t("experience_copilot_sandbox")}
+                label={t("experience_copilot_test_it")}
                 icon={<Icons.Dice />}
                 onClick={() => setSandboxOpen(true)}
                 testId="copilot-toolbar-sandbox"
@@ -951,25 +944,17 @@ export function ExperienceCopilotShell({
     </div>
   );
 
-  // ── Toolbar modals (tester / preview / sandbox) ──────────────────────────
-  // The tester/preview/sandbox surfaces moved OUT of a bottom panel (ER-13b)
-  // into top-of-editor toolbar buttons that open these modals. The sandbox
-  // modal hosts the shared `playground` element only in non-creation mode; in
-  // creation mode that same element renders INLINE on the `sandbox` toggle
-  // position instead (mutually exclusive — IR-90A single-instance). Exactly one
-  // ExperienceFrame is mounted (the preview modal); the sandbox's own frame is
-  // nested inside ExperiencePlayground, not rendered directly by this shell.
+  // ── Toolbar modals (preview / sandbox) ─────────────────────────────────
+  // The preview/sandbox surfaces moved OUT of a bottom panel (ER-13b) into
+  // top-of-editor toolbar buttons that open these modals; the rules tester was
+  // absorbed into the sandbox's diagnostics (XU-4). The sandbox modal hosts the
+  // shared `playground` element only in non-creation mode; in creation mode
+  // that same element renders INLINE on the `sandbox` toggle position instead
+  // (mutually exclusive — IR-90A single-instance). Exactly one ExperienceFrame
+  // is mounted (the preview modal); the sandbox's own frame is nested inside
+  // ExperiencePlayground, not rendered directly by this shell.
   const modals = (
     <>
-      <ShellModal
-        open={testerOpen}
-        onClose={() => setTesterOpen(false)}
-        title={t("experience_copilot_tester_title")}
-        testId="copilot-tester-modal"
-      >
-        <InteractiveTester code={rulesCode} onSendToCopilot={handleSendToCopilot} />
-      </ShellModal>
-
       <ShellModal
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
@@ -1103,8 +1088,8 @@ interface ShellModalProps {
   children: ReactNode;
 }
 
-/** Shared modal chrome for the three toolbar surfaces (tester / preview /
- *  sandbox). Reuses the app's shared {@link Modal} shell; the panel mirrors the
+/** Shared modal chrome for the toolbar surfaces (preview / sandbox). Reuses
+ *  the app's shared {@link Modal} shell; the panel mirrors the
  *  ExperienceSetupModal header/body pattern (title + close header, scrollable
  *  body). Full-screen on mobile via the shared Modal. */
 function ShellModal({ open, onClose, title, testId, children }: ShellModalProps) {

@@ -41,6 +41,7 @@ import type { RenderResult } from "@testing-library/react";
 import type {
   ExperiencePlaygroundData,
   ExperienceTestRunData,
+  ExperienceTestSimulateData,
   ExperienceVisualRow,
   ScriptRecord,
 } from "../../../api/types.js";
@@ -153,6 +154,7 @@ function makeAdvanceData(overrides: Partial<ExperiencePlaygroundData> = {}): Exp
 
 const startExperiencePlayground = mock((_body: Record<string, unknown>) => Promise.resolve(makeStartData()));
 const advanceExperiencePlayground = mock((_body: Record<string, unknown>) => Promise.resolve(makeAdvanceData()));
+const simulateExperienceTest = mock((_body: Record<string, unknown>) => Promise.resolve(makeSimData()));
 const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const listProviderProfiles = mock(() => Promise.resolve([{ id: "pp_test", name: "Test Provider", providerPreset: "openai", defaultModel: "gpt-test" }]));
@@ -200,11 +202,53 @@ function makeTestRunData(): ExperienceTestRunData {
   } as ExperienceTestRunData;
 }
 
+/** XU-4: a create-only discover result (the absorbed tester's run shape): a
+ *  minimal "Round" definition with score/pass legal actions. */
+function makeDiscoverData(overrides: Partial<ExperienceTestRunData> = {}): ExperienceTestRunData {
+  return {
+    definition: {
+      apiVersion: 1,
+      manifest: { id: "round", name: "Round" },
+      declaredCapabilities: [{ capability: "participants", reason: "scores" }],
+      hasChoose: false,
+      hasFlavor: false,
+    },
+    sourceHash: "hash_1",
+    initialState: { round: 1, scores: [0] },
+    finalState: { round: 1, scores: [0] },
+    revision: 0,
+    status: "active",
+    projection: {
+      state: { round: 1 },
+      actions: [
+        { type: "score", label: "Score" },
+        { type: "pass", label: "Pass turn" },
+      ],
+    },
+    events: [],
+    effects: [],
+    console: [],
+    steps: [],
+    ...overrides,
+  };
+}
+
+/** XU-4: a bounded-simulation result (the absorbed tester's simulate shape). */
+function makeSimData(overrides: Partial<ExperienceTestSimulateData> = {}): ExperienceTestSimulateData {
+  return {
+    ...makeDiscoverData(),
+    stopReason: "awaiting_human",
+    iterations: 2,
+    ...overrides,
+  };
+}
+
 mock.module("../../../api/experience-api.js", () => ({
   ...realExperienceApi,
   startExperiencePlayground,
   advanceExperiencePlayground,
   runExperienceTest,
+  simulateExperienceTest,
   listExperienceVisuals,
 }));
 
@@ -267,12 +311,14 @@ beforeAll(async () => {
 beforeEach(() => {
   startExperiencePlayground.mockClear();
   advanceExperiencePlayground.mockClear();
+  simulateExperienceTest.mockClear();
   listExperienceVisuals.mockClear();
   listAllScripts.mockClear();
   listProviderProfiles.mockClear();
   fetchProviderProfileModels.mockClear();
   runExperienceTest.mockClear();
   runExperienceTest.mockImplementation(async () => Promise.reject(new Error("mock not configured")));
+  simulateExperienceTest.mockImplementation(async () => makeSimData());
   startExperiencePlayground.mockImplementation(async () => makeStartData());
   advanceExperiencePlayground.mockImplementation(async () => makeAdvanceData());
   useScriptDraftStore.getState().resetAll();
@@ -606,11 +652,11 @@ describe("ExperiencePlayground", () => {
     });
 
     // ER-13 moved the playground out of the inline IR-84B seam into the
-    // copilot-shell Sandbox toolbar modal. Open the modal first, then the
-    // playground's start button is reachable inside it. (The boundary pinned
-    // here is unchanged: the playground still drives the CURRENT UNSAVED rules
-    // buffer that the editor owns.)
-    fireEvent.click(getByText("experience_copilot_sandbox"));
+    // copilot-shell toolbar modal (XU-4 renamed it "Test it"). Open the modal
+    // first, then the playground's start button is reachable inside it. (The
+    // boundary pinned here is unchanged: the playground still drives the
+    // CURRENT UNSAVED rules buffer that the editor owns.)
+    fireEvent.click(getByText("experience_copilot_test_it"));
     fireEvent.click(getByText("experience_playground_start"));
 
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
@@ -1166,5 +1212,167 @@ describe("ExperiencePlayground — one-click restart (fix item 9b)", () => {
     const secondCall = startExperiencePlayground.mock.calls[1]![0] as { rulesCode: string };
     expect(secondCall.rulesCode).toBe(firstCall.rulesCode);
     expect(secondCall.rulesCode).toBe(VALID_CODE);
+  });
+});
+
+// ── XU-4: the absorbed tester (discover / simulate / single-action participant) ─
+// The retired InteractiveTester's one-shot capabilities moved into the
+// playground's collapsed diagnostics accordion. The SAME boundary is pinned
+// here: the STATELESS runExperienceTest / simulateExperienceTest endpoints are
+// mocked at the client boundary; the component under test is real.
+
+describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
+  it("discover: the 'Validate rules' button re-runs create-only discovery over the current context and renders definition, projection, and legal actions", async () => {
+    const utils = renderPlayground();
+    const { getByText, findByText } = utils;
+    // Auto-derive fires runExperienceTest once on mount (default reject → safe
+    // default single human seat + empty grants). Settle it first so the
+    // explicit discover is the SECOND call and the grants stay [] (the same
+    // context the retired tester's discover test pinned).
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({
+      rulesCode: VALID_CODE,
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+      actions: [],
+    });
+
+    // The result renders: definition summary + projection + legal actions.
+    expect(await findByText("Round")).toBeTruthy();
+    expect(await findByText("(round)")).toBeTruthy();
+    expect(await findByText("experience_tester_projection")).toBeTruthy();
+    expect(await findByText("score")).toBeTruthy();
+    expect(await findByText("pass")).toBeTruthy();
+  });
+
+  it("discover: renders the per-seat legality matrix when the server supplies seatLegality", async () => {
+    const utils = renderPlayground();
+    const { getByText, findByText } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    runExperienceTest.mockImplementationOnce(async () =>
+      makeDiscoverData({
+        seatLegality: {
+          seats: [
+            { participantId: "you", label: "You", controller: "human", actionTypes: ["score"], count: 1 },
+            { participantId: "bot", label: "Bot", controller: "script", actionTypes: [], count: 0 },
+          ],
+          turnOwners: ["you"],
+        },
+      }),
+    );
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+
+    expect(await findByText("experience_tester_seat_legality")).toBeTruthy();
+    expect(await findByText("You · human")).toBeTruthy();
+    expect(await findByText("Bot · script")).toBeTruthy();
+    expect(await findByText(/experience_tester_turn/)).toBeTruthy();
+  });
+
+  it("discover: a broken rules body renders the typed vm_error with the kernel kind and console behind the tech-details disclosure", async () => {
+    const utils = renderPlayground();
+    const { getByText, findByText, queryByText } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    runExperienceTest.mockRejectedValueOnce(new ExperienceApiError(422, "Unexpected token", "vm_error", {
+      kind: "syntax",
+      console: [{ level: "error", args: ["boom"] }],
+    }));
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+
+    // The shared error block renders the human first line immediately; the
+    // technical fields (code/kind/console) sit behind the closed disclosure.
+    expect(await findByText("Unexpected token")).toBeTruthy();
+    expect(queryByText("vm_error")).toBeNull();
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
+    expect(await findByText("vm_error")).toBeTruthy();
+    expect(await findByText("syntax")).toBeTruthy();
+    expect(await findByText("boom")).toBeTruthy();
+  });
+
+  it("discover: malformed settings JSON shows the detailed diagnostic and never fires the request", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByPlaceholderText, container } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expandDiagnostics(utils);
+
+    // The settings field lives in the (expanded-by-default) launch-setup
+    // accordion; type malformed JSON and run.
+    fireEvent.change(getByPlaceholderText("{}"), { target: { value: "{\n  \"seed\": 1" } });
+    fireEvent.click(getByText("experience_tester_run"));
+
+    await waitFor(() => expect(container.textContent ?? "").toContain("experience_tester_settings_invalid"));
+    expect(container.textContent).toContain("unclosed '{' opened at line 1");
+    // Still exactly the auto-derive call — the discover never fired.
+    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+  });
+
+  it("simulate: auto-play sends the current context and renders the typed stop reason + iterations", async () => {
+    const utils = renderPlayground();
+    const { getByText, findByText } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expandDiagnostics(utils);
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest).toHaveBeenCalledWith({
+      rulesCode: VALID_CODE,
+      settings: {},
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+    });
+    expect(await findByText("awaiting_human")).toBeTruthy();
+    expect(await findByText("2")).toBeTruthy();
+    // Simulate never touches the run endpoint or the live playground.
+    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+  });
+
+  it("apply action: the custom-action form's participant selector sends participantId on advance", async () => {
+    const utils = renderPlayground();
+    const { container, getByText, getByPlaceholderText } = utils;
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expandDiagnostics(utils);
+
+    // Pick the default seat "You" from the NEW participant selector, then apply.
+    await pickDropdown(utils, container, "experience_tester_action_participant_default", "You (experience_playground_role_human)");
+    fireEvent.change(getByPlaceholderText("experience_tester_action_type_placeholder"), { target: { value: "score" } });
+    fireEvent.click(getByText("experience_tester_action_apply"));
+
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(advanceExperiencePlayground).toHaveBeenCalledWith({
+      playgroundSessionId: "pg-session-1",
+      humanAction: { type: "score", requestId: "pg-req-1", expectedRevision: 0, participantId: "you" },
+    });
+  });
+
+  it("sends the discover result digest to the copilot (the retired tester's run digest)", async () => {
+    const onSendToCopilot = mock();
+    const utils = render(<ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />);
+    const { getByText, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(getByTestId("playground-tester-send-to-copilot"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(true);
+    expect(digest.feedback.legalActionTypes).toEqual(["score", "pass"]);
+    expect(typeof digest.text).toBe("string");
+    expect(digest.text.length).toBeGreaterThan(0);
   });
 });

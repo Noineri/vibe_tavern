@@ -201,12 +201,12 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
   ToolbarSelect: FakeToolbarSelect,
 }));
 
-// The InteractiveTester (inside the tester modal) drives runExperienceTest;
-// the ExperiencePlayground (inside the sandbox modal) drives
-// startExperiencePlayground. Both are served by the fetch router above
-// (POST /api/experience/test/run and /api/experience/playground/start), so the
-// ER-14 send-to-copilot flow is observable through the REAL shell → child →
-// callback → controller → client → router wiring — with no module mocks.
+// The ExperiencePlayground (inside the sandbox modal) drives BOTH
+// runExperienceTest (the auto-derive discovery and the absorbed tester's
+// discover) and startExperiencePlayground. Both are served by the fetch router
+// above (POST /api/experience/test/run and /api/experience/playground/start),
+// so the ER-14 send-to-copilot flow is observable through the REAL shell →
+// child → callback → controller → client → router wiring — with no module mocks.
 const TEST_RUN_DATA: Awaited<ReturnType<typeof import("../../../../api/experience-api.js").runExperienceTest>> = {
   definition: {
     apiVersion: 1,
@@ -585,24 +585,22 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
   // Identity i18n (no LocaleProvider mounted): `useT` falls back to the
   // key-as-string default, so the component markers render their i18n keys
   // verbatim — matching the InteractiveTester/ExperienceEditor test pattern.
-  it("renders the three toolbar buttons in the editor pane", async () => {
-    const { getByTestId } = renderShell();
+  it("renders the two toolbar buttons (preview + test it) and no tester button", async () => {
+    const { getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
     expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
     expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
+    // XU-4: the tester merged into the sandbox — no separate tester button.
+    expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
   });
 
-  it("opens the Tester modal containing InteractiveTester", async () => {
-    const { getByTestId, getByText } = renderShell();
+  it("the tester modal is gone (InteractiveTester merged into the sandbox)", async () => {
+    const { queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    fireEvent.click(getByTestId("copilot-toolbar-tester"));
-
-    expect(getByTestId("copilot-tester-modal")).toBeDefined();
-    // InteractiveTester renders its content directly (collapsible removed — ER-13 review fix C).
-    expect(getByTestId("interactive-tester")).toBeDefined();
+    expect(queryByTestId("copilot-tester-modal")).toBeNull();
+    expect(queryByTestId("interactive-tester")).toBeNull();
   });
 
   it("opens the Preview modal containing ExperienceFrame", async () => {
@@ -669,8 +667,7 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     expect(hasHiddenClass(chatPane)).toBe(true);
     expect(hasHiddenClass(editPane)).toBe(false);
 
-    // The three toolbar buttons live in the Edit pane toolbar (same as desktop).
-    expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
+    // The two toolbar buttons live in the Edit pane toolbar (same as desktop).
     expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
     expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
   });
@@ -729,7 +726,8 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     expect(queryByTestId("experience-playground")).toBeTruthy();
     // The CodeEditor is absent on the sandbox position.
     expect(container.querySelector(".cm-editor")).toBeNull();
-    // Toggle only — the tester/preview/sandbox toolbar buttons are hidden.
+    // Toggle only — the preview/sandbox toolbar buttons are hidden (the tester
+    // button is gone entirely, XU-4).
     expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
     expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
@@ -743,7 +741,7 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     expect(queryByTestId("copilot-sandbox-modal")).toBeNull();
   });
 
-  it("rules position: rules toolbar + code editor + tester/preview present, sandbox button hidden", async () => {
+  it("rules position: rules toolbar + code editor + preview present, sandbox/test-it buttons hidden", async () => {
     const { container, getByTestId, queryByTestId } = renderShell({
       creationMode: true,
       rulesToolbar: <div data-testid="rules-toolbar-slot">rules toolbar</div>,
@@ -752,12 +750,14 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
 
     expect(getByTestId("rules-toolbar-slot")).toBeDefined();
     expect(container.querySelector(".cm-editor")).not.toBeNull();
-    expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
+    // XU-4: the tester button is gone; the preview stays; the test-it/sandbox
+    // button is hidden in creation mode (the sandbox is an inline tab).
+    expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
     expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
     expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
   });
 
-  it("visual position: visual toolbar + code editor + tester/preview present, sandbox button hidden", async () => {
+  it("visual position: visual toolbar + code editor + preview present, sandbox/test-it buttons hidden", async () => {
     const { container, getByRole, getByTestId, queryByTestId } = renderShell({
       creationMode: true,
       visualToolbar: <div data-testid="visual-toolbar-slot">visual toolbar</div>,
@@ -768,22 +768,20 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
 
     expect(getByTestId("visual-toolbar-slot")).toBeDefined();
     expect(container.querySelector(".cm-editor")).not.toBeNull();
-    expect(getByTestId("copilot-toolbar-tester")).toBeDefined();
+    expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
     expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
     expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
   });
 
-  it("tester + preview toolbar buttons still open their modals", async () => {
-    const { getByTestId, getByText } = renderShell({ creationMode: true });
+  it("the preview toolbar button still opens its modal in creation mode (no tester modal)", async () => {
+    const { getByTestId, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
-
-    fireEvent.click(getByTestId("copilot-toolbar-tester"));
-    expect(getByTestId("copilot-tester-modal")).toBeDefined();
-    expect(getByTestId("interactive-tester")).toBeDefined();
 
     fireEvent.click(getByTestId("copilot-toolbar-preview"));
     expect(getByTestId("copilot-preview-modal")).toBeDefined();
     expect(getByTestId("experience-frame-stub")).toBeDefined();
+    // XU-4: the tester modal is gone entirely.
+    expect(queryByTestId("copilot-tester-modal")).toBeNull();
   });
 });
 
@@ -869,15 +867,19 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
 });
 
 describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () => {
-  it("tester send: copies the digest into the chat input (no auto-send); the manual send carries testFeedback", async () => {
+  it("tester send (absorbed): the sandbox diagnostics' discover copies the digest into the chat input (no auto-send); the manual send carries testFeedback", async () => {
     const { getByTestId, getByText, findByText, container } = renderShell();
     await flushSessionLoad();
 
-    // Open the tester modal + run a create-only test.
-    fireEvent.click(getByTestId("copilot-toolbar-tester"));
+    // Open the sandbox modal and its collapsed diagnostics disclosure; run the
+    // absorbed discover ("Validate rules").
+    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+    fireEvent.click(getByText("experience_playground_diagnostics"));
     fireEvent.click(getByText("experience_tester_run"));
-    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/run$/)).toHaveLength(1));
-    // Wait for the result to render (the definition block appears after setResult).
+    // The playground's auto-derive also POSTs run once on mount, so the explicit
+    // discover is the SECOND call.
+    await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(2));
+    // Wait for the result to render (the definition block appears after setTesterResult).
     await findByText("experience_tester_definition");
 
     // The send-to-copilot button is present after a successful run.
@@ -889,8 +891,8 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await new Promise((r) => setTimeout(r, 25));
     expect(streamCalls()).toHaveLength(0);
 
-    // Close the tester modal so the chat input textarea is the only one left.
-    fireEvent.click(getByTestId("copilot-toolbar-tester"));
+    // Close the sandbox modal so the chat input textarea is the only one left.
+    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
 
     // The digest text sits in the chat input, prefilled for the user to send.
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;

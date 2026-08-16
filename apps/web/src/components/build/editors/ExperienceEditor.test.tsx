@@ -1135,20 +1135,23 @@ describe("ExperienceEditor", () => {
     expect(await findByText(/syntax error at line 1/)).toBeTruthy();
   });
 
-  it("reveals the InteractiveTester in the shell's tester modal", async () => {
+  it("reveals the unified test surface (sandbox) from the editor toolbar", async () => {
     serverScripts = [{ ...baseScript }];
     const { container, findByText, findByTestId, getByTestId, queryByTestId } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
-    // The InteractiveTester is absent until the tester modal opens.
-    expect(queryByTestId("copilot-tester-modal")).toBeNull();
+    // XU-4: the tester modal is gone — the single "Test it" entry point opens
+    // the sandbox modal, which hosts the merged tester capabilities. Same
+    // boundary as the retired InteractiveTester test: editor → shell toolbar
+    // → test surface.
+    expect(queryByTestId("copilot-sandbox-modal")).toBeNull();
+    expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
 
-    fireEvent.click(getByTestId("copilot-toolbar-tester"));
+    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
 
-    expect(getByTestId("copilot-tester-modal")).toBeDefined();
-    // InteractiveTester renders its content directly (collapsible removed — ER-13 review fix C).
-    expect(await findByTestId("interactive-tester")).toBeTruthy();
+    expect(getByTestId("copilot-sandbox-modal")).toBeDefined();
+    expect(await findByTestId("experience-playground")).toBeTruthy();
   });
 
   // IR-90E: fail-closed validation — stale valid state must never survive

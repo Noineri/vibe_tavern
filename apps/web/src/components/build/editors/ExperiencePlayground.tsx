@@ -63,6 +63,7 @@ import {
   ExperienceApiError,
   advanceExperiencePlayground,
   runExperienceTest,
+  simulateExperienceTest,
   startExperiencePlayground,
 } from "../../../api/experience-api.js";
 import { fetchProviderProfileModels, listProviderProfiles } from "../../../api/provider-api.js";
@@ -71,8 +72,11 @@ import type {
   ExperienceParticipant,
   ExperiencePlaygroundAdvanceRequest,
   ExperiencePlaygroundData,
+  ExperienceSeatLegalityMatrix,
   ExperienceTestConsoleEntry,
   ExperienceTestDefinition,
+  ExperienceTestRunData,
+  ExperienceTestSimulateData,
 } from "../../../api/types.js";
 import {
   ExperienceFrame,
@@ -80,7 +84,9 @@ import {
 } from "../../experience/ExperienceFrame.js";
 import {
   buildPlaygroundDigest,
+  buildRunTestDigest,
   buildRunTestErrorDigest,
+  buildSimulateDigest,
   type CopilotDigest,
 } from "../../../lib/experience-copilot-digest.js";
 import {
@@ -269,6 +275,233 @@ function ConsoleBlock({ entries, label }: { entries: readonly ExperienceTestCons
   );
 }
 
+/** The per-seat legality matrix (EXPERIENCE_TURN_LEGALITY_DIAGNOSTICS_REPORT
+ *  step 3): one compact row per roster seat — its legal action types (or the
+ *  actions() error) — with the current turn owners highlighted. Absorbed from
+ *  the retired InteractiveTester (XU-4); renders only when the run carried a
+ *  roster AND the server supplied the matrix (older builds omit it). */
+function SeatLegalityBlock({ matrix, completed }: { matrix: ExperienceSeatLegalityMatrix; completed: boolean }) {
+  if (matrix.seats.length === 0) return null;
+  const { t } = useT();
+  return (
+    <div className={blockCls} style={{ padding: 10 }}>
+      <div className={blockLabelCls}>{t("experience_tester_seat_legality")}</div>
+      <div className="mt-1 space-y-1">
+        {matrix.seats.map((seat) => {
+          const owner = matrix.turnOwners.includes(seat.participantId);
+          return (
+            <div key={seat.participantId} className="flex flex-wrap items-center gap-2">
+              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px]", owner ? "bg-accent-dim text-accent-t" : "bg-s3 text-t3")}>
+                {seat.label} · {seat.controller}
+              </span>
+              {seat.error !== undefined ? (
+                <span className="font-mono text-[10px] text-danger-text">actions() error: {seat.error}</span>
+              ) : seat.actionTypes.length === 0 ? (
+                <span className="font-ui text-[11px] italic text-t3">{t("experience_tester_no_actions")}</span>
+              ) : (
+                <span className="flex flex-wrap gap-1">
+                  {seat.actionTypes.map((type) => (
+                    <span key={type} className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">{type}</span>
+                  ))}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-1.5 font-ui text-[11px] text-t3">
+        {t("experience_tester_turn")}:{" "}
+        <span className="font-mono text-t2">
+          {matrix.turnOwners.length > 0 ? matrix.turnOwners.join(", ") : completed ? "— (completed)" : "—"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** XU-4: the retired InteractiveTester's create-only discover result, rendered
+ *  verbatim in information content (definition summary, projection, legal
+ *  actions, seat legality, events/effects/steps/console). Reuses this file's
+ *  `JsonBlock`/`ConsoleBlock`. */
+function TestRunResultBlock({ result }: { result: ExperienceTestRunData }) {
+  const { t } = useT();
+  return (
+    <div className="mt-2 space-y-2">
+      <div className={blockCls} style={{ padding: 10 }}>
+        <div className={blockLabelCls}>{t("experience_tester_definition")}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[12px] text-t1">
+          <span className="font-semibold">{result.definition.manifest.name}</span>
+          <span className="font-mono text-[11px] text-t3">({result.definition.manifest.id})</span>
+          <span className="text-[11px] text-t3">· apiVersion {result.definition.apiVersion}</span>
+          {result.definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">choose ✓</span>}
+          {result.definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">flavor ✓</span>}
+          {result.definition.setup !== undefined && (
+            <span className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[10px] text-t2">
+              {t("experience_tester_setup_fields")}: {result.definition.setup.fields.length}
+            </span>
+          )}
+        </div>
+        <div className="mt-1 font-ui text-[11px] text-t3">
+          {result.definition.declaredCapabilities.length > 0
+            ? result.definition.declaredCapabilities.map((c) => c.capability).join(", ")
+            : t("experience_assign_no_capabilities")}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+        <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{result.revision}</span></span>
+        <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{result.status}</span></span>
+      </div>
+
+      <div className={blockCls} style={{ padding: 10 }}>
+        <div className={blockLabelCls}>{t("experience_tester_projection")}</div>
+        <JsonBlock value={result.projection.state} />
+      </div>
+
+      <div className={blockCls} style={{ padding: 10 }}>
+        <div className={blockLabelCls}>{t("experience_tester_final_state")}</div>
+        <JsonBlock value={result.finalState} />
+      </div>
+
+      <div className={blockCls} style={{ padding: 10 }}>
+        <div className={blockLabelCls}>{t("experience_tester_legal_actions")}</div>
+        {result.projection.actions.length === 0 ? (
+          <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_tester_no_actions")}</p>
+        ) : (
+          <div className="mt-1 space-y-1">
+            {result.projection.actions.map((action, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2">
+                <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[10px] text-accent-t">{action.type}</span>
+                {action.label !== undefined && <span className="font-ui text-[11px] text-t2">{action.label}</span>}
+                {action.participantId !== undefined && <span className="font-mono text-[10px] text-t3">@{action.participantId}</span>}
+                {action.allowsText === true && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t3">text</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {result.seatLegality !== undefined && (
+        <SeatLegalityBlock matrix={result.seatLegality} completed={result.status === "completed"} />
+      )}
+
+      {result.events.length > 0 && (
+        <div className={blockCls} style={{ padding: 10 }}>
+          <div className={blockLabelCls}>{t("experience_tester_events")}</div>
+          <div className="mt-1 space-y-1">
+            {result.events.map((event, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
+                <span className="font-mono text-[11px] text-t2">{event.type}</span>
+                {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {result.effects.length > 0 && (
+        <div className={blockCls} style={{ padding: 10 }}>
+          <div className={blockLabelCls}>{t("experience_tester_effects")}</div>
+          <div className="mt-1 space-y-1">
+            {result.effects.map((effect, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
+                <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {result.steps.length > 0 && (
+        <div className={blockCls} style={{ padding: 10 }}>
+          <div className={blockLabelCls}>{t("experience_tester_steps")}</div>
+          <div className="mt-1 space-y-1">
+            {result.steps.map((step, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-t2">
+                <span className="text-t3">{step.requestId}</span>
+                <span className="rounded bg-accent-dim px-1.5 py-0.5 text-[10px] text-accent-t">{step.actionType}</span>
+                <span>→ rev {step.revision} · {step.status}</span>
+                {step.replayed && <span className="rounded bg-warning-dim px-1.5 py-0.5 text-[10px] uppercase text-warning-text">{t("experience_tester_replayed")}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <ConsoleBlock entries={result.console} label={t("script_test_console")} />
+    </div>
+  );
+}
+
+/** XU-4: the retired InteractiveTester's bounded-simulation result. The typed
+ *  stop reason + bounds summary, followed by the accumulated events/effects/
+ *  steps/console (the simulate envelope carries them all). */
+function TestSimulateResultBlock({ result }: { result: ExperienceTestSimulateData }) {
+  const { t } = useT();
+  return (
+    <div className="mt-2 space-y-2">
+      <div className={blockCls} style={{ padding: 10 }}>
+        <div className={blockLabelCls}>{t("experience_tester_simulate")}</div>
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+          <span>{t("experience_tester_sim_stop_reason")}: <span className="font-mono text-t2">{result.stopReason}</span></span>
+          <span>{t("experience_tester_sim_iterations")}: <span className="font-mono text-t2">{result.iterations}</span></span>
+          <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{result.revision}</span></span>
+          <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{result.status}</span></span>
+        </div>
+      </div>
+
+      {result.events.length > 0 && (
+        <div className={blockCls} style={{ padding: 10 }}>
+          <div className={blockLabelCls}>{t("experience_tester_events")}</div>
+          <div className="mt-1 space-y-1">
+            {result.events.map((event, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
+                <span className="font-mono text-[11px] text-t2">{event.type}</span>
+                {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {result.effects.length > 0 && (
+        <div className={blockCls} style={{ padding: 10 }}>
+          <div className={blockLabelCls}>{t("experience_tester_effects")}</div>
+          <div className="mt-1 space-y-1">
+            {result.effects.map((effect, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
+                <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {result.steps.length > 0 && (
+        <div className={blockCls} style={{ padding: 10 }}>
+          <div className={blockLabelCls}>{t("experience_tester_steps")}</div>
+          <div className="mt-1 space-y-1">
+            {result.steps.map((step, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-t2">
+                <span className="text-t3">{step.requestId}</span>
+                <span className="rounded bg-accent-dim px-1.5 py-0.5 text-[10px] text-accent-t">{step.actionType}</span>
+                <span>→ rev {step.revision} · {step.status}</span>
+                {step.replayed && <span className="rounded bg-warning-dim px-1.5 py-0.5 text-[10px] uppercase text-warning-text">{t("experience_tester_replayed")}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <ConsoleBlock entries={result.console} label={t("script_test_console")} />
+    </div>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 interface ExperiencePlaygroundProps {
@@ -344,6 +577,16 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [payloadJson, setPayloadJson] = useState("");
   const [requestId, setRequestId] = useState("pg-req-1");
   const [expectedRevision, setExpectedRevision] = useState("0");
+  // XU-4: the single-action form's optional participant (the retired tester
+  // carried a participant selector; the playground's custom action form gains
+  // it, empty = the projection viewer default).
+  const [actionParticipantId, setActionParticipantId] = useState("");
+  // XU-4: absorbed one-shot tester results (discover / simulate). These run
+  // against the STATELESS tester endpoints and are independent of the live
+  // playground session (they stay available before/without a session).
+  const [testerResult, setTesterResult] = useState<ExperienceTestRunData | null>(null);
+  const [simResult, setSimResult] = useState<ExperienceTestSimulateData | null>(null);
+  const [testerBusy, setTesterBusy] = useState<"run" | "simulate" | null>(null);
 
   // IR-90E: provider/model loading for model seats (mirrors ExperienceSetupModal).
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[] | null>(null);
@@ -638,10 +881,13 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       setExpectedRevision(String(outcome.data.revision));
       setActionType("");
       setPayloadJson("");
+      setActionParticipantId("");
     }
   };
 
-  /** Custom-action form submit (payload validated locally first). */
+  /** Custom-action form submit (payload validated locally first). XU-4: an
+   *  optional participant from the roster joins the existing fields; empty =
+   *  the projection-viewer default. */
   const handleApplyAction = async () => {
     const type = actionType.trim();
     if (type === "") return;
@@ -650,7 +896,64 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       setError({ message: `${t("experience_tester_action_payload_invalid")} — ${payload.diagnostic}`, console: [] });
       return;
     }
-    await submitAction(type, undefined, payload);
+    await submitAction(type, actionParticipantId !== "" ? actionParticipantId : undefined, payload);
+  };
+
+  /** XU-4: on-demand create-only discover over the STATELESS tester (the
+   *  retired InteractiveTester's run path). Reuses the CURRENT roster/grants/
+   *  settings/manual-seed so the diagnostics reflect the same context a start
+   *  would use; the manual seed (not the random-start launch seed) keeps the
+   *  result reproducible, matching the tester. */
+  const handleDiscover = async () => {
+    const settings = parseOptionalJsonDiagnosed(settingsJson);
+    if (!settings.ok) {
+      setError({ message: `${t("experience_tester_settings_invalid")} — ${settings.diagnostic}`, console: [] });
+      return;
+    }
+    setTesterBusy("run");
+    setError(null);
+    try {
+      const data = await runExperienceTest({
+        rulesCode: code,
+        settings: settings.present ? settings.value : {},
+        participants,
+        capabilityGrants: [...grants],
+        ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
+        actions: [],
+      });
+      setTesterResult(data);
+    } catch (runError) {
+      setError(toPlaygroundError(runError));
+    } finally {
+      setTesterBusy(null);
+    }
+  };
+
+  /** XU-4: bounded auto-advance of script seats via the STATELESS tester (the
+   *  retired InteractiveTester's simulate path), reporting the typed stop
+   *  reason. Same context as {@link handleDiscover}. */
+  const handleSimulate = async () => {
+    const settings = parseOptionalJsonDiagnosed(settingsJson);
+    if (!settings.ok) {
+      setError({ message: `${t("experience_tester_settings_invalid")} — ${settings.diagnostic}`, console: [] });
+      return;
+    }
+    setTesterBusy("simulate");
+    setError(null);
+    try {
+      const data = await simulateExperienceTest({
+        rulesCode: code,
+        settings: settings.present ? settings.value : {},
+        participants,
+        capabilityGrants: [...grants],
+        ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
+      });
+      setSimResult(data);
+    } catch (simError) {
+      setError(toPlaygroundError(simError));
+    } finally {
+      setTesterBusy(null);
+    }
   };
 
   /** Stable frame-action handler (IR-73B seam): the visual's intention carries
@@ -743,6 +1046,18 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       ? buildPlaygroundDigest({ session, definition, error })
       : buildRunTestErrorDigest(error);
     onSendToCopilot(digest);
+  };
+
+  /** XU-4: feed the absorbed tester's discover/simulate digest to the copilot
+   *  (the retired tester's ER-14 precedence: discover result → simulate
+   *  result). Only wired when the shell provides the callback. */
+  const handleSendTesterToCopilot = () => {
+    if (onSendToCopilot === undefined) return;
+    if (testerResult !== null) {
+      onSendToCopilot(buildRunTestDigest(testerResult));
+    } else if (simResult !== null) {
+      onSendToCopilot(buildSimulateDigest(simResult));
+    }
   };
 
   return (
@@ -1098,12 +1413,14 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   </>
                 )}
               </div>
+            </div>
+          )}
 
-              {/* Developer diagnostics — collapsed by default. Raw state,
-                  revision, request id, expected revision, payload JSON,
-                  events, effects, and console remain reachable after explicit
-                  disclosure. */}
-              <div className={blockCls} style={{ padding: 10 }}>
+          {/* Developer diagnostics — collapsed by default. Raw state, revision,
+              request id, expected revision, payload JSON, events, effects, and
+              console remain reachable after explicit disclosure. XU-4: also the
+              absorbed tester (validate rules / auto-play / single action). */}
+          <div className={blockCls} style={{ padding: 10 }}>
                 <button
                   type="button"
                   className="flex w-full cursor-pointer items-center gap-1.5 text-left"
@@ -1117,6 +1434,53 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 </button>
                 {diagnosticsOpen && (
                   <div className="mt-2 space-y-2">
+                    {/* XU-4: absorbed tester — validate rules (create-only
+                        discover) and auto-play script seats (bounded simulate).
+                        Both run against the STATELESS tester and stay available
+                        before/without a live session. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        data-testid="playground-discover"
+                        className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+                        disabled={testerBusy !== null || busy !== null || code.trim() === ""}
+                        onClick={() => void handleDiscover()}
+                      >
+                        {t("experience_tester_run")}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="playground-simulate"
+                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                        disabled={testerBusy !== null || busy !== null || code.trim() === ""}
+                        onClick={() => void handleSimulate()}
+                      >
+                        {t("experience_tester_simulate")}
+                      </button>
+                      {testerBusy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
+                    </div>
+
+                    {testerResult !== null && <TestRunResultBlock result={testerResult} />}
+                    {simResult !== null && <TestSimulateResultBlock result={simResult} />}
+
+                    {/* ER-14 (absorbed): send the latest tester digest (discover
+                        result → simulate result) to the copilot. */}
+                    {onSendToCopilot !== undefined && (testerResult !== null || simResult !== null) && (
+                      <button
+                        type="button"
+                        data-testid="playground-tester-send-to-copilot"
+                        className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                        disabled={testerBusy !== null}
+                        onClick={handleSendTesterToCopilot}
+                      >
+                        {t("experience_tester_send_to_copilot")}
+                      </button>
+                    )}
+
+                    {/* Live-session diagnostics (send + definition + info +
+                        custom action + raw state) — only while a session is live. */}
+                    {session !== null && (
+                      <>
                     {/* ER-14: send the live session diagnostics to the copilot
                         thread. Shown only when the shell wires the callback AND
                         a session is live. Lives INSIDE the Developer-diagnostics
@@ -1158,7 +1522,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                       <span>{t("experience_tester_sim_stop_reason")}: <span className="font-mono text-t2">{session.stopReason}</span></span>
                     </div>
 
-                    {/* Custom action form (type/payload/requestId/expectedRevision) */}
+                    {/* Custom action form (type/participant/payload/requestId/expectedRevision) */}
                     <div className="flex flex-wrap items-center gap-2">
                       <input
                         className={cn(inputCls, "w-40")}
@@ -1166,6 +1530,16 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                         placeholder={t("experience_tester_action_type_placeholder")}
                         onChange={(e) => setActionType(e.target.value)}
                       />
+                      <div className="w-44 shrink-0">
+                        <DropdownSelect
+                          value={actionParticipantId}
+                          options={participants.map((p) => ({ id: p.id, label: `${p.label} (${t(CONTROLLER_LABEL_KEY[p.controller])})` }))}
+                          searchable={false}
+                          placeholder={t("experience_tester_action_participant_default")}
+                          defaultOption={t("experience_tester_action_participant_default")}
+                          onChange={setActionParticipantId}
+                        />
+                      </div>
                       <input
                         className={cn(inputCls, "w-32")}
                         value={requestId}
@@ -1239,11 +1613,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                     )}
 
                     <ConsoleBlock entries={session.console} label={t("script_test_console")} />
+                      </>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
-          )}
         </div>
     </div>
   );

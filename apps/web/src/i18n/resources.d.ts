@@ -718,6 +718,7 @@ export default interface Resources {
     "experience_copilot_rules": "Rules",
     "experience_copilot_sandbox": "Sandbox",
     "experience_copilot_sandbox_title": "Playground",
+    "experience_copilot_test_it": "Test it",
     "experience_copilot_send": "Send",
     "experience_copilot_session": "Session",
     "experience_copilot_subtitle": "Ask the AI assistant to propose rules or visual edits.",
