@@ -182,7 +182,13 @@ describe("ExperienceCopilotInputArea", () => {
     const { queryByTestId, getByTestId, props } = renderInput({ isSending: true });
 
     expect(queryByTestId("copilot-send-btn")).toBeNull();
-    fireEvent.click(getByTestId("copilot-cancel-btn"));
+    const cancelBtn = getByTestId("copilot-cancel-btn");
+    // UX 2026-08-16 remark 2: the cancel button takes the compact icon-square
+    // pattern from the mobile input area / the send button — h-8 w-8, icon-only,
+    // label only via aria-label + tooltip (NOT a text button).
+    expect(cancelBtn.className).toContain("h-8 w-8");
+    expect(cancelBtn.textContent).toBe("");
+    fireEvent.click(cancelBtn);
     expect(props.onCancel).toHaveBeenCalledTimes(1);
   });
 

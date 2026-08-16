@@ -162,14 +162,17 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
 
           <div className="ml-auto flex items-center gap-[9px]">
             {isSending ? (
-              <button
-                type="button"
-                data-testid="copilot-cancel-btn"
-                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim"
-                onClick={onCancel}
-              >
-                {t("experience_copilot_cancel")}
-              </button>
+              <CustomTooltip content={t("experience_copilot_cancel")}>
+                <button
+                  type="button"
+                  data-testid="copilot-cancel-btn"
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[5px] border border-danger text-danger-text transition-colors duration-150 hover:bg-danger-dim"
+                  onClick={onCancel}
+                  aria-label={t("experience_copilot_cancel")}
+                >
+                  <Icons.close />
+                </button>
+              </CustomTooltip>
             ) : (
               <CustomTooltip content={t("experience_copilot_send")}>
                 <button
