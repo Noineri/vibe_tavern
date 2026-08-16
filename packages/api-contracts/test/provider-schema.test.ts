@@ -23,9 +23,9 @@ import { COAUTHOR_TRANSPORT, SAMPLER_FIELDS, type SamplerFieldId } from "@vibe-t
  * either side of the frontend↔backend contract.
  *
  * See `character-schema.test.ts` for the shared pattern: `safeParse`
- * everywhere, an `expectReject` helper typed over `SafeParseReturnType<unknown,
- * unknown>`, inline factories, and explicit nullable().optional() three-state
- * cells.
+ * everywhere, an `expectReject` helper typed over
+ * `ZodSafeParseResult<unknown>`, inline factories, and explicit
+ * nullable().optional() three-state cells.
  */
 
 // --- helpers ----------------------------------------------------------------
@@ -34,7 +34,7 @@ import { COAUTHOR_TRANSPORT, SAMPLER_FIELDS, type SamplerFieldId } from "@vibe-t
  * Asserts a `safeParse` result is a rejection and (defensively) that it carries
  * at least one issue. Generic over the parsed type so it works for any schema.
  */
-function expectReject(result: z.SafeParseReturnType<unknown, unknown>) {
+function expectReject(result: z.ZodSafeParseResult<unknown>) {
   expect(result.success).toBe(false);
   if (!result.success) {
     expect(result.error.issues.length).toBeGreaterThan(0);

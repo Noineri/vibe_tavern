@@ -38,7 +38,7 @@ function validCreateScript(): { name: string; scopeType: string } {
  * carries at least one issue. Generic over the parsed type so it works for
  * any schema, including the discriminatedUnion.
  */
-function expectReject(result: z.SafeParseReturnType<unknown, unknown>) {
+function expectReject(result: z.ZodSafeParseResult<unknown>) {
   expect(result.success).toBe(false);
   if (!result.success) {
     expect(result.error.issues.length).toBeGreaterThan(0);
@@ -46,7 +46,7 @@ function expectReject(result: z.SafeParseReturnType<unknown, unknown>) {
 }
 
 /** Narrows a successful parse to its `.data` (throws clearly if it failed). */
-function expectData(result: z.SafeParseReturnType<unknown, unknown>): unknown {
+function expectData(result: z.ZodSafeParseResult<unknown>): unknown {
   expect(result.success).toBe(true);
   if (!result.success) throw new Error("expected success but parse failed");
   return result.data;
