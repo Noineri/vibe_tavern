@@ -595,13 +595,19 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
   // Identity i18n (no LocaleProvider mounted): `useT` falls back to the
   // key-as-string default, so the component markers render their i18n keys
   // verbatim — matching the InteractiveTester/ExperienceEditor test pattern.
-  it("renders the single 'Test it' sandbox button (no preview button, no tester button)", async () => {
-    const { getByTestId, queryByTestId } = renderShell();
+  it("renders the unified [Preview|Code|Try] outer toggle (no toolbar buttons, no tester)", async () => {
+    const { getByRole, queryByTestId } = renderShell();
     await flushSessionLoad();
 
+    // XU-6 (quote 10): the 3-position toggle is ALWAYS present — the old
+    // "Test it" sandbox button is gone (the Try tab replaces it).
+    expect(getByRole("radio", { name: "experience_copilot_preview" })).toBeDefined();
+    expect(getByRole("radio", { name: "experience_copilot_code" })).toBeDefined();
+    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
     // XU-5: the preview button is gone — preview is the default editor tab.
     expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
-    expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
+    // XU-6: the sandbox "Test it" button is gone (the Try tab replaces it).
+    expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
     // XU-4: the tester merged into the sandbox — no separate tester button.
     expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
   });
@@ -639,14 +645,15 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
     expect(queryByTestId("experience-frame-stub")).toBeNull();
   });
 
-  it("opens the Sandbox modal containing ExperiencePlayground", async () => {
-    const { getByTestId } = renderShell();
+  it("the Try tab renders the playground inline (no sandbox modal)", async () => {
+    const { getByRole, getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
 
-    expect(getByTestId("copilot-sandbox-modal")).toBeDefined();
-    // The shared playground element mounts inside the modal.
+    // XU-6: the shared playground element mounts INLINE on the Try tab — the
+    // sandbox modal is gone entirely.
+    expect(queryByTestId("copilot-sandbox-modal")).toBeNull();
     expect(getByTestId("experience-playground")).toBeDefined();
   });
 });
@@ -693,8 +700,9 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     expect(hasHiddenClass(chatPane)).toBe(true);
     expect(hasHiddenClass(editPane)).toBe(false);
 
-    // The sandbox "Test it" button lives in the Edit pane's outer toolbar.
-    expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
+    // The unified outer toggle lives in the Edit pane: the Try tab is present
+    // (XU-6 — the old sandbox "Test it" button is gone).
+    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
   });
 });
 
@@ -751,14 +759,14 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     expect(queryByTestId("experience-playground")).toBeTruthy();
     // The CodeEditor is absent on the try position.
     expect(container.querySelector(".cm-editor")).toBeNull();
-    // Toggle only — the sandbox toolbar button is hidden (the inline position
-    // replaces it), and the preview button is gone entirely (XU-5).
+    // Toggle only — the sandbox toolbar button is gone (XU-6), and the preview
+    // button is gone entirely (XU-5).
     expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
     expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
   });
 
-  it("does not render the sandbox modal in creation mode", async () => {
+  it("does not render the sandbox modal (gone in all modes, XU-6)", async () => {
     const { getByRole, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
@@ -776,8 +784,8 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     // Empty visual → default is Code (inner rules sub-toggle).
     expect(getByTestId("rules-toolbar-slot")).toBeDefined();
     expect(container.querySelector(".cm-editor")).not.toBeNull();
-    // The preview button is gone (XU-5); the sandbox/test-it button is hidden
-    // in creation mode (the sandbox is an inline position).
+    // The preview button is gone (XU-5); the sandbox/test-it button is gone
+    // (XU-6 — the sandbox is now the inline Try tab in every mode).
     expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
     expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
@@ -895,12 +903,12 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
 
 describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () => {
   it("tester send (absorbed): the sandbox diagnostics' discover copies the digest into the chat input (no auto-send); the manual send carries testFeedback", async () => {
-    const { getByTestId, getByText, findByText, container } = renderShell();
+    const { getByTestId, getByText, getByRole, findByText, container } = renderShell();
     await flushSessionLoad();
 
-    // Open the sandbox modal and its collapsed diagnostics disclosure; run the
-    // absorbed discover ("Validate rules").
-    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+    // Switch to the Try tab (inline playground) and open its collapsed
+    // diagnostics disclosure; run the absorbed discover ("Validate rules").
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
     fireEvent.click(getByText("experience_playground_diagnostics"));
     fireEvent.click(getByText("experience_tester_run"));
     // The playground's auto-derive also POSTs run once on mount, so the explicit
@@ -918,8 +926,9 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await new Promise((r) => setTimeout(r, 25));
     expect(streamCalls()).toHaveLength(0);
 
-    // Close the sandbox modal so the chat input textarea is the only one left.
-    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+    // Switch back to the Code tab so the inline playground unmounts (only the
+    // chat input textarea remains in the container).
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
 
     // The digest text sits in the chat input, prefilled for the user to send.
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
@@ -935,12 +944,12 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     expect((body.content as string).length).toBeGreaterThan(0);
   });
 
-  it("playground send: the sandbox-modal playground copies a diagnostics digest into the input; manual send carries it", async () => {
-    const { getByTestId, getByText, findByText, container } = renderShell();
+  it("playground send: the inline-Try playground copies a diagnostics digest into the input; manual send carries it", async () => {
+    const { getByTestId, getByText, getByRole, findByText, container } = renderShell();
     await flushSessionLoad();
 
-    // Open the sandbox modal + start a session.
-    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+    // Switch to the Try tab (inline playground) + start a session.
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/playground\/start$/)).toHaveLength(1));
     // Wait for the session to render (the turn title appears after setSession).
@@ -955,8 +964,9 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await new Promise((r) => setTimeout(r, 25));
     expect(streamCalls()).toHaveLength(0);
 
-    // Close the sandbox modal, then send the prefilled digest manually.
-    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+    // Switch back to the Code tab so the inline playground unmounts, then send
+    // the prefilled digest manually.
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
     expect(textarea.value.length).toBeGreaterThan(0);
     fireEvent.click(getByTestId("copilot-send-btn"));
