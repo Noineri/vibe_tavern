@@ -382,6 +382,52 @@ describe("validateSubmittedAction", () => {
 		if (result.ok) return;
 		expect(result.kind).toBe("illegal_action");
 	});
+
+	// Rich illegal_action diagnostics (EXPERIENCE_TURN_LEGALITY_DIAGNOSTICS_REPORT
+	// step 2): the message must carry the CURRENT legal set so a seat/turn desync
+	// is self-explaining on every surface that shows it.
+	test("illegal-action message lists the current legal set with seat owners", () => {
+		const result = validateSubmittedAction({ type: "cheat", requestId: "r", expectedRevision: 0 }, legal);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		if (result.kind !== "illegal_action") return;
+		expect(result.message).toBe(
+			'action "cheat" is not legal (legal now: increment for participant "p1", reset)',
+		);
+	});
+
+	test("illegal-action message names the rejected seat before the legal set", () => {
+		const result = validateSubmittedAction({ type: "increment", requestId: "r", expectedRevision: 0, participantId: "p2" }, legal);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		if (result.kind !== "illegal_action") return;
+		expect(result.message).toBe(
+			'action "increment" is not legal for participant "p2" (legal now: increment for participant "p1", reset)',
+		);
+	});
+
+	test("illegal-action message states an empty legal set explicitly (seat-mapping hint)", () => {
+		const result = validateSubmittedAction({ type: "throw", requestId: "r", expectedRevision: 0, participantId: "you" }, []);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		if (result.kind !== "illegal_action") return;
+		expect(result.message).toBe(
+			'action "throw" is not legal for participant "you" (legal now: none — check seat mapping / turn ownership)',
+		);
+	});
+
+	test("illegal-action message dedupes repeated types and caps at 10 + overflow", () => {
+		const many: ExperienceActionDescriptor[] = [];
+		for (let i = 0; i < 12; i++) many.push({ type: `move_${i}` });
+		many.push({ type: "move_0" }); // duplicate type — deduped, not counted twice
+		const result = validateSubmittedAction({ type: "cheat", requestId: "r", expectedRevision: 0 }, many);
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		if (result.kind !== "illegal_action") return;
+		expect(result.message).toBe(
+			'action "cheat" is not legal (legal now: move_0, move_1, move_2, move_3, move_4, move_5, move_6, move_7, move_8, move_9 …+2 more)',
+		);
+	});
 });
 
 // ─── payloadSchema enforcement (fix step 1a) ────────────────────────────────

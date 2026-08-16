@@ -2019,6 +2019,8 @@
   "experience_tester_final_state": "Authoritative state",
   "experience_tester_legal_actions": "Legal actions",
   "experience_tester_no_actions": "No legal actions for this viewer.",
+  "experience_tester_seat_legality": "Seat legality",
+  "experience_tester_turn": "Turn",
   "experience_tester_events": "Events",
   "experience_tester_effects": "Effects (reported, never executed)",
   "experience_tester_steps": "Steps",

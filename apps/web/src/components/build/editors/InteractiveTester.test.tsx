@@ -261,6 +261,28 @@ describe("InteractiveTester", () => {
     expect(runExperienceTest.mock.calls[0]?.[0]).toMatchObject({ actions: [] });
   });
 
+  it("renders the per-seat legality matrix when the server supplies seatLegality", async () => {
+    runExperienceTest.mockImplementation(async () =>
+      makeRunData({
+        seatLegality: {
+          seats: [
+            { participantId: "you", label: "You", controller: "human", actionTypes: ["score"], count: 1 },
+            { participantId: "bot", label: "Bot", controller: "script", actionTypes: [], count: 0 },
+          ],
+          turnOwners: ["you"],
+        },
+      }),
+    );
+    const { getByText, findByText } = renderTester();
+    fireEvent.click(getByText("experience_tester_run"));
+
+    expect(await findByText("experience_tester_seat_legality")).toBeTruthy();
+    expect(await findByText("You · human")).toBeTruthy();
+    expect(await findByText("Bot · script")).toBeTruthy();
+    // The turn line is one text node split by a nested span, so match by regex.
+    expect(await findByText(/experience_tester_turn/)).toBeTruthy();
+  });
+
   it("discover-only: a broken rules body renders the typed vm_error with the kernel kind and the captured console", async () => {
     runExperienceTest.mockRejectedValueOnce(new ExperienceApiError(422, "Unexpected token", "vm_error", {
       kind: "syntax",

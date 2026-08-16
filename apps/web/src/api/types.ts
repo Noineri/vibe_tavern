@@ -42,6 +42,8 @@ import type {
 	ExperienceActionDto,
 	ExperienceDefinitionDto,
 	ExperienceFinishRequestDto,
+	ExperienceSeatLegality,
+	ExperienceSeatLegalityMatrix,
 	ExperienceSessionResponseDto,
 } from "@vibe-tavern/api-contracts";
 // Type-only schema imports: the interactive-runtime request DTOs that the
@@ -72,6 +74,8 @@ export type {
 	ProxyRecord,
 	PersonaRecord,
 	ChatListItem,
+	ExperienceSeatLegality,
+	ExperienceSeatLegalityMatrix,
 };
 
 // ─── Chat ─────────────────────────────────────────────────────────────
@@ -875,6 +879,11 @@ export interface ExperienceTestStepTrace {
   console: ExperienceTestConsoleEntry[];
 }
 
+/** `ExperienceSeatLegality` / `ExperienceSeatLegalityMatrix` (the per-seat
+ *  legality matrix) are re-exported above from the shared wire contract
+ *  `@vibe-tavern/api-contracts` — the frontend renders exactly the shape the
+ *  backend produces, so drift is a compile error. */
+
 /** POST /experience/test/run success body. Mirrors `ExperienceTestRunData` in
  *  services/api `domain/interactive/experience-tester.ts` (backend-only). */
 export interface ExperienceTestRunData {
@@ -889,6 +898,10 @@ export interface ExperienceTestRunData {
   effects: ExperienceEffectRequest[];
   console: ExperienceTestConsoleEntry[];
   steps: ExperienceTestStepTrace[];
+  /** Per-seat legality matrix at the final state (one entry per roster
+   *  participant). OPTIONAL on the wire so older server builds (without the
+   *  matrix) stay consumable; consumers must tolerate its absence. */
+  seatLegality?: ExperienceSeatLegalityMatrix;
 }
 
 /** Why a bounded simulation stopped. Mirrors `ExperienceTestStopReason` in

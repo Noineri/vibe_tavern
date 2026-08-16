@@ -108,6 +108,22 @@ describe("buildRunTestDigest", () => {
     });
   });
 
+  it("includes the per-seat legality matrix in feedback and text when supplied", () => {
+    const matrix = {
+      seats: [
+        { participantId: "you", label: "You", controller: "human" as const, actionTypes: ["score", "pass"], count: 2 },
+        { participantId: "ai", label: "AI", controller: "script" as const, actionTypes: [], count: 0 },
+      ],
+      turnOwners: ["you"],
+    };
+    const { text, feedback } = buildRunTestDigest(makeRunData({ seatLegality: matrix }));
+
+    expect(feedback.seatLegality).toEqual(matrix);
+    expect(text).toContain("Turn: you");
+    expect(text).toContain('Seat "You" (id "you", human): score, pass');
+    expect(text).toContain('Seat "AI" (id "ai", script): none');
+  });
+
   it("maps legalActionTypes from projection.actions[].type and caps stateSummary", () => {
     const big = { round: 1, blob: "x".repeat(2000) };
     const { feedback } = buildRunTestDigest(

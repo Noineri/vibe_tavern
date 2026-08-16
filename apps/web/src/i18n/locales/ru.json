@@ -2037,6 +2037,8 @@
   "experience_tester_final_state": "Авторитетное состояние",
   "experience_tester_legal_actions": "Доступные действия",
   "experience_tester_no_actions": "Для этого зрителя нет доступных действий.",
+  "experience_tester_seat_legality": "Действия по местам",
+  "experience_tester_turn": "Ход",
   "experience_tester_events": "События",
   "experience_tester_effects": "Эффекты (показаны, не выполнены)",
   "experience_tester_steps": "Шаги",

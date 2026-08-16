@@ -55,6 +55,7 @@ import {
 import type {
   ExperienceActionRequest,
   ExperienceParticipant,
+  ExperienceSeatLegalityMatrix,
   ExperienceTestConsoleEntry,
   ExperienceTestRunData,
   ExperienceTestSimulateData,
@@ -186,6 +187,50 @@ function ConsoleBlock({ entries, label }: { entries: readonly ExperienceTestCons
             <pre className="flex-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{entry.args.join(" ")}</pre>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** The per-seat legality matrix (EXPERIENCE_TURN_LEGALITY_DIAGNOSTICS_REPORT
+ *  step 3): one compact row per roster seat — its legal action types (or the
+ *  actions() error) — with the current turn owners highlighted. Renders only
+ *  when the run carried a roster AND the server supplied the matrix (older
+ *  builds omit it). */
+function SeatLegalityBlock({ matrix, completed }: { matrix: ExperienceSeatLegalityMatrix; completed: boolean }) {
+  if (matrix.seats.length === 0) return null;
+  const { t } = useT();
+  return (
+    <div className={blockCls} style={{ padding: 10 }}>
+      <div className={blockLabelCls}>{t("experience_tester_seat_legality")}</div>
+      <div className="mt-1 space-y-1">
+        {matrix.seats.map((seat) => {
+          const owner = matrix.turnOwners.includes(seat.participantId);
+          return (
+            <div key={seat.participantId} className="flex flex-wrap items-center gap-2">
+              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px]", owner ? "bg-accent-dim text-accent-t" : "bg-s3 text-t3")}>
+                {seat.label} · {seat.controller}
+              </span>
+              {seat.error !== undefined ? (
+                <span className="font-mono text-[10px] text-danger-text">actions() error: {seat.error}</span>
+              ) : seat.actionTypes.length === 0 ? (
+                <span className="font-ui text-[11px] italic text-t3">{t("experience_tester_no_actions")}</span>
+              ) : (
+                <span className="flex flex-wrap gap-1">
+                  {seat.actionTypes.map((type) => (
+                    <span key={type} className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">{type}</span>
+                  ))}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-1.5 font-ui text-[11px] text-t3">
+        {t("experience_tester_turn")}:{" "}
+        <span className="font-mono text-t2">
+          {matrix.turnOwners.length > 0 ? matrix.turnOwners.join(", ") : completed ? "— (completed)" : "—"}
+        </span>
       </div>
     </div>
   );
@@ -617,6 +662,10 @@ export function InteractiveTester({ code, onSendToCopilot }: InteractiveTesterPr
                   </div>
                 )}
               </div>
+
+              {result.seatLegality !== undefined && (
+                <SeatLegalityBlock matrix={result.seatLegality} completed={result.status === "completed"} />
+              )}
 
               {result.events.length > 0 && (
                 <div className={blockCls} style={{ padding: 10 }}>

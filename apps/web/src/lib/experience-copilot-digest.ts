@@ -111,8 +111,31 @@ const ATTACHED_NOTE =
 
 /** A create-only test digest from a successful run. The feedback is the ok-path
  *  `ExperienceCopilotRunTestDigest` (`status`, `revision`, `legalActionTypes`,
- *  capped `stateSummary`, `consoleTail`). */
+ *  capped `stateSummary`, `consoleTail`) — plus `seatLegality` when the run
+ *  carried a roster (per-seat matrix + turn owners). */
 export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest {
+  const matrix = result.seatLegality;
+  const seatLines =
+    matrix !== undefined && matrix.seats.length > 0
+      ? [
+          `Turn: ${
+            matrix.turnOwners.length > 0
+              ? matrix.turnOwners.join(", ")
+              : result.status === "completed"
+                ? "— (completed)"
+                : "—"
+          }`,
+          ...matrix.seats.map((seat) => {
+            const list =
+              seat.error !== undefined
+                ? `actions() error: ${seat.error}`
+                : seat.actionTypes.length > 0
+                  ? seat.actionTypes.join(", ")
+                  : "none";
+            return `Seat "${seat.label}" (id "${seat.participantId}", ${seat.controller}): ${list}`;
+          }),
+        ]
+      : [];
   const feedback: Record<string, unknown> = {
     ok: true,
     status: result.status,
@@ -120,6 +143,7 @@ export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest
     legalActionTypes: result.projection.actions.map((a) => a.type),
     stateSummary: summarizeState(result.projection.state),
     consoleTail: consoleTail(result.console),
+    ...(matrix !== undefined ? { seatLegality: matrix } : {}),
   };
   const legalTypes = result.projection.actions.map((a) => a.type);
   const lines = [
@@ -128,6 +152,7 @@ export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest
     `Status: ${result.status}`,
     `Revision: ${result.revision}`,
     `Legal action types: ${legalTypes.length > 0 ? legalTypes.join(", ") : "(none)"}`,
+    ...seatLines,
     ATTACHED_NOTE,
   ];
   return { text: lines.join("\n"), feedback };
