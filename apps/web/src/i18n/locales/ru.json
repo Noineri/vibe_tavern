@@ -2078,6 +2078,7 @@
   "experience_playground_participant_id_edit": "Изменить ID",
   "experience_playground_random_start": "Случайное начало",
   "experience_playground_seed_label": "Зерно",
+  "experience_playground_seed_random_on": "Случайное при каждом запуске",
   "experience_playground_setup_title": "Участники и параметры запуска",
   "experience_playground_setup_summary_random_on": "случайное начало: вкл",
   "experience_playground_setup_summary_random_off": "случайное начало: выкл",

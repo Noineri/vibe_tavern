@@ -804,6 +804,7 @@ export default interface Resources {
     "experience_playground_role_model": "AI character",
     "experience_playground_role_script": "Automaton (by rules)",
     "experience_playground_seed_label": "Seed",
+    "experience_playground_seed_random_on": "Random on every launch",
     "experience_playground_send_diagnostics": "Send diagnostics to assistant",
     "experience_playground_session_label": "Session",
     "experience_playground_setup_summary_random_off": "random start: off",

@@ -707,7 +707,10 @@ describe("ExperiencePlayground", () => {
     });
 
     // The seed input is rendered and stays in the layout (never clipped out).
-    const seedInput = container.querySelector('input[placeholder="experience_tester_seed_placeholder"]') as HTMLInputElement | null;
+    // Random start defaults ON in this fixture, so the placeholder is the
+    // "random on every launch" key (the OFF placeholder only shows after the
+    // toggle is switched).
+    const seedInput = container.querySelector('input[placeholder="experience_playground_seed_random_on"]') as HTMLInputElement | null;
     expect(seedInput).not.toBeNull();
     expect(seedInput!.offsetParent === null ? true : seedInput!.parentElement?.contains(seedInput)).toBe(true);
 

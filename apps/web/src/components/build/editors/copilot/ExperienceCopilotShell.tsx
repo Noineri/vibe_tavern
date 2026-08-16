@@ -986,7 +986,7 @@ export function ExperienceCopilotShell({
         <ShellModal
           open={sandboxOpen}
           onClose={() => setSandboxOpen(false)}
-          title={t("experience_copilot_sandbox_title")}
+          title={t("experience_copilot_test_it")}
           testId="copilot-sandbox-modal"
         >
           {playground}

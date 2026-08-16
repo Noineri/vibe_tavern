@@ -1061,11 +1061,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   };
 
   return (
-    <div data-testid="experience-playground" className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
+    <div data-testid="experience-playground" className="rounded-lg border border-border bg-s2 p-3">
       <div>
           {/* Play context: roster + capability grants + seed + settings + seat —
               collapsed into a summary accordion (XU-3). */}
-          <div className="mb-3 rounded-md border border-border bg-bg" style={{ padding: 10 }}>
+          <div className="mb-3 rounded-md border border-border bg-bg p-3">
             <button
               type="button"
               className="flex w-full cursor-pointer items-center gap-2 text-left"
@@ -1082,8 +1082,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 </span>
               )}
             </button>
-            <AnimatedDisclosure open={setupOpen}>
-            <div className="mt-3">
+            <AnimatedDisclosure open={setupOpen} className="mt-3 space-y-3">
+            <div>
               <label className={lblCls}>{t("experience_setup_participants_label")}</label>
             {seats.map((seat, index) => (
               <div key={index} className="mb-2 rounded-xl border border-border bg-surface p-2.5">
@@ -1101,7 +1101,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                     aria-label={t("experience_playground_participant_name")}
                     onChange={(e) => updateSeatLabel(index, e.target.value)}
                   />
-                  <div className="w-40 shrink-0">
+                  <div className="w-48 shrink-0">
                     <DropdownSelect
                       value={seat.controller}
                       options={CONTROLLERS.map((controller) => ({ id: controller, label: t(CONTROLLER_LABEL_KEY[controller]) }))}
@@ -1193,7 +1193,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             </button>
           </div>
 
-          <div className="mt-3">
+          <div>
             <label className={lblCls}>{t("experience_playground_capabilities_title")}</label>
             <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
               {CAPABILITIES.map((capability) => (
@@ -1215,7 +1215,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             </div>
           </div>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-3">
             <div>
               <label className={lblCls}>{t("experience_playground_seed_label")}</label>
               <div className="mt-1.5 flex items-center gap-2">
@@ -1229,7 +1229,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
               <input
                 className={cn(inputCls, "mt-1.5", randomStart && "opacity-60")}
                 value={randomStart ? lastUsedSeed : seed}
-                placeholder={t("experience_tester_seed_placeholder")}
+                placeholder={t(randomStart ? "experience_playground_seed_random_on" : "experience_tester_seed_placeholder")}
                 disabled={randomStart}
                 onChange={(e) => setSeed(e.target.value)}
               />
@@ -1420,7 +1420,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
               request id, expected revision, payload JSON, events, effects, and
               console remain reachable after explicit disclosure. XU-4: also the
               absorbed tester (validate rules / auto-play / single action). */}
-          <div className={blockCls} style={{ padding: 10 }}>
+          <div className={cn(blockCls, "mt-3 p-3")}>
                 <button
                   type="button"
                   className="flex w-full cursor-pointer items-center gap-1.5 text-left"

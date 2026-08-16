@@ -2060,6 +2060,7 @@
   "experience_playground_participant_id_edit": "Edit ID",
   "experience_playground_random_start": "Random start",
   "experience_playground_seed_label": "Seed",
+  "experience_playground_seed_random_on": "Random on every launch",
   "experience_playground_setup_title": "Participants & launch settings",
   "experience_playground_setup_summary_random_on": "random start: on",
   "experience_playground_setup_summary_random_off": "random start: off",
