@@ -652,11 +652,12 @@ describe("ExperiencePlayground", () => {
     });
 
     // ER-13 moved the playground out of the inline IR-84B seam into the
-    // copilot-shell toolbar modal (XU-4 renamed it "Test it"). Open the modal
+    // copilot shell; XU-6 unified the tabs, so it now lives inline under the
+    // "Try it" tab (the "Test it" toolbar modal is gone). Switch to the tab
     // first, then the playground's start button is reachable inside it. (The
     // boundary pinned here is unchanged: the playground still drives the
     // CURRENT UNSAVED rules buffer that the editor owns.)
-    fireEvent.click(getByText("experience_copilot_test_it"));
+    fireEvent.click(getByText("experience_copilot_try_it"));
     fireEvent.click(getByText("experience_playground_start"));
 
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));

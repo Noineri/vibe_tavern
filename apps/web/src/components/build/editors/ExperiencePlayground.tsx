@@ -2,12 +2,11 @@
  * ExperiencePlayground — the interactive play-loop authoring surface
  * (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 8 / IR-84B).
  *
- * Mounted by the ExperienceEditor as a peer of the IR-81D InteractiveTester
+ * Mounted by the ExperienceCopilotShell inside the "Try" tab (XU-6; before
+ * XU-4/XU-6 it was a modal next to the since-retired IR-81D InteractiveTester)
  * and fed BOTH unsaved buffers via props: the CURRENT UNSAVED rules buffer
  * (`code`) and the CURRENT UNSAVED visual source (`visualSource`, null when no
- * visual is selected). This is the interactive counterpart of the tester: the
- * tester is a one-shot discover + single-reduce diagnostic over the stateless
- * IR-81B backend; this panel is the turn-by-turn PLAY loop over the IR-84A
+ * visual is selected). This is the turn-by-turn PLAY loop over the IR-84A
  * in-memory playground driver (POST /api/experience/playground/start|advance
  * via the two client functions in api/experience-api.ts):
  *

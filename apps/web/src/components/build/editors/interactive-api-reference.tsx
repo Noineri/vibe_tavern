@@ -11,8 +11,9 @@ import { useT } from "../../../i18n/context.js";
  * Documentation only — it renders static, strict-t() copy with literal code
  * samples. It documents the PUBLIC contract the IR-12 sandbox discovers
  * (`context.experience.register({…})`), nothing application-internal. The
- * runtime diagnostic that validates a source against this contract is the
- * InteractiveTester (IR-81D), mounted separately in ExperienceEditor.
+ * runtime diagnostic that validates a source against this contract lives in
+ * the playground's developer-diagnostics accordion (XU-4; formerly the
+ * standalone InteractiveTester, IR-81D).
  *
  * Mirrors the layout of ScriptApiReference (script-api-reference.tsx): one
  * accented container, numbered sections, `code` chip + description rows, and
