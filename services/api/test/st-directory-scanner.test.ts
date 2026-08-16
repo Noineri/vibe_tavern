@@ -183,12 +183,17 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		// ONE import call drives the whole directory through the real runtime.
 		const result = await env.runtime.importSillyTavernDirectory(stDir);
 
+		// Errors FIRST — on a transient import failure the counters below all read
+		// 0, and asserting them first throws before ever showing WHY (observed on
+		// a Linux CI flake: "characters: Expected 1, Received 0" with the actual
+		// error swallowed). The errors array is the diagnosis; surface it first.
+		expect(result.errors).toEqual([]);
+
 		// Top-line counters must reflect REAL writes, not the old no-op count.
 		expect(result.characters).toBe(1);
 		expect(result.lorebooks).toBe(1);
 		expect(result.presets).toBe(1);
 		expect(result.personas).toBe(1);
-		expect(result.errors).toEqual([]);
 
 		// withTrace wiring gate: the seeded character greeting must NOT trigger
 		// assemblePrompt (the lore-activation engine). If this is > 0, the
