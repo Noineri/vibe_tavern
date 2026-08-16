@@ -131,9 +131,9 @@ Animation library. Used for:
 Virtual scrolling for message list.
 
 **Why Virtuoso (not react-window / @tanstack/virtual):**
-- **Reverse list support** — chat messages grow upward. Virtuoso has built-in `initialTopMostItemIndex` and `followOutput="smooth"` for auto-scroll.
-- **Dynamic height** — messages vary from 1 line to 500+ tokens. Virtuoso measures each item automatically. No manual `estimateSize` needed.
-- **Footer component** — renders `StreamingContent` (pending user message + streaming reply) as a virtual item at the bottom.
+- **Dynamic height** — messages vary from 1 line to 500+ tokens. Virtuoso measures old history without a manual `estimateSize` contract.
+- **Hybrid footer** — the newest five pages stay mounted in the footer, isolating pinned in-place growth from virtualized row measurement.
+- **Bounded history** — 1,000+ message branches virtualize the older prefix while retaining a fixed recent working set.
 
 ### Radix UI
 

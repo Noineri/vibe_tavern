@@ -56,22 +56,26 @@ Streaming-target selectors live in `stores/chat-selectors.ts`:
 
 ## Message List (`MessageList.tsx`)
 
-### Virtualization with react-virtuoso
+### Hybrid virtualization with a stable recent tail
 
-The message list uses `<Virtuoso>` with:
-- `displayIds` as the item source, including synthetic pending user/assistant messages while generation is active
-- `totalListHeightChanged` delegated to `useStickToBottom`, which follows content-height changes only while the viewport is pinned
-- `overscan={{ main: 4000, reverse: 4000 }}` for stable variable-height rendering
-- Dynamic height measurement built in, with a `flow-root` item wrapper so message margins stay inside Virtuoso's measured boxes
-- Small header and footer spacers that remain part of the measured list
+`MessageScroller` splits `displayIds` at a 20-message page boundary:
 
-There is intentionally no `followOutput` or `initialTopMostItemIndex`; the centralized stick-to-bottom controller owns the scroll position through Virtuoso's public handle.
+- Older messages remain ordinary `react-virtuoso` items with variable-height measurement and 4000px overscan.
+- The five newest pages render in Virtuoso's footer as a stable tail. This bounds the always-mounted suffix to 81–100 messages, including synthetic pending messages.
+- A `flow-root` wrapper contains each message's vertical margins in both regions.
+- `useStickToBottom` observes only the stable tail and the viewport. While pinned, either size changing writes the exact native bottom offset before paint.
+- Only wheel/touch/scrollbar/keyboard intent may detach a pinned reader. Firefox's delayed nested-scroll restoration and Virtuoso's own position corrections emit scroll events without user intent, so the controller rejects them and restores the bottom.
+- Delayed `totalListHeightChanged` notifications only reconcile estimates from the older virtualized prefix.
+
+The separation is load-bearing. Synchronously observing virtualized rows while also scrolling can change the rendered row set and re-enter measurement, producing `ResizeObserver` loop errors. The stable tail's height does not depend on which old rows are mounted, so disclosures, streaming Markdown, images, and font changes all use the same content-agnostic bottom-follow rule. When a new 20-message page starts, only the oldest tail page moves into virtualization; the four newest pages retain their DOM identity.
+
+There is intentionally no `followOutput` or component-level follow callback. The centralized controller owns the pinned state, combines user scroll intent with native geometry, and owns the scroll position.
 
 ### Ghost Message Prevention
 
 **Problem:** When the user sends a message, the optimistic UI appends a pending user message immediately. When the backend responds with the confirmed snapshot, it includes the persisted user message. Without deduplication, the same message appears twice.
 
-**Solution:** `MessageList.tsx` filters the message order before rendering:
+**Solution:** `useDisplayMessageIds()` filters the message order before rendering:
 
 ```
 If activeGen.pendingUserMessageContent exists:
@@ -80,7 +84,7 @@ If activeGen.pendingUserMessageContent exists:
     Remove it from the rendered list
 ```
 
-The pending message is shown via Virtuoso's `Footer` component instead, which renders `StreamingContent`. This ensures exactly one copy is visible at all times — the pending one during streaming, the confirmed one after the snapshot arrives.
+Synthetic pending ids are appended to `displayIds` and therefore render in the stable tail. This ensures exactly one copy is visible at all times — the pending one during streaming, the confirmed one after the snapshot arrives.
 
 ---
 
@@ -148,8 +152,8 @@ Messages support **multiple variants** (swipes). Each variant has its own `conte
    - This keeps the clickable arrows fixed under the cursor regardless of layout shifts
 
 2. **Bottom positioning via `useStickToBottom`**:
-   - Switching variants changes the measured list height, so Virtuoso calls `totalListHeightChanged`
-   - If the viewport is pinned, the controller follows the bottom through Virtuoso's public handle
+   - Switching a visible variant changes the stable tail's measured height
+   - If the viewport is pinned, the controller writes the exact native bottom offset before paint
    - If the user has detached, the controller preserves that reading position instead of forcing the view down
    - `MessageBlock` does not query the global DOM or write `scrollTop` directly
 
@@ -206,7 +210,7 @@ Quoted dialogue highlighting deliberately works on the HAST tree instead of raw 
 | `MobileVariantCarousel` | 3-panel drag carousel (see above) |
 | `VariantControls` | Arrow buttons for variant switching (used both inline and in the portal overlay) |
 | `VariantJumpList` | Dropdown jump-list for hopping between many variants at once |
-| `PendingUserMessage` / `PendingAssistantMessage` | The optimistic/streaming footer cells rendered via Virtuoso's `Footer` (`StreamingContent`) |
+| `PendingUserMessage` / `PendingAssistantMessage` | Optimistic/streaming cells appended to the stable recent tail |
 
 ---
 
@@ -259,7 +263,7 @@ When generation ends, `flush()` drains the remainder before the final snapshot i
 ```
 User sends message
   → startGeneration() sets pendingUserMessageContent + isSending
-  → StreamingContent renders in Virtuoso Footer (pending user message + streaming reply)
+  → Synthetic pending ids render in the stable tail (pending user message + streaming reply)
   → SSE stream yields text-delta / reasoning-delta chunks
   → StreamingReveal.pushDelta() → streamingRevealedText updates on each tick
   → MessageBlock for the streaming-target message renders the revealed text inline
@@ -267,7 +271,7 @@ User sends message
   → Fresh send/generate starts a fire-and-forget completion-refresh wait (including a cancelled stream that committed a new partial assistant message; regenerate and pre-content cancellation do not)
   → Matching scoped insight/message patch → applyInsightsCompletionPatch()
   → Ghost message filter prevents duplicate user message
-  → StreamingContent disappears (generation becomes idle)
+  → Synthetic pending ids disappear (generation becomes idle)
 ```
 
 ### Regeneration
@@ -387,7 +391,7 @@ Reserved-but-unimplemented modes (`novel`, `group`) have no package entry and fa
 
 `PlayMode.tsx` is the chat-focused layout (as opposed to Build Mode's editor layout). It composes `MessageList` + `QueueManager` + `InputArea`. PlayMode is selected by the shell dispatch when the active chat's package resolves its `play` surface (see [Shell Dispatch & Chat Modes](#shell-dispatch--chat-modes) above).
 
-A deliberate remount detail: `MessageList` is keyed by `${chatId}|${branchId}` so Virtuoso's `initialTopMostItemIndex` re-runs and pins to the bottom natively on chat/branch switch, rather than fighting Virtuoso's measurement cache with a manual rAF pin.
+A deliberate remount detail: `MessageList` is keyed by `${chatId}|${branchId}` so message-local UI and Virtuoso's old-history cache reset at the branch boundary. `useStickToBottom` receives the same scope and establishes the native bottom position in a layout effect.
 
 ---
 

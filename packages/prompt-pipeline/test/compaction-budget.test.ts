@@ -34,6 +34,50 @@ beforeEach(() => {
 });
 
 describe("history compaction budget", () => {
+  it("finds the largest fitting suffix without rescanning a long history quadratically", () => {
+    const messages = Array.from({ length: 1_000 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `message-${index}`,
+    }));
+    let countCalls = 0;
+
+    const plan = planHistoryCompaction({
+      messages,
+      nonHistoryTokens: 0,
+      contextBudget: 101,
+      countHistoryTokens: (candidate) => {
+        countCalls += 1;
+        return candidate.length;
+      },
+    });
+
+    expect(plan?.messages).toHaveLength(101);
+    expect(plan?.messages[0]?.content).toBe("message-899");
+    expect(plan?.preservedHistoryTokens).toBe(101);
+    expect(countCalls).toBeLessThanOrEqual(14);
+  });
+
+  it("does not tokenize the full history when a smaller suffix already proves overflow", () => {
+    const messages = Array.from({ length: 1_000 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `message-${index}`,
+    }));
+    const countedLengths: number[] = [];
+
+    const plan = planHistoryCompaction({
+      messages,
+      nonHistoryTokens: 0,
+      contextBudget: 664,
+      countHistoryTokens: (candidate) => {
+        countedLengths.push(candidate.length);
+        return candidate.length;
+      },
+    });
+
+    expect(plan?.messages).toHaveLength(664);
+    expect(countedLengths).not.toContain(messages.length);
+  });
+
   it("compacts when response reserve makes an otherwise fitting prompt exceed context", () => {
     const unbounded = assemblePrompt(baseContext());
     const result = assemblePrompt(baseContext({

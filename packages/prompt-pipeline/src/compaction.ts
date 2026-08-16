@@ -94,9 +94,11 @@ function carriesToolCalls(message: { role: string }): boolean {
 
 export interface HistoryCompactionPlan<T> {
   messages: T[];
-  fullHistoryTokens: number;
+  /** Available only when deciding the boundary required counting the full history. */
+  fullHistoryTokens?: number;
   preservedHistoryTokens: number;
-  totalBeforeCompaction: number;
+  /** Available only when `fullHistoryTokens` is known. */
+  totalBeforeCompaction?: number;
   responseReserve: number;
 }
 
@@ -114,6 +116,7 @@ export function planHistoryCompaction<T extends { role: string }>(input: {
   nonHistoryTokens: number;
   contextBudget: number | null | undefined;
   responseReserve?: number;
+  /** Exact suffix cost. It must not decrease when older messages are prepended. */
   countHistoryTokens: (messages: ReadonlyArray<T>) => number;
   minPreservedMessages?: number;
 }): HistoryCompactionPlan<T> | null {
@@ -125,18 +128,69 @@ export function planHistoryCompaction<T extends { role: string }>(input: {
     return null;
   }
 
-  const fullHistoryTokens = countHistoryTokens(messages);
-  const totalBeforeCompaction = nonHistoryTokens + fullHistoryTokens;
-  if (totalBeforeCompaction + responseReserve <= contextBudget) {
-    return null;
+  const historyBudget = Math.max(0, contextBudget - nonHistoryTokens - responseReserve);
+  const tokenCounts = new Map<number, number>();
+  const countSuffix = (count: number): number => {
+    const cached = tokenCounts.get(count);
+    if (cached !== undefined) return cached;
+    const tokens = countHistoryTokens(messages.slice(messages.length - count));
+    tokenCounts.set(count, tokens);
+    return tokens;
+  };
+
+  let keepCount = minPreservedMessages;
+  const minimumTokens = countSuffix(minPreservedMessages);
+  let firstOverflowingCount: number | null = minimumTokens > historyBudget
+    ? minPreservedMessages
+    : null;
+
+  if (firstOverflowingCount === null) {
+    // Use the measured recent pair to choose a useful first probe. This is only
+    // a search hint; every accepted boundary is still verified by the exact
+    // formatter/tokenizer. Starting near the expected fit avoids tokenizing a
+    // thousand-message prefix merely to prove that an already-over-budget tail
+    // must be compacted.
+    const projectedCount = minimumTokens > 0
+      ? Math.floor((historyBudget * minPreservedMessages) / minimumTokens)
+      : minPreservedMessages + 1;
+    let candidateCount = Math.min(
+      messages.length,
+      Math.max(minPreservedMessages + 1, projectedCount),
+    );
+
+    while (true) {
+      const candidateTokens = countSuffix(candidateCount);
+      if (candidateTokens > historyBudget) {
+        firstOverflowingCount = candidateCount;
+        break;
+      }
+
+      keepCount = candidateCount;
+      if (candidateCount === messages.length) {
+        return null;
+      }
+
+      candidateCount = Math.min(
+        messages.length,
+        Math.max(candidateCount + 1, Math.ceil(candidateCount * 1.5)),
+      );
+    }
   }
 
-  const historyBudget = Math.max(0, contextBudget - nonHistoryTokens - responseReserve);
-  let keepCount = minPreservedMessages;
-  for (let candidateCount = minPreservedMessages + 1; candidateCount <= messages.length; candidateCount++) {
-    const candidate = messages.slice(messages.length - candidateCount);
-    if (countHistoryTokens(candidate) > historyBudget) break;
-    keepCount = candidateCount;
+  // Suffix cost grows with the number of preserved messages. Once a fitting
+  // suffix and a non-fitting suffix bracket the boundary, finish with binary
+  // search. The old linear walk reformatted and tokenized 3, 4, 5, ... N
+  // messages, making preview assembly quadratic and blocking the Bun server.
+  let lower = keepCount + 1;
+  let upper = firstOverflowingCount - 1;
+  while (lower <= upper) {
+    const candidateCount = Math.floor((lower + upper) / 2);
+    if (countSuffix(candidateCount) <= historyBudget) {
+      keepCount = candidateCount;
+      lower = candidateCount + 1;
+    } else {
+      upper = candidateCount - 1;
+    }
   }
 
   const keepFrom = findSafeCompactionBoundary(messages, keepCount);
@@ -145,11 +199,16 @@ export function planHistoryCompaction<T extends { role: string }>(input: {
   }
 
   const preservedMessages = messages.slice(keepFrom);
+  const fullHistoryTokens = tokenCounts.get(messages.length);
   return {
     messages: preservedMessages,
-    fullHistoryTokens,
-    preservedHistoryTokens: countHistoryTokens(preservedMessages),
-    totalBeforeCompaction,
+    ...(fullHistoryTokens === undefined
+      ? {}
+      : {
+          fullHistoryTokens,
+          totalBeforeCompaction: nonHistoryTokens + fullHistoryTokens,
+        }),
+    preservedHistoryTokens: countSuffix(preservedMessages.length),
     responseReserve,
   };
 }

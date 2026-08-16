@@ -5,14 +5,12 @@ import { MessageBlock } from "./MessageBlock.js";
 import { MessageScroller, useDisplayMessageIds } from "./MessageScroller.js";
 
 /**
- * RP (Play Mode) message surface: virtualized, bottom-pinned chat thread.
+ * RP (Play Mode) message surface: hybrid-virtualized, bottom-pinned chat thread.
  *
- * The fragile streaming-follow machinery (rAF pinning, wheel/touch listeners,
- * the floating scroll-to-bottom button) lives in the shared {@link MessageScroller}
- * primitive; this component owns the RP-specific parts only — the flat display-id
- * derivation (tool messages filtered out + pending placeholders) and the
- * per-item render (which needs RP-only derivations: isFirstAssistant for the
- * context-separator, prevRole for adjacent-message styling).
+ * Virtualized history, the stable recent tail, bottom-following, and the
+ * floating scroll-to-bottom button live in the shared {@link MessageScroller}
+ * primitive. This component owns only the RP-specific flat id derivation and
+ * per-message rendering.
  *
  * Co-Author mode has its own `CoauthorMessageList` that reuses the same
  * scroller but can swap both the id derivation and the renderer independently

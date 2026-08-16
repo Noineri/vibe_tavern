@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Virtuoso } from "react-virtuoso";
 import type { ReactNode } from "react";
-import type { Components } from "react-virtuoso";
+import type { Components, ContextProp } from "react-virtuoso";
 import { useChatStore, useIsSending } from "../../stores/chat-store.js";
 import { useMessageOrder } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -12,7 +12,7 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useStickToBottom } from "./use-stick-to-bottom.js";
-import { FollowBottomContext } from "./follow-bottom-context.js";
+import { partitionMessageRenderWindow } from "./message-render-window.js";
 
 /**
  * Flat-list display-id derivation: the visible message sequence BEFORE any
@@ -67,7 +67,8 @@ export interface MessageScrollerProps {
   /**
    * Ordered list of message ids (plus synthetic `__pending-*` ids, if any) to
    * render. Computed by the caller (RP vs co-author have different derivation
-   * rules). Passed straight to Virtuoso as the key/total source of truth.
+   * rules). The scroller keeps the recent suffix mounted and virtualizes the
+   * older prefix.
    */
   displayIds: string[];
   /**
@@ -78,11 +79,31 @@ export interface MessageScrollerProps {
   renderItem: (index: number, messageId: string) => ReactNode;
 }
 
-// Hoisted to module scope: declared inside the component body they got a fresh
-// identity on every render, which made Virtuoso remount them and re-trigger
-// height measurements.
+interface MessageScrollerContext {
+  renderItem: (index: number, messageId: string) => ReactNode;
+  stableTailIds: string[];
+  stableTailStartIndex: number;
+  stableTailRef: (node: HTMLElement | null) => void;
+}
+
+// Hoisted to module scope: fresh component identities make Virtuoso remount its
+// structural elements and restart height measurement.
 const Header = () => <div style={{ height: 28 }} />;
-const Footer = () => <div style={{ height: 12 }} />;
+
+function StableTail({ context }: ContextProp<MessageScrollerContext>) {
+  const { renderItem, stableTailIds, stableTailStartIndex, stableTailRef } = context;
+
+  return (
+    <div ref={stableTailRef} data-message-stable-tail style={{ display: "flow-root" }}>
+      {stableTailIds.map((messageId, offset) => (
+        <div key={messageId} style={{ display: "flow-root" }}>
+          {renderItem(stableTailStartIndex + offset, messageId)}
+        </div>
+      ))}
+      <div style={{ height: 12 }} />
+    </div>
+  );
+}
 
 /**
  * Item wrapper. Identical to the default one except for `display: flow-root`,
@@ -102,68 +123,76 @@ const Footer = () => <div style={{ height: 12 }} />;
  * stay inside and the measured height matches what the DOM lays out. Measured
  * after the change: item gaps 0, distance-to-bottom 0 in both engines.
  */
-const Item: NonNullable<Components["Item"]> = ({ children, style, item, context, ...rest }) => (
+const Item: NonNullable<Components<string, MessageScrollerContext>["Item"]> = ({ children, style, item, context, ...rest }) => (
   <div {...rest} style={{ ...style, display: "flow-root" }}>
     {children}
   </div>
 );
 
-const components = { Header, Footer, Item };
+const components: Components<string, MessageScrollerContext> = {
+  Header,
+  Footer: StableTail,
+  Item,
+};
 
 /**
- * Reusable virtualized message scroller.
+ * Reusable hybrid message scroller.
  *
  * Shared by RP (`MessageList`) and Co-Author (`CoauthorMessageList`); they
  * differ only in how `displayIds` is derived and how an item renders, and the
  * scroll behaviour has to be identical.
  *
- * All scroll handling lives in `useStickToBottom` and reduces to one rule:
- * `pinned` = the viewport is at the bottom; content grew while `pinned` → drive
- * to the bottom. There are no timers here, no rAF loops, no wheel/touch
- * listeners and no notion of a "generation" or an "end of stream" — deliberately
- * so: the previous implementation consisted of six such mechanisms, one of which
- * was dead code and two of which fought over effect ordering.
+ * Older messages remain virtualized for long conversations. Several complete
+ * recent pages render in Virtuoso's footer and therefore retain their DOM while
+ * the view is pinned. A ResizeObserver watches only that stable tail. Changing
+ * `scrollTop` cannot resize it, so disclosure and streaming growth settle at the
+ * bottom before paint without the ResizeObserver feedback loop caused by
+ * synchronously measuring virtualized rows.
  *
- * There is intentionally NO `followOutput` prop: per the library's own docs it
- * only fires when `totalCount` changes, so while tokens stream (item count
- * constant, one item growing) it is inert. Its role when a message is appended
- * is covered by the same `totalListHeightChanged`.
- *
- * `totalListHeightChanged` is not the only growth input, because it arrives one
- * frame after the DOM grew — the virtualizer re-measures the row and re-renders
- * first — and that frame is visible while tokens stream. `followContent` goes
- * down through `FollowBottomContext` so the streamed body applies the same rule
- * in the frame it grew in.
+ * The stable tail is bounded: a 1,000-message branch still mounts only the last
+ * 81–100 messages plus Virtuoso's viewport/overscan rows. At each page boundary
+ * the oldest tail page moves into virtualization while the four newest pages
+ * keep their React and DOM identity.
  */
 export function MessageScroller({ displayIds, renderItem }: MessageScrollerProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const { virtuosoRef, scrollerRef, onTotalListHeightChanged, followContent, pinned, scrollToBottom } =
-    useStickToBottom();
-
-  const itemContent = (index: number) => {
-    const messageId = displayIds[index];
-    if (!messageId) return null;
-    return renderItem(index, messageId);
-  };
+  const resetKey = useSnapshotStore((state) =>
+    `${state.activeChat?.id ?? ""}:${state.activeBranch?.id ?? ""}`,
+  );
+  const { virtualizedIds, stableTailIds, stableTailStartIndex } = useMemo(
+    () => partitionMessageRenderWindow(displayIds),
+    [displayIds],
+  );
+  const {
+    scrollerRef,
+    stableTailRef,
+    onVirtualizedHeightChanged,
+    pinned,
+    scrollToBottom,
+  } = useStickToBottom(resetKey);
+  const context = useMemo<MessageScrollerContext>(() => ({
+    renderItem,
+    stableTailIds,
+    stableTailStartIndex,
+    stableTailRef,
+  }), [renderItem, stableTailIds, stableTailStartIndex, stableTailRef]);
 
   return (
     <TranslateErrorBoundary>
       <div className={cn("relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
-        <FollowBottomContext.Provider value={followContent}>
-          <Virtuoso
-            ref={virtuosoRef}
-            scrollerRef={scrollerRef}
-            computeItemKey={(index) => displayIds[index]}
-            totalCount={displayIds.length}
-            totalListHeightChanged={onTotalListHeightChanged}
-            overscan={{ main: 4000, reverse: 4000 }}
-            itemContent={itemContent}
-            components={components}
-            className="flex-1"
-            style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
-          />
-        </FollowBottomContext.Provider>
+        <Virtuoso<string, MessageScrollerContext>
+          scrollerRef={scrollerRef}
+          data={virtualizedIds}
+          context={context}
+          computeItemKey={(_index, messageId) => messageId}
+          totalListHeightChanged={onVirtualizedHeightChanged}
+          overscan={{ main: 4000, reverse: 4000 }}
+          itemContent={(index, messageId) => renderItem(index, messageId)}
+          components={components}
+          className="flex-1"
+          style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        />
         {!pinned && displayIds.length > 0 && (
           isMobile ? (
             <button type="button"

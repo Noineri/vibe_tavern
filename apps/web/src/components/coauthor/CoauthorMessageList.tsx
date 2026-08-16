@@ -9,9 +9,9 @@ import { CoauthorTurnShell } from "./CoauthorTurnShell.js";
  * Co-Author message surface — the structural fork point from RP.
  *
  * Reuses the same {@link MessageScroller} primitive as {@link MessageList} (RP),
- * so streaming-follow, bottom-pinning, and the floating scroll-to-bottom button
- * stay single-sourced. What is OWNED here is the Co-Author id derivation and the
- * per-item renderer, both of which diverge from RP across the upcoming CS tasks:
+ * so hybrid virtualization, bottom-pinning, and the floating scroll-to-bottom
+ * button stay single-sourced. What is owned here is the Co-Author id derivation
+ * and per-item renderer, both of which diverge from RP across the upcoming CS tasks:
  *
  *  - CS-30 (author identity): swap `MessageBlock` for `CoauthorMessageBlock`,
  *    which renders "You" + a neutral glyph for the user and

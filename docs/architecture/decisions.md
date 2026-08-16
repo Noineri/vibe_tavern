@@ -28,20 +28,20 @@
 
 **Trade-off:** Brief visual "stickiness" at the bottom during the pin window. Acceptable because the user is actively interacting with variant controls and not scrolling.
 
-**Update (scroll refactor, branch `refactor/chat-streaming-scroll`):** the rAF bottom-pin was removed; the portal overlay for the variant controls remains.
+**Update (hybrid scroll refactor):** the rAF bottom-pin was removed; the portal overlay for the variant controls remains.
 
-Chat scrolling is now governed by one rule (`apps/web/src/lib/stick-to-bottom.ts` + `apps/web/src/components/chat/use-stick-to-bottom.ts`): `pinned` means the viewport is at the bottom, and any change in content height while `pinned` drives the view to the bottom through Virtuoso's `totalListHeightChanged`.
-Switching a variant changes the message height, so it is already covered by that mechanism and needs no pin of its own.
-That also removed the last global-DOM write in the chat — `document.querySelector('[data-virtuoso-scroller="true"]')` followed by a direct `scrollTop` assignment behind Virtuoso's back, repeated every frame for 900ms.
+Chat scrolling is now governed by one rule (`apps/web/src/lib/stick-to-bottom.ts` + `apps/web/src/components/chat/use-stick-to-bottom.ts`): `pinned` means the viewport is at the bottom, and a size change in the stable recent tail writes the exact native bottom offset. Older history remains virtualized and its delayed height notifications only reconcile estimates. Switching a visible variant changes the stable tail's height, so it needs no variant-specific pin.
+
+A pinned view detaches only after wheel, touch, scrollbar, or keyboard scroll intent. This prevents Firefox's delayed nested-scroll restoration after reload, and Virtuoso's own position corrections, from being misclassified as reader navigation.
+
+This removed the global DOM query and 900ms write loop. The scroll container ref and its stable tail observer are owned by `MessageScroller`.
 
 The portal overlay is untouched. It solves the other half of the original problem — keeping the clickable arrows at fixed screen coordinates while the message resizes — and that problem has not gone away.
 
 One behavior changed deliberately: when the user has scrolled up, switching a variant no longer yanks the view down.
 The 900ms pin did that unconditionally, overriding the position the user had chosen.
 
-Why the original decision missed this: the options table above weighs three ways to fight Virtuoso's measurement cycle and never considers delegating to it.
-The signal needed was already in the library — `totalListHeightChanged` is derived from the list state and fires whenever an item is re-measured, whereas `followOutput` fires only when `totalCount` changes, which is why it stays inert while tokens stream into a message that already exists.
-That gap is what made every earlier fix imperative.
+Why the original decision missed this: the options table weighs three ways to fight Virtuoso's measurement cycle but does not separate the frequently resizing pinned surface from older virtualized history. Once those regions have different ownership, both can use their natural mechanism without racing.
 
 ---
 
@@ -93,7 +93,7 @@ That gap is what made every earlier fix imperative.
 **Rationale:**
 - Content-based matching is reliable because the pending content is set from the same string that gets persisted
 - The filter is reactive — it activates only during streaming and deactivates when the snapshot arrives
-- The pending message is shown via Virtuoso's Footer component (`StreamingContent`), so there's always exactly one copy visible
+- Synthetic pending ids are appended to the stable footer tail, so there is always exactly one visible copy
 - Simpler than tracking message IDs (the pending message doesn't have a server ID yet)
 
 **Trade-off:** If two identical user messages are sent in sequence, the second could be filtered. Prevented by the UI — the send button is disabled during streaming.
@@ -183,17 +183,17 @@ That gap is what made every earlier fix imperative.
 
 ## AD-010: react-virtuoso over react-window for Message List
 
-**Context:** Chat message list needs virtual scrolling with reverse ordering and dynamic heights.
+**Context:** Chat branches can exceed 1,000 variable-height Markdown messages. The pinned viewport must also follow in-place height changes (streaming, disclosures, images) before paint. Making Virtuoso's row ResizeObserver synchronous removed the delay but caused observer feedback loops when scrolling changed the rendered row set.
 
 **Decision:** react-virtuoso.
 
 **Rationale:**
-- **Built-in reverse list** — `initialTopMostItemIndex` starts at bottom, `followOutput="smooth"` auto-scrolls on new messages. react-window requires manual reverse logic.
 - **Dynamic height** — Virtuoso measures each item automatically. react-window requires `estimateSize` which is inaccurate for variable-length markdown content.
-- **Footer component** — renders `StreamingContent` as a virtual item at the bottom. react-window doesn't have this concept.
+- **Stable footer boundary** — the newest five 20-message pages render in the footer, outside the virtualized row set. A native ResizeObserver can keep that bounded tail pinned without re-entering row measurement.
+- **Bounded long-chat cost** — branches with 1,000+ messages keep their older prefix virtualized while only 81–100 recent messages stay mounted.
 - **Chat-optimized** — Virtuoso was designed for chat UIs. react-window is general-purpose.
 
-**Trade-off:** Larger bundle than react-window (~15KB vs ~6KB). Acceptable for the feature set.
+**Trade-off:** The footer keeps up to 100 recent message components mounted even when the reader scrolls deep into older history. This fixed cost is intentional: it isolates the pinned surface from virtualizer measurement while keeping total DOM work bounded.
 
 ---
 

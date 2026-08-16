@@ -1058,11 +1058,14 @@ function buildLayers(
   });
   if (compactionPlan) {
     recentMessagesForHistory = compactionPlan.messages;
+    const beforeCompaction = compactionPlan.totalBeforeCompaction === undefined
+      ? ""
+      : `${compactionPlan.totalBeforeCompaction} tokens before, `;
     compactionSummary =
       `Kept ${recentMessagesForHistory.length} of ` +
       `${context.chat.recentMessages.length} recent messages ` +
       `(~${compactionPlan.preservedHistoryTokens} tokens after compaction, ` +
-      `${compactionPlan.totalBeforeCompaction} tokens before, ` +
+      beforeCompaction +
       `budget ${context.config?.contextBudget}, ` +
       `responseReserve ${compactionPlan.responseReserve}).`;
   }
@@ -1293,4 +1296,3 @@ function finalizeAssembly(
  * The `aiAssistant.enabledLayers` field controls which context layers are included.
  * System, existing, and instruction layers are always on.
  */
-

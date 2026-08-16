@@ -78,7 +78,7 @@ export function useCoauthorMobileTab(isMobile: boolean, hasProposal: boolean) {
  *
  * Mobile (CA-14): a `[Chat] [Doc]` tab bar collapses the two panels into one
  * viewport. Both panels stay MOUNTED across tab switches (only `hidden` toggles)
- * so the CodeMirror editor + Virtuoso scroll positions survive — switching to
+ * so the CodeMirror editor + chat scroll position survive — switching to
  * the Doc tab to review a proposal, then back to Chat to reply, must not lose
  * state. When a proposal becomes reviewable the surface auto-switches to Doc
  * and pulses it (see {@link useCoauthorMobileTab}).
@@ -87,9 +87,9 @@ export function CoauthorMode() {
   const { t } = useT();
   const isMobile = useIsMobile();
 
-  // key={activeScope} forces MessageList to remount on chat/branch switch, so
-  // Virtuoso's initialTopMostItemIndex re-runs and pins to bottom natively on mount.
-  // Same rationale as PlayMode.
+  // Remount at the chat/branch boundary so message-local UI and Virtuoso's
+  // old-history measurement cache cannot leak across conversations. The shared
+  // scroll hook establishes the new scope's native bottom position.
   const activeScope = useSnapshotStore((s) => {
     const cid = s.activeChat?.id ?? null;
     const bid = s.activeBranch?.id ?? null;
