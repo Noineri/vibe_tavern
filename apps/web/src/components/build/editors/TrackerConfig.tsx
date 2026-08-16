@@ -512,7 +512,7 @@ function configPatch(draft: SceneTrackerConfig): SceneTrackerConfigPatch {
 }
 
 /** Format Zod DSL issues into a single inline error string with dotted paths. */
-function formatDslError(issues: { path: (string | number)[]; message: string }[]): string {
+function formatDslError(issues: readonly { readonly path: PropertyKey[]; readonly message: string }[]): string {
   return issues
     .slice(0, 4)
     .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "(root)"}: ${issue.message}`)

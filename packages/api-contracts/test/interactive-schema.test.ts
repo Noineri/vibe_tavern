@@ -63,21 +63,21 @@ import {
 
 // --- helpers ----------------------------------------------------------------
 
-function expectReject(result: z.SafeParseReturnType<unknown, unknown>) {
+function expectReject(result: z.ZodSafeParseResult<unknown>) {
   expect(result.success).toBe(false);
   if (!result.success) {
     expect(result.error.issues.length).toBeGreaterThan(0);
   }
 }
 
-function expectData(result: z.SafeParseReturnType<unknown, unknown>): unknown {
+function expectData(result: z.ZodSafeParseResult<unknown>): unknown {
   expect(result.success).toBe(true);
   if (!result.success) throw new Error("expected success but parse failed");
   return result.data;
 }
 
 /** The option list of a zod enum schema, as a sorted string array. */
-function enumOptions(schema: z.ZodEnum<[string, ...string[]]>): string[] {
+function enumOptions<T extends Readonly<Record<string, string>>>(schema: z.ZodEnum<T>): string[] {
   return [...schema.options].sort();
 }
 
