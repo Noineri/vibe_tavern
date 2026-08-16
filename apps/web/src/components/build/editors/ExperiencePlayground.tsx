@@ -1218,6 +1218,13 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           <div className="grid gap-2 sm:grid-cols-3">
             <div>
               <label className={lblCls}>{t("experience_playground_seed_label")}</label>
+              <input
+                className={cn(inputCls, "mt-1.5 h-[34px]", randomStart && "opacity-60")}
+                value={randomStart ? lastUsedSeed : seed}
+                placeholder={t(randomStart ? "experience_playground_seed_random_on" : "experience_tester_seed_placeholder")}
+                disabled={randomStart}
+                onChange={(e) => setSeed(e.target.value)}
+              />
               <div className="mt-1.5 flex items-center gap-2">
                 <Toggle
                   checked={randomStart}
@@ -1226,13 +1233,6 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 />
                 <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
               </div>
-              <input
-                className={cn(inputCls, "mt-1.5", randomStart && "opacity-60")}
-                value={randomStart ? lastUsedSeed : seed}
-                placeholder={t(randomStart ? "experience_playground_seed_random_on" : "experience_tester_seed_placeholder")}
-                disabled={randomStart}
-                onChange={(e) => setSeed(e.target.value)}
-              />
             </div>
             <div>
               <label className={lblCls}>{t("experience_playground_human_seat_label")}</label>
@@ -1244,13 +1244,14 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   placeholder={t("experience_playground_human_seat_auto")}
                   defaultOption={t("experience_playground_human_seat_auto")}
                   onChange={setHumanSeatId}
+                  className="h-[34px]"
                 />
               </div>
             </div>
             <div>
               <label className={lblCls}>{t("experience_setup_settings_label")}</label>
               <AutoTextarea
-                className={cn(monoCls, "mt-1.5")}
+                className={cn(monoCls, "mt-1.5 min-h-[34px]")}
                 value={settingsJson}
                 onChange={(e) => setSettingsJson(e.target.value)}
                 placeholder="{}"
