@@ -127,7 +127,12 @@ export const reorderLoreEntriesSchema = z.object({
 
 export const importLorebookSchema = z.object({
   format: z.enum(["st", "janitor"]).optional().default("st"),
-  data: z.unknown(),
+  // Optional by contract: the import path accepts a payload that omits `data`.
+  // Zod 4.4 separated key presence from value validity (#5661), so a bare
+  // `z.unknown()` no longer accepts a missing key the way Zod 3 did — the
+  // `.optional()` is what carries that contract now, and matches the inferred
+  // `data?: unknown` this schema has always produced.
+  data: z.unknown().optional(),
   mode: z.enum(["merge", "replace", "new"]).optional().default("new"),
   scopeType: z.string().optional().default("character"),
   characterId: z.string().optional(),

@@ -63,20 +63,46 @@ const sceneNodeNumberSchema = z
 /**
  * Object key / field-name schema: any non-empty string that is not a reserved
  * path segment. Applied as the *key* schema of every record (`z.record(key, ...)`),
- * so reserved/unsafe keys (including `__proto__`, which Zod's record output
- * reconstruction would otherwise silently drop via the prototype setter) are
- * rejected at the input stage with an exact path.
+ * so reserved/unsafe keys are rejected at the input stage with an exact path.
  */
 const sceneFieldNameSchema = z
   .string()
   .min(1)
-  .refine((segment) => !isReservedSceneSegment(segment), (segment) => ({
-    message: `Reserved path segment "${segment}" is not allowed as a key.`,
-  }));
+  .refine((segment) => !isReservedSceneSegment(segment), {
+    error: (issue) => `Reserved path segment "${String(issue.input)}" is not allowed as a key.`,
+  });
+
+/**
+ * A record keyed by scene field names, with every reserved key rejected loudly.
+ *
+ * The key schema alone is not sufficient: Zod 4 strips an own `__proto__` key
+ * from record input *before* the key schema runs, so a field literally named
+ * `__proto__` would be silently dropped from the parsed output instead of
+ * failing (Zod 3 surfaced the key and the refine above rejected it). The
+ * pre-parse guard re-reads the raw own property names, so all four reserved
+ * segments stay a hard error with an exact path — the contract the Scene
+ * editor and the import path both rely on.
+ */
+function sceneFieldRecord<V extends z.ZodType>(valueSchema: V) {
+  return z.preprocess((raw, ctx) => {
+    if (raw !== null && typeof raw === "object") {
+      for (const key of Object.getOwnPropertyNames(raw)) {
+        if (isReservedSceneSegment(key)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `Reserved path segment "${key}" is not allowed as a key.`,
+          });
+        }
+      }
+    }
+    return raw;
+  }, z.record(sceneFieldNameSchema, valueSchema));
+}
 
 const sceneNodeObjectSchema = z.object({
   $type: z.literal("object"),
-  properties: z.record(sceneFieldNameSchema, z.lazy(() => sceneTrackerNodeSchema)),
+  properties: sceneFieldRecord(z.lazy(() => sceneTrackerNodeSchema)),
   /** Optional human display name (renderer-only; stripped from the hash + model prompt). */
   label: sceneNodeLabelSchema.optional(),
 }).strict();
@@ -149,8 +175,7 @@ export const sceneTrackerNodeSchema: z.ZodType<SceneTrackerSchemaNode> = z.lazy(
  * total-node limit, and the depth limit at the top level so every limit check
  * shares one source of truth.
  */
-export const sceneTrackerDslSchema = z
-  .record(sceneFieldNameSchema, sceneTrackerNodeSchema)
+export const sceneTrackerDslSchema = sceneFieldRecord(sceneTrackerNodeSchema)
   .superRefine((dsl, ctx) => {
     const keys = Object.keys(dsl);
     if (keys.length > SCENE_TRACKER_LIMITS.maxKeysPerObject) {
@@ -215,7 +240,7 @@ export function buildSceneValueSchema(node: SceneTrackerSchemaNode): z.ZodType {
  * output is strict-validated through the same boundary the Objective Tracker
  * uses. A top-level refine enforces the global total-node limit on the data.
  */
-export function buildSceneDataSchema(dsl: SceneTrackerDsl): z.ZodType {
+export function buildSceneDataSchema(dsl: SceneTrackerDsl): z.ZodType<Record<string, unknown>> {
   const root = rejectUnknownKeys(z.object(buildObjectShape(dsl)));
   return root.superRefine((value, ctx) => {
     const total = countSceneDataNodes(value);
@@ -232,11 +257,8 @@ export function buildSceneDataSchema(dsl: SceneTrackerDsl): z.ZodType {
 export function validateSceneData(
   dsl: SceneTrackerDsl,
   data: unknown,
-): z.SafeParseReturnType<Record<string, unknown>, Record<string, unknown>> {
-  return buildSceneDataSchema(dsl).safeParse(data) as z.SafeParseReturnType<
-    Record<string, unknown>,
-    Record<string, unknown>
-  >;
+): z.ZodSafeParseResult<Record<string, unknown>> {
+  return buildSceneDataSchema(dsl).safeParse(data);
 }
 
 function buildObjectShape(dsl: SceneTrackerDsl): Record<string, z.ZodType> {
@@ -248,7 +270,9 @@ function buildObjectShape(dsl: SceneTrackerDsl): Record<string, z.ZodType> {
 }
 
 /** Wrap an object schema so unknown keys are rejected, each at its own path. */
-function rejectUnknownKeys<T extends z.ZodRawShape>(objectSchema: z.ZodObject<T>): z.ZodType {
+function rejectUnknownKeys<T extends z.ZodRawShape>(
+  objectSchema: z.ZodObject<T>,
+): z.ZodType<Record<string, unknown>> {
   const knownKeys = new Set(Object.keys(objectSchema.shape));
   return objectSchema.passthrough().superRefine((value, ctx) => {
     for (const key of Object.keys(value as Record<string, unknown>)) {
@@ -271,9 +295,9 @@ function rejectUnknownKeys<T extends z.ZodRawShape>(objectSchema: z.ZodObject<T>
 export const sceneTrackerEditPathSegmentSchema = z
   .string()
   .min(1)
-  .refine((segment) => !isReservedSceneSegment(segment), (segment) => ({
-    message: `Reserved path segment "${segment}" is not allowed.`,
-  }));
+  .refine((segment) => !isReservedSceneSegment(segment), {
+    error: (issue) => `Reserved path segment "${String(issue.input)}" is not allowed.`,
+  });
 
 /** A dotted edit path into a Scene schema — every segment non-reserved. */
 export const sceneTrackerEditPathSchema = z.array(sceneTrackerEditPathSegmentSchema);

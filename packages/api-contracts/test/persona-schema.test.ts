@@ -37,7 +37,7 @@ function validCreatePersona(): { name: string } {
  * Asserts a `safeParse` result is a rejection and (defensively) that it carries
  * at least one issue. Generic over the parsed type so it works for any schema.
  */
-function expectReject(result: z.SafeParseReturnType<unknown, unknown>) {
+function expectReject(result: z.ZodSafeParseResult<unknown>) {
   expect(result.success).toBe(false);
   if (!result.success) {
     expect(result.error.issues.length).toBeGreaterThan(0);

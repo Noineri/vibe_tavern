@@ -39,7 +39,7 @@ import {
  * Asserts a `safeParse` result is a rejection and (defensively) that it carries
  * at least one issue. Generic over the parsed type so it works for any schema.
  */
-function expectReject(result: z.SafeParseReturnType<unknown, unknown>) {
+function expectReject(result: z.ZodSafeParseResult<unknown>) {
   expect(result.success).toBe(false);
   if (!result.success) {
     expect(result.error.issues.length).toBeGreaterThan(0);
@@ -47,10 +47,10 @@ function expectReject(result: z.SafeParseReturnType<unknown, unknown>) {
 }
 
 /** Type guard narrowing a safeParse result to its success branch (for asserting `.data`). */
-function expectSuccessData<T>(result: z.SafeParseReturnType<T, unknown>): T {
+function expectSuccessData<T>(result: z.ZodSafeParseResult<T>): T {
   expect(result.success).toBe(true);
   if (!result.success) throw new Error("expected success");
-  return result.data as T;
+  return result.data;
 }
 
 // --- factories --------------------------------------------------------------
@@ -348,12 +348,16 @@ describe("importLorebookSchema", () => {
     }
   });
 
-  // PIN: `data` is `z.unknown()`, which in Zod is permissive — it accepts
-  // `undefined`, so a payload that OMITS `data` still parses (data resolves to
-  // undefined). This is load-bearing: if a future change makes `data` required
-  // (e.g. `z.unknown().refine(v => v !== undefined)`), it breaks the import
-  // path. Pin the current permissive behavior explicitly.
-  it("accepts a payload that omits data (z.unknown() accepts undefined)", () => {
+  // PIN: `data` is `z.unknown().optional()`, so a payload that OMITS `data`
+  // still parses and the key stays absent from the output. This is
+  // load-bearing: if a future change makes `data` required (dropping the
+  // `.optional()`, or `z.unknown().refine(v => v !== undefined)`), it breaks
+  // the import path. Pin the permissive behavior explicitly.
+  //
+  // Until Zod 4.4 the `.optional()` was redundant — a bare `z.unknown()`
+  // accepted a missing key on its own. Zod #5661 split key presence from value
+  // validity, so the marker is now what carries this contract.
+  it("accepts a payload that omits data", () => {
     const result = importLorebookSchema.safeParse({});
     expect(result.success).toBe(true);
     if (result.success) {

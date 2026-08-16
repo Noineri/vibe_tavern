@@ -786,7 +786,7 @@ function isThenable(value: unknown): boolean {
 }
 
 function describeZodError(err: z.ZodError): string {
-	return err.errors
+	return err.issues
 		.map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<root>"}: ${issue.message}`)
 		.join("; ");
 }
