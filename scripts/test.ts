@@ -110,8 +110,18 @@ export function createTestSuites(): readonly TestSuite[] {
 
 const TEST_SUITES = createTestSuites();
 
-async function runTestSuite(suite: TestSuite, testTempRoot: string): Promise<TestSuiteResult> {
+async function runTestSuite(suite: TestSuite, tempRoot: string): Promise<TestSuiteResult> {
 	const startedAt = performance.now();
+	// PER-SUITE temp dir, deliberately not shared: suites run several at a time,
+	// and the store-cleanup preload's process-global afterAll sweeps `vt-*` dirs
+	// in TMPDIR created after its own start. With one shared root, a fast suite
+	// (scripts finishes in ~3s) sweeps a slow suite's LIVE dirs mid-test — rm of
+	// open files succeeds on Linux, so the victim gets ENOENT / empty scans
+	// (observed as CI flakes: st-directory-scanner characters=0, gallery-avatar
+	// promote 400). A private root makes the sweep structurally incapable of
+	// seeing another suite's dirs. The runner's final recursive rm of the shared
+	// root still cleans everything up.
+	const suiteTempRoot = await mkdtemp(join(tempRoot, `${suite.name}-`));
 	try {
 		const process = Bun.spawn([...suite.command], {
 			cwd: suite.cwd,
@@ -119,9 +129,9 @@ async function runTestSuite(suite: TestSuite, testTempRoot: string): Promise<Tes
 			stderr: "pipe",
 			env: {
 				...Bun.env,
-				TEMP: testTempRoot,
-				TMP: testTempRoot,
-				TMPDIR: testTempRoot,
+				TEMP: suiteTempRoot,
+				TMP: suiteTempRoot,
+				TMPDIR: suiteTempRoot,
 				FORCE_COLOR: "0",
 				NO_COLOR: "1",
 			},
