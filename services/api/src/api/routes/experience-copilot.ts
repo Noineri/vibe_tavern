@@ -46,25 +46,60 @@ type SseStreamWriter = {
   aborted: boolean;
   onAbort: (callback: () => void) => void;
   writeSSE: (options: CopilotStreamEvent) => Promise<void>;
+  /** Raw socket write (from hono's StreamingApi base) — used for SSE comments. */
+  write: (message: string) => Promise<unknown>;
 };
+
+/** Silence between SSE writes must stay under Bun.serve's idleTimeout (255s,
+ *  its hard max): a thinking model's long reasoning or a held (non-streaming)
+ *  provider response produces no real events for minutes, and the socket gets
+ *  killed with "request timed out". 15s of silence → write an SSE comment. */
+const SSE_HEARTBEAT_MS = 15_000;
 
 /** Drain the copilot stream's `{event, data}` iterable into SSE, mirroring the
  *  chat stream route's `writeChatSseEvents`. On a mid-stream provider error the
  *  streaming headers are already sent, so the error surfaces as an SSE `error`
- *  event (not an HTTP status) — same as the chat stream. */
-async function writeCopilotSseEvents(
+ *  event (not an HTTP status) — same as the chat stream. Exported for the
+ *  heartbeat unit test. */
+export async function writeCopilotSseEvents(
   stream: SseStreamWriter,
   events: AsyncIterable<CopilotStreamEvent>,
   abortBridge: RouteAbortBridge,
+  heartbeatMs: number = SSE_HEARTBEAT_MS,
 ): Promise<void> {
   stream.onAbort(() => abortBridge.abort("sse"));
+  const iterator = events[Symbol.asyncIterator]();
+  // The in-flight iterator.next() — created lazily and REUSED across heartbeat
+  // ticks so exactly one pull is ever pending (see the race comment below).
+  let pendingNext: Promise<IteratorResult<CopilotStreamEvent, unknown>> | undefined;
   try {
-    for await (const event of events) {
+    while (true) {
       if (stream.aborted) {
         abortBridge.abort("sse-aborted-flag");
         break;
       }
-      await stream.writeSSE({ event: event.event, data: event.data });
+      // Race the PENDING next() (created once and carried across heartbeat
+      // ticks) against the heartbeat timer: if the generator is silent past
+      // `heartbeatMs`, emit an SSE comment (`: ping`) — invisible to every event
+      // parser — and race the SAME pending next() again. Calling next() fresh
+      // each tick would leave orphaned pending calls that silently consume
+      // generator output (caught by the heartbeat unit test).
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const raced = await Promise.race([
+        (pendingNext ??= iterator.next()),
+        new Promise<"heartbeat">((resolve) => {
+          timer = setTimeout(() => resolve("heartbeat"), heartbeatMs);
+        }),
+      ]).finally(() => {
+        if (timer !== undefined) clearTimeout(timer);
+      });
+      if (raced === "heartbeat") {
+        await stream.write(": ping\n\n");
+        continue;
+      }
+      pendingNext = undefined;
+      if (raced.done) break;
+      await stream.writeSSE({ event: raced.value.event, data: raced.value.data });
     }
   } catch (err) {
     if (abortBridge.signal.aborted || stream.aborted) {

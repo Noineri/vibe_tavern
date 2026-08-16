@@ -208,10 +208,17 @@ export function createMappedStream(
         } else {
           yield { type: "text-delta", delta: p2.text };
         }
-      } else if (p.type === "reasoning-delta" && p2.delta) {
+      } else if (p.type === "reasoning-delta") {
         // ── Native reasoning parts (AI SDK v5+: reasoning-start/reasoning-delta/reasoning-end) ──
-        reasoningCount++;
-        yield { type: "reasoning-delta", textDelta: p2.delta };
+        // v7 TextStreamReasoningDeltaPart carries the text in `text` (same field as
+        // text-delta); older builds used `delta`. A hand-cast hiding the rename made
+        // this branch dead in v7 — ALL reasoning was silently dropped, so thinking
+        // models looked hung until the SSE idle timeout killed the connection.
+        const reasoningText = p2.text ?? p2.delta;
+        if (reasoningText) {
+          reasoningCount++;
+          yield { type: "reasoning-delta", textDelta: reasoningText };
+        }
       } else if (p.type === "redacted-reasoning") {
         state.hasRedacted = true;
       }
