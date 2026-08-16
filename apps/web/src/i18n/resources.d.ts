@@ -725,6 +725,8 @@ export default interface Resources {
     "experience_copilot_title": "AI assistant",
     "experience_copilot_tool_failed": "Tool failed",
     "experience_copilot_visual": "Visual",
+    "experience_copilot_visual_problems": "Visual source problems",
+    "experience_copilot_visual_valid": "Visual source OK",
     "experience_detach_title": "Open in separate window",
     "experience_detach_unavailable": "This mini-app window is no longer connected.",
     "experience_detached_badge": "detached",

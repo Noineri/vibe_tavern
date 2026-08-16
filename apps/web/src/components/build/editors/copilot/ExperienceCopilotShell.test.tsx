@@ -552,6 +552,35 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
   });
 });
 
+describe("ExperienceCopilotShell — visual validator (UX 2026-08-16 remark 6)", () => {
+  it("visual tab: a broken visual source shows the problems banner; a clean one shows the OK chip", async () => {
+    const broken = [
+      "<style>.x{color:red}</style>",
+      "<div></div>",
+      "<script>",
+      "(function(){ if (true { } })();",
+      "</script>",
+    ].join("\n");
+    const first = renderShell({ visualSource: broken });
+    await flushSessionLoad();
+
+    // Banner only exists on the visual tab.
+    expect(first.queryByTestId("copilot-visual-validator")).toBeNull();
+    fireEvent.click(first.getByRole("radio", { name: "experience_copilot_visual" }));
+
+    expect(first.getByTestId("copilot-visual-validator").textContent).toContain("experience_copilot_visual_problems");
+    expect(first.getByTestId("copilot-visual-validator").textContent).toContain("script block 1");
+    first.unmount();
+
+    // A compile-clean visual shows the OK chip instead.
+    const clean = "<style>.x{c:red}</style>\n<div></div>\n<script>var a = 1;</script>";
+    const second = renderShell({ visualSource: clean });
+    await flushSessionLoad();
+    fireEvent.click(second.getByRole("radio", { name: "experience_copilot_visual" }));
+    expect(second.getByTestId("copilot-visual-validator").textContent).toContain("experience_copilot_visual_valid");
+  });
+});
+
 describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () => {
   // Identity i18n (no LocaleProvider mounted): `useT` falls back to the
   // key-as-string default, so the component markers render their i18n keys

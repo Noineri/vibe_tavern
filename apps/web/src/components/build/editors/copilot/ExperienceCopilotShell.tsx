@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
+import { validateVisualSource } from "../../../../lib/visual-source-validator.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { Modal } from "../../../shared/Modal.js";
@@ -426,6 +427,14 @@ export function ExperienceCopilotShell({
   const visualReview = useMemo(
     () => buildBufferReview(effVisual.base, effVisual.proposed, acceptedVisualHunks, !ctrl.isSending, dismissedVisualHunks),
     [effVisual, acceptedVisualHunks, dismissedVisualHunks, ctrl.isSending],
+  );
+
+  // UX 2026-08-16 remark 6 — static validation of the EFFECTIVE visual document:
+  // while a review round is open that is the PROPOSED text (what accept-all
+  // would land); otherwise the live buffer.
+  const visualValidation = useMemo(
+    () => validateVisualSource(visualReview ? visualReview.proposed : visualSource),
+    [visualReview, visualSource],
   );
 
   // CD-8 conflict semantics. Clean path: the buffer is exactly the hybrid the
@@ -891,6 +900,36 @@ export function ExperienceCopilotShell({
       ) : (
         <>
           {editorBuffer === "rules" ? rulesToolbar : visualToolbar}
+          {/* UX 2026-08-16 remark 6 — visual validator status row. Validates
+              the EFFECTIVE document: during a review round the proposed text
+              (what accept would land), otherwise the live buffer. Static
+              checks only (script-block compile + block closure) — see
+              lib/visual-source-validator.ts; runtime behavior stays the
+              sandbox's job. */}
+          {editorBuffer === "visual" && (
+            <div data-testid="copilot-visual-validator" className="px-3 pb-1.5 pt-2">
+              {visualValidation.ok ? (
+                <div className="flex items-center gap-1.5 font-ui text-[11px] text-success-text">
+                  <Icons.Check className="h-3 w-3 shrink-0" />
+                  <span>{t("experience_copilot_visual_valid")}</span>
+                </div>
+              ) : (
+                <div className="rounded-md border border-danger bg-danger-dim px-2.5 py-1.5">
+                  <div className="flex items-center gap-1.5 font-ui text-[11px] font-medium text-danger-text">
+                    <Icons.Alert className="h-3.5 w-3.5 shrink-0" />
+                    <span>{t("experience_copilot_visual_problems")}</span>
+                  </div>
+                  <ul className="mt-1 space-y-0.5">
+                    {visualValidation.problems.map((p, i) => (
+                      <li key={i} className="font-mono text-[11px] leading-[1.5] text-danger-text">
+                        {p.line !== null ? `L${p.line}: ` : ""}{p.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
           {/* CD-6: the review-mode editor (inline diff + review bar). The
               accept-selection state lives here in the shell so it survives
               buffer-tab switches (the panel remounts per tab). */}
