@@ -51,6 +51,7 @@ import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
+import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
@@ -311,6 +312,18 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     const persisted = scriptId === undefined ? null : loadPlaygroundConfig(scriptId);
     return persisted !== null ? persisted.humanSeatId : "";
   });
+  // XU-2: "Random start" toggle. ON by default for a FRESH config (no persisted
+  // state): a non-technical user gets a fresh start without understanding
+  // seeds. A restored config uses its persisted flag (normalized to false when
+  // absent — backward compatible).
+  const [randomStart, setRandomStart] = useState(() => {
+    const persisted = scriptId === undefined ? null : loadPlaygroundConfig(scriptId);
+    return persisted !== null ? persisted.randomStart : true;
+  });
+  /** The last randomly-generated seed (XU-2): shown read-only in the disabled
+   *  seed input while the toggle is ON, so the author can still see what was
+   *  used without hand-managing a seed. */
+  const [lastUsedSeed, setLastUsedSeed] = useState("");
 
   // Session + turn form (local only). requestId/expectedRevision are
   // author-editable (prefilled from the last envelope) so idempotent replays
@@ -362,7 +375,6 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
         ? { modelId: seat.modelId }
         : {}),
     }));
-  const humanSeats = participants.filter((p) => p.controller === EXPERIENCE_CONTROLLER.human);
 
   const updateSeat = (index: number, patch: Partial<PlaygroundSeat>) => {
     setSeatsTouched(true);
@@ -412,12 +424,20 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       seed,
       settingsJson,
       humanSeatId,
+      randomStart,
     });
-  }, [scriptId, seatsTouched, seats, grants, seed, settingsJson, humanSeatId]);
+  }, [scriptId, seatsTouched, seats, grants, seed, settingsJson, humanSeatId, randomStart]);
 
   const toggleGrant = (capability: ExperienceCapability, checked: boolean) => {
     setSeatsTouched(true);
     setGrants((prev) => (checked ? [...prev, capability] : prev.filter((c) => c !== capability)));
+  };
+
+  /** XU-2: toggling "Random start" touches the config so it persists (the save
+   *  effect is gated on seatsTouched). */
+  const handleRandomStartChange = (checked: boolean) => {
+    setSeatsTouched(true);
+    setRandomStart(checked);
   };
 
   // IR-90E: load provider profiles when the panel opens and a model seat exists.
@@ -527,6 +547,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       setError({ message: `${t("experience_tester_settings_invalid")} — ${settings.diagnostic}`, console: [] });
       return;
     }
+    // XU-2: a fresh random seed per launch when the toggle is ON; OFF keeps the
+    // manual seed path verbatim (empty = the server deterministic default).
+    const launchSeed = randomStart ? String(Math.floor(Math.random() * 2 ** 31)) : seed.trim();
+    if (randomStart) setLastUsedSeed(launchSeed);
     setBusy("start");
     setError(null);
     setFrameReady(false);
@@ -536,7 +560,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
         settings: settings.present ? settings.value : {},
         participants,
         capabilityGrants: [...grants],
-        ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
+        ...(launchSeed !== "" ? { seed: launchSeed } : {}),
         ...(humanSeatId !== "" ? { humanSeatId } : {}),
       });
       setSession(data);
@@ -803,11 +827,20 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
 
           <div className="mb-3 grid gap-2 sm:grid-cols-3">
             <div>
-              <label className={lblCls}>{t("experience_tester_seed_label")}</label>
+              <label className={lblCls}>{t("experience_playground_seed_label")}</label>
+              <div className="mt-1.5 flex items-center gap-2">
+                <Toggle
+                  checked={randomStart}
+                  onChange={handleRandomStartChange}
+                  aria-label={t("experience_playground_random_start")}
+                />
+                <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
+              </div>
               <input
-                className={cn(inputCls, "mt-1.5")}
-                value={seed}
+                className={cn(inputCls, "mt-1.5", randomStart && "opacity-60")}
+                value={randomStart ? lastUsedSeed : seed}
                 placeholder={t("experience_tester_seed_placeholder")}
+                disabled={randomStart}
                 onChange={(e) => setSeed(e.target.value)}
               />
             </div>
@@ -816,7 +849,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
               <div className="mt-1.5">
                 <DropdownSelect
                   value={humanSeatId}
-                  options={humanSeats.map((p) => ({ id: p.id, label: p.label }))}
+                  options={participants.map((p) => ({ id: p.id, label: `${p.label} (${t(CONTROLLER_LABEL_KEY[p.controller])})` }))}
                   searchable={false}
                   placeholder={t("experience_playground_human_seat_auto")}
                   defaultOption={t("experience_playground_human_seat_auto")}

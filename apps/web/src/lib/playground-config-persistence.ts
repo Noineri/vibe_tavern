@@ -35,6 +35,10 @@ export interface PersistedPlaygroundConfig {
 	readonly seed: string;
 	readonly settingsJson: string;
 	readonly humanSeatId: string;
+	/** XU-2: "Random start" toggle. Backward compatible on read: a pre-XU-2
+	 *  envelope has no flag, so {@link loadPlaygroundConfig} normalizes the
+	 *  absence to `false`. */
+	readonly randomStart: boolean;
 }
 
 const STORAGE_VERSION = 1;
@@ -64,7 +68,14 @@ function isPersistedConfig(value: unknown): value is PersistedPlaygroundConfig {
 	for (const grant of v.grants) {
 		if (typeof grant !== "string") return false;
 	}
-	return typeof v.seed === "string" && typeof v.settingsJson === "string" && typeof v.humanSeatId === "string";
+	return (
+		typeof v.seed === "string" &&
+		typeof v.settingsJson === "string" &&
+		typeof v.humanSeatId === "string" &&
+		// XU-2: randomStart is optional on read for backward compatibility — a
+		// pre-XU-2 envelope has no flag; load normalizes the absence to false.
+		(v.randomStart === undefined || typeof v.randomStart === "boolean")
+	);
 }
 
 /** Save the current test config under the script's key. Failures are silent:
@@ -87,7 +98,10 @@ export function loadPlaygroundConfig(scriptId: string): PersistedPlaygroundConfi
 		const raw = window.localStorage.getItem(storageKey(scriptId));
 		if (raw === null) return null;
 		const parsed: unknown = JSON.parse(raw);
-		return isPersistedConfig(parsed) ? parsed : null;
+		if (!isPersistedConfig(parsed)) return null;
+		// Backward compatible: a pre-XU-2 envelope has no randomStart — normalize
+		// to false so a restored config never silently flips to a random start.
+		return { ...parsed, randomStart: parsed.randomStart === true };
 	} catch {
 		return null;
 	}

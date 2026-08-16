@@ -352,7 +352,7 @@ function restoreUrl() {
 describe("ExperiencePlayground", () => {
   it("start: picking a human seat and starting sends the unsaved rules + roster + seat and renders the definition, projection, legal actions, and stop-reason", async () => {
     const utils = renderPlayground();
-    const { container, getByText, getAllByPlaceholderText, findByText } = utils;
+    const { container, getByText, getByRole, getAllByPlaceholderText, findByText } = utils;
 
     // Add a second human seat and pick it as the driven seat. The seat id is
     // now auto-generated from the name (XU-1): typing "Alice" yields id
@@ -360,7 +360,11 @@ describe("ExperiencePlayground", () => {
     fireEvent.click(getByText("experience_setup_add_participant"));
     const labelInputs = getAllByPlaceholderText("experience_setup_participant_name_placeholder");
     fireEvent.change(labelInputs[1]!, { target: { value: "Alice" } });
-    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "Alice");
+    // XU-2: "Random start" is ON by default (fresh config); turn it OFF so the
+    // manual (empty) seed path is exercised — the deterministic-default
+    // boundary this test pins.
+    fireEvent.click(getByRole("switch"));
+    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "Alice (experience_playground_role_human)");
 
     fireEvent.click(getByText("experience_playground_start"));
 
@@ -875,6 +879,63 @@ describe("ExperiencePlayground", () => {
     expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_playground_role_human")).toBe(true);
     expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_playground_role_model")).toBe(true);
   });
+
+  // XU-2: the "Which seat you play" dropdown lists ALL roster seats (not just
+  // human seats) and picks send that humanSeatId; the seed toggle governs
+  // whether a random seed or the manual seed reaches the Start request.
+  it("seat choice (XU-2): the dropdown lists ALL roster seats incl. a model seat, and picking one sends that humanSeatId", async () => {
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    const utils = renderPlayground(VALID_CODE);
+    const { container, getByText, getByRole } = utils;
+    // Auto-derive → human "you" + model "ai".
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
+    // Turn "Random start" OFF for a deterministic payload (no random seed).
+    fireEvent.click(getByRole("switch"));
+    // The MODEL seat is listed (the list is built uniformly from participants
+    // for every controller, so the script branch shares this code path).
+    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "AI (experience_playground_role_model)");
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground).toHaveBeenCalledWith(expect.objectContaining({ humanSeatId: "ai" }));
+  });
+
+  it("seed (XU-2): Random start ON generates a fresh non-empty seed per launch (two starts differ)", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole } = utils;
+    // Fresh config → the toggle defaults to ON.
+    expect(getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    const restart = getByText("experience_playground_restart");
+    fireEvent.click(restart);
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(2));
+    const first = startExperiencePlayground.mock.calls[0]![0] as { seed: string };
+    const second = startExperiencePlayground.mock.calls[1]![0] as { seed: string };
+    expect(first.seed).toBeTruthy();
+    expect(second.seed).toBeTruthy();
+    expect(first.seed).not.toBe(second.seed);
+  });
+
+  it("seed (XU-2): Random start OFF sends the manually entered seed verbatim", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole, getByPlaceholderText } = utils;
+    fireEvent.click(getByRole("switch")); // ON → OFF
+    fireEvent.change(getByPlaceholderText("experience_tester_seed_placeholder"), { target: { value: "my-seed-42" } });
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground).toHaveBeenCalledWith(expect.objectContaining({ seed: "my-seed-42" }));
+  });
+
+  it("seed (XU-2): Random start OFF + empty seed keeps the deterministic-default path (no seed key)", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole } = utils;
+    fireEvent.click(getByRole("switch")); // ON → OFF
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0]).not.toHaveProperty("seed");
+  });
 });
 
 // ── ER-14: send diagnostics to assistant ────────────────────────────────────
@@ -975,6 +1036,39 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
     // Falls back to the default single human seat — the roster shows the
     // friendly human role label, not a broken restored row.
     expect(view.baseElement.textContent).toContain("experience_playground_role_human");
+  });
+
+  it("persists randomStart and restores it; a pre-XU-2 envelope without the flag restores as OFF", async () => {
+    // Part 1: toggle ON → OFF, persist, remount → restored OFF.
+    const first = renderPlayground(VALID_CODE, null, { scriptId: "script_rs" });
+    await first.findByText("experience_playground_start");
+    fireEvent.click(first.getByRole("switch")); // ON → OFF
+    await waitFor(() => {
+      const raw = window.localStorage.getItem("experience.playground.script_rs");
+      expect(raw).toBeTruthy();
+      const saved = JSON.parse(raw!) as { randomStart: boolean };
+      expect(saved.randomStart).toBe(false);
+    });
+    first.unmount();
+
+    const second = renderPlayground(VALID_CODE, null, { scriptId: "script_rs" });
+    await second.findByText("experience_playground_start");
+    expect(second.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    second.unmount();
+
+    // Part 2: an OLD envelope (no randomStart flag) restores as OFF (false).
+    window.localStorage.setItem("experience.playground.script_old", JSON.stringify({
+      version: 1,
+      seats: [{ id: "you", label: "You", controller: "human" }],
+      grants: [],
+      seed: "",
+      settingsJson: "",
+      humanSeatId: "",
+    }));
+    const third = renderPlayground(VALID_CODE, null, { scriptId: "script_old" });
+    await third.findByText("experience_playground_start");
+    expect(third.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    third.unmount();
   });
 });
 
