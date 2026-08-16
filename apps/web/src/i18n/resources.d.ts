@@ -708,7 +708,7 @@ export default interface Resources {
     "experience_copilot_preview_title": "Visual preview",
     "experience_copilot_provider": "Provider",
     "experience_copilot_provider_select": "Select provider",
-    "experience_copilot_result_sent": "Sent to assistant",
+    "experience_copilot_result_copied": "Copied to the assistant chat",
     "experience_copilot_retry": "Retry",
     "experience_copilot_rules": "Rules",
     "experience_copilot_sandbox": "Sandbox",

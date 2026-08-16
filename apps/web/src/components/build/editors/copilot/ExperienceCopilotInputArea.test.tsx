@@ -245,4 +245,17 @@ describe("ExperienceCopilotInputArea", () => {
     expect(getByTestId("copilot-model-pill").className).toContain("w-[240px]");
     expect(getByTestId("dropdown-group-copilot-model-all").getAttribute("data-content-width")).toBe("320");
   });
+
+  it("prefill replaces the current draft (UX 2026-08-16 remark 6)", () => {
+    const { getByPlaceholderText, props, rerender } = renderInput();
+    const textarea = getByPlaceholderText("experience_copilot_input_placeholder") as HTMLTextAreaElement;
+
+    fireEvent.change(textarea, { target: { value: "hand-typed draft" } });
+    expect(textarea.value).toBe("hand-typed draft");
+
+    // A prefill object arriving (fresh identity per copy click in the Shell)
+    // replaces the draft — the user reviews/edits, then sends manually.
+    rerender(<ExperienceCopilotInputArea {...props} prefill={{ text: "digest from tester" }} />);
+    expect(textarea.value).toBe("digest from tester");
+  });
 });

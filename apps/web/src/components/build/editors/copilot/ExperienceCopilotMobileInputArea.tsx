@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
@@ -20,9 +20,15 @@ import type { ExperienceCopilotInputAreaProps } from "./ExperienceCopilotInputAr
  * repeat).
  */
 export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAreaProps) {
-  const { isSending, onSend, onCancel, providerProfileId, model, onProviderChange } = props;
+  const { isSending, onSend, onCancel, providerProfileId, model, onProviderChange, prefill } = props;
 
   const [draft, setDraft] = useState("");
+
+  // UX 2026-08-16 remark 6 — see `prefill` on the shared props interface. Same
+  // contract as the desktop input area: fresh object → replace the draft.
+  useEffect(() => {
+    if (prefill) setDraft(prefill.text);
+  }, [prefill]);
 
   const { t } = useT();
 

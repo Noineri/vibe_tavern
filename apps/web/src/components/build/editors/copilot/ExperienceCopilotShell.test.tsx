@@ -840,7 +840,7 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
 });
 
 describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () => {
-  it("tester send: posts a digest into the thread (testFeedback reaches the stream body) and a subsequent manual send carries it", async () => {
+  it("tester send: copies the digest into the chat input (no auto-send); the manual send carries testFeedback", async () => {
     const { getByTestId, getByText, findByText, container } = renderShell();
     await flushSessionLoad();
 
@@ -855,32 +855,30 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     const sendBtn = await findByText("experience_tester_send_to_copilot");
     fireEvent.click(sendBtn);
 
-    // handleSendToCopilot → ctrl.handleSend → the stream POST body carries testFeedback.
-    await waitFor(() => expect(streamCalls()).toHaveLength(1));
-    const firstBody = streamCalls()[0]!.body!;
-    expect(firstBody.testFeedback).toMatchObject({ ok: true, status: "active" });
-    expect(firstBody.step).toBe("test");
-    // The digest text was posted as the user message content.
-    expect(typeof firstBody.content).toBe("string");
-    expect((firstBody.content as string).length).toBeGreaterThan(0);
+    // UX 2026-08-16 remark 6: clicking COPIES into the chat input — it must NOT
+    // dispatch the turn. No stream POST happens until the user sends.
+    await new Promise((r) => setTimeout(r, 25));
+    expect(streamCalls()).toHaveLength(0);
 
     // Close the tester modal so the chat input textarea is the only one left.
     fireEvent.click(getByTestId("copilot-toolbar-tester"));
 
-    // A SUBSEQUENT manual send (typed into the chat input) also carries the
-    // latest testFeedback (it survives until overwritten).
+    // The digest text sits in the chat input, prefilled for the user to send.
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: "can you fix the rules?" } });
-    fireEvent.click(getByTestId("copilot-send-btn"));
+    expect(textarea.value.length).toBeGreaterThan(0);
 
-    await waitFor(() => expect(streamCalls()).toHaveLength(2));
-    const secondBody = streamCalls()[1]!.body!;
-    expect(secondBody.content).toBe("can you fix the rules?");
-    expect(secondBody.testFeedback).toMatchObject({ ok: true, status: "active" });
+    // The manual send posts the digest as the user message with testFeedback.
+    fireEvent.click(getByTestId("copilot-send-btn"));
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    const body = streamCalls()[0]!.body!;
+    expect(body.testFeedback).toMatchObject({ ok: true, status: "active" });
+    expect(body.step).not.toBe("test");
+    expect(typeof body.content).toBe("string");
+    expect((body.content as string).length).toBeGreaterThan(0);
   });
 
-  it("playground send: the sandbox-modal playground posts a diagnostics digest", async () => {
-    const { getByTestId, getByText, findByText } = renderShell();
+  it("playground send: the sandbox-modal playground copies a diagnostics digest into the input; manual send carries it", async () => {
+    const { getByTestId, getByText, findByText, container } = renderShell();
     await flushSessionLoad();
 
     // Open the sandbox modal + start a session.
@@ -895,10 +893,19 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     const sendBtn = await findByText("experience_playground_send_diagnostics");
     fireEvent.click(sendBtn);
 
+    // UX 2026-08-16 remark 6: copy, not dispatch.
+    await new Promise((r) => setTimeout(r, 25));
+    expect(streamCalls()).toHaveLength(0);
+
+    // Close the sandbox modal, then send the prefilled digest manually.
+    fireEvent.click(getByTestId("copilot-toolbar-sandbox"));
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    expect(textarea.value.length).toBeGreaterThan(0);
+    fireEvent.click(getByTestId("copilot-send-btn"));
+
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     const body = streamCalls()[0]!.body!;
     expect(body.testFeedback).toMatchObject({ ok: true, status: "active", revision: 0 });
-    expect(body.step).toBe("test");
   });
 });
 

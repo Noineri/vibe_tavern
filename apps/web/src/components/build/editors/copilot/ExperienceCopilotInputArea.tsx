@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
@@ -29,12 +29,23 @@ export interface ExperienceCopilotInputAreaProps {
   providerProfileId: string | null;
   model?: string;
   onProviderChange: (profileId: string, model?: string) => void;
+  /** Outside-set draft text (UX 2026-08-16 remark 6): the tester/playground
+ *  "send to copilot" button COPIES the digest into the chat input instead of
+ *  dispatching the turn — the user presses send themselves. Applied whenever
+ *  a new object arrives (replaces the current draft). */
+  prefill?: { text: string };
 }
 
 export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProps) {
-  const { isSending, onSend, onCancel, providerProfileId, model, onProviderChange } = props;
+  const { isSending, onSend, onCancel, providerProfileId, model, onProviderChange, prefill } = props;
 
   const [draft, setDraft] = useState("");
+
+  // UX 2026-08-16 remark 6 — see `prefill` above. Object identity is the
+  // trigger: the Shell mints a fresh object per copy click.
+  useEffect(() => {
+    if (prefill) setDraft(prefill.text);
+  }, [prefill]);
 
   const { t } = useT();
 

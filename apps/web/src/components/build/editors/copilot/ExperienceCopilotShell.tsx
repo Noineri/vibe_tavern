@@ -158,6 +158,9 @@ export function ExperienceCopilotShell({
   // message also carries the latest test feedback (it survives history
   // compaction as a system-level JSON context section).
   const [testFeedback, setTestFeedback] = useState<Record<string, unknown> | undefined>(undefined);
+  // UX 2026-08-16 remark 6 — prefill handed to the chat input on "send to
+  // copilot" (see handleSendToCopilot). Object identity is the trigger.
+  const [inputPrefill, setInputPrefill] = useState<{ text: string } | null>(null);
 
   // Resolve the provider ONCE per pass: the saved binding wins when it still
   // exists; a dangling/absent saved id falls back to the first available
@@ -609,24 +612,18 @@ export function ExperienceCopilotShell({
     toast.success(t("copilot_review_reverted"));
   }, [review, t, threadId]);
 
-  // ER-14: post a test/simulate/playground digest into the copilot thread. The
-  // digest's human-readable `text` becomes a user message (the model responds);
-  // its structured `feedback` is set as `testFeedback` and carried on every
-  // subsequent send until overwritten. A toast confirms when the chat pane
-  // isn't visible (the tester/playground live in modals/panes).
+  // ER-14: copy a test/simulate/playground digest into the copilot chat input.
+  // UX 2026-08-16 remark 6: this must NOT dispatch the turn — the button copies
+  // the digest text into the input and the user sends it themselves. The
+  // structured `feedback` is still captured now so the next manual send carries
+  // it (testFeedback survives until overwritten, per ER-14).
   const handleSendToCopilot = useCallback(
     (digest: CopilotDigest) => {
       setTestFeedback(digest.feedback);
-      captureDangling();
-      void ctrl.handleSend(digest.text, {
-        rules: rulesCode,
-        visual: visualSource,
-        step: "test",
-        testFeedback: digest.feedback,
-      });
-      toast.success(t("experience_copilot_result_sent"));
+      setInputPrefill({ text: digest.text });
+      toast.success(t("experience_copilot_result_copied"));
     },
-    [ctrl, rulesCode, visualSource, t],
+    [t],
   );
 
   // ── Session switch / new (ER-12b) ────────────────────────────────────────
@@ -797,6 +794,7 @@ export function ExperienceCopilotShell({
           {isMobile ? (
             <ExperienceCopilotMobileInputArea
               isSending={ctrl.isSending}
+              prefill={inputPrefill ?? undefined}
               onSend={(content) => {
                 captureDangling();
                 void ctrl.handleSend(content, {
@@ -814,6 +812,7 @@ export function ExperienceCopilotShell({
           ) : (
             <ExperienceCopilotInputArea
               isSending={ctrl.isSending}
+              prefill={inputPrefill ?? undefined}
               onSend={(content) => {
                 captureDangling();
                 void ctrl.handleSend(content, {

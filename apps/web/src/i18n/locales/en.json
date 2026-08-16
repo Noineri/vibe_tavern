@@ -1871,7 +1871,7 @@
   "experience_copilot_tester_title": "Rules tester",
   "experience_copilot_preview_title": "Visual preview",
   "experience_copilot_sandbox_title": "Playground",
-  "experience_copilot_result_sent": "Sent to assistant",
+  "experience_copilot_result_copied": "Copied to the assistant chat",
   "experience_copilot_title": "AI assistant",
   "experience_copilot_subtitle": "Ask the AI assistant to propose rules or visual edits.",
   "experience_copilot_loading": "Loading AI assistant…",
