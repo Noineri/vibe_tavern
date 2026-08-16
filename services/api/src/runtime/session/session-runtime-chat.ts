@@ -1,7 +1,6 @@
 import type { AssemblePromptResponse, Message, PromptTrace, ProviderResponseTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, UiSettingsStore } from "@vibe-tavern/db";
-import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, ExperienceStore } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, UiSettingsStore, ExperienceStore } from "@vibe-tavern/db";
 import type { ToolSet } from "ai";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { SendMessageRequest } from "../../domain/chat/chat-application-types.js";
