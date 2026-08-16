@@ -215,6 +215,11 @@ export interface GeneratingScrimProps {
 	/** Extra class on the overlay (e.g. rounded corners to match the host). */
 	className?: string;
 	/**
+	 * Optional data-testid for tests that pin the scrim's presence (e.g. the
+	 * copilot editor's frozen-scrim assertion). Rides on the scrim root.
+	 */
+	testId?: string;
+	/**
 	 * When true AND variant="blur", the backdrop-blur is applied so the locked
 	 * text reads as frozen. DEFAULT false.
 	 */
@@ -239,11 +244,13 @@ export function GeneratingScrim({
 	label,
 	pointerEvents,
 	className,
+	testId,
 	hasExistingContent,
 }: GeneratingScrimProps) {
 	const blur = variant === "blur" && hasExistingContent;
 	return (
 		<motion.div
+			data-testid={testId}
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
 			exit={{ opacity: 0 }}

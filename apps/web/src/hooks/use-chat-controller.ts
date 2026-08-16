@@ -39,8 +39,9 @@ import {
   renameBranchAction,
 } from "../stores/api-actions/chat-actions.js";
 import { useDiceStore } from "../stores/dice-store.js";
+import { useExperienceStore } from "../stores/experience-store.js";
 import { DiceApiError } from "../api/dice-api.js";
-import type { DiceLaneState, DiceSendCommitIntent } from "../api/types.js";
+import type { DiceLaneState, DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
@@ -72,12 +73,26 @@ export type DiceSendBlock = "choose" | "actor_mismatch";
 
 const DICE_CONFLICT_CODES = new Set(["stale_revision", "unresolved_choose"]);
 
+// IR-70H Experience bind conflict codes carried on DiceApiError (non-stream
+// HTTP 409 via sendChatMessageError) or ProviderStreamError (SSE error event).
+// These are server-side commit conflicts, not provider failures — the
+// attachment moved under us. Disjoint from DICE_CONFLICT_CODES.
+const EXPERIENCE_CONFLICT_CODES = new Set(["not_found", "already_bound", "stale_queue", "stale_session"]);
+
 /** Extract the dice commit-conflict code from either send-mode error: non-stream
  *  throws {@link DiceApiError} (HTTP 409 body `error.details.code`), stream
  *  throws {@link ProviderStreamError} (SSE error event `code`). */
 function diceConflictCode(error: unknown): string | undefined {
   const code = error instanceof DiceApiError || error instanceof ProviderStreamError ? error.code : undefined;
   return code !== undefined && DICE_CONFLICT_CODES.has(code) ? code : undefined;
+}
+
+/** Extract the experience bind-conflict code from either send-mode error
+ *  (IR-70H). Same transport as {@link diceConflictCode} but checks the four
+ *  Experience bind codes — disjoint from the Dice codes. */
+function experienceConflictCode(error: unknown): string | undefined {
+  const code = error instanceof DiceApiError || error instanceof ProviderStreamError ? error.code : undefined;
+  return code !== undefined && EXPERIENCE_CONFLICT_CODES.has(code) ? code : undefined;
 }
 
 /** Pure send-gate: the reason the active pending lane blocks a send, or null.
@@ -126,6 +141,43 @@ function readDiceSendState(): { commitIntent: DiceSendCommitIntent | undefined; 
   return { commitIntent, blockReason: null };
 }
 
+/** Imperative read (at send time) of the experience attachment commit intent
+ *  for the EXACT scope the caller is about to send into (IR-73D). The
+ *  `expectedChatId` is the actual send target (from the chat store, not the
+ *  snapshot); a transient mismatch — snapshot claims a different chat is active
+ *  — fails closed so the other chat's attachment can never be bound into this
+ *  send. Subtractive-only: when the scope has no queued attachment, or the
+ *  attachment's scope IDs don't match the active scope exactly, the intent is
+ *  undefined and the send body is byte-identical to a no-experience send.
+ *  Derives ONLY the three identifiers/revisions the server already stored —
+ *  never `publicReport`, hashes, transcript, state, or visual source. The
+ *  returned `scope` (always set when there is an active chat+branch) is used
+ *  for the post-settlement authoritative attachment refresh. */
+function readExperienceSendState(expectedChatId: ChatId): {
+  commitIntent: ExperienceSendCommitIntent | undefined;
+  scope: { chatId: string; branchId: string } | null;
+} {
+  const snapshot = useSnapshotStore.getState();
+  // Fail closed unless the snapshot's active chat is the EXACT send target — a
+  // transient mismatch could otherwise capture the wrong chat's intent.
+  if (snapshot.activeChat?.id !== expectedChatId) return { commitIntent: undefined, scope: null };
+  const chatId = snapshot.activeChat?.id ?? null;
+  const branchId = snapshot.activeBranch?.id ?? null;
+  if (!chatId || !branchId) return { commitIntent: undefined, scope: null };
+  const attachment = useExperienceStore.getState().byScope[JSON.stringify([chatId, branchId])]?.queuedAttachment ?? null;
+  if (!attachment || attachment.chatId !== chatId || attachment.branchId !== branchId) {
+    return { commitIntent: undefined, scope: { chatId, branchId } };
+  }
+  return {
+    commitIntent: {
+      experienceAttachmentId: attachment.id,
+      experienceQueueRevision: attachment.queueRevision,
+      experienceSessionRevision: attachment.sessionRevision,
+    },
+    scope: { chatId, branchId },
+  };
+}
+
 /** A send that failed with a dice commit conflict (stale lane revision /
  *  unresolved choose) is NOT a provider error — the lane moved under us. Resync
  *  the pending lane and KEEP the draft so the user can re-review and resend.
@@ -141,6 +193,23 @@ function tryHandleDiceSendConflict(
   restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
   const branchId = useSnapshotStore.getState().activeBranch?.id ?? null;
   if (branchId) void useDiceStore.getState().refreshPending(chatId, branchId);
+  return true;
+}
+
+/** A send that failed with an experience bind conflict (not_found /
+ *  already_bound / stale_queue / stale_session — IR-70H) is NOT a provider
+ *  error — the attachment moved under us. Restore the draft so the user can
+ *  re-review and resend. The authoritative attachment refresh is handled by
+ *  the post-settlement refresh in handleSend (requirement 3), not here. Returns
+ *  true when the error was an experience conflict (caller must skip the generic
+ *  provider-error path). */
+function tryHandleExperienceSendConflict(
+  error: unknown,
+  pendingUserContent: string | null | undefined,
+  pendingAttachments: Attachment[] | undefined,
+): boolean {
+  if (experienceConflictCode(error) === undefined) return false;
+  restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
   return true;
 }
 
@@ -433,6 +502,14 @@ export function useChatController(): ChatControllerActions {
         useChatStore.getState().setGenerationStatus(chatId, "failed");
         return "failed";
       }
+      // IR-73D: an experience bind conflict (not_found / already_bound /
+      // stale_queue / stale_session) restores the draft — not a provider
+      // error. The authoritative attachment refresh is handled by the
+      // post-settlement refresh in handleSend.
+      if (tryHandleExperienceSendConflict(error, pendingUserContent, pendingAttachments)) {
+        useChatStore.getState().setGenerationStatus(chatId, "failed");
+        return "failed";
+      }
       void logClientSendDebug("web.hook.stream.error", {
         chatId,
         message: error instanceof Error ? error.message : String(error),
@@ -584,6 +661,15 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
+    // IR-73D: capture the experience attachment commit intent (only when the
+    // active scope has a valid server-queued attachment). Subtractive: when
+    // absent or scope-mismatched, no experience fields are added and no
+    // experience refresh is issued. The scope is retained for the post-
+    // settlement authoritative attachment refresh (requirement 3). The send
+    // target (activeChatId) is passed so a transient snapshot mismatch fails
+    // closed instead of capturing the wrong chat's intent.
+    const exp = readExperienceSendState(activeChatId);
+
     if (streamResponseRef.current) {
       void logClientSendDebug("web.hook.handleSend.stream-request", {
         activeChatId,
@@ -593,7 +679,7 @@ export function useChatController(): ChatControllerActions {
       csStore.clearDraftAttachments();
       await executeStreamAction(
         activeChatId,
-        (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined, ...dice.commitIntent }, opts),
+        (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined, ...dice.commitIntent, ...exp.commitIntent }, opts),
         draft,
         currentAttachments,
       );
@@ -608,7 +694,7 @@ export function useChatController(): ChatControllerActions {
       // treats abort as a settled "cancelled" outcome without invoking onError.
       await executeNonStreamAction(
         activeChatId,
-        (signal) => sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, dice.commitIntent, signal),
+        (signal) => sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, dice.commitIntent, signal, exp.commitIntent),
         {
           pendingUserContent: draft,
           pendingAttachments: currentAttachments,
@@ -617,6 +703,10 @@ export function useChatController(): ChatControllerActions {
             // DICE-F3: a dice commit conflict resyncs the lane and keeps the
             // draft — it is not a provider failure.
             if (tryHandleDiceSendConflict(error, activeChatId, draft, currentAttachments)) return;
+            // IR-73D: an experience bind conflict restores the draft — not a
+            // provider failure. The authoritative attachment refresh is
+            // handled by the post-settlement refresh below.
+            if (tryHandleExperienceSendConflict(error, draft, currentAttachments)) return;
             if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
               toast.error(getT()("vision_not_supported"), {
                 description: getT()("vision_not_supported_desc"),
@@ -633,6 +723,19 @@ export function useChatController(): ChatControllerActions {
           },
         },
       );
+    }
+
+    // IR-73D settlement/rollback parity: if an experience intent was captured,
+    // refresh that exact scope's queued attachment after EVERY send settlement
+    // (success, typed conflict, generic error, and abort). This lets server
+    // truth clear a bound attachment or restore/replace an unbound/compensated
+    // one. A no-experience send issues no experience refresh. The refresh is
+    // AWAITED (not fire-and-forget) so handleSend does not resolve until the
+    // authoritative attachment state is settled — otherwise a rapid second send
+    // could capture the already-bound stale intent before the refresh completes.
+    // The store action records its own errors, so a failure here does not throw.
+    if (exp.commitIntent && exp.scope) {
+      await useExperienceStore.getState().refreshAttachment(exp.scope.chatId, exp.scope.branchId);
     }
   }, []);
 

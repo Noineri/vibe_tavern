@@ -7,6 +7,7 @@ export interface ProviderDataState {
   /** RP-scoped favorites consumed by ProviderModal and RP quick switches. */
   favoritesByProfile: Record<string, FavoriteProviderModelRecord[]>;
   coauthorFavoritesByProfile: Record<string, FavoriteProviderModelRecord[]>;
+  copilotFavoritesByProfile: Record<string, FavoriteProviderModelRecord[]>;
 }
 
 export interface ProviderDataActions {
@@ -18,10 +19,11 @@ export const useProviderDataStore = create<ProviderDataState & ProviderDataActio
   profiles: [],
   favoritesByProfile: {},
   coauthorFavoritesByProfile: {},
+  copilotFavoritesByProfile: {},
   setProfiles: (profiles) => set({ profiles }),
-  setFavorites: (profileId, scope, favorites) => set((state) => (
-    scope === MODEL_FAVORITE_SCOPE.rp
-      ? { favoritesByProfile: { ...state.favoritesByProfile, [profileId]: favorites } }
-      : { coauthorFavoritesByProfile: { ...state.coauthorFavoritesByProfile, [profileId]: favorites } }
-  )),
+  setFavorites: (profileId, scope, favorites) => set((state) => {
+    if (scope === MODEL_FAVORITE_SCOPE.rp) return { favoritesByProfile: { ...state.favoritesByProfile, [profileId]: favorites } };
+    if (scope === MODEL_FAVORITE_SCOPE.coauthor) return { coauthorFavoritesByProfile: { ...state.coauthorFavoritesByProfile, [profileId]: favorites } };
+    return { copilotFavoritesByProfile: { ...state.copilotFavoritesByProfile, [profileId]: favorites } };
+  }),
 }));

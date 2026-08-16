@@ -25,6 +25,7 @@ export type ProviderProxyMode = typeof PROXY_MODE[keyof typeof PROXY_MODE];
 export const MODEL_FAVORITE_SCOPE = {
   rp: "rp",
   coauthor: "coauthor",
+  copilot: "copilot",
 } as const;
 
 export type ModelFavoriteScope = typeof MODEL_FAVORITE_SCOPE[keyof typeof MODEL_FAVORITE_SCOPE];

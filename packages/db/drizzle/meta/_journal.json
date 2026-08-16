@@ -232,6 +232,76 @@
       "when": 1786138099667,
       "tag": "0032_lethal_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1786371753458,
+      "tag": "0033_volatile_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1786446928793,
+      "tag": "0034_condemned_nightcrawler",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1786473401373,
+      "tag": "0035_nifty_alex_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1786521182867,
+      "tag": "0036_hard_sabretooth",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1786554360369,
+      "tag": "0037_loud_polaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1786715540794,
+      "tag": "0038_abnormal_karma",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1786735403840,
+      "tag": "0039_nebulous_fallen_one",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1786740622488,
+      "tag": "0040_tidy_human_torch",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1786776630249,
+      "tag": "0041_fuzzy_paper_doll",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1786778074209,
+      "tag": "0042_loving_thena",
+      "breakpoints": true
     }
   ]
 }

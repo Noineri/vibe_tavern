@@ -2,7 +2,7 @@ import type { ChatBranchId, ChatId, ChatMode, MessageId, MessageVariantId, Objec
 import { brandId } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
 import { createMessageVariant, updateChatDynamicPrompt, type CreateMessageVariantInput } from "../../api/chat-api.js";
-import type { DiceSendCommitIntent } from "../../api/types.js";
+import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../../api/types.js";
 import {
   activateBranch,
   createChat,
@@ -224,11 +224,11 @@ export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string |
   syncSnapshot(snapshot);
 }
 
-export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal): Promise<void> {
+export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal, experienceCommit?: ExperienceSendCommitIntent): Promise<void> {
   useCoauthorTurnStore.getState().clearTurn(chatId);
-  // Spread the optional dice commit intent (`{diceMode, pendingRevision}`) into
-  // the wire body; absent ⇒ a no-Dice send, byte-identical to before. DICE-F3.
-  const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit }, { signal });
+  // Spread the optional commit intents into the wire body; absent ⇒ a plain
+  // send, byte-identical to before. DICE-F3 (dice) + IR-51 (experience).
+  const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit, ...experienceCommit }, { signal });
   syncSnapshot(snapshot);
   syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);

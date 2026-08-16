@@ -92,7 +92,7 @@ export const saveProviderDraftSchema = providerCoreSchema.extend({
 
 export const updateProviderProfileSchema = providerCoreSchema.partial();
 
-export const modelFavoriteScopeSchema = z.enum([MODEL_FAVORITE_SCOPE.rp, MODEL_FAVORITE_SCOPE.coauthor]);
+export const modelFavoriteScopeSchema = z.enum([MODEL_FAVORITE_SCOPE.rp, MODEL_FAVORITE_SCOPE.coauthor, MODEL_FAVORITE_SCOPE.copilot]);
 
 export const favoriteProviderModelQuerySchema = z.object({
   scope: modelFavoriteScopeSchema.default(MODEL_FAVORITE_SCOPE.rp),

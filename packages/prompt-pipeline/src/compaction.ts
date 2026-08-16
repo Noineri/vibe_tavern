@@ -68,10 +68,30 @@ export function estimateMessageArrayTokens(messages: Array<{ content: string }>)
  * In the OpenAI API (and most others), a "tool" role message must be immediately
  * preceded by an "assistant" message containing the tool calls.
  *
+ * It equally refuses to start the preserved block with an assistant message
+ * that carries tool calls: providers that require a user turn before a
+ * function-call turn (Gemini via OpenAI-compat bridges, Anthropic) reject such
+ * a history outright, because the user request that triggered the calls was
+ * cut away by the boundary. Plain assistant text heads stay allowed — they are
+ * valid for every provider VT ships.
+ *
  * @param messages The full array of chat messages.
  * @param preserveCount The minimum number of recent messages to preserve.
  * @returns The index of the first message to be preserved (everything before it can be summarized).
  */
+/**
+ * Duck-typed tool-call detector for the boundary walk: callers pass role-tagged
+ * messages whose assistant entries may carry `toolCalls` (copilot history) or
+ * `tool_calls` (OpenAI-shaped) — either spelling marks the message as a
+ * function-call carrier. Role-generic histories without these fields are
+ * unaffected.
+ */
+function carriesToolCalls(message: { role: string }): boolean {
+  const candidate = message as { toolCalls?: unknown; tool_calls?: unknown };
+  const calls = candidate.toolCalls ?? candidate.tool_calls;
+  return Array.isArray(calls) && calls.length > 0;
+}
+
 export interface HistoryCompactionPlan<T> {
   messages: T[];
   fullHistoryTokens: number;
@@ -152,6 +172,14 @@ export function findSafeCompactionBoundary(
   while (keepFrom > 0) {
     const firstPreserved = messages[keepFrom];
 
+    // An assistant head carrying tool calls is an unsafe boundary for
+    // functionCall-after-user providers (see doc comment) — step back so the
+    // triggering user message (or whatever precedes the call run) survives.
+    if (firstPreserved.role === "assistant" && carriesToolCalls(firstPreserved)) {
+      keepFrom -= 1;
+      continue;
+    }
+
     // If the first preserved message is NOT a tool result, the boundary is safe.
     if (firstPreserved.role !== "tool") {
       break;
@@ -164,8 +192,9 @@ export function findSafeCompactionBoundary(
     if (preceding.role === "assistant") {
       // The preceding message is the assistant that made the tool call.
       // We must include it in the preserved block, so we move the boundary back by 1.
+      // Re-loop (no break): the newly exposed head is now that assistant — if
+      // IT carries tool calls, the functionCall-after-user rule walks further back.
       keepFrom -= 1;
-      break;
     } else {
       // The preceding message is NOT an assistant (this is a technically orphaned tool result).
       // We keep walking back to try and find the assistant message.

@@ -535,8 +535,9 @@ export async function* streamAiAssistant(
         }
       }
 
-      // Emit the cleaned text result. For code-generating modes (dice_script),
-      // strip any stray markdown fences the model added despite instructions.
+      // Emit the cleaned text result. For the code-generating dice_script mode,
+      // strip any stray markdown fences the model added despite instructions so
+      // the user receives raw executable source.
       if (fullText.trim()) {
         const finalText = request.mode === "dice_script"
           ? cleanGeneratedCode(fullText)

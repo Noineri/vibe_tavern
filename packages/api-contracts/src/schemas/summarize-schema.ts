@@ -8,7 +8,7 @@ export const autoSummaryConfigSchema = z.object({
   useChatModel: z.boolean().default(true),
   excludeSummarized: z.boolean().default(true),
   // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): feed preceding chat-summaries
-  // (summarizedTo < from) into the summary prompt as read-only continuity.
+  // (summarizedFrom < from) into the summary prompt as read-only continuity.
   // Default ON — ranged/auto summaries are continuity-aware out of the box.
   includePriorSummaries: z.boolean().default(true),
   // How many of the most-recent preceding summaries to include (0 = none,
@@ -52,6 +52,15 @@ export const generateChatSummarySchema = z.object({
   // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): per-call override of the auto-summary
   // toggle for manual ranged summaries. Default ON (mirrors autoSummaryConfig).
   includePriorSummaries: z.boolean().optional().default(true),
+  // SUM-2: per-call sampler overrides for ranged-summary generation. Absent =
+  // inherit from the provider profile, so summaries match RP temperature by
+  // default but can be cooled down (thinking models at high temperature drift
+  // on long structured summary prompts). temperature/maxOutputTokens reach the
+  // executor as overrides; contextBudget caps how much chat history the
+  // assembler admits (replaces effectiveProfile.contextBudget when set).
+  temperature: z.number().min(0).max(2).optional(),
+  maxOutputTokens: z.number().int().min(1).optional(),
+  contextBudget: z.number().int().min(1).optional(),
 });
 
 export const updateMemorySettingsSchema = z.object({

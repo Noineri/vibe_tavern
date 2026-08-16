@@ -178,7 +178,7 @@ export interface ChatRuntimeApi {
 	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
 	updateChatSummaryRecord: (chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
 	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SummaryResponse }>;
-	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
+	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean; temperature?: number; maxOutputTokens?: number; contextBudget?: number }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
 	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<ConfigPatchResponse>;
 	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
 	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
@@ -329,13 +329,19 @@ export interface ScriptRuntimeApi {
 	listScripts: (scopeType: string, ownerId?: string) => Promise<Script[]>;
 	getScript: (scriptId: string) => Promise<Script | null>;
 	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
-	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
+	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }) => Promise<Script>;
 	setScriptScope: (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
 	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
 	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
 	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
 	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
+	/** List the visuals bound to a script (its equal-peer "skin" set; BE-5 junction). */
+	getScriptVisuals: (scriptId: string) => Promise<ExperienceVisualRow[]>;
+	/** Bind a visual to a script (idempotent; first bound visual auto-becomes the silent default). */
+	bindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
+	/** Unbind a visual (reassigns the silent default if it was the one removed). */
+	unbindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────
@@ -513,6 +519,318 @@ export interface DiceRuntimeApi {
 	chooseFinal: (chatId: string, rollId: string, attemptId: string) => Promise<void>;
 }
 
+// ─── Experience (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 3 / IR-32) ────────
+
+import type {
+	ExperienceSessionView,
+	ExperienceProjection,
+	ExperienceQueuedAttachmentView,
+	TurnAwait,
+} from "../../domain/interactive/experience-service.js";
+import type { ExperienceReportStatus } from "../../domain/interactive/experience-report-service.js";
+import type { RecalculationPreview } from "../../domain/interactive/experience-replay-service.js";
+import type {
+	ExperienceTestRunData,
+	ExperienceTestRunInput,
+	ExperienceTestSimulateData,
+	ExperienceTestSimulateInput,
+} from "../../domain/interactive/experience-tester.js";
+import type {
+	ExperiencePlaygroundAdvanceInput,
+	ExperiencePlaygroundData,
+	ExperiencePlaygroundStartInput,
+} from "../../domain/interactive/experience-playground.js";
+import type {
+	ExperienceChatConfigRow,
+	ExperienceVisualRow,
+	ExperienceEffectRow,
+} from "@vibe-tavern/db";
+import type {
+	ExperienceActionDescriptor,
+	ExperienceEvent,
+} from "@vibe-tavern/domain";
+
+/** A session response: authoritative session metadata plus the projected view
+ *  for the requesting viewer. The adapter shapes this from the service's
+ *  {@link ExperienceSessionView} + {@link ExperienceProjection}. Never includes
+ *  hidden state for other seats. */
+export type ExperienceSessionResponse = ExperienceSessionView & { view: ExperienceProjection };
+
+/** Action-round response: the session + projected view after one submitted
+ *  action AND any auto-resolved script seats, plus the emitted events and whose
+ *  turn is next. */
+export type ExperienceActionResponse = ExperienceSessionResponse & {
+	events: ExperienceEvent[];
+	await: TurnAwait;
+};
+
+/** Effect-run response: the terminal effect row + whether its result was
+ *  delivered into the reducer (false on stale completion — the session advanced
+ *  past the originating revision, so the effect stays succeeded-but-undelivered).
+ *  When delivered, the post-feed-back session + projected view are included. */
+export interface ExperienceEffectRunResponse {
+	effect: ExperienceEffectRow;
+	delivered: boolean;
+	/** Present when this path did NOT run the effect because the host owns it:
+	 *  `timer` effects are scheduler-driven (fix step 2c) — the route answers
+	 *  202 and the row stays whatever the scheduler made it. */
+	hostScheduled?: boolean;
+	/** Machine-readable failure reason when status is `failed`. */
+	error?: string;
+	session?: ExperienceSessionResponse;
+}
+
+/** Privacy-safe queued-attachment response (IR-70A). `null` when the session
+ *  has no current queued (unbound) attachment. The {@link
+ *  ExperienceQueuedAttachmentView} DTO is the attachment row minus its hidden
+ *  checkpoint — never carry or derive from `hiddenStateCheckpointJson`. */
+export type ExperienceQueuedAttachmentResponse = ExperienceQueuedAttachmentView | null;
+
+// ─── IR-70D: Context status + prompt-override DTOs ──────────────────────────
+
+/** Privacy-safe context-bundle status (IR-70D). Strips all payload fields
+ *  (variantsJson, compactSummaryJson, character/persona snapshots, source
+ *  hashes) — only session-scoped metadata + provider/model/source ids (bare
+ *  provenance pointers, never content). */
+export interface ExperienceContextStatusDto {
+  sessionId: string;
+  mode: import("@vibe-tavern/domain").ExperienceContextMode;
+  branchFrontierRevision: number | null;
+  messageFrontierPosition: number | null;
+  providerProfileId: string | null;
+  modelId: string | null;
+  sourceCharacterId: string | null;
+  sourceChatId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One prompt-override layer — scope, content, optional characterId, and
+ *  timestamps. A null layer means no override is persisted for that scope. */
+export interface ExperiencePromptOverrideDto {
+  scope: 'global' | 'character';
+  content: string;
+  characterId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Both independent prompt-override layers (IR-70D). The setup UI edits each
+ *  layer independently — never collapse to only the effective winner here. */
+export interface ExperiencePromptOverridesResponse {
+  global: ExperiencePromptOverrideDto | null;
+  character: ExperiencePromptOverrideDto | null;
+}
+
+export interface ExperienceRuntimeApi {
+	// ── Config (the config-driven setup source) ──
+	getExperienceConfig: (chatId: string) => Promise<ExperienceChatConfigRow>;
+	updateExperienceConfig: (chatId: string, body: {
+		enabled?: boolean;
+		scriptId?: string | null;
+		visualId?: string | null;
+		contextSourceCharacterId?: string | null;
+		contextSourceChatId?: string | null;
+		capabilityGrants?: import("@vibe-tavern/domain").ExperienceCapability[];
+		contextMode?: import("@vibe-tavern/domain").ExperienceContextMode;
+		launcherVisible?: boolean;
+	}) => Promise<ExperienceChatConfigRow>;
+
+	// ── Visual resources ──
+	listExperienceVisuals: (scopeType: string, ownerId?: string) => Promise<ExperienceVisualRow[]>;
+	getExperienceVisual: (id: string) => Promise<ExperienceVisualRow | null>;
+	createExperienceVisual: (body: {
+		name: string;
+		source: string;
+		apiVersion: number;
+		compatibleManifestIds?: string[];
+		scopeType?: string;
+		characterId?: string | null;
+	}) => Promise<ExperienceVisualRow>;
+	updateExperienceVisual: (id: string, patch: {
+		name?: string;
+		source?: string;
+		apiVersion?: number;
+		compatibleManifestIds?: string[];
+	}) => Promise<ExperienceVisualRow>;
+	deleteExperienceVisual: (id: string) => Promise<void>;
+
+	// ── Session lifecycle ──
+	startExperienceSession: (chatId: string, body: {
+		branchId: string;
+		settings?: unknown;
+		participants: import("@vibe-tavern/domain").ExperienceParticipant[];
+	}) => Promise<ExperienceSessionResponse>;
+	getExperienceSession: (sessionId: string) => Promise<ExperienceSessionResponse>;
+	/** Branch-scoped active-session discovery (IR-70A): resolve the branch's
+	 *  active session and project it for the human viewer. Returns the SAME
+	 *  response shape as {@link getExperienceSession}. */
+	getActiveExperienceSession: (chatId: string, branchId: string) => Promise<ExperienceSessionResponse>;
+	/** Canonical explicit user finish: terminal snapshot is atomically queued. */
+	endExperienceSession: (sessionId: string, body: { expectedRevision: number }) => Promise<ExperienceQueuedAttachmentResponse>;
+	submitExperienceAction: (sessionId: string, body: import("@vibe-tavern/domain").ExperienceAction, signal?: AbortSignal) => Promise<ExperienceActionResponse>;
+
+	// ── Per-viewer projection reads ──
+	getExperienceView: (sessionId: string, participantId?: string) => Promise<ExperienceProjection>;
+	getExperienceActions: (sessionId: string, participantId?: string) => Promise<ExperienceActionDescriptor[]>;
+
+	// ── Queued-attachment read (IR-70A) ──
+	/** Read the session's current queued attachment through the privacy-safe DTO,
+	 *  or `null` when none is queued. Never includes hidden checkpoint state. */
+	getExperienceQueuedAttachment: (sessionId: string) => Promise<ExperienceQueuedAttachmentResponse>;
+	/** Explicit Queue / Add later at the exact client revision. */
+	queueExperienceReport: (sessionId: string, body: { expectedRevision: number }) => Promise<ExperienceQueuedAttachmentView>;
+	/** Privacy-safe server report status and exact validated-public-event count. */
+	getExperienceReportStatus: (sessionId: string) => Promise<ExperienceReportStatus>;
+
+	// ── Replay ──
+	undoExperienceSession: (sessionId: string, body: { targetRevision: number }) => Promise<ExperienceActionResponse>;
+	previewExperienceRecalculation: (sessionId: string, body: { rulesCode: string }) => Promise<RecalculationPreview>;
+
+	// ── Effects (read-only; retry/resolve lands in Wave 4) ──
+	getExperienceEffects: (sessionId: string) => Promise<ExperienceEffectRow[]>;
+	runExperienceEffect: (effectId: string, signal?: AbortSignal) => Promise<ExperienceEffectRunResponse>;
+
+	// ── Context capture + status (IR-70D) ──
+	/** Explicit cancellable context capture. Requires immutable session grant
+	 *  `rp_context`. The signal passes through to the compact-summary generation
+	 *  so a client disconnect persists nothing and preserves the prior bundle. */
+	captureExperienceContext: (sessionId: string, body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null }, signal?: AbortSignal) => Promise<ExperienceContextStatusDto>;
+	/** Read the session's current frozen context-bundle metadata, or null when
+	 *  never captured. Returns ONLY session metadata + provider/model ids — never
+	 *  payload fields (variants, compact summary, character/persona snapshots, RP
+	 *  messages, or provider secrets). Requires `rp_context`. */
+	getExperienceContextStatus: (sessionId: string) => Promise<ExperienceContextStatusDto | null>;
+
+	// ── Prompt overrides (IR-70D) ──
+	/** Read both independent prompt-override layers (global + current-character)
+	 *  through a capability gate. Requires immutable session grant `model`.
+	 *  Returns null layers when no override is persisted for that scope; never
+	 *  collapses to only the effective winner. */
+	getExperiencePromptOverrides: (sessionId: string) => Promise<ExperiencePromptOverridesResponse>;
+	/** Write the global prompt-override layer. Requires `model`. Returns the
+	 *  updated combined layers so both are always visible after a write. */
+	updateExperienceGlobalOverride: (sessionId: string, body: { content: string }) => Promise<ExperiencePromptOverridesResponse>;
+	/** Write the current-character prompt-override layer. Requires `model` +
+	 *  the session's chat must have a character (otherwise 422). Derives the
+	 *  character from the session → chat; never accepts an arbitrary characterId.
+	 *  Returns the updated combined layers. */
+	updateExperienceCharacterOverride: (sessionId: string, body: { content: string }) => Promise<ExperiencePromptOverridesResponse>;
+
+	// ── Stateless unsaved-source tester (Wave 8 / IR-81B) ──
+	/** Drive UNSAVED rules source through the real sandbox/kernel with zero
+	 *  persistence and zero chat/session/DB binding: discover + create + project
+	 *  + legal actions, then replay an ordered action list with the host managing
+	 *  the in-memory revision counter, requestId idempotency, and expectedRevision
+	 *  compare-and-swap. Authoritative only over its own ephemeral state. */
+	runExperienceTest: (body: ExperienceTestRunInput) => Promise<ExperienceTestRunData>;
+	/** Discover + create, then run a bounded automated simulation advancing
+	 *  script-controlled seats via the real `choose` until a human/model boundary,
+	 *  a terminal status, no legal action, or a host bound is reached. Returns a
+	 *  typed stop-reason diagnostic per case. */
+	simulateExperienceTest: (body: ExperienceTestSimulateInput) => Promise<ExperienceTestSimulateData>;
+
+	// ── Interactive playground session driver (Wave 8 / IR-84A) ──
+	/** Start an in-memory interactive play session: discover + create + project
+	 *  + advance leading script seats until the first human/model/idle boundary.
+	 *  ZERO durable writes — the session lives in process memory keyed by the
+	 *  returned playground session id. Authoritative only over its own ephemeral
+	 *  state. Model seats are reported as `awaiting_model` and never invoked. */
+	startExperiencePlayground: (body: ExperiencePlaygroundStartInput) => Promise<ExperiencePlaygroundData>;
+	/** Apply ONE human action via the real reduce, then advance script seats via
+	 *  the real `choose` until the next human/model/idle boundary. Returns this
+	 *  turn's state/projection/events/effects/console + bumped revision/status/
+	 *  stop-reason. requestId idempotency precedes expectedRevision CAS. */
+	advanceExperiencePlayground: (body: ExperiencePlaygroundAdvanceInput) => Promise<ExperiencePlaygroundData>;
+}
+
+// ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
+
+import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
+
+/** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
+ *  first turn) plus its auto-compact toggle (CM-4). */
+export interface ExperienceCopilotContextState {
+  metrics: ExperienceCopilotContextMetrics | null;
+  autoCompact: boolean;
+}
+
+/** POST `/compact` response (CM-5): the new digest message + the recomputed
+ *  post-compaction metrics (source always "estimate" — the provider only
+ *  reports usage on an actual turn; the next turn refines it). */
+export interface ExperienceCopilotCompactResult {
+  digest: ExperienceCopilotMessageWire;
+  metrics: ExperienceCopilotContextMetrics;
+}
+
+/** The experience-copilot streaming subsystem — a standalone, editor-embedded
+ *  pair-editor (own endpoint, own tables — ER-3) that proposes rules/visual
+ *  edits via tools (ER-4) and streams one turn at a time. NOT a chat-mode and
+ *  NOT the multi-mode AI-assistant. The stream yields SSE-shaped
+ *  `{ event, data }` chunks (same contract as `sendMessageStream`) so the route
+ *  emits them verbatim through `streamSSE`. */
+export interface ExperienceCopilotRuntimeApi {
+	/** Stream one copilot turn for a thread. Loads the thread context, assembles
+	 *  the prompt (ER-5), builds the tools (ER-4), streams via `streamText`, and
+	 *  yields SSE events (`text-delta`, `reasoning-delta`, `tool-call`,
+	 *  `tool-result`, `finish`, `error`). Persists the turn (user message + tool
+	 *  calls/results + final assistant text) to the ER-3 store. */
+	experienceCopilotStream: (threadId: string, body: Omit<ExperienceCopilotStreamRequest, "threadId">, signal?: AbortSignal) => AsyncGenerator<ExperienceCopilotStreamEvent>;
+
+	/** The single active (unarchived) thread for a script, or null. Delegates to
+	 *  the ER-3 store's `getActive`. */
+	experienceCopilotGetActive: (scriptId: string) => Promise<ExperienceCopilotThreadWire | null>;
+
+	/** All messages for a thread, oldest → newest. Delegates to the ER-3 store's
+	 *  `listMessages`. */
+	experienceCopilotListMessages: (threadId: string) => Promise<ExperienceCopilotMessageWire[]>;
+
+	/** Archive the current active thread (if any) and create a fresh active one.
+	 *  Delegates to the ER-3 store's `startNewSession` (single-tx archive-then-
+	 *  insert). */
+	experienceCopilotStartNewSession: (scriptId: string, title?: string) => Promise<ExperienceCopilotThreadWire>;
+
+	/** All sessions (active + archived) for a script, newest first. Delegates
+	 *  to the ER-3 store's `listSessions`. */
+	experienceCopilotListSessions: (scriptId: string) => Promise<ExperienceCopilotThreadWire[]>;
+
+	/** Resume an archived session (archiving its active sibling, if any), or a
+	 *  no-op when it is already active. Delegates to the ER-3 store's
+	 *  `activate`. Returns null when the thread does not exist. */
+	experienceCopilotActivate: (sessionId: string) => Promise<ExperienceCopilotThreadWire | null>;
+
+	/** Archive a single session (idempotent). Delegates to the ER-3 store's
+	 *  `archive`. Returns null when the thread does not exist. */
+	experienceCopilotArchive: (sessionId: string) => Promise<ExperienceCopilotThreadWire | null>;
+
+	/** Read a thread's last-turn context metrics + auto-compact toggle (CM-4).
+	 *  `metrics` is null before the first turn. */
+	experienceCopilotGetContext: (threadId: string) => Promise<ExperienceCopilotContextState>;
+
+	/** Toggle the thread's auto-compact flag (CM-4). Returns the full context
+	 *  state (`{ metrics, autoCompact }`) so the client can replace its local copy. */
+	experienceCopilotPatchContext: (threadId: string, body: { autoCompact?: boolean }) => Promise<ExperienceCopilotContextState>;
+
+	/** Manually compact a thread (CM-5): LLM-summarize everything older than the
+	 *  keep-window into a new `role: "digest"` message (anchor in `toolCallId`).
+	 *  `providerProfileId`/`model` are required when the thread has no last-used
+	 *  pair. Rejects 400 when there is nothing to compact; 409 when a compaction
+	 *  is already in-flight; provider errors surface as 502 via the global handler. */
+	experienceCopilotCompact: (threadId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ExperienceCopilotCompactResult>;
+}
+
+/** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The
+ *  built-in "Experience Authoring" seed (id "builtin") is READ-ONLY — update /
+ *  delete reject it with a 400. */
+export interface CopilotProfileRuntimeApi {
+	/** Built-in seed first, then user profiles in store order. */
+	listCopilotProfiles: () => Promise<import("@vibe-tavern/api-contracts").CopilotProfile[]>;
+	createCopilotProfile: (input: import("@vibe-tavern/api-contracts").CopilotProfileCreate) => Promise<import("@vibe-tavern/api-contracts").CopilotProfile>;
+	updateCopilotProfile: (id: string, input: import("@vibe-tavern/api-contracts").CopilotProfileUpdate) => Promise<import("@vibe-tavern/api-contracts").CopilotProfile>;
+	deleteCopilotProfile: (id: string) => Promise<void>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	chat: ChatRuntimeApi;
@@ -526,9 +844,14 @@ export interface RuntimeApi {
 	importExport: ImportExportRuntimeApi;
 	asset: AssetRuntimeApi;
 	coauthorSkills: CoauthorSkillsRuntimeApi;
+	/** Copilot skills (CP-5) — same wire contract as coauthorSkills, different roots. */
+	copilotSkills: CoauthorSkillsRuntimeApi;
 	aiAssistant: AiAssistantRuntimeApi;
 	settings: SettingsRuntimeApi;
 	mobileAccess: MobileAccessRuntimeApi;
 	insights: InsightsRuntimeApi;
 	dice: DiceRuntimeApi;
+	experience: ExperienceRuntimeApi;
+	experienceCopilot: ExperienceCopilotRuntimeApi;
+	copilotProfiles: CopilotProfileRuntimeApi;
 }

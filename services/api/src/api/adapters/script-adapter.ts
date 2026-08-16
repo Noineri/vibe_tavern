@@ -1,6 +1,7 @@
 import type { ScriptRuntimeApi } from "../contract/runtime-api.js";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { StoreContainer, ExperienceVisualRow } from "@vibe-tavern/db";
 import { testScript, parseScriptImport } from "../../domain/scripts-engine/script-test-service.js";
+import { BUILTIN_EXPERIENCE_CATALOG } from "../../domain/interactive/builtin-experiences/index.js";
 
 export class ScriptAdapter implements ScriptRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}
@@ -13,16 +14,43 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		this.stores.scripts.getById(scriptId);
 
 	createScript = (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) =>
-		this.stores.scripts.create(body);
+		this.stores.scripts.create({
+			...body,
+			// Interactive rules are trusted executable code. Publicly authored
+			// revisions always begin disabled; app-owned seeds may still use the
+			// lower-level store directly for their reviewed shipped source.
+			enabled: body.scriptKind === "interactive" ? false : body.enabled,
+		});
 
-	updateScript = (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) =>
-		this.stores.scripts.update(scriptId, body);
+	updateScript = async (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }) => {
+		const existing = await this.stores.scripts.getById(scriptId);
+		if (existing?.scriptKind !== "interactive") return this.stores.scripts.update(scriptId, body);
+
+		const sourceChanged = body.code !== undefined && body.code !== existing.code;
+		// Enabling must name the exact reviewed source. A bare enabled=true can
+		// race a concurrent source save and accidentally trust a different body.
+		const lacksReviewedSource = body.enabled === true && body.code === undefined;
+		return this.stores.scripts.update(
+			scriptId,
+			sourceChanged || lacksReviewedSource ? { ...body, enabled: false } : body,
+		);
+	};
 
 	setScriptScope = (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) =>
 		this.stores.scripts.setScope(scriptId, scopeType, ownerId);
 
 	deleteScript = async (scriptId: string) => {
+		// Fix item 12: deleting a built-in script records a dismissal so the seed
+		// never re-creates/re-binds what the user explicitly removed.
+		const existing = await this.stores.scripts.getById(scriptId);
+		const builtinId = existing?.extensions && typeof existing.extensions.builtinId === "string"
+			? existing.extensions.builtinId
+			: null;
+		const entry = builtinId === null ? undefined : BUILTIN_EXPERIENCE_CATALOG.find((e) => e.id === builtinId);
 		await this.stores.scripts.delete(scriptId);
+		if (entry !== undefined) {
+			await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visualStableKey);
+		}
 	};
 
 	testScript = (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }) => {
@@ -37,6 +65,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 			name,
 			code,
 			scriptKind: body.scriptKind,
+			enabled: body.scriptKind === "interactive" ? false : undefined,
 			scopeType: body.scopeType ?? "character",
 			characterId: body.characterId,
 			personaId: body.personaId,
@@ -49,4 +78,30 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 
 	setScriptLinks = (scriptId: string, links: Array<{ targetType: string; targetId: string }>) =>
 		this.stores.scripts.setLinks(scriptId, links);
+
+	// ── Visual bindings (script_visuals junction, BE-5) ──────────────────────
+
+	getScriptVisuals = async (scriptId: string): Promise<ExperienceVisualRow[]> => {
+		const ids = await this.stores.scripts.getBoundVisualIds(scriptId);
+		const rows = await Promise.all(
+			ids.map((id) => this.stores.experienceResources.getVisualById(id)),
+		);
+		// A bound id may resolve to null if the visual was deleted and the soft
+		// default went stale; drop those rather than surfacing nulls to the UI.
+		return rows.filter((v): v is ExperienceVisualRow => v !== null);
+	};
+
+	bindScriptVisual = (scriptId: string, visualId: string): Promise<void> =>
+		this.stores.scripts.bindVisual(scriptId, visualId);
+
+	unbindScriptVisual = async (scriptId: string, visualId: string) => {
+		// Fix item 12: unbinding a built-in visual records a dismissal so the
+		// seed never re-binds it on the next startup.
+		const visual = await this.stores.experienceResources.getVisualById(visualId);
+		const entry = visual === null ? undefined : BUILTIN_EXPERIENCE_CATALOG.find((e) => e.visualStableKey === visual.stableKey);
+		await this.stores.scripts.unbindVisual(scriptId, visualId);
+		if (entry !== undefined) {
+			await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visualStableKey);
+		}
+	};
 }

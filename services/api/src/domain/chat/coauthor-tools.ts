@@ -33,7 +33,7 @@ import {
   type CoauthorTarget,
   type CoauthorToolOutput,
 } from "@vibe-tavern/api-contracts";
-import { log, LORE_LOGIC } from "@vibe-tavern/domain";
+import { applyExactEditsToBody, log, LORE_LOGIC } from "@vibe-tavern/domain";
 import { buildReadSkillFileTool } from "../coauthor/skills/skill-read-tool.js";
 import {
   defaultLoreDraftIdGen,
@@ -203,57 +203,6 @@ function validateProfileMd(profileMd: string): string {
   }
   const parsed = parseProfileMd(profileMd);
   return serializeProfileMd(parsed);
-}
-
-/** Count non-overlapping literal occurrences of `needle` in `haystack`. */
-function countOccurrences(haystack: string, needle: string): number {
-  if (needle.length === 0) return 0;
-  let count = 0;
-  let idx = 0;
-  while ((idx = haystack.indexOf(needle, idx)) !== -1) {
-    count++;
-    idx += needle.length;
-  }
-  return count;
-}
-
-/**
- * Apply an ordered batch of exact SEARCH/REPLACE edits to a single section body
- * (pure). Each `search` must be non-empty, differ from `replace`, and match
- * EXACTLY ONCE in the CURRENT (already-mutated-by-prior-items-in-this-batch)
- * body. Matching is literal — case-sensitive, no regex, no `$` substitution —
- * implemented via indexOf+slice so replacement text is never reinterpreted. A
- * failed item throws and the caller discards the partial result, so a batch
- * commits atomically (all-or-nothing).
- */
-function applyExactEditsToBody(
-  body: string,
-  edits: ReadonlyArray<{ search: string; replace: string }>,
-  toolName: string,
-): string {
-  let result = body;
-  for (const { search, replace } of edits) {
-    if (!search) {
-      throw new Error(`${toolName}: edit.search must not be empty`);
-    }
-    if (search === replace) {
-      throw new Error(`${toolName}: edit is a no-op (search === replace): ${JSON.stringify(search.slice(0, 80))}`);
-    }
-    const count = countOccurrences(result, search);
-    if (count === 0) {
-      throw new Error(
-        `${toolName}: edit.search not found in the current section body: ${JSON.stringify(search.slice(0, 80))}`,
-      );
-    }
-    if (count > 1) {
-      throw new Error(
-        `${toolName}: edit.search is ambiguous (${count} matches) — add more surrounding context so it matches once: ${JSON.stringify(search.slice(0, 80))}`,
-      );
-    }
-    const idx = result.indexOf(search);
-    result = result.slice(0, idx) + replace + result.slice(idx + search.length);
-  }
-  return result;
 }
 
 /**

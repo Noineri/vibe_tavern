@@ -25,11 +25,11 @@ export interface StreamOpts {
  * Unified SSE streaming helper for chat endpoints.
  * Replaces the 3 duplicated fetch+parseSSEStream blocks in app-client.ts.
  */
-async function streamChatEndpoint(
+export async function streamChatEndpoint(
   url: string,
   body: unknown,
   opts: StreamOpts,
-): Promise<{ finishReason: string; usage?: Record<string, number> }> {
+): Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown }> {
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
   opts.onStatus("preparing");
@@ -81,7 +81,7 @@ async function streamChatEndpoint(
 /** Convenience: send message stream */
 export const sendStream = (
   chatId: string,
-  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number },
+  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
   opts: StreamOpts,
 ) => streamChatEndpoint(`/api/chats/${chatId}/messages/stream`, input, opts);
 

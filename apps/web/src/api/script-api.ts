@@ -1,4 +1,4 @@
-import type { ScriptRecord, ScriptLinkRecord } from "./types.js";
+import type { ScriptRecord, ScriptLinkRecord, ExperienceVisualRow } from "./types.js";
 import type { ScriptKind } from "@vibe-tavern/domain";
 import type { ScriptTestResult } from "@vibe-tavern/api-contracts";
 import { client } from "./client.js";
@@ -19,7 +19,7 @@ export async function createScript(body: { name: string; description?: string; c
   return unwrapRpc<ScriptRecord>(response);
 }
 
-export async function updateScript(scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
+export async function updateScript(scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }): Promise<ScriptRecord> {
   const response = await client.api.scripts[":scriptId"].$patch({ param: { scriptId }, json: body });
   return unwrapRpc<ScriptRecord>(response);
 }
@@ -53,4 +53,24 @@ export async function getScriptLinks(scriptId: string): Promise<ScriptLinkRecord
 export async function setScriptLinks(scriptId: string, links: Array<{ targetType: "character" | "persona"; targetId: string }>): Promise<ScriptLinkRecord[]> {
   const response = await client.api.scripts[":scriptId"].links.$put({ param: { scriptId }, json: { links } });
   return unwrapRpc<ScriptLinkRecord[]>(response);
+}
+
+// ── Visual bindings (script_visuals junction, BE-5/BE-6) ────────────────────
+
+/** GET /api/scripts/:scriptId/visuals — the visuals bound to a script (its equal-peer "skin" set). */
+export async function getScriptVisuals(scriptId: string): Promise<ExperienceVisualRow[]> {
+  const response = await client.api.scripts[":scriptId"].visuals.$get({ param: { scriptId } });
+  return unwrapRpc<ExperienceVisualRow[]>(response);
+}
+
+/** POST /api/scripts/:scriptId/visuals — bind a visual (idempotent; the first bound visual auto-becomes the silent default). */
+export async function bindScriptVisual(scriptId: string, visualId: string): Promise<void> {
+  const response = await client.api.scripts[":scriptId"].visuals.$post({ param: { scriptId }, json: { visualId } });
+  await unwrapRpc(response);
+}
+
+/** DELETE /api/scripts/:scriptId/visuals/:visualId — unbind a visual (reassigns the silent default if it was removed). */
+export async function unbindScriptVisual(scriptId: string, visualId: string): Promise<void> {
+  const response = await client.api.scripts[":scriptId"].visuals[":visualId"].$delete({ param: { scriptId, visualId } });
+  await unwrapRpc(response);
 }

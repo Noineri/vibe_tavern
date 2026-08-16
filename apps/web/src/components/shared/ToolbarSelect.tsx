@@ -22,7 +22,7 @@
 // and lighter primitive (DropdownSelect's cmdk carries a search state machine
 // these sites do not need). See overlay-primitive-audit.md diagnosis table.
 
-import { cloneElement, isValidElement, useState, type ReactElement, type ReactNode } from "react";
+import { cloneElement, isValidElement, Fragment, useState, type ReactElement, type ReactNode } from "react";
 import * as Select from "@radix-ui/react-select";
 import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
@@ -39,6 +39,17 @@ export interface ToolbarSelectItem {
 	label: ReactNode;
 	/** Optional leading node (avatar, icon) rendered before the label. */
 	leading?: ReactNode;
+	/** Optional trailing node rendered at the row's right edge (e.g. a star
+	 *  toggle). Pointer events on it are stopped so tapping it does NOT select
+	 *  the item. */
+	trailing?: ReactNode;
+	/** Optional small section header rendered above this row (e.g. "Favorites"
+	 *  on the first favorite and "All models" on the first non-favorite).
+	 *  Inert for keyboard navigation on both halves. */
+	sectionLabel?: ReactNode;
+	/** Filter key for the mobile `searchable` input — plain text matched
+	 *  case-insensitively. Defaults to `label` when it is a plain string. */
+	searchText?: string;
 }
 
 interface ToolbarSelectProps {
@@ -70,6 +81,11 @@ interface ToolbarSelectProps {
 	onSelect: (value: string) => void;
 	/** Shown in place of the list when `items` is empty (e.g. no starred models). */
 	emptyText?: ReactNode;
+	/** Mobile-only: render a search input at the top of the bottom sheet and
+	 *  filter rows by `searchText ?? label`. Ignored on desktop (Radix Select
+	 *  already ships first-letter type-ahead; sites needing full search on
+	 *  desktop use `DropdownSelect` instead). */
+	searchable?: boolean;
 	/** Optional trailing row under the list (e.g. the "manage personas" link).
 	 *  Rendered inside the popover/sheet, above the mobile cancel button. */
 	footer?: ReactNode;
@@ -93,6 +109,7 @@ export function ToolbarSelect({
 	onSelect,
 	emptyText,
 	footer,
+	searchable,
 	side = "top",
 	align = "end",
 	sideOffset = 8,
@@ -117,6 +134,7 @@ export function ToolbarSelect({
 				onSelect={onSelect}
 				emptyText={emptyText}
 				footer={footer}
+				searchable={searchable}
 			/>
 		);
 	}
@@ -157,8 +175,13 @@ export function ToolbarSelect({
 						{items.length > 0 ? (
 							<div className="overflow-y-auto" style={{ maxHeight: popoverMaxHeight("singleLine") }}>
 								{items.map((item) => (
+									<Fragment key={item.value}>
+										{item.sectionLabel && (
+											<div className="px-4 pb-0.5 pt-2 font-ui text-[10.5px] font-medium uppercase tracking-wide text-t3">
+												{item.sectionLabel}
+										</div>
+									)}
 									<Select.Item
-										key={item.value}
 										value={item.value}
 										data-testid={itemTestId?.(item.value)}
 										className="flex w-full cursor-pointer items-center gap-2 px-4 py-1.5 text-left font-ui text-[13px] text-t1 outline-none transition-colors data-[highlighted]:bg-s2 data-[state=checked]:bg-accent-dim"
@@ -174,7 +197,18 @@ export function ToolbarSelect({
 												{item.label}
 											</span>
 										</Select.ItemText>
+										{item.trailing && (
+											<span
+												className="ml-auto flex shrink-0 items-center"
+												onPointerDown={(e) => e.stopPropagation()}
+												onPointerUp={(e) => e.stopPropagation()}
+												onClick={(e) => e.stopPropagation()}
+											>
+												{item.trailing}
+											</span>
+										)}
 									</Select.Item>
+									</Fragment>
 								))}
 							</div>
 						) : (
@@ -199,13 +233,22 @@ function ToolbarSelectMobile({
 	onSelect,
 	emptyText,
 	footer,
-}: Pick<ToolbarSelectProps, "trigger" | "itemTestId" | "title" | "items" | "value" | "onSelect" | "emptyText" | "footer"> & {
+	searchable,
+}: Pick<ToolbarSelectProps, "trigger" | "itemTestId" | "title" | "items" | "value" | "onSelect" | "emptyText" | "footer" | "searchable"> & {
 	open: boolean;
 	setOpen: (open: boolean) => void;
 }) {
 	const { t } = useT();
+	const [search, setSearch] = useState("");
 
 	if (!isValidElement(trigger)) return null;
+
+	const query = search.trim().toLowerCase();
+	const filtered = query
+		? items.filter((item) =>
+				(item.searchText ?? (typeof item.label === "string" ? item.label : "")).toLowerCase().includes(query),
+		)
+		: items;
 
 	// Clone the caller's button so it opens the sheet. We do NOT overwrite its
 	// className or data-testid — Slot/cloneElement merge, so the caller's own
@@ -217,26 +260,55 @@ function ToolbarSelectMobile({
 	return (
 		<>
 			{mobileTrigger}
-			<BottomSheet open={open} onClose={() => setOpen(false)} title={title}>
-				{items.length > 0 ? (
+			<BottomSheet open={open} onClose={() => { setOpen(false); setSearch(""); }} title={title}>
+				{searchable && items.length > 0 && (
+					<div className="px-4 pb-2">
+						<input
+							type="text"
+							data-testid="toolbar-select-search"
+							className="w-full rounded-md border border-border bg-input-bg px-3 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none placeholder:text-t4 focus:border-accent"
+							placeholder={t("search_models")}
+							value={search}
+							onChange={(e) => setSearch(e.target.value)}
+						/>
+					</div>
+				)}
+				{filtered.length > 0 ? (
 					<div className="max-h-[50vh] overflow-y-auto">
-						{items.map((item) => (
-							<button
-								type="button"
-								key={item.value}
-								data-testid={itemTestId?.(item.value)}
-								className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3"
-								onClick={() => {
-									onSelect(item.value);
-									setOpen(false);
-								}}
-							>
-								<div className="w-5 shrink-0 flex justify-center text-accent-t">
-									{value === item.value && <Icons.Check />}
-								</div>
-								{item.leading}
-								<div className="min-w-0 truncate">{item.label}</div>
-							</button>
+						{filtered.map((item) => (
+							<Fragment key={item.value}>
+								{item.sectionLabel && (
+									<div className="px-5 pb-0.5 pt-2 font-ui text-[10.5px] font-medium uppercase tracking-wide text-t3">
+										{item.sectionLabel}
+									</div>
+								)}
+								<button
+									type="button"
+									data-testid={itemTestId?.(item.value)}
+									className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3"
+									onClick={() => {
+										onSelect(item.value);
+										setOpen(false);
+										setSearch("");
+									}}
+								>
+									<div className="w-5 shrink-0 flex justify-center text-accent-t">
+										{value === item.value && <Icons.Check />}
+									</div>
+									{item.leading}
+									<div className="min-w-0 flex-1 truncate">{item.label}</div>
+									{item.trailing && (
+										<span
+											className="ml-auto flex shrink-0 items-center"
+											onPointerDown={(e) => e.stopPropagation()}
+											onPointerUp={(e) => e.stopPropagation()}
+											onClick={(e) => e.stopPropagation()}
+										>
+											{item.trailing}
+										</span>
+									)}
+								</button>
+							</Fragment>
 						))}
 					</div>
 				) : (

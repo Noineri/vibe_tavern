@@ -50,6 +50,23 @@ export interface SendMessageRequest {
     mode: "normal" | "immersive";
     pendingRevision: number;
   };
+  /**
+   * IR-51: optional experience (interactive-runtime) attachment commit intent.
+   * When present, the user-message insert and the queued-attachment verify-and-bind
+   * run in ONE atomic transaction (alongside any Dice bind when both are present).
+   * The client supplies ONLY the attachment id + the queue/session revisions it
+   * last saw on the queued row; the server verifies they match the stored row and
+   * throws before the message row persists on a stale/already-bound row — no
+   * ghost message, no partial bind, mirroring {@link diceCommit}. Omitted/
+   * undefined ⇒ no-experience send behavior (byte-for-byte current path). Never
+   * carries raw transcript/events/state — the frozen report + hidden checkpoint
+   * already live server-side.
+   */
+  experienceCommit?: {
+    attachmentId: string;
+    queueRevision: number;
+    sessionRevision: number;
+  };
 }
 
 export interface SendMessageResponse {

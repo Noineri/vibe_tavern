@@ -3,6 +3,7 @@ import { Icons } from "../components/shared/icons.js";
 import { CharacterForm } from "../components/build/editors/CharacterForm.js";
 import { LorebookEditor } from "../components/build/editors/LorebookEditor.js";
 import { InsightsPanel } from "../components/build/editors/InsightsPanel.js";
+import { ExperienceEditor } from "../components/build/editors/ExperienceEditor.js";
 
 registerBuildPanel({
   id: "character",
@@ -40,6 +41,19 @@ registerBuildPanel({
     // directly, so it needs nothing from the BuildPanelContext (it shows an
     // empty state when no chat is active).
     return <InsightsPanel />;
+  },
+});
+
+registerBuildPanel({
+  id: "experience",
+  icon: <Icons.Stack />,
+  labelKey: "sidebar_build_experience",
+  fullBleed: true,
+  render() {
+    // Global authoring surface for interactive rules + visuals (IR-81C). It is
+    // deliberately context-free: scripts/visuals are global resources here,
+    // and per-chat activation stays in Chat Add-ons (ExperienceAssignment).
+    return <ExperienceEditor />;
   },
 });
 

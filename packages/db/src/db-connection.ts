@@ -1,11 +1,107 @@
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { Database } from 'bun:sqlite';
-import { resolve } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as schema from './db-schema.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
+
+// ─── Test-only handle registry + temp-dir sweep ─────────────────────────
+//
+// createDb() registers its raw bun:sqlite handle here, and the test suites
+// (services/api + packages/db — each a single bun:test process spanning many
+// files) release EVERY handle in one process-global afterAll, then sweep the
+// temp dirs. Two reasons it's needed:
+//  1. Without closing, bun:sqlite keeps WAL/SHM handles open and `rm` of the
+//     temp dir fails with EBUSY/EPERM on Windows.
+//  2. Temp dirs are created all over the tests (mkdtemp for file stores, DB
+//     roots, scratch) — only a sweep of os.tmpdir() catches them all; tracking
+//     dbPath alone misses the `createDb(":memory:")` + separate-mkdtemp cases.
+// At peak 12,000+ orphaned dirs had accumulated under %TEMP% before this.
+// closeAllDbs() is wired in via a `bunfig.toml [test] preload` in each suite.
+const openedDatabases = new Set<Database>();
+
+/** Basenames a test temp root is allowed to have. The sweep only touches
+ *  os.tmpdir() children whose name matches one of these prefixes, so a real
+ *  data dir (or an unrelated temp file) is never removed. */
+const TEST_TEMP_PREFIX = /^(vt-|coauthor-|vibe-tavern-)/i;
+
+async function rmWithRetry(target: string): Promise<void> {
+  // Two quick retries only. The grace delay in closeAllDbs already lets Windows
+  // release WAL/SHM handles after sqlite.close(); a long per-dir backoff here
+  // would multiply across hundreds of dirs and blow the afterAll hook timeout.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await rm(target, { recursive: true, force: true });
+      return;
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if ((code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY') && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 30 * (attempt + 1)));
+        continue;
+      }
+      return;
+    }
+  }
+}
+
+/** Remove os.tmpdir() children that match a test prefix AND were created/touched
+ *  during this run (mtime >= since). The mtime bound + prefix guard make this
+ *  safe: it never touches dirs from before the run or with non-test names. */
+async function sweepTestTempDirs(since: number): Promise<void> {
+  const tmp = String(tmpdir());
+  let entries: string[];
+  try {
+    entries = await readdir(tmp);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries
+      .filter((name) => TEST_TEMP_PREFIX.test(name))
+      .map(async (name) => {
+        const full = join(tmp, name);
+        try {
+          const st = await stat(full);
+          if (st.isDirectory() && st.mtimeMs >= since) {
+            await rmWithRetry(full);
+          }
+        } catch {
+          /* skip unreadable entries */
+        }
+      }),
+  );
+}
+
+/** Close every opened SQLite handle and sweep the run's temp dirs. Called once
+ *  from a global afterAll registered via a `bunfig.toml [test] preload`. Pass
+ *  `sweepSince` = the timestamp the preload captured at import (before tests) so
+ *  only dirs created during THIS run are removed. Safe when empty; never throws. */
+export async function closeAllDbs(options?: { sweepSince?: number }): Promise<void> {
+  for (const sqlite of openedDatabases) {
+    try {
+      sqlite.close();
+    } catch (err: unknown) {
+      console.warn('[db] test cleanup: close failed:', err);
+    }
+  }
+  openedDatabases.clear();
+  if (options?.sweepSince !== undefined) {
+    // Windows releases bun:sqlite's WAL/SHM file handles ASYNCHRONOUSLY after
+    // sqlite.close() returns — measured ~700-1200ms before the OS lets rm
+    // through. A single long sleep would do, but sweeping a few times with a
+    // short grace between each clears most dirs fast and catches stragglers
+    // without a per-dir backoff that would blow the afterAll hook timeout when
+    // hundreds of dirs are involved (Bun's rm ignores Node's maxRetries, so the
+    // retry has to be manual and bounded).
+    for (let pass = 0; pass < 4; pass++) {
+      await new Promise((r) => setTimeout(r, 200));
+      await sweepTestTempDirs(options.sweepSince);
+    }
+  }
+}
 
 /**
  * A drizzle transaction client (the `tx` passed to `db.transaction(cb)`'s
@@ -85,6 +181,26 @@ function splitMigrationStatements(sqlContent: string): string[] {
   const trailing = current.trim();
   if (trailing.length > 0) statements.push(trailing);
   return statements;
+}
+
+/**
+ * Stamp one journal migration at its CURRENT `when` (drizzle folderMillis).
+ *
+ * Legacy Vibe Tavern DBs created `__drizzle_migrations` with UNIQUE(hash), while
+ * drizzle-orm's own table has no hash uniqueness. A migration re-dated during a
+ * branch reconciliation can therefore leave the same hash at an OLD created_at.
+ * INSERT OR IGNORE silently does nothing in the legacy shape and leaves
+ * drizzle's created_at watermark behind. Move an existing hash to the current
+ * watermark; insert only when the hash is genuinely absent. This works for both
+ * table shapes (and collapses any non-unique duplicate hashes to one timestamp).
+ */
+function stampMigrationAtWhen(sqlite: Database, hash: string, when: number): void {
+  const existing = sqlite.prepare('SELECT id FROM __drizzle_migrations WHERE hash = ? LIMIT 1').get(hash) as { id: number } | null;
+  if (existing) {
+    sqlite.prepare('UPDATE __drizzle_migrations SET created_at = ? WHERE hash = ?').run(when, hash);
+    return;
+  }
+  sqlite.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(hash, when);
 }
 
 interface DrizzleSnapshotColumn {
@@ -184,9 +300,9 @@ async function rebaseToBaseline(sqlite: Database, migrationsFolder: string): Pro
   if (!await Bun.file(journalPath).exists()) return;
   const journal = JSON.parse(await Bun.file(journalPath).text());
 
-  const stamped = new Set<string>(
-    (sqlite.prepare('SELECT hash FROM __drizzle_migrations').all() as { hash: string }[])
-      .map((r) => r.hash),
+  const stampedAt = new Set<string>(
+    (sqlite.prepare('SELECT hash, created_at FROM __drizzle_migrations').all() as { hash: string; created_at: number }[])
+      .map((row) => `${row.hash}:${Number(row.created_at)}`),
   );
 
   const existingTables = new Set(
@@ -195,24 +311,21 @@ async function rebaseToBaseline(sqlite: Database, migrationsFolder: string): Pro
       .map((r) => r.name.toLowerCase()),
   );
 
-  const insert = sqlite.prepare(
-    'INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)',
-  );
-
   let stampedCount = 0;
   for (const entry of journal.entries) {
     const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
     const sqlContent = await Bun.file(sqlPath).text();
     const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
-    if (stamped.has(hash)) continue; // already applied
+    const stampKey = `${hash}:${entry.when}`;
+    if (stampedAt.has(stampKey)) continue; // exact hash + current journal watermark already present
 
     const createdTables = [...sqlContent.matchAll(/CREATE\s+(?:TABLE|VIRTUAL TABLE)\s+(?:IF NOT EXISTS\s+)?[`"']?(\w+)/gmi)]
       .map((m) => m[1])
       .filter((t) => !t.startsWith('__drizzle') && !t.startsWith('__new'));
 
     if (createdTables.length > 0 && createdTables.every((t) => existingTables.has(t.toLowerCase()))) {
-      insert.run(hash, entry.when);
-      stamped.add(hash);
+      stampMigrationAtWhen(sqlite, hash, entry.when);
+      stampedAt.add(stampKey);
       stampedCount++;
       console.log(`[db] Rebase: migration ${entry.tag} schema already present — stamped as applied (SQL skipped).`);
     }
@@ -416,9 +529,9 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
           throw stmtErr;
         }
       }
-      // Stamp this migration as applied so migrate() skips it next time
+      // Stamp this migration at the current journal watermark so migrate() skips it next time.
       const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
-      sqlite.prepare('INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(hash, entry.when);
+      stampMigrationAtWhen(sqlite, hash, entry.when);
       repaired++;
       // Update existing set
       for (const t of createdTables) existing.add(t.toLowerCase());
@@ -609,22 +722,32 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
   if (!await Bun.file(journalPath).exists()) return;
   const journal = JSON.parse(await Bun.file(journalPath).text());
 
-  // Collect already-stamped hashes
-  const stamped = new Set<string>();
+  // Drizzle's migrator resumes from a single high-water mark, NOT by hash
+  // membership: SQLiteSyncDialect.migrate reads the ONE row with the greatest
+  // created_at and runs every journal entry whose folderMillis (`when`) exceeds
+  // it. So "applied" here means `when <= MAX(created_at)` — the same notion.
+  // Checking hash membership instead is a trap: when a migration is regenerated
+  // with identical SQL (identical hash) but a new `when` — e.g. a branch-merge
+  // reconciliation renumbering/re-dating it — existing DBs keep the stamp at the
+  // OLD created_at. The hash is "present", so a hash-based heal would skip
+  // re-stamping, yet that orphan row's created_at sits below the new
+  // folderMillis, so migrate() re-runs the migration and dies on "table already
+  // exists". Mirror drizzle's watermark exactly to stay self-consistent with it.
+  let watermark = 0;
   try {
-    const rows = sqlite.prepare('SELECT hash FROM __drizzle_migrations').all() as { hash: string }[];
-    for (const r of rows) stamped.add(r.hash);
+    const row = sqlite.prepare('SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1').get() as { created_at: number } | undefined;
+    watermark = row ? Number(row.created_at) : 0;
   } catch {
     return; // No meta table yet — nothing to heal
   }
 
   let healed = 0;
   for (const entry of journal.entries) {
+    if (entry.when <= watermark) continue; // at/below the watermark — migrate() will skip it too
+
     const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
     const sqlContent = await Bun.file(sqlPath).text();
     const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
-
-    if (stamped.has(hash)) continue; // Already applied
 
     // Rebuild migrations (CREATE TABLE `__new_<x>` ... DROP ... RENAME) must
     // NEVER run through this statement-by-statement path. It is not atomic,
@@ -660,7 +783,8 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
     }
 
     if (allOk) {
-      sqlite.prepare('INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(hash, entry.when);
+      stampMigrationAtWhen(sqlite, hash, entry.when);
+      watermark = entry.when; // advance so later entries are evaluated against the new high-water mark
       healed++;
       console.log(`[db] Heal: stamped migration ${entry.tag}`);
     }
@@ -674,6 +798,9 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
 export async function createDb(dbPath: string, migrationsFolderOverride?: string): Promise<AppDb> {
   await mkdir(resolve(dbPath, '..'), { recursive: true });
   const sqlite = new Database(dbPath);
+  // Register the raw handle so test suites can release it (and sweep the temp
+  // dirs) in a single global afterAll — see closeAllDbs. No-op for production.
+  openedDatabases.add(sqlite);
   sqlite.exec('PRAGMA journal_mode = WAL');
   sqlite.exec('PRAGMA foreign_keys = ON');
 

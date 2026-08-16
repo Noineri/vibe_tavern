@@ -15,6 +15,8 @@ import {
   validateRegistration,
   validateResolveOutput,
 } from "./dice-script-service.js";
+import { discoverExperienceDefinition } from "../interactive/experience-kernel.js";
+import type { ExperienceDefinition } from "../interactive/experience-kernel.js";
 
 export interface ScriptTestInput {
 	scriptId: string;
@@ -74,11 +76,24 @@ export interface DiceScriptTestResult {
 	discoveryError: string | null;
 }
 
+// ─── Interactive-script test result (Wave 1 / IR-13 discovery) ───────────────
+
+/** Mirrors the wire `interactiveScriptTestResultSchema`: the validated
+ *  definition when registration succeeded, plus a nullable discovery error.
+ *  Full action-sequence testing arrives in Wave 8 (InteractiveTester). */
+export interface InteractiveScriptTestResult {
+	/** Discovered definition when registration succeeded; null on error. */
+	definition: ExperienceDefinition | null;
+	/** Registration/discovery VM error (syntax/runtime/timeout/missing-method); null when clean. */
+	discoveryError: string | null;
+}
+
 // ─── Discriminated result (dispatch by scriptKind) ───────────────────────────
 
 export type ScriptTestResult =
 	| ({ kind: "prompt" } & PromptScriptTestResult)
-	| ({ kind: "dice" } & DiceScriptTestResult);
+	| ({ kind: "dice" } & DiceScriptTestResult)
+	| ({ kind: "interactive" } & InteractiveScriptTestResult);
 
 // ─── Main dispatch ───────────────────────────────────────────────────────────
 
@@ -100,6 +115,9 @@ export async function testScript(
 
 	if (script.scriptKind === "dice") {
 		return { kind: "dice", ...testDiceScript(code, script.name, input) };
+	}
+	if (script.scriptKind === "interactive") {
+		return { kind: "interactive", ...testInteractiveScript(code, script.name) };
 	}
 	return { kind: "prompt", ...testPromptScript(code, script, input) };
 }
@@ -252,6 +270,28 @@ function testDiceScript(
 	});
 
 	return { checks, sampleRolls, discoveryError: null };
+}
+
+// ─── Interactive-script tester (definition discovery; Wave 1) ────────────────
+
+/**
+ * Discover one interactive (experience) definition via the synchronous kernel
+ * (IR-12). Discovery runs the body once under the timeout, confirms exactly one
+ * `context.experience.register({...})` whose four mandatory methods are present,
+ * and schema-validates the static apiVersion/manifest/capabilities. The test
+ * panel surfaces the validated definition (or a discovery error); it does NOT
+ * execute create/project/actions/reduce here — full action-sequence testing
+ * arrives in Wave 8. Mirrors the dice discovery shape.
+ */
+function testInteractiveScript(
+	code: string,
+	scriptName: string,
+): InteractiveScriptTestResult {
+	const discovery = discoverExperienceDefinition(code, scriptName);
+	if (!discovery.ok) {
+		return { definition: null, discoveryError: discovery.message };
+	}
+	return { definition: discovery.definition, discoveryError: null };
 }
 
 export interface ParsedScriptImport {

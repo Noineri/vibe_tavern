@@ -370,3 +370,32 @@ describe("ScriptStore file-payload parity (DICE-B2)", () => {
 		expect(payload.scriptKind).toBe("prompt");
 	});
 });
+
+describe("ScriptStore.defaultVisualId (experience default-visual soft link)", () => {
+	test("create + read round-trips defaultVisualId (null by default, set when provided)", async () => {
+		const { store } = await setup();
+		const plain = await store.create({ name: "no-default", scopeType: "global" });
+		expect(plain.defaultVisualId).toBeNull();
+
+		const paired = await store.create({ name: "with-default", scopeType: "global", defaultVisualId: "vis_a" });
+		expect(paired.defaultVisualId).toBe("vis_a");
+
+		// listAll / getById also surface the field.
+		const all = await store.listAll();
+		expect(all.find((s) => s.id === paired.id)?.defaultVisualId).toBe("vis_a");
+		const byId = await store.getById(paired.id);
+		expect(byId?.defaultVisualId).toBe("vis_a");
+	});
+
+	test("update sets and clears defaultVisualId without touching other fields", async () => {
+		const { store } = await setup();
+		const s = await store.create({ name: "exp", scopeType: "global" });
+
+		const set = await store.update(s.id, { defaultVisualId: "vis_b" });
+		expect(set.defaultVisualId).toBe("vis_b");
+		expect(set.name).toBe("exp");
+
+		const cleared = await store.update(s.id, { defaultVisualId: null });
+		expect(cleared.defaultVisualId).toBeNull();
+	});
+});

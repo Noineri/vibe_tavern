@@ -180,6 +180,11 @@ export async function nonstreamingProviderExecute(
     if (input.overrideMaxTokens != null) {
       samplerConfig.maxOutputTokens = input.overrideMaxTokens;
     }
+    // SUM-2: per-call temperature override (e.g. summary generation cools the
+    // sampler). Applied after buildSamplerConfig so it wins over the profile.
+    if (input.overrideTemperature != null) {
+      samplerConfig.temperature = input.overrideTemperature;
+    }
     // See stream-provider-executor.ts: stateless multi-step on the Responses
     // transport requires `store: false` so the SDK serializes each complete
     // function_call + function_call_output pair into every follow-up request.

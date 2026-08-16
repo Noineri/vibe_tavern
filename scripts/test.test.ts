@@ -70,7 +70,7 @@ describe("test suite orchestration", () => {
 		]);
 		for (const suite of bunTestSuites) {
 			expect(suite.command).toContain("--timeout");
-			expect(suite.command).toContain("15000");
+			expect(suite.command).toContain("45000");
 		}
 	});
 

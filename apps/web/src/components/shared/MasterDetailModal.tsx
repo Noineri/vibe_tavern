@@ -187,7 +187,10 @@ export function MasterDetailModal({
       >
         <div
           className={cn(
-            "flex flex-col overflow-hidden bg-surface",
+            // Frosted on glass themes (lava): --glass-bg is a translucent fill
+            // tuned to survive .glass-blur; in opaque themes both resolve to
+            // --surface / blur 0 — byte-identical to the old plain bg-surface.
+            "glass-blur flex flex-col overflow-hidden bg-glass-bg",
             isMobile ? "h-[100dvh] w-[100dvw]" : containerClassName,
           )}
           onClick={(e) => e.stopPropagation()}

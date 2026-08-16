@@ -46,6 +46,9 @@ class AbortSentinel extends Error {}
 export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   finishReason: string;
   usage?: Record<string, number>;
+  /** The copilot finish event's segmented context metrics (CM-4), when the
+   *  server emitted them. RP-chat streams never carry this — it stays undefined. */
+  metrics?: unknown;
 }> {
   const reader = opts.response.body?.getReader();
   if (!reader) throw new Error("No response body");
@@ -53,6 +56,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   const decoder = new TextDecoder();
   let finishReason = "stop";
   let usage: Record<string, number> | undefined;
+  let metrics: unknown;
 
   // Early exit if already aborted.
   if (opts.signal?.aborted) {
@@ -163,10 +167,12 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
           });
         }
       } else {
-        // Default text-delta (no `event:` field) or any unrecognised event.
+        // Default text-delta (no `event:` field) or any unrecognised event
+        // (including `finish`).
         if (parsed.delta !== undefined) opts.onChunk(parsed.delta as string);
         if (parsed.finishReason) finishReason = parsed.finishReason;
         if (parsed.usage) usage = parsed.usage;
+        if (parsed.metrics !== undefined) metrics = parsed.metrics;
       }
     },
   });
@@ -195,5 +201,5 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   }
 
   opts.onStatus("idle");
-  return { finishReason, usage };
+  return { finishReason, usage, metrics };
 }

@@ -90,6 +90,7 @@ function makeDiceService(options: DiceServiceOptions = {}) {
 				return new Map(rollsByMessage);
 			},
 		},
+		experiences: { getAttachmentsForMessages: async () => new Map() },
 	} as unknown as StoreContainer;
 
 	const resolver: PromptAssemblyResolver = {

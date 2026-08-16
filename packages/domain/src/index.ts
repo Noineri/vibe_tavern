@@ -1,5 +1,6 @@
 export * from "./api-types.js";
 export * from "./attachment.js";
+export * from "./builtin-experiences.js";
 export * from "./character-asset.js";
 export * from "./chat-notification.js";
 export * from "./coauthor-transport-capabilities.js";
@@ -18,3 +19,4 @@ export * from "./proxy-profile.js";
 export * from "./provider-support.js";
 export * from "./sampler-params.js";
 export * from "./scene-tracker-constants.js";
+export * from "./text-exact-edit.js";

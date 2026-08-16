@@ -17,7 +17,15 @@ import { DiceTray } from "./DiceTray.js";
 
 const EMPTY_LANE: DiceLaneState = { revision: 0, rolls: [] };
 
-export function DicePanel(): ReactNode {
+export interface DicePanelProps {
+  /** When true, render statically inside a shared flex bar (no absolute
+   *  centering wrapper) — used by PlayMode's shared launcher bar so Dice and
+   *  the Experience launcher coexist as siblings. Default (false) keeps the
+   *  absolute-centering behavior unchanged (IR-73B, additive only). */
+  readonly docked?: boolean;
+}
+
+export function DicePanel({ docked = false }: DicePanelProps = {}): ReactNode {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(false);
@@ -66,44 +74,60 @@ export function DicePanel(): ReactNode {
     />
   );
 
+  const popover = (
+    <Popover.Root open={expanded} onOpenChange={setExpanded}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={t("dice_panel_title")}
+          className={cn(
+            "glass-blur flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border2 bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 shadow-sm transition-colors hover:bg-s3 hover:text-t1",
+            readyCount > 0 && "border-accent/40 bg-accent-dim text-accent-t",
+            unresolvedChoose && "border-warning/50 bg-warning-dim text-warning-text",
+          )}
+        >
+          {rolling ? <Icons.regen className="animate-spin-slow" /> : <Ic.dice />}
+          <span>{pillLabel}</span>
+          <Icons.Caret direction={expanded ? "d" : "u"} />
+        </button>
+      </Popover.Trigger>
+      {!isMobile && (
+        <Popover.Portal container={getModalPortal() ?? undefined}>
+          <Popover.Content
+            side="top"
+            align="center"
+            sideOffset={4}
+            className="glass-blur z-[220] w-[42rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+          >
+            {tray}
+          </Popover.Content>
+        </Popover.Portal>
+      )}
+    </Popover.Root>
+  );
+
+  const sheet = expanded && isMobile && (
+    <BottomSheet open={true} onClose={() => setExpanded(false)} title={t("dice_tray_title")}>
+      {tray}
+    </BottomSheet>
+  );
+
+  // docked: render statically as a flex child (PlayMode shared launcher bar).
+  // default: absolute-center above the input area (unchanged behavior).
+  if (docked) {
+    return (
+      <>
+        {popover}
+        {sheet}
+      </>
+    );
+  }
+
   return (
     <div className="absolute bottom-full left-1/2 z-20 mb-1 flex -translate-x-1/2 items-center">
-      <Popover.Root open={expanded} onOpenChange={setExpanded}>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-label={t("dice_panel_title")}
-            className={cn(
-              "glass-blur flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border2 bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 shadow-sm transition-colors hover:bg-s3 hover:text-t1",
-              readyCount > 0 && "border-accent/40 bg-accent-dim text-accent-t",
-              unresolvedChoose && "border-warning/50 bg-warning-dim text-warning-text",
-            )}
-          >
-            {rolling ? <Icons.regen className="animate-spin-slow" /> : <Ic.dice />}
-            <span>{pillLabel}</span>
-            <Icons.Caret direction={expanded ? "d" : "u"} />
-          </button>
-        </Popover.Trigger>
-        {!isMobile && (
-          <Popover.Portal container={getModalPortal() ?? undefined}>
-            <Popover.Content
-              side="top"
-              align="center"
-              sideOffset={4}
-              className="glass-blur z-[220] w-[42rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
-            >
-              {tray}
-            </Popover.Content>
-          </Popover.Portal>
-        )}
-      </Popover.Root>
-
-      {expanded && isMobile && (
-        <BottomSheet open={true} onClose={() => setExpanded(false)} title={t("dice_tray_title")}>
-          {tray}
-        </BottomSheet>
-      )}
+      {popover}
+      {sheet}
     </div>
   );
 }

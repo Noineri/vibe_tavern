@@ -24,6 +24,10 @@ export interface UiSettings {
   coauthorMaxTokens: number | null;
   /** Null inherits the bound profile/model's effective context budget. */
   coauthorContextBudget: number | null;
+  /** Experience-copilot binding (provider + model). Null/dangling → the shell
+   *  falls back to the first available provider profile (the pre-fix default). */
+  copilotProviderId: string | null;
+  copilotModelName: string | null;
   updatedAt: string;
 }
 
@@ -42,6 +46,8 @@ export interface UiSettingsUpdate {
   coauthorModelName?: string | null;
   coauthorMaxTokens?: number | null;
   coauthorContextBudget?: number | null;
+  copilotProviderId?: string | null;
+  copilotModelName?: string | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -60,6 +66,8 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   coauthorModelName: null,
   coauthorMaxTokens: null,
   coauthorContextBudget: null,
+  copilotProviderId: null,
+  copilotModelName: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -109,6 +117,8 @@ export class UiSettingsStore {
       coauthorModelName: partial.coauthorModelName ?? UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: partial.coauthorMaxTokens ?? UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
       coauthorContextBudget: partial.coauthorContextBudget ?? UI_SETTINGS_DEFAULTS.coauthorContextBudget,
+      copilotProviderId: partial.copilotProviderId ?? UI_SETTINGS_DEFAULTS.copilotProviderId,
+      copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -134,6 +144,8 @@ export class UiSettingsStore {
       coauthorModelName: UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
       coauthorContextBudget: UI_SETTINGS_DEFAULTS.coauthorContextBudget,
+      copilotProviderId: UI_SETTINGS_DEFAULTS.copilotProviderId,
+      copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
       updatedAt: this.clock.now(),
     }).returning();
 
@@ -157,6 +169,8 @@ export class UiSettingsStore {
       coauthorModelName: row.coauthorModelName ?? null,
       coauthorMaxTokens: row.coauthorMaxTokens ?? null,
       coauthorContextBudget: row.coauthorContextBudget ?? null,
+      copilotProviderId: row.copilotProviderId ?? null,
+      copilotModelName: row.copilotModelName ?? null,
       updatedAt: row.updatedAt,
     };
   }

@@ -241,7 +241,7 @@ export function DiceAssignment({ chatId, diceMode, diceScriptIds, diceActorBindi
             return (
               <div
                 key={def.scriptId}
-                className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md bg-s1 px-2.5 py-1.5"
+                className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md bg-s2 px-2.5 py-1.5"
               >
                 <span className="min-w-0 truncate font-ui text-[12px] font-medium text-t2">
                   {def.scriptLabel}
