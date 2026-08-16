@@ -32,8 +32,17 @@ const BUN = process.execPath;
  * worst case — a `mkdtemp` + full migration stack costs milliseconds on Linux
  * and seconds there — but the floor is machine speed under load, not platform,
  * so the headroom is unconditional.
+ *
+ * The budget also bounds the store-cleanup preload's process-global afterAll
+ * (close every SQLite handle + sweep the run's temp dirs, see
+ * services/api/test/store-cleanup.ts). That hook is legitimate long-pole work,
+ * NOT a hung test: measured 16.6s / 18.7s on the GitHub Windows runner with
+ * 2–4 suites sweeping concurrently, and ~26s locally under a full-suite load —
+ * all over a previous 15s budget while every actual test passed. Bun ignores
+ * a per-hook timeout override (verified empirically: `afterAll(fn, ms)` still
+ * fails at the global --timeout), so the global budget is the only lever.
  */
-export const TEST_TIMEOUT_MS = 15_000;
+export const TEST_TIMEOUT_MS = 45_000;
 
 export function testTimeoutArgs(): readonly string[] {
 	return ["--timeout", String(TEST_TIMEOUT_MS)];

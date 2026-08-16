@@ -49,7 +49,7 @@ test("gives each web test file the same timeout headroom on every platform", () 
 	// run several at a time, so contention reaches Linux too. See scripts/test.ts.
 	const command = createWebTestFileCommand("a.test.tsx", "report.xml");
 	expect(command).toContain("--timeout");
-	expect(command).toContain("15000");
+	expect(command).toContain("45000");
 });
 
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {
