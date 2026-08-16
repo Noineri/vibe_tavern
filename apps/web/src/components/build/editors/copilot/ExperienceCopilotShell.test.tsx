@@ -374,7 +374,10 @@ function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]>
   const props = {
     scriptId: "script-1",
     rulesCode: "// rules buffer",
-    visualSource: "// visual buffer",
+    // XU-5: an empty visual source defaults the editor to the Code tab (matching
+    // the pre-XU-5 "rules" default most tests assume); preview-default tests
+    // pass a non-empty `visualSource` explicitly.
+    visualSource: "",
     onRulesChange: mock(),
     onVisualChange: mock(),
     ...over,
@@ -524,11 +527,15 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
   it("switches the CodeEditor between the Rules and Visual buffers", async () => {
     const onRulesChange = mock();
     const onVisualChange = mock();
-    const { container, getByRole } = renderShell({ onRulesChange, onVisualChange });
+    const { container, getByRole } = renderShell({ onRulesChange, onVisualChange, visualSource: "// visual buffer" });
 
     // Drain the async `loadSession` so its state updates are captured in act
     // (the editor pane renders regardless of session state).
     await flushSessionLoad();
+
+    // XU-5: a non-empty visual source defaults to the Preview tab — navigate to
+    // Code to reach the editor.
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
 
     const cmEl = container.querySelector<HTMLElement>(".cm-editor");
     expect(cmEl).not.toBeNull();
@@ -564,8 +571,10 @@ describe("ExperienceCopilotShell — visual validator (UX 2026-08-16 remark 6)",
     const first = renderShell({ visualSource: broken });
     await flushSessionLoad();
 
-    // Banner only exists on the visual tab.
+    // Banner only exists on the code tab's Visual buffer — preview (the default
+    // here, since a visual source exists) has no validator.
     expect(first.queryByTestId("copilot-visual-validator")).toBeNull();
+    fireEvent.click(first.getByRole("radio", { name: "experience_copilot_code" }));
     fireEvent.click(first.getByRole("radio", { name: "experience_copilot_visual" }));
 
     expect(first.getByTestId("copilot-visual-validator").textContent).toContain("experience_copilot_visual_problems");
@@ -576,6 +585,7 @@ describe("ExperienceCopilotShell — visual validator (UX 2026-08-16 remark 6)",
     const clean = "<style>.x{c:red}</style>\n<div></div>\n<script>var a = 1;</script>";
     const second = renderShell({ visualSource: clean });
     await flushSessionLoad();
+    fireEvent.click(second.getByRole("radio", { name: "experience_copilot_code" }));
     fireEvent.click(second.getByRole("radio", { name: "experience_copilot_visual" }));
     expect(second.getByTestId("copilot-visual-validator").textContent).toContain("experience_copilot_visual_valid");
   });
@@ -585,11 +595,12 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
   // Identity i18n (no LocaleProvider mounted): `useT` falls back to the
   // key-as-string default, so the component markers render their i18n keys
   // verbatim — matching the InteractiveTester/ExperienceEditor test pattern.
-  it("renders the two toolbar buttons (preview + test it) and no tester button", async () => {
+  it("renders the single 'Test it' sandbox button (no preview button, no tester button)", async () => {
     const { getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
+    // XU-5: the preview button is gone — preview is the default editor tab.
+    expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
     // XU-4: the tester merged into the sandbox — no separate tester button.
     expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
@@ -603,14 +614,29 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
     expect(queryByTestId("interactive-tester")).toBeNull();
   });
 
-  it("opens the Preview modal containing ExperienceFrame", async () => {
-    const { getByTestId } = renderShell();
+  it("preview is the DEFAULT editor tab when a visual exists (ExperienceFrame inline, no modal)", async () => {
+    const { getByTestId, queryByTestId, container } = renderShell({ visualSource: "// visual buffer" });
     await flushSessionLoad();
 
-    fireEvent.click(getByTestId("copilot-toolbar-preview"));
-
-    expect(getByTestId("copilot-preview-modal")).toBeDefined();
+    // The ExperienceFrame renders INLINE in the preview tab — no modal.
     expect(getByTestId("experience-frame-stub")).toBeDefined();
+    expect(queryByTestId("copilot-preview-modal")).toBeNull();
+    // The code editor is NOT mounted while the preview tab is active.
+    expect(container.querySelector(".cm-editor")).toBeNull();
+  });
+
+  it("an empty visual source defaults to the Code tab and preview shows the empty-state on demand", async () => {
+    const { container, getByRole, getByText, queryByTestId } = renderShell();
+    await flushSessionLoad();
+
+    // Empty visual → default is Code (the rules editor is mounted).
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
+    expect(queryByTestId("experience-frame-stub")).toBeNull();
+
+    // Switch to Preview → the empty-state (no frame).
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_preview" }));
+    expect(getByText("experience_playground_no_visual")).toBeDefined();
+    expect(queryByTestId("experience-frame-stub")).toBeNull();
   });
 
   it("opens the Sandbox modal containing ExperiencePlayground", async () => {
@@ -667,8 +693,7 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     expect(hasHiddenClass(chatPane)).toBe(true);
     expect(hasHiddenClass(editPane)).toBe(false);
 
-    // The two toolbar buttons live in the Edit pane toolbar (same as desktop).
-    expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
+    // The sandbox "Test it" button lives in the Edit pane's outer toolbar.
     expect(getByTestId("copilot-toolbar-sandbox")).toBeDefined();
   });
 });
@@ -705,29 +730,29 @@ describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
 });
 
 describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
-  it("renders a 3-position toggle (rules/visual/sandbox)", async () => {
+  it("renders a 3-position OUTER toggle (preview/code/try)", async () => {
     const { getByRole } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
     // Identity i18n: the creation labels resolve through `t` (key-as-string
-    // fallback without a LocaleProvider), unlike the non-creation inline labels.
-    expect(getByRole("radio", { name: "experience_copilot_rules" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_sandbox" })).toBeDefined();
+    // fallback without a LocaleProvider).
+    expect(getByRole("radio", { name: "experience_copilot_preview" })).toBeDefined();
+    expect(getByRole("radio", { name: "experience_copilot_code" })).toBeDefined();
+    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
   });
 
-  it("sandbox position renders the playground inline and hides the code editor + toolbar buttons", async () => {
+  it("try position renders the playground inline and hides the code editor + toolbar buttons", async () => {
     const { container, getByRole, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_sandbox" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
 
     // The shared playground element mounts INLINE.
     expect(queryByTestId("experience-playground")).toBeTruthy();
-    // The CodeEditor is absent on the sandbox position.
+    // The CodeEditor is absent on the try position.
     expect(container.querySelector(".cm-editor")).toBeNull();
-    // Toggle only — the preview/sandbox toolbar buttons are hidden (the tester
-    // button is gone entirely, XU-4).
+    // Toggle only — the sandbox toolbar button is hidden (the inline position
+    // replaces it), and the preview button is gone entirely (XU-5).
     expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
     expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
@@ -737,49 +762,51 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     const { getByRole, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_sandbox" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
     expect(queryByTestId("copilot-sandbox-modal")).toBeNull();
   });
 
-  it("rules position: rules toolbar + code editor + preview present, sandbox/test-it buttons hidden", async () => {
+  it("code position (rules): rules toolbar + code editor, no sandbox/test-it buttons", async () => {
     const { container, getByTestId, queryByTestId } = renderShell({
       creationMode: true,
       rulesToolbar: <div data-testid="rules-toolbar-slot">rules toolbar</div>,
     });
     await flushSessionLoad();
 
+    // Empty visual → default is Code (inner rules sub-toggle).
     expect(getByTestId("rules-toolbar-slot")).toBeDefined();
     expect(container.querySelector(".cm-editor")).not.toBeNull();
-    // XU-4: the tester button is gone; the preview stays; the test-it/sandbox
-    // button is hidden in creation mode (the sandbox is an inline tab).
+    // The preview button is gone (XU-5); the sandbox/test-it button is hidden
+    // in creation mode (the sandbox is an inline position).
     expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
-    expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
+    expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
   });
 
-  it("visual position: visual toolbar + code editor + preview present, sandbox/test-it buttons hidden", async () => {
+  it("code position (visual): visual toolbar + code editor", async () => {
     const { container, getByRole, getByTestId, queryByTestId } = renderShell({
       creationMode: true,
       visualToolbar: <div data-testid="visual-toolbar-slot">visual toolbar</div>,
     });
     await flushSessionLoad();
 
+    // Default is Code (rules); switch the inner sub-toggle to Visual.
     fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
 
     expect(getByTestId("visual-toolbar-slot")).toBeDefined();
     expect(container.querySelector(".cm-editor")).not.toBeNull();
     expect(queryByTestId("copilot-toolbar-tester")).toBeNull();
-    expect(getByTestId("copilot-toolbar-preview")).toBeDefined();
+    expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     expect(queryByTestId("copilot-toolbar-sandbox")).toBeNull();
   });
 
-  it("the preview toolbar button still opens its modal in creation mode (no tester modal)", async () => {
-    const { getByTestId, queryByTestId } = renderShell({ creationMode: true });
+  it("preview position shows the empty-state in creation mode (no preview modal)", async () => {
+    const { getByRole, getByText, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByTestId("copilot-toolbar-preview"));
-    expect(getByTestId("copilot-preview-modal")).toBeDefined();
-    expect(getByTestId("experience-frame-stub")).toBeDefined();
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_preview" }));
+    expect(getByText("experience_playground_no_visual")).toBeDefined();
+    expect(queryByTestId("copilot-preview-modal")).toBeNull();
     // XU-4: the tester modal is gone entirely.
     expect(queryByTestId("copilot-tester-modal")).toBeNull();
   });
@@ -1022,8 +1049,8 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
       />,
     );
     expect(queryByTestId("copilot-toolbar-revert")).not.toBeNull();
-    // …but the sandbox position has no code editor / review affordances.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_sandbox" }));
+    // …but the try (sandbox) position has no code editor / review affordances.
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
     expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
   });
 });
@@ -1063,6 +1090,8 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     expect(getByTestId("copilot-review-count").textContent).toContain("copilot_review_hunks_count");
     expect(queryByTestId("copilot-buffer-dot-rules")).not.toBeNull();
     expect(queryByTestId("copilot-buffer-dot-visual")).toBeNull();
+    // XU-5: the OUTER Code tab also carries a dot (review dots on both levels).
+    expect(queryByTestId("copilot-outer-dot-code")).not.toBeNull();
 
     // Accept-all writes the proposed buffer into the rules draft.
     fireEvent.click(getByTestId("copilot-accept-all"));
