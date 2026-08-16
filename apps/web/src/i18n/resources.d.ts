@@ -739,6 +739,7 @@ export default interface Resources {
     "experience_detach_unavailable": "This mini-app window is no longer connected.",
     "experience_detached_badge": "detached",
     "experience_editor_back": "All mini-apps",
+    "experience_editor_card_draft_tooltip": "Draft — unsaved changes",
     "experience_editor_card_no_visual": "no visual",
     "experience_editor_card_visual": "visual: {name}",
     "experience_editor_create_error": "Couldn't create the mini-app",

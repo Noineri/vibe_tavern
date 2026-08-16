@@ -662,6 +662,17 @@ export function ExperienceEditor() {
             {allScripts.map((script) => {
               const display = { ...script, ...(scriptDrafts[script.id]?.values ?? {}) };
               const firstBoundVisual = (boundVisuals[script.id] ?? [])[0] ?? null;
+              const isDraft = isLocalId(script.id);
+              const statusKey = isDraft
+                ? "experience_editor_card_draft_tooltip"
+                : display.enabled
+                  ? "experience_editor_enabled"
+                  : "experience_editor_disabled";
+              const dotClass = isDraft
+                ? "bg-warning"
+                : display.enabled
+                  ? "bg-success"
+                  : "bg-t4";
               return (
                 <div
                   key={script.id}
@@ -674,29 +685,21 @@ export function ExperienceEditor() {
                   >
                     <ExperienceCardPreview visualSource={firstBoundVisual?.source ?? null} />
                     <div className="p-3.5">
-                      <div className="flex items-start gap-2.5">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.stack /></div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
-                            {isLocalId(script.id) && (
-                              <span className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-warning-dim text-warning-text">
-                                {t("experience_editor_unsaved_badge")}
-                              </span>
-                            )}
-                          </div>
-                          <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase leading-none", display.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
-                            {display.enabled ? t("experience_editor_enabled") : t("experience_editor_disabled")}
-                          </span>
-                        </div>
+                      <div className="flex items-center gap-1.5">
+                        <CustomTooltip content={t(statusKey)}>
+                          <span
+                            aria-label={t(statusKey)}
+                            data-testid="card-status-dot"
+                            className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)}
+                          />
+                        </CustomTooltip>
+                        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
                       </div>
-                      {display.description && (
-                        <div className="mt-2.5 line-clamp-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{display.description}</div>
-                      )}
-                      <div className="mt-2 font-ui text-[11px] text-t3">
-                        {firstBoundVisual
-                          ? t("experience_editor_card_visual", { name: firstBoundVisual.name })
-                          : t("experience_editor_card_no_visual")}
+                      <div
+                        data-testid="card-description"
+                        className="mt-2 min-h-[3.25em] font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2"
+                      >
+                        {display.description && <div className="line-clamp-2">{display.description}</div>}
                       </div>
                     </div>
                   </button>

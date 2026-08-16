@@ -1848,6 +1848,7 @@
   "experience_editor_existing_label": "Ваши мини-приложения",
   "experience_editor_no_scripts": "Мини-приложений пока нет — создайте одно выше.",
   "experience_editor_back": "Все мини-приложения",
+  "experience_editor_card_draft_tooltip": "Черновик — есть несохранённые изменения",
   "experience_editor_card_no_visual": "нет представления",
   "experience_editor_card_visual": "представление: {name}",
   "experience_editor_create_error": "Не удалось создать мини-приложение",

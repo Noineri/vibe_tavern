@@ -573,7 +573,7 @@ describe("ExperienceEditor", () => {
     expect(IntersectionObserverStub.instances[0]!.disconnected).toBe(true);
   });
 
-  it("renders human Enabled/Disabled statuses and a visual line on the card (XU-7)", async () => {
+  it("renders human status dots and a uniform description slot on the card (XU-7)", async () => {
     serverScripts = [
       { ...baseScript, enabled: true },
       { ...baseScript, id: "srv_2", name: "Second Rules", enabled: false },
@@ -582,15 +582,16 @@ describe("ExperienceEditor", () => {
       id === "srv_1" ? [{ ...baseVisual }] : [],
     );
 
-    const { findByText } = render(<ExperienceEditor />);
+    const { findByLabelText, getAllByTestId } = render(<ExperienceEditor />);
 
-    // Statuses reuse the XU-6 top-bar keys (Enabled/Disabled) — no duplicates.
-    expect(await findByText("experience_editor_enabled")).toBeTruthy();
-    expect(await findByText("experience_editor_disabled")).toBeTruthy();
+    // Status is a colored dot before the name, labelled with the human status
+    // (the old text chip + Draft badge are gone — the dot replaces both).
+    expect(await findByLabelText("experience_editor_enabled")).toBeTruthy();
+    expect(await findByLabelText("experience_editor_disabled")).toBeTruthy();
 
-    // The bound card echoes the visual name; the visual-less card shows "no visual".
-    expect(await findByText("experience_editor_card_visual")).toBeTruthy();
-    expect(await findByText("experience_editor_card_no_visual")).toBeTruthy();
+    // The description slot is always present (fixed two-line height) so cards
+    // keep a uniform height even when a script has no description.
+    expect(getAllByTestId("card-description")).toHaveLength(2);
   });
 
   it("auto-selects the first bound visual on open and badges bound visuals in the list (ER-18b)", async () => {
