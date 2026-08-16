@@ -362,11 +362,14 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
       rules: VALID_RULES,
       step: "rules",
     });
-    // SHA-256 of the system message captured BEFORE the digest refactor — pins
-    // that lifting digest messages out of the history flow changed nothing for
-    // a thread that never compacted (zero behavior change without a digest).
+    // SHA-256 of the system message — pins that lifting digest messages out
+    // of the history flow changed nothing for a thread that never compacted
+    // (zero behavior change without a digest). Re-captured after the
+    // experience-authoring skill DESCRIPTION changed (commit ad893b75 added
+    // "turn ownership and seat mapping" — the description is part of the
+    // rendered skill catalog, so the assembled message legitimately shifts).
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("1233dc436186884f02adfeb546561130d9d25564759d288ae0f049f444925998");
+      .toBe("3b62f8e2d8036c7e4058bf9895e0dde079421f1e4610e6f5c585c4d69f4ba82c");
     expect(result.messages).toHaveLength(3);
   });
 
