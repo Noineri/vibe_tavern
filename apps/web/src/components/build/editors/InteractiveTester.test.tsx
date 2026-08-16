@@ -274,6 +274,19 @@ describe("InteractiveTester", () => {
     expect(await findByText("boom")).toBeTruthy();
   });
 
+  it("UX 2026-08-16 remark 5: malformed settings JSON shows the detailed diagnostic (reason + located anomaly), not a bare label", async () => {
+    const { getByText, getByPlaceholderText, container } = renderTester();
+    // Type malformed settings JSON (unclosed object on line 1) and run.
+    fireEvent.change(getByPlaceholderText("{}"), { target: { value: "{\n  \"seed\": 1" } });
+    fireEvent.click(getByText("experience_tester_run"));
+
+    // The request never fires (local authoring error) and the error panel
+    // carries the localized label PLUS the engine reason + scanner location.
+    await waitFor(() => expect(container.textContent ?? "").toContain("experience_tester_settings_invalid"));
+    expect(container.textContent).toContain("unclosed '{' opened at line 1");
+    expect(runExperienceTest).not.toHaveBeenCalled();
+  });
+
   it("one-action reduce: a legal action replays the accumulated list and renders the next state, events, effects, console, and the bumped revision", async () => {
     const { getByText, getByPlaceholderText, findByText } = renderTester();
     fireEvent.click(getByText("experience_tester_run"));

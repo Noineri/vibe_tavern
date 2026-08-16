@@ -55,6 +55,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
 import { cn } from "../../../lib/cn.js";
+import { parseOptionalJsonDiagnosed } from "../../../lib/json-parse-diagnostic.js";
 import { useT } from "../../../i18n/context.js";
 import {
   ExperienceApiError,
@@ -192,18 +193,6 @@ function toPlaygroundError(error: unknown): PlaygroundErrorView {
   return { message: error instanceof Error ? error.message : String(error), console: [] };
 }
 
-/** Parse an optional JSON field. Blank input is "absent" (omitted from the
- *  request); non-blank invalid JSON is a local authoring error — the panel
- *  never sends malformed JSON to the playground. */
-function parseOptionalJson(raw: string): { ok: true; present: boolean; value?: unknown } | { ok: false } {
-  const trimmed = raw.trim();
-  if (trimmed === "") return { ok: true, present: false };
-  try {
-    return { ok: true, present: true, value: JSON.parse(trimmed) };
-  } catch {
-    return { ok: false };
-  }
-}
 
 // ─── Small render helpers ────────────────────────────────────────────────────
 
@@ -471,9 +460,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
 
   /** Start a fresh ephemeral session from the CURRENT UNSAVED buffers. */
   const handleStart = async () => {
-    const settings = parseOptionalJson(settingsJson);
+    const settings = parseOptionalJsonDiagnosed(settingsJson);
     if (!settings.ok) {
-      setError({ message: t("experience_tester_settings_invalid"), console: [] });
+      setError({ message: `${t("experience_tester_settings_invalid")} — ${settings.diagnostic}`, console: [] });
       return;
     }
     setBusy("start");
@@ -555,9 +544,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const handleApplyAction = async () => {
     const type = actionType.trim();
     if (type === "") return;
-    const payload = parseOptionalJson(payloadJson);
+    const payload = parseOptionalJsonDiagnosed(payloadJson);
     if (!payload.ok) {
-      setError({ message: t("experience_tester_action_payload_invalid"), console: [] });
+      setError({ message: `${t("experience_tester_action_payload_invalid")} — ${payload.diagnostic}`, console: [] });
       return;
     }
     await submitAction(type, undefined, payload);
