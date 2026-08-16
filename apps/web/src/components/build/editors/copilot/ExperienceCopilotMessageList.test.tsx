@@ -7,10 +7,11 @@ import { useExperienceCopilotTurnStore } from "../../../../stores/experience-cop
 useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
 let ExperienceCopilotMessageList: typeof import("./ExperienceCopilotMessageList.js").ExperienceCopilotMessageList;
 
 beforeAll(async () => {
-  ({ render } = await import("@testing-library/react"));
+  ({ render, fireEvent } = await import("@testing-library/react"));
   ({ ExperienceCopilotMessageList } = await import("./ExperienceCopilotMessageList.js"));
 });
 
@@ -41,6 +42,7 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "a1", role: "assistant", content: "Here are the rules" }),
         ]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -49,12 +51,44 @@ describe("ExperienceCopilotMessageList", () => {
     expect(getByText("Here are the rules")).toBeDefined();
   });
 
+  it("shows the live reasoning block in the co-author pattern when pendingReasoning is non-empty (UX 2026-08-16 remark 4)", () => {
+    const { getByTestId, queryByTestId, rerender } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    expect(queryByTestId("copilot-pending-reasoning-row")).toBeNull();
+
+    rerender(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[]}
+        pendingText=""
+        pendingReasoning="thinking about the rules"
+        pendingUserContent=""
+      />,
+    );
+
+    // The row exists and carries the co-author MessageReasoning minimal body.
+    // Body starts collapsed (defaultOpen=false) — expand via the header click.
+    const row = getByTestId("copilot-pending-reasoning-row");
+    expect(row.getAttribute("data-role")).toBe("assistant");
+    fireEvent.click(row.querySelector("button")!);
+    expect(row.textContent).toContain("thinking about the rules");
+  });
+
   it("shows the live pendingText assistant bubble when non-empty", () => {
     const { getByText } = render(
       <ExperienceCopilotMessageList
         threadId="thread-1"
         messages={[]}
         pendingText="streaming reply…"
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -71,6 +105,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent="make the visual darker"
       />,
     );
@@ -99,6 +134,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -146,6 +182,7 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "a2", role: "assistant", content: "second reply" }),
         ]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -209,6 +246,7 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "a2", role: "assistant", content: "second reply" }),
         ]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -241,6 +279,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText="I'll edit the rulesDone"
+        pendingReasoning=""
         pendingUserContent="go"
       />,
     );
@@ -268,6 +307,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText="Hello"
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -297,6 +337,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -333,6 +374,7 @@ describe("ExperienceCopilotMessageList", () => {
           }),
         ]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -350,6 +392,7 @@ describe("ExperienceCopilotMessageList", () => {
         threadId="thread-1"
         messages={[]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );
@@ -369,6 +412,7 @@ describe("ExperienceCopilotMessageList", () => {
           message({ id: "d1", role: "digest", content: "summarized", toolCallId: "u2" }),
         ]}
         pendingText=""
+        pendingReasoning=""
         pendingUserContent=""
       />,
     );

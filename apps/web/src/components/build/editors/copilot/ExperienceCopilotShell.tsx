@@ -789,6 +789,7 @@ export function ExperienceCopilotShell({
             threadId={threadId}
             messages={messages}
             pendingText={ctrl.pendingText}
+            pendingReasoning={ctrl.pendingReasoning}
             pendingUserContent={ctrl.pendingUserContent}
           />
           {isMobile ? (

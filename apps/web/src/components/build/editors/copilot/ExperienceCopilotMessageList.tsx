@@ -10,6 +10,7 @@ import {
 import { orderMessagesWithDigests } from "../../../../lib/copilot-context.js";
 import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.js";
 import { CopilotActivityCard } from "./CopilotActivityCard.js";
+import { MessageReasoning } from "../../../chat/MessageReasoning.js";
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { useT } from "../../../../i18n/context.js";
@@ -36,6 +37,10 @@ export interface ExperienceCopilotMessageListProps {
   messages: ExperienceCopilotMessageWire[];
   /** Live assistant text accumulated this turn (cleared by the shell on settle). */
   pendingText: string;
+  /** Live model reasoning for the pending turn — rendered above the pending
+   *  bubble with the co-author's MessageReasoning "minimal" pattern (UX
+   *  2026-08-16 remark 4). Live-only: cleared on settle, not persisted. */
+  pendingReasoning: string;
   /** The user's just-sent message, shown optimistically while the model
    *  generates (the persisted user row only lands after the turn settles). */
   pendingUserContent: string;
@@ -45,6 +50,7 @@ export function ExperienceCopilotMessageList({
   threadId,
   messages,
   pendingText,
+  pendingReasoning,
   pendingUserContent,
 }: ExperienceCopilotMessageListProps) {
   const { t } = useT();
@@ -141,6 +147,7 @@ export function ExperienceCopilotMessageList({
     visibleMessages.length === 0 &&
     !hasPendingUserContent &&
     !hasPendingText &&
+    !pendingReasoning &&
     feed.length === 0;
 
   if (isEmpty) {
@@ -187,6 +194,17 @@ export function ExperienceCopilotMessageList({
                 createdAt: "",
               }}
             />
+          )}
+
+          {pendingReasoning && (
+            <div className="flex gap-2.5" data-role="assistant" data-testid="copilot-pending-reasoning-row">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-s3">
+                <Icons.Sparkles className="h-4 w-4 text-accent-t" />
+              </div>
+              <div className="min-w-0 max-w-[80%]">
+                <MessageReasoning reasoning={pendingReasoning} reasoningDurationMs={null} variant="minimal" />
+              </div>
+            </div>
           )}
 
           {feed.map((entry) => {

@@ -59,6 +59,12 @@ export interface ExperienceCopilotController {
   isSending: boolean;
   /** Live assistant text accumulated from text-deltas this turn (cleared on settle). */
   pendingText: string;
+  /** Live model reasoning accumulated from reasoning-deltas this turn,
+   *  rendered with the co-author's MessageReasoning "minimal" pattern (UX
+   *  2026-08-16 remark 4). Cleared on settle alongside pendingText — the
+   *  copilot's persisted turns do not carry reasoning (server-side TurnSegment
+   *  has no reasoning kind), so the block is live-only for now. */
+  pendingReasoning: string;
   /** The user's just-sent message, shown optimistically while the model
    *  generates — the persisted user row only appears after the turn settles
    *  and the shell refetches, so without this the user's own message is
@@ -118,6 +124,7 @@ export function useExperienceCopilotController(
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
+  const [pendingReasoning, setPendingReasoning] = useState("");
   // Optimistic user message: shown immediately on send so the user sees their
   // own message while the model generates (the persisted row only arrives
   // after the turn settles + the shell refetches). Cleared in `finally` so
@@ -150,6 +157,7 @@ export function useExperienceCopilotController(
       isSendingRef.current = true;
       setIsSending(true);
       setPendingText("");
+      setPendingReasoning("");
       setPendingUserContent(trimmed);
 
       try {
@@ -171,7 +179,9 @@ export function useExperienceCopilotController(
               setPendingText((p) => p + delta);
               useExperienceCopilotTurnStore.getState().appendTextDelta(threadId, delta);
             },
-            onReasoningChunk: () => {},
+            onReasoningChunk: (delta) => {
+              setPendingReasoning((p) => p + delta);
+            },
             onToolCall: (info) => {
               useExperienceCopilotTurnStore.getState().closeTextSegment(threadId);
               useExperienceCopilotTurnStore.getState().appendActivityRef(threadId, info.toolCallId);
@@ -247,6 +257,7 @@ export function useExperienceCopilotController(
         onMetrics?.(parsedMetrics?.success ? parsedMetrics.data : null);
 
         setPendingText("");
+        setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
         onTurnSettled?.();
@@ -257,6 +268,7 @@ export function useExperienceCopilotController(
           showProviderErrorToast(error, getT());
         }
         setPendingText("");
+        setPendingReasoning("");
         setIsSending(false);
         isSendingRef.current = false;
         onTurnSettled?.();
@@ -273,5 +285,5 @@ export function useExperienceCopilotController(
     toast.info(getT()("cancelling_generation"));
   }, []);
 
-  return { isSending, pendingText, pendingUserContent, handleSend, handleCancel };
+  return { isSending, pendingText, pendingReasoning, pendingUserContent, handleSend, handleCancel };
 }

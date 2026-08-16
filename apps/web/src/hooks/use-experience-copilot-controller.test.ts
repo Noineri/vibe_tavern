@@ -133,6 +133,14 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     });
     expect(result.current.pendingText).toBe("Hello");
 
+    // UX 2026-08-16 remark 4: reasoning-deltas accumulate into pendingReasoning
+    // (rendered with the co-author's MessageReasoning minimal pattern).
+    await act(async () => {
+      captured.onReasoningChunk!("think");
+      captured.onReasoningChunk!("ing");
+    });
+    expect(result.current.pendingReasoning).toBe("thinking");
+
     // Drive the tool-event wiring: onToolCall captures args + a streaming
     // placeholder, onToolResult finalizes each card with the persisted shape.
     await act(async () => {
@@ -162,6 +170,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
 
     expect(result.current.isSending).toBe(false);
     expect(result.current.pendingText).toBe("");
+    expect(result.current.pendingReasoning).toBe("");
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
 
     const activities = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
