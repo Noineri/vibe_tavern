@@ -102,6 +102,10 @@ interface PlaygroundSeat {
   providerProfileId?: string;
   /** Pinned model id for a model seat (IR-90E). */
   modelId?: string;
+  /** True while the id is auto-managed (tracks the label): becomes false the
+   *  moment the user edits the id by hand. Local-only — never persisted, so a
+   *  restored seat keeps its stored id verbatim (renames do not regenerate it). */
+  idAuto?: boolean;
 }
 
 /** The typed-error view model this panel renders. Normalized from the client
@@ -129,10 +133,13 @@ const CONTROLLERS = [
   EXPERIENCE_CONTROLLER.model,
 ] as const;
 
+/** Friendly (non-technical) role labels for the roster card dropdown. The
+ *  technical controller values map 1:1 (human/model/script) — only the label
+ *  changes; the domain value sent to Start is untouched. */
 const CONTROLLER_LABEL_KEY = {
-  [EXPERIENCE_CONTROLLER.human]: "experience_setup_controller_human",
-  [EXPERIENCE_CONTROLLER.script]: "experience_setup_controller_script",
-  [EXPERIENCE_CONTROLLER.model]: "experience_setup_controller_model",
+  [EXPERIENCE_CONTROLLER.human]: "experience_playground_role_human",
+  [EXPERIENCE_CONTROLLER.script]: "experience_playground_role_script",
+  [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_model",
 } as const;
 
 const CAPABILITIES = [
@@ -198,6 +205,36 @@ function toPlaygroundError(error: unknown): PlaygroundErrorView {
 
 const blockCls = "rounded-md border border-border bg-bg";
 const blockLabelCls = "text-[11px] font-semibold uppercase tracking-[0.06em] text-t3";
+
+/** Slugify a participant name into a stable seat id: lowercase, latin
+ *  alphanumerics + dashes only, "seat" fallback for an empty name. */
+function slugifyId(name: string): string {
+  const base = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return base === "" ? "seat" : base;
+}
+
+/** Dedupe a candidate id against an already-taken set with -2/-3 suffixes. */
+function uniqueIdFor(base: string, taken: ReadonlySet<string>): string {
+  let candidate = base;
+  let n = 2;
+  while (taken.has(candidate)) {
+    candidate = `${base}-${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+/** First letter for the participant's avatar circle (label → id → "?"). */
+function seatInitial(seat: PlaygroundSeat): string {
+  const source = seat.label.trim() !== "" ? seat.label.trim() : seat.id.trim();
+  return source === "" ? "?" : source.charAt(0).toUpperCase();
+}
 
 function JsonBlock({ value }: { value: unknown }) {
   return (
@@ -294,6 +331,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [loadingProfiles, setLoadingProfiles] = useState<Set<string>>(new Set());
   // IR-90E: collapsed Developer diagnostics (novice-readable default).
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  // XU-1: which seat's id editor is currently revealed (null = none).
+  const [editingIdIndex, setEditingIdIndex] = useState<number | null>(null);
   // IR-90E: auto-derive tracks whether the user has manually modified the
   // roster (once touched, auto-derive never overrides). A RESTORED config
   // (fix item 9a) counts as touched — the persisted roster is the user's
@@ -328,6 +367,29 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const updateSeat = (index: number, patch: Partial<PlaygroundSeat>) => {
     setSeatsTouched(true);
     setSeats((prev) => prev.map((seat, i) => (i === index ? { ...seat, ...patch } : seat)));
+  };
+
+  /** Label change with auto-id tracking: while a seat's id is still
+   *  auto-managed (never hand-edited), regenerate it from the new name,
+   *  deduping against every OTHER seat. Hand-edited and restored seats keep
+   *  their id verbatim. */
+  const updateSeatLabel = (index: number, label: string) => {
+    setSeatsTouched(true);
+    setSeats((prev) =>
+      prev.map((seat, i) => {
+        if (i !== index) return seat;
+        if (seat.idAuto !== true) return { ...seat, label };
+        const taken = new Set(prev.filter((_, j) => j !== index).map((s) => s.id));
+        return { ...seat, label, id: uniqueIdFor(slugifyId(label), taken), idAuto: true };
+      }),
+    );
+  };
+
+  /** Hand-editing the id breaks auto-tracking permanently: the id becomes the
+   *  user's explicit choice, so renames no longer regenerate it. */
+  const updateSeatId = (index: number, id: string) => {
+    setSeatsTouched(true);
+    setSeats((prev) => prev.map((seat, i) => (i === index ? { ...seat, id, idAuto: false } : seat)));
   };
 
   // Fix item 9a: persist the test config on every manual change (the mount
@@ -617,21 +679,22 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           <div className="mb-3">
             <label className={lblCls}>{t("experience_setup_participants_label")}</label>
             {seats.map((seat, index) => (
-              <div key={index}>
-                <div className="mb-1.5 mt-1.5 flex flex-wrap items-center gap-2">
-                  <input
-                    className={cn(inputCls, "min-w-0 w-24 shrink-0")}
-                    value={seat.id}
-                    placeholder={t("experience_tester_seat_id_placeholder")}
-                    onChange={(e) => updateSeat(index, { id: e.target.value })}
-                  />
+              <div key={index} className="mb-2 rounded-xl border border-border bg-surface p-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div
+                    aria-hidden
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-dim font-ui text-sm font-semibold text-accent-t"
+                  >
+                    {seatInitial(seat)}
+                  </div>
                   <input
                     className={cn(inputCls, "min-w-[7rem] flex-1")}
                     value={seat.label}
                     placeholder={t("experience_setup_participant_name_placeholder")}
-                    onChange={(e) => updateSeat(index, { label: e.target.value })}
+                    aria-label={t("experience_playground_participant_name")}
+                    onChange={(e) => updateSeatLabel(index, e.target.value)}
                   />
-                  <div className="w-28 shrink-0">
+                  <div className="w-40 shrink-0">
                     <DropdownSelect
                       value={seat.controller}
                       options={CONTROLLERS.map((controller) => ({ id: controller, label: t(CONTROLLER_LABEL_KEY[controller]) }))}
@@ -657,8 +720,33 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                     <Ic.del />
                   </button>
                 </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-10">
+                  {editingIdIndex === index ? (
+                    <input
+                      autoFocus
+                      className={cn(inputCls, "w-32")}
+                      value={seat.id}
+                      aria-label={t("experience_playground_participant_id")}
+                      onChange={(e) => updateSeatId(index, e.target.value)}
+                      onBlur={() => setEditingIdIndex(null)}
+                      onKeyDown={(e) => { if (e.key === "Enter") setEditingIdIndex(null); }}
+                    />
+                  ) : (
+                    <span className="font-mono text-[11px] text-t3">
+                      {t("experience_playground_participant_id")}: <span className="text-t2" data-testid="playground-seat-id">{seat.id === "" ? "—" : seat.id}</span>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={t("experience_playground_participant_id_edit")}
+                    className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s3 hover:text-t1"
+                    onClick={() => setEditingIdIndex(editingIdIndex === index ? null : index)}
+                  >
+                    <Ic.edit />
+                  </button>
+                </div>
                 {seat.controller === EXPERIENCE_CONTROLLER.model && grants.includes(EXPERIENCE_CAPABILITY.model) && (
-                  <div className="mb-1.5 ml-1 flex flex-col gap-1.5 sm:flex-row">
+                  <div className="mt-1.5 flex flex-col gap-1.5 pl-10 sm:flex-row">
                     <div className="flex-1">
                       <DropdownSelect
                         value={seat.providerProfileId ?? ""}
@@ -686,7 +774,13 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             <button
               type="button"
               className="mt-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
-              onClick={() => { setSeatsTouched(true); setSeats((prev) => [...prev, { id: "", label: "", controller: EXPERIENCE_CONTROLLER.human }]); }}
+              onClick={() => {
+                setSeatsTouched(true);
+                setSeats((prev) => {
+                  const taken = new Set(prev.map((s) => s.id));
+                  return [...prev, { id: uniqueIdFor("seat", taken), label: "", controller: EXPERIENCE_CONTROLLER.human, idAuto: true }];
+                });
+              }}
             >
               <Ic.plus /> {t("experience_setup_add_participant")}
             </button>

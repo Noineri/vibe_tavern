@@ -354,10 +354,10 @@ describe("ExperiencePlayground", () => {
     const utils = renderPlayground();
     const { container, getByText, getAllByPlaceholderText, findByText } = utils;
 
-    // Add a second human seat and pick it as the driven seat.
+    // Add a second human seat and pick it as the driven seat. The seat id is
+    // now auto-generated from the name (XU-1): typing "Alice" yields id
+    // "alice" without a separate id field.
     fireEvent.click(getByText("experience_setup_add_participant"));
-    const idInputs = getAllByPlaceholderText("experience_tester_seat_id_placeholder");
-    fireEvent.change(idInputs[1]!, { target: { value: "alice" } });
     const labelInputs = getAllByPlaceholderText("experience_setup_participant_name_placeholder");
     fireEvent.change(labelInputs[1]!, { target: { value: "Alice" } });
     await pickDropdown(utils, container, "experience_playground_human_seat_auto", "Alice");
@@ -620,17 +620,16 @@ describe("ExperiencePlayground", () => {
     fireEvent.change(labelInputs[1]!, { target: { value: "Управляемый моделью дилер" } });
     fireEvent.change(labelInputs[2]!, { target: { value: "Очень длинное имя участника" } });
 
-    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-    expect(seatIdInputs.length).toBeGreaterThanOrEqual(3);
-    // Each roster row (parent of a seat-id input) wraps instead of overflowing:
-    // it carries flex-wrap, and its flexible label input has a min-width floor.
-    seatIdInputs.forEach((seatInput) => {
-      const row = seatInput.parentElement;
-      if (!row) throw new Error("roster row missing");
+    // XU-1: the id moved out of the row (now a muted "ID: …" line under the
+    // card), so the wrap contract is pinned on the NAME input's flex-wrap row.
+    const nameInputs = container.querySelectorAll('input[placeholder="experience_setup_participant_name_placeholder"]');
+    expect(nameInputs.length).toBeGreaterThanOrEqual(3);
+    nameInputs.forEach((nameInput) => {
+      const row = nameInput.parentElement;
+      if (!row) throw new Error("roster card row missing");
       const rowCls = row.getAttribute("class") ?? "";
       expect(rowCls).toContain("flex-wrap");
-      const labelInput = row.querySelector('input[placeholder="experience_setup_participant_name_placeholder"]');
-      expect(labelInput?.getAttribute("class") ?? "").toContain("min-w-[7rem]");
+      expect(nameInput.getAttribute("class") ?? "").toContain("min-w-[7rem]");
       // Best-effort layout boundary: under happy-dom these are 0/0 (no layout);
       // a layout-capable runner would report the real overflow — either way the
       // wrapped row never scrolls past its container.
@@ -760,15 +759,15 @@ describe("ExperiencePlayground", () => {
     // The discovery mock returns participants + model → seats and grants
     // are populated WITHOUT any manual clicks.
     await waitFor(() => {
-      const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-      expect(seatIdInputs.length).toBe(2);
+      const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
+      expect(seatIds.length).toBe(2);
     });
     expect(runExperienceTest).toHaveBeenCalledTimes(1);
 
     // Verify auto-derived roster: human seat "you" + model seat "ai".
-    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-    expect((seatIdInputs[0] as HTMLInputElement).value).toBe("you");
-    expect((seatIdInputs[1] as HTMLInputElement).value).toBe("ai");
+    const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
+    expect(seatIds[0]?.textContent).toBe("you");
+    expect(seatIds[1]?.textContent).toBe("ai");
 
     // ── Step 2: ONLY select provider + model on the model seat ──
     // No manual capability toggles, no "add participant" click, no controller
@@ -852,29 +851,29 @@ describe("ExperiencePlayground", () => {
     // Wait for auto-derive to complete (the effect fires on open, then the
     // async discovery resolves and updates the roster).
     await waitFor(() => {
-      const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-      expect(seatIdInputs.length).toBe(2);
+      const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
+      expect(seatIds.length).toBe(2);
     });
     expect(runExperienceTest).toHaveBeenCalledTimes(1);
 
     // The roster now has TWO seats: the default human seat AND an auto-derived
     // model seat — without the user manually adding or configuring anything.
-    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-    expect((seatIdInputs[0] as HTMLInputElement).value).toBe("you");
-    expect((seatIdInputs[1] as HTMLInputElement).value).toBe("ai");
+    const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
+    expect(seatIds[0]?.textContent).toBe("you");
+    expect(seatIds[1]?.textContent).toBe("ai");
 
     // The capability grants are auto-checked (both participants + model).
     const grantCheckboxes = container.querySelectorAll('[role="checkbox"]');
     const checkedGrants = [...grantCheckboxes].filter((cb) => cb.getAttribute("aria-checked") === "true");
     expect(checkedGrants.length).toBe(2);
 
-    // The model seat's controller dropdown shows "model".
+    // The model seat's controller dropdown shows the friendly model role label.
     const controllerTriggers = [...container.querySelectorAll("button")].filter(
-      (b) => b.textContent?.trim() === "experience_setup_controller_human" || b.textContent?.trim() === "experience_setup_controller_model",
+      (b) => b.textContent?.trim() === "experience_playground_role_human" || b.textContent?.trim() === "experience_playground_role_model",
     );
     // One human + one model controller visible.
-    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_setup_controller_human")).toBe(true);
-    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_setup_controller_model")).toBe(true);
+    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_playground_role_human")).toBe(true);
+    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_playground_role_model")).toBe(true);
   });
 });
 
@@ -934,7 +933,7 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
     await first.findByText("experience_playground_start");
     // Touch the roster: add a seat and set its controller to model.
     fireEvent.click(first.getByText("experience_setup_add_participant"));
-    await pickDropdown(first, first.baseElement, "experience_setup_controller_human", "experience_setup_controller_model");
+    await pickDropdown(first, first.baseElement, "experience_playground_role_human", "experience_playground_role_model");
     // Persist effect fires on the touched change. The discovery mock declares
     // participants+model, so auto-derive may have already added its own model
     // seat before the manual touch — what matters is that the TOUCHED seat
@@ -955,7 +954,7 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
     // The restored model seat is visible in the roster UI (its controller
     // dropdown now shows the model label) and auto-derive did not override it.
     await waitFor(() => {
-      expect(second.baseElement.textContent).toContain("experience_setup_controller_model");
+      expect(second.baseElement.textContent).toContain("experience_playground_role_model");
       expect(second.baseElement.textContent).not.toContain("experience_playground_add_seat");
     });
     second.unmount();
@@ -974,8 +973,8 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
     window.localStorage.setItem("experience.playground.script_bad", "{not json");
     const view = renderPlayground(VALID_CODE, null, { scriptId: "script_bad" });
     // Falls back to the default single human seat — the roster shows the
-    // human controller label, not a broken restored row.
-    expect(view.baseElement.textContent).toContain("experience_setup_controller_human");
+    // friendly human role label, not a broken restored row.
+    expect(view.baseElement.textContent).toContain("experience_playground_role_human");
   });
 });
 
