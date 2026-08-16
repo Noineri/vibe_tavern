@@ -40,6 +40,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Ic } from "../../shared/icons.js";
+import { EmptyState } from "../../shared/empty-state.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
@@ -87,6 +88,7 @@ import {
 } from "./experience-local-helpers.js";
 import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
+import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
 
 function draftValuesEqual(a: ScriptDraftValues, b: ScriptDraftValues): boolean {
   return a.name === b.name
@@ -649,40 +651,54 @@ export function ExperienceEditor() {
           {t("experience_editor_existing_label")}
         </div>
         {allScripts.length === 0 ? (
-          <div className="py-6 text-center font-ui text-[13px] text-t3">{t("experience_editor_no_scripts")}</div>
+          <EmptyState
+            icon={<Ic.stack />}
+            title={t("experience_editor_no_scripts")}
+            cta={t("experience_editor_empty_cta")}
+            onCta={() => void handleCreateExperience()}
+          />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {allScripts.map((script) => {
               const display = { ...script, ...(scriptDrafts[script.id]?.values ?? {}) };
+              const firstBoundVisual = (boundVisuals[script.id] ?? [])[0] ?? null;
               return (
                 <div
                   key={script.id}
-                  className="group flex flex-col rounded-xl border border-border bg-surface transition-all hover:border-accent/40 hover:bg-s2"
+                  className="group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition-all hover:border-accent/40 hover:bg-s2"
                 >
                   <button
                     type="button"
-                    className="flex w-full cursor-pointer flex-col p-3.5 text-left"
+                    className="flex w-full cursor-pointer flex-col text-left"
                     onClick={() => openScript(script.id)}
                   >
-                    <div className="flex items-start gap-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.stack /></div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
-                          {isLocalId(script.id) && (
-                            <span className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-warning-dim text-warning-text">
-                              {t("experience_editor_unsaved_badge")}
-                            </span>
-                          )}
+                    <ExperienceCardPreview visualSource={firstBoundVisual?.source ?? null} />
+                    <div className="p-3.5">
+                      <div className="flex items-start gap-2.5">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.stack /></div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
+                            {isLocalId(script.id) && (
+                              <span className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-warning-dim text-warning-text">
+                                {t("experience_editor_unsaved_badge")}
+                              </span>
+                            )}
+                          </div>
+                          <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase leading-none", display.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+                            {display.enabled ? t("experience_editor_enabled") : t("experience_editor_disabled")}
+                          </span>
                         </div>
-                        <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase leading-none", display.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
-                          {display.enabled ? "ON" : "OFF"}
-                        </span>
+                      </div>
+                      {display.description && (
+                        <div className="mt-2.5 line-clamp-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{display.description}</div>
+                      )}
+                      <div className="mt-2 font-ui text-[11px] text-t3">
+                        {firstBoundVisual
+                          ? t("experience_editor_card_visual", { name: firstBoundVisual.name })
+                          : t("experience_editor_card_no_visual")}
                       </div>
                     </div>
-                    {display.description && (
-                      <div className="mt-2.5 line-clamp-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{display.description}</div>
-                    )}
                   </button>
                   {!isLocalId(script.id) && (
                     <div className="border-t border-border px-3 py-2">

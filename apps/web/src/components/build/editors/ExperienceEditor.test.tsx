@@ -110,7 +110,7 @@ const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const createScript = mock((_body: Record<string, unknown>) => Promise.resolve<ScriptRecord>({ ...baseScript }));
 const updateScript = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ScriptRecord>({ ...baseScript }));
 const deleteScript = mock((_id: string) => Promise.resolve<void>(undefined));
-const getScriptVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
+const getScriptVisuals = mock((_id?: string) => Promise.resolve<ExperienceVisualRow[]>([]));
 const bindScriptVisual = mock((_scriptId: string, _visualId: string) => Promise.resolve<void>(undefined));
 const unbindScriptVisual = mock((_scriptId: string, _visualId: string) => Promise.resolve<void>(undefined));
 const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
@@ -192,6 +192,51 @@ mock.module("../../experience/ExperienceFrame.js", () => ({
   ExperienceFrame: () => <div data-testid="experience-frame-stub" />,
 }));
 
+// ── XU-7: IntersectionObserver stub ────────────────────────────────────────
+// happy-dom 20 ships an IntersectionObserver whose observe() is a no-op (the
+// callback never fires), so the lazy card preview would never mount its iframe.
+// This stub records observations and lets a test fire the callback for a
+// specific element, pinning the "mount only after intersection" boundary.
+class IntersectionObserverStub {
+  static instances: IntersectionObserverStub[] = [];
+  private callback: IntersectionObserverCallback;
+  observed: Element[] = [];
+  disconnected = false;
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+    IntersectionObserverStub.instances.push(this);
+  }
+  observe(target: Element) {
+    this.observed.push(target);
+  }
+  unobserve(_target: Element) {
+    // no-op
+  }
+  disconnect() {
+    this.disconnected = true;
+  }
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+  /** Fire the callback as if the observed element(s) entered/left the viewport. */
+  fire(isIntersecting: boolean) {
+    const entries = this.observed.map((target) => {
+      const rect = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0 };
+      return {
+        isIntersecting,
+        target,
+        intersectionRatio: isIntersecting ? 1 : 0,
+        intersectionRect: rect,
+        rootBounds: null,
+        boundingClientRect: rect,
+        time: 0,
+      } as unknown as IntersectionObserverEntry;
+    });
+    this.callback(entries, this as unknown as IntersectionObserver);
+  }
+}
+
 let ExperienceEditor: typeof import("./ExperienceEditor.js").ExperienceEditor;
 type EditorViewInstance = import("@codemirror/view").EditorView;
 let act: typeof import("@testing-library/react").act;
@@ -244,6 +289,10 @@ beforeEach(() => {
   runExperienceTest.mockImplementation(async () => makeTestRunData());
   useScriptDraftStore.getState().resetAll();
   useExperienceVisualDraftStore.getState().resetAll();
+  // XU-7: reset + install the IntersectionObserver stub before every render so
+  // the lazy card preview observes into a fresh, test-controllable observer.
+  IntersectionObserverStub.instances = [];
+  globalThis.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
   serverScripts = [];
   serverVisuals = [];
   createGate = null;
@@ -497,6 +546,51 @@ describe("ExperienceEditor", () => {
     expect(await findByText("Existing Visual")).toBeTruthy();
     // The dashed "+" trigger (aria-label = scope_visual key) is present.
     expect(await findByLabelText("scope_visual")).toBeTruthy();
+  });
+
+  it("lazy-mounts the card visual preview only after intersection (XU-7)", async () => {
+    serverScripts = [{ ...baseScript }];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]); // vis_1 bound → non-null source
+
+    const { findByTestId, queryByTestId } = render(<ExperienceEditor />);
+
+    // The card preview renders its placeholder; the iframe stub is NOT mounted
+    // before intersection.
+    expect(await findByTestId("experience-card-preview")).toBeTruthy();
+    expect(queryByTestId("experience-frame-stub")).toBeNull();
+
+    // Exactly one observer was created and is observing the preview container.
+    await waitFor(() => {
+      expect(IntersectionObserverStub.instances.length).toBe(1);
+      expect(IntersectionObserverStub.instances[0]?.observed.length).toBe(1);
+    });
+
+    // Fire the intersection → the iframe mounts and the observer disconnects.
+    act(() => {
+      IntersectionObserverStub.instances[0]!.fire(true);
+    });
+    expect(queryByTestId("experience-frame-stub")).toBeTruthy();
+    expect(IntersectionObserverStub.instances[0]!.disconnected).toBe(true);
+  });
+
+  it("renders human Enabled/Disabled statuses and a visual line on the card (XU-7)", async () => {
+    serverScripts = [
+      { ...baseScript, enabled: true },
+      { ...baseScript, id: "srv_2", name: "Second Rules", enabled: false },
+    ];
+    getScriptVisuals.mockImplementation(async (id) =>
+      id === "srv_1" ? [{ ...baseVisual }] : [],
+    );
+
+    const { findByText } = render(<ExperienceEditor />);
+
+    // Statuses reuse the XU-6 top-bar keys (Enabled/Disabled) — no duplicates.
+    expect(await findByText("experience_editor_enabled")).toBeTruthy();
+    expect(await findByText("experience_editor_disabled")).toBeTruthy();
+
+    // The bound card echoes the visual name; the visual-less card shows "no visual".
+    expect(await findByText("experience_editor_card_visual")).toBeTruthy();
+    expect(await findByText("experience_editor_card_no_visual")).toBeTruthy();
   });
 
   it("auto-selects the first bound visual on open and badges bound visuals in the list (ER-18b)", async () => {
