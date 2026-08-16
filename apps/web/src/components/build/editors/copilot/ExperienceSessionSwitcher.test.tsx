@@ -58,6 +58,7 @@ function renderSwitcher(over: Partial<Parameters<typeof ExperienceSessionSwitche
     disabled: false,
     onActivate: mock(),
     onNew: mock(),
+    onRename: mock(),
     ...over,
   };
   const utils = render(<ExperienceSessionSwitcher {...props} />);
@@ -134,5 +135,88 @@ describe("ExperienceSessionSwitcher", () => {
 
     expect(getByTestId("copilot-session-new")).toBeDefined();
     expect(queryByTestId("copilot-session-t1")).toBeNull();
+  });
+
+  // ── Numbering + rename (2026-08-17) ────────────────────────────────────────
+
+  it("untitled sessions are numbered by creation order, not list position", () => {
+    // Newest-first list: t2 (created later) is listed SECOND but is creation #2;
+    // a third untitled session created FIRST lists last but must read "… 1".
+    const sessions = [
+      session("t1", { title: "", createdAt: "2026-08-02T00:00:00Z" }),
+      session("t2", { title: "", createdAt: "2026-08-03T00:00:00Z", archivedAt: "x" }),
+      session("t3", { title: "", createdAt: "2026-08-01T00:00:00Z" }),
+    ];
+    const { getByTestId } = renderSwitcher({ sessions });
+    expect(getByTestId("copilot-session-t3").textContent).toContain("experience_copilot_session 1");
+    expect(getByTestId("copilot-session-t1").textContent).toContain("experience_copilot_session 2");
+    expect(getByTestId("copilot-session-t2").textContent).toContain("experience_copilot_session 3");
+  });
+
+  it("a stored title replaces the number; the active header shows the numbered label too", () => {
+    const sessions = [
+      session("t1", { title: "", createdAt: "2026-08-01T00:00:00Z" }),
+      session("t2", { title: "Дурак редизайн", createdAt: "2026-08-02T00:00:00Z" }),
+    ];
+    const { getByTestId } = renderSwitcher({ sessions });
+    expect(getByTestId("copilot-session-t2").textContent).toContain("Дурак редизайн");
+    // Active = t1 (untitled) → the trigger label carries its number.
+    expect(getByTestId("copilot-session-switcher-trigger").textContent).toContain(
+      "experience_copilot_session 1",
+    );
+  });
+
+  it("every row has a rename pencil; clicking it swaps the row into an inline input", () => {
+    const onRename = mock();
+    const { getByTestId, queryByTestId } = renderSwitcher({ onRename });
+
+    // Pencil on both the active (div) row and a switch (button) row.
+    expect(getByTestId("copilot-session-rename-t1")).toBeDefined();
+    expect(getByTestId("copilot-session-rename-t2")).toBeDefined();
+
+    fireEvent.click(getByTestId("copilot-session-rename-t2"));
+    // The row becomes an <input> seeded with the DISPLAY label (the numbered
+    // fallback for an untitled session).
+    const input = getByTestId("copilot-session-t2").querySelector("input");
+    expect(input).not.toBeNull();
+    expect((input as HTMLInputElement).value).toContain("experience_copilot_session");
+  });
+
+  it("Enter commits the rename (onRename with trimmed value); Escape cancels without firing", () => {
+    const onRename = mock();
+    const { getByTestId } = renderSwitcher({ onRename });
+
+    fireEvent.click(getByTestId("copilot-session-rename-t1"));
+    const input = getByTestId("copilot-session-t1").querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "  Дурак — визуал  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onRename).toHaveBeenCalledTimes(1);
+    expect(onRename).toHaveBeenCalledWith("t1", "Дурак — визуал");
+
+    // Escape path: re-enter rename and abort.
+    fireEvent.click(getByTestId("copilot-session-rename-t1"));
+    const again = getByTestId("copilot-session-t1").querySelector("input") as HTMLInputElement;
+    fireEvent.keyDown(again, { key: "Escape" });
+    expect(onRename).toHaveBeenCalledTimes(1); // still once
+    expect(getByTestId("copilot-session-t1").querySelector("input")).toBeNull();
+  });
+
+  it("an unchanged or empty rename aborts without firing onRename", () => {
+    const onRename = mock();
+    const { getByTestId } = renderSwitcher({ onRename });
+
+    // t1 has a stored title "Session one" — blur with the same value = abort.
+    fireEvent.click(getByTestId("copilot-session-rename-t1"));
+    const input = getByTestId("copilot-session-t1").querySelector("input") as HTMLInputElement;
+    fireEvent.blur(input);
+    expect(onRename).not.toHaveBeenCalled();
+
+    // Empty input also aborts (never fires with "").
+    fireEvent.click(getByTestId("copilot-session-rename-t1"));
+    const again = getByTestId("copilot-session-t1").querySelector("input") as HTMLInputElement;
+    fireEvent.change(again, { target: { value: "   " } });
+    fireEvent.keyDown(again, { key: "Enter" });
+    expect(onRename).not.toHaveBeenCalled();
   });
 });

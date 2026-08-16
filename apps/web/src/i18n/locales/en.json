@@ -2236,5 +2236,7 @@
   "copilot_model_favorites_section": "Favorites",
   "copilot_model_all_section": "All models",
   "copilot_model_star": "Add to favorites",
-  "copilot_model_unstar": "Remove from favorites"
+  "copilot_model_unstar": "Remove from favorites",
+  "experience_copilot_rename_session": "Rename session",
+  "experience_copilot_rename_error": "Failed to rename the session"
 }

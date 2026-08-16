@@ -111,6 +111,31 @@ describe("ExperienceCopilotStore", () => {
     expect(archivedAgain?.archivedAt).not.toBeNull();
   });
 
+  test("renameSession sets the title and bumps updated_at, without touching archived_at", async () => {
+    const { store } = await setup();
+    const SCRIPT = "script_d2";
+    const first = await store.startNewSession(SCRIPT, ""); // untitled → auto-number label in UI
+    const second = await store.startNewSession(SCRIPT, ""); // archives first
+
+    // Rename the ARCHIVED sibling — renaming must not resurrect it.
+    const renamed = await store.renameSession(first.id, "Дурак — визуал");
+    expect(renamed?.title).toBe("Дурак — визуал");
+    expect(renamed?.archivedAt).not.toBeNull();
+
+    // Renaming bumps updated_at ("most recently touched") but the ACTIVE
+    // session is unchanged — rename never swaps which session is active.
+    expect(renamed?.updatedAt >= first.updatedAt).toBe(true);
+    const activeAfter = await store.getActive(SCRIPT);
+    expect(activeAfter?.id).toBe(second.id);
+
+    // Clearing to "" is the "back to auto-number" state.
+    const cleared = await store.renameSession(first.id, "");
+    expect(cleared?.title).toBe("");
+
+    // Missing id → null, no throw.
+    expect(await store.renameSession("nope", "x")).toBeNull();
+  });
+
   test("appendMessage inserts the message and bumps the thread's updated_at", async () => {
     const { store } = await setup();
     const SCRIPT = "script_e";

@@ -121,6 +121,17 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
     return thread ? this.toThreadWire(thread) : null;
   };
 
+  experienceCopilotRenameSession = async (
+    sessionId: string,
+    title: string,
+  ): Promise<ExperienceCopilotThreadWire | null> => {
+    // Normalize here so every caller (route validator, future callers) gets the
+    // same storage semantics: trimmed, empty = "no custom title" (the UI then
+    // falls back to the auto-numbered label).
+    const thread = await this.stores.experienceCopilot.renameSession(sessionId, title.trim());
+    return thread ? this.toThreadWire(thread) : null;
+  };
+
   experienceCopilotGetContext = async (threadId: string): Promise<ExperienceCopilotContextState> => {
     const thread = await this.stores.experienceCopilot.getById(threadId);
     if (!thread) {

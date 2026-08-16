@@ -27,6 +27,7 @@ import {
   startExperienceCopilotSession,
   listExperienceCopilotSessions,
   activateExperienceCopilotSession,
+  renameExperienceCopilotSession,
 } from "../../../../api/experience-copilot-api.js";
 import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
 import { ExperienceContextMeter } from "./ExperienceContextMeter.js";
@@ -686,6 +687,24 @@ export function ExperienceCopilotShell({
     }
   }, [ctrl.isSending, scriptId, fetchSessions, t]);
 
+  // ── Session rename (2026-08-17) ──────────────────────────────────────────
+  // Fire-and-refresh: the switcher exits rename mode immediately and the shell
+  // re-fetches the session list so the new title lands. Unlike switch/new,
+  // renaming is SAFE mid-stream (it touches only the title), so there is no
+  // isSending guard here. On failure, refresh anyway so the label reverts.
+  const handleRenameSession = useCallback(
+    async (targetThreadId: string, title: string) => {
+      try {
+        await renameExperienceCopilotSession(targetThreadId, title);
+      } catch {
+        toast.error(t("experience_copilot_rename_error"));
+      } finally {
+        await fetchSessions();
+      }
+    },
+    [fetchSessions, t],
+  );
+
   // ── Mobile auto-switch on proposal ───────────────────────────────────────
   // A proposal becomes reviewable in the Chat pane (activity cards + Apply), so
   // when one lands on mobile the surface jumps there. Ref-guarded edge mirroring
@@ -803,6 +822,7 @@ export function ExperienceCopilotShell({
               disabled={ctrl.isSending}
               onActivate={handleActivate}
               onNew={handleNewSession}
+              onRename={handleRenameSession}
             />
             <button
               type="button"

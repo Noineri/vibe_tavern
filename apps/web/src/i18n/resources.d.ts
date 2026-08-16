@@ -713,6 +713,8 @@ export default interface Resources {
     "experience_copilot_preview": "Preview",
     "experience_copilot_provider": "Provider",
     "experience_copilot_provider_select": "Select provider",
+    "experience_copilot_rename_error": "Failed to rename the session",
+    "experience_copilot_rename_session": "Rename session",
     "experience_copilot_result_copied": "Copied to the assistant chat",
     "experience_copilot_retry": "Retry",
     "experience_copilot_rules": "Rules",

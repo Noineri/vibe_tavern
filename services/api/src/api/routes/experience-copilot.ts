@@ -162,6 +162,14 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
       const threadId = c.req.param("threadId");
       return c.json(await runtime.experienceCopilotArchive(threadId));
     })
+    .patch(
+      "/api/experience-copilot/:threadId/title",
+      zValidator("json", z.object({ title: z.string().max(120) })),
+      async (c) => {
+        const threadId = c.req.param("threadId");
+        return c.json(await runtime.experienceCopilotRenameSession(threadId, c.req.valid("json").title));
+      },
+    )
     .get("/api/experience-copilot/:threadId/context", async (c) => {
       const threadId = c.req.param("threadId");
       return c.json(await runtime.experienceCopilotGetContext(threadId));

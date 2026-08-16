@@ -105,6 +105,19 @@ export async function archiveExperienceCopilotSession(
   return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
 }
 
+/** Rename a session (trim server-side; an empty title clears back to the
+ *  auto-numbered fallback label). Returns null when the thread does not exist. */
+export async function renameExperienceCopilotSession(
+  threadId: string,
+  title: string,
+): Promise<ExperienceCopilotThreadWire | null> {
+  const response = await client.api["experience-copilot"][":threadId"].title.$patch({
+    param: { threadId },
+    json: { title },
+  });
+  return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+}
+
 // ─── Context meter + compaction (CM-4/CM-5) ─────────────────────────────────
 
 export interface ExperienceCopilotContextState {

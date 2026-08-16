@@ -239,6 +239,20 @@ export class ExperienceCopilotStore {
     return row ? this.mapThread(row) : null;
   }
 
+  /** Rename a session: set its title (empty = back to the auto-numbered
+   *  fallback label) and bump updated_at. Returns null when the thread does
+   *  not exist. Renaming does NOT touch archived_at — an archived session can
+   *  be renamed in place. */
+  async renameSession(sessionId: string, title: string): Promise<ExperienceCopilotThread | null> {
+    const now = this.clock.now();
+    const [row] = await this.db
+      .update(experienceCopilotThreads)
+      .set({ title, updatedAt: now })
+      .where(eq(experienceCopilotThreads.id, sessionId))
+      .returning();
+    return row ? this.mapThread(row) : null;
+  }
+
   /**
    * Append a message to a thread and bump the thread's updated_at so it surfaces
    * as the most recently touched session. Returns the inserted message. Both
