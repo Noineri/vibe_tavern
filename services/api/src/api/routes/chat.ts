@@ -5,7 +5,7 @@ import { z } from "zod";
 import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
-import { DiceBindError } from "@vibe-tavern/db";
+import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
 import { readOptionalJson } from "./helpers.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
@@ -62,17 +62,25 @@ async function writeChatSseEvents(
 
     const message = extractProviderErrorMessage(err);
     const category = classifyProviderError(err);
-    // DICE-B11 send-path gap (stream arm): a dice commit conflict (stale lane
-    // revision / unresolved choose) throws DiceBindError inside the generator
-    // during the for-await above. Streaming headers are already sent (HTTP 200),
-    // so this cannot become a 409 — surface the structured `code` on the SSE
-    // error event instead so the client can tell a retryable dice conflict
-    // (refresh pending + keep the draft) from a provider failure. The non-stream
-    // arm maps the same error to a real 409 in the global onError.
-    const diceCode = err instanceof DiceBindError ? err.code : undefined;
-    logSendDebug("api.route.sse.error", { message, category, ...(diceCode ? { code: diceCode } : {}) });
+    // Send-path bind conflicts (DICE-B11 / IR-70H, stream arm): a dice commit
+    // conflict (stale lane revision / unresolved choose) or an experience
+    // attachment bind conflict (not_found / already_bound / stale_queue /
+    // stale_session) throws DiceBindError / ExperienceBindError inside the
+    // generator during the for-await above. Streaming headers are already sent
+    // (HTTP 200), so this cannot become a 409 — surface the structured typed
+    // `code` on the SSE error event instead so the client can tell a retryable
+    // bind conflict (refresh pending + keep the draft) from a provider failure.
+    // `code` is authoritative for client recovery; `category` stays on the wire
+    // for parity but is NOT an actionable provider signal here (it resolves to
+    // "unknown" for a plain bind error). The non-stream arm maps the same
+    // errors to a real 409 in the global onError.
+    const bindCode =
+      err instanceof DiceBindError ? err.code :
+      err instanceof ExperienceBindError ? err.code :
+      undefined;
+    logSendDebug("api.route.sse.error", { message, category, ...(bindCode ? { code: bindCode } : {}) });
     try {
-      await stream.writeSSE({ event: "error", data: JSON.stringify({ message, category, ...(diceCode ? { code: diceCode } : {}) }) });
+      await stream.writeSSE({ event: "error", data: JSON.stringify({ message, category, ...(bindCode ? { code: bindCode } : {}) }) });
     } catch {
       abortBridge.abort("sse-error-write-failed");
     }

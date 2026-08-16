@@ -1,4 +1,4 @@
-import type { DiceRollSnapshot, PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, ExperienceReportSnapshot, PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
 
 export type { PromptLayerPosition };
 
@@ -61,6 +61,13 @@ export interface RecentMessage {
    *  Dice scripts or rolls. These are already-bound snapshots: assembly is
    *  read-only over them. */
   diceRolls?: DiceRollSnapshot[];
+  /** Bound immutable experience report snapshots for this message (IR-52 prompt
+   *  projection). Present on user messages carrying a frozen public report;
+   *  absent otherwise. The pipeline formats these into a delimited
+   *  authoritative block appended once to the message's effective content — it
+   *  never executes experience scripts, never projects state, and never reads
+   *  hidden checkpoints. Already-bound snapshots: assembly is read-only. */
+  experienceReports?: ExperienceReportSnapshot[];
 }
 
 export interface PromptAssemblyContext {
@@ -207,7 +214,7 @@ export interface PromptAssemblyContext {
     injectPrompt: string;
   } | null;
   /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-2): preceding chat-summaries (the
-   *  `summarizedTo < from` chain, token-capped, oldest→newest) fed into the
+   *  `summarizedFrom < from` chain, token-capped, oldest→newest) fed into the
    *  summary prompt as read-only continuity context. Absent / empty = no layer.
    *  The pipeline renders a single `prior_summaries_context` layer (in_prompt)
    *  ONLY under `config.summary` with non-empty priors — never on a chat turn.

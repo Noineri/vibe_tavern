@@ -134,6 +134,8 @@ const baseScript: ScriptRecord = {
   chatId: null,
   enabled: true,
   sortOrder: 0,
+  defaultVisualId: null,
+  copilotProfileId: null,
 };
 
 let serverScript: ScriptRecord;
@@ -188,6 +190,11 @@ beforeEach(() => {
 
 function Harness() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "character" });
+  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+}
+
+function HarnessAll() {
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "all" });
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 
@@ -328,5 +335,35 @@ describe("useScriptPanel explicit save", () => {
     fireEvent.click(saveButton);
     await waitFor(() => expect(updateScript).toHaveBeenCalledTimes(2));
     expect(updateScript.mock.calls[1]?.[1]).toMatchObject({ code: "AB" });
+  });
+});
+
+// ── IR-90A: interactive scripts are owned exclusively by the Experience editor ─
+describe("useScriptPanel interactive-script filtering", () => {
+  it("never lists an interactive script returned by listScripts (character scope)", async () => {
+    listScripts.mockResolvedValue([
+      { ...baseScript, id: "p1", name: "Prompt One", scriptKind: "prompt" },
+      { ...baseScript, id: "d1", name: "Dice One", scriptKind: "dice" },
+      { ...baseScript, id: "i1", name: "Interactive One", scriptKind: "interactive" },
+    ]);
+    const { findByText, queryByText } = render(<Harness />);
+
+    expect(await findByText("Prompt One")).toBeTruthy();
+    expect(await findByText("Dice One")).toBeTruthy();
+    // The interactive script is filtered out at the list-fetch choke point and
+    // therefore is never listed, never badged, and never openable/tested as a
+    // PROMPT script by this generic Prompt/Dice editor.
+    expect(queryByText("Interactive One")).toBeNull();
+  });
+
+  it("filters interactive scripts from the 'all' overview scope (listAllScripts) too", async () => {
+    listAllScripts.mockResolvedValue([
+      { ...baseScript, id: "p1", name: "Prompt All", scriptKind: "prompt" },
+      { ...baseScript, id: "i1", name: "Interactive All", scriptKind: "interactive" },
+    ]);
+    const { findByText, queryByText } = render(<HarnessAll />);
+
+    expect(await findByText("Prompt All")).toBeTruthy();
+    expect(queryByText("Interactive All")).toBeNull();
   });
 });

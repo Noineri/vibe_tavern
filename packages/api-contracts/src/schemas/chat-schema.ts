@@ -32,9 +32,37 @@ export const sendMessageSchema = z.object({
    */
   diceMode: z.enum(["normal", "immersive"]).optional(),
   pendingRevision: z.number().int().nonnegative().optional(),
+  /**
+   * IR-51: optional experience (interactive-runtime) attachment commit intent.
+   * Omitted ⇒ no-experience send behavior. When present, the three fields are
+   * ALL required together and carry ONLY identifiers the server already stored —
+   * the attachment id, the queue revision, and the session revision the client
+   * last saw on that queued row. They NEVER carry raw transcript/events/state:
+   * the frozen report/transcript + hidden checkpoint already live server-side
+   * (queued by the experience service); the send merely binds that pre-existing
+   * row to the new user message atomically. A stale queue/session revision
+   * (someone queued a newer report, or the row was replaced) fails the whole
+   * user-turn commit before the message row persists, exactly like a stale
+   * Dice revision. See sendMessageSchema refine below.
+   */
+  experienceAttachmentId: z.string().min(1).optional(),
+  experienceQueueRevision: z.number().int().nonnegative().optional(),
+  experienceSessionRevision: z.number().int().nonnegative().optional(),
 }).refine(
   (data) => (data.diceMode === undefined) === (data.pendingRevision === undefined),
   { message: "diceMode and pendingRevision must both be present or both absent" },
+).refine(
+  // IR-51: the three experience fields are all-or-none. A half-spec is rejected
+  // so a client can never accidentally bind a partial/ambiguous attachment.
+  (data) => {
+    const present = [
+      data.experienceAttachmentId,
+      data.experienceQueueRevision,
+      data.experienceSessionRevision,
+    ].map((v) => v !== undefined);
+    return present.every((v) => v === present[0]);
+  },
+  { message: "experienceAttachmentId, experienceQueueRevision, and experienceSessionRevision must all be present or all absent" },
 );
 
 const messageVariantIdSchema = z.string().min(1).transform((value) => brandId<MessageVariantId>(value));

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { resolve } from "node:path";
-import { DiceBindError } from "@vibe-tavern/db";
+import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../shared/errors.js";
 import { ProviderExecutionError } from "../infrastructure/ai/provider-execution-types.js";
 import { logSendDebug } from "../shared/send-debug-log.js";
@@ -94,21 +94,26 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 				502,
 			);
 		}
-		if (err instanceof DiceBindError) {
-			// DICE-B11 send-path gap: bindActiveAndResetInTx throws DiceBindError
-			// (a plain Error, NOT a DomainError) when the send-time dice commit has a
-			// stale lane revision or an unresolved choose. Unmapped it fell through to
-			// the generic 500 below, so the frontend could never distinguish a
-			// retryable dice conflict (refresh pending + keep the draft) from a real
-			// server error. Map it to the 409 Conflict the contract promises, carrying
-			// the structured code the client keys on.
+		if (err instanceof DiceBindError || err instanceof ExperienceBindError) {
+			// Send-path bind conflicts (DICE-B11 / IR-70H): the atomic-send bind
+			// step throws DiceBindError (a plain Error, NOT a DomainError) when the
+			// send-time dice commit has a stale lane revision or an unresolved
+			// choose, and ExperienceBindError when an experience-attachment bind
+			// fails (not_found / already_bound / stale_queue / stale_session). Both
+			// are plain Errors rather than DomainErrors, so unmapped they fell
+			// through to the generic 500 below and the frontend could never
+			// distinguish a retryable conflict (refresh pending + keep the draft)
+			// from a real server/provider error. Map each to the 409 Conflict the
+			// contract promises, carrying the structured typed code the client keys
+			// on. The two instanceof checks keep both vocabularies explicit; the
+			// JSON shape is identical for either kind.
 			return c.json(
 				{ error: { kind: "Conflict" as const, message: err.message, details: { code: err.code } } },
 				409,
 			);
 		}
 		if (isDomainError(err)) {
-			return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 500 | 502);
+			return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 422 | 500 | 502);
 		}
 		console.error("[unhandled]", err);
 		return c.json(

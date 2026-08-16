@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
-import { setTokenCountFn } from "../src/compaction.ts";
+import { findSafeCompactionBoundary, planHistoryCompaction, setTokenCountFn } from "../src/compaction.ts";
 
 const history = [
   { id: "msg_1", role: "user" as const, content: "Old user message." },
@@ -110,5 +110,35 @@ describe("history compaction budget", () => {
     expect(text).toContain("ASSISTANT: Calling a tool.");
     expect(text).toContain("TOOL: Tool result.");
     expect(text).not.toContain("Old message.");
+  });
+
+  it("never starts the preserved block with an assistant message carrying tool calls", () => {
+    // Regression (experience copilot × Gemini-style upstreams): the budget trim
+    // could cut away the user request and leave the assistant tool-call run as
+    // the first preserved message — functionCall-after-user providers then 400
+    // the whole request. The boundary must step back to the triggering user.
+    const toolHistory = [
+      { role: "user" as const, content: "Build me a grid starter." },
+      { role: "assistant" as const, content: "", toolCalls: [{ toolCallId: "tc_1" }] },
+      { role: "tool" as const, content: "skill body" },
+      { role: "user" as const, content: "Now polish it." },
+      { role: "assistant" as const, content: "Done." },
+    ];
+    // Direct boundary unit: preserving the last 3 messages would land the cut
+    // on the assistant-with-calls row; the walk must return the user index.
+    expect(findSafeCompactionBoundary(toolHistory, 3)).toBe(0);
+
+    // And through the planner: compaction under a tight budget either keeps a
+    // user head or declines to compact — never emits a tool-call assistant head.
+    const plan = planHistoryCompaction({
+      messages: toolHistory,
+      nonHistoryTokens: 0,
+      contextBudget: 1,
+      countHistoryTokens: () => 1,
+    });
+    const preserved = plan?.messages ?? toolHistory;
+    const head = preserved[0];
+    const headCarriesCalls = head.role === "assistant" && Array.isArray((head as { toolCalls?: unknown[] }).toolCalls) && ((head as { toolCalls?: unknown[] }).toolCalls?.length ?? 0) > 0;
+    expect(headCarriesCalls).toBe(false);
   });
 });

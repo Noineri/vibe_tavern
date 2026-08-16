@@ -191,6 +191,8 @@ export interface ProviderExecutionInput {
   prefill?: string;
   /** Override the profile's maxOutputTokens for this specific call (e.g. summarization). */
   overrideMaxTokens?: number;
+  /** Override the profile's temperature for this specific call (e.g. cooling the sampler for summary generation). */
+  overrideTemperature?: number;
   /** AI SDK tools to pass to streamText(). AI SDK handles validation, execution, and multi-turn loop. */
   tools?: ToolSet;
   /** Max multi-step tool-calling rounds per generation. */

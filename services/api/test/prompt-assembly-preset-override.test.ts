@@ -112,6 +112,7 @@ const mockStores = {
   characterAssets: { listByCharacter: async () => [] },
   presets: { listAll: async () => [] },
   diceRolls: { getRollsForMessages: async () => new Map() },
+  experiences: { getAttachmentsForMessages: async () => new Map() },
 } as unknown as StoreContainer;
 
 const mockFileStore = {

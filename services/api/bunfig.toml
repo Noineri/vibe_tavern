@@ -1,0 +1,9 @@
+# Test-time configuration for the services/api suite.
+# `bun test` (run from this workspace) picks up this file automatically.
+#
+# The preload registers a process-global afterAll that closes every SQLite
+# handle opened during the run and removes the temp dirs — see
+# ./test/store-cleanup.ts. Without it the suite leaks 12k+ temp dirs.
+
+[test]
+preload = ["./test/store-cleanup.ts"]

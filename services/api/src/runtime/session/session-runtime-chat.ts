@@ -1,6 +1,7 @@
 import type { AssemblePromptResponse, Message, PromptTrace, ProviderResponseTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, UiSettingsStore } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, ExperienceStore } from "@vibe-tavern/db";
 import type { ToolSet } from "ai";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { SendMessageRequest } from "../../domain/chat/chat-application-types.js";
@@ -59,6 +60,10 @@ export interface ChatRuntimeDeps {
   /** Star-prompt counter storage. `prepareLiveTurn` bumps `userMessageCount`
    * once per committed live user turn; nothing else in this runtime reads it. */
   uiSettings: UiSettingsStore;
+  /** IR-51: experience attachment store. Used only by `prepareLiveTurn`'s
+   * assembly-failure cleanup to release an attachment bound to a just-inserted
+   * user message (a compensating write — NOT a transaction rollback). */
+  experiences: ExperienceStore;
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
@@ -102,7 +107,7 @@ export class ChatRuntime {
    * but with attachments) DOES insert — the message carries its attachments and,
    * when `diceCommit` is present, binds Dice exactly like a prose send (DICE-B11).
    */
-  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[], diceCommit?: SendMessageRequest["diceCommit"]): Promise<PreparedLiveTurn> {
+  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[], diceCommit?: SendMessageRequest["diceCommit"], experienceCommit?: SendMessageRequest["experienceCommit"]): Promise<PreparedLiveTurn> {
     const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
     const hasAttachments = !!(attachments && attachments.length > 0);
@@ -121,6 +126,7 @@ export class ChatRuntime {
       mode: "reply",
       attachments,
       diceCommit,
+      experienceCommit,
     });
 
     let assembled;
@@ -128,15 +134,17 @@ export class ChatRuntime {
       assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
     } catch (err) {
       try {
-        // DICE-B11: release any Dice rolls the atomic bind just attached to
-        // this user message, THEN delete the message. This is a COMPENSATING
-        // WRITE (not a tx rollback — the synchronous bind already committed
-        // inside addMessageWithDiceBind). Release FIRST so rolls return to
-        // pending regardless of the subsequent delete; both ops are idempotent
-        // (no-op when no rolls are bound / message already gone). Runs ONLY on
-        // assembly (preparation) failure, BEFORE the provider call — provider
-        // failure after the user-message commit keeps the bound rolls.
+        // DICE-B11 / IR-51: release any Dice rolls AND any experience
+        // attachment the atomic bind just attached to this user message, THEN
+        // delete the message. This is a COMPENSATING WRITE (not a tx rollback —
+        // the synchronous bind already committed inside addMessageWithBind).
+        // Release FIRST so rolls/attachments return to pending regardless of the
+        // subsequent delete; all ops are idempotent (no-op when nothing is bound
+        // / message already gone). Runs ONLY on assembly (preparation) failure,
+        // BEFORE the provider call — provider failure after the user-message
+        // commit keeps the bound rolls/attachment.
         await this.deps.diceRolls.rollbackRelease(userMessage.id);
+        await this.deps.experiences.rollbackReleaseAttachment(userMessage.id);
         await this.deps.chatApp.deleteMessage(userMessage.id);
       } catch { /* best-effort rollback of the just-inserted user message; the original assemble error is rethrown below */ }
       throw err;

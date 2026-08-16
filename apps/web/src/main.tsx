@@ -8,6 +8,7 @@ import { initI18n } from "./i18n/i18n.js";
 import { isLocale, detectBrowserLocale, type Locale } from "./i18n/registry.js";
 import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import { VibeMdThemePreview } from "./components/build/editors/VibeMdThemePreview.js";
+import { ExperienceDetachedHost, isDetachedExperienceWindow } from "./components/experience/ExperienceDetachedWindow.js";
 import { clearMobileToken, extractTokenFromHash, saveMobileToken } from "./lib/mobile-token.js";
 import { useSessionStore } from "./stores/session-store.js";
 import "./styles.css";
@@ -79,20 +80,23 @@ initI18n(initialLocale);
  * When the hash changes we re-render so entering/leaving is instant.
  */
 function Root() {
-  const [view, setView] = useState<"app" | "tuner" | "vtf">(() => {
+  const [view, setView] = useState<"app" | "tuner" | "vtf" | "experience">(() => {
+    if (isDetachedExperienceWindow()) return "experience";
     if (window.location.hash === "#theme-tuner") return "tuner";
     if (window.location.hash === "#vtf-preview") return "vtf";
     return "app";
   });
   useEffect(() => {
     const onHash = () => {
-      if (window.location.hash === "#theme-tuner") setView("tuner");
+      if (isDetachedExperienceWindow()) setView("experience");
+      else if (window.location.hash === "#theme-tuner") setView("tuner");
       else if (window.location.hash === "#vtf-preview") setView("vtf");
       else setView("app");
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+  if (view === "experience") return <ExperienceDetachedHost />;
   if (view === "tuner") return <ThemeTuner />;
   if (view === "vtf") return <VibeMdThemePreview />;
   return <App />;

@@ -29,6 +29,17 @@ export type ScriptId = Brand<"ScriptId">;
 export type DiceRollId = Brand<"DiceRollId">;
 export type DicePendingLaneId = Brand<"DicePendingLaneId">;
 
+// ─── Interactive Runtime (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 1) ─────────
+export type ExperienceVisualId = Brand<"ExperienceVisualId">;
+export type ExperienceSessionId = Brand<"ExperienceSessionId">;
+export type ExperienceStepId = Brand<"ExperienceStepId">;
+export type ExperienceEffectId = Brand<"ExperienceEffectId">;
+export type ExperienceContextBundleId = Brand<"ExperienceContextBundleId">;
+export type ExperienceAttachmentId = Brand<"ExperienceAttachmentId">;
+// Experience copilot thread/message persistence (EXPERIENCE_EDITOR_REFACTOR_PLAN, ER-3).
+export type ExperienceCopilotThreadId = Brand<"ExperienceCopilotThreadId">;
+export type ExperienceCopilotMessageId = Brand<"ExperienceCopilotMessageId">;
+
 /** Unsafe cast from a plain string to a branded ID. Use only at layer boundaries (DB, API). */
 export function brandId<TId extends Id>(value: string): TId {
   return value as TId;

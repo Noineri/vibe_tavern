@@ -258,7 +258,7 @@ export class ChatLifecycleRuntime {
 		summarizedTo: number;
 		contextBudget?: number | null;
 		/** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): load preceding chat-summaries
-		 *  (summarizedTo < from) as read-only continuity. Default true. */
+		 *  (summarizedFrom < from) as read-only continuity. Default true. */
 		includePriorSummaries?: boolean;
 		/** How many most-recent preceding summaries to include (0 = none).
 		 *  Undefined → default 10. */
@@ -279,11 +279,16 @@ export class ChatLifecycleRuntime {
 			})
 			.map((message) => brandId<import("@vibe-tavern/domain").MessageId>(message.id));
 
-		// SPC-3: build the preceding-chain prior-summaries payload. Count-capped
-		// to the N most-recent summaries whose range ends strictly before `from`
-		// (no overlap with the range being summarized), then reversed to
-		// oldest→newest for readability. `includePriorSummaries === false` or
-		// `maxPriorSummaries <= 0` → no payload (layer absent, byte-equivalent).
+		// SPC-3: build the preceding-chain prior-summaries payload. Prior =
+		// summaries whose range STARTS before `from` (summarizedFrom < from),
+		// i.e. earlier chapters regardless of how their end meets `from`. This
+		// decouples continuity from the range end, so adjacent/inclusive chunks
+		// (e.g. T1–T50 then T50–T100) still feed the prior chain instead of
+		// silently cold-starting the model. Summaries that start at or after
+		// `from` are excluded as future-spoilers. Count-capped to the N
+		// most-recent (by summarizedTo desc, then reversed to oldest→newest).
+		// `includePriorSummaries === false` or `maxPriorSummaries <= 0` → no
+		// payload (layer absent, byte-equivalent).
 		let priorSummaries: Array<{ id: string; label?: string; content: string }> | undefined;
 		if (input.includePriorSummaries !== false) {
 			const limit = input.maxPriorSummaries != null && Number.isFinite(input.maxPriorSummaries)
@@ -292,7 +297,7 @@ export class ChatLifecycleRuntime {
 			if (limit > 0) {
 				const all = await this.deps.stores.chatSummaries.listByChatBranch(input.chatId, branchId);
 				const preceding = all
-					.filter((summary) => summary.summarizedTo < from && summary.content.trim())
+					.filter((summary) => summary.summarizedFrom < from && summary.content.trim())
 					.sort((a, b) => b.summarizedTo - a.summarizedTo)
 					.slice(0, limit)
 					.reverse();

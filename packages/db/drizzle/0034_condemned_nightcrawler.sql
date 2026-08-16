@@ -1,0 +1,1 @@
+ALTER TABLE `scripts` ADD `default_visual_id` text;

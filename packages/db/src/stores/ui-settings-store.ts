@@ -32,6 +32,10 @@ export interface UiSettings {
   nextStarPromptAt: number;
   /** How many times "Later" was chosen — selects the backoff interval. */
   starPromptDeferrals: number;
+  /** Experience-copilot binding (provider + model). Null/dangling → the shell
+   *  falls back to the first available provider profile (the pre-fix default). */
+  copilotProviderId: string | null;
+  copilotModelName: string | null;
   updatedAt: string;
 }
 
@@ -54,6 +58,8 @@ export interface UiSettingsUpdate {
   userMessageCount?: number;
   nextStarPromptAt?: number;
   starPromptDeferrals?: number;
+  copilotProviderId?: string | null;
+  copilotModelName?: string | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -76,6 +82,8 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   userMessageCount: 0,
   nextStarPromptAt: 10,
   starPromptDeferrals: 0,
+  copilotProviderId: null,
+  copilotModelName: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -129,6 +137,8 @@ export class UiSettingsStore {
       userMessageCount: partial.userMessageCount ?? UI_SETTINGS_DEFAULTS.userMessageCount,
       nextStarPromptAt: partial.nextStarPromptAt ?? UI_SETTINGS_DEFAULTS.nextStarPromptAt,
       starPromptDeferrals: partial.starPromptDeferrals ?? UI_SETTINGS_DEFAULTS.starPromptDeferrals,
+      copilotProviderId: partial.copilotProviderId ?? UI_SETTINGS_DEFAULTS.copilotProviderId,
+      copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -158,6 +168,8 @@ export class UiSettingsStore {
       userMessageCount: UI_SETTINGS_DEFAULTS.userMessageCount,
       nextStarPromptAt: UI_SETTINGS_DEFAULTS.nextStarPromptAt,
       starPromptDeferrals: UI_SETTINGS_DEFAULTS.starPromptDeferrals,
+      copilotProviderId: UI_SETTINGS_DEFAULTS.copilotProviderId,
+      copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
       updatedAt: this.clock.now(),
     }).returning();
 
@@ -185,6 +197,8 @@ export class UiSettingsStore {
       userMessageCount: row.userMessageCount,
       nextStarPromptAt: row.nextStarPromptAt,
       starPromptDeferrals: row.starPromptDeferrals,
+      copilotProviderId: row.copilotProviderId ?? null,
+      copilotModelName: row.copilotModelName ?? null,
       updatedAt: row.updatedAt,
     };
   }

@@ -25,6 +25,8 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.githubStarred === "boolean" ? { githubStarred: body.githubStarred } : {}),
 		...(isNonNegativeInteger(body.nextStarPromptAt) ? { nextStarPromptAt: body.nextStarPromptAt } : {}),
 		...(isNonNegativeInteger(body.starPromptDeferrals) ? { starPromptDeferrals: body.starPromptDeferrals } : {}),
+		...(typeof body.copilotProviderId === "string" || body.copilotProviderId === null ? { copilotProviderId: body.copilotProviderId } : {}),
+		...(typeof body.copilotModelName === "string" || body.copilotModelName === null ? { copilotModelName: body.copilotModelName } : {}),
 	});
 }
 

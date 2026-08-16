@@ -32,8 +32,17 @@ const BUN = process.execPath;
  * worst case — a `mkdtemp` + full migration stack costs milliseconds on Linux
  * and seconds there — but the floor is machine speed under load, not platform,
  * so the headroom is unconditional.
+ *
+ * The budget also bounds the store-cleanup preload's process-global afterAll
+ * (close every SQLite handle + sweep the run's temp dirs, see
+ * services/api/test/store-cleanup.ts). That hook is legitimate long-pole work,
+ * NOT a hung test: measured 16.6s / 18.7s on the GitHub Windows runner with
+ * 2–4 suites sweeping concurrently, and ~26s locally under a full-suite load —
+ * all over a previous 15s budget while every actual test passed. Bun ignores
+ * a per-hook timeout override (verified empirically: `afterAll(fn, ms)` still
+ * fails at the global --timeout), so the global budget is the only lever.
  */
-export const TEST_TIMEOUT_MS = 15_000;
+export const TEST_TIMEOUT_MS = 45_000;
 
 export function testTimeoutArgs(): readonly string[] {
 	return ["--timeout", String(TEST_TIMEOUT_MS)];
@@ -101,8 +110,18 @@ export function createTestSuites(): readonly TestSuite[] {
 
 const TEST_SUITES = createTestSuites();
 
-async function runTestSuite(suite: TestSuite, testTempRoot: string): Promise<TestSuiteResult> {
+async function runTestSuite(suite: TestSuite, tempRoot: string): Promise<TestSuiteResult> {
 	const startedAt = performance.now();
+	// PER-SUITE temp dir, deliberately not shared: suites run several at a time,
+	// and the store-cleanup preload's process-global afterAll sweeps `vt-*` dirs
+	// in TMPDIR created after its own start. With one shared root, a fast suite
+	// (scripts finishes in ~3s) sweeps a slow suite's LIVE dirs mid-test — rm of
+	// open files succeeds on Linux, so the victim gets ENOENT / empty scans
+	// (observed as CI flakes: st-directory-scanner characters=0, gallery-avatar
+	// promote 400). A private root makes the sweep structurally incapable of
+	// seeing another suite's dirs. The runner's final recursive rm of the shared
+	// root still cleans everything up.
+	const suiteTempRoot = await mkdtemp(join(tempRoot, `${suite.name}-`));
 	try {
 		const process = Bun.spawn([...suite.command], {
 			cwd: suite.cwd,
@@ -110,9 +129,9 @@ async function runTestSuite(suite: TestSuite, testTempRoot: string): Promise<Tes
 			stderr: "pipe",
 			env: {
 				...Bun.env,
-				TEMP: testTempRoot,
-				TMP: testTempRoot,
-				TMPDIR: testTempRoot,
+				TEMP: suiteTempRoot,
+				TMP: suiteTempRoot,
+				TMPDIR: suiteTempRoot,
 				FORCE_COLOR: "0",
 				NO_COLOR: "1",
 			},

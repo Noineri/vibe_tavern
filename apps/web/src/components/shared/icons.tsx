@@ -107,6 +107,9 @@ export const Ic = {
   // conventional "how much of an allowance is left" glyph; used by the chat
   // toolbar's provider-quota flyout.
   quota:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="8" cy="8" r="6" strokeOpacity="0.3"/><path d="M8 2a6 6 0 0 1 4.24 10.24"/></svg>,
+  // Counterclockwise curved arrow — the copilot editor's «Отменить изменения»
+  // (revert to turn-start snapshot). Lucide undo-2 geometry scaled to 16.
+  undo:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9.33 2.67 6 6 2.67"/><path d="M2.67 6h7a3.67 3.67 0 0 1 0 7.33H7.33"/></svg>,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

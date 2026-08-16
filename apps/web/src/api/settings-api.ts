@@ -54,13 +54,15 @@ export async function bootstrapApp(): Promise<{
       userMessageCount: 0,
       nextStarPromptAt: 10,
       starPromptDeferrals: 0,
+      copilotProviderId: null,
+      copilotModelName: null,
       updatedAt: "",
     },
     isArmServer: data.isArmServer ?? false,
   };
 }
 
-export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorMaxTokens" | "coauthorContextBudget" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals">>): Promise<UiSettingsRecord> {
+export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorMaxTokens" | "coauthorContextBudget" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals"> {
   const response = await client.api.settings.ui.$patch({ json: input });
   return unwrapRpc<UiSettingsRecord>(response);
 }

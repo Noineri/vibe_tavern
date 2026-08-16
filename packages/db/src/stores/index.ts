@@ -75,6 +75,13 @@ export type {
   UpdateCoauthorModuleData,
 } from './coauthor-module-store.js';
 
+export { CopilotProfileStore } from './copilot-profile-store.js';
+export type {
+  CopilotProfileRow,
+  CreateCopilotProfileData,
+  UpdateCopilotProfileData,
+} from './copilot-profile-store.js';
+
 export { DiceRollStore } from './dice-roll-store.js';
 export type {
   DicePendingLane,
@@ -82,6 +89,39 @@ export type {
   LaneState,
 } from './dice-roll-store.js';
 export { DiceBindError } from './dice-roll-store.js';
+
+export { ExperienceStore, ExperienceBindError } from './experience-store.js';
+export type {
+  ExperienceSessionRow,
+  ExperienceStepRow,
+  ExperienceEffectRow,
+  ExperienceContextBundleRow,
+  ExperienceAttachmentRow,
+  CreateSessionData,
+  ApplyTransitionData,
+  ApplyTransitionResult,
+  AtomicReportData,
+  CaptureContextBundleData,
+  QueueAttachmentData,
+} from './experience-store.js';
+
+export { ExperienceResourceStore } from './experience-resource-store.js';
+export type {
+  ExperienceVisualRow,
+  ExperienceChatConfigRow,
+  ExperiencePromptOverrideRow,
+  CreateVisualData,
+  UpdateVisualData,
+  UpdateChatConfigData,
+} from './experience-resource-store.js';
+
+export { ExperienceCopilotStore } from './experience-copilot-store.js';
+export type {
+  ExperienceCopilotThread,
+  ExperienceCopilotMessage,
+  AppendMessageInput,
+  CopilotContextMetrics,
+} from './experience-copilot-store.js';
 
 export { QuotaStore, defaultQuotaConfigForKind } from './quota-store.js';
 export type {

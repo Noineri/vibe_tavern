@@ -151,7 +151,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const refreshScripts = useCallback(async () => {
     // "all" — overview mode (read-only), returns all scripts with no scope filter.
     // Otherwise — filtered by scope + owner.
-    setScripts(scope === "all" ? await listAllScripts() : await listScripts(scope, scopeId));
+    // Interactive scripts are owned exclusively by the Experience editor;
+    // exclude them here so they never enter this generic Prompt/Dice list
+    // (never listed, never badged, never opened or tested as a prompt script).
+    const all = scope === "all" ? await listAllScripts() : await listScripts(scope, scopeId);
+    setScripts(all.filter((s) => s.scriptKind !== "interactive"));
   }, [scope, scopeId]);
 
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);

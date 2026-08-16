@@ -30,7 +30,19 @@ import { SessionRuntime } from "../runtime/session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
 import { createRuntimeStore } from "../runtime/session/session-runtime-store.js";
 import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js";
+import { createCopilotSkillService } from "../domain/interactive/copilot/copilot-skill-service.js";
+import { resolveCopilotUserSkillsRoot, resolveExperienceCopilotSkillsRoot } from "../domain/interactive/copilot/experience-copilot-module.js";
 import { DiceService } from "../domain/dice/dice-service.js";
+import { ExperienceResourceService } from "../domain/interactive/experience-resource-service.js";
+import { ExperienceService } from "../domain/interactive/experience-service.js";
+import { ExperienceChatterService } from "../domain/interactive/experience-chatter-service.js";
+import { ExperienceReplayService } from "../domain/interactive/experience-replay-service.js";
+import { ExperienceContextService } from "../domain/interactive/experience-context-service.js";
+import { ExperienceModelEffectService } from "../domain/interactive/experience-model-effect-service.js";
+import { ExperienceTimerEffectService } from "../domain/interactive/experience-timer-effect-service.js";
+import { ExperienceTimerScheduler } from "../domain/interactive/experience-timer-scheduler.js";
+import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
+import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
@@ -114,6 +126,23 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	]);
 	console.log(`${tag} Seed data ensured.`);
 
+	// Built-in experiences (BE-4): ensure app-owned interactive experiences
+	// (Conversation messenger first) exist exactly once. Idempotent — a single
+	// entry failing is collected into `skipped` and logged, never crashing init.
+	const builtinSeed = await seedBuiltinExperiences(stores);
+	if (builtinSeed.skipped.length > 0) {
+		console.warn(
+			`${tag} Built-in experiences: ${builtinSeed.skipped.length} skipped —`,
+			builtinSeed.skipped,
+		);
+	}
+	if (builtinSeed.dismissed.length > 0) {
+		console.log(
+			`${tag} Built-in experiences dismissed by user (seed skipped): [${builtinSeed.dismissed.join(", ")}].`,
+		);
+	}
+	console.log(`${tag} Built-in experiences ensured: [${builtinSeed.seeded.join(", ")}].`);
+
 	// Tokenizers
 	await warmupTokenizers();
 	setTokenCountFn(countTokens);
@@ -140,6 +169,12 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const skillLibraryService = new SkillLibraryService(
 		resolveUserSkillsRoot(config.dataDir),
 		await resolveBuiltinSkillsRoot(),
+	);
+	// Copilot skill library (CP-5) — the SAME generic service over the copilot
+	// built-in + user roots (isolated from Co-Author character skills).
+	const copilotSkillService = createCopilotSkillService(
+		resolveCopilotUserSkillsRoot(config.dataDir),
+		await resolveExperienceCopilotSkillsRoot(),
 	);
 	const sessionRuntime = new SessionRuntime(stores, {
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
@@ -179,6 +214,34 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		},
 	};
 	const diceService = new DiceService(stores, cryptoRng);
+	const experienceResourceService = new ExperienceResourceService(stores);
+	const experienceChatterService = new ExperienceChatterService({ providerProfiles: providerProfileService });
+	const experienceService = new ExperienceService(stores, experienceResourceService, { chatter: experienceChatterService });
+	const experienceReplayService = new ExperienceReplayService(stores, experienceResourceService);
+	const experienceContextService = new ExperienceContextService({
+		stores,
+		providerProfiles: providerProfileService,
+		chatLifecycle: sessionRuntime.chatLifecycle,
+	});
+	const experienceModelEffectService = new ExperienceModelEffectService({
+		stores,
+		experienceService,
+		contextService: experienceContextService,
+		providerProfiles: providerProfileService,
+		executeStructured: generateStructuredActionChoice,
+	});
+	// Timer effects are host-driven (they must fire with the page closed): the
+	// service owns the claim → sleep → tick lifecycle, the scheduler owns
+	// discovery. afterMs counts from claim — restart restarts the countdown.
+	const experienceTimerEffectService = new ExperienceTimerEffectService({
+		stores,
+		experienceService,
+	});
+	const experienceTimerScheduler = new ExperienceTimerScheduler({
+		stores,
+		timerEffects: experienceTimerEffectService,
+		onError: (error) => console.error("[experience] timer scheduler:", error),
+	});
 	const runtime = new RuntimeApiAdapter(
 		stores,
 		providerProfileService,
@@ -193,6 +256,12 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		trackerService,
 		skillLibraryService,
 		diceService,
+		experienceService,
+		experienceResourceService,
+		experienceReplayService,
+		experienceModelEffectService,
+		experienceContextService,
+		copilotSkillService,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));
@@ -221,6 +290,16 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 
 	addRuntimeTeardown(() => quotaService.stop());
 	await quotaService.start();
+
+	// Durable-effect reconciliation + the host timer loop. `reconcileUnknownEffects`
+	// folds `running` rows left by the previous process (crash or shutdown — the
+	// scheduler's stop() deliberately does NOT abort in-flight sleeps) into
+	// `unknown`, the same recovery the model-effect path documents. The
+	// scheduler then picks up every still-`pending` timer across all sessions.
+	const reconciled = await stores.experiences.reconcileUnknownEffects();
+	if (reconciled > 0) console.log(`${tag} Reconciled ${reconciled} interrupted experience effect(s) to unknown.`);
+	addRuntimeTeardown(() => experienceTimerScheduler.stop());
+	experienceTimerScheduler.start();
 
 	console.log(`${tag} Application ready.`);
 	return app;

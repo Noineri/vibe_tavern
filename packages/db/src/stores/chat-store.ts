@@ -440,7 +440,8 @@ export class ChatStore {
     chatId: string,
     fromMessageId: string,
     label?: string,
-    diceForkInTx?: (tx: DbTransaction, msgIdMap: Map<string, string>) => void,
+    diceForkInTx?: (tx: DbTransaction, msgIdMap: Map<string, string>, newBranchId: string) => void,
+    experienceForkInTx?: (tx: DbTransaction, msgIdMap: Map<string, string>, newBranchId: string) => void,
   ): Promise<ChatBranch> {
     const sourceMsg = await this.db.select().from(messages)
       .where(eq(messages.id, fromMessageId)).get();
@@ -572,7 +573,17 @@ export class ChatStore {
         // dice copy back too. Only bound rolls (user messages) are copied;
         // pending rolls stay on their owning branch and never move on a fork.
         if (diceForkInTx) {
-          diceForkInTx(tx, msgIdMap);
+          diceForkInTx(tx, msgIdMap, branchId);
+        }
+        // IR-53 (Wave 5): clone bound experience attachments onto the new
+        // message ids in the same transaction. Only attachments bound to a
+        // copied message (id in msgIdMap, i.e. position <= fork point) are
+        // copied — later unsent state never moves. Queued (unbound) attachments
+        // stay on their owning branch/session. The copied rows land on the
+        // FORKED branch (newBranchId) so the FK cascade + branchId queries stay
+        // correct; the immutable snapshot is preserved verbatim.
+        if (experienceForkInTx) {
+          experienceForkInTx(tx, msgIdMap, branchId);
         }
       }
     });

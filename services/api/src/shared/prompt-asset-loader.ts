@@ -55,8 +55,17 @@ export async function resolvePromptAssetPath(filename: string): Promise<string> 
  * Load a prompt asset's text, re-reading from disk on every call so external
  * edits are picked up without a restart. Re-throws the read error (with the
  * resolved path) if the file is missing.
+ *
+ * Line endings are NORMALIZED to `\n`: the repo authors prompt assets with LF,
+ * but a Windows checkout with `core.autocrlf=true` (e.g. CI runners) or a user
+ * override saved by a CRLF editor materializes `\r\n` on disk — and a stray
+ * `\r` leaking into a system prompt both changes the bytes sent to the LLM on
+ * a platform-dependent basis and breaks byte-level prompt pins (see
+ * experience-copilot-prompt.test.ts). Prompts are prose; nothing in them
+ * depends on a carriage return surviving.
  */
 export async function loadPromptAsset(filename: string): Promise<string> {
   const path = await resolvePromptAssetPath(filename);
-  return Bun.file(path).text();
+  const raw = await Bun.file(path).text();
+  return raw.replace(/\r\n?/g, "\n");
 }

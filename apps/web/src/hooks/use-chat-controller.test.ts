@@ -14,7 +14,9 @@
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { act, renderHook } from "@testing-library/react";
-import type { ChatId } from "@vibe-tavern/domain";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
+import type { ExperienceScopeState } from "../stores/experience-store.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
@@ -46,7 +48,6 @@ mock.module("../i18n/locale-helpers.js", () => ({
 	getT: () => (key: string) => key,
 }));
 
-import type { DiceRollSnapshot } from "../api/types.js";
 const { useChatController, diceSendBlockReason } = await import("./use-chat-controller.js");
 const { ProviderStreamError } = await import("../api/provider-stream-error.js");
 const { DiceApiError } = await import("../api/dice-api.js");
@@ -56,6 +57,7 @@ const { useProviderStore } = await import("../stores/provider-store.js");
 const { useProviderDataStore } = await import("../stores/provider-data-store.js");
 const { useSnapshotStore } = await import("../stores/snapshot-store.js");
 const { useBootstrapStore } = await import("../stores/api-actions/bootstrap-actions.js");
+const { useExperienceStore } = await import("../stores/experience-store.js");
 
 const CHAT = "chat-1" as ChatId;
 const MSG = "msg-1";
@@ -293,12 +295,16 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
   // Stubbed once per file so conflict tests can assert it fired; cleared in
   // beforeEach. `tryHandleDiceSendConflict` calls it fire-and-forget.
   const refreshPending = mock();
+  // IR-73D: refreshAttachment is stubbed alongside refreshPending so
+  // conflict / settlement tests can assert the experience attachment refresh.
+  const refreshAttachment = mock((_chatId: string, _branchId: string): Promise<void> => Promise.resolve());
   const BRANCH = "br-1";
 
   beforeEach(() => {
     sendChatMessageStream.mockReset();
     sendChatMessageAction.mockReset();
     refreshPending.mockClear();
+    refreshAttachment.mockClear();
     useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
     useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
     // `readDiceSendState` reads chatId / branchId / insights / persona /
@@ -315,6 +321,9 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     });
     useChatStore.setState({ activeChatId: CHAT, draft: "hi", generations: {}, messageActionId: null });
     useDiceStore.setState({ byScope: {}, refreshPending: refreshPending as never });
+    // IR-73D: clear experience scope and override refreshAttachment with the
+    // test mock so settlement/conflict tests can assert it fired.
+    useExperienceStore.setState({ byScope: {}, activeScope: null, refreshAttachment });
   });
 
   /** Put a normal-mode pending lane into the active scope. */
@@ -328,6 +337,46 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
           lastError: null,
         },
       } as never,
+    });
+  }
+
+  /** Experience queued attachment for the active scope (IR-73D). */
+  function makeExpAttachment(overrides: Partial<ExperienceQueuedAttachmentView> = {}): ExperienceQueuedAttachmentView {
+    return {
+      id: "att-1",
+      chatId: CHAT,
+      branchId: BRANCH,
+      sessionId: "exp-sess-1",
+      sessionRevision: 3,
+      queueRevision: 2,
+      kind: "report",
+      publicReport: { title: "Game", events: [] },
+      rulesSourceHash: "hash-rules",
+      visualSourceHash: "hash-visual",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      ...overrides,
+    };
+  }
+
+  /** Put a queued attachment (or null) into the active experience scope. */
+  function setExpAttachment(attachment: ExperienceQueuedAttachmentView | null): void {
+    const scope: ExperienceScopeState = {
+      config: null,
+      session: null,
+      effects: [],
+      queuedAttachment: attachment,
+      reportStatus: null,
+      contextStatus: null,
+      actionRequestIds: {},
+      loading: false,
+      lastError: null,
+      lastApiError: null,
+      modalOpen: false,
+      detached: false,
+    };
+    useExperienceStore.setState({
+      byScope: { [JSON.stringify([CHAT, BRANCH])]: scope },
     });
   }
 
@@ -505,5 +554,318 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
 
     expect(refreshPending).toHaveBeenCalledWith(CHAT, BRANCH);
     expect(useChatStore.getState().draft).toBe("hi");
+  });
+
+  // ── IR-73D experience send integration ─────────────────────────────
+  //
+  // The experience path mirrors the Dice subtractive pattern: when no
+  // attachment is queued (or the scope IDs mismatch), the send body is
+  // byte-identical to a no-experience send and no experience refresh fires.
+  // When a valid attachment exists, exactly three identifiers/revisions are
+  // derived and spread into the body; a server-side bind conflict (IR-70H)
+  // restores the draft and triggers the authoritative attachment refresh
+  // instead of the provider-error toast path. Combined Dice + Experience
+  // carries both intents atomically.
+
+  test("IR-73D: no queued attachment ⇒ stream body has NO experience fields, no refresh", async () => {
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+    const body = sendChatMessageStream.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.experienceAttachmentId).toBeUndefined();
+    expect(body.experienceQueueRevision).toBeUndefined();
+    expect(body.experienceSessionRevision).toBeUndefined();
+    expect(refreshAttachment).not.toHaveBeenCalled();
+  });
+
+  test("IR-73D: valid queued attachment ⇒ exact three experience fields on stream body", async () => {
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    const body = sendChatMessageStream.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.experienceAttachmentId).toBe("att-1");
+    expect(body.experienceQueueRevision).toBe(2);
+    expect(body.experienceSessionRevision).toBe(3);
+  });
+
+  test("IR-73D: exact experience final arg on non-stream action", async () => {
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageAction.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageAction).toHaveBeenCalledTimes(1);
+    // (chatId, content, attachments, diceCommit, signal, experienceCommit)
+    expect(sendChatMessageAction.mock.calls[0][5]).toEqual({
+      experienceAttachmentId: "att-1",
+      experienceQueueRevision: 2,
+      experienceSessionRevision: 3,
+    });
+  });
+
+  test("IR-73D: combined Dice + Experience ⇒ both complete intents in stream body", async () => {
+    setNormalLane([makeRoll({ included: true })]);
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    const body = sendChatMessageStream.mock.calls[0][1] as Record<string, unknown>;
+    // Dice intent complete
+    expect(body.diceMode).toBe("normal");
+    expect(body.pendingRevision).toBe(7);
+    // Experience intent complete
+    expect(body.experienceAttachmentId).toBe("att-1");
+    expect(body.experienceQueueRevision).toBe(2);
+    expect(body.experienceSessionRevision).toBe(3);
+  });
+
+  test("IR-73D: stream conflict (stale_queue) ⇒ draft kept, attachment refreshed, no dice refresh", async () => {
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("stale", "server_error", "stale_queue"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(refreshAttachment).toHaveBeenCalledWith(CHAT, BRANCH);
+    expect(refreshPending).not.toHaveBeenCalled();
+    expect(useChatStore.getState().draft).toBe("hi");
+  });
+
+  test("IR-73D: stream conflict (not_found) ⇒ draft kept, attachment refreshed", async () => {
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("gone", "server_error", "not_found"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(refreshAttachment).toHaveBeenCalledWith(CHAT, BRANCH);
+    expect(useChatStore.getState().draft).toBe("hi");
+  });
+
+  test("IR-73D: non-stream conflict (already_bound) ⇒ draft kept, attachment refreshed", async () => {
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageAction.mockRejectedValueOnce(new DiceApiError(409, "bound", "already_bound"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageAction).toHaveBeenCalledTimes(1);
+    expect(refreshAttachment).toHaveBeenCalledWith(CHAT, BRANCH);
+    expect(refreshPending).not.toHaveBeenCalled();
+    expect(useChatStore.getState().draft).toBe("hi");
+  });
+
+  test("IR-73D: non-stream conflict (stale_session) ⇒ draft kept, attachment refreshed", async () => {
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageAction.mockRejectedValueOnce(new DiceApiError(409, "stale", "stale_session"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(refreshAttachment).toHaveBeenCalledWith(CHAT, BRANCH);
+    expect(useChatStore.getState().draft).toBe("hi");
+  });
+
+  test("IR-73D: generic stream failure with captured intent ⇒ attachment refreshed", async () => {
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("boom", "server_error"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(refreshAttachment).toHaveBeenCalledWith(CHAT, BRANCH);
+  });
+
+  test("IR-73D: cancellation with captured intent ⇒ attachment refreshed", async () => {
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { signal: AbortSignal }): Promise<never> => {
+      return new Promise((_resolve, reject) => {
+        opts.signal.addEventListener("abort", () => {
+          const err = new Error("The user aborted a request");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    });
+    const { result } = renderHook(() => useChatController());
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      useChatStore.getState().abortGeneration(CHAT);
+      await pending;
+    });
+
+    expect(refreshAttachment).toHaveBeenCalledWith(CHAT, BRANCH);
+  });
+
+  test("IR-73D: success with captured intent ⇒ attachment refreshed authoritatively", async () => {
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(refreshAttachment).toHaveBeenCalledWith(CHAT, BRANCH);
+  });
+
+  test("IR-73D: scope mismatch (wrong chatId) ⇒ no experience intent, no refresh", async () => {
+    setExpAttachment(makeExpAttachment({ chatId: "WRONG-CHAT" }));
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    const body = sendChatMessageStream.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.experienceAttachmentId).toBeUndefined();
+    expect(body.experienceQueueRevision).toBeUndefined();
+    expect(body.experienceSessionRevision).toBeUndefined();
+    expect(refreshAttachment).not.toHaveBeenCalled();
+  });
+
+  test("IR-73D: no private report/source fields leak into send body", async () => {
+    setExpAttachment(makeExpAttachment());
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    const body = sendChatMessageStream.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.publicReport).toBeUndefined();
+    expect(body.rulesSourceHash).toBeUndefined();
+    expect(body.visualSourceHash).toBeUndefined();
+    expect(body.kind).toBeUndefined();
+    expect(body.sessionId).toBeUndefined();
+    expect(body.sessionRevision).toBeUndefined();
+    expect(body.queueRevision).toBeUndefined();
+    expect(body.chatId).toBeUndefined();
+    expect(body.branchId).toBeUndefined();
+  });
+
+  test("IR-73D: captured intent keeps handleSend pending until refresh settles (success path)", async () => {
+    setExpAttachment(makeExpAttachment());
+    let resolveRefresh!: () => void;
+    refreshAttachment.mockReturnValueOnce(new Promise<void>((r) => { resolveRefresh = r; }));
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    let settled = false;
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend();
+      pending.then(() => { settled = true; });
+      // Flush microtasks until the stream settles and the post-settlement
+      // block reaches refreshAttachment.
+      for (let i = 0; i < 20 && refreshAttachment.mock.calls.length === 0; i++) {
+        await Promise.resolve();
+      }
+    });
+
+    // The stream settled (refreshAttachment was reached), but the deferred
+    // refresh has not — handleSend must still be pending.
+    expect(refreshAttachment).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+
+    await act(async () => {
+      resolveRefresh();
+      await pending;
+    });
+    expect(settled).toBe(true);
+  });
+
+  test("IR-73D: no captured intent ⇒ handleSend resolves without calling refresh", async () => {
+    // No attachment set — no intent captured. handleSend must resolve fully
+    // without ever calling refreshAttachment (boundary parity with the
+    // captured-intent case above).
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+    expect(refreshAttachment).not.toHaveBeenCalled();
+  });
+
+  test("IR-73D: snapshot activeChat ≠ send target ⇒ fail closed (no intent, no refresh)", async () => {
+    // ChatStore send target is CHAT; Snapshot claims a DIFFERENT chat is active,
+    // one with its own valid queued attachment. A transient mismatch must NOT
+    // bind the other chat's attachment into the CHAT send.
+    const currentSnapshot = useSnapshotStore.getState();
+    if (!currentSnapshot.activeChat) throw new Error("Expected seeded active chat");
+    useSnapshotStore.setState({
+      activeChat: { ...currentSnapshot.activeChat, id: brandId<ChatId>("OTHER-CHAT") },
+    });
+    useExperienceStore.setState({
+      byScope: {
+        [JSON.stringify(["OTHER-CHAT", BRANCH])]: {
+          config: null,
+          session: null,
+          effects: [],
+          queuedAttachment: makeExpAttachment({ chatId: "OTHER-CHAT", id: "other-att" }),
+          reportStatus: null,
+          contextStatus: null,
+          actionRequestIds: {},
+          loading: false,
+          lastError: null,
+          lastApiError: null,
+          modalOpen: false,
+          detached: false,
+        },
+      },
+    });
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+    const body = sendChatMessageStream.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.experienceAttachmentId).toBeUndefined();
+    expect(body.experienceQueueRevision).toBeUndefined();
+    expect(body.experienceSessionRevision).toBeUndefined();
+    expect(refreshAttachment).not.toHaveBeenCalled();
   });
 });

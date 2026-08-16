@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { scriptKindSchema, diceFaceShapeSchema, diceResolutionSchema, diceCheckDescriptorSchema } from "./dice-schema.js";
+import { experienceDefinitionSchema } from "./interactive-schema.js";
 
 export const createScriptSchema = z.object({
   name: z.string().min(1),
@@ -24,6 +25,14 @@ export const updateScriptSchema = z.object({
   code: z.string().optional(),
   enabled: z.boolean().optional(),
   sortOrder: z.number().optional(),
+  /** Default visual paired with an interactive experience. Set by the creation
+   *  wizard after both assets exist; null clears it. Not a source revision —
+   *  does not affect trust/enabled state. */
+  defaultVisualId: z.string().nullable().optional(),
+  /** Copilot profile assigned to the experience (EXPERIENCE_COPILOT_PROFILES_PLAN,
+   *  CP-6). Null unassigns (reverts to the built-in seed). Soft link — the
+   *  resolver falls back to the built-in seed for a dangling id. */
+  copilotProfileId: z.string().nullable().optional(),
 });
 
 /** Reassign a script's scope atomically (PR-6 binding). Clears stale FKs.
@@ -88,6 +97,11 @@ export const scriptLinkSchema = z.object({
 
 export const setScriptLinksSchema = z.object({
   links: z.array(scriptLinkSchema),
+});
+
+/** Body for POST /api/scripts/:scriptId/visuals — bind a visual to a script. */
+export const bindScriptVisualSchema = z.object({
+  visualId: z.string().min(1),
 });
 
 // ─── Script test result (POST /scripts/:scriptId/test) ───────────────────────
@@ -164,12 +178,25 @@ export const diceScriptTestResultSchema = z.object({
   discoveryError: z.string().nullable(),
 });
 
+/** Interactive-script test result (Wave 1 IR-12 sandbox discovery). Mirrors the
+ *  dice discovery shape: the validated definition when registration succeeded,
+ *  plus a nullable discovery error. Full action-sequence testing arrives in
+ *  Wave 8 (InteractiveTester). */
+export const interactiveScriptTestResultSchema = z.object({
+  /** Discovered definition when registration succeeded; null on error. */
+  definition: experienceDefinitionSchema.nullable(),
+  /** Registration/discovery VM error (syntax/runtime/timeout/missing-method); null when clean. */
+  discoveryError: z.string().nullable(),
+});
+
 export const scriptTestResultSchema = z.discriminatedUnion("kind", [
   promptScriptTestResultSchema.extend({ kind: z.literal("prompt") }),
   diceScriptTestResultSchema.extend({ kind: z.literal("dice") }),
+  interactiveScriptTestResultSchema.extend({ kind: z.literal("interactive") }),
 ]);
 
 export type ScriptTestResult = z.infer<typeof scriptTestResultSchema>;
 export type PromptScriptTestResult = z.infer<typeof promptScriptTestResultSchema>;
 export type DiceScriptTestResult = z.infer<typeof diceScriptTestResultSchema>;
 export type DiceSampleRoll = z.infer<typeof diceSampleRollSchema>;
+export type InteractiveScriptTestResult = z.infer<typeof interactiveScriptTestResultSchema>;

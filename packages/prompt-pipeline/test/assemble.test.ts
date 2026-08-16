@@ -4,7 +4,7 @@ import { getAiAssistantAssembler } from "../src/ai-assistant/ai-assistant-assemb
 import { getSummaryStrategy } from "../src/summary/summary-strategies.ts";
 import { setTokenCountFn } from "../src/compaction.ts";
 import type { PromptAssemblyContext } from "../src/types.ts";
-import { brandId, type DiceRollSnapshot, type DiceRollId, type MessageId } from "@vibe-tavern/domain";
+import { brandId, type DiceRollSnapshot, type DiceRollId, type ExperienceReportSnapshot, type MessageId } from "@vibe-tavern/domain";
 
 function baseContext(overrides = {}) {
   return {
@@ -647,6 +647,122 @@ describe("assemblePrompt", () => {
       expect(hist!.text).toContain("Stealth Check");
       expect(hist!.text).not.toContain("A".repeat(50));
 
+      setTokenCountFn(() => 0);
+    });
+  });
+
+  // IR-52 (Wave 5): the experience-report block is projected through the SAME
+  // single-derivation seam as Dice — macro-resolved prose plus the delimited
+  // authoritative block — so report text is token-counted before compaction,
+  // trace-visible in the history layer, and present in the final payload once.
+  // A message may carry BOTH a Dice block and an experience block (combined
+  // atomic bind from IR-51). Absence (no experienceReports) is a no-op.
+  describe("Experience report projection (IR-52, Wave 5)", () => {
+    function makeReport(overrides: Partial<ExperienceReportSnapshot> = {}): ExperienceReportSnapshot {
+      return {
+        kind: "report",
+        sessionRevision: 3,
+        title: "Tic-Tac-Toe",
+        summary: "Round 3 — X to move",
+        events: [{ type: "move", detail: "X played center" }],
+        ...overrides,
+      };
+    }
+
+    it("absence of experienceReports is byte-for-byte no-op (identical payload)", () => {
+      const none = assemblePrompt(baseContext());
+      const empty = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "Hello.", experienceReports: [] },
+            { id: "msg_2", role: "assistant", content: "Hi there." },
+          ],
+        },
+      }));
+      expect(JSON.stringify(empty.finalPayload)).toBe(JSON.stringify(none.finalPayload));
+      expect(JSON.stringify(empty.layers)).toBe(JSON.stringify(none.layers));
+    });
+
+    it("projects the report block into the user message in the final payload", () => {
+      const result = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "I make my move.", experienceReports: [makeReport()] },
+            { id: "msg_2", role: "assistant", content: "..." },
+          ],
+        },
+      }));
+      const userMsg = result.finalPayload.messages.find((m) => m.messageId === "msg_1");
+      expect(userMsg).toBeDefined();
+      expect(userMsg!.content).toContain("I make my move.");
+      expect(userMsg!.content).toContain("[Experience report — Tic-Tac-Toe — authoritative]");
+      expect(userMsg!.content).toContain("resolved facts");
+      expect(userMsg!.content).toContain("- move: X played center");
+      expect(userMsg!.content).toContain("[End experience report]");
+    });
+
+    it("projects the report block into the history layer text (trace-visible)", () => {
+      const result = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "go", experienceReports: [makeReport()] },
+          ],
+        },
+      }));
+      const hist = result.layers.find((l) => l.id === "recent_history");
+      expect(hist!.text).toContain("[Experience report — Tic-Tac-Toe");
+    });
+
+    it("appends both Dice and experience blocks when a message carries both (combined bind)", () => {
+      const roll: DiceRollSnapshot = {
+        rollId: brandId<DiceRollId>("roll_1"),
+        requestId: "req_1",
+        actor: { actorType: "character", actorId: "char_1", actorLabel: "Theron" },
+        scriptId: "script_1", scriptLabel: "Combat", scriptRevision: 1,
+        checkId: "check_1", checkLabel: "Stealth Check", notation: "2d6+1",
+        faceShape: "d6", resolution: "narrative", mode: "normal", included: true,
+        finalAttemptId: "att_1",
+        attempts: [{ attemptId: "att_1", faces: [3, 5], modifier: 1, subtotal: 8, total: 9 }],
+        boundMessageId: brandId<MessageId>("msg_1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+      };
+      const result = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "turn", diceRolls: [roll], experienceReports: [makeReport()] },
+          ],
+        },
+      }));
+      const userMsg = result.finalPayload.messages.find((m) => m.messageId === "msg_1")!;
+      expect(userMsg.content).toContain("[Dice]");
+      expect(userMsg.content).toContain("[Experience report —");
+      // Dice block renders before the experience block (stable order).
+      expect(userMsg.content.indexOf("[Dice]")).toBeLessThan(userMsg.content.indexOf("[Experience report"));
+      expect(userMsg.content).toContain("turn\n[Dice]");
+    });
+
+    it("counts the report text toward compaction tokens (no undercount)", () => {
+      setTokenCountFn((text) => (typeof text === "string" ? text.length : 1));
+      const longReport = makeReport({
+        title: "Long",
+        summary: undefined,
+        events: [{ type: "x", detail: "B".repeat(80) }],
+      });
+      const messages = [
+        { id: "msg_1", role: "user" as const, content: "go", experienceReports: [longReport] },
+        { id: "msg_2", role: "assistant" as const, content: "ack" },
+        { id: "msg_3", role: "user" as const, content: "again" },
+        { id: "msg_4", role: "assistant" as const, content: "ack" },
+      ];
+      const unbounded = assemblePrompt(baseContext({ chat: { recentMessages: messages } }));
+      const result = assemblePrompt(baseContext({
+        chat: { recentMessages: messages },
+        config: { contextBudget: unbounded.totalTokenEstimate - 50 },
+      }));
+      expect(result.compactionSummary).toBeDefined();
+      // The long report detail must have been evicted by compaction (it counted).
+      const hist = result.layers.find((l) => l.id === "recent_history");
+      expect(hist!.text).not.toContain("B".repeat(80));
       setTokenCountFn(() => 0);
     });
   });

@@ -2,6 +2,7 @@ export type DomainErrorKind =
   | "NotFound"
   | "Validation"
   | "Conflict"
+  | "Unprocessable"
   | "Provider"
   | "Cancelled"
   | "Unauthorized"
@@ -44,6 +45,14 @@ export function conflict(message: string, details?: Record<string, unknown>): Do
   return new DomainError({ kind: "Conflict", message, details });
 }
 
+/** Semantically invalid well-formed input (HTTP 422) — e.g. an action that is
+ *  not in the legal set, a missing required method, or a denied capability.
+ *  Distinct from {@link validation} (HTTP 400), which is for malformed input the
+ *  server could not parse. Used by the interactive-runtime contract. */
+export function unprocessable(message: string, details?: Record<string, unknown>): DomainError {
+  return new DomainError({ kind: "Unprocessable", message, details });
+}
+
 export function providerError(message: string, details?: Record<string, unknown>): DomainError {
   return new DomainError({ kind: "Provider", message, details });
 }
@@ -72,6 +81,7 @@ const STATUS_BY_KIND: Record<DomainErrorKind, number> = {
   NotFound: 404,
   Validation: 400,
   Conflict: 409,
+  Unprocessable: 422,
   Provider: 502,
   Cancelled: 499,
   Unauthorized: 401,

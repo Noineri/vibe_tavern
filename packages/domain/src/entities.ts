@@ -5,6 +5,12 @@ import type {
   ChatId,
   ChatSummaryId,
   DiceRollId,
+  ExperienceAttachmentId,
+  ExperienceContextBundleId,
+  ExperienceEffectId,
+  ExperienceSessionId,
+  ExperienceStepId,
+  ExperienceVisualId,
   LoreEntryId,
   LorebookId,
   MessageId,
@@ -51,6 +57,16 @@ import type {
   DiceResolution,
   DiceFinalizationPolicy,
   DiceFaceShape,
+} from "./platform-constants.js";
+import type {
+  ExperienceCapability,
+  ExperienceContextMode,
+  ExperienceController,
+  ExperienceEffectKind,
+  ExperienceEffectStatus,
+  ExperienceEventVisibility,
+  ExperienceSessionStatus,
+  ExperienceViewerKind,
 } from "./platform-constants.js";
 
 export type Timestamp = string;
@@ -449,6 +465,408 @@ export interface DiceRollSnapshot {
   policy?: DiceFinalizationPolicy;
   boundMessageId?: MessageId | null;
   createdAt: Timestamp;
+}
+
+// ─── Interactive Runtime entities (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 1)
+//
+// Canonical envelopes for the Interactive Runtime. The pure synchronous VM and
+// kernel arrive in IR-12; the durable persistence in Wave 2. These shapes are
+// the authoritative semantic contract every later layer mirrors — the bounded
+// WIRE schemas live in api-contracts/interactive-schema.ts. A registered
+// experience owns JSON-safe state and the meaning of its actions; the host owns
+// identity, branch/session linkage, monotonic revisions, request idempotency,
+// atomic persistence, deterministic effect delivery, snapshots, trust, and the
+// visual/RP bridges.
+
+/**
+ * Identity + name a registered experience publishes. `apiVersion` is the host
+ * protocol version the script targets; it lives on the registration/definition
+ * and session, not on the manifest itself (mirrors the design's
+ * `register({ apiVersion, manifest, … })` shape).
+ */
+export interface ExperienceManifest {
+  id: string;
+  name: string;
+}
+
+/**
+ * A capability a package declares it may use, with an optional bounded reason
+ * shown in the per-session grant UI. Only declared AND user-granted
+ * capabilities reach the VM `context`.
+ */
+export interface ExperienceDeclaredCapability {
+  capability: ExperienceCapability;
+  reason?: string;
+}
+
+// ─── Setup descriptor (IR-70F) ───────────────────────────────────────────────
+//
+// A package may declare an OPTIONAL bounded setup-field list (IR-70F). The host
+// renders these as validated settings before launch (IR-73A); the rules `create`
+// method receives the submitted values as `settings`. This is discovery metadata
+// only — it does not add a lifecycle method and does not affect runtime
+// create/project/actions/reduce/choose/flavor behavior. A package with no setup
+// descriptor registers nothing here and remains byte-for-byte valid. These
+// canonical shapes are readonly-compatible (frozen at the kernel boundary after
+// schema normalization).
+
+/** One option of a select setup field. Value is a bounded nonblank id; label is
+ *  human-facing. */
+export interface ExperienceSetupFieldOption {
+  value: string;
+  label: string;
+}
+
+/** Base fields every setup field carries (id/label/description). */
+interface ExperienceSetupFieldBase {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+/** A free-text setup field. Length bounds are integers in 0..2000; min<=max; a
+ *  declared default must satisfy the declared bounds. */
+export interface ExperienceSetupFieldText extends ExperienceSetupFieldBase {
+  kind: "text";
+  placeholder?: string;
+  required?: boolean;
+  default?: string;
+  minLength?: number;
+  maxLength?: number;
+}
+
+/** A numeric setup field. All numbers finite; step > 0; min<=max; a declared
+ *  default must lie within the declared min/max. */
+export interface ExperienceSetupFieldNumber extends ExperienceSetupFieldBase {
+  kind: "number";
+  required?: boolean;
+  default?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+/** A boolean toggle setup field. */
+export interface ExperienceSetupFieldBoolean extends ExperienceSetupFieldBase {
+  kind: "boolean";
+  default?: boolean;
+}
+
+/** A single-choice setup field. Options are 1..64; option values are bounded
+ *  nonblank unique ids; a declared default must equal one of the option values. */
+export interface ExperienceSetupFieldSelect extends ExperienceSetupFieldBase {
+  kind: "select";
+  required?: boolean;
+  default?: string;
+  options: ExperienceSetupFieldOption[];
+}
+
+/** A single declared setup field — discriminated by `kind`. */
+export type ExperienceSetupField =
+  | ExperienceSetupFieldText
+  | ExperienceSetupFieldNumber
+  | ExperienceSetupFieldBoolean
+  | ExperienceSetupFieldSelect;
+
+/** The optional setup descriptor a package registers: a bounded list of fields
+ *  (at most 32) with unique ids. Omitted by packages with no setup surface. */
+export interface ExperienceSetupDefinition {
+  fields: ExperienceSetupField[];
+}
+
+/** A participant seat declared by an experience's settings. */
+export interface ExperienceParticipant {
+  id: string;
+  label: string;
+  controller: ExperienceController;
+  /**
+   * Pinned provider profile for a model-controlled seat (IR-70E). Present only
+   * when `controller === "model"`, alongside {@link modelId}. A new start
+   * request must pin BOTH for every model seat; a legacy persisted participant
+   * with neither field falls back to the active provider/default model at
+   * effect time. Always absent for human/script seats.
+   */
+  providerProfileId?: string;
+  /**
+   * Pinned model id for a model-controlled seat (IR-70E). Present only when
+   * `controller === "model"`, alongside {@link providerProfileId}. See that
+   * field for the legacy-fallback + malformed-rejection semantics.
+   */
+  modelId?: string;
+  /**
+   * User-pulled library character behind this seat (report item 6b). Present
+   * only on model-controlled seats (the start schema enforces that). The live
+   * id rides along for per-character prompt-override lookup at effect time;
+   * the frozen card snapshot lives in {@link character}.
+   */
+  characterId?: string;
+  /**
+   * Frozen character-card snapshot captured at session start (report item
+   * 6b). The session keeps answering with this identity even after the source
+   * character is deleted from the library. Server-authoritative: built by the
+   * lifecycle at start, never accepted from a client start request.
+   */
+  character?: ExperienceSeatCharacter;
+}
+
+/** A frozen character-card snapshot for a model seat (report item 6b).
+ * Structurally compatible with the prompt-pipeline's context character
+ * snapshot (defined there because prompt-pipeline imports DOWN into domain —
+ * the domain copy is the authority for the persisted participant shape). */
+export interface ExperienceSeatCharacter {
+  id: string;
+  name: string;
+  description: string;
+  scenario?: string | null;
+  personality?: string | null;
+}
+
+/**
+ * The viewer a `project`/`actions` call is computed for. Hidden information is
+ * enforced by projecting per-viewer: a seat (human/script/model) carries its
+ * `participantId`; an observer view carries none and sees no private data.
+ */
+export interface ExperienceViewer {
+  kind: ExperienceViewerKind;
+  participantId?: string;
+}
+
+/**
+ * An immutable snapshot of a rules or visual resource captured at session
+ * start. Edits and deletes of the source row never corrupt an active or
+ * historical session because the exact source + hash + revision are frozen
+ * here (the snapshot-isolation invariant).
+ */
+export interface ExperienceSourceSnapshot {
+  id: string;
+  label: string;
+  revision: number;
+  source: string;
+  sourceHash: string;
+}
+
+/**
+ * One typed intention a viewer may submit. Returned by `actions()` as a
+ * descriptor and submitted to `reduce()` (carrying `requestId` +
+ * `expectedRevision`) as an action. `payloadSchema` is a bounded JSON-schema-ish
+ * description the kernel validates submitted payloads against; `allowsText` is
+ * true only when the package permits free text (model controllers).
+ */
+export interface ExperienceActionDescriptor {
+  type: string;
+  participantId?: string;
+  label?: string;
+  payloadSchema?: unknown;
+  allowsText?: boolean;
+}
+
+/** A submitted action intention. Carries idempotency + revision for CAS. */
+export interface ExperienceAction {
+  type: string;
+  requestId: string;
+  expectedRevision: number;
+  participantId?: string;
+  payload?: unknown;
+}
+
+/**
+ * An event emitted by a transition. `public` events reach the visual, the
+ * queued report, and the Writer; `private` events never leave the
+ * authoritative runtime — the literal that makes hidden-state absence provable.
+ */
+export interface ExperienceEvent {
+  visibility: ExperienceEventVisibility;
+  type: string;
+  detail?: unknown;
+}
+
+/**
+ * A durable effect a reducer requests as data. The host persists the request
+ * `pending` before running the capability work, then feeds success, failure,
+ * cancellation, or retry back through the same state-machine boundary. V1's
+ * only effect kind is `model` (atomic model generation).
+ */
+export interface ExperienceEffectRequest {
+  kind: ExperienceEffectKind;
+  request: unknown;
+}
+
+/**
+ * The output of `reduce`: the next authoritative state, post-move session
+ * status (`active` or `completed` — `interrupted` is host-only), emitted
+ * events, and optional durable effect requests. The host never trusts this
+ * blindly: state must round-trip as bounded JSON, status is schema-narrowed,
+ * and persistence applies it via compare-and-swap on the revision.
+ */
+export interface ExperienceTransition {
+  state: unknown;
+  status: ExperienceSessionStatus;
+  events: ExperienceEvent[];
+  effects?: ExperienceEffectRequest[];
+  message?: string;
+}
+
+/**
+ * The per-viewer projection `project` returns and the visual/bridge receive:
+ * projected state, legal actions at this revision, the revision, and status.
+ * Never carries hidden state for the viewer it was computed for.
+ */
+export interface ExperienceProjectedView {
+  state: unknown;
+  actions: ExperienceActionDescriptor[];
+  revision: number;
+  status: ExperienceSessionStatus;
+}
+
+/**
+ * The canonical persisted experience session. Scoped by chatId + branchId with
+ * at most one active session per branch (`activeSlot`, unique per branch). Pins
+ * the exact rules/visual source snapshots so edits/deletes do not corrupt it;
+ * holds current state, monotonic revision, participants, granted capabilities,
+ * RP-context mode, report frontier, and the deterministic-random seed/cursor.
+ * The DB table + store arrive in Wave 2; this is the canonical shape.
+ */
+export interface ExperienceSession {
+  sessionId: ExperienceSessionId;
+  chatId: ChatId;
+  branchId: ChatBranchId;
+  /** Pinned rules source snapshot (exact hash/revision). */
+  rules: ExperienceSourceSnapshot;
+  /** Pinned visual source snapshot, or null when no visual is bound. */
+  visual: ExperienceSourceSnapshot | null;
+  /** Host protocol version the rules registered. */
+  apiVersion: number;
+  /** Discovered manifest (id/name) frozen at start. */
+  manifest: ExperienceManifest;
+  /** Initial authoritative settings — a replay input (deterministic rebuild). */
+  initialSettings: unknown;
+  /** Current authoritative state (bounded JSON, round-trips). */
+  currentState: unknown;
+  /** Post-last-transition session status. */
+  status: ExperienceSessionStatus;
+  /** Monotonic revision; increments on every applied transition. */
+  revision: number;
+  /** Participant roster. */
+  participants: ExperienceParticipant[];
+  /** User-approved capabilities (subset of declared). */
+  capabilityGrants: ExperienceCapability[];
+  /** RP-context mode for model-controlled seats. */
+  contextMode: ExperienceContextMode;
+  /** Highest revision frozen into a queued/bound report. */
+  reportFrontier: number;
+  /** Deterministic-random seed + cursor (for deterministic_random capability). */
+  randomSeed: string;
+  randomCursor: number;
+  /** Active slot within the branch (nullable; {branchId, activeSlot} is unique). */
+  activeSlot: number | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/**
+ * A durable effect record persisted before execution. Process interruption
+ * after `running` reconciles to `unknown`; only an explicit user retry creates a
+ * new attempt (incrementing `attemptCount`), preserving the original effect id
+ * and audit history.
+ */
+export interface ExperienceEffect {
+  effectId: ExperienceEffectId;
+  sessionId: ExperienceSessionId;
+  kind: ExperienceEffectKind;
+  status: ExperienceEffectStatus;
+  /** The revision at which the reducer requested this effect. */
+  originatingRevision: number;
+  /** Bounded JSON request payload. */
+  request: unknown;
+  /** Bounded JSON result payload (present when succeeded). */
+  result?: unknown;
+  /** Stable error string (present when failed/unknown). */
+  error?: string;
+  /** Number of attempts; only explicit user retry increments. */
+  attemptCount: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// ─── RP report binding (IR-52, Wave 5) ───────────────────────────────────────
+
+/**
+ * One public event inside a frozen RP report. This is the Writer-visible half
+ * of an {@link ExperienceEvent}: the `visibility` discriminator is stripped at
+ * freeze time because a bound report is ALL public by construction (hidden
+ * events never leave the reducer). The ordinary RP Writer reads these as
+ * resolved facts and narrates them; it never chooses moves or receives tools.
+ */
+export interface ExperienceReportEvent {
+  /** Bounded event type id from the reducer (e.g. "round", "move", "score"). */
+  type: string;
+  /** Optional bounded detail payload — the script's prompt-efficient prose or
+   *  structured facts for this event. Rendered verbatim by the formatter. */
+  detail?: unknown;
+}
+
+/**
+ * The self-describing public report stored as `publicEventsJson` on a bound
+ * experience attachment. A bound attachment has NO foreign key to its session
+ * (it survives session deletion — see `experience_attachments.sessionId`), so
+ * the report MUST carry its own title and public events rather than joining a
+ * session row that may no longer exist. It NEVER carries hidden state — the
+ * hidden checkpoint lives in the separate `hiddenStateCheckpointJson` column
+ * and is read only on branch-fork restore, never on prompt assembly.
+ */
+export interface ExperiencePublicReport {
+  /** Identifies the experience (manifest/game name) for the Writer. */
+  title: string;
+  /** Optional one-line setup/context line (e.g. "Round 3 — X to move"). */
+  summary?: string;
+  /** Ordered public events the Writer narrates as authoritative facts. */
+  events: ReadonlyArray<ExperienceReportEvent>;
+}
+
+/**
+ * The message-scoped projection of a bound experience attachment that the
+ * prompt-pipeline formatter consumes. Produced by mapping a stored
+ * `ExperienceAttachmentRow` (parsing its `publicEventsJson` defensively);
+ * the formatter is pure and read-only over this. Mirrors {@link DiceRollSnapshot}
+ * in role: an already-bound immutable snapshot that assembly never re-executes.
+ */
+export interface ExperienceReportSnapshot {
+  /** Attachment kind: "report" (public events) | "transcript" (future Messenger
+   *  alternating dialogue). Selects the formatter wrapper. */
+  kind: string;
+  /** Session revision at the freeze point (for reference; the snapshot is
+   *  immutable regardless of later session advances). */
+  sessionRevision: number;
+  /** The parsed self-describing public report. */
+  title: string;
+  /** Optional one-line summary, lifted from the report envelope. */
+  summary?: string;
+  /** Public events the Writer narrates. */
+  events: ReadonlyArray<ExperienceReportEvent>;
+}
+
+/**
+ * A visual resource: an editable, user-owned HTML/CSS/JS bundle that runs
+ * sandboxed in an iframe and communicates only through the versioned
+ * `VibeExperience` bridge. Scope metadata mirrors Script so a visual can be
+ * global or owned by a character/persona/chat.
+ */
+export interface ExperienceVisual {
+  visualId: ExperienceVisualId;
+  name: string;
+  /** The visual source bundle (editable; Wave 6 ships starters). */
+  source: string;
+  sourceHash: string;
+  /** Bridge API version this visual targets. */
+  apiVersion: number;
+  /** Manifest ids this visual is compatible with (loose coupling). */
+  compatibleManifestIds: string[];
+  scopeType: LoreScopeType;
+  characterId: string | null;
+  personaId: string | null;
+  chatId: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 /**
