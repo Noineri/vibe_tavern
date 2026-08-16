@@ -750,6 +750,7 @@ export default interface Resources {
     "experience_editor_existing_label": "Your mini-apps",
     "experience_editor_load_error": "Couldn’t load interactive resources.",
     "experience_editor_new_experience_name": "New mini-app",
+    "experience_editor_new_visual_name": "New visual",
     "experience_editor_no_scripts": "No mini-apps yet — create one above.",
     "experience_editor_rules_template": "Rules template",
     "experience_editor_step_appearance": "Appearance",

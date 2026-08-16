@@ -41,6 +41,14 @@ export function CopilotActivityCard({ activity }: { activity: ExperienceCopilotT
     ? activity.readPath!
     : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
 
+  // The label is NEVER visually truncated: the model's summaries are the
+  // user's window into what the copilot is doing, and an ellipsis hides
+  // exactly that. A file PATH stays single-line (`truncate`) — paths are
+  // machine strings — but every other label wraps onto as many lines as it
+  // needs (`whitespace-normal break-words`; copy still carries the full text
+  // either way — the old `truncate` hid it visually only).
+  const titleCls = isRead ? "min-w-0 truncate" : "min-w-0 whitespace-normal break-words";
+
   return (
     <div className="overflow-hidden rounded-md">
       <div
@@ -48,12 +56,12 @@ export function CopilotActivityCard({ activity }: { activity: ExperienceCopilotT
         data-tool={activity.toolName}
         {...(activity.target ? { "data-target": activity.target } : {})}
         className={cn(
-          "flex min-w-0 items-center gap-1.5 px-2 py-1.5 font-ui text-[11px] font-medium tracking-[0.03em]",
+          "flex min-w-0 items-start gap-1.5 px-2 py-1.5 font-ui text-[11px] font-medium tracking-[0.03em]",
           errored ? "text-danger-text" : "text-t2",
         )}
       >
-        <span className={statusClass}>{statusIcon}</span>
-        <span className="min-w-0 truncate">{title}</span>
+        <span className={cn(statusClass, "shrink-0 leading-[1.45]")}>{statusIcon}</span>
+        <span data-testid="copilot-activity-title" className={cn(titleCls, "leading-[1.45]")}>{title}</span>
         {isProposal && (
           <span
             data-testid="copilot-activity-target"

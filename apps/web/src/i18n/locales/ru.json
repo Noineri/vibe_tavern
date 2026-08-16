@@ -2258,5 +2258,6 @@
   "copilot_model_star": "В избранное",
   "copilot_model_unstar": "Убрать из избранного",
   "experience_copilot_rename_session": "Переименовать сессию",
-  "experience_copilot_rename_error": "Не удалось переименовать сессию"
+  "experience_copilot_rename_error": "Не удалось переименовать сессию",
+  "experience_editor_new_visual_name": "Новое представление"
 }

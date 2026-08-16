@@ -345,9 +345,19 @@ export function ExperienceEditor() {
       });
       setScripts((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
       setActiveScriptId(created.id);
-      // TF-1: a brand-new experience binds nothing — drop the previously open
-      // experience's visual so it cannot leak into the fresh Visual buffer.
-      setActiveVisualId(null);
+      // TF-1: a brand-new experience binds nothing — the previously open
+      // experience's visual is dropped so it cannot leak into the fresh Visual
+      // buffer. Instead, creating the app implies creating ITS OWN visual draft
+      // (2026-08-17): a pending empty visual is selected immediately, so the
+      // Visual tab is a live editable buffer from the start — the user (or the
+      // copilot) fills it in and saves it like any other visual, instead of
+      // hitting a "no visual selected" dead end first.
+      setActiveVisualId(createPendingVisual({
+        name: t("experience_editor_new_visual_name"),
+        source: "",
+        apiVersion: VISUAL_API_VERSION,
+        compatibleManifestIds: [],
+      }));
       setCreatingScriptId(created.id);
       setChosenRulesStarterId(null);
     } catch (error) {

@@ -655,6 +655,26 @@ describe("ExperienceEditor", () => {
     expect(rulesDraftEntries().filter(([id]) => id.startsWith("local:"))).toHaveLength(0);
   });
 
+  it("blank create implies a fresh visual draft: the Visual tab opens on an editable empty buffer (2026-08-17)", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { findByText, getByRole, findByDisplayValue } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("experience_editor_create_new"));
+    await waitFor(() => {
+      expect(getByRole("radio", { name: "experience_copilot_visual" })).toBeDefined();
+    });
+
+    // A pending (local-id) visual draft exists, seeded empty with the default name.
+    const pending = visualDraftEntries().filter(([id]) => id.startsWith("local:"));
+    expect(pending).toHaveLength(1);
+    expect(pending[0]![1].values.name).toBe("experience_editor_new_visual_name");
+    expect(pending[0]![1].values.source).toBe("");
+
+    // And it is SELECTED: opening the Visual tab shows the draft's name in the
+    // visual-name input — a live editable buffer, not a "no visual" dead end.
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    expect(await findByDisplayValue("experience_editor_new_visual_name")).toBeDefined();
+  });
+
   it("in creation mode the rules template picker fills the buffer and records the choice", async () => {
     const { findByText, getByRole } = render(<ExperienceEditor />);
 
@@ -780,7 +800,7 @@ describe("ExperienceEditor", () => {
     });
   });
 
-  it("back → create-new resets the visual selection: a fresh experience opens with an empty Visual buffer (TF-1)", async () => {
+  it("back → create-new gives the fresh experience its OWN visual draft — the previous visual never leaks (TF-1)", async () => {
     // TF-1: neither the back button nor persist-on-create reset activeVisualId,
     // so the previous experience's bound visual leaked into the brand-new one
     // (its source landed in the Visual buffer of a script that never bound it).
@@ -816,18 +836,24 @@ describe("ExperienceEditor", () => {
     });
 
     // Creation mode's Visual buffer must NOT carry the previous experience's
-    // visual: the dropdown shows the placeholder, not "Existing Visual".
+    // visual — and since 2026-08-17 it carries its OWN fresh draft instead:
+    // the dropdown shows the new draft's name (not "Existing Visual", not the
+    // empty placeholder — the tab is a live editable buffer from the start).
     fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
     await waitFor(() => {
-      const stale = [...container.querySelectorAll("button")].find((b) =>
-        (b.textContent ?? "").includes("Existing Visual"),
+      const trigger = [...container.querySelectorAll("button")].find((b) =>
+        (b.textContent ?? "").includes("experience_editor_new_visual_name"),
       );
-      expect(stale).toBeUndefined();
+      expect(trigger).toBeTruthy();
     });
-    const trigger = [...container.querySelectorAll("button")].find((b) =>
-      (b.textContent ?? "").includes("experience_assign_visual_placeholder"),
+    const stale = [...container.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").includes("Existing Visual"),
     );
-    expect(trigger).toBeTruthy();
+    expect(stale).toBeUndefined();
+    // The draft is a NEW pending visual, not the old bound row.
+    const pending = visualDraftEntries().filter(([id]) => id.startsWith("local:"));
+    expect(pending).toHaveLength(1);
+    expect(pending[0]![1].values.source).toBe("");
   });
 
   it("patches one snapshot on later saves and keeps a failed save dirty + retryable", async () => {

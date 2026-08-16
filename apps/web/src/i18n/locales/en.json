@@ -2238,5 +2238,6 @@
   "copilot_model_star": "Add to favorites",
   "copilot_model_unstar": "Remove from favorites",
   "experience_copilot_rename_session": "Rename session",
-  "experience_copilot_rename_error": "Failed to rename the session"
+  "experience_copilot_rename_error": "Failed to rename the session",
+  "experience_editor_new_visual_name": "New visual"
 }

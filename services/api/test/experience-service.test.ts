@@ -990,6 +990,38 @@ describe("ExperienceService — pinned visual source snapshot (IR-70G)", () => {
     expect(resumed.data.visualSourceHash).toBeNull();
   });
 
+  // ─── Empty-source visuals are draft placeholders (2026-08-17) ──────────────
+  // Creating a new app implies creating its visual draft; the draft starts
+  // empty and must be saveable as-is (the frame renders blank until filled).
+  test("create and update accept an EMPTY visual source (draft placeholders)", async () => {
+    await setup();
+
+    const created = await resources.createVisual({ name: "Draft", source: "", apiVersion: 1 });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.data.source).toBe("");
+    expect(created.data.sourceHash).not.toBeNull(); // hashed like any source
+
+    // Patch to empty round-trips too (back to placeholder after edits).
+    const patched = await resources.updateVisual(created.data.id, { source: "" });
+    expect(patched.ok).toBe(true);
+    if (!patched.ok) return;
+    expect(patched.data.source).toBe("");
+  });
+
+  test("a session started with an EMPTY pinned visual source pins it verbatim", async () => {
+    const service = await setup();
+    const { chatId, branchId, visual } = await seedChatAndScript(COUNTER_SOURCE, [], { source: "" });
+    expect(visual).not.toBeNull();
+    if (visual === null) return;
+
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.visualSource).toBe("");
+    expect(started.data.visualSourceHash).toBe(visual.sourceHash);
+  });
+
   test("action responses inherit the pinned visual source fields", async () => {
     const service = await setup();
     const { chatId, branchId, visual } = await seedChatAndScript(COUNTER_SOURCE, [], { source: "<board id='v1'/>" });
