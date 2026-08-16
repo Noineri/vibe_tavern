@@ -10,6 +10,10 @@ import type {
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow } from "@vibe-tavern/db";
 
 import { streamExperienceCopilot } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
+import {
+  COPILOT_CONTEXT_BUDGET_TOKENS,
+  COPILOT_RESPONSE_RESERVE_TOKENS,
+} from "../src/domain/interactive/copilot/copilot-limits.js";
 import type {
   ExperienceCopilotStreamDeps,
   ExperienceCopilotStreamEvent,
@@ -238,6 +242,34 @@ describe("experience-copilot stream (ER-6)", () => {
     // The turn is persisted: 1 user message + 1 assistant text message.
     expect(store.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(store.messages[1].content).toBe("Hello copilot!");
+  });
+
+  it("uses copilot-owned budget/reserve regardless of the RP profile (A-lite, 2026-08-17)", async () => {
+    // The profile carries chat-RP numbers (a fresh profile defaults to a 16k
+    // budget — smaller than the copilot's own system message). The copilot must
+    // assemble and report metrics against ITS fixed limits, not these.
+    const rpProfile = { ...makeProfile(), contextBudget: 16000, maxTokens: 2000 };
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store, {
+          getProviderProfile: async () => rpProfile,
+          getEffectiveProviderProfile: async () => rpProfile,
+        }),
+      ),
+    );
+
+    expect(store.metricsCalls).toHaveLength(1);
+    const metrics = store.metricsCalls[0].metrics as {
+      budgetTokens: number;
+      reserveTokens: number;
+    };
+    expect(metrics.budgetTokens).toBe(COPILOT_CONTEXT_BUDGET_TOKENS);
+    expect(metrics.reserveTokens).toBe(COPILOT_RESPONSE_RESERVE_TOKENS);
   });
 
   it("emits tool-call + tool-result when the model calls a tool", async () => {
@@ -629,10 +661,11 @@ describe("experience-copilot stream — context metrics (CM-4)", () => {
     const data = finish!.data as { metrics: { source: string; totalTokens: number; budgetTokens: number; reserveTokens: number } };
     expect(data.metrics.source).toBe("provider");
     expect(data.metrics.totalTokens).toBe(1234);
-    // Per-segment values remain the assembler's estimate; budget/reserve derive
-    // from the effective profile (contextBudget null → 0, maxTokens 2000).
-    expect(data.metrics.budgetTokens).toBe(0);
-    expect(data.metrics.reserveTokens).toBe(2000);
+    // Per-segment values remain the assembler's estimate; budget/reserve are
+    // the copilot's FIXED limits (A-lite, 2026-08-17) — the RP profile's
+    // contextBudget/maxTokens no longer flow into copilot metrics.
+    expect(data.metrics.budgetTokens).toBe(COPILOT_CONTEXT_BUDGET_TOKENS);
+    expect(data.metrics.reserveTokens).toBe(COPILOT_RESPONSE_RESERVE_TOKENS);
   });
 
   it("multi-step tool turn: totalTokens = the LAST step's input, not the summed aggregate usage", async () => {
@@ -670,7 +703,11 @@ describe("experience-copilot stream — context metrics (CM-4)", () => {
     expect(data.metrics.totalTokens).toBe(64500);
   });
 
-  it("maxTokens -1 (\"model decides\") clamps reserveTokens to 0, never a -1 reserve", async () => {
+  it("profile maxTokens -1 (\"model decides\") no longer affects the copilot's reserve — fixed, never negative", async () => {
+    // Before A-lite the reserve was read from the profile and a -1 ("model
+    // decides") had to be clamped to 0 so a negative reserve never leaked into
+    // metrics. The copilot now owns its reserve outright; the -1 profile must
+    // be irrelevant — the fixed reserve is always positive.
     const store = createFakeStore(makeThread());
     const profile = makeProfile();
     profile.maxTokens = -1;
@@ -685,7 +722,7 @@ describe("experience-copilot stream — context metrics (CM-4)", () => {
 
     const finish = events.find((e) => e.event === "finish");
     const data = finish!.data as { metrics: { reserveTokens: number } };
-    expect(data.metrics.reserveTokens).toBe(0);
+    expect(data.metrics.reserveTokens).toBe(COPILOT_RESPONSE_RESERVE_TOKENS);
   });
 });
 

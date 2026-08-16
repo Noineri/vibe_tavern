@@ -23,6 +23,10 @@ import type {
 } from "@vibe-tavern/db";
 import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
 import { ExperienceCopilotCompactionService } from "../src/domain/interactive/copilot/experience-copilot-compaction.js";
+import {
+  COPILOT_COMPACT_MAX_OUTPUT_TOKENS,
+  COPILOT_COMPACT_TEMPERATURE,
+} from "../src/domain/interactive/copilot/copilot-limits.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -147,9 +151,17 @@ type ExecuteResult = { text: string } | Error;
 
 function makeExecutor(initial: ExecuteResult = { text: "summary" }) {
   let result: ExecuteResult = initial;
-  const calls: Array<{ model: string; prompt: Record<string, unknown> }> = [];
-  const execute = async (input: { model: string; prompt: Record<string, unknown> }) => {
-    calls.push({ model: input.model, prompt: input.prompt });
+  const calls: Array<{
+    model: string;
+    prompt: Record<string, unknown>;
+    input: Record<string, unknown>;
+  }> = [];
+  const execute = async (input: Record<string, unknown>) => {
+    calls.push({
+      model: input.model as string,
+      prompt: input.prompt as Record<string, unknown>,
+      input,
+    });
     if (result instanceof Error) throw result;
     return { text: result.text, providerResponse: {} };
   };
@@ -216,6 +228,26 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     expect(transcript).toContain("m1");
     expect(transcript).toContain("m12");
     expect(transcript).not.toContain("m13");
+  });
+
+  it("digest call carries copilot-owned sampler overrides, not the RP profile's (A-lite, 2026-08-17)", async () => {
+    // The profile's samplers (temperature 1, maxTokens 2000) once let a
+    // reasoning model burn the whole output cap on thinking → "Provider
+    // returned an empty summary". The digest call must pin its own cool,
+    // roomy samplers regardless of the profile.
+    const { store } = makeStore(makeTurnSequence(20));
+    const executor = makeExecutor({ text: "summary-1" });
+    const service = new ExperienceCopilotCompactionService(
+      store,
+      makeProviderProfiles() as never,
+      executor.execute as never,
+    );
+
+    await service.compact({ threadId: "thread_1" });
+
+    expect(executor.calls).toHaveLength(1);
+    expect(executor.calls[0].input.overrideTemperature).toBe(COPILOT_COMPACT_TEMPERATURE);
+    expect(executor.calls[0].input.overrideMaxTokens).toBe(COPILOT_COMPACT_MAX_OUTPUT_TOKENS);
   });
 
   it("folds the prior digest into the next and re-anchors (successive compactions)", async () => {
