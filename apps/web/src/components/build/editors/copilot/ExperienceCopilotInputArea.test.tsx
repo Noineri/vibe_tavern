@@ -70,6 +70,8 @@ interface FakeDropdownSelectProps {
   groups?: Array<{ id: string; label?: string; options: Array<{ id: string; label: string; trailing?: ReactNode }> }>;
   placeholder?: string;
   triggerTestId?: string;
+  triggerClassName?: string;
+  contentWidth?: number;
   triggerLeading?: ReactNode;
   onChange: (value: string) => void;
 }
@@ -77,12 +79,12 @@ interface FakeDropdownSelectProps {
 function FakeDropdownSelect(props: FakeDropdownSelectProps) {
   return (
     <div>
-      <button type="button" data-testid={props.triggerTestId} onClick={() => {}}>
+      <button type="button" data-testid={props.triggerTestId} className={props.triggerClassName} onClick={() => {}}>
         {props.triggerLeading}
         {props.options.find((o) => o.id === props.value)?.label ?? props.placeholder}
       </button>
       {(props.groups ?? []).map((g) => (
-        <div key={g.id} data-testid={`dropdown-group-${g.id}`}>
+        <div key={g.id} data-testid={`dropdown-group-${g.id}`} data-content-width={props.contentWidth ?? "trigger"}>
           {g.label && <div data-testid={`dropdown-group-label-${g.id}`}>{g.label}</div>}
           {g.options.map((o) => (
             <div key={o.id} data-testid={`dropdown-option-${o.id}`} onClick={() => props.onChange(o.id)}>
@@ -225,5 +227,16 @@ describe("ExperienceCopilotInputArea", () => {
 
     expect(queryByTestId("dropdown-group-copilot-model-favorites")).toBeNull();
     expect(getByTestId("dropdown-group-copilot-model-all")).toBeDefined();
+  });
+
+  it("model picker: narrow fixed trigger width, popup decoupled via contentWidth", () => {
+    const { getByTestId } = renderInput();
+
+    // UX contract (2026-08-16 remark 3): the CLOSED trigger stays clamped for
+    // layout stability (w-[240px], set in bae87b16), while the OPEN dropdown
+    // gets its own fixed width (contentWidth) instead of following the
+    // trigger — long model ids + trailing star + context length need room.
+    expect(getByTestId("copilot-model-pill").className).toContain("w-[240px]");
+    expect(getByTestId("dropdown-group-copilot-model-all").getAttribute("data-content-width")).toBe("320");
   });
 });

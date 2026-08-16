@@ -129,6 +129,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
             searchPlaceholder={t("search_models")}
             placeholder={t("experience_copilot_model_select")}
             triggerTestId="copilot-model-pill"
+            contentWidth={320}
             triggerLeading={<Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />}
             triggerClassName={cn(
               "h-8 w-[240px] shrink rounded-[5px] bg-s2 px-2.5 text-[12.5px] text-t1 transition-colors hover:bg-s3",

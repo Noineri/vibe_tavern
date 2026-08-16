@@ -47,6 +47,12 @@ interface DropdownSelectProps {
   /** Popover side relative to the trigger. Defaults to "bottom"; sites whose
  *  trigger sits at the bottom of a panel (chat input bars) pass "top". */
   side?: "top" | "bottom";
+  /** Fixed popup width in px. Decouples the dropdown from the trigger's width
+ *  (mirrors ToolbarSelect's `contentWidth`): a trigger clamped narrow for
+ *  layout stability (e.g. w-[240px] in a chat input bar) can still open a
+ *  wide popup when the options need more room (long model ids + trailing
+ *  star + context length). Default: follow the trigger width. */
+  contentWidth?: number;
 }
 
 // Built on cmdk (Command) + Radix Popover: a real searchable combobox.
@@ -71,6 +77,7 @@ export function DropdownSelect({
   triggerTestId,
   triggerLeading,
   side = "bottom",
+  contentWidth,
 }: DropdownSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -195,7 +202,7 @@ export function DropdownSelect({
           onCloseAutoFocus={(e) => e.preventDefault()}
           className="glass-blur z-[400] overflow-hidden rounded-md border border-border bg-glass-bg shadow-[0_8px_30px_rgba(0,0,0,0.6)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           style={{
-            width: "var(--radix-popover-trigger-width)",
+            width: contentWidth ?? "var(--radix-popover-trigger-width)",
             maxHeight: 260,
           }}
         >
