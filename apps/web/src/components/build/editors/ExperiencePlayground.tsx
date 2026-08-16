@@ -53,6 +53,7 @@ import { Checkbox } from "../../shared/Checkbox.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
 import { cn } from "../../../lib/cn.js";
@@ -79,6 +80,7 @@ import {
 } from "../../experience/ExperienceFrame.js";
 import {
   buildPlaygroundDigest,
+  buildRunTestErrorDigest,
   type CopilotDigest,
 } from "../../../lib/experience-copilot-digest.js";
 import {
@@ -151,12 +153,17 @@ const CAPABILITIES = [
   EXPERIENCE_CAPABILITY.rpAttachment,
 ] as const;
 
+/** Friendly (non-technical) capability labels for the grant checkboxes (XU-3).
+ *  The technical capability id (the wire string) stays reachable via the ⓘ
+ *  tooltip next to each label — non-technical authors never see raw ids inline.
+ *  The existing `experience_cap_*` keys remain in place for the other surfaces
+ *  (InteractiveTester, ExperienceAssignment); these are playground-only. */
 const CAPABILITY_LABEL_KEY = {
-  [EXPERIENCE_CAPABILITY.participants]: "experience_cap_participants",
-  [EXPERIENCE_CAPABILITY.deterministicRandom]: "experience_cap_deterministic_random",
-  [EXPERIENCE_CAPABILITY.model]: "experience_cap_model",
-  [EXPERIENCE_CAPABILITY.rpContext]: "experience_cap_rp_context",
-  [EXPERIENCE_CAPABILITY.rpAttachment]: "experience_cap_rp_attachment",
+  [EXPERIENCE_CAPABILITY.participants]: "experience_cap_friendly_participants",
+  [EXPERIENCE_CAPABILITY.deterministicRandom]: "experience_cap_friendly_deterministic_random",
+  [EXPERIENCE_CAPABILITY.model]: "experience_cap_friendly_model",
+  [EXPERIENCE_CAPABILITY.rpContext]: "experience_cap_friendly_rp_context",
+  [EXPERIENCE_CAPABILITY.rpAttachment]: "experience_cap_friendly_rp_attachment",
 } as const;
 
 // ─── Normalization helpers (no `as any`; the wire details record is unknown) ──
@@ -346,6 +353,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   // XU-1: which seat's id editor is currently revealed (null = none).
   const [editingIdIndex, setEditingIdIndex] = useState<number | null>(null);
+  // XU-3: the launch-setup accordion (expanded until a session becomes live)
+  // and the typed-error technical-details disclosure (closed by default).
+  // Neither is persisted — both derive from live component state.
+  const [setupOpen, setSetupOpen] = useState(true);
+  const [errorTechOpen, setErrorTechOpen] = useState(false);
   // IR-90E: auto-derive tracks whether the user has manually modified the
   // roster (once touched, auto-derive never overrides). A RESTORED config
   // (fix item 9a) counts as touched — the persisted roster is the user's
@@ -361,6 +373,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [frameReady, setFrameReady] = useState(false);
   const sessionRef = useRef<ExperiencePlaygroundData | null>(null);
   sessionRef.current = session;
+  // XU-3: previous session-active flag so the launch-setup accordion collapses
+  // exactly when a session becomes live (and re-expands on reset).
+  const prevSessionActive = useRef(false);
 
   const participants: ExperienceParticipant[] = seats
     .filter((seat) => seat.id.trim() !== "")
@@ -683,6 +698,18 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     });
   }, [frameReady, session]);
 
+  // XU-3: auto-collapse the launch-setup accordion when a session becomes live
+  // (derived from session state only; never persisted). The user may re-open it
+  // anytime; reset (session → null) restores the expanded default on the next
+  // transition.
+  useEffect(() => {
+    const active = session !== null;
+    if (active !== prevSessionActive.current) {
+      prevSessionActive.current = active;
+      setSetupOpen(!active);
+    }
+  }, [session]);
+
   const hasVisual = visualSource !== null && visualSource.trim() !== "";
 
   // IR-90E: ordinary-language status for the novice-readable default view.
@@ -696,12 +723,53 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     return t("experience_playground_status_default");
   })();
 
+  // XU-3: one-line launch-setup summary for the collapsed accordion header.
+  // Composed from the roster (label + friendly role) and the random-start flag.
+  const setupSummary = [
+    ...seats.map((seat) => {
+      const name = seat.label.trim() !== "" ? seat.label.trim() : seat.id.trim() !== "" ? seat.id.trim() : "?";
+      return `${name} (${t(CONTROLLER_LABEL_KEY[seat.controller])})`;
+    }),
+    t(randomStart ? "experience_playground_setup_summary_random_on" : "experience_playground_setup_summary_random_off"),
+  ].join(" · ");
+
+  /** XU-3: feed a typed error to the copilot. A live session uses the
+   *  playground digest (mirrors the diagnostics send path); a failed START has
+   *  no session, so it falls back to the run-test error digest (the fail-path
+   *  shape). Only wired when the shell provides the callback. */
+  const handleAskCopilotAboutError = () => {
+    if (onSendToCopilot === undefined || error === null) return;
+    const digest = session !== null
+      ? buildPlaygroundDigest({ session, definition, error })
+      : buildRunTestErrorDigest(error);
+    onSendToCopilot(digest);
+  };
+
   return (
     <div data-testid="experience-playground" className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
       <div>
-          {/* Play context: roster + capability grants + seed + settings + seat */}
-          <div className="mb-3">
-            <label className={lblCls}>{t("experience_setup_participants_label")}</label>
+          {/* Play context: roster + capability grants + seed + settings + seat —
+              collapsed into a summary accordion (XU-3). */}
+          <div className="mb-3 rounded-md border border-border bg-bg" style={{ padding: 10 }}>
+            <button
+              type="button"
+              className="flex w-full cursor-pointer items-center gap-2 text-left"
+              onClick={() => setSetupOpen((v) => !v)}
+              aria-expanded={setupOpen}
+            >
+              <span className={cn("inline-block shrink-0 text-t3 transition-transform", setupOpen && "rotate-90")}>
+                {Ic.caret("r")}
+              </span>
+              <span className={cn(blockLabelCls, "shrink-0")}>{t("experience_playground_setup_title")}</span>
+              {!setupOpen && (
+                <span className="min-w-0 truncate font-ui text-[11px] text-t3" data-testid="playground-setup-summary">
+                  {setupSummary}
+                </span>
+              )}
+            </button>
+            <AnimatedDisclosure open={setupOpen}>
+            <div className="mt-3">
+              <label className={lblCls}>{t("experience_setup_participants_label")}</label>
             {seats.map((seat, index) => (
               <div key={index} className="mb-2 rounded-xl border border-border bg-surface p-2.5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -810,22 +878,29 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             </button>
           </div>
 
-          <div className="mb-3">
-            <label className={lblCls}>{t("experience_tester_capabilities_label")}</label>
+          <div className="mt-3">
+            <label className={lblCls}>{t("experience_playground_capabilities_title")}</label>
             <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
               {CAPABILITIES.map((capability) => (
                 <Checkbox
                   key={capability}
                   checked={grants.includes(capability)}
                   onChange={(checked) => toggleGrant(capability, checked)}
-                  label={t(CAPABILITY_LABEL_KEY[capability])}
+                  label={
+                    <span className="flex items-center gap-1">
+                      <span className="text-[13px]">{t(CAPABILITY_LABEL_KEY[capability])}</span>
+                      <CustomTooltip content={capability}>
+                        <span className="cursor-help text-[12px] text-t4">ⓘ</span>
+                      </CustomTooltip>
+                    </span>
+                  }
                   className="font-ui text-[12px]"
                 />
               ))}
             </div>
           </div>
 
-          <div className="mb-3 grid gap-2 sm:grid-cols-3">
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <div>
               <label className={lblCls}>{t("experience_playground_seed_label")}</label>
               <div className="mt-1.5 flex items-center gap-2">
@@ -870,65 +945,80 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
               />
             </div>
           </div>
+            </AnimatedDisclosure>
+          </div>
 
-          {/* Session controls */}
+          {/* Session controls: the prominent primary play action (XU-3). */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
               disabled={busy !== null || code.trim() === ""}
               onClick={() => void handleStart()}
             >
+              {Ic.caret("r")}
               {t("experience_playground_start")}
             </button>
-            {session !== null && (
-              <>
-                <button
-                  type="button"
-                  className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                  disabled={busy !== null}
-                  onClick={handleRestart}
-                >
-                  {t("experience_playground_restart")}
-                </button>
-                <button
-                  type="button"
-                  className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                  disabled={busy !== null}
-                  onClick={handleReset}
-                >
-                  {t("experience_playground_reset")}
-                </button>
-              </>
-            )}
             {busy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
           </div>
 
-          {/* Typed error (start or advance) */}
+          {/* Typed error (start or advance) — human first, tech under a
+              disclosure, and a copilot escape hatch (XU-3). */}
           {error !== null && (
             <div className="mt-3 rounded-md border border-danger bg-danger-dim" style={{ padding: 10 }}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase text-danger-text">{t("experience_playground_error_title")}</span>
-                {error.code !== undefined && (
-                  <span className="rounded bg-danger/20 px-1.5 py-0.5 font-mono text-[10px] uppercase text-danger-text">{error.code}</span>
-                )}
+              <div className="flex items-start gap-2">
+                <span aria-hidden className="mt-0.5 shrink-0 text-danger-text"><Ic.alert /></span>
+                <p className="font-ui text-[13px] leading-snug text-danger-text">{error.message}</p>
               </div>
-              <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{error.message}</pre>
-              <div className="mt-1 space-y-0.5 font-ui text-[11px] text-t2">
-                {error.kind !== undefined && (
-                  <div><span className="text-t3">{t("experience_tester_error_kind")}: </span><span className="font-mono">{error.kind}</span></div>
-                )}
-                {error.currentRevision !== undefined && (
-                  <div><span className="text-t3">{t("experience_tester_error_current_revision")}: </span><span className="font-mono">{error.currentRevision}</span></div>
-                )}
-                {error.granted !== undefined && (
-                  <div><span className="text-t3">{t("experience_tester_error_granted")}: </span><span className="font-mono">{error.granted.join(", ")}</span></div>
-                )}
-                {error.needs !== undefined && (
-                  <div><span className="text-t3">{t("experience_tester_error_needs")}: </span><span className="font-mono">{error.needs.join(", ")}</span></div>
-                )}
+              {onSendToCopilot !== undefined && (
+                <button
+                  type="button"
+                  data-testid="playground-error-ask-copilot"
+                  className="mt-2 flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+                  onClick={handleAskCopilotAboutError}
+                >
+                  <Ic.sparkles />
+                  {t("experience_playground_error_ask_copilot")}
+                </button>
+              )}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="flex w-full cursor-pointer items-center gap-1.5 text-left"
+                  onClick={() => setErrorTechOpen((v) => !v)}
+                  aria-expanded={errorTechOpen}
+                >
+                  <span className={cn("inline-block shrink-0 text-danger-text transition-transform", errorTechOpen && "rotate-90")}>
+                    {Ic.caret("r")}
+                  </span>
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-danger-text">{t("experience_playground_error_tech_details")}</span>
+                </button>
+                <AnimatedDisclosure open={errorTechOpen}>
+                  <div className="mt-1.5 space-y-1.5">
+                    {error.code !== undefined && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] font-semibold uppercase text-danger-text">{t("experience_playground_error_title")}</span>
+                        <span className="rounded bg-danger/20 px-1.5 py-0.5 font-mono text-[10px] uppercase text-danger-text">{error.code}</span>
+                      </div>
+                    )}
+                    <div className="space-y-0.5 font-ui text-[11px] text-t2">
+                      {error.kind !== undefined && (
+                        <div><span className="text-t3">{t("experience_tester_error_kind")}: </span><span className="font-mono">{error.kind}</span></div>
+                      )}
+                      {error.currentRevision !== undefined && (
+                        <div><span className="text-t3">{t("experience_tester_error_current_revision")}: </span><span className="font-mono">{error.currentRevision}</span></div>
+                      )}
+                      {error.granted !== undefined && (
+                        <div><span className="text-t3">{t("experience_tester_error_granted")}: </span><span className="font-mono">{error.granted.join(", ")}</span></div>
+                      )}
+                      {error.needs !== undefined && (
+                        <div><span className="text-t3">{t("experience_tester_error_needs")}: </span><span className="font-mono">{error.needs.join(", ")}</span></div>
+                      )}
+                    </div>
+                    <ConsoleBlock entries={error.console} label={t("script_test_console")} />
+                  </div>
+                </AnimatedDisclosure>
               </div>
-              <ConsoleBlock entries={error.console} label={t("script_test_console")} />
             </div>
           )}
 
@@ -936,10 +1026,29 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
               legal actions. Raw diagnostics behind collapsed disclosure. */}
           {session !== null && (
             <div className="mt-3 space-y-3">
-              {/* Ordinary-language status */}
-              <div className="flex items-center gap-2 rounded-md border border-border bg-s3" style={{ padding: 8 }}>
+              {/* Ordinary-language status + session controls (XU-3): restart/
+                  reset live next to the active-session status strip. */}
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-s3" style={{ padding: 8 }}>
                 <span className="font-ui text-[12px] text-t2">{statusText}</span>
                 {busy !== null && <span className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                    disabled={busy !== null}
+                    onClick={handleRestart}
+                  >
+                    {t("experience_playground_restart")}
+                  </button>
+                  <button
+                    type="button"
+                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                    disabled={busy !== null}
+                    onClick={handleReset}
+                  >
+                    {t("experience_playground_reset")}
+                  </button>
+                </div>
               </div>
 
               {/* The REAL visual against the current playground state — primary view. */}

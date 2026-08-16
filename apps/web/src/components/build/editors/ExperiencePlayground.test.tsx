@@ -401,9 +401,17 @@ describe("ExperiencePlayground", () => {
       kind: "syntax",
       console: [{ level: "error", args: ["boom"] }],
     }));
-    const { getByText, findByText } = renderPlayground();
+    const { getByText, findByText, queryByText } = renderPlayground();
     fireEvent.click(getByText("experience_playground_start"));
 
+    // XU-3: the human first line renders immediately; the technical fields
+    // (code/kind/console) sit behind the closed-by-default "Technical details"
+    // disclosure.
+    expect(await findByText("Unexpected token")).toBeTruthy();
+    expect(queryByText("vm_error")).toBeNull();
+    expect(queryByText("syntax")).toBeNull();
+
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
     expect(await findByText("vm_error")).toBeTruthy();
     expect(await findByText("syntax")).toBeTruthy();
     expect(await findByText("boom")).toBeTruthy();
@@ -446,11 +454,15 @@ describe("ExperiencePlayground", () => {
     fireEvent.change(getByPlaceholderText("experience_tester_action_type_placeholder"), { target: { value: "cheat" } });
     fireEvent.click(getByText("experience_tester_action_apply"));
 
-    expect(await findByText("illegal_action")).toBeTruthy();
+    // XU-3: the human message renders first; the error code sits behind the
+    // closed "Technical details" disclosure.
+    expect(await findByText("Action type is not legal for this viewer")).toBeTruthy();
     expect(advanceExperiencePlayground).toHaveBeenCalledWith({
       playgroundSessionId: "pg-session-1",
       humanAction: { type: "cheat", requestId: "pg-req-1", expectedRevision: 0 },
     });
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
+    expect(await findByText("illegal_action")).toBeTruthy();
     // The pre-action projection is still the rendered one (revision 0).
     expect(await findByText("experience_tester_projection")).toBeTruthy();
   });
@@ -468,6 +480,10 @@ describe("ExperiencePlayground", () => {
     fireEvent.change(getByLabelText("experience_tester_action_expected_revision"), { target: { value: "7" } });
     fireEvent.click(getByText("experience_tester_action_apply"));
 
+    // XU-3: the error code + current revision sit behind the closed "Technical
+    // details" disclosure.
+    expect(await findByText("Action expected revision 7, session is at 0")).toBeTruthy();
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
     expect(await findByText("stale_revision")).toBeTruthy();
     expect(await findByText("3")).toBeTruthy();
   });
@@ -936,6 +952,17 @@ describe("ExperiencePlayground", () => {
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
     expect(startExperiencePlayground.mock.calls[0]![0]).not.toHaveProperty("seed");
   });
+
+  // XU-3: the collapsed launch-setup accordion header summarizes the roster
+  // (label + friendly role) and the random-start flag.
+  it("setup summary (XU-3): the collapsed accordion header summarizes seats + random start", () => {
+    const { getByText, getByTestId } = renderPlayground();
+    fireEvent.click(getByText("experience_playground_setup_title"));
+    const summary = getByTestId("playground-setup-summary");
+    expect(summary.textContent).toBe(
+      "You (experience_playground_role_human) · experience_playground_setup_summary_random_on",
+    );
+  });
 });
 
 // ── ER-14: send diagnostics to assistant ────────────────────────────────────
@@ -976,6 +1003,55 @@ describe("ExperiencePlayground — send diagnostics to assistant (ER-14)", () =>
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
     expandDiagnostics(utils);
     expect(queryByTestId("playground-send-to-copilot")).toBeNull();
+  });
+});
+
+// ── XU-3: error copilot escape hatch + technical-details disclosure ─────────
+
+describe("ExperiencePlayground — error copilot escape hatch (XU-3)", () => {
+  it("error block shows the human line + ask-copilot button, with technical details under a closed-by-default disclosure", async () => {
+    startExperiencePlayground.mockRejectedValueOnce(new ExperienceApiError(422, "Unexpected token", "vm_error", {
+      kind: "syntax",
+      console: [{ level: "error", args: ["boom"] }],
+    }));
+    const onSendToCopilot = mock();
+    const { getByText, findByText, getByTestId, queryByText } = render(
+      <ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />,
+    );
+    fireEvent.click(getByText("experience_playground_start"));
+
+    // Human first line + ask-copilot button are immediately visible.
+    expect(await findByText("Unexpected token")).toBeTruthy();
+    expect(getByTestId("playground-error-ask-copilot")).toBeTruthy();
+    // Technical fields are NOT rendered until the disclosure is opened.
+    expect(queryByText("vm_error")).toBeNull();
+    expect(queryByText("syntax")).toBeNull();
+    expect(queryByText("boom")).toBeNull();
+
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
+    expect(await findByText("vm_error")).toBeTruthy();
+    expect(await findByText("syntax")).toBeTruthy();
+    expect(await findByText("boom")).toBeTruthy();
+  });
+
+  it("ask-copilot posts the fail-path digest when a START fails (no session)", async () => {
+    startExperiencePlayground.mockRejectedValueOnce(new ExperienceApiError(422, "Unexpected token", "vm_error", {
+      kind: "syntax",
+      console: [{ level: "error", args: ["boom"] }],
+    }));
+    const onSendToCopilot = mock();
+    const { getByText, getByTestId } = render(
+      <ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />,
+    );
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-error-ask-copilot")).toBeTruthy());
+
+    fireEvent.click(getByTestId("playground-error-ask-copilot"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(false);
+    expect(digest.feedback.errorCode).toBe("vm_error");
+    expect(digest.feedback.errorKind).toBe("syntax");
   });
 });
 
