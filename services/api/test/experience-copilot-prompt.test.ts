@@ -350,6 +350,65 @@ describe("assembleExperienceCopilotPrompt — tool-pair safety", () => {
   });
 });
 
+// ─── (e) User-flow doc + Russian UI labels (2026-08-17) ─────────────────────────────────────────────
+
+describe("assembleExperienceCopilotPrompt — user-flow doc + RU labels", () => {
+  test("the human-side flow doc is always present (profile-independent tail section)", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [{ role: "user", content: "Hello" }],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    expect(result.systemMessage).toContain("# How the user builds and tests (the human side)");
+    // The sandbox launch parameters the user can configure are named so the
+    // model can walk the user through the Try-it panel.
+    expect(result.systemMessage).toContain("Random start");
+    expect(result.systemMessage).toContain("Which seat you play");
+    expect(result.systemMessage).toContain("Participants & launch settings");
+  });
+
+  test("a Russian-voice history appends the RU↔EN label map; an English one does not", async () => {
+    const ru = await assembleExperienceCopilotPrompt({
+      history: [
+        { role: "user", content: "Привет, давай сделаем дурака" },
+        { role: "assistant", content: "Привет! Начнём с правил." },
+      ],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    expect(ru.systemMessage).toContain("# UI labels — Russian ↔ English");
+    expect(ru.systemMessage).toContain("«Проверить и создать»");
+
+    const en = await assembleExperienceCopilotPrompt({
+      history: [
+        { role: "user", content: "Hi, let us build a durak game" },
+        { role: "assistant", content: "Hi! Starting with rules." },
+      ],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    expect(en.systemMessage).not.toContain("# UI labels — Russian ↔ English");
+  });
+
+  test("Cyrillic in tool parts alone does NOT trigger the RU map", async () => {
+    // Tool payloads are code/JSON — stray Cyrillic there (a flavor string in
+    // the rules) says nothing about the user's voice.
+    const result = await assembleExperienceCopilotPrompt({
+      history: [
+        { role: "user", content: "make it russian-flavored" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ toolCallId: "c1", toolName: "write_buffer", input: { buffer: "rules", content: "const s = \"Дурак\";" } }],
+        },
+      ],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    expect(result.systemMessage).not.toContain("# UI labels — Russian ↔ English");
+  });
+});
+
 // ─── (d) Digest messages (CM-3) ──────────────────────────────────────────────
 
 describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
@@ -365,11 +424,12 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // SHA-256 of the system message — pins that lifting digest messages out
     // of the history flow changed nothing for a thread that never compacted
     // (zero behavior change without a digest). Re-captured after the
-    // experience-authoring skill DESCRIPTION changed (commit ad893b75 added
-    // "turn ownership and seat mapping" — the description is part of the
-    // rendered skill catalog, so the assembled message legitimately shifts).
+    // experience-authoring skill DESCRIPTION changed (commit ad893b75) and
+    // again after the human-side user-flow doc (experience-copilot/
+    // user-flow.md) became an always-on tail section (2026-08-17) — an
+    // intentional system-prompt content change, not drift.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("3b62f8e2d8036c7e4058bf9895e0dde079421f1e4610e6f5c585c4d69f4ba82c");
+      .toBe("65aa170588bad615c8b3d6c5fecd2c6677e66b4e52b9e8132d450add1b9637d8");
     expect(result.messages).toHaveLength(3);
   });
 

@@ -75,6 +75,35 @@ export type ExperienceCopilotHistoryMessage =
  *  this narrower type. */
 export type ExperienceCopilotFlowMessage = Exclude<ExperienceCopilotHistoryMessage, { role: "digest" }>;
 
+// ─── Russian-voice UI labels ────────────────────────────────────────────────
+//
+// The system prompt is English, but the user may write (and run their UI) in
+// Russian. When their own history carries Cyrillic, the assembly appends a
+// compact RU↔EN label map so the model can name panels/buttons the way the
+// user sees them. Deliberately NOT a lorebook engine: the single activation
+// condition ("does the user speak Russian?") collapses to a cheap scan, so a
+// conditional block IS the whole mechanism. Digest content is scanned too — a
+// fully-compacted Russian thread still triggers. Tool parts are skipped: tool
+// payloads are code/JSON whose stray Cyrillic (comments, flavor strings) says
+// nothing about the user's voice.
+
+const CYRILLIC_RE = /[\u0400-\u04FF]/;
+
+function userSpeaksRussian(history: readonly ExperienceCopilotHistoryMessage[]): boolean {
+  return history.some((m) => m.role !== "tool" && CYRILLIC_RE.test(m.content));
+}
+
+const RU_UI_LABELS_BLOCK = `# UI labels — Russian ↔ English
+
+The user writes in Russian. When naming a UI element in chat, use the label the user sees — Russian when their UI is Russian (or the exact label they quoted). Mapping (Russian = English):
+
+- Steps: «Правила» = Rules · «Внешний вид» = Appearance · «Попробовать» = Try it
+- Tester: «Проверить и создать» = Discover & create
+- Playground (the inline Try-it tab): «Играть» = Play · «Сброс» = Reset · «Перезапустить (настройки те же)» = Restart (same settings) · «Отправить результат ассистенту» = Send result to assistant
+- Sessions: «Сессия N» = Session N · «Новая сессия» = New session · «В архиве» = Archived · «Переименовать сессию» = Rename session
+- Diff review: «Принять» = Accept · «Принять все» = Accept all
+- Saving: «Сохранить» = Save (rules) · «Сохранить представление» = Save visual`;
+
 // ─── Digest boundary (CM-5) ──────────────────────────────────────────────────
 //
 // A compaction digest REPLACES older messages in the MODEL window only — the
@@ -415,10 +444,15 @@ export async function assembleExperienceCopilotPrompt(
   // references (rules DSL + visual bridge) load alongside so all asset I/O fans
   // out together.
   const profile = input.profile ?? await resolveBuiltinCopilotProfile();
-  const [allSkills, rulesReference, visualReference] = await Promise.all([
+  const [allSkills, rulesReference, visualReference, userFlow] = await Promise.all([
     resolveExperienceCopilotSkillCatalog(input.skillUserRoot),
     loadPromptAsset("interactive-rules.md"),
     loadPromptAsset("interactive-visual.md"),
+    // The human-side authoring/testing flow (stepper, diff review, sandbox
+    // settings, live run, guiding protocol) — app-universal knowledge, so it
+    // loads in the ASSEMBLY (not the profile's base prompt, which user-created
+    // profiles snapshot away from base.md).
+    loadPromptAsset("experience-copilot/user-flow.md"),
   ]);
   // The profile's skillIds GATE the catalog — only enabled skills are listed
   // and only their roots are exposed to `read_skill_file`. The built-in seed
@@ -465,7 +499,16 @@ export async function assembleExperienceCopilotPrompt(
     headSections.push("", skillCatalogBlock);
   }
   headSections.push("", contextPackage);
+  // RU-voice label map (see the Russian-voice section above): appended ONLY
+  // when the user's own history carries Cyrillic, so an English thread stays
+  // byte-identical to the pre-feature assembly (the CM-3 pin covers exactly
+  // that case). Counts toward systemTokens like any other head section.
+  if (userSpeaksRussian(input.history)) {
+    headSections.push("", RU_UI_LABELS_BLOCK);
+  }
   const tailSections: string[] = [
+    "",
+    userFlow,
     "",
     "# Experience rules API reference (the `context.experience.register({...})` DSL — reference material; use the tools above to propose edits, do NOT output raw code in chat)",
     "",
