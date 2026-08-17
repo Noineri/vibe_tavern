@@ -94,6 +94,21 @@ describe("checkFreeSpace", () => {
 
 describe("snapshotDatabase", () => {
 	/**
+	 * CI flake guard (2026-08-17 incident): a degraded windows-latest runner
+	 * held the freshly written fixture db hostage — the whole api suite ran
+	 * 497s instead of the usual ~154s, and the first test below spent 107s in
+	 * `unable to open database file` (SQLITE_CANTOPEN) until the production
+	 * retry budget (4 attempts / ~1.75s) ran out. No in-process budget could
+	 * ride out a ~100s AV/indexer storm, and shrinking coverage to dodge a
+	 * sick runner is not a trade worth making. `{ retry: 2 }` re-runs a failed
+	 * test from scratch (fresh `mkdtemp` root per attempt via beforeEach): an
+	 * environmental failure gets a clean second and third shot, while a real
+	 * regression fails deterministically on every attempt. Green runs are
+	 * unaffected — the option only engages on failure.
+	 */
+	const FLAKY_RUNNER_RETRIES = { retry: 2 } as const;
+
+	/**
 	 * Assert a snapshot succeeded, in a way that says why when it did not.
 	 *
 	 * `snapshotDatabase` never throws: a failure is `ok: false` plus a message,
@@ -123,7 +138,7 @@ describe("snapshotDatabase", () => {
 		return { dbPath, dataDir, db };
 	}
 
-	it("produces a snapshot that opens and holds the same rows, WAL included", async () => {
+	it("produces a snapshot that opens and holds the same rows, WAL included", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(500);
 
 		const result = await snapshotDatabase(dbPath, dataDir, "1.2.3");
@@ -141,20 +156,20 @@ describe("snapshotDatabase", () => {
 		}
 	});
 
-	it("writes into data/backups/ as pre-update-<version>.db", async () => {
+	it("writes into data/backups/ as pre-update-<version>.db", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(1);
 		const result = await snapshotDatabase(dbPath, dataDir, "9.9.9");
 		expect(result.path).toBe(join(dataDir, "backups", "pre-update-9.9.9.db"));
 		expect((await stat(result.path ?? "")).isFile()).toBe(true);
 	});
 
-	it("emits a single file with no WAL sidecar", async () => {
+	it("emits a single file with no WAL sidecar", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(50);
 		const result = await snapshotDatabase(dbPath, dataDir, "1.0.0");
 		expect(await stat(`${result.path}-wal`).then(() => true, () => false)).toBe(false);
 	});
 
-	it("sanitizes a hostile version string instead of writing outside backups/", async () => {
+	it("sanitizes a hostile version string instead of writing outside backups/", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(1);
 		const result = await snapshotDatabase(dbPath, dataDir, "../../escaped");
 
@@ -167,7 +182,7 @@ describe("snapshotDatabase", () => {
 		expect((await stat(result.path ?? "")).isFile()).toBe(true);
 	});
 
-	it("keeps an existing snapshot for the same version rather than failing", async () => {
+	it("keeps an existing snapshot for the same version rather than failing", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(10);
 		const first = await snapshotDatabase(dbPath, dataDir, "2.0.0");
 		const second = await snapshotDatabase(dbPath, dataDir, "2.0.0");
@@ -176,7 +191,7 @@ describe("snapshotDatabase", () => {
 		expect(second.path).toBe(first.path);
 	});
 
-	it("reports a failure — without throwing — when there is no database", async () => {
+	it("reports a failure — without throwing — when there is no database", FLAKY_RUNNER_RETRIES, async () => {
 		const dataDir = join(root, "empty");
 		await mkdir(dataDir, { recursive: true });
 		const result = await snapshotDatabase(join(dataDir, "missing.db"), dataDir, "1.0.0");
@@ -184,7 +199,7 @@ describe("snapshotDatabase", () => {
 		expect(result.message ?? "").toMatch(/No database found/);
 	});
 
-	it("reports a failure — without throwing — when the source is not a database", async () => {
+	it("reports a failure — without throwing — when the source is not a database", FLAKY_RUNNER_RETRIES, async () => {
 		const dataDir = join(root, "garbage");
 		await mkdir(dataDir, { recursive: true });
 		const dbPath = join(dataDir, "vibe-tavern.db");
@@ -194,7 +209,7 @@ describe("snapshotDatabase", () => {
 		expect(result.message ?? "").toMatch(/Could not create a pre-update database backup/);
 	});
 
-	it("does not run the migration stack — the source is opened read-only", async () => {
+	it("does not run the migration stack — the source is opened read-only", FLAKY_RUNNER_RETRIES, async () => {
 		// Pinned on the source's schema rather than its mtime: running the
 		// migration stack would add drizzle's bookkeeping table and the whole
 		// application schema alongside `chats`, which is directly observable.
@@ -264,7 +279,7 @@ describe("snapshotDatabase", () => {
 		throw new Error("opening a database under a missing directory was expected to fail");
 	}
 
-	it("retries a transient 'unable to open database file' instead of giving up", async () => {
+	it("retries a transient 'unable to open database file' instead of giving up", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(20);
 		const opener = flakyOpener(1, new Error("unable to open database file"));
 
@@ -280,7 +295,7 @@ describe("snapshotDatabase", () => {
 		expect((snap.query("SELECT COUNT(*) AS n FROM chats").get() as { n: number }).n).toBe(20);
 	});
 
-	it("clears a partial destination between attempts — VACUUM INTO refuses to overwrite", async () => {
+	it("clears a partial destination between attempts — VACUUM INTO refuses to overwrite", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(3);
 		const destination = snapshotPathFor(dataDir, "5.0.0");
 		// A half-written snapshot is what a torn VACUUM INTO leaves behind. If the
@@ -300,7 +315,7 @@ describe("snapshotDatabase", () => {
 		expect(result.bytes).toBeGreaterThan("torn write".length);
 	});
 
-	it("gives up after the attempt budget and reports the failure", async () => {
+	it("gives up after the attempt budget and reports the failure", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(1);
 		const opener = flakyOpener(Number.MAX_SAFE_INTEGER, new Error("unable to open database file"));
 
@@ -314,7 +329,7 @@ describe("snapshotDatabase", () => {
 		expect(result.message ?? "").toMatch(/unable to open database file/);
 	});
 
-	it("does not retry a failure that is not a transient open", async () => {
+	it("does not retry a failure that is not a transient open", FLAKY_RUNNER_RETRIES, async () => {
 		const { dbPath, dataDir } = await makeWalDb(1);
 		const opener = flakyOpener(Number.MAX_SAFE_INTEGER, new Error("disk I/O error"));
 
@@ -327,7 +342,7 @@ describe("snapshotDatabase", () => {
 		expect(opener.state.calls).toBe(1);
 	});
 
-	it("retries the destination spelling of CANTOPEN — 'unable to open database: <path>'", async () => {
+	it("retries the destination spelling of CANTOPEN — 'unable to open database: <path>'", FLAKY_RUNNER_RETRIES, async () => {
 		// The regression this pins. SQLITE_CANTOPEN reaches the retry under two
 		// messages: sqlite3_open on the source says "unable to open database
 		// file", and the ATTACH that VACUUM INTO runs on its destination says
@@ -348,7 +363,7 @@ describe("snapshotDatabase", () => {
 		expect(opener.state.calls).toBe(2);
 	});
 
-	it("retries on the error object bun:sqlite really throws, not just its wording", async () => {
+	it("retries on the error object bun:sqlite really throws, not just its wording", FLAKY_RUNNER_RETRIES, async () => {
 		// Production never sees a hand-written Error — it sees a SQLiteError, and
 		// its `code` is the same SQLITE_CANTOPEN under either message. Keying on
 		// the code is what stops the next reword of SQLite's error strings from
@@ -367,7 +382,7 @@ describe("snapshotDatabase", () => {
 		expect(opener.state.calls).toBe(2);
 	});
 
-	it("waits longer after each failed attempt instead of a flat delay", async () => {
+	it("waits longer after each failed attempt instead of a flat delay", FLAKY_RUNNER_RETRIES, async () => {
 		// Two failures means two waits. Flat would spend 40 + 40; backing off
 		// spends 40 + 80. Asserted as a lower bound only: a loaded CI box makes
 		// timers overshoot, never undershoot, so this cannot flake the way an
