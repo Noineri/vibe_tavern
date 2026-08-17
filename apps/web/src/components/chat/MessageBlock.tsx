@@ -338,7 +338,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     </div>
   ) : (
     <div>
-      {isMobile && variantCount > 1 ? (
+      {isMobile && variantCount > 1 && canSwitchVariant ? (
         <MobileVariantCarousel
           selectedVariantIndex={selectedVariantIndex}
           variants={variants}

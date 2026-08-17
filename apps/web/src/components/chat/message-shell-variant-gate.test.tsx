@@ -221,3 +221,51 @@ describe("Mobile variant carousel — gated to last message (desktop parity)", (
     expect(container.textContent).toContain("1/3");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Content swipe carousel (MobileVariantCarousel in MessageBlock) — the
+// 3-panel framer-motion track that fires onSelectVariant on swipe. This is a
+// SECOND gate (regression 2026-08): the 2026-06-21 fix above gated only the
+// actions-row VariantControls; MessageBlock's mobile render branch still chose
+// the swipe carousel for ANY multi-variant message via `isMobile && variantCount > 1`,
+// without the `canSwitchVariant` (isLast && !isCoauthorMode) term — so brushing
+// an old message's content sideways flipped its variant. Sentinel for the
+// swipe carousel is its 300%-wide track (`w-[300%]`); the static desktop-style
+// branch never contains it.
+// ---------------------------------------------------------------------------
+
+describe("Mobile content swipe carousel — gated to last message", () => {
+  test("NON-LAST multi-variant assistant message: swipe track must NOT render, content stays static", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([makeAssistantMessage("m1"), makeMultiVariantMessage("m2"), makeAssistantMessage("m3")]),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const { container } = render(
+      <MessageBlock messageId="m2" index={1} isFirstAssistant={false} isLast={false} prevRole="assistant" />,
+    );
+    await act(async () => { await Promise.resolve(); });
+
+    // The 300% track is the swipe carousel; it must be absent for older messages.
+    expect(container.innerHTML).not.toContain("w-[300%]");
+    // Fallback branch still renders the selected variant's content statically.
+    expect(container.textContent).toContain("variant-0");
+  });
+
+  test("LAST multi-variant assistant message: swipe track IS rendered", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([makeAssistantMessage("m1"), makeMultiVariantMessage("m2")]),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const { container } = render(
+      <MessageBlock messageId="m2" index={1} isFirstAssistant={false} isLast={true} prevRole="assistant" />,
+    );
+    await act(async () => { await Promise.resolve(); });
+
+    // Positive control: the swipe carousel track renders for the last message.
+    expect(container.innerHTML).toContain("w-[300%]");
+  });
+});
