@@ -51,6 +51,10 @@ import {
   type ExperienceCopilotFlowMessage,
 } from "./experience-copilot-prompt.js";
 import { storeMessagesToHistory } from "./experience-copilot-stream.js";
+import {
+  COPILOT_COMPACT_MAX_OUTPUT_TOKENS,
+  COPILOT_COMPACT_TEMPERATURE,
+} from "./copilot-limits.js";
 
 /** How many of the most recent messages stay verbatim (unsummarized) when
  *  compacting. The plan did not pin a number; 8 ≈ 2–3 authoring turns of recent
@@ -224,6 +228,11 @@ export class ExperienceCopilotCompactionService {
       model,
       prompt,
       signal: input.signal,
+      // Copilot-owned digest samplers (copilot-limits.ts): the RP profile's
+      // temperature/maxTokens are for chat RP, not summarization — cool and
+      // roomy so a reasoning model can't burn the cap on thinking alone.
+      overrideTemperature: COPILOT_COMPACT_TEMPERATURE,
+      overrideMaxTokens: COPILOT_COMPACT_MAX_OUTPUT_TOKENS,
     });    const summary = generation.text.trim();
     if (!summary) {
       throw validation("Provider returned an empty summary.");

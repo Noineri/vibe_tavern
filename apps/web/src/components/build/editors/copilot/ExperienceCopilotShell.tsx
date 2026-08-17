@@ -6,8 +6,6 @@ import { Icons } from "../../../shared/icons.js";
 import { validateVisualSource } from "../../../../lib/visual-source-validator.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
-import { Modal } from "../../../shared/Modal.js";
-import { InteractiveTester } from "../InteractiveTester.js";
 import { ExperiencePlayground } from "../ExperiencePlayground.js";
 import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
@@ -29,6 +27,7 @@ import {
   startExperienceCopilotSession,
   listExperienceCopilotSessions,
   activateExperienceCopilotSession,
+  renameExperienceCopilotSession,
 } from "../../../../api/experience-copilot-api.js";
 import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
 import { ExperienceContextMeter } from "./ExperienceContextMeter.js";
@@ -49,13 +48,16 @@ import { useShallow } from "zustand/react/shallow";
 import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
 
 /**
- * ExperienceCopilotShell (ER-11d / ER-13b′) — the visible 2-pane copilot
- * editor surface: chat-left (propose rules/visual edits → review activity
- * cards → Apply) and editor-right (manually edit the two canonical buffers via
- * CodeEditor). The tester / preview / sandbox surfaces are NO LONGER a bottom
- * panel (ER-13b): they are top-of-editor toolbar buttons that open modals
- * (Tester → InteractiveTester, Preview → ExperienceFrame, Sandbox →
- * ExperiencePlayground). On mobile it collapses to a 2-tab `[Chat][Edit]` bar.
+ * ExperienceCopilotShell (ER-11d / ER-13b′ / XU-5) — the visible 2-pane
+ * copilot editor surface: chat-left (propose rules/visual edits → review
+ * activity cards → Apply) and editor-right (edit the two canonical buffers).
+ * The editor pane is `[Preview | Code | Try]` (XU-5 / XU-6): Preview is the
+ * DEFAULT tab (a live `ExperienceFrame`), Code is the second layer holding the
+ * inner `[Rules | Visual]` sub-toggle + the two CodeEditors, and the rules
+ * tester was ABSORBED into the sandbox's diagnostics (XU-4). The Try tab is
+ * ALWAYS present in both modes (quote 10) — the shared playground renders
+ * INLINE there; the old sandbox toolbar button + modal are gone (XU-6). On
+ * mobile it collapses to a 2-tab `[Chat][Edit]` bar.
  *
  * CONTROLLED. This component owns NO canonical buffer text — `rulesCode` /
  * `visualSource` are props from the parent (ER-13 wires this into
@@ -71,10 +73,10 @@ import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
  * `ExperienceCopilotInputArea`, mobile → `ExperienceCopilotMobileInputArea`),
  * chosen via the shared `useIsMobile` hook.
  *
- * In CREATION MODE (`creationMode`, ER-13d-1) the editor toggle becomes
- * 3-position `[Rules | Visual | Sandbox]`, the shared playground renders
- * INLINE on the `sandbox` position, and the sandbox toolbar button + modal are
- * hidden. Non-creation mode is byte-identical to the ER-13b′ surface.
+ * `creationMode` no longer changes the tab structure (XU-6, quote 10): the
+ * outer toggle is `[Preview | Code | Try]` in BOTH modes. It is retained on the
+ * props for source compatibility with the parent's creation stepper, but it is
+ * no longer consumed here.
  */
 
 export interface ExperienceCopilotShellProps {
@@ -91,12 +93,14 @@ export interface ExperienceCopilotShellProps {
   /** Contextual toolbar rendered BELOW the editor toolbar when the Visual
    *  buffer is active. Optional — undefined renders nothing (no gap). */
   visualToolbar?: ReactNode;
-  /** CREATION MODE (ER-13d-1): swaps the editor toggle for a 3-position
-   *  `[Rules | Visual | Sandbox]` control, renders the playground INLINE on
-   *  the `sandbox` position, and hides the sandbox toolbar button + modal.
-   *  Defaults to false — the shell is byte-identical to the ER-13b′ surface
-   *  (2-position toggle + tester/preview/sandbox modals). */
+  /** DEPRECATED (XU-6, quote 10): the outer toggle is `[Preview | Code | Try]`
+   *  in BOTH modes, so this no longer changes the shell's tab structure. Kept
+   *  for source compatibility (the parent still passes it); not consumed here. */
   creationMode?: boolean;
+  /** Reports the shell's current authoring position for the creation stepper
+   *  (`rules` / `appearance` / `try`). Optional — unused when the parent renders
+   *  no stepper. Fired on mount (initial default) and on every tab switch. */
+  onStepChange?: (step: ExperienceCopilotStep) => void;
   /** The copilot profile currently assigned to this experience
    *  (`scripts.copilotProfileId`), or null (built-in seed). Drives the gear
    *  button's profile modal highlight + assignment (CP-8/CP-9). */
@@ -108,7 +112,12 @@ type MobileTab = "chat" | "edit";
 /** Stable empty fallback for the turn-store selector (a fresh `[]` per call
  *  would break useShallow's reference equality and re-render every keystroke). */
 const EMPTY_ACTIVITIES: readonly ExperienceCopilotToolActivity[] = [];
-type EditorBuffer = "rules" | "visual" | "sandbox";
+/** Outer editor tab (XU-5): live preview / code / inline sandbox. */
+type EditorBuffer = "preview" | "code" | "sandbox";
+/** Inner code sub-toggle — the two canonical buffers. */
+type CodeBuffer = "rules" | "visual";
+/** Authoring position reported to the parent's creation stepper (XU-6). */
+export type ExperienceCopilotStep = "rules" | "appearance" | "try";
 
 export function ExperienceCopilotShell({
   scriptId,
@@ -120,6 +129,7 @@ export function ExperienceCopilotShell({
   visualToolbar,
   creationMode = false,
   assignedProfileId = null,
+  onStepChange,
 }: ExperienceCopilotShellProps) {
   const isMobile = useIsMobile();
   const { t } = useT();
@@ -145,12 +155,15 @@ export function ExperienceCopilotShell({
 
   // ── UI-only tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
-  const [editorBuffer, setEditorBuffer] = useState<EditorBuffer>("rules");
+  // XU-5: the editor pane defaults to the live preview when a visual exists,
+  // else to the code pane. The choice is seeded ONCE at mount — a later manual
+  // switch wins and is never fought by an effect.
+  const [editorBuffer, setEditorBuffer] = useState<EditorBuffer>(
+    () => (visualSource.trim() !== "" ? "preview" : "code"),
+  );
+  const [codeBuffer, setCodeBuffer] = useState<CodeBuffer>("rules");
 
-  // ── Toolbar modal open state (tester / preview / sandbox) ────────────────
-  const [testerOpen, setTesterOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [sandboxOpen, setSandboxOpen] = useState(false);
+  // ── Toolbar modal open state (profile) ──────────────────────────────────
   const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // ER-14: the latest test/simulate digest the user sent back from the test
@@ -674,6 +687,24 @@ export function ExperienceCopilotShell({
     }
   }, [ctrl.isSending, scriptId, fetchSessions, t]);
 
+  // ── Session rename (2026-08-17) ──────────────────────────────────────────
+  // Fire-and-refresh: the switcher exits rename mode immediately and the shell
+  // re-fetches the session list so the new title lands. Unlike switch/new,
+  // renaming is SAFE mid-stream (it touches only the title), so there is no
+  // isSending guard here. On failure, refresh anyway so the label reverts.
+  const handleRenameSession = useCallback(
+    async (targetThreadId: string, title: string) => {
+      try {
+        await renameExperienceCopilotSession(targetThreadId, title);
+      } catch {
+        toast.error(t("experience_copilot_rename_error"));
+      } finally {
+        await fetchSessions();
+      }
+    },
+    [fetchSessions, t],
+  );
+
   // ── Mobile auto-switch on proposal ───────────────────────────────────────
   // A proposal becomes reviewable in the Chat pane (activity cards + Apply), so
   // when one lands on mobile the surface jumps there. Ref-guarded edge mirroring
@@ -694,10 +725,12 @@ export function ExperienceCopilotShell({
     }
   }, [hasProposal, isMobile]);
 
-  // ── Creation-mode editor toggle options ──────────────────────────────────
-  // Non-creation keeps the original inline-English 2-option constant; creation
-  // adds the i18n-labelled `sandbox` position (ER-13d-1). Built here because
-  // the creation labels resolve through `t`.
+  // ── Editor toggle options (XU-5) ────────────────────────────────────────
+  // The editor pane is now `[Preview | Code (| Try)]` — preview is the default
+  // layer; code is the second layer holding the inner `[Rules | Visual]`
+  // sub-toggle. Creation mode adds the inline `sandbox` position (ER-13d-1),
+  // relabelled "Try". Built here because the creation labels resolve through
+  // `t`.
   // Buffer-tab labels with the pending-review dot (CD-6): a tab whose buffer
   // has unaccepted hunks carries an accent dot (per the settled vision: the
   // OTHER tab must signal pending diffs; showing it on both tabs is harmless
@@ -717,21 +750,47 @@ export function ExperienceCopilotShell({
     );
   };
 
-  const bufferOptions = creationMode
-    ? [
-        { value: "rules", label: tabLabel("rules", t("experience_copilot_rules")) },
-        { value: "visual", label: tabLabel("visual", t("experience_copilot_visual")) },
-        { value: "sandbox", label: t("experience_copilot_sandbox") },
-      ]
-    : [
-        { value: "rules", label: tabLabel("rules", t("experience_copilot_rules")) },
-        { value: "visual", label: tabLabel("visual", t("experience_copilot_visual")) },
-      ];
+  // The OUTER "Code" tab carries a dot when EITHER buffer has pending hunks
+  // (CD-6): the preview layer can't show diffs, so the code layer signals them.
+  const codeTabLabel =
+    rulesReview !== null || visualReview !== null
+      ? (
+        <span className="inline-flex items-center gap-1.5">
+          {t("experience_copilot_code")}
+          <span
+            data-testid="copilot-outer-dot-code"
+            title={t("copilot_review_pending_badge")}
+            className="h-1.5 w-1.5 rounded-full bg-accent"
+          />
+        </span>
+      )
+      : t("experience_copilot_code");
 
-  // IR-90A: exactly one ExperiencePlayground element is shared by the two
-  // surfaces. In creation mode it renders INLINE on the `sandbox` position;
-  // otherwise it renders inside the sandbox modal. The branches are mutually
-  // exclusive, so a single instance ever mounts.
+  const outerBufferOptions = [
+    { value: "preview", label: t("experience_copilot_preview") },
+    { value: "code", label: codeTabLabel },
+    { value: "sandbox", label: t("experience_copilot_try_it") },
+  ];
+
+  const codeBufferOptions = [
+    { value: "rules", label: tabLabel("rules", t("experience_copilot_rules")) },
+    { value: "visual", label: tabLabel("visual", t("experience_copilot_visual")) },
+  ];
+
+  // XU-6: the creation stepper in the parent mirrors the shell's current
+  // authoring position. `appearance` maps to the Visual code buffer; `try` to
+  // the inline sandbox tab; anything else is the Rules position.
+  const activeStep = useMemo<ExperienceCopilotStep>(
+    () => (editorBuffer === "sandbox" ? "try" : codeBuffer === "visual" ? "appearance" : "rules"),
+    [editorBuffer, codeBuffer],
+  );
+  useEffect(() => {
+    onStepChange?.(activeStep);
+  }, [activeStep, onStepChange]);
+
+  // IR-90A: exactly one ExperiencePlayground element is shared by the inline
+  // Try tab in both modes (the old sandbox modal is gone, XU-6). A single
+  // instance ever mounts.
   const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={scriptId} onSendToCopilot={handleSendToCopilot} />;
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
@@ -763,6 +822,7 @@ export function ExperienceCopilotShell({
               disabled={ctrl.isSending}
               onActivate={handleActivate}
               onNew={handleNewSession}
+              onRename={handleRenameSession}
             />
             <button
               type="button"
@@ -810,7 +870,7 @@ export function ExperienceCopilotShell({
                 void ctrl.handleSend(content, {
                   rules: rulesCode,
                   visual: visualSource,
-                  step: editorBuffer === "visual" ? "visual" : editorBuffer === "sandbox" ? "test" : "rules",
+                  step: editorBuffer === "sandbox" ? "test" : codeBuffer === "visual" ? "visual" : "rules",
                   ...(testFeedback !== undefined ? { testFeedback } : {}),
                 });
               }}
@@ -828,7 +888,7 @@ export function ExperienceCopilotShell({
                 void ctrl.handleSend(content, {
                   rules: rulesCode,
                   visual: visualSource,
-                  step: editorBuffer === "visual" ? "visual" : editorBuffer === "sandbox" ? "test" : "rules",
+                  step: editorBuffer === "sandbox" ? "test" : codeBuffer === "visual" ? "visual" : "rules",
                   ...(testFeedback !== undefined ? { testFeedback } : {}),
                 });
               }}
@@ -853,17 +913,54 @@ export function ExperienceCopilotShell({
 
   const editorPane = (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
+      {/* XU-5 outer tabs: [Preview | Code | Try] — preview is the default
+          layer; the Try tab renders the shared playground inline in BOTH modes
+          (XU-6, quote 10 — the old sandbox "Test it" button + modal are gone). */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
         <SegmentedControl
           value={editorBuffer}
-          options={bufferOptions}
+          options={outerBufferOptions}
           onChange={(value) =>
-            setEditorBuffer(value === "sandbox" ? "sandbox" : value === "visual" ? "visual" : "rules")
+            setEditorBuffer(value === "sandbox" ? "sandbox" : value === "code" ? "code" : "preview")
           }
           compact
         />
-        {editorBuffer !== "sandbox" && (
-          <div className="flex items-center gap-1.5">
+      </div>
+
+      {editorBuffer === "preview" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {visualSource.trim() !== "" ? (
+            // Disconnected visual render: no session. An EMPTY initial view is
+            // pushed on ready so the visual's render() fires + reports its height
+            // (otherwise auto-resize never runs and the iframe stalls at the
+            // 120px fallback). Actions/errors are no-ops.
+            <ExperienceFrame
+              visualSource={visualSource}
+              sessionId="preview"
+              initialRevision={0}
+              initialView={{ state: {}, actions: [], revision: 0, status: "active" }}
+              onAction={() => {}}
+              onError={() => {}}
+            />
+          ) : (
+            <EmptyState
+              icon={<Icons.Eye />}
+              title={t("experience_playground_no_visual")}
+            />
+          )}
+        </div>
+      ) : editorBuffer === "sandbox" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">{playground}</div>
+      ) : (
+        <>
+          {/* XU-5 code sub-toggle: [Rules | Visual] + the review revert. */}
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
+            <SegmentedControl
+              value={codeBuffer}
+              options={codeBufferOptions}
+              onChange={(value) => setCodeBuffer(value === "visual" ? "visual" : "rules")}
+              compact
+            />
             {review.canRevert && (
               <ToolbarButton
                 label={t("copilot_review_revert")}
@@ -872,41 +969,15 @@ export function ExperienceCopilotShell({
                 testId="copilot-toolbar-revert"
               />
             )}
-            <ToolbarButton
-              label={t("experience_copilot_tester")}
-              icon={<Icons.Terminal />}
-              onClick={() => setTesterOpen(true)}
-              testId="copilot-toolbar-tester"
-            />
-            <ToolbarButton
-              label={t("experience_copilot_preview")}
-              icon={<Icons.Eye />}
-              onClick={() => setPreviewOpen(true)}
-              testId="copilot-toolbar-preview"
-            />
-            {!creationMode && (
-              <ToolbarButton
-                label={t("experience_copilot_sandbox")}
-                icon={<Icons.Dice />}
-                onClick={() => setSandboxOpen(true)}
-                testId="copilot-toolbar-sandbox"
-              />
-            )}
           </div>
-        )}
-      </div>
-      {editorBuffer === "sandbox" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">{playground}</div>
-      ) : (
-        <>
-          {editorBuffer === "rules" ? rulesToolbar : visualToolbar}
+          {codeBuffer === "rules" ? rulesToolbar : visualToolbar}
           {/* UX 2026-08-16 remark 6 — visual validator status row. Validates
               the EFFECTIVE document: during a review round the proposed text
               (what accept would land), otherwise the live buffer. Static
               checks only (script-block compile + block closure) — see
               lib/visual-source-validator.ts; runtime behavior stays the
               sandbox's job. */}
-          {editorBuffer === "visual" && (
+          {codeBuffer === "visual" && (
             <div data-testid="copilot-visual-validator" className="px-3 pb-1.5 pt-2">
               {visualValidation.ok ? (
                 <div className="flex items-center gap-1.5 font-ui text-[11px] text-success-text">
@@ -934,80 +1005,30 @@ export function ExperienceCopilotShell({
               accept-selection state lives here in the shell so it survives
               buffer-tab switches (the panel remounts per tab). */}
           <ExperienceCopilotEditorPanel
-            value={editorBuffer === "rules" ? rulesCode : visualSource}
-            onChange={editorBuffer === "rules" ? onRulesChange : onVisualChange}
+            value={codeBuffer === "rules" ? rulesCode : visualSource}
+            onChange={codeBuffer === "rules" ? onRulesChange : onVisualChange}
             isSending={ctrl.isSending}
-            review={editorBuffer === "rules" ? rulesReview : visualReview}
-            acceptedHunkIds={editorBuffer === "rules" ? acceptedRulesHunks : acceptedVisualHunks}
-            dismissedHunkIds={editorBuffer === "rules" ? dismissedRulesHunks : dismissedVisualHunks}
-            onAcceptHunk={editorBuffer === "rules" ? acceptRulesHunk : acceptVisualHunk}
-            onAcceptAll={editorBuffer === "rules" ? acceptAllRules : acceptAllVisual}
-            onDismissHunk={editorBuffer === "rules" ? dismissRulesHunk : dismissVisualHunk}
-            onDismissPending={editorBuffer === "rules" ? dismissPendingRules : dismissPendingVisual}
-            onCancelRound={editorBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
+            review={codeBuffer === "rules" ? rulesReview : visualReview}
+            acceptedHunkIds={codeBuffer === "rules" ? acceptedRulesHunks : acceptedVisualHunks}
+            dismissedHunkIds={codeBuffer === "rules" ? dismissedRulesHunks : dismissedVisualHunks}
+            onAcceptHunk={codeBuffer === "rules" ? acceptRulesHunk : acceptVisualHunk}
+            onAcceptAll={codeBuffer === "rules" ? acceptAllRules : acceptAllVisual}
+            onDismissHunk={codeBuffer === "rules" ? dismissRulesHunk : dismissVisualHunk}
+            onDismissPending={codeBuffer === "rules" ? dismissPendingRules : dismissPendingVisual}
+            onCancelRound={codeBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
           />
         </>
       )}
     </div>
   );
 
-  // ── Toolbar modals (tester / preview / sandbox) ──────────────────────────
-  // The tester/preview/sandbox surfaces moved OUT of a bottom panel (ER-13b)
-  // into top-of-editor toolbar buttons that open these modals. The sandbox
-  // modal hosts the shared `playground` element only in non-creation mode; in
-  // creation mode that same element renders INLINE on the `sandbox` toggle
-  // position instead (mutually exclusive — IR-90A single-instance). Exactly one
-  // ExperienceFrame is mounted (the preview modal); the sandbox's own frame is
-  // nested inside ExperiencePlayground, not rendered directly by this shell.
+  // ── Toolbar modals (profile only) ────────────────────────────────────────
+  // XU-5/XU-6: the preview moved OUT of a modal into the editor's default tab
+  // (the inline `ExperienceFrame`), and the sandbox became the inline Try tab
+  // in BOTH modes (quote 10) — so no sandbox modal remains. The rules tester
+  // was absorbed into the sandbox's diagnostics (XU-4).
   const modals = (
     <>
-      <ShellModal
-        open={testerOpen}
-        onClose={() => setTesterOpen(false)}
-        title={t("experience_copilot_tester_title")}
-        testId="copilot-tester-modal"
-      >
-        <InteractiveTester code={rulesCode} onSendToCopilot={handleSendToCopilot} />
-      </ShellModal>
-
-      <ShellModal
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        title={t("experience_copilot_preview_title")}
-        testId="copilot-preview-modal"
-      >
-        {visualSource.trim() !== "" ? (
-          // Disconnected visual render: no session. An EMPTY initial view is
-          // pushed on ready so the visual's render() fires + reports its height
-          // (otherwise auto-resize never runs and the iframe stalls at the
-          // 120px fallback). Actions/errors are no-ops.
-          <ExperienceFrame
-            visualSource={visualSource}
-            sessionId="preview"
-            initialRevision={0}
-            initialView={{ state: {}, actions: [], revision: 0, status: "active" }}
-            onAction={() => {}}
-            onError={() => {}}
-          />
-        ) : (
-          <EmptyState
-            icon={<Icons.Eye />}
-            title={t("experience_playground_no_visual")}
-          />
-        )}
-      </ShellModal>
-
-      {!creationMode && (
-        <ShellModal
-          open={sandboxOpen}
-          onClose={() => setSandboxOpen(false)}
-          title={t("experience_copilot_sandbox_title")}
-          testId="copilot-sandbox-modal"
-        >
-          {playground}
-        </ShellModal>
-      )}
-
       <CopilotProfileModal
         scriptId={scriptId}
         assignedProfileId={assignedProfileId}
@@ -1092,47 +1113,5 @@ function ToolbarButton({ label, icon, onClick, testId }: ToolbarButtonProps) {
       {icon}
       <span>{label}</span>
     </button>
-  );
-}
-
-interface ShellModalProps {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  testId: string;
-  children: ReactNode;
-}
-
-/** Shared modal chrome for the three toolbar surfaces (tester / preview /
- *  sandbox). Reuses the app's shared {@link Modal} shell; the panel mirrors the
- *  ExperienceSetupModal header/body pattern (title + close header, scrollable
- *  body). Full-screen on mobile via the shared Modal. */
-function ShellModal({ open, onClose, title, testId, children }: ShellModalProps) {
-  const isMobile = useIsMobile();
-  const { t } = useT();
-  return (
-    <Modal open={open} onClose={onClose} title={title} description={title}>
-      <div
-        className={cn(
-          isMobile
-            ? "flex h-full w-full flex-col bg-surface"
-            : "flex max-h-[88vh] w-[min(760px,94vw)] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl",
-        )}
-        data-testid={testId}
-      >
-        <header className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-          <h2 className="min-w-0 flex-1 truncate font-ui text-sm font-semibold text-t1">{title}</h2>
-          <button
-            type="button"
-            className="rounded p-1 text-t4 hover:bg-s3 hover:text-t2"
-            onClick={onClose}
-            aria-label={t("experience_setup_close")}
-          >
-            <Icons.Close />
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
-      </div>
-    </Modal>
   );
 }

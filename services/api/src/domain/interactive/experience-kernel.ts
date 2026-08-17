@@ -549,6 +549,27 @@ function validateFlavor(
 
 // ─── Legal-action validation ─────────────────────────────────────────────────
 
+/** Render the current legal set for the illegal_action message: deduped
+ *  `type` entries in order (each with `for participant "id"` when its
+ *  descriptor carries one), capped at 10 + `…+N more`. An empty set says so
+ *  explicitly — a seat that "cannot ever act" is almost always a seat-mapping
+ *  or turn-ownership bug, and this is the one line the author sees. */
+function formatLegalTypes(legal: readonly ExperienceActionDescriptor[]): string {
+	if (legal.length === 0) return "none — check seat mapping / turn ownership";
+	const seen = new Set<string>();
+	const entries: string[] = [];
+	for (const d of legal) {
+		const entry = d.participantId !== undefined ? `${d.type} for participant "${d.participantId}"` : d.type;
+		if (seen.has(entry)) continue;
+		seen.add(entry);
+		entries.push(entry);
+	}
+	const cap = 10;
+	const listed = entries.slice(0, cap);
+	const rest = entries.length - listed.length;
+	return rest > 0 ? `${listed.join(", ")} …+${rest} more` : listed.join(", ");
+}
+
 /**
  * Validate that a submitted {@link ExperienceAction} matches a descriptor in the
  * `legal` set the host computed via {@link runActions} for the current viewer.
@@ -568,7 +589,11 @@ export function validateSubmittedAction(
 	);
 	if (candidate === undefined) {
 		const seat = action.participantId !== undefined ? ` for participant "${action.participantId}"` : "";
-		return kernelError("illegal_action", `action "${action.type}" is not legal${seat}`, []);
+		return kernelError(
+			"illegal_action",
+			`action "${action.type}" is not legal${seat} (legal now: ${formatLegalTypes(legal)})`,
+			[],
+		);
 	}
 	if (action.payload !== undefined) {
 		const payloadError = jsonBoundsError(action.payload, {

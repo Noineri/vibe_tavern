@@ -73,7 +73,7 @@ describe("ExperienceResourceService — rules validation (real VM)", () => {
 });
 
 describe("ExperienceResourceService — visual CRUD + source hash", () => {
-  test("create computes a hash; a source edit re-hashes; empty source is rejected", async () => {
+  test("create computes a hash; a source edit re-hashes; empty source is ALLOWED (draft placeholder)", async () => {
     const created = await service.createVisual({ name: "Board", source: "<html>v1</html>", apiVersion: 1 });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
@@ -83,8 +83,12 @@ describe("ExperienceResourceService — visual CRUD + source hash", () => {
     const edited = await service.updateVisual(created.data.id, { source: "<html>v2</html>" });
     expect(edited.ok && edited.data.sourceHash).not.toBe(h1);
 
+    // 2026-08-17: a visual draft starts empty and must be saveable as-is —
+    // the create path no longer rejects blank/whitespace source.
     const empty = await service.createVisual({ name: "Empty", source: "   ", apiVersion: 1 });
-    expect(empty.ok).toBe(false);
+    expect(empty.ok).toBe(true);
+    if (!empty.ok) return;
+    expect(empty.data.source).toBe("   ");
   });
 
   test("update/delete on a missing visual return a typed 404", async () => {

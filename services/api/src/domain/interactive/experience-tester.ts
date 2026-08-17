@@ -82,6 +82,10 @@ import {
   type ExperienceSessionStatus,
   type ExperienceViewer,
 } from "@vibe-tavern/domain";
+import type {
+  ExperienceSeatLegality,
+  ExperienceSeatLegalityMatrix,
+} from "@vibe-tavern/api-contracts";
 
 // ─── Tunables ────────────────────────────────────────────────────────────────
 
@@ -147,6 +151,12 @@ export interface ExperienceTestProjection {
   readonly flavor?: unknown;
 }
 
+/** `ExperienceSeatLegality` / `ExperienceSeatLegalityMatrix` (the per-seat
+ *  legality matrix, EXPERIENCE_TURN_LEGALITY_DIAGNOSTICS_REPORT step 3) are
+ *  imported above from the shared wire contract
+ *  `@vibe-tavern/api-contracts` — the backend produces exactly the shape the
+ *  frontend renders, so drift is a compile error. */
+
 export interface ExperienceTestRunData {
   readonly definition: ExperienceDefinition;
   readonly sourceHash: string;
@@ -167,6 +177,10 @@ export interface ExperienceTestRunData {
   /** VM console captured across discovery + every method call. */
   readonly console: ExperienceConsoleEntry[];
   readonly steps: ExperienceTestStepTrace[];
+  /** Per-seat legality matrix at the final state (one entry per roster
+   *  participant, computed under that seat's own viewer). Empty seats array
+   *  when the run carried no roster. */
+  readonly seatLegality: ExperienceSeatLegalityMatrix;
 }
 
 export type ExperienceTestRunResult =
@@ -257,6 +271,52 @@ function hashSeedString(seed: string): number {
     hash = Math.imul(hash, 0x01000193);
   }
   return hash >>> 0;
+}
+
+/** The per-seat legality matrix at `state`: for EVERY roster participant, run
+ *  the real `actions()` under that seat's own viewer and aggregate the legal
+ *  types. A failing `actions()` does NOT fail the run — the seat entry carries
+ *  the kernel message (`error`) so "cannot act" stays distinguishable from
+ *  "blew up". `turnOwners` is empty on a terminal status (see the interface). */
+function buildSeatLegalityMatrix(
+  code: string,
+  scriptName: string,
+  state: unknown,
+  status: ExperienceSessionStatus,
+  grants: readonly ExperienceCapability[],
+  participants: readonly ExperienceParticipant[],
+  consoleBuf: ExperienceConsoleEntry[],
+): ExperienceSeatLegalityMatrix {
+  const seats: ExperienceSeatLegality[] = participants.map((p) => {
+    const viewer: ExperienceViewer = {
+      kind: viewerKindForController(p.controller),
+      participantId: p.id,
+    };
+    const legal = runActions(code, scriptName, state, viewer, buildCapabilityContext(grants, participants));
+    consoleBuf.push(...legal.console);
+    if (!legal.ok) {
+      return {
+        participantId: p.id,
+        label: p.label,
+        controller: p.controller,
+        actionTypes: [],
+        count: 0,
+        error: legal.message,
+      };
+    }
+    return {
+      participantId: p.id,
+      label: p.label,
+      controller: p.controller,
+      actionTypes: [...new Set(legal.value.map((d) => d.type))],
+      count: legal.value.length,
+    };
+  });
+  const turnOwners =
+    status === EXPERIENCE_SESSION_STATUS.active
+      ? seats.filter((s) => s.error === undefined && s.count > 0).map((s) => s.participantId)
+      : [];
+  return { seats, turnOwners };
 }
 
 function viewerKindForController(controller: string): ExperienceViewer["kind"] {
@@ -553,6 +613,11 @@ export function runExperienceTest(input: ExperienceTestRunInput): ExperienceTest
     consoleBuf,
   );
 
+  // Per-seat legality matrix at the FINAL state (post-replay; for a create-only
+  // run that IS the initial state). Computed after the projection so a failing
+  // per-seat `actions()` cannot shadow the run result (it becomes seat.error).
+  const seatLegality = buildSeatLegalityMatrix(code, scriptName, state, status, grants, participants, consoleBuf);
+
   return {
     ok: true,
     data: {
@@ -567,6 +632,7 @@ export function runExperienceTest(input: ExperienceTestRunInput): ExperienceTest
       effects,
       console: consoleBuf,
       steps,
+      seatLegality,
     },
   };
 }

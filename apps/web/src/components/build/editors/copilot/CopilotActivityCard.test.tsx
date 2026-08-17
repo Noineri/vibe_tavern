@@ -58,6 +58,13 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     expect(getAllByText("2 passed")).toHaveLength(1);
     // The reviewing affordances live in the editor now, not here.
     expect(queryByTestId("copilot-apply-btn")).toBeNull();
+    // Truncation policy (2026-08-17): a model summary WRAPS (never visually
+    // cut — it is the user's window into what the copilot is doing); only a
+    // file path stays single-line with ellipsis.
+    const titles = getAllByTestId("copilot-activity-title").map((el) => el.className);
+    expect(titles[0]).toContain("truncate"); // read path
+    expect(titles[1]).not.toContain("truncate"); // write_buffer summary
+    expect(titles[1]).toContain("break-words");
   });
 
   it("renders a visual-target write_buffer card with a Visual label", () => {

@@ -32,8 +32,11 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { applyExactEditsToBody, log } from "@vibe-tavern/domain";
-import type { ExperienceCopilotToolOutput } from "@vibe-tavern/api-contracts";
-import { runExperienceTest, simulateExperienceTest } from "../experience-tester.js";
+import type { ExperienceCopilotToolOutput, ExperienceSeatLegalityMatrix } from "@vibe-tavern/api-contracts";
+import {
+  runExperienceTest,
+  simulateExperienceTest,
+} from "../experience-tester.js";
 import { buildReadSkillFileTool } from "../../coauthor/skills/skill-read-tool.js";
 
 /** Structured log for every experience-copilot tool call — the observability
@@ -61,6 +64,13 @@ export interface ExperienceCopilotRunTestDigest {
   readonly revision?: number;
   /** `type` of each legal action the human seat may submit next. */
   readonly legalActionTypes?: string[];
+  /** Per-seat legality matrix (one entry per roster participant + the current
+   *  turn owners) — present when the run carried a roster. The copilot's own
+   *  `run_test` tool runs create-only with an empty roster (the projection's
+   *  `legalActionTypes` already covers that case), so today this arrives via
+   *  the frontend-pushed tester digest; kept in this interface so both digest
+   *  sources stay shape-compatible. */
+  readonly seatLegality?: ExperienceSeatLegalityMatrix;
   /** Compact JSON snapshot of the projected state (capped). */
   readonly stateSummary?: string;
   /** Last few flattened console entries (`level: args…`). */

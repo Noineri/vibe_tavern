@@ -37,10 +37,12 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ChangeEvent, ReactNode } from "react";
+import type { ExperienceSetupFieldDto } from "@vibe-tavern/api-contracts";
 import type { RenderResult } from "@testing-library/react";
 import type {
   ExperiencePlaygroundData,
   ExperienceTestRunData,
+  ExperienceTestSimulateData,
   ExperienceVisualRow,
   ScriptRecord,
 } from "../../../api/types.js";
@@ -153,6 +155,7 @@ function makeAdvanceData(overrides: Partial<ExperiencePlaygroundData> = {}): Exp
 
 const startExperiencePlayground = mock((_body: Record<string, unknown>) => Promise.resolve(makeStartData()));
 const advanceExperiencePlayground = mock((_body: Record<string, unknown>) => Promise.resolve(makeAdvanceData()));
+const simulateExperienceTest = mock((_body: Record<string, unknown>) => Promise.resolve(makeSimData()));
 const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const listProviderProfiles = mock(() => Promise.resolve([{ id: "pp_test", name: "Test Provider", providerPreset: "openai", defaultModel: "gpt-test" }]));
@@ -200,11 +203,53 @@ function makeTestRunData(): ExperienceTestRunData {
   } as ExperienceTestRunData;
 }
 
+/** XU-4: a create-only discover result (the absorbed tester's run shape): a
+ *  minimal "Round" definition with score/pass legal actions. */
+function makeDiscoverData(overrides: Partial<ExperienceTestRunData> = {}): ExperienceTestRunData {
+  return {
+    definition: {
+      apiVersion: 1,
+      manifest: { id: "round", name: "Round" },
+      declaredCapabilities: [{ capability: "participants", reason: "scores" }],
+      hasChoose: false,
+      hasFlavor: false,
+    },
+    sourceHash: "hash_1",
+    initialState: { round: 1, scores: [0] },
+    finalState: { round: 1, scores: [0] },
+    revision: 0,
+    status: "active",
+    projection: {
+      state: { round: 1 },
+      actions: [
+        { type: "score", label: "Score" },
+        { type: "pass", label: "Pass turn" },
+      ],
+    },
+    events: [],
+    effects: [],
+    console: [],
+    steps: [],
+    ...overrides,
+  };
+}
+
+/** XU-4: a bounded-simulation result (the absorbed tester's simulate shape). */
+function makeSimData(overrides: Partial<ExperienceTestSimulateData> = {}): ExperienceTestSimulateData {
+  return {
+    ...makeDiscoverData(),
+    stopReason: "awaiting_human",
+    iterations: 2,
+    ...overrides,
+  };
+}
+
 mock.module("../../../api/experience-api.js", () => ({
   ...realExperienceApi,
   startExperiencePlayground,
   advanceExperiencePlayground,
   runExperienceTest,
+  simulateExperienceTest,
   listExperienceVisuals,
 }));
 
@@ -267,12 +312,14 @@ beforeAll(async () => {
 beforeEach(() => {
   startExperiencePlayground.mockClear();
   advanceExperiencePlayground.mockClear();
+  simulateExperienceTest.mockClear();
   listExperienceVisuals.mockClear();
   listAllScripts.mockClear();
   listProviderProfiles.mockClear();
   fetchProviderProfileModels.mockClear();
   runExperienceTest.mockClear();
   runExperienceTest.mockImplementation(async () => Promise.reject(new Error("mock not configured")));
+  simulateExperienceTest.mockImplementation(async () => makeSimData());
   startExperiencePlayground.mockImplementation(async () => makeStartData());
   advanceExperiencePlayground.mockImplementation(async () => makeAdvanceData());
   useScriptDraftStore.getState().resetAll();
@@ -352,15 +399,19 @@ function restoreUrl() {
 describe("ExperiencePlayground", () => {
   it("start: picking a human seat and starting sends the unsaved rules + roster + seat and renders the definition, projection, legal actions, and stop-reason", async () => {
     const utils = renderPlayground();
-    const { container, getByText, getAllByPlaceholderText, findByText } = utils;
+    const { container, getByText, getByRole, getAllByPlaceholderText, findByText } = utils;
 
-    // Add a second human seat and pick it as the driven seat.
+    // Add a second human seat and pick it as the driven seat. The seat id is
+    // now auto-generated from the name (XU-1): typing "Alice" yields id
+    // "alice" without a separate id field.
     fireEvent.click(getByText("experience_setup_add_participant"));
-    const idInputs = getAllByPlaceholderText("experience_tester_seat_id_placeholder");
-    fireEvent.change(idInputs[1]!, { target: { value: "alice" } });
     const labelInputs = getAllByPlaceholderText("experience_setup_participant_name_placeholder");
     fireEvent.change(labelInputs[1]!, { target: { value: "Alice" } });
-    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "Alice");
+    // XU-2: "Random start" is ON by default (fresh config); turn it OFF so the
+    // manual (empty) seed path is exercised — the deterministic-default
+    // boundary this test pins.
+    fireEvent.click(getByRole("switch"));
+    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "Alice (experience_playground_role_human)");
 
     fireEvent.click(getByText("experience_playground_start"));
 
@@ -397,9 +448,17 @@ describe("ExperiencePlayground", () => {
       kind: "syntax",
       console: [{ level: "error", args: ["boom"] }],
     }));
-    const { getByText, findByText } = renderPlayground();
+    const { getByText, findByText, queryByText } = renderPlayground();
     fireEvent.click(getByText("experience_playground_start"));
 
+    // XU-3: the human first line renders immediately; the technical fields
+    // (code/kind/console) sit behind the closed-by-default "Technical details"
+    // disclosure.
+    expect(await findByText("Unexpected token")).toBeTruthy();
+    expect(queryByText("vm_error")).toBeNull();
+    expect(queryByText("syntax")).toBeNull();
+
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
     expect(await findByText("vm_error")).toBeTruthy();
     expect(await findByText("syntax")).toBeTruthy();
     expect(await findByText("boom")).toBeTruthy();
@@ -442,11 +501,15 @@ describe("ExperiencePlayground", () => {
     fireEvent.change(getByPlaceholderText("experience_tester_action_type_placeholder"), { target: { value: "cheat" } });
     fireEvent.click(getByText("experience_tester_action_apply"));
 
-    expect(await findByText("illegal_action")).toBeTruthy();
+    // XU-3: the human message renders first; the error code sits behind the
+    // closed "Technical details" disclosure.
+    expect(await findByText("Action type is not legal for this viewer")).toBeTruthy();
     expect(advanceExperiencePlayground).toHaveBeenCalledWith({
       playgroundSessionId: "pg-session-1",
       humanAction: { type: "cheat", requestId: "pg-req-1", expectedRevision: 0 },
     });
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
+    expect(await findByText("illegal_action")).toBeTruthy();
     // The pre-action projection is still the rendered one (revision 0).
     expect(await findByText("experience_tester_projection")).toBeTruthy();
   });
@@ -464,6 +527,10 @@ describe("ExperiencePlayground", () => {
     fireEvent.change(getByLabelText("experience_tester_action_expected_revision"), { target: { value: "7" } });
     fireEvent.click(getByText("experience_tester_action_apply"));
 
+    // XU-3: the error code + current revision sit behind the closed "Technical
+    // details" disclosure.
+    expect(await findByText("Action expected revision 7, session is at 0")).toBeTruthy();
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
     expect(await findByText("stale_revision")).toBeTruthy();
     expect(await findByText("3")).toBeTruthy();
   });
@@ -586,11 +653,12 @@ describe("ExperiencePlayground", () => {
     });
 
     // ER-13 moved the playground out of the inline IR-84B seam into the
-    // copilot-shell Sandbox toolbar modal. Open the modal first, then the
-    // playground's start button is reachable inside it. (The boundary pinned
-    // here is unchanged: the playground still drives the CURRENT UNSAVED rules
-    // buffer that the editor owns.)
-    fireEvent.click(getByText("experience_copilot_sandbox"));
+    // copilot shell; XU-6 unified the tabs, so it now lives inline under the
+    // "Try it" tab (the "Test it" toolbar modal is gone). Switch to the tab
+    // first, then the playground's start button is reachable inside it. (The
+    // boundary pinned here is unchanged: the playground still drives the
+    // CURRENT UNSAVED rules buffer that the editor owns.)
+    fireEvent.click(getByText("experience_copilot_try_it"));
     fireEvent.click(getByText("experience_playground_start"));
 
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
@@ -620,17 +688,16 @@ describe("ExperiencePlayground", () => {
     fireEvent.change(labelInputs[1]!, { target: { value: "Управляемый моделью дилер" } });
     fireEvent.change(labelInputs[2]!, { target: { value: "Очень длинное имя участника" } });
 
-    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-    expect(seatIdInputs.length).toBeGreaterThanOrEqual(3);
-    // Each roster row (parent of a seat-id input) wraps instead of overflowing:
-    // it carries flex-wrap, and its flexible label input has a min-width floor.
-    seatIdInputs.forEach((seatInput) => {
-      const row = seatInput.parentElement;
-      if (!row) throw new Error("roster row missing");
+    // XU-1: the id moved out of the row (now a muted "ID: …" line under the
+    // card), so the wrap contract is pinned on the NAME input's flex-wrap row.
+    const nameInputs = container.querySelectorAll('input[placeholder="experience_setup_participant_name_placeholder"]');
+    expect(nameInputs.length).toBeGreaterThanOrEqual(3);
+    nameInputs.forEach((nameInput) => {
+      const row = nameInput.parentElement;
+      if (!row) throw new Error("roster card row missing");
       const rowCls = row.getAttribute("class") ?? "";
       expect(rowCls).toContain("flex-wrap");
-      const labelInput = row.querySelector('input[placeholder="experience_setup_participant_name_placeholder"]');
-      expect(labelInput?.getAttribute("class") ?? "").toContain("min-w-[7rem]");
+      expect(nameInput.getAttribute("class") ?? "").toContain("min-w-[7rem]");
       // Best-effort layout boundary: under happy-dom these are 0/0 (no layout);
       // a layout-capable runner would report the real overflow — either way the
       // wrapped row never scrolls past its container.
@@ -642,7 +709,10 @@ describe("ExperiencePlayground", () => {
     });
 
     // The seed input is rendered and stays in the layout (never clipped out).
-    const seedInput = container.querySelector('input[placeholder="experience_tester_seed_placeholder"]') as HTMLInputElement | null;
+    // Random start defaults ON in this fixture, so the placeholder is the
+    // "random on every launch" key (the OFF placeholder only shows after the
+    // toggle is switched).
+    const seedInput = container.querySelector('input[placeholder="experience_playground_seed_random_on"]') as HTMLInputElement | null;
     expect(seedInput).not.toBeNull();
     expect(seedInput!.offsetParent === null ? true : seedInput!.parentElement?.contains(seedInput)).toBe(true);
 
@@ -760,15 +830,15 @@ describe("ExperiencePlayground", () => {
     // The discovery mock returns participants + model → seats and grants
     // are populated WITHOUT any manual clicks.
     await waitFor(() => {
-      const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-      expect(seatIdInputs.length).toBe(2);
+      const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
+      expect(seatIds.length).toBe(2);
     });
     expect(runExperienceTest).toHaveBeenCalledTimes(1);
 
     // Verify auto-derived roster: human seat "you" + model seat "ai".
-    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-    expect((seatIdInputs[0] as HTMLInputElement).value).toBe("you");
-    expect((seatIdInputs[1] as HTMLInputElement).value).toBe("ai");
+    const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
+    expect(seatIds[0]?.textContent).toBe("you");
+    expect(seatIds[1]?.textContent).toBe("ai");
 
     // ── Step 2: ONLY select provider + model on the model seat ──
     // No manual capability toggles, no "add participant" click, no controller
@@ -852,29 +922,97 @@ describe("ExperiencePlayground", () => {
     // Wait for auto-derive to complete (the effect fires on open, then the
     // async discovery resolves and updates the roster).
     await waitFor(() => {
-      const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-      expect(seatIdInputs.length).toBe(2);
+      const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
+      expect(seatIds.length).toBe(2);
     });
     expect(runExperienceTest).toHaveBeenCalledTimes(1);
 
     // The roster now has TWO seats: the default human seat AND an auto-derived
     // model seat — without the user manually adding or configuring anything.
-    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
-    expect((seatIdInputs[0] as HTMLInputElement).value).toBe("you");
-    expect((seatIdInputs[1] as HTMLInputElement).value).toBe("ai");
+    const seatIds = container.querySelectorAll('[data-testid="playground-seat-id"]');
+    expect(seatIds[0]?.textContent).toBe("you");
+    expect(seatIds[1]?.textContent).toBe("ai");
 
     // The capability grants are auto-checked (both participants + model).
     const grantCheckboxes = container.querySelectorAll('[role="checkbox"]');
     const checkedGrants = [...grantCheckboxes].filter((cb) => cb.getAttribute("aria-checked") === "true");
     expect(checkedGrants.length).toBe(2);
 
-    // The model seat's controller dropdown shows "model".
+    // The model seat's controller dropdown shows the friendly model role label.
     const controllerTriggers = [...container.querySelectorAll("button")].filter(
-      (b) => b.textContent?.trim() === "experience_setup_controller_human" || b.textContent?.trim() === "experience_setup_controller_model",
+      (b) => b.textContent?.trim() === "experience_playground_role_human" || b.textContent?.trim() === "experience_playground_role_model",
     );
     // One human + one model controller visible.
-    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_setup_controller_human")).toBe(true);
-    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_setup_controller_model")).toBe(true);
+    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_playground_role_human")).toBe(true);
+    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_playground_role_model")).toBe(true);
+  });
+
+  // XU-2: the "Which seat you play" dropdown lists ALL roster seats (not just
+  // human seats) and picks send that humanSeatId; the seed toggle governs
+  // whether a random seed or the manual seed reaches the Start request.
+  it("seat choice (XU-2): the dropdown lists ALL roster seats incl. a model seat, and picking one sends that humanSeatId", async () => {
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    const utils = renderPlayground(VALID_CODE);
+    const { container, getByText, getByRole } = utils;
+    // Auto-derive → human "you" + model "ai".
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
+    // Turn "Random start" OFF for a deterministic payload (no random seed).
+    fireEvent.click(getByRole("switch"));
+    // The MODEL seat is listed (the list is built uniformly from participants
+    // for every controller, so the script branch shares this code path).
+    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "AI (experience_playground_role_model)");
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground).toHaveBeenCalledWith(expect.objectContaining({ humanSeatId: "ai" }));
+  });
+
+  it("seed (XU-2): Random start ON generates a fresh non-empty seed per launch (two starts differ)", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole } = utils;
+    // Fresh config → the toggle defaults to ON.
+    expect(getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    const restart = getByText("experience_playground_restart");
+    fireEvent.click(restart);
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(2));
+    const first = startExperiencePlayground.mock.calls[0]![0] as { seed: string };
+    const second = startExperiencePlayground.mock.calls[1]![0] as { seed: string };
+    expect(first.seed).toBeTruthy();
+    expect(second.seed).toBeTruthy();
+    expect(first.seed).not.toBe(second.seed);
+  });
+
+  it("seed (XU-2): Random start OFF sends the manually entered seed verbatim", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole, getByPlaceholderText } = utils;
+    fireEvent.click(getByRole("switch")); // ON → OFF
+    fireEvent.change(getByPlaceholderText("experience_tester_seed_placeholder"), { target: { value: "my-seed-42" } });
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground).toHaveBeenCalledWith(expect.objectContaining({ seed: "my-seed-42" }));
+  });
+
+  it("seed (XU-2): Random start OFF + empty seed keeps the deterministic-default path (no seed key)", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole } = utils;
+    fireEvent.click(getByRole("switch")); // ON → OFF
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0]).not.toHaveProperty("seed");
+  });
+
+  // XU-3: the collapsed launch-setup accordion header summarizes the roster
+  // (label + friendly role) and the random-start flag.
+  it("setup summary (XU-3): the collapsed accordion header summarizes seats + random start", () => {
+    const { getByText, getByTestId } = renderPlayground();
+    fireEvent.click(getByText("experience_playground_setup_title"));
+    const summary = getByTestId("playground-setup-summary");
+    expect(summary.textContent).toBe(
+      "You (experience_playground_role_human) · experience_playground_setup_summary_random_on",
+    );
   });
 });
 
@@ -919,6 +1057,55 @@ describe("ExperiencePlayground — send diagnostics to assistant (ER-14)", () =>
   });
 });
 
+// ── XU-3: error copilot escape hatch + technical-details disclosure ─────────
+
+describe("ExperiencePlayground — error copilot escape hatch (XU-3)", () => {
+  it("error block shows the human line + ask-copilot button, with technical details under a closed-by-default disclosure", async () => {
+    startExperiencePlayground.mockRejectedValueOnce(new ExperienceApiError(422, "Unexpected token", "vm_error", {
+      kind: "syntax",
+      console: [{ level: "error", args: ["boom"] }],
+    }));
+    const onSendToCopilot = mock();
+    const { getByText, findByText, getByTestId, queryByText } = render(
+      <ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />,
+    );
+    fireEvent.click(getByText("experience_playground_start"));
+
+    // Human first line + ask-copilot button are immediately visible.
+    expect(await findByText("Unexpected token")).toBeTruthy();
+    expect(getByTestId("playground-error-ask-copilot")).toBeTruthy();
+    // Technical fields are NOT rendered until the disclosure is opened.
+    expect(queryByText("vm_error")).toBeNull();
+    expect(queryByText("syntax")).toBeNull();
+    expect(queryByText("boom")).toBeNull();
+
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
+    expect(await findByText("vm_error")).toBeTruthy();
+    expect(await findByText("syntax")).toBeTruthy();
+    expect(await findByText("boom")).toBeTruthy();
+  });
+
+  it("ask-copilot posts the fail-path digest when a START fails (no session)", async () => {
+    startExperiencePlayground.mockRejectedValueOnce(new ExperienceApiError(422, "Unexpected token", "vm_error", {
+      kind: "syntax",
+      console: [{ level: "error", args: ["boom"] }],
+    }));
+    const onSendToCopilot = mock();
+    const { getByText, getByTestId } = render(
+      <ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />,
+    );
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-error-ask-copilot")).toBeTruthy());
+
+    fireEvent.click(getByTestId("playground-error-ask-copilot"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(false);
+    expect(digest.feedback.errorCode).toBe("vm_error");
+    expect(digest.feedback.errorKind).toBe("syntax");
+  });
+});
+
 // ── Fix item 9a: config persistence ─────────────────────────────────────────
 
 describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
@@ -934,7 +1121,7 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
     await first.findByText("experience_playground_start");
     // Touch the roster: add a seat and set its controller to model.
     fireEvent.click(first.getByText("experience_setup_add_participant"));
-    await pickDropdown(first, first.baseElement, "experience_setup_controller_human", "experience_setup_controller_model");
+    await pickDropdown(first, first.baseElement, "experience_playground_role_human", "experience_playground_role_model");
     // Persist effect fires on the touched change. The discovery mock declares
     // participants+model, so auto-derive may have already added its own model
     // seat before the manual touch — what matters is that the TOUCHED seat
@@ -955,7 +1142,7 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
     // The restored model seat is visible in the roster UI (its controller
     // dropdown now shows the model label) and auto-derive did not override it.
     await waitFor(() => {
-      expect(second.baseElement.textContent).toContain("experience_setup_controller_model");
+      expect(second.baseElement.textContent).toContain("experience_playground_role_model");
       expect(second.baseElement.textContent).not.toContain("experience_playground_add_seat");
     });
     second.unmount();
@@ -974,8 +1161,41 @@ describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
     window.localStorage.setItem("experience.playground.script_bad", "{not json");
     const view = renderPlayground(VALID_CODE, null, { scriptId: "script_bad" });
     // Falls back to the default single human seat — the roster shows the
-    // human controller label, not a broken restored row.
-    expect(view.baseElement.textContent).toContain("experience_setup_controller_human");
+    // friendly human role label, not a broken restored row.
+    expect(view.baseElement.textContent).toContain("experience_playground_role_human");
+  });
+
+  it("persists randomStart and restores it; a pre-XU-2 envelope without the flag restores as OFF", async () => {
+    // Part 1: toggle ON → OFF, persist, remount → restored OFF.
+    const first = renderPlayground(VALID_CODE, null, { scriptId: "script_rs" });
+    await first.findByText("experience_playground_start");
+    fireEvent.click(first.getByRole("switch")); // ON → OFF
+    await waitFor(() => {
+      const raw = window.localStorage.getItem("experience.playground.script_rs");
+      expect(raw).toBeTruthy();
+      const saved = JSON.parse(raw!) as { randomStart: boolean };
+      expect(saved.randomStart).toBe(false);
+    });
+    first.unmount();
+
+    const second = renderPlayground(VALID_CODE, null, { scriptId: "script_rs" });
+    await second.findByText("experience_playground_start");
+    expect(second.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    second.unmount();
+
+    // Part 2: an OLD envelope (no randomStart flag) restores as OFF (false).
+    window.localStorage.setItem("experience.playground.script_old", JSON.stringify({
+      version: 1,
+      seats: [{ id: "you", label: "You", controller: "human" }],
+      grants: [],
+      seed: "",
+      settingsJson: "",
+      humanSeatId: "",
+    }));
+    const third = renderPlayground(VALID_CODE, null, { scriptId: "script_old" });
+    await third.findByText("experience_playground_start");
+    expect(third.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    third.unmount();
   });
 });
 
@@ -997,5 +1217,358 @@ describe("ExperiencePlayground — one-click restart (fix item 9b)", () => {
     const secondCall = startExperiencePlayground.mock.calls[1]![0] as { rulesCode: string };
     expect(secondCall.rulesCode).toBe(firstCall.rulesCode);
     expect(secondCall.rulesCode).toBe(VALID_CODE);
+  });
+});
+
+// ── XU-4: the absorbed tester (discover / simulate / single-action participant) ─
+// The retired InteractiveTester's one-shot capabilities moved into the
+// playground's collapsed diagnostics accordion. The SAME boundary is pinned
+// here: the STATELESS runExperienceTest / simulateExperienceTest endpoints are
+// mocked at the client boundary; the component under test is real.
+
+describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
+  it("discover: the 'Validate rules' button re-runs create-only discovery over the current context and renders definition, projection, and legal actions", async () => {
+    const utils = renderPlayground();
+    const { getByText, findByText } = utils;
+    // Auto-derive fires runExperienceTest once on mount (default reject → safe
+    // default single human seat + empty grants). Settle it first so the
+    // explicit discover is the SECOND call and the grants stay [] (the same
+    // context the retired tester's discover test pinned).
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({
+      rulesCode: VALID_CODE,
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+      actions: [],
+    });
+
+    // The result renders: definition summary + projection + legal actions.
+    expect(await findByText("Round")).toBeTruthy();
+    expect(await findByText("(round)")).toBeTruthy();
+    expect(await findByText("experience_tester_projection")).toBeTruthy();
+    expect(await findByText("score")).toBeTruthy();
+    expect(await findByText("pass")).toBeTruthy();
+  });
+
+  it("discover: renders the per-seat legality matrix when the server supplies seatLegality", async () => {
+    const utils = renderPlayground();
+    const { getByText, findByText } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    runExperienceTest.mockImplementationOnce(async () =>
+      makeDiscoverData({
+        seatLegality: {
+          seats: [
+            { participantId: "you", label: "You", controller: "human", actionTypes: ["score"], count: 1 },
+            { participantId: "bot", label: "Bot", controller: "script", actionTypes: [], count: 0 },
+          ],
+          turnOwners: ["you"],
+        },
+      }),
+    );
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+
+    expect(await findByText("experience_tester_seat_legality")).toBeTruthy();
+    expect(await findByText("You · human")).toBeTruthy();
+    expect(await findByText("Bot · script")).toBeTruthy();
+    expect(await findByText(/experience_tester_turn/)).toBeTruthy();
+  });
+
+  it("discover: a broken rules body renders the typed vm_error with the kernel kind and console behind the tech-details disclosure", async () => {
+    const utils = renderPlayground();
+    const { getByText, findByText, queryByText } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    runExperienceTest.mockRejectedValueOnce(new ExperienceApiError(422, "Unexpected token", "vm_error", {
+      kind: "syntax",
+      console: [{ level: "error", args: ["boom"] }],
+    }));
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+
+    // The shared error block renders the human first line immediately; the
+    // technical fields (code/kind/console) sit behind the closed disclosure.
+    expect(await findByText("Unexpected token")).toBeTruthy();
+    expect(queryByText("vm_error")).toBeNull();
+    fireEvent.click(getByText("experience_playground_error_tech_details"));
+    expect(await findByText("vm_error")).toBeTruthy();
+    expect(await findByText("syntax")).toBeTruthy();
+    expect(await findByText("boom")).toBeTruthy();
+  });
+
+  it("discover: malformed settings JSON shows the detailed diagnostic and never fires the request", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByTestId, container } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expandDiagnostics(utils);
+
+    // The settings JSON lives under the collapsed "advanced" disclosure
+    // (LOBBY-A); open it, type malformed JSON, and run.
+    fireEvent.click(getByTestId("playground-settings-advanced-toggle"));
+    const jsonArea = await waitFor(() => {
+      const el = container.querySelector('[data-testid="auto-textarea"]');
+      expect(el).not.toBeNull();
+      return el as HTMLTextAreaElement;
+    });
+    fireEvent.change(jsonArea, { target: { value: "{\n  \"seed\": 1" } });
+    fireEvent.click(getByText("experience_tester_run"));
+
+    await waitFor(() => expect(container.textContent ?? "").toContain("experience_tester_settings_invalid"));
+    expect(container.textContent).toContain("unclosed '{' opened at line 1");
+    // Still exactly the auto-derive call — the discover never fired.
+    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+  });
+
+  it("simulate: auto-play sends the current context and renders the typed stop reason + iterations", async () => {
+    const utils = renderPlayground();
+    const { getByText, findByText } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expandDiagnostics(utils);
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest).toHaveBeenCalledWith({
+      rulesCode: VALID_CODE,
+      settings: {},
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+    });
+    expect(await findByText("awaiting_human")).toBeTruthy();
+    expect(await findByText("2")).toBeTruthy();
+    // Simulate never touches the run endpoint or the live playground.
+    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+  });
+
+  it("apply action: the custom-action form's participant selector sends participantId on advance", async () => {
+    const utils = renderPlayground();
+    const { container, getByText, getByPlaceholderText } = utils;
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expandDiagnostics(utils);
+
+    // Pick the default seat "You" from the NEW participant selector, then apply.
+    await pickDropdown(utils, container, "experience_tester_action_participant_default", "You (experience_playground_role_human)");
+    fireEvent.change(getByPlaceholderText("experience_tester_action_type_placeholder"), { target: { value: "score" } });
+    fireEvent.click(getByText("experience_tester_action_apply"));
+
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(advanceExperiencePlayground).toHaveBeenCalledWith({
+      playgroundSessionId: "pg-session-1",
+      humanAction: { type: "score", requestId: "pg-req-1", expectedRevision: 0, participantId: "you" },
+    });
+  });
+
+  it("sends the discover result digest to the copilot (the retired tester's run digest)", async () => {
+    const onSendToCopilot = mock();
+    const utils = render(<ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />);
+    const { getByText, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(getByTestId("playground-tester-send-to-copilot"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(true);
+    expect(digest.feedback.legalActionTypes).toEqual(["score", "pass"]);
+    expect(typeof digest.text).toBe("string");
+    expect(digest.text.length).toBeGreaterThan(0);
+  });
+});
+
+// ── LOBBY-A: declared setup fields render as the launch form ────────────────
+
+describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY_REPORT fix step 1)", () => {
+  /** Declared setup fields: a defaulted select, a defaulted number, a
+   *  defaulted boolean, and (when `withRequiredText`) a required no-default
+   *  text field. */
+  function makeSetupFields(withRequiredText: boolean): ExperienceSetupFieldDto[] {
+    const fields: ExperienceSetupFieldDto[] = [
+      { id: "difficulty", kind: "select", label: "Difficulty", required: true, default: "easy", options: [{ value: "easy", label: "Easy" }, { value: "hard", label: "Hard" }] },
+      { id: "rounds", kind: "number", label: "Rounds", default: 3, min: 1, max: 9, step: 1 },
+      { id: "hints", kind: "boolean", label: "Hints", default: false },
+    ];
+    if (withRequiredText) fields.push({ id: "nickname", kind: "text", label: "Nickname", required: true });
+    return fields;
+  }
+
+  function mockDiscoveryWithSetup(fields: ExperienceSetupFieldDto[]): void {
+    runExperienceTest.mockImplementation(async () =>
+      makeDiscoverData({
+        definition: {
+          apiVersion: 1,
+          manifest: { id: "round", name: "Round" },
+          declaredCapabilities: [{ capability: "participants", reason: "scores" }],
+          hasChoose: false,
+          hasFlavor: false,
+          setup: { fields },
+        },
+      }),
+    );
+  }
+
+  /** Wait for the debounced discovery to land the setup form (400ms debounce
+   *  + promise resolution; headroom over the 1s waitFor default). */
+  async function waitForSetupForm(utils: { container: HTMLElement }): Promise<void> {
+    await waitFor(() => expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeTruthy(), { timeout: 4000 });
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("declared fields render as a form; author defaults seed into the launch; the raw JSON hides under the advanced disclosure", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(false));
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    // The declared fields render (required fields carry the required mark —
+    // match by substring); the raw JSON textarea is NOT directly rendered
+    // (collapsed advanced disclosure) — only its toggle is.
+    expect(utils.getByText(/Difficulty/)).toBeTruthy();
+    expect(utils.getByText("Rounds")).toBeTruthy();
+    // A boolean's label renders twice (the row label + the checkbox label).
+    expect(utils.getAllByText("Hints").length).toBeGreaterThan(1);
+    expect(utils.getByTestId("playground-settings-advanced-toggle")).toBeTruthy();
+    expect(utils.container.querySelectorAll('[data-testid="auto-textarea"]').length).toBe(0);
+
+    // Start sends the seeded author defaults (write-through seeding — the
+    // same values the hidden JSON now carries; modal omission semantics).
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({ difficulty: "easy", rounds: 3, hints: false });
+  });
+
+  it("a field edit writes into the settings JSON; undeclared extra keys and derived defaults ride along", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(false));
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    // Hand-write JSON with an UNDECLARED extra key and no declared keys (the
+    // author defaults re-derive for display and for the launch payload).
+    fireEvent.click(utils.getByTestId("playground-settings-advanced-toggle"));
+    const jsonArea = utils.container.querySelector('[data-testid="auto-textarea"]') as HTMLTextAreaElement;
+    await waitFor(() => expect(jsonArea).toBeTruthy());
+    fireEvent.change(jsonArea, { target: { value: '{"mystery":"x"}' } });
+
+    // Pick Hard through the form: the edit merges into the JSON object (the
+    // extra key is preserved), and Start sends extra + chosen + defaults.
+    await pickDropdown(utils, utils.container, "Easy", "Hard");
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({ mystery: "x", difficulty: "hard", rounds: 3, hints: false });
+  });
+
+  it("a required empty field blocks Start with the panel error + inline per-field error; filling it launches", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(true));
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(utils.getByText("experience_playground_settings_field_errors")).toBeTruthy());
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+    // Inline per-field error (identity i18n — the key verbatim).
+    expect(utils.getAllByText("experience_setup_field_required_error").length).toBeGreaterThan(0);
+
+    // Fill the required text field (the only auto-textarea while the advanced
+    // JSON stays collapsed) → Start carries the typed value.
+    const nickname = utils.container.querySelector('[data-testid="auto-textarea"]') as HTMLTextAreaElement;
+    fireEvent.change(nickname, { target: { value: "Ada" } });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({ difficulty: "easy", rounds: 3, hints: false, nickname: "Ada" });
+  });
+
+  it("a no-default boolean cycles absent ↔ true (unchecking restores absence)", async () => {
+    mockDiscoveryWithSetup([{ id: "turbo", kind: "boolean", label: "Turbo" }]);
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    // Toggle through the checkbox control (a boolean's text lives twice — the
+    // row label and the checkbox label; the control is the [role=checkbox]).
+    // Both toggles happen BEFORE any start so the launch-setup accordion
+    // stays mounted (a live session collapses it — XU-3).
+    const turboCheckbox = () => utils.getAllByText("Turbo").find((el) => el.closest('[role="checkbox"]'))!;
+
+    // Check → the JSON write-through carries turbo:true (read it through the
+    // advanced disclosure instead of launching).
+    fireEvent.click(utils.getByTestId("playground-settings-advanced-toggle"));
+    const jsonArea = () => utils.container.querySelector('[data-testid="auto-textarea"]') as HTMLTextAreaElement;
+    fireEvent.click(turboCheckbox());
+    await waitFor(() => expect(jsonArea().value).toBe('{"turbo":true}'));
+
+    // Uncheck → absence restored (the key is deleted, not written false).
+    fireEvent.click(turboCheckbox());
+    await waitFor(() => expect(jsonArea().value).toBe("{}"));
+
+    // Start sends the absent boolean (omission semantics — never a written false).
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({});
+  });
+
+  it("a package with no declared fields hides the JSON under the advanced disclosure too (no form, but never a raw textarea in the default view)", async () => {
+    runExperienceTest.mockImplementation(async () => makeDiscoverData());
+    const utils = renderPlayground();
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeNull();
+    // The JSON is collapsed behind the advanced toggle — NOT rendered directly.
+    expect(utils.getByTestId("playground-settings-advanced-toggle")).toBeTruthy();
+    expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeNull();
+    // Opening the disclosure still exposes the textarea (technical users).
+    fireEvent.click(utils.getByTestId("playground-settings-advanced-toggle"));
+    await waitFor(() => expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeTruthy());
+  });
+
+  it("broken settings JSON disables the form and warns; the JSON stays reachable under the advanced disclosure", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(false));
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    fireEvent.click(utils.getByTestId("playground-settings-advanced-toggle"));
+    const jsonArea = utils.container.querySelector('[data-testid="auto-textarea"]') as HTMLTextAreaElement;
+    fireEvent.change(jsonArea, { target: { value: "{" } });
+
+    await waitFor(() => expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeNull());
+    expect(utils.getByText("experience_playground_settings_json_invalid")).toBeTruthy();
+    // The broken JSON stays directly editable (the technical-user escape hatch).
+    expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeTruthy();
+    // Start keeps the pre-LOBBY-A behavior: the detailed JSON diagnostic, no request.
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(utils.getByText(/experience_tester_settings_invalid/)).toBeTruthy());
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+  });
+
+  it("a settings-only edit persists without a roster edit, and a restored config still gets the form", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(false));
+    const first = renderPlayground(VALID_CODE, null, { scriptId: "script_lobby" });
+    await waitForSetupForm(first);
+
+    // Pick Hard through the form — a settings-only edit (no roster edit).
+    await pickDropdown(first, first.container, "Easy", "Hard");
+    await waitFor(() => expect(window.localStorage.getItem("experience.playground.script_lobby")).toBeTruthy());
+    const raw = JSON.parse(window.localStorage.getItem("experience.playground.script_lobby")!) as { settingsJson: string };
+    expect(JSON.parse(raw.settingsJson)).toEqual({ difficulty: "hard", rounds: 3, hints: false });
+    first.unmount();
+
+    // Remount: the config restores (Hard persists) and — despite the restored
+    // roster (seatsTouched) — the discovery STILL captures the declared fields:
+    // the form is there for a restored config too (the pre-LOBBY-A discovery
+    // was skipped entirely for touched configs).
+    const second = renderPlayground(VALID_CODE, null, { scriptId: "script_lobby" });
+    await waitForSetupForm(second);
+    expect(second.getByText("Hard")).toBeTruthy();
   });
 });

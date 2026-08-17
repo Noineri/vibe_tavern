@@ -42,13 +42,11 @@ import {
   INTERACTIVE_SCHEMA_MAX_LABEL,
   INTERACTIVE_SCHEMA_MAX_PARTICIPANTS,
   type ExperienceDefinitionDto,
-  type ExperienceSetupFieldDto,
 } from "@vibe-tavern/api-contracts";
 import { Modal } from "../shared/Modal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Checkbox } from "../shared/Checkbox.js";
-import { NumberInput } from "../shared/NumberInput.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { Ic } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -69,6 +67,13 @@ import {
 } from "../../api/experience-api.js";
 import { testScript } from "../../api/script-api.js";
 import {
+  FieldError,
+  SetupFieldRow,
+  seedSetupDefaults,
+  validateSetupFields,
+  type SetupField,
+} from "./setup-fields.js";
+import {
   fetchProviderProfileModels,
   listProviderProfiles,
 } from "../../api/provider-api.js";
@@ -82,9 +87,6 @@ import type {
 } from "../../api/types.js";
 
 type TKey = keyof Resources["en"];
-
-/** The four canonical setup-field kinds (IR-70F), discriminated by `kind`. */
-type SetupField = ExperienceSetupFieldDto;
 
 /** Controller literal union (mirrors EXPERIENCE_CONTROLLER). */
 type SeatController = "human" | "script" | "model";
@@ -169,16 +171,6 @@ function normalizeContextMode(raw: string | undefined): ExperienceContextMode {
 function toMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
-}
-
-/** Float-tolerant step check: `value` must be a whole multiple of `step`
- *  measured from `min` (or 0 when unbounded). Returns false for non-finite. */
-function matchesStep(value: number, min: number | undefined, step: number | undefined): boolean {
-  if (!Number.isFinite(value)) return false;
-  if (step === undefined) return true;
-  const base = min ?? 0;
-  const quotient = (value - base) / step;
-  return Math.abs(quotient - Math.round(quotient)) < 1e-9;
 }
 
 export function ExperienceSetupModal({
@@ -423,23 +415,8 @@ export function ExperienceSetupModal({
   // a default are marked `entered` so they submit as real values.
   useEffect(() => {
     if (discovery.status !== "ok") return;
-    const next: Record<string, string | boolean | undefined> = {};
-    const entered = new Set<string>();
-    for (const field of discovery.definition.setup?.fields ?? []) {
-      if (field.kind === "boolean") {
-        if (field.default !== undefined) next[field.id] = field.default;
-        // else: undefined → absent (no-default boolean stays absent until checked)
-      } else if (field.kind === "number") {
-        if (field.default !== undefined) {
-          next[field.id] = String(field.default);
-          entered.add(field.id);
-        }
-      } else {
-        // text / select
-        if (field.default !== undefined) next[field.id] = field.default;
-      }
-    }
-    setFieldValues(next);
+    const { values, entered } = seedSetupDefaults(discovery.definition.setup?.fields ?? []);
+    setFieldValues(values);
     setNumberEntered(entered);
     setFieldErrors({});
   }, [discovery]);
@@ -641,72 +618,13 @@ export function ExperienceSetupModal({
   /** Validate setup fields → a clean bounded settings object (omitting optional
    *  untouched empties) or null when invalid, recording per-field errors. */
   function validateSettings(): Record<string, unknown> | null {
-    const errors: Record<string, string> = {};
-    const settings: Record<string, unknown> = {};
-    for (const field of setupFields) {
-      const raw = fieldValues[field.id];
-      if (field.kind === "boolean") {
-        if (raw === true || raw === false) settings[field.id] = raw;
-        // undefined → absent (booleans are never required)
-        continue;
-      }
-      if (field.kind === "number") {
-        const entered = numberEntered.has(field.id);
-        if (!entered) {
-          if (field.required) errors[field.id] = t("experience_setup_field_required_error");
-          continue; // optional untouched number → omitted
-        }
-        const num = typeof raw === "string" ? Number(raw) : NaN;
-        if (!Number.isFinite(num)) {
-          errors[field.id] = t("experience_setup_field_number_nan");
-          continue;
-        }
-        if (field.min !== undefined && num < field.min) {
-          errors[field.id] = t("experience_setup_field_number_below_min", { min: field.min });
-          continue;
-        }
-        if (field.max !== undefined && num > field.max) {
-          errors[field.id] = t("experience_setup_field_number_above_max", { max: field.max });
-          continue;
-        }
-        if (!matchesStep(num, field.min, field.step)) {
-          errors[field.id] = t("experience_setup_field_number_step", { step: field.step ?? 1 });
-          continue;
-        }
-        settings[field.id] = num;
-        continue;
-      }
-      if (field.kind === "text") {
-        const value = typeof raw === "string" ? raw : "";
-        if (value === "") {
-          if (field.required) errors[field.id] = t("experience_setup_field_required_error");
-          continue; // optional untouched text → omitted
-        }
-        if (field.minLength !== undefined && value.length < field.minLength) {
-          errors[field.id] = t("experience_setup_field_text_too_short", { min: field.minLength });
-          continue;
-        }
-        if (field.maxLength !== undefined && value.length > field.maxLength) {
-          errors[field.id] = t("experience_setup_field_text_too_long", { max: field.maxLength });
-          continue;
-        }
-        settings[field.id] = value;
-        continue;
-      }
-      // select
-      const value = typeof raw === "string" ? raw : "";
-      if (value === "") {
-        if (field.required) errors[field.id] = t("experience_setup_field_required_error");
-        continue; // optional untouched select → omitted
-      }
-      if (!field.options.some((o) => o.value === value)) {
-        errors[field.id] = t("experience_setup_field_select_invalid");
-        continue;
-      }
-      settings[field.id] = value;
+    const result = validateSetupFields({ fields: setupFields, values: fieldValues, entered: numberEntered, t });
+    if (!result.ok) {
+      setFieldErrors(result.errors);
+      return null;
     }
-    setFieldErrors(errors);
-    return Object.keys(errors).length === 0 ? settings : null;
+    setFieldErrors({});
+    return result.settings;
   }
 
   /** Validate the roster → a clean start-participant array or null when
@@ -1297,75 +1215,6 @@ function ErrorBox({ title, detail }: { title: string; detail?: string | null }) 
     <div className="rounded-md border border-danger bg-danger-dim px-2.5 py-2">
       <div className="font-ui text-[11px] font-semibold uppercase text-danger-text">{title}</div>
       {detail && <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{detail}</pre>}
-    </div>
-  );
-}
-
-function FieldError({ text }: { text: string }) {
-  return (
-    <p className="font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
-      {text}
-    </p>
-  );
-}
-
-/** One labeled description line under a control (author `description`). */
-function FieldDescription({ text }: { text: string }) {
-  return <p className="font-ui text-[11px] leading-relaxed text-t4">{text}</p>;
-}
-
-interface SetupFieldRowProps {
-  field: SetupField;
-  value: string | boolean | undefined;
-  error: string | undefined;
-  t: (key: TKey, opts?: Record<string, unknown>) => string;
-  onText: (v: string) => void;
-  onNumber: (v: number) => void;
-  onToggle: () => void;
-  onSelect: (v: string) => void;
-}
-
-function SetupFieldRow({ field, value, error, t, onText, onNumber, onToggle, onSelect }: SetupFieldRowProps) {
-  const requiredMark = "required" in field && field.required ? ` — ${t("experience_setup_field_required")}` : "";
-  return (
-    <div className="flex flex-col gap-1" data-field-id={field.id}>
-      <label className="font-ui text-[12px] font-medium text-t2">
-        {field.label}
-        {requiredMark}
-      </label>
-      {field.description && <FieldDescription text={field.description} />}
-      {field.kind === "text" && (
-        <AutoTextarea
-          className="rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-[13px] text-t1 outline-none focus:border-accent"
-          value={typeof value === "string" ? value : ""}
-          onChange={(e) => onText(e.target.value)}
-          placeholder={"placeholder" in field ? field.placeholder : undefined}
-          minRows={1}
-          maxRows={4}
-          macroAutocomplete={false}
-        />
-      )}
-      {field.kind === "number" && (
-        <NumberInput
-          value={typeof value === "string" && value !== "" ? Number(value) : 0}
-          onChange={onNumber}
-          min={"min" in field ? field.min : undefined}
-          max={"max" in field ? field.max : undefined}
-          step={"step" in field ? field.step : undefined}
-        />
-      )}
-      {field.kind === "boolean" && (
-        <Checkbox checked={value === true} onChange={onToggle} label={field.label} />
-      )}
-      {field.kind === "select" && (
-        <DropdownSelect
-          value={typeof value === "string" ? value : ""}
-          options={field.options.map((o) => ({ id: o.value, label: o.label }))}
-          placeholder={t("experience_setup_select_placeholder")}
-          onChange={onSelect}
-        />
-      )}
-      {error && <FieldError text={error} />}
     </div>
   );
 }

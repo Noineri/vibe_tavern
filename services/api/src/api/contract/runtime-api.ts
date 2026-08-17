@@ -803,6 +803,12 @@ export interface ExperienceCopilotRuntimeApi {
 	/** Archive a single session (idempotent). Delegates to the ER-3 store's
 	 *  `archive`. Returns null when the thread does not exist. */
 	experienceCopilotArchive: (sessionId: string) => Promise<ExperienceCopilotThreadWire | null>;
+	/** Rename a session (trim; empty title clears back to the auto-numbered
+	 *  fallback). Returns the updated wire thread, or null when not found. */
+	experienceCopilotRenameSession: (
+		sessionId: string,
+		title: string,
+	) => Promise<ExperienceCopilotThreadWire | null>;
 
 	/** Read a thread's last-turn context metrics + auto-compact toggle (CM-4).
 	 *  `metrics` is null before the first turn. */

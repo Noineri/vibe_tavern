@@ -1,29 +1,38 @@
 import * as Popover from "@radix-ui/react-popover";
+import { useMemo, useState } from "react";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
 import { formatRelativeTime } from "../../../layout/sidebar-utils.js";
+import { SidebarChatRename } from "../../../layout/sections/SidebarChatRename.js";
 import { useT } from "../../../../i18n/context.js";
 
 /**
  * ExperienceSessionSwitcher (ER-12b) — the copilot chat-header session dock.
  *
- * A compact header bar that shows the ACTIVE session's title (or a locale
- * "Session" fallback) and opens a Radix Popover listing every session for the
- * script: the active one is highlighted + non-clickable, archived ones are
- * dimmed/dated and clickable, and a dashed "+ New session" action sits at the
+ * A compact header bar that shows the ACTIVE session's label and opens a Radix
+ * Popover listing every session for the script: the active one is highlighted
+ * + non-clickable, archived ones are dimmed/dated and clickable, a pencil on
+ * every row renames inline, and a dashed "+ New session" action sits at the
  * bottom (it archives the current session server-side and starts fresh — see
  * the shell's `handleNewSession`).
  *
- * CONTROLLED and presentational: it owns NO async work and NO session state.
- * The shell (ExperienceCopilotShell) owns `sessions` / `threadId` and passes
- * them down; `onActivate` / `onNew` are the shell's switch/new handlers.
+ * NUMBERING: untitled sessions display "Session N" where N is the 1-based
+ * position in the script's chronological creation order (computed here from
+ * `createdAt`; nothing is persisted). A user-set title replaces the number.
+ *
+ * CONTROLLED and presentational: it owns NO async work and NO session state
+ * beyond the local which-row-is-renaming flag. The shell
+ * (ExperienceCopilotShell) owns `sessions` / `threadId` and passes them down;
+ * `onActivate` / `onNew` / `onRename` are the shell's handlers.
  *
  * `disabled` is the no-mid-stream-switch invariant: the shell passes
  * `ctrl.isSending` so the trigger, every item, and New are inert while a turn
  * is streaming. Switching `threadId` mid-stream would race the in-flight
  * stream's settle-closure (which would overwrite the new view), so the switch
  * path is simply blocked until the turn settles — no controller change needed.
+ * The RENAME pencil stays enabled while streaming: it only touches the title,
+ * which races nothing.
  */
 export interface ExperienceSessionSwitcherProps {
   /** All sessions (active + archived) for the script, newest first. */
@@ -33,12 +42,19 @@ export interface ExperienceSessionSwitcherProps {
   disabled?: boolean;
   onActivate: (threadId: string) => void;
   onNew: () => void;
+  onRename: (threadId: string, title: string) => void;
 }
 
-/** Session label: the stored title when non-empty, else the locale fallback. */
-function sessionLabel(session: ExperienceCopilotThreadWire, fallback: string): string {
+/** Session label: the stored title when non-empty, else the numbered locale
+ *  fallback ("Session N" — N is the creation-order position). */
+function sessionLabel(
+  session: ExperienceCopilotThreadWire,
+  fallback: string,
+  number: number | undefined,
+): string {
   const trimmed = session.title?.trim();
-  return trimmed ? trimmed : fallback;
+  if (trimmed) return trimmed;
+  return number !== undefined ? `${fallback} ${number}` : fallback;
 }
 
 export function ExperienceSessionSwitcher({
@@ -47,12 +63,32 @@ export function ExperienceSessionSwitcher({
   disabled = false,
   onActivate,
   onNew,
+  onRename,
 }: ExperienceSessionSwitcherProps) {
   const { t } = useT();
+  const [renamingId, setRenamingId] = useState<string | null>(null);
 
   const activeSession = sessions.find((s) => s.id === activeThreadId) ?? null;
   const sessionFallback = t("experience_copilot_session");
-  const activeLabel = activeSession ? sessionLabel(activeSession, sessionFallback) : sessionFallback;
+
+  // Auto-numbering map: 1-based position in createdAt order (the shell lists
+  // sessions newest-first, so the number is NOT the array index). ISO strings
+  // compare lexicographically, matching chronological order.
+  const numbersById = useMemo(() => {
+    const byCreation = [...sessions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const map = new Map<string, number>();
+    byCreation.forEach((s, index) => map.set(s.id, index + 1));
+    return map;
+  }, [sessions]);
+
+  const activeLabel = activeSession
+    ? sessionLabel(activeSession, sessionFallback, numbersById.get(activeSession.id))
+    : sessionFallback;
+
+  const renameInputCls = cn(
+    "w-full rounded-sm border border-border bg-s1 px-1.5 py-0.5 font-ui text-[13px] text-t1",
+    "outline-none focus-visible:border-accent-t",
+  );
 
   return (
     <Popover.Root>
@@ -85,12 +121,25 @@ export function ExperienceSessionSwitcher({
             {sessions.map((session) => {
               const isActive = session.id === activeThreadId;
               const isArchived = session.archivedAt !== null;
-              const label = sessionLabel(session, sessionFallback);
+              const label = sessionLabel(session, sessionFallback, numbersById.get(session.id));
               const date = formatRelativeTime(session.updatedAt);
+              const isRenaming = renamingId === session.id;
 
-              const row = (
+              const row = isRenaming ? (
+                <SidebarChatRename
+                  // Seed with the DISPLAY label: Enter-unchanged aborts (the
+                  // auto number is not a stored title), typing replaces it.
+                  initialValue={label}
+                  className={renameInputCls}
+                  onCommit={(next) => {
+                    setRenamingId(null);
+                    onRename(session.id, next);
+                  }}
+                  onCancel={() => setRenamingId(null)}
+                />
+              ) : (
                 <>
-                  <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
                     <span
                       className={cn(
                         "min-w-0 flex-1 truncate",
@@ -114,6 +163,26 @@ export function ExperienceSessionSwitcher({
                 </>
               );
 
+              // Shared shell: relative wrapper + absolutely-positioned pencil.
+              // The pencil must NOT nest inside the row <button> (a button in a
+              // button is invalid HTML and drops clicks) — it overlays the row's
+              // right edge, and `pr-9` keeps the label from running under it.
+              // The pencil stays enabled while streaming: renaming races nothing.
+              const pencil = isRenaming ? null : (
+                <button
+                  type="button"
+                  data-testid={`copilot-session-rename-${session.id}`}
+                  aria-label={t("experience_copilot_rename_session")}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setRenamingId(session.id);
+                  }}
+                  className="absolute right-1.5 top-2 z-[1] shrink-0 rounded-sm p-1 text-t4 transition-colors hover:bg-s1 hover:text-t1 focus-visible:bg-s1 focus-visible:text-t1"
+                >
+                  <Icons.Edit className="h-3 w-3" />
+                </button>
+              );
+
               if (isActive) {
                 // The active session is a selection indicator, not a switch
                 // target — rendered as a non-interactive row.
@@ -123,29 +192,35 @@ export function ExperienceSessionSwitcher({
                     data-testid={`copilot-session-${session.id}`}
                     data-active="true"
                     data-archived={isArchived ? "true" : "false"}
-                    className="mx-0.5 flex flex-col rounded-md bg-accent-dim px-2.5 py-1.5"
+                    className="relative mx-0.5 flex flex-col rounded-md bg-accent-dim px-2.5 py-1.5 pr-9"
                   >
                     {row}
+                    {pencil}
                   </div>
                 );
               }
 
               return (
-                <button
+                <div
                   key={session.id}
-                  type="button"
-                  data-testid={`copilot-session-${session.id}`}
-                  data-active="false"
-                  data-archived={isArchived ? "true" : "false"}
-                  disabled={disabled}
-                  onClick={() => {
-                    if (disabled) return;
-                    onActivate(session.id);
-                  }}
-                  className="mx-0.5 flex flex-col rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-s2 focus-visible:bg-s2 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+                  className="relative mx-0.5 rounded-md transition-colors hover:bg-s2 focus-within:bg-s2"
                 >
-                  {row}
-                </button>
+                  <button
+                    type="button"
+                    data-testid={`copilot-session-${session.id}`}
+                    data-active="false"
+                    data-archived={isArchived ? "true" : "false"}
+                    disabled={disabled}
+                    onClick={() => {
+                      if (disabled) return;
+                      onActivate(session.id);
+                    }}
+                    className="flex w-full flex-col rounded-md px-2.5 py-1.5 pr-9 text-left transition-colors focus-visible:bg-s2 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+                  >
+                    {row}
+                  </button>
+                  {pencil}
+                </div>
               );
             })}
           </div>

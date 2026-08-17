@@ -772,10 +772,12 @@ export const experienceConfigUpdateSchema = z.object({
   launcherVisible: z.boolean().optional(),
 });
 
-/** Create a visual resource (global or character-scoped in V1). */
+/** Create a visual resource (global or character-scoped in V1). Source may
+ *  be empty — a saved visual can be a placeholder draft the user (or the
+ *  copilot) fills in later; an empty frame simply renders blank. */
 export const experienceVisualCreateSchema = z.object({
   name: boundedLabel,
-  source: z.string().min(1),
+  source: z.string(),
   apiVersion: z.number().int().min(1),
   compatibleManifestIds: z.array(boundedId).optional(),
   scopeType: z.enum(["global", "character", "persona", "chat"]).optional(),
@@ -785,7 +787,7 @@ export const experienceVisualCreateSchema = z.object({
 /** Patch a visual resource. A source edit changes the sourceHash (trust signal). */
 export const experienceVisualUpdateSchema = z.object({
   name: boundedLabel.optional(),
-  source: z.string().min(1).optional(),
+  source: z.string().optional(),
   apiVersion: z.number().int().min(1).optional(),
   compatibleManifestIds: z.array(boundedId).optional(),
 });

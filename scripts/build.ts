@@ -49,11 +49,15 @@ async function copyApiRuntimeAssets() {
   }
   // Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
   // flat readdir above skips subdirectories, so copy the whole folder.
-  const coauthorSource = join(promptDir, "coauthor");
-  const coauthorTarget = join(apiOut, "coauthor");
-  if (await pathExists(coauthorSource)) {
-    await cp(coauthorSource, coauthorTarget, { recursive: true });
-    promptTargets.push(coauthorTarget);
+  // Same for the experience-copilot folder (base.md + skills + user-flow.md);
+  // both resolve in prod via the loader's import.meta.dir candidate.
+  for (const assetFolder of ["coauthor", "experience-copilot"]) {
+    const source = join(promptDir, assetFolder);
+    const target = join(apiOut, assetFolder);
+    if (await pathExists(source)) {
+      await cp(source, target, { recursive: true });
+      promptTargets.push(target);
+    }
   }
   for (const tokenizerTarget of tokenizerTargets) {
     await cp(tokenizerSource, tokenizerTarget, { recursive: true });

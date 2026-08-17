@@ -1,6 +1,6 @@
 ---
 name: experience-authoring
-description: Craft guidance for authoring interactive experiences — the rules-first workflow, state/action design patterns, the testing loop, and the common pitfalls (non-termination, capability mismatch, host leakage). Read this when you are about to write or repair a rules package or a visual, before proposing the edit.
+description: Craft guidance for authoring interactive experiences — the rules-first workflow, state/action design patterns, turn ownership and seat mapping, the testing loop, and the common pitfalls (non-termination, capability mismatch, host leakage). Read this when you are about to write or repair a rules package or a visual, before proposing the edit.
 ---
 
 # Experience authoring — craft guidance
@@ -24,10 +24,21 @@ Work rules-first, always. The rules package is the source of truth for the exper
 - **Capabilities are declared, not assumed.** Read `context.participants` only with the `participants` capability; use `context.random` only with `deterministic_random`. Seeding randomness through `context.random` (inside `create`/`reduce`) is what makes replays deterministic — never `Math.random` for authoritative state.
 - **`choose` and `flavor` are optional and purpose-built.** `choose` is for script-controlled seats making a decision the rules own (an AI dealer drawing a card). `flavor` is for cosmetic variety that must stay deterministic across viewers (renderring-flavored text). If you are unsure whether you need them, you do not — the four mandatory methods cover most experiences.
 
+## Turn ownership and seat mapping (the #1 illegal-action trap)
+
+Multi-seat games fail here more than anywhere else: the app "gets confused about whose turn it is" and every human move comes back `illegal_action`. The engine does not sync turn logic for you — you own three surfaces, and they desync silently. Follow these rules exactly:
+
+- **Map seats through `context.participants`, never invent ids.** In `create`, capture `participants[i].id` into state and resolve any later viewer by looking up `viewer.participantId` in THAT array. A hardcoded `'player_1'` or `'seat_0'` that differs from the roster id makes `actions()` return `[]` for the human forever — while the visual still shows "your move".
+- **`actions(viewer)` is the SINGLE gate.** Gate every descriptor by turn ownership there; `reduce` re-checks ownership defensively (no-op on mismatch). Do NOT add a second gate anywhere else — especially not in the visual.
+- **The visual must gate clicks on `view.actions` DATA, not on re-derived turn logic.** A click is legal if and only if its action type is present in the current `view.actions` for this viewer. The visual never re-computes whose turn it is from projected state (`turn`, `attacker`, `phase` fields are for LABELS, not for gating) — a visual that derives its own `ownerTurn` will eventually disagree with the rules and submit moves the engine rejects. Render the buttons from `view.actions`; an empty list is a waiting state.
+- **After ANY change to turn order** (swaps after a bout, skips, round rotations), immediately `run_test` and walk one full cycle of every seat before elaborating. A swap applied in `actions` but not in `reduce` (or vice versa) is exactly the multi-iteration bug this section exists to prevent.
+- **Debugging `illegal_action`:** the error names the action and participant. Read the CURRENT legal set from the digest (`legalActionTypes` for the test viewer) — if it is empty for the human seat, your seat mapping or turn gate is wrong; if it shows another seat's types, ownership lives in the wrong branch. Fix the rules, never the visual, when they disagree.
+
 ## Designing the visual
 
 - The visual receives the projected state over the bridge and renders it. It must not encode rules logic — if the visual needs a value the rules do not project, change `project` to surface it rather than recomputing it in the visual.
 - Keep the visual a pure function of projected state plus the actions the bridge exposes. Side effects belong to the rules; the visual only reflects.
+- Click-gating is data, not logic: buttons come from `view.actions`, never from a re-derived turn check (see "Turn ownership and seat mapping" above).
 
 ## When something fails
 

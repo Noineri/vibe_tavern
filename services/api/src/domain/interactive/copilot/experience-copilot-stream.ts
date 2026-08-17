@@ -46,6 +46,7 @@ import {
   type ExperienceCopilotStep,
   type ExperienceCopilotTestFeedback,
 } from "./experience-copilot-prompt.js";
+import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS } from "./copilot-limits.js";
 import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 
@@ -370,8 +371,8 @@ export async function* streamExperienceCopilot(
       : {}),
     step,
     model: modelName,
-    contextBudget: effectiveProfile.contextBudget,
-    responseReserve: effectiveProfile.maxTokens,
+    contextBudget: COPILOT_CONTEXT_BUDGET_TOKENS,
+    responseReserve: COPILOT_RESPONSE_RESERVE_TOKENS,
     profile: copilotProfile,
     ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
   });
@@ -560,8 +561,8 @@ export async function* streamExperienceCopilot(
     digestTokens: assembled.tokenAccounting.digest,
     historyTokens: assembled.tokenAccounting.history,
     totalTokens: metricsTotalTokens,
-    budgetTokens: effectiveProfile.contextBudget ?? 0,
-    reserveTokens: Math.max(0, effectiveProfile.maxTokens ?? 0),
+    budgetTokens: COPILOT_CONTEXT_BUDGET_TOKENS,
+    reserveTokens: COPILOT_RESPONSE_RESERVE_TOKENS,
     source: metricsSource,
     measuredAt: new Date().toISOString(),
   };

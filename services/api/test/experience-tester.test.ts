@@ -169,6 +169,29 @@ describe("runExperienceTest — real kernel (stateless)", () => {
     expect(res.data.console.some((e) => e.args.includes("created"))).toBe(true);
   });
 
+  test("seatLegality matrix lists per-seat legal actions and the turn owner", () => {
+    // TURN_HANDOFF_SOURCE: at create the script seat owns the turn ("script"),
+    // the human seat has no legal action yet — the exact seat-mapping/turn
+    // desync the matrix exists to surface as a first-class fact.
+    const res = runExperienceTest({
+      rulesCode: TURN_HANDOFF_SOURCE,
+      participants: [youHuman, botScript],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const m = res.data.seatLegality;
+    expect(m.seats).toHaveLength(2);
+    const bot = m.seats.find((s) => s.participantId === "bot");
+    const you = m.seats.find((s) => s.participantId === "you");
+    expect(bot?.actionTypes).toEqual(["pass"]);
+    expect(bot?.count).toBe(1);
+    expect(bot?.controller).toBe("script");
+    expect(you?.actionTypes).toEqual([]);
+    expect(you?.count).toBe(0);
+    expect(you?.controller).toBe("human");
+    expect(m.turnOwners).toEqual(["bot"]);
+  });
+
   test("one action reduces through the real kernel and bumps the host revision", () => {
     const res = runExperienceTest({
       rulesCode: COUNTER_SOURCE,

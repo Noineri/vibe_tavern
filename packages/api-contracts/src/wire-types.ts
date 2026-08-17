@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -337,4 +337,41 @@ export interface ProviderQuotaRecord {
 	lastError: ProviderQuotaErrorKind | null;
 	/** When the stored poll result was last written; null when nothing is stored. */
 	updatedAt: string | null;
+}
+
+// ─── Interactive experience (tester response fragments) ─────────────────────
+
+/**
+ * One roster seat's legal actions at an interactive test run's final state
+ * (EXPERIENCE_TURN_LEGALITY_DIAGNOSTICS_REPORT step 3). Backend-produced; the
+ * frontend renders it as the per-seat legality matrix so "the human seat has
+ * ZERO actions" is a first-class fact instead of an empty list only the
+ * projection viewer shows — the classic seat-mapping bug (state ids that never
+ * match the roster ids) is visible at a glance.
+ */
+export interface ExperienceSeatLegality {
+	participantId: string;
+	label: string;
+	/** Who controls the seat (`human` / `script` / `model`). */
+	controller: ExperienceController;
+	/** Deduped legal action types for this seat, in descriptor order. Empty
+	 *  when the seat cannot act at this state — or cannot EVER act (the
+	 *  seat-mapping bug). */
+	actionTypes: string[];
+	/** Legal-action descriptor count for this seat (pre-dedup). */
+	count: number;
+	/** Present only when `actions()` failed for this seat's viewer: the kernel
+	 *  error message. Distinguishes "cannot act" from "blew up". */
+	error?: string;
+}
+
+/**
+ * The per-seat legality matrix at a run's final state. `turnOwners` lists the
+ * participantIds whose legal set is non-empty — the seats that currently own
+ * the turn; empty on a terminal status (seats may still advertise post-game
+ * actions like a rematch offer, which the per-seat entries keep showing).
+ */
+export interface ExperienceSeatLegalityMatrix {
+	seats: ExperienceSeatLegality[];
+	turnOwners: string[];
 }

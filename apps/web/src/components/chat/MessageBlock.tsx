@@ -292,7 +292,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         label={t("edit")}
       >
         <AutoTextarea
-          className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
+          className="w-full resize-none overflow-y-auto rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
           style={{}}
           minRows={7}
           value={editingDraft}

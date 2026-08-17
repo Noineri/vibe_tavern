@@ -40,7 +40,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Ic } from "../../shared/icons.js";
+import { EmptyState } from "../../shared/empty-state.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
@@ -84,8 +86,9 @@ import {
   pendingVisualRow,
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
-import { ExperienceCopilotShell } from "./copilot/ExperienceCopilotShell.js";
+import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
+import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
 
 function draftValuesEqual(a: ScriptDraftValues, b: ScriptDraftValues): boolean {
   return a.name === b.name
@@ -106,6 +109,10 @@ function visualValuesEqual(a: ExperienceVisualDraftValues, b: ExperienceVisualDr
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/** XU-6 creation stepper: the authoring order the shell reports (rules →
+ *  appearance → try). */
+const CREATION_STEP_ORDER: readonly ExperienceCopilotStep[] = ["rules", "appearance", "try"];
 
 // ── Component ──────────────────────────────────────────────────────────────
 
@@ -156,6 +163,13 @@ export function ExperienceEditor() {
   // picker). Drives the paired-visual highlight in step 2. Cleared on
   // navigating back so a later creation starts fresh.
   const [chosenRulesStarterId, setChosenRulesStarterId] = useState<string | null>(null);
+
+  // XU-6: the creation stepper's active step (reported by the shell as the
+  // user moves between Rules / Appearance / Try).
+  const [activeStep, setActiveStep] = useState<ExperienceCopilotStep>("rules");
+  const handleStepChange = useCallback((step: ExperienceCopilotStep) => setActiveStep(step), []);
+  // XU-6: the visual toolbar's collapsed "Technical details" accordion.
+  const [visualTechOpen, setVisualTechOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -331,9 +345,19 @@ export function ExperienceEditor() {
       });
       setScripts((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
       setActiveScriptId(created.id);
-      // TF-1: a brand-new experience binds nothing — drop the previously open
-      // experience's visual so it cannot leak into the fresh Visual buffer.
-      setActiveVisualId(null);
+      // TF-1: a brand-new experience binds nothing — the previously open
+      // experience's visual is dropped so it cannot leak into the fresh Visual
+      // buffer. Instead, creating the app implies creating ITS OWN visual draft
+      // (2026-08-17): a pending empty visual is selected immediately, so the
+      // Visual tab is a live editable buffer from the start — the user (or the
+      // copilot) fills it in and saves it like any other visual, instead of
+      // hitting a "no visual selected" dead end first.
+      setActiveVisualId(createPendingVisual({
+        name: t("experience_editor_new_visual_name"),
+        source: "",
+        apiVersion: VISUAL_API_VERSION,
+        compatibleManifestIds: [],
+      }));
       setCreatingScriptId(created.id);
       setChosenRulesStarterId(null);
     } catch (error) {
@@ -637,40 +661,57 @@ export function ExperienceEditor() {
           {t("experience_editor_existing_label")}
         </div>
         {allScripts.length === 0 ? (
-          <div className="py-6 text-center font-ui text-[13px] text-t3">{t("experience_editor_no_scripts")}</div>
+          <EmptyState
+            icon={<Ic.stack />}
+            title={t("experience_editor_no_scripts")}
+            cta={t("experience_editor_empty_cta")}
+            onCta={() => void handleCreateExperience()}
+          />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {allScripts.map((script) => {
               const display = { ...script, ...(scriptDrafts[script.id]?.values ?? {}) };
+              const firstBoundVisual = (boundVisuals[script.id] ?? [])[0] ?? null;
+              const isDraft = isLocalId(script.id);
+              const statusKey = isDraft
+                ? "experience_editor_card_draft_tooltip"
+                : display.enabled
+                  ? "experience_editor_enabled"
+                  : "experience_editor_disabled";
+              const dotClass = isDraft
+                ? "bg-warning"
+                : display.enabled
+                  ? "bg-success"
+                  : "bg-t4";
               return (
                 <div
                   key={script.id}
-                  className="group flex flex-col rounded-xl border border-border bg-surface transition-all hover:border-accent/40 hover:bg-s2"
+                  className="group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition-all hover:border-accent/40 hover:bg-s2"
                 >
                   <button
                     type="button"
-                    className="flex w-full cursor-pointer flex-col p-3.5 text-left"
+                    className="flex w-full cursor-pointer flex-col text-left"
                     onClick={() => openScript(script.id)}
                   >
-                    <div className="flex items-start gap-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.stack /></div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
-                          {isLocalId(script.id) && (
-                            <span className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-warning-dim text-warning-text">
-                              {t("experience_editor_unsaved_badge")}
-                            </span>
-                          )}
-                        </div>
-                        <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase leading-none", display.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
-                          {display.enabled ? "ON" : "OFF"}
-                        </span>
+                    <ExperienceCardPreview visualSource={firstBoundVisual?.source ?? null} />
+                    <div className="p-3.5">
+                      <div className="flex items-center gap-1.5">
+                        <CustomTooltip content={t(statusKey)}>
+                          <span
+                            aria-label={t(statusKey)}
+                            data-testid="card-status-dot"
+                            className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)}
+                          />
+                        </CustomTooltip>
+                        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-t1">{display.name}</span>
+                      </div>
+                      <div
+                        data-testid="card-description"
+                        className="mt-2 min-h-[3.25em] font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2"
+                      >
+                        {display.description && <div className="line-clamp-2">{display.description}</div>}
                       </div>
                     </div>
-                    {display.description && (
-                      <div className="mt-2.5 line-clamp-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{display.description}</div>
-                    )}
                   </button>
                   {!isLocalId(script.id) && (
                     <div className="border-t border-border px-3 py-2">
@@ -724,13 +765,15 @@ export function ExperienceEditor() {
           placeholder={t("script_name")}
         />
 
-        <span
-          className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text")}
-        >
-          {scriptEnabled ? t("experience_editor_trusted") : t("experience_editor_untrusted")}
-        </span>
         <CustomTooltip content={t("experience_editor_trust_hint")}>
-          <span className="cursor-help text-[11px] text-t4">ⓘ</span>
+          <span
+            className={cn(
+              "shrink-0 cursor-help rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase",
+              scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
+            )}
+          >
+            {scriptEnabled ? t("experience_editor_enabled") : t("experience_editor_disabled")}
+          </span>
         </CustomTooltip>
         <Toggle
           checked={scriptEnabled}
@@ -784,12 +827,55 @@ export function ExperienceEditor() {
         </div>
       )}
 
+      {/* XU-6 creation stepper: a slim presentational strip above the editor
+          pane. The active step mirrors the shell's current position (reported
+          via onStepChange); completed steps get a check. */}
+      {creationMode && (
+        <div
+          className="flex shrink-0 items-center gap-1.5 border-b border-border bg-surface px-3 py-1.5"
+          data-testid="experience-creation-stepper"
+        >
+          {CREATION_STEP_ORDER.map((step, index) => {
+            const isActive = activeStep === step;
+            const isDone = CREATION_STEP_ORDER.indexOf(activeStep) > index;
+            const label =
+              step === "rules"
+                ? t("experience_copilot_rules")
+                : step === "appearance"
+                  ? t("experience_editor_step_appearance")
+                  : t("experience_copilot_try_it");
+            return (
+              <div key={step} className="flex items-center gap-1.5">
+                {index > 0 && <span className="text-t4">{Ic.caret("r")}</span>}
+                <span
+                  className={cn(
+                    "flex items-center gap-1.5 font-ui text-[11px] font-medium",
+                    isActive ? "text-accent-t" : isDone ? "text-t2" : "text-t3",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 items-center justify-center rounded-full text-[9px]",
+                      isDone ? "bg-accent text-on-accent" : "bg-s3 text-t3",
+                    )}
+                  >
+                    {isDone ? Ic.check() : index + 1}
+                  </span>
+                  {label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Body: the 2-pane copilot shell hosts both editors + top-button modals. */}
       <div className="flex min-h-0 flex-1">
         <ExperienceCopilotShell
           scriptId={activeScript.id}
           assignedProfileId={activeScript.copilotProfileId ?? null}
           creationMode={creationMode}
+          onStepChange={handleStepChange}
           rulesCode={activeScript.code}
           onRulesChange={(code) => updateScriptDraft({ code })}
           visualSource={activeVisual?.source ?? ""}
@@ -919,17 +1005,14 @@ export function ExperienceEditor() {
                 ) : null}
               </div>
 
-              <button
-                type="button"
-                className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-accent bg-accent/10 px-3 py-2 text-left transition-all hover:bg-accent/20"
-                onClick={handleNewBlankVisual}
-              >
-                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-on-accent"><Ic.plus /></span>
-                <span className="font-ui text-[12px] font-semibold text-accent-t">{t("experience_editor_visual_new_blank")}</span>
-              </button>
-
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-ui text-[11px] text-t3">{t("experience_editor_visual_new")}</span>
+                <button
+                  type="button"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                  onClick={handleNewBlankVisual}
+                >
+                  <Ic.plus /> {t("experience_editor_visual_blank")}
+                </button>
                 {VISUAL_STARTERS.map((starter) => {
                   const isPaired = creationMode
                     && chosenRulesStarterId !== null
@@ -981,18 +1064,38 @@ export function ExperienceEditor() {
                       label={visualSaveState === "error" ? t("retry") : t("experience_editor_visual_save")}
                     />
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
-                    <span>{t("experience_editor_visual_api_version")}: {activeVisual.apiVersion}</span>
-                    <span>
-                      {t("experience_editor_visual_hash")}:{" "}
-                      {isNewVisual
-                        ? t("experience_editor_visual_hash_unsaved")
-                        : (activeVisualDraft?.sourceHash ? activeVisualDraft.sourceHash.slice(0, 12) : "—")}
-                    </span>
-                    <span>
-                      {t("experience_editor_visual_manifests")}:{" "}
-                      {activeVisual.compatibleManifestIds.length > 0 ? activeVisual.compatibleManifestIds.join(", ") : "—"}
-                    </span>
+                  <div className="rounded-md border border-border bg-bg">
+                    <button
+                      type="button"
+                      className="flex w-full cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-left"
+                      onClick={() => setVisualTechOpen((v) => !v)}
+                      aria-expanded={visualTechOpen}
+                    >
+                      <span
+                        className="inline-block text-t3 transition-transform"
+                        style={{ transform: visualTechOpen ? "rotate(90deg)" : "none" }}
+                      >
+                        {Ic.caret("r")}
+                      </span>
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                        {t("experience_editor_visual_technical_details")}
+                      </span>
+                    </button>
+                    <AnimatedDisclosure open={visualTechOpen} className="px-2.5 pb-2">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+                        <span>{t("experience_editor_visual_api_version")}: {activeVisual.apiVersion}</span>
+                        <span>
+                          {t("experience_editor_visual_hash")}:{" "}
+                          {isNewVisual
+                            ? t("experience_editor_visual_hash_unsaved")
+                            : (activeVisualDraft?.sourceHash ? activeVisualDraft.sourceHash.slice(0, 12) : "—")}
+                        </span>
+                        <span>
+                          {t("experience_editor_visual_manifests")}:{" "}
+                          {activeVisual.compatibleManifestIds.length > 0 ? activeVisual.compatibleManifestIds.join(", ") : "—"}
+                        </span>
+                      </div>
+                    </AnimatedDisclosure>
                   </div>
                 </>
               ) : (

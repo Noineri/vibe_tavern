@@ -39,7 +39,21 @@ describe("createMappedStream", () => {
     ]);
   });
 
-  it("yields native reasoning-delta chunks", async () => {
+  it("yields native reasoning-delta chunks (v7 `text` field)", async () => {
+    // AI SDK v7 TextStreamReasoningDeltaPart carries the text in `text`, NOT
+    // `delta` — this regression test pins the real v7 shape (a hand-cast hid
+    // the rename and silently dropped ALL reasoning).
+    const parts = [
+      { type: "reasoning-delta", id: "r1", text: "thinking..." },
+    ];
+    const { stream } = createMappedStream(fromParts(parts));
+    const chunks = await collect(stream);
+    expect(chunks).toEqual([
+      { type: "reasoning-delta", textDelta: "thinking..." },
+    ]);
+  });
+
+  it("still yields native reasoning-delta chunks from the legacy `delta` field", async () => {
     const parts = [
       { type: "reasoning-delta", delta: "thinking..." },
     ];

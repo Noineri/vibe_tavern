@@ -45,11 +45,16 @@ type StoreOverrides = {
   getActive?: ExperienceCopilotStore["getActive"];
   listMessages?: ExperienceCopilotStore["listMessages"];
   startNewSession?: ExperienceCopilotStore["startNewSession"];
+  renameSession?: ExperienceCopilotStore["renameSession"];
 };
 
 function makeStore(overrides: StoreOverrides = {}) {
-  const calls: { startNewSession: Array<{ scriptId: string; title?: string }> } = {
+  const calls: {
+    startNewSession: Array<{ scriptId: string; title?: string }>;
+    renameSession: Array<{ sessionId: string; title: string }>;
+  } = {
     startNewSession: [],
+    renameSession: [],
   };
   const store = {
     getActive: overrides.getActive ?? (async () => null),
@@ -59,6 +64,12 @@ function makeStore(overrides: StoreOverrides = {}) {
       (async (scriptId: string, title?: string) => {
         calls.startNewSession.push({ scriptId, title });
         return makeThread({ scriptId, title: title ?? "" });
+      }),
+    renameSession:
+      overrides.renameSession ??
+      (async (sessionId: string, title: string) => {
+        calls.renameSession.push({ sessionId, title });
+        return makeThread({ id: sessionId, title });
       }),
   } as unknown as ExperienceCopilotStore;
   return { store, calls };
@@ -137,5 +148,36 @@ describe("ExperienceCopilotAdapter lifecycle (ER-11a)", () => {
     expect(wire?.scriptId).toBeNull();
     expect(wire?.draftSessionId).toBeNull();
     expect(wire?.archivedAt).toBeNull();
+  });
+
+  it("renameSession trims the title, delegates to the store, and maps to wire", async () => {
+    const { store, calls } = makeStore();
+    const adapter = makeAdapter(store);
+
+    const wire = await adapter.experienceCopilotRenameSession("thread_1", "  Дурак — визуал  ");
+
+    expect(calls.renameSession).toEqual([{ sessionId: "thread_1", title: "Дурак — визуал" }]);
+    expect(wire?.id).toBe("thread_1");
+    expect(wire?.title).toBe("Дурак — визуал");
+  });
+
+  it("renameSession with a whitespace-only title clears to the empty fallback", async () => {
+    const { store, calls } = makeStore();
+    const adapter = makeAdapter(store);
+
+    const wire = await adapter.experienceCopilotRenameSession("thread_1", "   ");
+
+    // Empty = "no custom title" → the UI falls back to the auto-numbered label.
+    expect(calls.renameSession).toEqual([{ sessionId: "thread_1", title: "" }]);
+    expect(wire?.title).toBe("");
+  });
+
+  it("renameSession maps a missing thread to null (not a throw)", async () => {
+    const { store } = makeStore({
+      renameSession: async () => null,
+    });
+    const adapter = makeAdapter(store);
+
+    expect(await adapter.experienceCopilotRenameSession("gone", "x")).toBeNull();
   });
 });

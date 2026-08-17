@@ -244,9 +244,9 @@ export class ExperienceResourceService {
   // ─── Visuals ──────────────────────────────────────────────────────────────
 
   async createVisual(input: CreateVisualInput): Promise<ExperienceResult<ExperienceVisualRow>> {
-    if (input.source.trim().length === 0) {
-      return err({ status: 422, code: "validation_error", message: "Visual source must not be empty" });
-    }
+    // Empty source is ALLOWED (2026-08-17): a visual can be saved as a draft
+    // placeholder and filled in later — the frame simply renders blank. The
+    // user's flow creates the visual draft together with the new app.
     const row = await this.stores.experienceResources.createVisual({
       name: input.name,
       source: input.source,
@@ -283,9 +283,7 @@ export class ExperienceResourceService {
     if (existing === null) {
       return err({ status: 404, code: "visual_not_found", message: `Visual '${id}' not found` });
     }
-    if (patch.source !== undefined && patch.source.trim().length === 0) {
-      return err({ status: 422, code: "validation_error", message: "Visual source must not be empty" });
-    }
+    // Empty source patches are allowed too (draft placeholders) — see createVisual.
     // A source edit changes the sourceHash (trust-invalidation signal); the
     // store recomputes it inline.
     const row = await this.stores.experienceResources.updateVisual(id, patch);
