@@ -1,7 +1,10 @@
 import { useMemo } from "react";
 import { buildLineDiff, type TextDiffSummary } from "../../../shared/TextDiffPreview.js";
 import { allHunkIds, groupHunks, mergeSelectedBody, type DiffHunk } from "../../../../lib/coauthor-hunk-merge.js";
+import { cn } from "../../../../lib/cn.js";
 import { CodeEditor } from "../../../shared/CodeEditor.js";
+import { MobileExpandCodeEditor } from "../../../shared/MobileExpandCodeEditor.js";
+import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { GeneratingScrim } from "../../../shared/generation-feedback.js";
 import { computeDiffDecorationSpecs, copilotDiffExtensions } from "./CopilotDiffDecorations.js";
 import { useT } from "../../../../i18n/context.js";
@@ -213,6 +216,9 @@ export interface ExperienceCopilotEditorPanelProps {
   onDismissPending: () => void;
   /** RV-3: cancel the whole round for this tab (accepted hunks rolled back). */
   onCancelRound: () => void;
+  /** Header label for the mobile fullscreen editor (buffer name; the shared
+   *  wrapper falls back to a generic label when omitted). */
+  fullscreenLabel?: string;
 }
 
 export function ExperienceCopilotEditorPanel({
@@ -227,8 +233,16 @@ export function ExperienceCopilotEditorPanel({
   onDismissHunk,
   onDismissPending,
   onCancelRound,
+  fullscreenLabel,
 }: ExperienceCopilotEditorPanelProps) {
   const { t } = useT();
+  // Mobile (4a follow-up): CodeMirror runs in page-scroll mode on phones —
+  // the editor grows to its content and the pane scrolls as one (a narrow
+  // screen scrolls down naturally; an inner scrollbar inside a squeezed flex
+  // remainder is unusable). NOTE scrollMode is a CodeEditor rebuild dep: the
+  // view remounts when the viewport crosses the 768px breakpoint — rare and
+  // acceptable (same class of rebuild as the existing readOnly toggling).
+  const isMobile = useIsMobile();
 
   // Dismissed hunks decorate like accepted ones (nothing) — the resolved set
   // drives the decoration engine (RV-2).
@@ -312,19 +326,35 @@ export function ExperienceCopilotEditorPanel({
         {/* CD-3: frozen (read-only + shared GeneratingScrim dim) while the model
             works — the scrim alone dims the surface (same as the coauthor
             editor); no extra frame opacity, which would double-darken. */}
+        {/* Mobile (4a follow-up): the frame grows to the document (h-auto)
+            instead of filling the squeezed flex remainder — with the toolbar
+            stack above (the visual buffer's five rows) the remainder collapsed
+            to ~2px, making the editor unreachable. The scroll container above
+            scrolls the grown frame. */}
         <div
           data-testid="copilot-editor-frame"
-          className="relative h-full min-h-0 rounded-md border border-border bg-bg"
+          className={cn(
+            "relative h-full min-h-0 rounded-md border border-border bg-bg",
+            "max-md:h-auto",
+          )}
         >
-          <CodeEditor
-            className="h-full"
+          <MobileExpandCodeEditor
             value={docValue}
             onChange={onChange}
-            minHeight="300px"
-            scrollMode="inner"
             readOnly={readOnly}
             extensions={extensions}
-          />
+            label={fullscreenLabel}
+          >
+            <CodeEditor
+              className="h-full max-md:h-auto"
+              value={docValue}
+              onChange={onChange}
+              minHeight="300px"
+              scrollMode={isMobile ? "page" : "inner"}
+              readOnly={readOnly}
+              extensions={extensions}
+            />
+          </MobileExpandCodeEditor>
           {isSending && (
             <GeneratingScrim
               variant="dim"

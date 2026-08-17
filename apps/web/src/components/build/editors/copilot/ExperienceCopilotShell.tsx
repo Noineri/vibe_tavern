@@ -1016,6 +1016,7 @@ export function ExperienceCopilotShell({
             onDismissHunk={codeBuffer === "rules" ? dismissRulesHunk : dismissVisualHunk}
             onDismissPending={codeBuffer === "rules" ? dismissPendingRules : dismissPendingVisual}
             onCancelRound={codeBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
+            fullscreenLabel={codeBuffer === "rules" ? t("experience_copilot_rules") : t("experience_copilot_visual")}
           />
         </>
       )}

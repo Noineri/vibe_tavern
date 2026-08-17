@@ -1588,17 +1588,35 @@ describe("ExperienceEditor", () => {
     expect(scroller.classList.contains("max-w-[860px]")).toBe(true);
   });
 
-  it("script header: mobile hides the save-state label, gives the name its own row, upsizes icon buttons (4a defect 3)", async () => {
+  it("script header: mobile recomposes into two tight rows — name shares the back row, save fills the action row (4a follow-up)", async () => {
     serverScripts = [{ ...baseScript }];
     const { container, findByText } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
 
+    // The name input must NOT claim its own row anymore (no basis-full): it
+    // shares row 1 with the back button (flex-1 fills the remainder).
     const nameInput = container.querySelector('input[placeholder="script_name"]');
     if (!(nameInput instanceof HTMLInputElement)) throw new Error("name input missing");
-    expect(nameInput.classList.contains("max-md:basis-full")).toBe(true);
+    expect(nameInput.classList.contains("max-md:basis-full")).toBe(false);
+    expect(nameInput.classList.contains("flex-1")).toBe(true);
+    // The action cluster is a display:contents group on desktop (flat row)
+    // and a nested flex row on mobile — the deterministic two-row split.
+    const pill = container.querySelector("span.cursor-help");
+    if (!(pill instanceof HTMLElement)) throw new Error("status pill missing");
+    const cluster = pill.closest("div");
+    if (!(cluster instanceof HTMLElement)) throw new Error("action cluster missing");
+    expect(cluster.classList.contains("contents")).toBe(true);
+    expect(cluster.classList.contains("max-md:flex")).toBe(true);
+    expect(cluster.classList.contains("max-md:flex-wrap")).toBe(true);
 
+    // The save-state label stays hidden on mobile; the save button fills the
+    // action row and is touch-tall.
     const stateLabel = await findByText("saved_state");
     expect(stateLabel.classList.contains("max-md:hidden")).toBe(true);
+    const saveBtn = container.querySelector('button[aria-label="Сохранить"], button[aria-label="save"]');
+    if (!(saveBtn instanceof HTMLElement)) throw new Error("save button missing");
+    expect(saveBtn.classList.contains("max-md:flex-1")).toBe(true);
+    expect(saveBtn.classList.contains("max-md:min-h-[44px]")).toBe(true);
 
     const dupBtn = container.querySelector('button[aria-label="experience_editor_duplicate"]');
     if (!(dupBtn instanceof HTMLElement)) throw new Error("duplicate button missing");

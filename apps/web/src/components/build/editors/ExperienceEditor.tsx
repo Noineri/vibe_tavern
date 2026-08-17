@@ -757,14 +757,26 @@ export function ExperienceEditor() {
           {Ic.caret("l")} {t("experience_editor_back")}
         </button>
 
+        {/* 4a follow-up mobile composition: row 1 = back + name (flex-1);
+            row 2 = status pill + toggle + save (flex-1, fills) + duplicate +
+            delete. Two tight rows instead of the ragged 3–4 the one-container
+            flex-wrap produced. Desktop unchanged (single wrap row). */}
         <input
-          className={cn(inputCls, "min-w-0 max-md:basis-full flex-1 text-[15px] font-semibold")}
+          className={cn(inputCls, "min-w-0 max-md:w-auto flex-1 text-[15px] font-semibold")}
           type="text"
           value={activeScript.name}
           onChange={(e) => updateScriptDraft({ name: e.target.value })}
           placeholder={t("script_name")}
         />
 
+        {/* 4a follow-up mobile composition: the action cluster (pill → delete)
+            is a flat `display:contents` group on desktop — the toolbar stays
+            the SAME single flex-wrap row as before — and becomes a nested flex
+            row on mobile, so the header composes into exactly two rows:
+            [← назад + имя] / [статус, тумблер, сохранить(flex-1), дубль, удалить].
+            (A plain `flex-1` on the name cannot force this: basis-0 lets the
+            shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
+        <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
         <CustomTooltip content={t("experience_editor_trust_hint")}>
           <span
             className={cn(
@@ -788,6 +800,7 @@ export function ExperienceEditor() {
           {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
         </span>
         <SaveButton
+          className="max-md:min-h-[44px] max-md:flex-1"
           dirty={scriptDirty}
           saveState={scriptSaveState}
           resetKey={activeScriptId}
@@ -795,6 +808,9 @@ export function ExperienceEditor() {
           label={scriptSaveState === "error" ? t("retry") : t("save")}
         />
 
+        {/* The icon pair moves as ONE unit (display:contents on desktop) so
+            mobile wrapping never strands a lone icon on its own row. */}
+        <div className="contents max-md:flex max-md:gap-1.5">
         <CustomTooltip content={t("experience_editor_duplicate")}>
           <button
             type="button"
@@ -819,6 +835,8 @@ export function ExperienceEditor() {
             </button>
           </CustomTooltip>
         )}
+        </div>
+        </div>
       </div>
 
       {enableLocked && (

@@ -7,7 +7,7 @@
  * helpers (buildBufferReview / mergedReviewText / allReviewHunkIds) at the
  * mergeSelectedBody boundary.
  */
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import {
   allReviewHunkIds,
@@ -288,5 +288,65 @@ describe("revertHunksFromBuffer (pure, RV-3 rollback path)", () => {
     const result = revertHunksFromBuffer("a\nb", delDiff, delHunks, new Set(delHunks.map((h) => h.id)));
     expect(result.skippedHunkIds).toEqual(delHunks.map((h) => h.id));
     expect(result.text).toBe("a\nb");
+  });
+});
+
+// ── Mobile (4a follow-up): page-scroll editor + fullscreen expansion ─────────
+// The shared MobileExpandCodeEditor mirrors MobileExpandTextarea's chrome; these
+// pins hold at the panel boundary: viewport-driven CodeMirror scroll mode, the
+// growing frame, and the expand → fullscreen session.
+let mobileOverride = false;
+const realMobile = await import("../../../../hooks/use-mobile.js");
+mock.module("../../../../hooks/use-mobile.js", () => ({
+  ...realMobile,
+  useIsMobile: () => mobileOverride,
+}));
+
+describe("ExperienceCopilotEditorPanel — mobile editor surface", () => {
+  beforeEach(() => { mobileOverride = false; });
+
+  it("desktop: inner scroll, fixed-fill frame, no expand button", () => {
+    const { container, queryByTestId } = renderPanel({ fullscreenLabel: "rules" });
+    const frame = container.querySelector('[data-testid="copilot-editor-frame"]');
+    if (!(frame instanceof HTMLElement)) throw new Error("frame missing");
+    expect(frame.classList.contains("max-md:h-auto")).toBe(true); // inert below md
+    expect(frame.classList.contains("h-full")).toBe(true);
+    expect(queryByTestId("mobile-expand-code-btn")).toBeNull();
+    // Inner scroll mode: CodeEditor's container clips (overflow auto).
+    const editorHost = frame.querySelector(".cm-editor")?.parentElement;
+    if (!(editorHost instanceof HTMLElement)) throw new Error("editor host missing");
+    expect(editorHost.style.overflow).toBe("auto");
+  });
+
+  it("mobile: page-scroll CodeMirror (grows to content) inside the frame", () => {
+    mobileOverride = true;
+    const { container } = renderPanel();
+    const editorHost = container.querySelector('.cm-editor')?.parentElement;
+    if (!(editorHost instanceof HTMLElement)) throw new Error("editor host missing");
+    // page mode: the host lets the document flow (overflow visible) — the
+    // pane scrolls, not the editor.
+    expect(editorHost.style.overflow).toBe("visible");
+    expect(editorHost.classList.contains("max-md:h-auto")).toBe(true);
+  });
+
+  it("mobile: expand opens a fullscreen CodeMirror session with the label; Готово closes", () => {
+    mobileOverride = true;
+    const onChange = mock();
+    const { container, getByTestId } = renderPanel({ onChange, fullscreenLabel: "visual-lbl" });
+    fireEvent.click(getByTestId("mobile-expand-code-btn"));
+    const overlay = getByTestId("mobile-code-fullscreen");
+    // Header carries the passed label + the Done button.
+    expect(overlay.textContent?.includes("visual-lbl")).toBe(true);
+    expect(overlay.textContent?.includes("done_btn")).toBe(true);
+    // The fullscreen session mounts its OWN CodeMirror inside the overlay.
+    expect(overlay.querySelectorAll(".cm-editor").length).toBe(1);
+    // Готово closes the overlay; the inline editor stays mounted.
+    const done = [...overlay.querySelectorAll("div")].find(
+      (d) => (d.textContent ?? "").trim() === "done_btn",
+    );
+    if (!(done instanceof HTMLElement)) throw new Error("done button missing");
+    fireEvent.click(done);
+    expect(() => getByTestId("mobile-code-fullscreen")).toThrow();
+    expect(container.querySelectorAll(".cm-editor").length).toBe(1);
   });
 });
