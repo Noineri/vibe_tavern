@@ -1433,11 +1433,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             <div>
               <label className={lblCls}>{t("experience_setup_settings_label")}</label>
               {/* LOBBY-A: the package's declared setup fields render as a real
-                  form (author defaults seeded into the JSON); the raw JSON
-                  textarea hides under a collapsed "advanced" disclosure
+                  form (author defaults seeded into the JSON). The raw JSON
+                  textarea is ALWAYS under a collapsed "advanced" disclosure
                   (verbatim: «жсон для технических пользователей под аккордеон
-                  прятать») and stays the direct control when the package
-                  declares no fields or the JSON is not a plain object. */}
+                  прятать») — never the default view, fields or not. */}
               {setupFormAvailable && (
                 <div className="mt-1.5 flex flex-col gap-2.5" data-testid="playground-setup-form">
                   {setupFields.map((field) => (
@@ -1460,27 +1459,27 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   {t("experience_playground_settings_json_invalid")}
                 </p>
               )}
-              {setupFormAvailable ? (
-                <div className="mt-1.5">
-                  <button
-                    type="button"
-                    className="flex cursor-pointer items-center gap-1.5 font-ui text-[11px] text-t3 transition-colors hover:text-t1"
-                    onClick={() => setSettingsJsonOpen((v) => !v)}
-                    aria-expanded={settingsJsonOpen}
-                    data-testid="playground-settings-advanced-toggle"
-                  >
-                    <span className={cn("inline-block shrink-0 transition-transform", settingsJsonOpen && "rotate-90")}>
-                      {Ic.caret("r")}
-                    </span>
-                    {t("experience_playground_settings_advanced")}
-                  </button>
-                  <AnimatedDisclosure open={settingsJsonOpen}>
-                    {settingsJsonTextarea}
-                  </AnimatedDisclosure>
-                </div>
-              ) : (
-                settingsJsonTextarea
-              )}
+              {/* The raw JSON is ALWAYS under the collapsed "advanced"
+                  disclosure — with or without declared fields (verbatim quote:
+                  «жсон для технических пользователей под аккордеон прятать»);
+                  a non-technical user never faces a raw textarea by default. */}
+              <div className="mt-1.5">
+                <button
+                  type="button"
+                  className="flex cursor-pointer items-center gap-1.5 font-ui text-[11px] text-t3 transition-colors hover:text-t1"
+                  onClick={() => setSettingsJsonOpen((v) => !v)}
+                  aria-expanded={settingsJsonOpen}
+                  data-testid="playground-settings-advanced-toggle"
+                >
+                  <span className={cn("inline-block shrink-0 transition-transform", settingsJsonOpen && "rotate-90")}>
+                    {Ic.caret("r")}
+                  </span>
+                  {t("experience_playground_settings_advanced")}
+                </button>
+                <AnimatedDisclosure open={settingsJsonOpen}>
+                  {settingsJsonTextarea}
+                </AnimatedDisclosure>
+              </div>
             </div>
           </div>
             </AnimatedDisclosure>

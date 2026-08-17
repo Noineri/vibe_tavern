@@ -1305,13 +1305,19 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
 
   it("discover: malformed settings JSON shows the detailed diagnostic and never fires the request", async () => {
     const utils = renderPlayground();
-    const { getByText, getByPlaceholderText, container } = utils;
+    const { getByText, getByTestId, container } = utils;
     await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
     expandDiagnostics(utils);
 
-    // The settings field lives in the (expanded-by-default) launch-setup
-    // accordion; type malformed JSON and run.
-    fireEvent.change(getByPlaceholderText("{}"), { target: { value: "{\n  \"seed\": 1" } });
+    // The settings JSON lives under the collapsed "advanced" disclosure
+    // (LOBBY-A); open it, type malformed JSON, and run.
+    fireEvent.click(getByTestId("playground-settings-advanced-toggle"));
+    const jsonArea = await waitFor(() => {
+      const el = container.querySelector('[data-testid="auto-textarea"]');
+      expect(el).not.toBeNull();
+      return el as HTMLTextAreaElement;
+    });
+    fireEvent.change(jsonArea, { target: { value: "{\n  \"seed\": 1" } });
     fireEvent.click(getByText("experience_tester_run"));
 
     await waitFor(() => expect(container.textContent ?? "").toContain("experience_tester_settings_invalid"));
@@ -1513,16 +1519,20 @@ describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY
     expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({});
   });
 
-  it("a package with no declared fields keeps the direct raw-JSON textarea (fallback)", async () => {
+  it("a package with no declared fields hides the JSON under the advanced disclosure too (no form, but never a raw textarea in the default view)", async () => {
     runExperienceTest.mockImplementation(async () => makeDiscoverData());
     const utils = renderPlayground();
     await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
     expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeNull();
-    expect(utils.queryByTestId("playground-settings-advanced-toggle")).toBeNull();
-    expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeTruthy();
+    // The JSON is collapsed behind the advanced toggle — NOT rendered directly.
+    expect(utils.getByTestId("playground-settings-advanced-toggle")).toBeTruthy();
+    expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeNull();
+    // Opening the disclosure still exposes the textarea (technical users).
+    fireEvent.click(utils.getByTestId("playground-settings-advanced-toggle"));
+    await waitFor(() => expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeTruthy());
   });
 
-  it("broken settings JSON disables the form, warns, and keeps the textarea as the direct control", async () => {
+  it("broken settings JSON disables the form and warns; the JSON stays reachable under the advanced disclosure", async () => {
     mockDiscoveryWithSetup(makeSetupFields(false));
     const utils = renderPlayground();
     await waitForSetupForm(utils);
