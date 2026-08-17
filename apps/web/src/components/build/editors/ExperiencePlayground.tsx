@@ -1192,7 +1192,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       }}
       placeholder="{}"
       minRows={1}
-      maxRows={4}
+      maxRows={12}
       macroAutocomplete={false}
     />
   );
@@ -1790,7 +1790,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                         onChange={(e) => setPayloadJson(e.target.value)}
                         placeholder={t("experience_tester_action_payload_label")}
                         minRows={1}
-                        maxRows={4}
+                        maxRows={12}
                         macroAutocomplete={false}
                       />
                     </div>

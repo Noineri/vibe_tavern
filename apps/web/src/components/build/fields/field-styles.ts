@@ -8,9 +8,12 @@
  * while avoiding Tailwind v4 numeric-spacing issues.
  */
 
-/** Standard text-area/input class (sans / font-ui), including required padding. */
+/** Standard text-area/input class (sans / font-ui), including required padding.
+ *  `overflow-y-auto` (not `overflow-hidden`) is REQUIRED by AutoTextarea's
+ *  `maxRows` contract — once the cap stops the growth, the field must scroll
+ *  internally; `overflow-hidden` silently clips the tail instead. */
 export const inputCls =
-  "field-input-pad w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent resize-none overflow-hidden";
+  "field-input-pad w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent resize-none overflow-y-auto";
 
 /** Monospace variant for prompt-instruction fields (system / post-history / depth). */
 export const monoCls = inputCls + " font-mono text-xs";
