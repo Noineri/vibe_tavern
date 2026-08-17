@@ -14,7 +14,8 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { DualRangeSlider } from "./DualRangeSlider.js";
-import { computeTokenEstimate, TokenEstimate } from "./TokenEstimate.js";
+import { computeTokenEstimate, TokenEstimate, type CountedMessage } from "./TokenEstimate.js";
+import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import {
   createChatSummaryAction,
@@ -161,12 +162,22 @@ export function useSummaryTab({
   const effectiveModel = (useChatModel ? (pinnedModel ?? activeProvider?.defaultModel ?? selectedModel) : (pinnedModel ?? selectedModel))?.trim() ?? "";
 
   /* ─── derived data ─── */
+  // Tokenizing the chat is the expensive part of the estimate — a 1000-message
+  // branch costs ~150ms per pass. Both memory sliders recompute the estimate on
+  // every step, so counting has to be keyed on the message set (which cannot
+  // change while a thumb is held) rather than on the slider values. Dragging
+  // then only re-sums integers.
+  const countedMessages = useMemo<CountedMessage[]>(
+    () => messages.map((m) => ({ position: m.position, tokens: countTokens(m.content) })),
+    [messages],
+  );
+
   const selectedRangeMessages = useMemo(() => {
-    return messages.filter((m) => {
+    return countedMessages.filter((m) => {
       const pos = (m.position ?? 0) + 1;
       return pos >= rangeFrom && pos <= rangeTo;
     });
-  }, [messages, rangeFrom, rangeTo]);
+  }, [countedMessages, rangeFrom, rangeTo]);
 
   const excludedRanges = useMemo(() => {
     return summaries
@@ -174,9 +185,12 @@ export function useSummaryTab({
       .map((s) => ({ from: s.summarizedFrom, to: s.summarizedTo }));
   }, [summaries]);
 
+  // Keyed on the draft alone, so a slider step does not re-encode the summary.
+  const summaryTokens = useMemo(() => countTokens(draftText), [draftText]);
+
   const tokenEstimate = useMemo(
-    () => computeTokenEstimate(draftText, excludedRanges, historyLimit, messages, selectedRangeMessages),
-    [draftText, excludedRanges, historyLimit, messages, selectedRangeMessages],
+    () => computeTokenEstimate(summaryTokens, excludedRanges, historyLimit, countedMessages, selectedRangeMessages),
+    [summaryTokens, excludedRanges, historyLimit, countedMessages, selectedRangeMessages],
   );
 
   const contextPct = contextWindow.limit > 0 ? Math.min(100, Math.round((contextWindow.used / contextWindow.limit) * 100)) : 0;

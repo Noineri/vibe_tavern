@@ -1,29 +1,37 @@
 import { useT } from "../../i18n/context.js";
-import { countTokens } from "../../utils/tokenizer.js";
+
+/** A message reduced to what the estimate needs: its slot and its token cost. */
+export interface CountedMessage {
+  position?: number | null;
+  tokens: number;
+}
 
 /**
  * Compute the token-savings estimate for the Summary memory strategy. Pure
- * (mirrors the original `useMemo` body in ContextMemoryModal) so the
  * arithmetic — history excludes summarized ranges then slices to the limit;
- * `saved`/`pct` derive from the selected-range raw tokens minus the summary —
- * is unit-testable without rendering the modal.
+ * `saved`/`pct` derive from the selected-range raw tokens minus the summary.
+ *
+ * Counting is deliberately the caller's job. Both memory sliders re-run this on
+ * every step, and BPE-encoding a 1000-message chat costs ~150ms per pass, which
+ * is what made dragging either thumb crawl. Message content cannot change while
+ * a thumb is held, so SummaryTab counts once per message set and this function
+ * only ever sums integers.
  */
 export function computeTokenEstimate(
-  draftText: string,
+  summaryTokens: number,
   excludedRanges: ReadonlyArray<{ from: number; to: number }>,
   historyLimit: number,
-  messages: ReadonlyArray<{ position?: number | null; content: string }>,
-  selectedRangeMessages: ReadonlyArray<{ content: string }>,
+  messages: ReadonlyArray<CountedMessage>,
+  selectedRangeMessages: ReadonlyArray<{ tokens: number }>,
 ): { summaryTokens: number; historyTokens: number; total: number; selectedRawTokens: number; saved: number; pct: number } {
-  const summaryTokens = countTokens(draftText);
   const limitedMessages = messages
     .filter((m) => {
       const pos = (m.position ?? 0) + 1;
       return !excludedRanges.some((r) => pos >= r.from && pos <= r.to);
     })
     .slice(-(historyLimit || messages.length));
-  const historyTokens = limitedMessages.reduce((sum, m) => sum + countTokens(m.content), 0);
-  const selectedRawTokens = selectedRangeMessages.reduce((sum, m) => sum + countTokens(m.content), 0);
+  const historyTokens = limitedMessages.reduce((sum, m) => sum + m.tokens, 0);
+  const selectedRawTokens = selectedRangeMessages.reduce((sum, m) => sum + m.tokens, 0);
   const saved = Math.max(0, selectedRawTokens - summaryTokens);
   const pct = selectedRawTokens > 0 ? Math.round((saved / selectedRawTokens) * 100) : 0;
   return { summaryTokens, historyTokens, total: summaryTokens + historyTokens, selectedRawTokens, saved, pct };
