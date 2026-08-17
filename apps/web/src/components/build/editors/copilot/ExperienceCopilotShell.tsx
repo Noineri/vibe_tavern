@@ -795,7 +795,7 @@ export function ExperienceCopilotShell({
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   const chatPane = (
-    <div className="flex min-h-0 flex-1 flex-col bg-surface">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       {sessionLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
@@ -912,7 +912,7 @@ export function ExperienceCopilotShell({
   );
 
   const editorPane = (
-    <div className="flex min-h-0 flex-1 flex-col bg-bg">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
       {/* XU-5 outer tabs: [Preview | Code | Try] — preview is the default
           layer; the Try tab renders the shared playground inline in BOTH modes
           (XU-6, quote 10 — the old sandbox "Test it" button + modal are gone). */}
@@ -1039,10 +1039,15 @@ export function ExperienceCopilotShell({
   );
 
   if (isMobile) {
+    /* 4a mobile fix: every flex item down this chain carries min-w-0 —
+       without it a content-driven min-content width inside the chat pane
+       (e.g. a wide tool-result card) inflates the whole column and pushes
+       the Чат/Правка tablist off-screen (844px blow-out). The desktop branch
+       below already pins widths (w-[440px] / min-w-0). */
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
-          className="flex shrink-0 border-b border-border bg-surface"
+          className="flex min-w-0 shrink-0 border-b border-border bg-surface"
           role="tablist"
           aria-label={t("experience_copilot_editor_aria")}
         >
@@ -1050,11 +1055,11 @@ export function ExperienceCopilotShell({
           <TabButton label={t("experience_copilot_tab_edit")} active={activeTab === "edit"} onClick={() => setActiveTab("edit")} />
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className={cn("flex min-h-0 flex-1 flex-col", activeTab !== "chat" && "hidden")} data-testid="copilot-pane-chat">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", activeTab !== "chat" && "hidden")} data-testid="copilot-pane-chat">
             {chatPane}
           </div>
-          <div className={cn("flex min-h-0 flex-1 flex-col", activeTab !== "edit" && "hidden")} data-testid="copilot-pane-edit">
+          <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", activeTab !== "edit" && "hidden")} data-testid="copilot-pane-edit">
             {editorPane}
           </div>
         </div>
@@ -1086,7 +1091,7 @@ function TabButton({ label, active, onClick }: TabButtonProps) {
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "relative flex flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[0.9rem] font-medium transition-colors",
+        "relative flex min-h-0 min-w-0 flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[0.9rem] font-medium transition-colors",
         active ? "border-b-2 border-accent text-t1" : "border-b-2 border-transparent text-t3",
       )}
     >

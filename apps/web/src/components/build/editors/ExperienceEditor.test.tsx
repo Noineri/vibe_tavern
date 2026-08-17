@@ -1570,4 +1570,77 @@ describe("ExperienceEditor", () => {
     expect(queryByText("experience_editor_back")).toBeNull();
     expect(container.querySelector('input[placeholder="script_name"]')).toBeNull();
   });
+
+  // 4a mobile audit pins (MOBILE_AND_PROMPT_FIXES_REPORT, 2026-08-17): the
+  // mobile-only reworks are `max-md:` variants (desktop classes untouched —
+  // useIsMobile / the shell's mobile branch break at 768px, same as Tailwind's
+  // md). happy-dom computes no layout, so these pins assert the responsive
+  // classes on the real rendered DOM.
+  it("picker view owns a mobile scroll container (4a defect 1: list could not scroll)", async () => {
+    serverScripts = [];
+    const { getByTestId } = render(<ExperienceEditor />);
+    await waitFor(() => expect(getByTestId("experience-picker-scroll")).toBeTruthy());
+    const scroller = getByTestId("experience-picker-scroll");
+    expect(scroller.classList.contains("max-md:h-full")).toBe(true);
+    expect(scroller.classList.contains("max-md:overflow-y-auto")).toBe(true);
+    // Desktop keeps the old behavior (no forced scroll container of its own —
+    // the max-md variants simply do not apply at ≥768px).
+    expect(scroller.classList.contains("max-w-[860px]")).toBe(true);
+  });
+
+  it("script header: mobile hides the save-state label, gives the name its own row, upsizes icon buttons (4a defect 3)", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+
+    const nameInput = container.querySelector('input[placeholder="script_name"]');
+    if (!(nameInput instanceof HTMLInputElement)) throw new Error("name input missing");
+    expect(nameInput.classList.contains("max-md:basis-full")).toBe(true);
+
+    const stateLabel = await findByText("saved_state");
+    expect(stateLabel.classList.contains("max-md:hidden")).toBe(true);
+
+    const dupBtn = container.querySelector('button[aria-label="experience_editor_duplicate"]');
+    if (!(dupBtn instanceof HTMLElement)) throw new Error("duplicate button missing");
+    expect(dupBtn.classList.contains("max-md:h-9")).toBe(true);
+    expect(dupBtn.classList.contains("max-md:w-9")).toBe(true);
+  });
+
+  it("visual toolbar: rows wrap on mobile, save button takes a full row, chips are touch-tall (4a defect 4/5)", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]); // bound → auto-selected on open
+
+    const { container, findByText, getByRole, getByDisplayValue } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    // XU-5: a bound visual defaults to Preview — switch to Code → Visual buffer
+    // so the visual toolbar (dropdown/starter chips/name+save row) mounts.
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    const nameField = await getByDisplayValue("Existing Visual");
+
+    // Row 3 (name + save): wraps on mobile; the save button owns a full row.
+    const row = nameField.parentElement;
+    if (!(row instanceof HTMLElement)) throw new Error("visual name row missing");
+    expect(row.classList.contains("max-md:flex-wrap")).toBe(true);
+    const saveBtn = row.querySelector('button[aria-label="experience_editor_visual_save"]');
+    if (!(saveBtn instanceof HTMLElement)) throw new Error("visual save button missing");
+    expect(saveBtn.classList.contains("max-md:w-full")).toBe(true);
+    expect(saveBtn.classList.contains("max-md:min-h-[44px]")).toBe(true);
+
+    // Row 1: the visual dropdown drops its 220px floor on mobile.
+    const dropdownWrap = container.querySelector("div.min-w-\\[220px\\]");
+    if (!(dropdownWrap instanceof HTMLElement)) throw new Error("dropdown wrapper missing");
+    expect(dropdownWrap.classList.contains("max-md:min-w-0")).toBe(true);
+
+    // Starter chips + API chip are touch-tall on mobile (h-7 desktop stays).
+    const chip = [...container.querySelectorAll("button")].find(
+      (b) => b.classList.contains("h-7") && (b.textContent ?? "").trim() === "Choice",
+    );
+    if (!chip) throw new Error("visual starter chip missing");
+    expect(chip.classList.contains("max-md:h-9")).toBe(true);
+    const deleteBtn = container.querySelector('button[aria-label="experience_editor_visual_delete"]');
+    if (!(deleteBtn instanceof HTMLElement)) throw new Error("visual delete button missing");
+    expect(deleteBtn.classList.contains("max-md:h-9")).toBe(true);
+  });
 });

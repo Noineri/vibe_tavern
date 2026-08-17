@@ -704,6 +704,54 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     // (XU-6 — the old sandbox "Test it" button is gone).
     expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
   });
+
+  it("guards the whole mobile flex column with min-w-0 (4a: the 844px tablist blow-out)", async () => {
+    // Regression pin, 2026-08-17 audit (MOBILE_AND_PROMPT_FIXES_REPORT 4a defect 2):
+    // the mobile branch used to render `flex min-h-0 flex-1 flex-col` divs with
+    // no min-width guard. A content-driven min-content width inside the chat
+    // pane then inflated every flex item up the chain (min-width:auto) and
+    // pushed the Чат/Правка tablist off-screen (844px on a 390px viewport).
+    // The desktop branch pins widths (w-[440px] shrink-0 / min-w-0), so this
+    // only manifested on mobile. happy-dom does not compute layout, so the pin
+    // asserts the guard classes on the real rendered DOM chain.
+    mobileOverride = true;
+    router.activeThread = thread("thread-1");
+    router.messages = [msg({ id: "u1", role: "user", content: "guards" })];
+
+    const { getByTestId, getByRole } = renderShell();
+    await flushSessionLoad();
+
+    const tablist = getByRole("tablist");
+    expect(tablist.classList.contains("min-w-0")).toBe(true);
+
+    const shellRoot = tablist.parentElement;
+    if (!(shellRoot instanceof HTMLElement)) throw new Error("shell root missing");
+    expect(shellRoot.classList.contains("min-w-0")).toBe(true);
+
+    const chatPane = getByTestId("copilot-pane-chat");
+    const editPane = getByTestId("copilot-pane-edit");
+    expect(chatPane.classList.contains("min-w-0")).toBe(true);
+    expect(editPane.classList.contains("min-w-0")).toBe(true);
+
+    const panesContainer = chatPane.parentElement;
+    if (!(panesContainer instanceof HTMLElement)) throw new Error("panes container missing");
+    expect(panesContainer.classList.contains("min-w-0")).toBe(true);
+
+    // Shared pane roots (used by BOTH branches — on desktop their widths are
+    // pinned by the branch wrappers, so the guard is a no-op there).
+    const chatRoot = chatPane.firstElementChild;
+    if (!(chatRoot instanceof HTMLElement)) throw new Error("chat pane content root missing");
+    expect(chatRoot.classList.contains("min-w-0")).toBe(true);
+    const editRoot = editPane.firstElementChild;
+    if (!(editRoot instanceof HTMLElement)) throw new Error("edit pane content root missing");
+    expect(editRoot.classList.contains("min-w-0")).toBe(true);
+
+    // The message list root must not re-open the hole between the pane and
+    // the (internally scrollable) message scroller.
+    const messageListRoot = chatPane.querySelector('[data-testid="copilot-message-list"]');
+    if (!(messageListRoot instanceof HTMLElement)) throw new Error("message list root missing");
+    expect(messageListRoot.classList.contains("min-w-0")).toBe(true);
+  });
 });
 
 describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {

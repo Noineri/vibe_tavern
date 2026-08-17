@@ -637,7 +637,7 @@ export function ExperienceEditor() {
   if (!activeScript) {
     return (
       <>
-      <div className="mx-auto max-w-[860px] px-6 py-5">
+      <div data-testid="experience-picker-scroll" className="mx-auto max-w-[860px] px-6 py-5 max-md:h-full max-md:overflow-y-auto">
         {listsFailed && (
           <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
             {t("experience_editor_load_error")}
@@ -758,7 +758,7 @@ export function ExperienceEditor() {
         </button>
 
         <input
-          className={cn(inputCls, "min-w-0 flex-1 text-[15px] font-semibold")}
+          className={cn(inputCls, "min-w-0 max-md:basis-full flex-1 text-[15px] font-semibold")}
           type="text"
           value={activeScript.name}
           onChange={(e) => updateScriptDraft({ name: e.target.value })}
@@ -782,7 +782,7 @@ export function ExperienceEditor() {
         />
 
         <span
-          className={cn("shrink-0 font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
+          className={cn("shrink-0 max-md:hidden font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
           title={activeScriptDraft?.error ?? undefined}
         >
           {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
@@ -799,7 +799,7 @@ export function ExperienceEditor() {
           <button
             type="button"
             aria-label={t("experience_editor_duplicate")}
-            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
+            className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
             onClick={handleDuplicateScript}
           >
             <Ic.copy />
@@ -812,7 +812,7 @@ export function ExperienceEditor() {
             <button
               type="button"
               aria-label={t("experience_editor_delete")}
-              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
+              className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
               onClick={() => setExperienceDeleteOpen(true)}
             >
               <Ic.del />
@@ -893,7 +893,7 @@ export function ExperienceEditor() {
                           type="button"
                           key={starter.id}
                           className={cn(
-                            "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
+                            "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
                             active
                               ? "border-accent bg-accent/10 text-accent-t"
                               : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
@@ -917,14 +917,14 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
                   onClick={() => setApiRefOpen((v) => !v)}
                 >
                   <Ic.book /> {t("script_api_reference")}
                 </button>
                 <button
                   type="button"
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                   disabled={validating || activeScript.code.trim() === ""}
                   onClick={() => void handleValidateRules()}
                 >
@@ -949,7 +949,7 @@ export function ExperienceEditor() {
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-[220px] flex-1">
+                <div className="min-w-[220px] max-md:min-w-0 flex-1">
                   <DropdownSelect
                     value={activeVisualId ?? ""}
                     options={allVisuals.map((visual) => {
@@ -980,7 +980,7 @@ export function ExperienceEditor() {
                       <button
                         type="button"
                         aria-label={t("experience_editor_duplicate")}
-                        className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
+                        className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
                         onClick={handleDuplicateVisual}
                       >
                         <Ic.copy />
@@ -990,7 +990,7 @@ export function ExperienceEditor() {
                       <button
                         type="button"
                         aria-label={t("experience_editor_visual_delete")}
-                        className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
+                        className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
                         onClick={() => {
                           if (activeVisualId) {
                             setVisualDeleteError(null);
@@ -1023,7 +1023,7 @@ export function ExperienceEditor() {
                       key={starter.id}
                       aria-label={isPaired ? t("experience_editor_visual_paired") : undefined}
                       className={cn(
-                        "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
+                        "flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 font-ui text-[11px] transition-all",
                         isPaired
                           ? "border-accent bg-accent/10 text-accent-t ring-2 ring-accent/40"
                           : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
@@ -1043,7 +1043,7 @@ export function ExperienceEditor() {
 
               {activeVisual ? (
                 <>
-                  <div className="flex items-center gap-2">
+                  <div className="flex max-md:flex-wrap items-center gap-2">
                     <input
                       className={cn(inputCls, "min-w-0 flex-1")}
                       type="text"
@@ -1053,10 +1053,10 @@ export function ExperienceEditor() {
                       title={activeVisualDraft?.error ?? undefined}
                     />
                     {visualDirty && (
-                      <span className="shrink-0 whitespace-nowrap font-ui text-[12px] text-t3">{t("unsaved_changes")}</span>
+                      <span className="shrink-0 max-md:hidden whitespace-nowrap font-ui text-[12px] text-t3">{t("unsaved_changes")}</span>
                     )}
                     <SaveButton
-                      className="shrink-0"
+                      className="shrink-0 max-md:min-h-[44px] max-md:w-full"
                       dirty={visualDirty}
                       saveState={visualSaveState}
                       resetKey={activeVisualId}
@@ -1107,7 +1107,7 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", visualApiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
+                  className={cn("flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", visualApiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
                   onClick={() => setVisualApiRefOpen((v) => !v)}
                 >
                   <Ic.book /> {t("script_api_reference")}
