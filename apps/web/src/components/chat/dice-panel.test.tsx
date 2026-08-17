@@ -281,6 +281,30 @@ describe("DiceTray", () => {
     }));
   });
 
+  it("marks every tray control as swipe-ignored so BottomSheet touch dismissal cannot eat taps", () => {
+    // Mechanism (verified against @base-ui/react drawer source + a live mobile-viewport
+    // repro): DrawerViewport registers a non-passive capture-phase touchmove and, when the
+    // touched region is not a scrolling container, calls preventDefault()+stopPropagation()
+    // on ANY moving touch — finger jitter of 1-2px — which suppresses Chrome's synthesized
+    // click. On phones the roll buttons then never fire; desktop mouse clicks are unaffected.
+    // `data-base-ui-swipe-ignore` makes the drawer reset its touch tracking for these
+    // elements, restoring taps. Pin it on every interactive control in the tray.
+    const { getByTestId, getByRole } = render(
+      <DiceTray
+        chatId="chat_1"
+        branchId="branch_1"
+        mode="normal"
+        definitions={definitions}
+        lane={lanes().normal}
+        character={mocks.character}
+        persona={mocks.persona}
+        diceActorBindings={null}
+      />,
+    );
+    expect(getByTestId("roll-btn-character-fate").getAttribute("data-base-ui-swipe-ignore")).not.toBeNull();
+    expect(getByTestId("roll-btn-persona-fate").getAttribute("data-base-ui-swipe-ignore")).not.toBeNull();
+  });
+
   it("supports Normal remove and clear actions", async () => {
     const roll = makeRoll();
     const { getByRole } = render(
@@ -297,7 +321,12 @@ describe("DiceTray", () => {
     );
 
     fireEvent.click(getByRole("button", { name: "dice_remove_roll" }));
+    // The remove and clear buttons live in regions that are scroll containers only when
+    // content overflows — with few rolls they are exposed to the same touch-claim mechanism
+    // as the roll buttons, so they must carry the swipe-ignore attribute too.
+    expect(getByRole("button", { name: "dice_remove_roll" }).getAttribute("data-base-ui-swipe-ignore")).not.toBeNull();
     fireEvent.click(getByRole("button", { name: "dice_clear_lane" }));
+    expect(getByRole("button", { name: "dice_clear_lane" }).getAttribute("data-base-ui-swipe-ignore")).not.toBeNull();
     await waitFor(() => {
       expect(mocks.actions.removeRoll).toHaveBeenCalledWith("chat_1", "branch_1", roll.rollId);
       expect(mocks.actions.clearLane).toHaveBeenCalledWith("chat_1", "branch_1");

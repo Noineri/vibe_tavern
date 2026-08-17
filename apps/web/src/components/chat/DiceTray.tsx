@@ -90,6 +90,13 @@ function ActorRollButton({
       onClick={onClick}
       disabled={state === "rolling"}
       data-testid={`roll-btn-${actorType}-${checkId}`}
+      // Base UI Drawer's touch machinery claims any moving touch inside a
+      // non-scrolling popup region (preventDefault on touchmove) — which
+      // suppresses the synthesized click, so finger jitter (1-2px) kills the
+      // tap on phones while desktop mouse clicks work. `data-base-ui-swipe-ignore`
+      // makes DrawerViewport reset its touch tracking for this element
+      // (isSwipeIgnoredTarget on touchstart), keeping taps clickable.
+      data-base-ui-swipe-ignore=""
       aria-label={`${action} — ${checkLabel} (${noun})`}
       title={`${action} — ${noun}`}
       className={cn(
@@ -315,6 +322,7 @@ function RollCard({ roll, mode, stale, onRemove, onIncludedChange, onChoose }: R
             type="button"
             onClick={onRemove}
             aria-label={t("dice_remove_roll")}
+            data-base-ui-swipe-ignore=""
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-t3 transition-colors hover:bg-danger-dim hover:text-danger-text"
           >
             <Icons.Trash />
@@ -650,6 +658,7 @@ export function DiceTray({
             type="button"
             onClick={() => { void clearLane(chatId, branchId); }}
             aria-label={t("dice_clear_lane")}
+            data-base-ui-swipe-ignore=""
             className="min-h-10 w-full rounded-md border border-border px-3 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors hover:border-danger/50 hover:bg-danger-dim hover:text-danger-text"
           >
             {t("dice_clear_all")}
