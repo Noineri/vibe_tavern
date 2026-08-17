@@ -71,6 +71,22 @@
 
 ---
 
+## Installation
+
+### On any platform with Bun (recommended)
+
+Install [Bun](https://bun.com) and run:
+
+```bash
+bun install -g vibe-tavern
+```
+
+Run Vibe Tavern with `vibe-tavern` command
+
+For other installation methods see [Quick start](#quick-start)
+
+---
+
 ## What is Vibe Tavern?
 
 Vibe Tavern is a local AI roleplay client I am building around everyday comfort, long-running sessions, and mobile screens.
@@ -216,16 +232,6 @@ An Android build for Termux automates most of the installation work.
 ---
 
 ## Quick start
-
-### Any platform, with Bun
-
-If you already have [Bun](https://bun.com), this is the shortest path:
-
-```bash
-bun install -g vibe-tavern
-```
-
-Then run `vibe-tavern`. Update with `vibe-tavern update`, or from the in-app update dialog.
 
 ### Windows
 
