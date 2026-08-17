@@ -478,6 +478,11 @@ export function PromptOrderCanvas({
             depth: targetDepth,
             order: index,
             kind: item.kind === "custom" ? "custom" : (existing?.kind ?? "built_in"),
+            // Role is content metadata on the entry (built-ins; customs carry
+            // theirs on CustomInjection). Carrying it over is load-bearing:
+            // rebuilding without it reset every non-default role to the slot's
+            // hardcoded default (system) on ANY drag — user-reported 09.08.2026.
+            ...(existing?.role ? { role: existing.role } : {}),
           };
           if (idx >= 0) nextPromptOrder[idx] = entry;
           else nextPromptOrder.push(entry);

@@ -26,7 +26,7 @@
  * Runner: bun:test + happy-dom.
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
-import type { ReactElement, ReactNode } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
@@ -72,7 +72,28 @@ mock.module("../../shared/Tooltip.js", () => ({
 let isMobile = false;
 mock.module("../../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => isMobile }));
 
-const { render, fireEvent, within } = await import("@testing-library/react");
+// @dnd-kit/core DndContext wrap-and-capture: the REAL component still renders
+// (identical provider machinery for useSortable etc.), but the handler props
+// are captured so tests can fire the same onDragStart/onDragEnd calls the
+// library itself makes at drag end. This pins the drag-COMMIT write-path
+// (handleDragEnd → commitList) without simulating cross-container pointer
+// drags, which the file header notes are fragile under happy-dom.
+const realDndKit = await import("@dnd-kit/core");
+type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+const RealDndContext = realDndKit.DndContext;
+let dndHandlers: RealDndContextProps | null = null;
+mock.module("@dnd-kit/core", () => ({
+  ...realDndKit,
+  // Render the real component as a child element (NOT a direct function
+  // call — that delegates its hooks into this wrapper and deadlocks React 19
+  // under happy-dom, observed as a hang on the first render).
+  DndContext: (props: RealDndContextProps) => {
+    dndHandlers = props;
+    return <RealDndContext {...props} />;
+  },
+}));
+
+const { render, fireEvent, within, act } = await import("@testing-library/react");
 
 let InjectionTable: typeof import("./InjectionTable.js").InjectionTable;
 beforeAll(async () => {
@@ -728,5 +749,42 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(within(beforeCard!).getByText("A gate wreathed in roses.")).toBeTruthy();
     expect(within(beforeCard!).getByText("rose, gate")).toBeTruthy();
     expect(within(beforeCard!).getByText("thorn")).toBeTruthy();
+  });
+
+  // ── Drag-commit write path (regression 09.08.2026) ─────────────────────
+  // User report: change a preset inject's role (persona description etc.);
+  // then ANY canvas drag resets it to system. handleDragEnd → commitList
+  // rebuilds EVERY canvas entry and (before the fix) omitted `role`, so the
+  // pipeline fell back to each slot's hardcoded default (system). The DndContext
+  // capture mock above lets us fire the exact handler pair the library fires
+  // at drag end; `over: null` still exercises the full commit (the reorder
+  // block is skipped, but commitList runs for every zone — "ANY drag").
+  it("drag-commit preserves existing entry roles (any drag, any item)", async () => {
+    const spies = makeSpies();
+    const promptOrder: PromptOrderEntry[] = [
+      { identifier: "main", enabled: true, kind: "built_in", zone: "before_chat", depth: null, order: 0, role: "user" },
+      { identifier: "personaDescription", enabled: true, kind: "built_in", zone: "before_chat", depth: null, order: 20, role: "assistant" },
+    ];
+    renderCanvas({ promptOrder, spies });
+
+    expect(dndHandlers).toBeTruthy();
+    // Minimal drag lifecycle: start freezes the visual zones, end commits
+    // every entry. Shapes are the subset handleDragStart/handleDragEnd read
+    // ({active:{id}} / {active:{id}, over}) — cast, not `as any`.
+    const startEvent = { active: { id: "slot:personaDescription" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
+    const endEvent = { active: { id: "slot:personaDescription" }, over: null } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => {
+      dndHandlers!.onDragStart!(startEvent);
+      dndHandlers!.onDragEnd!(endEvent);
+    });
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledTimes(1);
+    const next = spies.onPromptOrderChange.mock.calls[0][0] as PromptOrderEntry[];
+    const main = next.find((e) => e.identifier === "main");
+    const persona = next.find((e) => e.identifier === "personaDescription");
+    // The dragged item's role survives the rebuild…
+    expect(persona?.role).toBe("assistant");
+    // …and so does every other committed entry's (commitList rebuilds ALL).
+    expect(main?.role).toBe("user");
   });
 });
