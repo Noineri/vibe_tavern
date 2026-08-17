@@ -921,6 +921,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       setFieldErrors(validated.errors);
       return { ok: false, message: t("experience_playground_settings_field_errors") };
     }
+    // A pass must clear the painted errors too: a failed launch can be fixed
+    // through the advanced JSON textarea (applySetupFieldValue never runs),
+    // and a stale inline error would survive the successful relaunch.
+    setFieldErrors({});
     const extras = { ...settingsObject };
     for (const field of setupFields) delete extras[field.id];
     return { ok: true, value: { ...extras, ...validated.settings } };
