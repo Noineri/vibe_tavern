@@ -1,203 +1,171 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { RefObject } from "react";
-import type { VirtuosoHandle } from "react-virtuoso";
-import { nextPinned, type ScrollMetrics } from "../../lib/stick-to-bottom.js";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { isAtBottom, type ScrollMetrics } from "../../lib/stick-to-bottom.js";
 
 export interface StickToBottom {
-  /** Pass to `<Virtuoso ref>`. */
-  virtuosoRef: RefObject<VirtuosoHandle | null>;
-  /** Pass to `<Virtuoso scrollerRef>`. */
-  scrollerRef: (ref: HTMLElement | Window | null) => void;
-  /** Pass to `<Virtuoso totalListHeightChanged>`. */
-  onTotalListHeightChanged: (height: number) => void;
-  /**
-   * The same rule, applied the moment something inside a row grew instead of
-   * when the virtualizer notices. `totalListHeightChanged` reports that growth
-   * one frame later — it goes through the library's own re-measure and
-   * re-render first — and while tokens stream that frame is visible as a jump.
-   * Handed to the streamed body through `FollowBottomContext`.
-   */
-  followContent: () => void;
-  /**
-   * Whether the view follows the bottom. It flips rarely — only when the user
-   * detaches or re-attaches — so it is cheap to render the "to the end" button
-   * from.
-   */
+  /** Attach to the overflow container. */
+  scrollerRef: (node: HTMLElement | Window | null) => void;
+  /** Attach to the recent message tail whose mounted rows remain stable. */
+  stableTailRef: (node: HTMLElement | null) => void;
+  /** Reconcile delayed height estimates reported by the virtualized history. */
+  onVirtualizedHeightChanged: () => void;
+  /** Whether content and viewport size changes should keep the bottom aligned. */
   pinned: boolean;
   /** Re-attach and drive to the bottom (the "to the end" button). */
   scrollToBottom: () => void;
 }
 
+function readMetrics(element: HTMLElement): ScrollMetrics {
+  return {
+    scrollTop: element.scrollTop,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  };
+}
+
 /**
- * Binds the rule from `stick-to-bottom.ts` to a Virtuoso instance.
+ * Owns the scroll invariant for a message list with a stable recent tail.
  *
- * Three inputs and one output:
- *   in  — the container's `scroll` event   → recompute `pinned`
- *   in  — `totalListHeightChanged`         → if `pinned`, drive to the bottom
- *   in  — viewport resize                  → if `pinned`, drive to the bottom
- *   out — `scrollToBottom()` for the button → re-attach and drive
- *
- * Why `totalListHeightChanged` rather than `followOutput`: `followOutput` only
- * fires when `totalCount` changes — the library's own JSDoc says so. While
- * tokens stream the item count does not change; the height of one item grows.
- * `totalListHeightChanged` is derived from `listState`, which updates on every
- * item re-measurement, so it catches both a growing message and a new one.
- *
- * The hook knows NOTHING about generations: no `isSending`, no "end of stream".
- * Finishing a generation is just one more height change. That absence of an
- * "the stream ended" special case is precisely what removes the "it scrolled to
- * the bottom even though the user went back to read" bug.
+ * The observed tail is outside the virtualized history. Scrolling can change
+ * which old rows Virtuoso renders, but it cannot resize this observed element,
+ * so a tail resize can update `scrollTop` without feeding back into the same
+ * ResizeObserver. This lets the pinned position settle before paint for
+ * streaming text, disclosure animations, image loads, font changes, and future
+ * row content without component-specific coordination.
  */
-export function useStickToBottom(): StickToBottom {
-  const virtuosoRef = useRef<VirtuosoHandle | null>(null);
-  const scrollerElRef = useRef<HTMLElement | null>(null);
-  // `pinned` lives in a ref and in state at once: the ref is read on every
-  // scroll event (no re-render), the state renders the "to the end" button.
-  // Only `setPinned` writes either, so they cannot drift apart.
+export function useStickToBottom(resetKey: string): StickToBottom {
+  const scrollerElementRef = useRef<HTMLElement | null>(null);
+  const stableTailObserverRef = useRef<ResizeObserver | null>(null);
+  const viewportObserverRef = useRef<ResizeObserver | null>(null);
   const pinnedRef = useRef(true);
+  const userScrollIntentRef = useRef(false);
   const [pinned, setPinnedState] = useState(true);
+
   const setPinned = useCallback((next: boolean) => {
     if (pinnedRef.current === next) return;
     pinnedRef.current = next;
     setPinnedState(next);
   }, []);
-  // The last geometry we know of. `nextPinned` compares against it to tell a
-  // user scrolling up from a position the content re-layout moved itself.
-  //
-  // It is refreshed EVERY time we look at the container, not just on scroll
-  // events, and that is load-bearing rather than tidy: Firefox delivers scroll
-  // events late, so `scrollTop` in the event belongs to one moment while the
-  // `scrollHeight` we read while handling it belongs to a later one. The
-  // virtualizer's height estimate wobbles (measured: 6762 → 6003 → 5890 →
-  // 6205), so it can change and change back between two scroll events — and a
-  // comparison against the previous EVENT then reports "the height never moved"
-  // while the position did, which reads as a user scrolling up. Comparing
-  // against the last height we actually observed keeps the two coherent.
-  const lastMetricsRef = useRef<ScrollMetrics>({ scrollTop: 0, scrollHeight: 0, clientHeight: 0 });
-
-  const rememberGeometry = useCallback(() => {
-    const el = scrollerElRef.current;
-    if (!el) return;
-    lastMetricsRef.current = {
-      scrollTop: el.scrollTop,
-      scrollHeight: el.scrollHeight,
-      clientHeight: el.clientHeight,
-    };
-  }, []);
 
   const followBottom = useCallback(() => {
-    // Ask Virtuoso to scroll instead of writing scrollTop ourselves: it owns the
-    // position (it compensates for item re-measurement), and a second writer
-    // would desynchronise its internal "we are at the bottom" state.
-    //
-    // We ask for a deliberately unreachable offset: the library's `scrollTo`
-    // clamps `top` to the real maximum (`scrollHeight - viewportHeight`) at the
-    // moment it applies, and updates its own state with that same value. So
-    // "the maximum" is more accurate than any estimate of ours — an item may be
-    // re-measured between reading the height and scrolling.
-    //
-    // Why not `scrollToIndex({ index: "LAST", align: "end" })`, which is how the
-    // library implements follow internally: it aligns the bottom of the last
-    // ITEM with the bottom of the viewport, and the Footer sits below that item.
-    // Measured in the browser: it stopped 32px short, `isAtBottom` read that as
-    // "not at the bottom", and follow detached itself after the very first tick.
-    //
-    // `behavior: "auto"` — no animation: an animated scroll would still be
-    // running when the next token arrives.
-    virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER, behavior: "auto" });
-    rememberGeometry();
-  }, [rememberGeometry]);
+    const element = scrollerElementRef.current;
+    if (!element) return;
+    element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+  }, []);
 
-  const handleScroll = useCallback(() => {
-    const el = scrollerElRef.current;
-    if (!el) return;
-    const previous = lastMetricsRef.current;
-    const current: ScrollMetrics = {
-      scrollTop: el.scrollTop,
-      scrollHeight: el.scrollHeight,
-      clientHeight: el.clientHeight,
-    };
-    lastMetricsRef.current = current;
-    setPinned(nextPinned(pinnedRef.current, previous, current));
-    // Pinned but not at the bottom means a content re-layout moved the position
-    // and moved it short (the virtualizer does that when it swaps the streaming
-    // placeholder for the real message). Finish the trip.
-    // When there is nothing left to travel, the library's `scrollTo` bails out
-    // early and emits no event, so this does not recurse.
-    if (pinnedRef.current) followBottom();
+  const reconcileAfterLayoutChange = useCallback(() => {
+    const element = scrollerElementRef.current;
+    if (!element) return;
+    if (pinnedRef.current) {
+      followBottom();
+      return;
+    }
+    setPinned(isAtBottom(readMetrics(element)));
   }, [followBottom, setPinned]);
 
-  // The second geometry input beside `totalListHeightChanged`: VIEWPORT resize.
-  //
-  // It is needed because the library's callback only covers the list height.
-  // Measured: 1280x800 → 1280x600 changes neither the list height nor
-  // `scrollTop`, so neither `totalListHeightChanged` nor a `scroll` event
-  // arrives — and the view was left 200px from the bottom while still `pinned`.
-  //
-  // We observe the scroller and nothing inside it. Observing the list container
-  // is not an option: driving to the bottom changes which items are rendered,
-  // that changes the list height, and `ResizeObserver` storms — the browser
-  // answers with "ResizeObserver loop completed with undelivered notifications".
-  // The scroller's own size does not depend on scrolling, so there is no loop.
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const handleScroll = useCallback(() => {
+    const element = scrollerElementRef.current;
+    if (!element) return;
+    if (pinnedRef.current && !userScrollIntentRef.current) {
+      // Firefox can restore a nested scroll container after React's layout
+      // effects have already aligned a freshly loaded chat. That browser-owned
+      // scroll has no preceding user input, so it must not detach the pinned
+      // view. The same rule also rejects virtualizer-owned position changes.
+      followBottom();
+      return;
+    }
+    userScrollIntentRef.current = false;
+    setPinned(isAtBottom(readMetrics(element)));
+  }, [followBottom, setPinned]);
 
-  const observeViewport = useCallback(
-    (el: HTMLElement | null) => {
-      resizeObserverRef.current?.disconnect();
-      resizeObserverRef.current = null;
-      if (!el) return;
-      const observer = new ResizeObserver(() => {
-        if (pinnedRef.current) followBottom();
-        else rememberGeometry();
-      });
-      observer.observe(el);
-      resizeObserverRef.current = observer;
-    },
-    [followBottom],
-  );
+  const markUserScrollIntent = useCallback(() => {
+    userScrollIntentRef.current = true;
+  }, []);
 
-  const scrollerRef = useCallback(
-    (ref: HTMLElement | Window | null) => {
-      const previous = scrollerElRef.current;
-      if (previous) previous.removeEventListener("scroll", handleScroll);
-      // Virtuoso hands back a Window only in useWindowScroll mode, which is not
-      // used here; narrow to HTMLElement and ignore anything else.
-      const next = ref instanceof HTMLElement ? ref : null;
-      scrollerElRef.current = next;
-      if (next) next.addEventListener("scroll", handleScroll, { passive: true });
-      observeViewport(next);
-    },
-    [handleScroll, observeViewport],
-  );
+  const markWheelScrollIntent = useCallback((event: WheelEvent) => {
+    // At the bottom, a downward wheel has nowhere to go and must not leave a
+    // stale intent that could legitimize a later browser-owned scroll.
+    if (event.deltaY < 0 || !pinnedRef.current) markUserScrollIntent();
+  }, [markUserScrollIntent]);
 
-  useEffect(() => {
-    return () => {
-      scrollerElRef.current?.removeEventListener("scroll", handleScroll);
-      resizeObserverRef.current?.disconnect();
-    };
-  }, [handleScroll]);
+  const markDirectPointerIntent = useCallback((event: PointerEvent) => {
+    // A scrollbar-thumb drag targets the scroller itself. Pointer presses on a
+    // disclosure or message control must not be mistaken for scroll intent.
+    if (event.target === event.currentTarget) markUserScrollIntent();
+  }, [markUserScrollIntent]);
 
-  const followContent = useCallback(() => {
-    if (pinnedRef.current) followBottom();
-    else rememberGeometry();
-  }, [followBottom, rememberGeometry]);
+  const markKeyboardScrollIntent = useCallback((event: KeyboardEvent) => {
+    if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+      markUserScrollIntent();
+    }
+  }, [markUserScrollIntent]);
+
+  const observeViewport = useCallback((node: HTMLElement | null) => {
+    viewportObserverRef.current?.disconnect();
+    viewportObserverRef.current = null;
+    if (!node) return;
+    const observer = new ResizeObserver(reconcileAfterLayoutChange);
+    observer.observe(node);
+    viewportObserverRef.current = observer;
+  }, [reconcileAfterLayoutChange]);
+
+  const scrollerRef = useCallback((node: HTMLElement | Window | null) => {
+    const previous = scrollerElementRef.current;
+    if (previous) {
+      previous.removeEventListener("scroll", handleScroll);
+      previous.removeEventListener("wheel", markWheelScrollIntent);
+      previous.removeEventListener("touchmove", markUserScrollIntent);
+      previous.removeEventListener("pointerdown", markDirectPointerIntent);
+      previous.removeEventListener("keydown", markKeyboardScrollIntent);
+    }
+    const element = node instanceof HTMLElement ? node : null;
+    scrollerElementRef.current = element;
+    if (element) {
+      element.addEventListener("scroll", handleScroll, { passive: true });
+      element.addEventListener("wheel", markWheelScrollIntent, { passive: true });
+      element.addEventListener("touchmove", markUserScrollIntent, { passive: true });
+      element.addEventListener("pointerdown", markDirectPointerIntent, { passive: true });
+      element.addEventListener("keydown", markKeyboardScrollIntent);
+    }
+    observeViewport(element);
+  }, [handleScroll, markDirectPointerIntent, markKeyboardScrollIntent, markUserScrollIntent, markWheelScrollIntent, observeViewport]);
+
+  const stableTailRef = useCallback((node: HTMLElement | null) => {
+    stableTailObserverRef.current?.disconnect();
+    stableTailObserverRef.current = null;
+    if (!node) return;
+    const observer = new ResizeObserver(reconcileAfterLayoutChange);
+    observer.observe(node);
+    stableTailObserverRef.current = observer;
+  }, [reconcileAfterLayoutChange]);
 
   const scrollToBottom = useCallback(() => {
     setPinned(true);
     followBottom();
   }, [followBottom, setPinned]);
 
-  // The very first geometry read: without it `lastMetrics` stays at zeroes and
-  // the first real scroll event compares against a container that never existed.
+  useLayoutEffect(() => {
+    userScrollIntentRef.current = false;
+    setPinned(true);
+    followBottom();
+  }, [followBottom, resetKey, setPinned]);
+
   useEffect(() => {
-    rememberGeometry();
-  }, [rememberGeometry]);
+    return () => {
+      const element = scrollerElementRef.current;
+      element?.removeEventListener("scroll", handleScroll);
+      element?.removeEventListener("wheel", markWheelScrollIntent);
+      element?.removeEventListener("touchmove", markUserScrollIntent);
+      element?.removeEventListener("pointerdown", markDirectPointerIntent);
+      element?.removeEventListener("keydown", markKeyboardScrollIntent);
+      stableTailObserverRef.current?.disconnect();
+      viewportObserverRef.current?.disconnect();
+    };
+  }, [handleScroll, markDirectPointerIntent, markKeyboardScrollIntent, markUserScrollIntent, markWheelScrollIntent]);
 
   return {
-    virtuosoRef,
     scrollerRef,
-    onTotalListHeightChanged: followContent,
-    followContent,
+    stableTailRef,
+    onVirtualizedHeightChanged: reconcileAfterLayoutChange,
     pinned,
     scrollToBottom,
   };

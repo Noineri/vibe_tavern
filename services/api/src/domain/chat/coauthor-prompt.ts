@@ -304,7 +304,6 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   let compactionSummary: string | undefined;
 
   const nonHistoryTokens = estimateTokens(systemContent);
-  let totalTokenEstimate = nonHistoryTokens + estimateCoauthorHistoryTokens(history);
   const compactionPlan = planHistoryCompaction({
     messages: history,
     nonHistoryTokens,
@@ -312,15 +311,21 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     responseReserve: input.responseReserve,
     countHistoryTokens: estimateCoauthorHistoryTokens,
   });
+  let totalTokenEstimate: number;
   if (compactionPlan) {
     recentMessagesForHistory = compactionPlan.messages;
     totalTokenEstimate = nonHistoryTokens + compactionPlan.preservedHistoryTokens;
+    const beforeCompaction = compactionPlan.totalBeforeCompaction === undefined
+      ? ""
+      : `${compactionPlan.totalBeforeCompaction} tokens before, `;
     compactionSummary =
       `Kept ${recentMessagesForHistory.length} of ` +
       `${history.length} recent messages ` +
       `(~${compactionPlan.preservedHistoryTokens} tokens after compaction, ` +
-      `${compactionPlan.totalBeforeCompaction} tokens before, ` +
+      beforeCompaction +
       `budget: ${input.contextBudget}, reserve: ${compactionPlan.responseReserve})`;
+  } else {
+    totalTokenEstimate = nonHistoryTokens + estimateCoauthorHistoryTokens(history);
   }
 
   const finalPayload = {

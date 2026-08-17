@@ -391,13 +391,15 @@ When `contextBudget` is set and the complete prompt plus its response reserve ex
 
 ```
 1. Calculate nonHistoryTokens = every non-history layer, including mesExample, depth prompts, script injections, and endpoint-owned insights instructions
-2. Count the fully formatted history (role labels and separators included)
-3. Trigger when nonHistoryTokens + fullHistoryTokens + responseReserve > contextBudget
-4. historyBudget = contextBudget - nonHistoryTokens - responseReserve
-5. Test complete trailing history suffixes against historyBudget, preserving at least 2 messages
+2. Calculate historyBudget = contextBudget - nonHistoryTokens - responseReserve
+3. Measure a small recent suffix and project a useful first candidate from its exact formatted cost
+4. Grow the candidate suffix until one exceeds historyBudget; if the complete history fits, return it unchanged
+5. Binary-search the bracket for the largest exact trailing suffix, preserving at least 2 messages
 6. Apply findSafeCompactionBoundary() — never split assistant→tool pairs
-7. Discard messages before the safe boundary and add truthful diagnostic accounting
+7. Discard messages before the safe boundary and report exact accounting for the preserved suffix
 ```
+
+The overflow path deliberately does not tokenize the full history merely to report a pre-compaction total. Every candidate is still measured through the caller's exact formatter and model tokenizer; the optimization removes diagnostic work, not prompt-budget accuracy.
 
 ### Token Counting
 

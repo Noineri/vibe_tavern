@@ -7,9 +7,9 @@ import { ExperienceLauncher } from "../experience/ExperienceLauncher.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 
 export function PlayMode() {
-  // key={activeScope} forces MessageList to remount on chat/branch switch, so
-  // Virtuoso's initialTopMostItemIndex re-runs and pins to bottom natively on mount.
-  // This replaced the old prevScopeRef rAF-pin (spike 2026-06-20).
+  // Remount at the chat/branch boundary so message-local UI and Virtuoso's
+  // old-history measurement cache cannot leak across conversations. The shared
+  // scroll hook establishes the new scope's native bottom position.
   const activeScope = useSnapshotStore((s) => {
     const cid = s.activeChat?.id ?? null;
     const bid = s.activeBranch?.id ?? null;

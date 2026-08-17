@@ -1,6 +1,5 @@
-import { useLayoutEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Markdown } from "../../lib/markdown.js";
-import { useFollowBottom } from "./follow-bottom-context.js";
 
 interface StreamingMarkdownProps {
   text: string;
@@ -8,12 +7,6 @@ interface StreamingMarkdownProps {
 }
 
 export function StreamingMarkdown({ text, indicator }: StreamingMarkdownProps) {
-  const followBottom = useFollowBottom();
-
-  useLayoutEffect(() => {
-    followBottom();
-  }, [text, followBottom]);
-
   if (!text && !indicator) return null;
 
   return (
