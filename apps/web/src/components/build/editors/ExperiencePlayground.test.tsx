@@ -37,6 +37,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ChangeEvent, ReactNode } from "react";
+import type { ExperienceSetupFieldDto } from "@vibe-tavern/api-contracts";
 import type { RenderResult } from "@testing-library/react";
 import type {
   ExperiencePlaygroundData,
@@ -1378,5 +1379,186 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
     expect(digest.feedback.legalActionTypes).toEqual(["score", "pass"]);
     expect(typeof digest.text).toBe("string");
     expect(digest.text.length).toBeGreaterThan(0);
+  });
+});
+
+// ── LOBBY-A: declared setup fields render as the launch form ────────────────
+
+describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY_REPORT fix step 1)", () => {
+  /** Declared setup fields: a defaulted select, a defaulted number, a
+   *  defaulted boolean, and (when `withRequiredText`) a required no-default
+   *  text field. */
+  function makeSetupFields(withRequiredText: boolean): ExperienceSetupFieldDto[] {
+    const fields: ExperienceSetupFieldDto[] = [
+      { id: "difficulty", kind: "select", label: "Difficulty", required: true, default: "easy", options: [{ value: "easy", label: "Easy" }, { value: "hard", label: "Hard" }] },
+      { id: "rounds", kind: "number", label: "Rounds", default: 3, min: 1, max: 9, step: 1 },
+      { id: "hints", kind: "boolean", label: "Hints", default: false },
+    ];
+    if (withRequiredText) fields.push({ id: "nickname", kind: "text", label: "Nickname", required: true });
+    return fields;
+  }
+
+  function mockDiscoveryWithSetup(fields: ExperienceSetupFieldDto[]): void {
+    runExperienceTest.mockImplementation(async () =>
+      makeDiscoverData({
+        definition: {
+          apiVersion: 1,
+          manifest: { id: "round", name: "Round" },
+          declaredCapabilities: [{ capability: "participants", reason: "scores" }],
+          hasChoose: false,
+          hasFlavor: false,
+          setup: { fields },
+        },
+      }),
+    );
+  }
+
+  /** Wait for the debounced discovery to land the setup form (400ms debounce
+   *  + promise resolution; headroom over the 1s waitFor default). */
+  async function waitForSetupForm(utils: { container: HTMLElement }): Promise<void> {
+    await waitFor(() => expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeTruthy(), { timeout: 4000 });
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("declared fields render as a form; author defaults seed into the launch; the raw JSON hides under the advanced disclosure", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(false));
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    // The declared fields render (required fields carry the required mark —
+    // match by substring); the raw JSON textarea is NOT directly rendered
+    // (collapsed advanced disclosure) — only its toggle is.
+    expect(utils.getByText(/Difficulty/)).toBeTruthy();
+    expect(utils.getByText("Rounds")).toBeTruthy();
+    // A boolean's label renders twice (the row label + the checkbox label).
+    expect(utils.getAllByText("Hints").length).toBeGreaterThan(1);
+    expect(utils.getByTestId("playground-settings-advanced-toggle")).toBeTruthy();
+    expect(utils.container.querySelectorAll('[data-testid="auto-textarea"]').length).toBe(0);
+
+    // Start sends the seeded author defaults (write-through seeding — the
+    // same values the hidden JSON now carries; modal omission semantics).
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({ difficulty: "easy", rounds: 3, hints: false });
+  });
+
+  it("a field edit writes into the settings JSON; undeclared extra keys and derived defaults ride along", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(false));
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    // Hand-write JSON with an UNDECLARED extra key and no declared keys (the
+    // author defaults re-derive for display and for the launch payload).
+    fireEvent.click(utils.getByTestId("playground-settings-advanced-toggle"));
+    const jsonArea = utils.container.querySelector('[data-testid="auto-textarea"]') as HTMLTextAreaElement;
+    await waitFor(() => expect(jsonArea).toBeTruthy());
+    fireEvent.change(jsonArea, { target: { value: '{"mystery":"x"}' } });
+
+    // Pick Hard through the form: the edit merges into the JSON object (the
+    // extra key is preserved), and Start sends extra + chosen + defaults.
+    await pickDropdown(utils, utils.container, "Easy", "Hard");
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({ mystery: "x", difficulty: "hard", rounds: 3, hints: false });
+  });
+
+  it("a required empty field blocks Start with the panel error + inline per-field error; filling it launches", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(true));
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(utils.getByText("experience_playground_settings_field_errors")).toBeTruthy());
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+    // Inline per-field error (identity i18n — the key verbatim).
+    expect(utils.getAllByText("experience_setup_field_required_error").length).toBeGreaterThan(0);
+
+    // Fill the required text field (the only auto-textarea while the advanced
+    // JSON stays collapsed) → Start carries the typed value.
+    const nickname = utils.container.querySelector('[data-testid="auto-textarea"]') as HTMLTextAreaElement;
+    fireEvent.change(nickname, { target: { value: "Ada" } });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({ difficulty: "easy", rounds: 3, hints: false, nickname: "Ada" });
+  });
+
+  it("a no-default boolean cycles absent ↔ true (unchecking restores absence)", async () => {
+    mockDiscoveryWithSetup([{ id: "turbo", kind: "boolean", label: "Turbo" }]);
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    // Toggle through the checkbox control (a boolean's text lives twice — the
+    // row label and the checkbox label; the control is the [role=checkbox]).
+    // Both toggles happen BEFORE any start so the launch-setup accordion
+    // stays mounted (a live session collapses it — XU-3).
+    const turboCheckbox = () => utils.getAllByText("Turbo").find((el) => el.closest('[role="checkbox"]'))!;
+
+    // Check → the JSON write-through carries turbo:true (read it through the
+    // advanced disclosure instead of launching).
+    fireEvent.click(utils.getByTestId("playground-settings-advanced-toggle"));
+    const jsonArea = () => utils.container.querySelector('[data-testid="auto-textarea"]') as HTMLTextAreaElement;
+    fireEvent.click(turboCheckbox());
+    await waitFor(() => expect(jsonArea().value).toBe('{"turbo":true}'));
+
+    // Uncheck → absence restored (the key is deleted, not written false).
+    fireEvent.click(turboCheckbox());
+    await waitFor(() => expect(jsonArea().value).toBe("{}"));
+
+    // Start sends the absent boolean (omission semantics — never a written false).
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(startExperiencePlayground.mock.calls[0]![0].settings).toEqual({});
+  });
+
+  it("a package with no declared fields keeps the direct raw-JSON textarea (fallback)", async () => {
+    runExperienceTest.mockImplementation(async () => makeDiscoverData());
+    const utils = renderPlayground();
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeNull();
+    expect(utils.queryByTestId("playground-settings-advanced-toggle")).toBeNull();
+    expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeTruthy();
+  });
+
+  it("broken settings JSON disables the form, warns, and keeps the textarea as the direct control", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(false));
+    const utils = renderPlayground();
+    await waitForSetupForm(utils);
+
+    fireEvent.click(utils.getByTestId("playground-settings-advanced-toggle"));
+    const jsonArea = utils.container.querySelector('[data-testid="auto-textarea"]') as HTMLTextAreaElement;
+    fireEvent.change(jsonArea, { target: { value: "{" } });
+
+    await waitFor(() => expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeNull());
+    expect(utils.getByText("experience_playground_settings_json_invalid")).toBeTruthy();
+    // The broken JSON stays directly editable (the technical-user escape hatch).
+    expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeTruthy();
+    // Start keeps the pre-LOBBY-A behavior: the detailed JSON diagnostic, no request.
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(utils.getByText(/experience_tester_settings_invalid/)).toBeTruthy());
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+  });
+
+  it("a settings-only edit persists without a roster edit, and a restored config still gets the form", async () => {
+    mockDiscoveryWithSetup(makeSetupFields(false));
+    const first = renderPlayground(VALID_CODE, null, { scriptId: "script_lobby" });
+    await waitForSetupForm(first);
+
+    // Pick Hard through the form — a settings-only edit (no roster edit).
+    await pickDropdown(first, first.container, "Easy", "Hard");
+    await waitFor(() => expect(window.localStorage.getItem("experience.playground.script_lobby")).toBeTruthy());
+    const raw = JSON.parse(window.localStorage.getItem("experience.playground.script_lobby")!) as { settingsJson: string };
+    expect(JSON.parse(raw.settingsJson)).toEqual({ difficulty: "hard", rounds: 3, hints: false });
+    first.unmount();
+
+    // Remount: the config restores (Hard persists) and — despite the restored
+    // roster (seatsTouched) — the discovery STILL captures the declared fields:
+    // the form is there for a restored config too (the pre-LOBBY-A discovery
+    // was skipped entirely for touched configs).
+    const second = renderPlayground(VALID_CODE, null, { scriptId: "script_lobby" });
+    await waitForSetupForm(second);
+    expect(second.getByText("Hard")).toBeTruthy();
   });
 });

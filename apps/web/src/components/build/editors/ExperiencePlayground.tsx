@@ -39,7 +39,7 @@
  * any chat/session. Reset tears the session + frame down client-side (the
  * server-side session is ephemeral process memory owned by the IR-84A driver).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EXPERIENCE_CAPABILITY,
   EXPERIENCE_CONTROLLER,
@@ -81,6 +81,13 @@ import {
   ExperienceFrame,
   type ExperienceFrameHandle,
 } from "../../experience/ExperienceFrame.js";
+import {
+  deriveSetupValuesFromSettings,
+  mergeAbsentSetupDefaults,
+  SetupFieldRow,
+  validateSetupFields,
+  type SetupField,
+} from "../../experience/setup-fields.js";
 import {
   buildPlaygroundDigest,
   buildRunTestDigest,
@@ -171,11 +178,22 @@ const CAPABILITY_LABEL_KEY = {
   [EXPERIENCE_CAPABILITY.rpAttachment]: "experience_cap_friendly_rp_attachment",
 } as const;
 
+/** LOBBY-A (EXPERIENCE_ENGINE_LOBBY_REPORT fix step 1): the setup-field discovery debounce. The unsaved rules buffer changes per keystroke; the pre-LOBBY-A auto-derive fired a compile per keystroke while the roster was untouched. The debounce coalesces that churn AND is what makes it affordable to keep discovering (for the declared setup fields) even after the roster is user-owned. */
+const DISCOVERY_DEBOUNCE_MS = 400;
+
 // ─── Normalization helpers (no `as any`; the wire details record is unknown) ──
 
 function asStringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+/** LOBBY-A: narrow a parsed JSON value to a plain settings object. Null for
+ *  arrays/scalars/null — the setup form is unavailable for those and the raw
+ *  JSON path applies. Runtime-checked narrowing (not a suppressed cast). */
+function asSettingsObject(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 function asConsole(value: unknown): ExperienceTestConsoleEntry[] {
@@ -564,6 +582,24 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
    *  used without hand-managing a seed. */
   const [lastUsedSeed, setLastUsedSeed] = useState("");
 
+  // LOBBY-A (EXPERIENCE_ENGINE_LOBBY_REPORT fix step 1): the setup fields
+  // declared by the CURRENT rules buffer (discovered), plus the per-field
+  // validation errors painted inline. The settings JSON stays the single
+  // source of truth — the form renders it and every edit writes back into it.
+  const [setupFields, setSetupFields] = useState<SetupField[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  /** LOBBY-A: the collapsed "advanced" disclosure over the raw settings JSON
+   *  (technical users; verbatim: «жсон для технических пользователей под
+   *  аккордеон прятать»). Local only — never persisted. */
+  const [settingsJsonOpen, setSettingsJsonOpen] = useState(false);
+  /** LOBBY-A: settings became the user's explicit choice (a form edit or a
+   *  textarea edit) — or the config was restored. Persisting no longer
+   * requires a roster edit: `seatsTouched` gates only the roster auto-derive,
+   * so a settings-only configuration survives a remount. */
+  const [settingsTouched, setSettingsTouched] = useState(
+    () => scriptId !== undefined && loadPlaygroundConfig(scriptId) !== null,
+  );
+
   // Session + turn form (local only). requestId/expectedRevision are
   // author-editable (prefilled from the last envelope) so idempotent replays
   // and stale-revision conflicts are directly exercisable.
@@ -615,6 +651,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [frameReady, setFrameReady] = useState(false);
   const sessionRef = useRef<ExperiencePlaygroundData | null>(null);
   sessionRef.current = session;
+  // LOBBY-A: the latest settings JSON for the discovery callback — the
+  // write-through default seeding runs inside the discovery then-block, which
+  // closes over the render-time string.
+  const settingsJsonRef = useRef(settingsJson);
+  settingsJsonRef.current = settingsJson;
   // XU-3: previous session-active flag so the launch-setup accordion collapses
   // exactly when a session becomes live (and re-expands on reset).
   const prevSessionActive = useRef(false);
@@ -667,8 +708,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   // derived-not-yet-touched config is not the user's choice yet. Saving on ANY
   // touched change keeps the persisted row in lockstep with what the author
   // sees, so an unmount mid-configuration loses nothing.
+  // LOBBY-A: `settingsTouched` extends the gate to settings-only edits (a
+  // form/textarea edit persists without freezing the roster auto-derive).
   useEffect(() => {
-    if (scriptId === undefined || !seatsTouched) return;
+    if (scriptId === undefined || (!seatsTouched && !settingsTouched)) return;
     savePlaygroundConfig(scriptId, {
       seats: seats.map((seat) => ({
         id: seat.id,
@@ -683,7 +726,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       humanSeatId,
       randomStart,
     });
-  }, [scriptId, seatsTouched, seats, grants, seed, settingsJson, humanSeatId, randomStart]);
+  }, [scriptId, seatsTouched, settingsTouched, seats, grants, seed, settingsJson, humanSeatId, randomStart]);
 
   const toggleGrant = (capability: ExperienceCapability, checked: boolean) => {
     setSeatsTouched(true);
@@ -729,43 +772,100 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
 
   const providerOptions = (providerProfiles ?? []).map((p) => ({ id: p.id, label: p.name || p.id }));
 
+  // ── LOBBY-A: the setup form over the settings JSON ────────────────────────
+  //
+  // The settings JSON string stays the single source of truth (persisted by
+  // the save effect above, sent by start/discover/simulate below). The
+  // declared-fields form RENDERS it (derived values, no duplicate form state)
+  // and every edit writes back into it — textarea, persisted config, and
+  // launch payload can never drift apart. `null` = the JSON is not a plain
+  // object (broken or array/scalar): the form is unavailable then, the raw
+  // JSON path applies as before LOBBY-A.
+  const settingsObject = useMemo<Record<string, unknown> | null>(() => {
+    const parsed = parseOptionalJsonDiagnosed(settingsJson);
+    if (!parsed.ok) return null;
+    if (!parsed.present) return {};
+    return asSettingsObject(parsed.value);
+  }, [settingsJson]);
+
+  const setupFormAvailable = setupFields.length > 0 && settingsObject !== null;
+
+  const setupForm = useMemo(
+    () => deriveSetupValuesFromSettings(setupFields, settingsObject ?? {}),
+    [setupFields, settingsObject],
+  );
+
+  /** LOBBY-A: write the package's declared ABSENT defaults into the settings
+   *  JSON (write-through seeding — what the textarea shows is what Start
+   *  sends, and the persisted config carries the defaults). Existing explicit
+   *  entries are never touched; a no-change merge returns the same reference,
+   *  so a hand-formatted JSON body is not rewritten. Runs from the discovery
+   *  then-block only (a discovery event), never as a continuous normalizer —
+   *  re-adding a key the user is mid-deleting in the advanced textarea would
+   *  fight their editing. */
+  const seedDefaultsIntoSettings = (fields: SetupField[]) => {
+    if (fields.length === 0) return;
+    const parsed = parseOptionalJsonDiagnosed(settingsJsonRef.current);
+    if (!parsed.ok) return; // broken JSON — user is mid-edit; leave it alone
+    const base = parsed.present ? asSettingsObject(parsed.value) : {};
+    if (base === null) return;
+    const merged = mergeAbsentSetupDefaults(base, fields);
+    if (merged !== base) setSettingsJson(JSON.stringify(merged));
+  };
+
   // IR-90E: auto-derive an ordinary setup (roster + grants) from the discovered
   // definition when the panel opens and the user hasn't manually configured
   // seats. Uses the REAL runExperienceTest discovery (not brittle text parsing)
   // — discovery failure (broken rules) explicitly restores the safe default
   // single human seat plus empty grants.
+  // LOBBY-A: the discovery is (a) DEBOUNCED — the unsaved rules buffer changes
+  // per keystroke, and the pre-LOBBY-A effect fired a compile on each one —
+  // and (b) no longer skipped for a user-owned roster: it ALWAYS captures the
+  // declared setup fields (the launch form) so a RESTORED config (seatsTouched)
+  // gets the form too. Only the roster/grant derivation stays gated on the
+  // untouched flag.
   useEffect(() => {
-    if (seatsTouched || code.trim() === "") return;
+    if (code.trim() === "") return;
     let cancelled = false;
-    setDeriving(true);
-    runExperienceTest({ rulesCode: code, actions: [] })
-      .then((data) => {
-        if (cancelled || seatsTouched) return;
-        const declared = data.definition.declaredCapabilities.map((c) => c.capability);
-        const hasParticipants = declared.includes(EXPERIENCE_CAPABILITY.participants);
-        const hasModel = declared.includes(EXPERIENCE_CAPABILITY.model);
-        // Derive grants from the declared capabilities.
-        const derivedGrants = declared.filter((c): c is ExperienceCapability =>
-          CAPABILITIES.includes(c as ExperienceCapability));
-        setGrants(derivedGrants);
-        // Derive seats: a human seat is always present; add a model seat when
-        // both participants + model are declared.
-        if (hasParticipants && hasModel) {
-          setSeats([
-            { id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human },
-            { id: "ai", label: "AI", controller: EXPERIENCE_CONTROLLER.model },
-          ]);
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // Discovery failed (broken rules): restore the safe default single
-        // human seat plus empty grants.
-        setSeats([{ id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human }]);
-        setGrants([]);
-      })
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      setDeriving(true);
+      runExperienceTest({ rulesCode: code, actions: [] })
+        .then((data) => {
+          if (cancelled) return;
+          const fields = data.definition.setup?.fields ?? [];
+          setSetupFields(fields);
+          seedDefaultsIntoSettings(fields);
+          if (seatsTouched) return; // roster/grants are the user's explicit choice
+          const declared = data.definition.declaredCapabilities.map((c) => c.capability);
+          const hasParticipants = declared.includes(EXPERIENCE_CAPABILITY.participants);
+          const hasModel = declared.includes(EXPERIENCE_CAPABILITY.model);
+          // Derive grants from the declared capabilities.
+          const derivedGrants = declared.filter((c): c is ExperienceCapability =>
+            CAPABILITIES.includes(c as ExperienceCapability));
+          setGrants(derivedGrants);
+          // Derive seats: a human seat is always present; add a model seat when
+          // both participants + model are declared.
+          if (hasParticipants && hasModel) {
+            setSeats([
+              { id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human },
+              { id: "ai", label: "AI", controller: EXPERIENCE_CONTROLLER.model },
+            ]);
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Discovery failed (broken rules): no setup fields (the JSON textarea
+          // fallback applies) and the safe default single human seat plus empty
+          // grants — but never clobber a user-owned roster.
+          setSetupFields([]);
+          if (seatsTouched) return;
+          setSeats([{ id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human }]);
+          setGrants([]);
+        })
       .finally(() => { if (!cancelled) setDeriving(false); });
-    return () => { cancelled = true; };
+    }, DISCOVERY_DEBOUNCE_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [code, seatsTouched]);
 
   /** The ONE advance path (host chrome AND frame actions): apply one human
@@ -797,11 +897,75 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     [t],
   );
 
+  /** LOBBY-A: one shared settings-resolution path for start/discover/simulate.
+   *  Parses the settings JSON (the single source of truth). When the package
+   *  declares setup fields AND the JSON is a plain object, the declared fields
+   *  go through validateSetupFields — per-field errors paint inline and the
+   *  launch is blocked — and are sent with the modal's omission semantics
+   *  (untouched optional empties absent, authored defaults present);
+   *  undeclared extra keys ride along untouched. Broken/non-object JSON keeps
+   *  the pre-LOBBY-A behavior (sent verbatim / rejected by the schema). */
+  const buildLaunchSettings = ():
+    | { ok: true; value: unknown }
+    | { ok: false; message: string } => {
+    const parsed = parseOptionalJsonDiagnosed(settingsJson);
+    if (!parsed.ok) {
+      return { ok: false, message: `${t("experience_tester_settings_invalid")} — ${parsed.diagnostic}` };
+    }
+    if (!parsed.present) return { ok: true, value: {} };
+    if (setupFields.length === 0 || settingsObject === null) {
+      return { ok: true, value: parsed.value };
+    }
+    const validated = validateSetupFields({ fields: setupFields, values: setupForm.values, entered: setupForm.entered, t });
+    if (!validated.ok) {
+      setFieldErrors(validated.errors);
+      return { ok: false, message: t("experience_playground_settings_field_errors") };
+    }
+    const extras = { ...settingsObject };
+    for (const field of setupFields) delete extras[field.id];
+    return { ok: true, value: { ...extras, ...validated.settings } };
+  };
+
+  /** LOBBY-A: one setup-field edit → merge into the settings JSON (the source
+   *  of truth). Absent semantics (no-default boolean uncheck) deletes the key;
+   *  numbers are stored as JSON numbers; undeclared extra keys ride along. */
+  const applySetupFieldValue = (field: SetupField, raw: string | number | boolean | undefined) => {
+    const base = settingsObject ?? {};
+    let next: Record<string, unknown>;
+    if (raw === undefined) {
+      const { [field.id]: _removed, ...rest } = base;
+      next = rest;
+    } else {
+      next = { ...base, [field.id]: field.kind === "number" ? Number(raw) : raw };
+    }
+    setSettingsTouched(true);
+    setSettingsJson(JSON.stringify(next));
+    setFieldErrors((prev) => {
+      if (!(field.id in prev)) return prev;
+      const reduced = { ...prev };
+      delete reduced[field.id];
+      return reduced;
+    });
+  };
+
+  /** LOBBY-A: boolean toggle with the modal's semantics — a no-default boolean
+   *  cycles absent ↔ true (unchecking restores absence); a defaulted boolean
+   *  writes an explicit true/false. */
+  const toggleSetupBoolean = (field: SetupField) => {
+    if (field.kind !== "boolean") return;
+    const current = setupForm.values[field.id];
+    if (field.default === undefined) {
+      applySetupFieldValue(field, current === true ? undefined : true);
+    } else {
+      applySetupFieldValue(field, !(current === true));
+    }
+  };
+
   /** Start a fresh ephemeral session from the CURRENT UNSAVED buffers. */
   const handleStart = async () => {
-    const settings = parseOptionalJsonDiagnosed(settingsJson);
+    const settings = buildLaunchSettings();
     if (!settings.ok) {
-      setError({ message: `${t("experience_tester_settings_invalid")} — ${settings.diagnostic}`, console: [] });
+      setError({ message: settings.message, console: [] });
       return;
     }
     // XU-2: a fresh random seed per launch when the toggle is ON; OFF keeps the
@@ -814,7 +978,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     try {
       const data = await startExperiencePlayground({
         rulesCode: code,
-        settings: settings.present ? settings.value : {},
+        settings: settings.value,
         participants,
         capabilityGrants: [...grants],
         ...(launchSeed !== "" ? { seed: launchSeed } : {}),
@@ -904,9 +1068,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
    *  would use; the manual seed (not the random-start launch seed) keeps the
    *  result reproducible, matching the tester. */
   const handleDiscover = async () => {
-    const settings = parseOptionalJsonDiagnosed(settingsJson);
+    const settings = buildLaunchSettings();
     if (!settings.ok) {
-      setError({ message: `${t("experience_tester_settings_invalid")} — ${settings.diagnostic}`, console: [] });
+      setError({ message: settings.message, console: [] });
       return;
     }
     setTesterBusy("run");
@@ -914,7 +1078,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     try {
       const data = await runExperienceTest({
         rulesCode: code,
-        settings: settings.present ? settings.value : {},
+        settings: settings.value,
         participants,
         capabilityGrants: [...grants],
         ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
@@ -932,9 +1096,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
    *  retired InteractiveTester's simulate path), reporting the typed stop
    *  reason. Same context as {@link handleDiscover}. */
   const handleSimulate = async () => {
-    const settings = parseOptionalJsonDiagnosed(settingsJson);
+    const settings = buildLaunchSettings();
     if (!settings.ok) {
-      setError({ message: `${t("experience_tester_settings_invalid")} — ${settings.diagnostic}`, console: [] });
+      setError({ message: settings.message, console: [] });
       return;
     }
     setTesterBusy("simulate");
@@ -942,7 +1106,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     try {
       const data = await simulateExperienceTest({
         rulesCode: code,
-        settings: settings.present ? settings.value : {},
+        settings: settings.value,
         participants,
         capabilityGrants: [...grants],
         ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
@@ -1013,6 +1177,25 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   }, [session]);
 
   const hasVisual = visualSource !== null && visualSource.trim() !== "";
+
+  // LOBBY-A: the raw settings JSON textarea — the single source of truth the
+  // setup form renders and writes into. Rendered under the collapsed
+  // "advanced" disclosure when the form is live; directly when it is not
+  // (no declared fields / non-object JSON — the pre-LOBBY-A fallback).
+  const settingsJsonTextarea = (
+    <AutoTextarea
+      className={cn(monoCls, "mt-1.5 min-h-[34px]")}
+      value={settingsJson}
+      onChange={(e) => {
+        setSettingsTouched(true);
+        setSettingsJson(e.target.value);
+      }}
+      placeholder="{}"
+      minRows={1}
+      maxRows={4}
+      macroAutocomplete={false}
+    />
+  );
 
   // IR-90E: ordinary-language status for the novice-readable default view.
   const statusText = (() => {
@@ -1249,15 +1432,55 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             </div>
             <div>
               <label className={lblCls}>{t("experience_setup_settings_label")}</label>
-              <AutoTextarea
-                className={cn(monoCls, "mt-1.5 min-h-[34px]")}
-                value={settingsJson}
-                onChange={(e) => setSettingsJson(e.target.value)}
-                placeholder="{}"
-                minRows={1}
-                maxRows={4}
-                macroAutocomplete={false}
-              />
+              {/* LOBBY-A: the package's declared setup fields render as a real
+                  form (author defaults seeded into the JSON); the raw JSON
+                  textarea hides under a collapsed "advanced" disclosure
+                  (verbatim: «жсон для технических пользователей под аккордеон
+                  прятать») and stays the direct control when the package
+                  declares no fields or the JSON is not a plain object. */}
+              {setupFormAvailable && (
+                <div className="mt-1.5 flex flex-col gap-2.5" data-testid="playground-setup-form">
+                  {setupFields.map((field) => (
+                    <SetupFieldRow
+                      key={field.id}
+                      field={field}
+                      value={setupForm.values[field.id]}
+                      error={fieldErrors[field.id]}
+                      t={t}
+                      onText={(v) => applySetupFieldValue(field, v)}
+                      onNumber={(v) => applySetupFieldValue(field, v)}
+                      onToggle={() => toggleSetupBoolean(field)}
+                      onSelect={(v) => applySetupFieldValue(field, v)}
+                    />
+                  ))}
+                </div>
+              )}
+              {setupFields.length > 0 && settingsObject === null && (
+                <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
+                  {t("experience_playground_settings_json_invalid")}
+                </p>
+              )}
+              {setupFormAvailable ? (
+                <div className="mt-1.5">
+                  <button
+                    type="button"
+                    className="flex cursor-pointer items-center gap-1.5 font-ui text-[11px] text-t3 transition-colors hover:text-t1"
+                    onClick={() => setSettingsJsonOpen((v) => !v)}
+                    aria-expanded={settingsJsonOpen}
+                    data-testid="playground-settings-advanced-toggle"
+                  >
+                    <span className={cn("inline-block shrink-0 transition-transform", settingsJsonOpen && "rotate-90")}>
+                      {Ic.caret("r")}
+                    </span>
+                    {t("experience_playground_settings_advanced")}
+                  </button>
+                  <AnimatedDisclosure open={settingsJsonOpen}>
+                    {settingsJsonTextarea}
+                  </AnimatedDisclosure>
+                </div>
+              ) : (
+                settingsJsonTextarea
+              )}
             </div>
           </div>
             </AnimatedDisclosure>
