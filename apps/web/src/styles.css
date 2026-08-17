@@ -360,6 +360,20 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .crop-zoom-slider::-webkit-slider-thumb:hover{transform:scale(1.15)}
 .crop-zoom-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}
 
+/* ── Summary message-range dual slider (DualRangeSlider) ──
+   Two full-width range inputs stacked on one track. Making each *thumb* its own
+   hit target — host `pointer-events:none` + `::-webkit-slider-thumb{pointer-events:auto}`
+   — is Chromium-only: Firefox computes `pointer-events` on `::-moz-range-thumb`
+   but ignores it while hit-testing, so the whole control was dead there. Both
+   inputs are therefore inert to the pointer everywhere and the component drives
+   the values from its wrapper; these rules only paint the thumb. `.is-hot` marks
+   the handle the pointer would grab, replacing the old thumb `:hover`. */
+.dual-range{-webkit-appearance:none;appearance:none;background:transparent;pointer-events:none;margin:0}
+.dual-range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1);transition:box-shadow .15s}
+.dual-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1);transition:box-shadow .15s}
+.dual-range.is-hot::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--accent-dim)}
+.dual-range.is-hot::-moz-range-thumb{box-shadow:0 0 0 3px var(--accent-dim)}
+
 /* ── Avatar crop: keep preview sharp when zoomed ──
    react-easy-crop shrinks the <img> to fit (max-width/height:100%) then zooms
    via transform: scale(). Its own stylesheet sets will-change: transform,
