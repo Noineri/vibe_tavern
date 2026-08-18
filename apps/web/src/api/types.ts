@@ -805,10 +805,12 @@ export interface ExperienceContextStatusDto {
   messageFrontierPosition: number | null;
   providerProfileId: string | null;
   modelId: string | null;
-  /** Provenance of the captured RP-context source (report item 6): bare ids,
-   *  never content. Both null ⇔ captured from the ambient host chat. */
+  /** Provenance of the captured RP-context source (report item 6 / Wave 3):
+   *  bare ids, never content. Null ⇔ captured from the ambient host chat
+   *  (sourcePersonaId adds the user-identity override provenance). */
   sourceCharacterId: string | null;
   sourceChatId: string | null;
+  sourcePersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 }

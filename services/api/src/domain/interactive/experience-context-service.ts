@@ -133,6 +133,7 @@ export interface ExperienceContextStatus {
   modelId: string | null;
   sourceCharacterId: string | null;
   sourceChatId: string | null;
+  sourcePersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -306,6 +307,7 @@ export class ExperienceContextService {
 			modelId: row.modelId,
 			sourceCharacterId: row.sourceCharacterId,
 			sourceChatId: row.sourceChatId,
+			sourcePersonaId: row.sourcePersonaId,
 			createdAt: row.createdAt,
 			updatedAt: row.updatedAt,
 		};

@@ -208,6 +208,7 @@ function makeContextStatus(overrides: Partial<ExperienceContextStatusDto> = {}):
     modelId: "model-1",
     sourceCharacterId: null,
     sourceChatId: null,
+    sourcePersonaId: null,
     createdAt: T0,
     updatedAt: T0,
     ...overrides,

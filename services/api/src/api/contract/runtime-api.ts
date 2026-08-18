@@ -601,6 +601,7 @@ export interface ExperienceContextStatusDto {
   modelId: string | null;
   sourceCharacterId: string | null;
   sourceChatId: string | null;
+  sourcePersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -631,6 +632,7 @@ export interface ExperienceRuntimeApi {
 		visualId?: string | null;
 		contextSourceCharacterId?: string | null;
 		contextSourceChatId?: string | null;
+		contextSourcePersonaId?: string | null;
 		capabilityGrants?: import("@vibe-tavern/domain").ExperienceCapability[];
 		contextMode?: import("@vibe-tavern/domain").ExperienceContextMode;
 		launcherVisible?: boolean;
@@ -695,7 +697,7 @@ export interface ExperienceRuntimeApi {
 	/** Explicit cancellable context capture. Requires immutable session grant
 	 *  `rp_context`. The signal passes through to the compact-summary generation
 	 *  so a client disconnect persists nothing and preserves the prior bundle. */
-	captureExperienceContext: (sessionId: string, body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null }, signal?: AbortSignal) => Promise<ExperienceContextStatusDto>;
+	captureExperienceContext: (sessionId: string, body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null; contextSourcePersonaId?: string | null }, signal?: AbortSignal) => Promise<ExperienceContextStatusDto>;
 	/** Read the session's current frozen context-bundle metadata, or null when
 	 *  never captured. Returns ONLY session metadata + provider/model ids — never
 	 *  payload fields (variants, compact summary, character/persona snapshots, RP
