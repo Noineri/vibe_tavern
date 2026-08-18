@@ -911,8 +911,21 @@ export function ExperienceCopilotShell({
     </div>
   );
 
+  /* 4a follow-up round 2: on mobile the code branch is ONE scroll document
+     — the pane root itself scrolls (max-md:overflow-y-auto) and every fixed
+     row above the editor (buffer radios, sub-toggle, the visual toolbar wall,
+     validator) scrolls away with it. Previously the toolbar stack (measured
+     322px for the visual buffer) stayed pinned as shrink-0 rows and the
+     editor's inner scroll window got only the flex remainder (~72px on a
+     360×740 phone) — the "tiny window with a huge scroll" defect. The single
+     scroll works together with the panel's max-md:flex-none container (see
+     ExperienceCopilotEditorPanel): a flex-1 min-h-0 child would keep snapping
+     to the remainder and the root would never overflow. The preview/sandbox
+     branches keep their inner scroll (their containers stay flex-1 min-h-0,
+     so the root never overflows there — no double scrollbar). Desktop (>=md)
+     is untouched. */
   const editorPane = (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg max-md:overflow-y-auto">
       {/* XU-5 outer tabs: [Preview | Code | Try] — preview is the default
           layer; the Try tab renders the shared playground inline in BOTH modes
           (XU-6, quote 10 — the old sandbox "Test it" button + modal are gone). */}
@@ -1121,3 +1134,4 @@ function ToolbarButton({ label, icon, onClick, testId }: ToolbarButtonProps) {
     </button>
   );
 }
+

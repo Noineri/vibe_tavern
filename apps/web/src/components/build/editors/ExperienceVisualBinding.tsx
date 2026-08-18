@@ -41,10 +41,10 @@ export function ExperienceVisualBinding({ bound, available, onToggle, disabled }
       {bound.map((v) => (
         <CustomTooltip key={v.id} content={`${v.name} — ${t("experience_visual_unbind_hint")}`}>
           <div
-            className="flex h-[22px] min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border bg-s2 pl-0.5 pr-2 text-[11px] text-t2 transition-colors hover:border-danger hover:text-danger select-none"
+            className="flex h-[22px] max-md:h-9 min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border bg-s2 pl-0.5 pr-2 text-[11px] text-t2 transition-colors hover:border-danger hover:text-danger select-none"
             onClick={() => onToggle(v.id, false)}
           >
-            <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-accent-dim text-accent-t"><Ic.stack /></span>
+            <span className="flex h-[18px] max-md:h-7 max-md:w-7 w-[18px] shrink-0 items-center justify-center rounded-full bg-accent-dim text-accent-t"><Ic.stack /></span>
             <span className="truncate">{v.name}</span>
           </div>
         </CustomTooltip>
@@ -58,7 +58,7 @@ export function ExperienceVisualBinding({ bound, available, onToggle, disabled }
               aria-label={t("scope_visual")}
               disabled={disabled}
               className={cn(
-                "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-dashed border-border2 text-[12px] leading-none text-t3 transition-colors hover:border-accent hover:text-accent-t",
+                "flex h-[22px] w-[22px] max-md:h-9 max-md:w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border2 text-[12px] leading-none text-t3 transition-colors hover:border-accent hover:text-accent-t",
                 disabled && "pointer-events-none opacity-40",
               )}
             >

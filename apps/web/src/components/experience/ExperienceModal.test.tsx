@@ -332,3 +332,52 @@ describe("ExperienceModal — fail-closed rejection handling (seam #3 defect #4)
     expect(typeof onError.mock.calls[0]![0]).toBe("string");
   });
 });
+
+// ── 4a phase (e): mobile touch targets + header composition ────────────────
+// Class pins (happy-dom computes no layout): chrome/confirm buttons carry
+// max-md min-heights (36px precedent), icon buttons also min-width, the
+// pending badge yields its TEXT to the truncated title on mobile (pulse dot
+// stays), and the report footer pads past the gesture bar (safe-area).
+describe("ExperienceModal — mobile touch targets + badge composition (4a phase e)", () => {
+  it("chrome buttons have mobile min-height/min-width floors", () => {
+    const { getByTestId } = renderModal();
+    const detach = getByTestId("experience-detach") as HTMLButtonElement;
+    // Detach is an icon button: BOTH the min-height and the min-width floor.
+    expect(detach.classList.contains("max-md:min-h-9")).toBe(true);
+    expect(detach.classList.contains("max-md:min-w-9")).toBe(true);
+    const finish = getByTestId("experience-finish") as HTMLButtonElement;
+    expect(finish.classList.contains("max-md:min-h-9")).toBe(true);
+    const close = getByTestId("experience-close") as HTMLButtonElement;
+    expect(close.classList.contains("max-md:min-h-9")).toBe(true);
+    expect(close.classList.contains("max-md:min-w-9")).toBe(true);
+  });
+
+  it("finish-confirm buttons have mobile min-heights", () => {
+    const { getByTestId } = renderModal();
+    fireEvent.click(getByTestId("experience-finish"));
+    const cancel = getByTestId("experience-finish-cancel") as HTMLButtonElement;
+    expect(cancel.classList.contains("max-md:min-h-9")).toBe(true);
+    const confirm = getByTestId("experience-finish-confirm-btn") as HTMLButtonElement;
+    expect(confirm.classList.contains("max-md:min-h-9")).toBe(true);
+  });
+
+  it("pending badge text is hidden on mobile (pulse dot remains)", () => {
+    const { getByTestId } = renderModal({ pendingPhase: "typing" });
+    const badge = getByTestId("experience-pending");
+    const label = badge.querySelector("span.max-md\\:hidden");
+    expect(label).not.toBeNull();
+    expect(label!.textContent).toBe("experience_pending_typing");
+    // The pulse dot is NOT hidden on mobile.
+    const dot = badge.querySelector("span.animate-pulse");
+    expect(dot).not.toBeNull();
+    expect(dot!.classList.contains("max-md:hidden")).toBe(false);
+  });
+
+  it("report footer pads past the gesture bar on mobile", () => {
+    const { getByTestId } = renderModal({ reportControls: <div data-testid="rc" /> });
+    const footer = getByTestId("experience-report-footer") as HTMLElement;
+    expect(
+      footer.className.includes("pb-[calc(env(safe-area-inset-bottom,0px)+8px)]"),
+    ).toBe(true);
+  });
+});

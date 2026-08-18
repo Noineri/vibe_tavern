@@ -205,6 +205,27 @@ describe("ExperienceDetachedHost — trusted wrapper", () => {
     expect(queryByTestId("experience-detached-finish")).not.toBeNull();
   });
 
+  // ── 4a phase (e): mobile touch-target class pins (happy-dom computes no
+  // layout): the header Finish/Close buttons and the report footer carry the
+  // 36px mobile floor via max-md utilities; desktop sizes are unchanged.
+  it("header buttons + report footer carry mobile touch floors (4a phase e)", () => {
+    installUrlSpy();
+    const { getByTestId } = render(<ExperienceDetachedHost descriptor={DESCRIPTOR} />);
+    const finish = getByTestId("experience-detached-finish") as HTMLButtonElement;
+    expect(finish.classList.contains("max-md:min-h-9")).toBe(true);
+    const close = getByTestId("experience-detached-close") as HTMLButtonElement;
+    expect(close.classList.contains("max-md:min-h-9")).toBe(true);
+    expect(close.classList.contains("max-md:min-w-9")).toBe(true);
+    const footer = getByTestId("experience-detached-report-footer") as HTMLElement;
+    expect(
+      footer.className.includes("pb-[calc(env(safe-area-inset-bottom,0px)+8px)]"),
+    ).toBe(true);
+    // The shared report action button (ExperienceReportControls) carries the
+    // same floor — one pin covers the modal footer surface too.
+    const action = getByTestId("experience-report-action") as HTMLButtonElement;
+    expect(action.classList.contains("max-md:min-h-9")).toBe(true);
+  });
+
   it("shows the unavailable fallback when there is no descriptor", () => {
     installUrlSpy();
     // readDetachedDescriptor() (default window) returns null under happy-dom

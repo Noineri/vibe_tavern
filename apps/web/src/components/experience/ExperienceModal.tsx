@@ -292,11 +292,16 @@ export function ExperienceModal(props: ExperienceModalProps) {
               data-testid="experience-pending"
             >
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
-              {pendingPhase === "typing"
-                ? t("experience_pending_typing")
-                : pendingPhase === "timer"
-                  ? t("experience_pending_timer")
-                  : t("experience_pending_effect")}
+              {/* Mobile (4a phase e): the badge TEXT yields its width to the
+                  truncated title on a 360px header (the pulse dot alone still
+                  signals activity); desktop keeps the full label. */}
+              <span className="max-md:hidden">
+                {pendingPhase === "typing"
+                  ? t("experience_pending_typing")
+                  : pendingPhase === "timer"
+                    ? t("experience_pending_timer")
+                    : t("experience_pending_effect")}
+              </span>
             </span>
           )}
           {statusLabel && (
@@ -307,7 +312,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
           {onDetach && (
             <button
               type="button"
-              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
+              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9 max-md:min-w-9"
               onClick={onDetach}
               data-testid="experience-detach"
               title={t("experience_detach_title")}
@@ -318,7 +323,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
           {onFinishExperience && !confirmingFinish && (
             <button
               type="button"
-              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
+              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
               onClick={() => setConfirmingFinish(true)}
               data-testid="experience-finish"
             >
@@ -327,7 +332,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
           )}
           <button
             type="button"
-            className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+            className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 max-md:min-h-9 max-md:min-w-9"
             onClick={onClose}
             aria-label={t("experience_close")}
             data-testid="experience-close"
@@ -362,7 +367,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800"
+                    className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
                     onClick={() => setConfirmingFinish(false)}
                     data-testid="experience-finish-cancel"
                   >
@@ -370,7 +375,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
                   </button>
                   <button
                     type="button"
-                    className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
+                    className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 max-md:min-h-9"
                     onClick={confirmFinish}
                     data-testid="experience-finish-confirm-btn"
                   >
@@ -387,7 +392,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
             controls live in the popover/sheet instead (never both at once). */}
         {reportControls && (
           <footer
-            className="border-t border-neutral-800 px-4 py-2"
+            className="border-t border-neutral-800 px-4 py-2 max-md:pb-[calc(env(safe-area-inset-bottom,0px)+8px)]"
             data-testid="experience-report-footer"
           >
             {reportControls}

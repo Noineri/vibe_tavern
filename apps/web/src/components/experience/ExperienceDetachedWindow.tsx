@@ -383,7 +383,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
             privileged mutation (IR-73C acceptance fix). */}
         <button
           type="button"
-          className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 max-md:min-h-9"
           disabled={!session}
           onClick={() => setConfirmingFinish(true)}
           data-testid="experience-detached-finish"
@@ -392,7 +392,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
         </button>
         <button
           type="button"
-          className="rounded px-2 py-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+          className="rounded px-2 py-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 max-md:min-h-9 max-md:min-w-9"
           onClick={() => window.close()}
           aria-label={t("experience_close")}
           data-testid="experience-detached-close"
@@ -416,7 +416,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
           component handles null/no-session props gracefully (disabled
           no-events state) so it stays reachable while the rehydrate settles. */}
       <footer
-        className="border-t border-neutral-800 px-3 py-2"
+        className="border-t border-neutral-800 px-3 py-2 max-md:pb-[calc(env(safe-area-inset-bottom,0px)+8px)]"
         data-testid="experience-detached-report-footer"
       >
         <ExperienceReportControls

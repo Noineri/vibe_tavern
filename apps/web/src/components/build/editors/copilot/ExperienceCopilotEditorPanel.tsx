@@ -322,7 +322,12 @@ export function ExperienceCopilotEditorPanel({
           </div>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      {/* 4a follow-up round 2: on mobile this container takes its NATURAL
+          height (flex-none, no inner scroll) so the shell's pane root becomes
+          the single scroll document — see the editorPane root comment in
+          ExperienceCopilotShell.tsx. Desktop keeps the inner-scroll flex
+          remainder exactly as before. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-md:flex-none max-md:overflow-y-visible">
         {/* CD-3: frozen (read-only + shared GeneratingScrim dim) while the model
             works — the scrim alone dims the surface (same as the coauthor
             editor); no extra frame opacity, which would double-darken. */}

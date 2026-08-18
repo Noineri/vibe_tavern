@@ -751,6 +751,11 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     const messageListRoot = chatPane.querySelector('[data-testid="copilot-message-list"]');
     if (!(messageListRoot instanceof HTMLElement)) throw new Error("message list root missing");
     expect(messageListRoot.classList.contains("min-w-0")).toBe(true);
+
+    // 4a follow-up round 2: on mobile the EDIT pane content root is the single
+    // scroll document — the toolbar wall (visual buffer ~322px) scrolls away
+    // with the code instead of pinning above a ~72px flex remainder.
+    expect(editRoot.classList.contains("max-md:overflow-y-auto")).toBe(true);
   });
 });
 

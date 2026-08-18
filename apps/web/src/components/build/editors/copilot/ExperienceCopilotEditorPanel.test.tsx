@@ -327,6 +327,17 @@ describe("ExperienceCopilotEditorPanel — mobile editor surface", () => {
     // pane scrolls, not the editor.
     expect(editorHost.style.overflow).toBe("visible");
     expect(editorHost.classList.contains("max-md:h-auto")).toBe(true);
+
+    // 4a follow-up round 2: the panel's own scroll container takes its
+    // NATURAL height on mobile (flex-none, no inner scroll) so the shell's
+    // pane root becomes the single scroll document. Desktop keeps the
+    // flex-1 inner-scroll remainder (asserted in the desktop case above via
+    // overflow auto; the flex classes stay unpinned there by design).
+    const scrollHost = editorHost.closest(".p-3");
+    if (!(scrollHost instanceof HTMLElement)) throw new Error("scroll container missing");
+    expect(scrollHost.classList.contains("max-md:flex-none")).toBe(true);
+    expect(scrollHost.classList.contains("max-md:overflow-y-visible")).toBe(true);
+    expect(scrollHost.classList.contains("overflow-y-auto")).toBe(true); // desktop unchanged
   });
 
   it("mobile: expand opens a fullscreen CodeMirror session with the label; Готово closes", () => {

@@ -168,7 +168,7 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
       <button
         type="button"
         className={cn(
-          "rounded px-3 py-1.5 font-ui text-[12px] font-medium transition-colors",
+          "rounded px-3 py-1.5 font-ui text-[12px] font-medium transition-colors max-md:min-h-9",
           actionable && !pending
             ? "bg-accent text-on-accent hover:opacity-90"
             : "cursor-not-allowed bg-s2 text-t4",
