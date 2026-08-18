@@ -39,6 +39,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
+import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { Ic } from "../../shared/icons.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -118,6 +119,7 @@ const CREATION_STEP_ORDER: readonly ExperienceCopilotStep[] = ["rules", "appeara
 
 export function ExperienceEditor() {
   const { t } = useT();
+  const isMobile = useIsMobile();
 
   // ── Lists (server rows + unsaved local buffers) ──────────────────────────
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
@@ -784,7 +786,14 @@ export function ExperienceEditor() {
               scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
             )}
           >
-            {scriptEnabled ? t("experience_editor_enabled") : t("experience_editor_disabled")}
+            {/* Mobile follow-up round 3: the status pill uses the short form
+                (вкл/выкл · on/off) below 768px so the whole action cluster
+                fits one row; desktop keeps the full word. */}
+            {t(
+              scriptEnabled
+                ? isMobile ? "experience_editor_enabled_short" : "experience_editor_enabled"
+                : isMobile ? "experience_editor_disabled_short" : "experience_editor_disabled",
+            )}
           </span>
         </CustomTooltip>
         <Toggle
@@ -800,7 +809,7 @@ export function ExperienceEditor() {
           {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
         </span>
         <SaveButton
-          className="max-md:min-h-[44px] max-md:flex-1"
+          icon={isMobile ? <Ic.floppy /> : undefined}
           dirty={scriptDirty}
           saveState={scriptSaveState}
           resetKey={activeScriptId}

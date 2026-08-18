@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 
@@ -87,9 +87,15 @@ interface SaveButtonProps {
   style?: CSSProperties;
   size?: "compact" | "default" | "touch";
   resetKey?: string | number | null;
+  /** Icon-only mode (mobile toolbars): renders the given glyph instead of the
+   *  three-layer text swap. Sizes itself to a 36px touch square, keeps the
+   *  accent/disabled/saved color states, and exposes the live state text via
+   *  `aria-label` — pass e.g. `icon={isMobile ? <Ic.floppy /> : undefined}`
+   *  so desktop keeps the full label. */
+  icon?: ReactNode;
 }
 
-export function SaveButton({ dirty, saveState, onClick, label, disabled = false, className, style, size = "default", resetKey }: SaveButtonProps) {
+export function SaveButton({ dirty, saveState, onClick, label, disabled = false, className, style, size = "default", resetKey, icon }: SaveButtonProps) {
   const { t } = useT();
   const feedbackState = useSaveFeedback(saveState === "saving", dirty, resetKey);
   const visualState = saveState === "error" ? "error" : feedbackState;
@@ -98,7 +104,9 @@ export function SaveButton({ dirty, saveState, onClick, label, disabled = false,
   const idleLabel = label || t("save_btn");
   const activeLabel = isSaving ? t("saving") : isSaved ? t("saved") : idleLabel;
   const isDisabled = disabled || !dirty || saveState === "saving" || isSaving;
-  const sizeClass = size === "compact"
+  const sizeClass = icon !== undefined
+    ? "h-9 w-9 shrink-0"
+    : size === "compact"
     ? "min-h-7 min-w-[108px] px-3.5 text-[calc(var(--ui-fs)-3px)]"
     : size === "touch"
       ? "min-h-10 min-w-[124px] px-4 text-sm"
@@ -123,11 +131,15 @@ export function SaveButton({ dirty, saveState, onClick, label, disabled = false,
       disabled={isDisabled}
       onClick={onClick}
     >
-      <span aria-hidden="true" className="grid place-items-center">
-        <span className={cn("[grid-area:1/1] transition-opacity duration-250", !isSaving && !isSaved ? "opacity-100" : "opacity-0")}>{idleLabel}</span>
-        <span className={cn("[grid-area:1/1] transition-opacity duration-250", isSaving ? "opacity-100" : "opacity-0")}>{t("saving")}</span>
-        <span className={cn("[grid-area:1/1] transition-opacity duration-250", isSaved ? "opacity-100" : "opacity-0")}>{t("saved")}</span>
-      </span>
+      {icon !== undefined ? (
+        <span aria-hidden="true" className="grid place-items-center">{icon}</span>
+      ) : (
+        <span aria-hidden="true" className="grid place-items-center">
+          <span className={cn("[grid-area:1/1] transition-opacity duration-250", !isSaving && !isSaved ? "opacity-100" : "opacity-0")}>{idleLabel}</span>
+          <span className={cn("[grid-area:1/1] transition-opacity duration-250", isSaving ? "opacity-100" : "opacity-0")}>{t("saving")}</span>
+          <span className={cn("[grid-area:1/1] transition-opacity duration-250", isSaved ? "opacity-100" : "opacity-0")}>{t("saved")}</span>
+        </span>
+      )}
     </button>
   );
 }

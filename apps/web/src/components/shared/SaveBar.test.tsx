@@ -31,4 +31,19 @@ describe("SaveButton feedback", () => {
     expect(saved.classList.contains("min-w-[124px]")).toBe(true);
     expect(saved.disabled).toBe(true);
   });
+
+  test("icon mode renders a 36px floppy square with the state exposed via aria-label", () => {
+    const view = render(
+      <SaveButton dirty={true} saveState="idle" label="save" icon={<svg data-testid="floppy" />} onClick={() => {}} />,
+    );
+    const btn = view.getByRole("button", { name: "save" });
+    // Fixed touch square, not the text-button min-width floor.
+    expect(btn.classList.contains("h-9")).toBe(true);
+    expect(btn.classList.contains("w-9")).toBe(true);
+    expect(btn.classList.contains("min-w-[124px]")).toBe(false);
+    // The three-layer text swap is replaced by the single glyph; no text body.
+    expect(btn.querySelectorAll("[class*='grid-area']")).toHaveLength(0);
+    expect(btn.querySelector("[data-testid='floppy']")).toBeTruthy();
+    expect(btn.textContent).toBe("");
+  });
 });

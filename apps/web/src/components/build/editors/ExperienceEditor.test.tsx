@@ -123,6 +123,15 @@ const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
 const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
+const realMobileHook = await import("../../../hooks/use-mobile.js");
+
+// Follow-up round 3 (mobile script header): drive `useIsMobile` from a test
+// flag — SAFE mock (capture real module first, spread, override the one hook).
+const mobileMocks = { mobile: false };
+mock.module("../../../hooks/use-mobile.js", () => ({
+  ...realMobileHook,
+  useIsMobile: () => mobileMocks.mobile,
+}));
 
 mock.module("../../../api/script-api.js", () => ({
   ...realScriptApi,
@@ -273,6 +282,7 @@ function holdNextUpdate() {
 }
 
 beforeEach(() => {
+  mobileMocks.mobile = false;
   listAllScripts.mockClear();
   createScript.mockClear();
   updateScript.mockClear();
@@ -592,6 +602,39 @@ describe("ExperienceEditor", () => {
     // The description slot is always present (fixed two-line height) so cards
     // keep a uniform height even when a script has no description.
     expect(getAllByTestId("card-description")).toHaveLength(2);
+  });
+
+  // ── Follow-up round 3: mobile script header compaction ──────────────────
+  // The header action cluster must compose into ONE tight mobile row:
+  // [вкл/выкл pill][toggle][floppy save][duplicate][delete] — hence the short
+  // status keys and the icon-only SaveButton below 768px. Desktop (and every
+  // non-mobile test above) keeps the full word + text save label.
+  it("mobile: the status pill uses the short form and save collapses to a floppy icon", async () => {
+    serverScripts = [{ ...baseScript }];
+    mobileMocks.mobile = true;
+
+    const { findByText, queryByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("experience_editor_create_new"));
+
+    // Fresh script is disabled → short pill key, never the full word.
+    expect(await findByText("experience_editor_disabled_short")).toBeTruthy();
+    expect(queryByText("experience_editor_disabled")).toBeNull();
+
+    // Save is icon-only: a floppy svg, no visible text, state via aria-label.
+    const save = getByRole("button", { name: "save" });
+    expect(save.querySelector("svg")).toBeTruthy();
+    expect(save.textContent).toBe("");
+  });
+
+  it("desktop: the full status word and the text save label are unchanged", async () => {
+    serverScripts = [{ ...baseScript }];
+
+    const { findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("experience_editor_create_new"));
+
+    expect(await findByText("experience_editor_disabled")).toBeTruthy();
+    const save = getByRole("button", { name: "save" });
+    expect(save.textContent).toContain("save");
   });
 
   it("auto-selects the first bound visual on open and badges bound visuals in the list (ER-18b)", async () => {
@@ -1588,8 +1631,9 @@ describe("ExperienceEditor", () => {
     expect(scroller.classList.contains("max-w-[860px]")).toBe(true);
   });
 
-  it("script header: mobile recomposes into two tight rows — name shares the back row, save fills the action row (4a follow-up)", async () => {
+  it("script header: mobile recomposes into two tight rows — name shares the back row, save is an icon-only floppy (4a follow-up + round 3)", async () => {
     serverScripts = [{ ...baseScript }];
+    mobileMocks.mobile = true;
     const { container, findByText } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
 
@@ -1609,14 +1653,17 @@ describe("ExperienceEditor", () => {
     expect(cluster.classList.contains("max-md:flex")).toBe(true);
     expect(cluster.classList.contains("max-md:flex-wrap")).toBe(true);
 
-    // The save-state label stays hidden on mobile; the save button fills the
-    // action row and is touch-tall.
+    // The save-state label stays hidden on mobile; the save button is an
+    // icon-only floppy (round 3): a fixed 36px touch square instead of the
+    // old flex-1 filler, so [pill][toggle][save][dup][del] fit one row.
     const stateLabel = await findByText("saved_state");
     expect(stateLabel.classList.contains("max-md:hidden")).toBe(true);
     const saveBtn = container.querySelector('button[aria-label="Сохранить"], button[aria-label="save"]');
     if (!(saveBtn instanceof HTMLElement)) throw new Error("save button missing");
-    expect(saveBtn.classList.contains("max-md:flex-1")).toBe(true);
-    expect(saveBtn.classList.contains("max-md:min-h-[44px]")).toBe(true);
+    expect(saveBtn.classList.contains("h-9")).toBe(true);
+    expect(saveBtn.classList.contains("w-9")).toBe(true);
+    expect(saveBtn.classList.contains("min-w-[124px]")).toBe(false);
+    expect(saveBtn.querySelector("svg")).toBeTruthy();
 
     const dupBtn = container.querySelector('button[aria-label="experience_editor_duplicate"]');
     if (!(dupBtn instanceof HTMLElement)) throw new Error("duplicate button missing");
