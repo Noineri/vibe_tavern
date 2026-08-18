@@ -27,6 +27,7 @@ interface ApiCallErrorLike {
   isRetryable?: boolean;
   data?: unknown;
   responseBody?: string;
+  message?: string;
   url?: string;
   responseHeaders?: unknown;
   cause?: unknown;
@@ -62,6 +63,7 @@ function asApiCallError(error: unknown): ApiCallErrorLike | null {
     isRetryable: typeof error.isRetryable === "boolean" ? error.isRetryable : undefined,
     data: error.data,
     responseBody: typeof error.responseBody === "string" ? error.responseBody : undefined,
+    message: typeof error.message === "string" ? error.message : undefined,
     url: typeof error.url === "string" ? error.url : undefined,
     responseHeaders: error.responseHeaders,
     cause: error.cause,
@@ -134,6 +136,34 @@ function classifyByStatus(statusCode: number): ProviderErrorCategory | null {
   return null;
 }
 
+function tryParseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Non-JSON body — the expected outcome for plain-text provider errors;
+    // callers treat undefined as "no envelope" and fall through.
+    return undefined;
+  }
+}
+
+const PROXY_ERROR_MESSAGE_RE = /proxy_error/i;
+
+/** The local Antigravity proxy wraps its own upstream failures as
+ *  `{"error":{"message":…,"type":"proxy_error"}}` — with a WRONG 4xx
+ *  status (live incident 2026-08-17: HTTP 400 for a dead upstream socket).
+ *  The envelope means the failure is proxy-side and transient, so it must be
+ *  classified BEFORE the status mapping, where a literal 400 would wrongly
+ *  read as the client's invalid request. */
+function isProxyErrorEnvelope(apiLike: ApiCallErrorLike): boolean {
+  if (apiLike.responseBody !== undefined) {
+    const parsed = tryParseJson(apiLike.responseBody);
+    if (isRecord(parsed) && isRecord(parsed.error) && parsed.error.type === "proxy_error") return true;
+  }
+  // Message fallback for proxies that surface the envelope type only in the
+  // error text (no parseable body).
+  return apiLike.message !== undefined && PROXY_ERROR_MESSAGE_RE.test(apiLike.message);
+}
+
 // ─── public API ────────────────────────────────────────────────────────────
 
 /**
@@ -181,9 +211,13 @@ export function classifyProviderError(error: unknown): ProviderErrorCategory {
   // 4. Empty generation — AI SDK NoOutputGeneratedError.
   if (isNoOutputGenerated(error)) return "empty_response";
 
-  // 5. APICallError — the primary signal, keyed off statusCode.
+  // 5. APICallError — the primary signal, keyed off statusCode. The
+  //    proxy-error envelope is checked FIRST: it overrides the status code
+  //    (a proxy-side failure wrapped as 400 is a transient server error, not
+  //    the client's invalid request).
   const apiLike = asApiCallError(error);
   if (apiLike) {
+    if (isProxyErrorEnvelope(apiLike)) return "server_error";
     const byStatus = apiLike.statusCode !== undefined ? classifyByStatus(apiLike.statusCode) : null;
     if (byStatus) return byStatus;
     // statusCode present but outside the mapped ranges, and no network/parse

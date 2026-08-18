@@ -112,6 +112,51 @@ describe("classifyProviderError", () => {
     expect(classifyProviderError({ statusCode: 400 })).toBe("invalid_request");
   });
 
+  // ── 5a. Local-proxy error envelope (overrides the status code) ─────────
+  // Live incident 2026-08-17: the local Antigravity proxy wrapped its own
+  // upstream socket death as HTTP 400 with
+  // {"error":{"message":…,"type":"proxy_error"}} — transient, proxy-side.
+
+  it("classifies a 400 proxy_error envelope → server_error (live incident shape)", () => {
+    const apiLike = {
+      statusCode: 400,
+      responseBody: '{"error":{"message":"The socket connection was closed unexpectedly.","type":"proxy_error"}}',
+    };
+    expect(classifyProviderError(apiLike)).toBe("server_error");
+  });
+
+  it("classifies a proxy_error envelope found only in the message → server_error", () => {
+    const apiLike = {
+      statusCode: 400,
+      message: 'proxy_error: The socket connection was closed unexpectedly.',
+    };
+    expect(classifyProviderError(apiLike)).toBe("server_error");
+  });
+
+  it("unwraps RetryError around a 400 proxy_error envelope → server_error", () => {
+    const retryLike = {
+      errors: [new Error("attempt 1 failed")],
+      lastError: {
+        statusCode: 400,
+        responseBody: '{"error":{"message":"socket closed","type":"proxy_error"}}',
+      },
+    };
+    expect(classifyProviderError(retryLike)).toBe("server_error");
+  });
+
+  it("keeps a genuine 400 (non-proxy body) → invalid_request", () => {
+    const apiLike = {
+      statusCode: 400,
+      responseBody: '{"error":{"message":"Invalid request: unknown field","type":"invalid_request_error"}}',
+    };
+    expect(classifyProviderError(apiLike)).toBe("invalid_request");
+  });
+
+  it("keeps a 400 with a non-JSON body → invalid_request", () => {
+    const apiLike = { statusCode: 400, responseBody: "Bad Request" };
+    expect(classifyProviderError(apiLike)).toBe("invalid_request");
+  });
+
   it("maps 422 → invalid_request", () => {
     expect(classifyProviderError({ statusCode: 422 })).toBe("invalid_request");
   });
