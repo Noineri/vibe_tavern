@@ -1128,3 +1128,169 @@ describe("ExperienceService — character-backed model seats (report item 6b)", 
     expect(started.error.code).toBe("validation_error");
   });
 });
+
+// ─── Restart (lobby report LB-2 / Track B) ──────────────────────────────────
+
+/** Echoes the create settings into state so restart snapshot/override paths
+ *  are observable through the session row without a projection call. */
+const RESTART_ECHO_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "restart-echo", name: "Restart Echo" },
+  capabilities: [],
+  create(c, settings) { return { target: (settings && settings.target) || 0 }; },
+  project(c) { return { target: c.state.target }; },
+  actions() { return [{ type: "go" }]; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+/** One human action emits a pending model effect — the restart-cancels-pending
+ *  boundary. Grants mirror the model-effect tests (participants + model). */
+const RESTART_EFFECT_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "restart-fx", name: "Restart Fx" },
+  capabilities: [{ capability: "participants" }, { capability: "model" }],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions() { return [{ type: "ask" }]; },
+  reduce(c) {
+    return {
+      state: { n: c.state.n + 1 }, status: "active", events: [],
+      effects: [{ kind: "model", request: { viewer: "model", mode: "text", actionType: "say", instruction: "Reply." } }],
+    };
+  },
+});
+`;
+
+describe("ExperienceService — restart (lobby report LB-2)", () => {
+  /** setup() + a seed-INCREMENTING service: every start/restart draws a fresh
+   *  seed, which is what makes a restart a new match rather than a replay. */
+  function makeSeededService(): ExperienceService {
+    let n = 0;
+    return new ExperienceService(stores, resources, { generateSeed: () => "seed-" + (++n) });
+  }
+
+  test("active source: old session interrupted with a public restarted step, slot moves to the NEW session, seed differs", async () => {
+    await setup();
+    const service = makeSeededService();
+    const { chatId, branchId } = await seedChatAndScript(RESTART_ECHO_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: { target: 1 }, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    const restarted = await service.restartSession(started.data.sessionId);
+    expect(restarted.ok).toBe(true);
+    if (!restarted.ok) return;
+    expect(restarted.data.sessionId).not.toBe(started.data.sessionId);
+    expect(restarted.data.status).toBe("active");
+
+    const old = await stores.experiences.getSessionById(started.data.sessionId);
+    expect(old?.status).toBe("interrupted");
+    expect(old?.activeSlot).toBeNull();
+    const steps = await stores.experiences.getSteps(started.data.sessionId);
+    expect(steps.some((st) => st.message !== null && st.message.includes("restarted"))).toBe(true);
+
+    expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(restarted.data.sessionId);
+    const fresh = await stores.experiences.getSessionById(restarted.data.sessionId);
+    expect(fresh?.randomSeed).not.toBe(old?.randomSeed);
+  });
+
+  test("explicit settings/participants win; omitted override falls back to the source snapshots", async () => {
+    await setup();
+    const service = makeSeededService();
+    const { chatId, branchId } = await seedChatAndScript(RESTART_ECHO_SOURCE);
+    const roster = [{ id: "h1", label: "You", controller: "human" as const }];
+    const started = await service.startSession({ chatId, branchId, settings: { target: 1 }, participants: roster });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    // Explicit override wins over the frozen snapshot.
+    const overridden = await service.restartSession(started.data.sessionId, { settings: { target: 5 } });
+    expect(overridden.ok).toBe(true);
+    if (!overridden.ok) return;
+    let row = await stores.experiences.getSessionById(overridden.data.sessionId);
+    expect(JSON.parse(row!.initialSettingsJson)).toEqual({ target: 5 });
+
+    // No override → the SOURCE session's snapshots (settings AND roster) carry.
+    const snapshot = await service.restartSession(overridden.data.sessionId);
+    expect(snapshot.ok).toBe(true);
+    if (!snapshot.ok) return;
+    row = await stores.experiences.getSessionById(snapshot.data.sessionId);
+    expect(JSON.parse(row!.initialSettingsJson)).toEqual({ target: 5 });
+    expect(snapshot.data.participants).toEqual(roster);
+  });
+
+  test("completed source: status and revision untouched, final report frozen, slot passes to the successor", async () => {
+    await setup();
+    const service = makeSeededService();
+    const { chatId, branchId } = await seedChatAndScript(SCRIPT_COMPLETION_SOURCE, [EXPERIENCE_CAPABILITY.participants]);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "bot", label: "Bot", controller: "script" }],
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await service.advanceScriptTurns(started.data.sessionId);
+    const before = await stores.experiences.getSessionById(started.data.sessionId);
+    expect(before?.status).toBe("completed");
+
+    const restarted = await service.restartSession(started.data.sessionId);
+    expect(restarted.ok).toBe(true);
+    if (!restarted.ok) return;
+
+    const after = await stores.experiences.getSessionById(started.data.sessionId);
+    expect(after?.status).toBe("completed");
+    expect(after?.revision).toBe(before!.revision);
+    expect(after?.activeSlot).toBeNull();
+    // Revision-zero start report (1) + the final freeze the restart performs
+    // on the still-slot-holding completed match (2).
+    const frozen = await service.getQueuedAttachment(started.data.sessionId);
+    expect(frozen.ok && frozen.data?.queueRevision).toBe(2);
+    expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(restarted.data.sessionId);
+  });
+
+  test("a disabled or dangling setup is a typed not_enabled — nothing is persisted", async () => {
+    await setup();
+    const service = makeSeededService();
+    const { chatId, branchId } = await seedChatAndScript(RESTART_ECHO_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await resources.updateConfig(chatId, { enabled: false });
+
+    const result = await service.restartSession(started.data.sessionId);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.status).toBe(409);
+    expect(result.error.code).toBe("not_enabled");
+    // The active source was NOT finished behind the failed restart.
+    const untouched = await stores.experiences.getSessionById(started.data.sessionId);
+    expect(untouched?.status).toBe("active");
+  });
+
+  test("still-pending effects of a restarted ACTIVE match are cancelled", async () => {
+    await setup();
+    const service = makeSeededService();
+    const { chatId, branchId } = await seedChatAndScript(RESTART_EFFECT_SOURCE, ["participants", "model"]);
+    const participants = [
+      { id: "human", label: "You", controller: "human" as const },
+      { id: "model", label: "AI", controller: "model" as const, providerProfileId: "pp1", modelId: "test-model" },
+    ];
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const applied = await service.submitAction(started.data.sessionId, { type: "ask", requestId: "r1", expectedRevision: 0 });
+    expect(applied.ok).toBe(true);
+    const pending = (await stores.experiences.getEffectsForSession(started.data.sessionId)).filter((e) => e.status === "pending");
+    expect(pending.length).toBe(1);
+
+    const restarted = await service.restartSession(started.data.sessionId);
+    expect(restarted.ok).toBe(true);
+    if (!restarted.ok) return;
+    const after = await stores.experiences.getEffectsForSession(started.data.sessionId);
+    expect(after.every((e) => e.status === "cancelled")).toBe(true);
+  });
+});
+

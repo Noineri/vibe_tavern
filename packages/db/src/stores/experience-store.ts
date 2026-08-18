@@ -445,12 +445,17 @@ export class ExperienceStore {
    * gains the public user-ended system step. A rule-completed state keeps its
    * status/revision and only releases the slot while freezing its accumulated
    * public result. The optional synchronous seam proves rollback atomicity.
+   * The optional `manualFinishDetail` (LB-2 restart) overrides the public
+   * system-step text of a manual finish («The user decided to end the game.»
+   * by default); a rule-completed finish never writes that step, so the
+   * override only applies to the active-source path.
    */
   finishSessionWithFinalReport(
     sessionId: string,
     expectedRevision: number,
     report: AtomicReportData,
     beforeFreeze?: () => void,
+    manualFinishDetail?: string,
   ): FinishSessionWithReportResult {
     return this.db.transaction((tx) => {
       const current = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
@@ -493,10 +498,10 @@ export class ExperienceStore {
             appliedRevision: finalRevision,
             actorSnapshotJson: null,
             inputJson: null,
-            emittedEventsJson: JSON.stringify([{ visibility: 'public', type: 'experience_finished', detail: 'The user decided to end the game.' }]),
+            emittedEventsJson: JSON.stringify([{ visibility: 'public', type: 'experience_finished', detail: manualFinishDetail ?? 'The user decided to end the game.' }]),
             emittedEffectsJson: '[]',
             stateHash: null,
-            message: 'The user decided to end the game.',
+            message: manualFinishDetail ?? 'The user decided to end the game.',
             createdAt: now,
           })
           .run();

@@ -81,7 +81,14 @@ export class ExperienceReportService {
     });
   }
 
-  async finish(sessionId: string, expectedRevision: number): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
+  /** LB-2 (lobby report): `finishDetail` overrides the public system event
+   * text of a manual finish (restart uses it to say the match was restarted
+   * rather than simply ended); omitted = the default user-ended wording. */
+  async finish(
+    sessionId: string,
+    expectedRevision: number,
+    opts: { finishDetail?: string } = {},
+  ): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
     const session = await this.stores.experiences.getSessionById(sessionId);
     if (session === null) return this.sessionNotFound(sessionId);
     if (session.activeSlot === null) {
@@ -95,7 +102,7 @@ export class ExperienceReportService {
     const report = this.mergeReport(session, existing, steps);
     const manualFinish = session.status === "active";
     if (manualFinish) {
-      report.events.push({ type: "experience_finished", detail: "The user decided to end the game." });
+      report.events.push({ type: "experience_finished", detail: opts.finishDetail ?? "The user decided to end the game." });
     }
     const checkpointSession = manualFinish
       ? { ...session, activeSlot: null, revision: session.revision + 1, reportFrontier: session.revision + 1, status: "interrupted" }
@@ -104,6 +111,8 @@ export class ExperienceReportService {
       sessionId,
       expectedRevision,
       this.atomicData(checkpointSession, report),
+      undefined,
+      opts.finishDetail,
     );
     if (!finished.ok) {
       if (finished.conflict === "session_not_found") return this.sessionNotFound(sessionId);

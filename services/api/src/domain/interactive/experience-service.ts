@@ -378,10 +378,39 @@ export class ExperienceService {
     if (!setup.data.enabled || setup.data.rules === null) {
       return err({ status: 409, code: "not_enabled", message: "Interactive experience is not configured for this chat" });
     }
-    const rules = setup.data.rules;
-    const visual = setup.data.visual;
-    const grants = setup.data.capabilityGrants;
+    const { rules, visual, capabilityGrants: grants, contextMode } = setup.data;
+    return this.createSessionFromResolved({
+      chatId: input.chatId,
+      branchId: input.branchId,
+      rules,
+      visual,
+      grants,
+      contextMode,
+      settings: input.settings,
+      participants: input.participants,
+    });
+  }
 
+  /**
+   * Persist a NEW session from a fully-resolved effective setup — the shared
+   * tail of {@link startSession} and {@link restartSession} (lobby report
+   * LB-2). Validates the roster (V1 human-seat limit, IR-70E seat pinning),
+   * freezes character-backed seats, runs `create` + the revision-zero
+   * projections under the real VM, and writes the session row + initial
+   * report atomically. The typed branch_has_active conflict (another session
+   * claimed the branch slot meanwhile) surfaces as 409.
+   */
+  private async createSessionFromResolved(input: {
+    chatId: string;
+    branchId: string;
+    rules: ResolvedRulesSource;
+    visual: ResolvedVisualSource | null;
+    grants: ExperienceCapability[];
+    contextMode: ExperienceContextMode;
+    settings: unknown;
+    participants: ExperienceParticipant[];
+  }): Promise<ExperienceResult<ExperienceSessionView>> {
+    const { rules, visual, grants, contextMode } = input;
     // V1: at most one human-controlled seat.
     const humanSeats = input.participants.filter((p) => p.controller === EXPERIENCE_CONTROLLER.human);
     if (humanSeats.length > 1) {
@@ -471,7 +500,7 @@ export class ExperienceService {
       currentStateJson: safeStringify(initialState),
       participantsJson: safeStringify(enrichedParticipants),
       capabilityGrantsJson: safeStringify(grants),
-      contextMode: setup.data.contextMode,
+      contextMode: contextMode,
       randomSeed: seed,
       randomCursor: cursorAfterCreate,
     }, (session) => this.reports.buildStartReport(session, {
@@ -488,6 +517,71 @@ export class ExperienceService {
     }
 
     return ok(this.toSessionView(created_row.session));
+  }
+
+  /**
+   * Restart a session as a NEW match on the same chat+branch (lobby report
+   * LB-2 / Track B — «играть снова» / «изменить настройки»). A restart is a
+   * NEW session id, never a replay: the successor runs a fresh `create` under
+   * a NEW random seed; the source match's journal and reports are preserved.
+   *
+   * Resolution semantics:
+   *  - settings/participants default to the source session's frozen snapshots
+   *    (`initialSettingsJson` / `participantsJson`); explicit overrides win —
+   *    the lobby modal sends edited values, one-click «играть снова» sends
+   *    neither and gets the same match shape.
+   *  - The CURRENT effective setup is re-resolved (rules/visual/grants/
+   *    context): an author's rule fix or grant change lands in the new match;
+   *    a disabled or dangling script is the typed not_enabled error. The
+   *    source's pinned rules snapshot is NOT replayed — new match, new rules.
+   *  - An ACTIVE source is finished first: interrupted with a public
+   *    «restarted» system step + frozen final report, the slot released
+   *    atomically with the report freeze (revision CAS — a concurrent action
+   *    races to stale_revision, the caller retries); its still-pending
+   *    effects are cancelled so nothing wakes into the dead match. A
+   *    completed/interrupted source is left untouched.
+   */
+  async restartSession(sessionId: string, override?: {
+    settings?: unknown;
+    participants?: ExperienceParticipant[];
+  }): Promise<ExperienceResult<ExperienceSessionView>> {
+    const source = await this.stores.experiences.getSessionById(sessionId);
+    if (source === null) {
+      return err({ status: 404, code: "session_not_found", message: `Session '${sessionId}' not found` });
+    }
+    const setup = await this.resources.resolveEffectiveSetup(source.chatId);
+    if (!setup.ok) return setup;
+    if (!setup.data.enabled || setup.data.rules === null) {
+      return err({ status: 409, code: "not_enabled", message: "Interactive experience is not configured for this chat" });
+    }
+    const settings = override?.settings !== undefined ? override.settings : parseJson<unknown>(source.initialSettingsJson, {});
+    const participants = override?.participants ?? parseJson<ExperienceParticipant[]>(source.participantsJson, []);
+
+    if (source.activeSlot !== null) {
+      const finished = await this.reports.finish(sessionId, source.revision, {
+        finishDetail: "The user restarted the game — this match was ended.",
+      });
+      if (!finished.ok) return finished;
+      // Cancel still-pending effects of the dead match: timers would wake
+      // and CAS-fail forever, model calls would burn a provider turn.
+      for (const effect of await this.stores.experiences.getEffectsForSession(sessionId)) {
+        if (effect.status === "pending") {
+          await this.stores.experiences.cancelEffect(effect.id);
+        }
+      }
+    }
+
+    const { rules, visual, capabilityGrants, contextMode } = setup.data;
+    return this.createSessionFromResolved({
+      chatId: source.chatId,
+      branchId: source.branchId,
+      rules,
+      visual,
+      grants: capabilityGrants,
+      contextMode,
+      settings,
+      participants,
+    });
   }
 
   /** Load a session's current view (no VM call). */
