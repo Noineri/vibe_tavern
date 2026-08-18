@@ -29,6 +29,7 @@ import type {
   ExperienceQueuedAttachmentView,
   ExperienceReportQueueRequest,
   ExperienceReportStatus,
+  ExperienceRestartRequest,
   ExperienceSessionResponse,
   ExperienceStartRequest,
 } from "../api/types.js";
@@ -46,6 +47,7 @@ interface Impl {
   getExperienceContextStatus: (sessionId: string) => Promise<ExperienceContextStatusDto | null>;
   startExperienceSession: (chatId: string, body: ExperienceStartRequest) => Promise<ExperienceSessionResponse>;
   endExperienceSession: (sessionId: string, body: ExperienceFinishRequest) => Promise<ExperienceQueuedAttachmentResponse>;
+  restartExperienceSession: (sessionId: string, body: ExperienceRestartRequest) => Promise<ExperienceSessionResponse>;
   submitExperienceAction: (
     sessionId: string,
     body: ExperienceActionRequest,
@@ -64,6 +66,7 @@ let impl: Impl;
 const actionCalls: Array<{ sessionId: string; body: ExperienceActionRequest }> = [];
 const startCalls: Array<{ chatId: string; body: ExperienceStartRequest }> = [];
 const endCalls: Array<{ sessionId: string; body: ExperienceFinishRequest }> = [];
+const restartCalls: Array<{ sessionId: string; body: ExperienceRestartRequest }> = [];
 const queueCalls: Array<{ sessionId: string; body: ExperienceReportQueueRequest }> = [];
 
 const realExperienceApi = await import("../api/experience-api.js");
@@ -83,6 +86,10 @@ mock.module("../api/experience-api.js", () => {
     endExperienceSession: (sessionId: string, body: ExperienceFinishRequest) => {
       endCalls.push({ sessionId, body });
       return impl.endExperienceSession(sessionId, body);
+    },
+    restartExperienceSession: (sessionId: string, body: ExperienceRestartRequest) => {
+      restartCalls.push({ sessionId, body });
+      return impl.restartExperienceSession(sessionId, body);
     },
     submitExperienceAction: (sessionId: string, body: ExperienceActionRequest, options?: { signal?: AbortSignal }) => {
       actionCalls.push({ sessionId, body });
@@ -260,6 +267,7 @@ beforeEach(() => {
   actionCalls.length = 0;
   startCalls.length = 0;
   endCalls.length = 0;
+  restartCalls.length = 0;
   queueCalls.length = 0;
   impl = {
     getExperienceConfig: async (chatId) => makeConfig(chatId),
@@ -272,6 +280,7 @@ beforeEach(() => {
     getExperienceContextStatus: async () => null,
     startExperienceSession: async () => makeSession(),
     endExperienceSession: async () => null,
+    restartExperienceSession: async () => makeSession({ sessionId: "sess-restarted", revision: 1 }),
     submitExperienceAction: async () => makeActionResponse(),
     queueExperienceReport: async () => makeAttachment(),
     runExperienceEffect: async (effectId) => ({ effect: makeEffect({ id: effectId, status: "completed" }), delivered: true }),
@@ -746,6 +755,46 @@ describe("experience-store — lifecycle + effect + context actions", () => {
     expect(scope?.queuedAttachment).toBe(terminal);
     expect(scope?.reportStatus).toBeNull();
     expect(scope?.lastError).toBeNull();
+  });
+
+  test("restartSession sends the scope's sessionId with an EMPTY body, then a plain rehydrate discovers the successor", async () => {
+    await seedActiveScope(makeSession({ sessionId: S1, revision: 6 }));
+
+    const successor = makeSession({ sessionId: "sess-successor", revision: 1 });
+    impl.restartExperienceSession = async () => successor;
+    impl.getActiveExperienceSession = async () => successor;
+
+    const result = await useExperienceStore.getState().restartSession();
+
+    expect(restartCalls).toHaveLength(1);
+    expect(restartCalls[0].sessionId).toBe(S1);
+    // Empty body = restart with the source match's frozen snapshots (Б3 one-shot).
+    expect(restartCalls[0].body).toEqual({});
+    expect(result?.sessionId).toBe("sess-successor"); // the NEW session is returned
+    expect(result?.status).toBe("active");
+    // The plain rehydrate discovered the successor as the branch's active
+    // session — no terminal writeback path (unlike endSession).
+    expect(scopeState(KEY_C1B1)?.session?.sessionId).toBe("sess-successor");
+    expect(scopeState(KEY_C1B1)?.lastError).toBeNull();
+  });
+
+  test("restartSession API failure returns null and populates lastError after the resync", async () => {
+    await seedActiveScope(makeSession({ sessionId: S1, revision: 6 }));
+
+    impl.restartExperienceSession = async () => {
+      throw new ExperienceApiError(409, "Restart rejected", "branch_has_active");
+    };
+
+    const result = await useExperienceStore.getState().restartSession();
+    expect(result).toBeNull();
+
+    const scope = scopeState(KEY_C1B1);
+    expect(scope?.lastError).toBe("Restart rejected");
+    expect(scope?.lastApiError).toBeInstanceOf(ExperienceApiError);
+    expect(scope?.lastApiError?.status).toBe(409);
+    expect(scope?.lastApiError?.code).toBe("branch_has_active");
+    // The failure resync kept the server's active session authoritative.
+    expect(scope?.session?.sessionId).toBe(S1);
   });
 
   test("runEffect reflects the terminal effect row after resync", async () => {

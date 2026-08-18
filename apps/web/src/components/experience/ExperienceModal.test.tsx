@@ -8,6 +8,8 @@
  *     the confirm button runs the privileged onFinishExperience.
  *   - A frame-driven finish REQUEST also routes through the chrome confirmation
  *     (a compromised visual cannot auto-finish).
+ *   - The optional in-session settings entry (lobby Б4) follows the same
+ *     trusted-chrome confirm pattern: cancel never fires the privileged op.
  *   - Close hides the surface and calls onClose only — there is no onDestroy
  *     prop, so closing never ends the session.
  *
@@ -154,6 +156,32 @@ describe("ExperienceModal — finish confirmation lives in the chrome", () => {
   it("hides the Finish control when onFinishExperience is absent", () => {
     const { queryByTestId } = renderModal({ onFinishExperience: undefined });
     expect(queryByTestId("experience-finish")).toBeNull();
+  });
+});
+
+describe("ExperienceModal — in-session settings entry (lobby Б4)", () => {
+  it("hides the Settings control when onOpenSessionSettings is absent", () => {
+    const { queryByTestId } = renderModal();
+    expect(queryByTestId("experience-session-settings")).toBeNull();
+  });
+
+  it("Settings opens a chrome confirmation; cancel dismisses WITHOUT the privileged op; confirm runs it exactly once", () => {
+    const onOpenSessionSettings = mock(() => {});
+    const { getByTestId, queryByTestId } = renderModal({ onOpenSessionSettings });
+    fireEvent.click(getByTestId("experience-session-settings"));
+    // Confirm prompt is present IN THE CHROME; the privileged op has NOT run.
+    expect(getByTestId("experience-settings-confirm")).toBeTruthy();
+    expect(onOpenSessionSettings).not.toHaveBeenCalled();
+    // Cancel dismisses without invoking the entry.
+    fireEvent.click(getByTestId("experience-settings-cancel"));
+    expect(queryByTestId("experience-settings-confirm")).toBeNull();
+    expect(onOpenSessionSettings).not.toHaveBeenCalled();
+    // Reopen and confirm — the privileged op runs exactly once and the overlay
+    // closes.
+    fireEvent.click(getByTestId("experience-session-settings"));
+    fireEvent.click(getByTestId("experience-settings-confirm-btn"));
+    expect(onOpenSessionSettings).toHaveBeenCalledTimes(1);
+    expect(queryByTestId("experience-settings-confirm")).toBeNull();
   });
 });
 

@@ -23,6 +23,8 @@
  *  9. detach descriptor includes exact scope+pinned source; blocked popup error
  * 10. branch switch shows branch's own session + closes local surfaces
  * 11. desktop Popover / mobile BottomSheet
+ * 12. endgame restart pair replaces the primary for terminal sessions (Б3);
+ *     the in-session settings entry is wired only for ACTIVE matches (Б4)
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -120,6 +122,7 @@ const storeMocks = {
   setDetached: mock((_d: boolean) => {}),
   submitAction: mock(async (_intent: unknown) => null as unknown),
   endSession: mock(async () => null as unknown),
+  restartSession: mock(async () => null as unknown),
   runEffect: mock(async (_effectId: string, _signal?: AbortSignal) => null as unknown),
   queueReport: mock(async () => null as unknown),
 };
@@ -199,6 +202,7 @@ mock.module("../../stores/experience-store.js", () => ({
       submitAction: storeMocks.submitAction,
       rehydrate: storeMocks.rehydrate,
       endSession: storeMocks.endSession,
+      restartSession: storeMocks.restartSession,
       runEffect: storeMocks.runEffect,
       queueReport: storeMocks.queueReport,
     }),
@@ -263,6 +267,9 @@ mock.module("./ExperienceModal.js", () => ({
         <button data-testid="modal-close" onClick={() => (props.onClose as () => void)()}>close</button>
         <button data-testid="modal-detach" onClick={() => (props.onDetach as () => void)()}>detach</button>
         <button data-testid="modal-finish" onClick={() => (props.onFinishExperience as () => void)()}>finish</button>
+        {props.onOpenSessionSettings ? (
+          <button data-testid="modal-session-settings" onClick={() => (props.onOpenSessionSettings as () => void)()}>settings</button>
+        ) : null}
       </div>
     ) : null;
   },
@@ -1029,5 +1036,83 @@ describe("ExperienceLauncher — report controls (IR-73C)", () => {
     expect(queryByTestId("experience-report-error")).toBeNull();
     // Still only the one manual call — no auto-queue after the remount.
     expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── 12. Endgame restart pair (lobby Б3) + in-session settings (Б4) ────────
+describe("ExperienceLauncher — endgame restart pair (Б3)", () => {
+  it("completed session: the restart pair replaces the primary action and the status reads finished", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }) });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // The primary Start/Resume action is replaced by the restart pair.
+    expect(queryByTestId("experience-launcher-primary")).toBeNull();
+    expect(getByTestId("experience-restart-again")).toBeTruthy();
+    expect(getByTestId("experience-restart-settings")).toBeTruthy();
+    // The status line reads the finished label, not "Session active".
+    expect(document.body.textContent).toContain("experience_launcher_finished");
+
+    // Play again is the one-shot restart: empty body via the store, then the
+    // modal opens on the NEW match only on a non-null result.
+    storeMocks.restartSession.mockResolvedValue({ sessionId: "sess_new" });
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-restart-again"));
+    });
+    expect(storeMocks.restartSession).toHaveBeenCalledTimes(1);
+    expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
+    // No setup modal in the one-shot path.
+    expect(queryByTestId("setup-modal")).toBeNull();
+  });
+
+  it("Play again with a NULL restart result does not open the modal (server failure, store surfaces the error)", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }) });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    storeMocks.restartSession.mockResolvedValue(null);
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-restart-again"));
+    });
+    expect(storeMocks.restartSession).toHaveBeenCalledTimes(1);
+    expect(storeMocks.openModal).not.toHaveBeenCalled();
+  });
+
+  it("Change settings opens the setup modal WITHOUT restarting", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }) });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    fireEvent.click(getByTestId("experience-restart-settings"));
+    expect(getByTestId("setup-modal")).toBeTruthy();
+    expect(storeMocks.restartSession).not.toHaveBeenCalled();
+    expect(storeMocks.openModal).not.toHaveBeenCalled();
+  });
+
+  it("interrupted session behaves like completed: both restart buttons, no primary", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "interrupted" }) });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    expect(queryByTestId("experience-launcher-primary")).toBeNull();
+    expect(getByTestId("experience-restart-again")).toBeTruthy();
+    expect(getByTestId("experience-restart-settings")).toBeTruthy();
+  });
+});
+
+describe("ExperienceLauncher — in-session settings entry (Б4)", () => {
+  it("ACTIVE session: invoking the modal's settings entry closes the session modal and opens the setup modal", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    expect(getByTestId("modal-session-settings")).toBeTruthy();
+    fireEvent.click(getByTestId("modal-session-settings"));
+    expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
+    // The setup modal is now the only open surface.
+    expect(getByTestId("setup-modal")).toBeTruthy();
+    expect(queryByTestId("experience-modal")).toBeNull();
+    expect(storeMocks.restartSession).not.toHaveBeenCalled();
+  });
+
+  it("TERMINAL session: the settings entry is NOT wired into the modal (the popover restart pair owns the endgame)", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }), modalOpen: true });
+    const { queryByTestId } = render(<ExperienceLauncher />);
+    expect(queryByTestId("modal-session-settings")).toBeNull();
+    expect(modalProps.onOpenSessionSettings).toBeUndefined();
   });
 });

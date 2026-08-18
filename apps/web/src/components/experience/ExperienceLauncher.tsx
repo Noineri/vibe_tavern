@@ -202,6 +202,10 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   const title = session?.manifest.name ?? config!.scriptId ?? "";
   const incompatible = hasSession && session!.visualSource === null;
+  // Endgame (lobby Б3): a terminal branch session (completed or interrupted)
+  // swaps the primary launcher action for the restart pair. Status is a plain
+  // string union — no domain constant is needed.
+  const terminal = hasSession && (session!.status === "completed" || session!.status === "interrupted");
 
   // ── Localized bridge-error message for the fail-closed action outcome ────
   function localizeError(code: BridgeErrorCode): string {
@@ -247,6 +251,38 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   function handleCloseModal(): void {
     setPopupError(false);
     useExperienceStore.getState().closeModal();
+  }
+
+  // ── Endgame «Играть снова» (Б3): one-shot restart, NO setup modal — an
+  // empty body makes the server reuse the source match's frozen snapshots,
+  // the plain rehydrate discovers the successor as the branch's active
+  // session, and the session modal opens on the NEW match.
+  async function handlePlayAgain(): Promise<void> {
+    setPopoverOpen(false);
+    try {
+      const result = await useExperienceStore.getState().restartSession();
+      if (result !== null) useExperienceStore.getState().openModal();
+    } catch (err) {
+      // The session (or scope) may disappear between render and click — the
+      // store then rejects locally. Keep this surface quiet rather than leaking
+      // an unhandled rejection (same guard as handleFinishExperience).
+      if (typeof console !== "undefined") console.warn("[experience] restart rejected", err);
+    }
+  }
+
+  // ── Endgame «Изменить настройки» (Б3): open the setup modal (the prefill
+  // from the finished match's snapshots lands in a later unit).
+  function handleRestartChangeSettings(): void {
+    setPopoverOpen(false);
+    setSetupOpen(true);
+  }
+
+  // ── In-session settings entry (Б4): the session modal's trusted-chrome
+  // confirm routed here — close the session modal FIRST so the setup modal
+  // is the only open surface.
+  function handleOpenSessionSettings(): void {
+    useExperienceStore.getState().closeModal();
+    setSetupOpen(true);
   }
 
   // ── Finish: trusted confirmation → endSession → close ONLY on success ─────
@@ -327,9 +363,11 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
       ? lastError
       : loading
         ? t("experience_launcher_loading")
-        : hasSession
-          ? t("experience_launcher_active")
-          : "";
+        : terminal
+          ? t("experience_launcher_finished")
+          : hasSession
+            ? t("experience_launcher_active")
+            : "";
 
   const body = (
     <div className="flex flex-col gap-2 p-2">
@@ -337,7 +375,27 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
         <span className="font-ui text-[12px] font-medium text-t1">{title || t("experience_launcher_title")}</span>
         {statusLine && <span className="font-ui text-[11px] text-t4">{statusLine}</span>}
       </div>
-      {!incompatible && (
+      {terminal && !incompatible ? (
+        // Endgame (Б3): the primary action is replaced by the restart pair.
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90"
+            onClick={() => void handlePlayAgain()}
+            data-testid="experience-restart-again"
+          >
+            {t("experience_restart_play_again")}
+          </button>
+          <button
+            type="button"
+            className="rounded bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 hover:bg-s3"
+            onClick={handleRestartChangeSettings}
+            data-testid="experience-restart-settings"
+          >
+            {t("experience_restart_change_settings")}
+          </button>
+        </div>
+      ) : !incompatible && (
         <button
           type="button"
           className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90"
@@ -441,6 +499,12 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           onAction={handleAction}
           onDetach={handleDetach}
           onFinishExperience={() => void handleFinishExperience()}
+          // Б4 is the RUNNING-game entry: terminal games use the popover
+          // restart pair instead, so the in-session settings entry is wired
+          // only for an active, compatible match.
+          onOpenSessionSettings={
+            hasSession && !terminal && !incompatible ? handleOpenSessionSettings : undefined
+          }
           reportControls={
             modalOpen ? (
               <ExperienceReportControls

@@ -9,6 +9,7 @@ import type {
   ExperienceContextStatusDto,
   ExperienceEffectRow,
   ExperienceEffectRunResponse,
+  ExperienceParticipant,
   ExperienceQueuedAttachmentResponse,
   ExperienceQueuedAttachmentView,
   ExperienceReportStatus,
@@ -26,6 +27,7 @@ import {
   getExperienceQueuedAttachment,
   getExperienceReportStatus,
   queueExperienceReport,
+  restartExperienceSession,
   runExperienceEffect,
   startExperienceSession,
   submitExperienceAction,
@@ -136,6 +138,16 @@ export interface ExperienceActions {
    *  resources but preserves the terminal attachment for send binding
    *  (IR-73C/D). */
   endSession: () => Promise<ExperienceQueuedAttachmentResponse>;
+  /** Restart as a NEW match on the same branch (lobby Б3/Б4). The server
+   *  finishes the old match and the successor becomes the branch's active
+   *  session, so a plain rehydrate after success discovers it — there is NO
+   *  terminal attachment writeback here (unlike `endSession`). Omitted
+   *  `override` fields reuse the source session's frozen snapshots.
+   *  Returns the NEW session, or null on a server failure (see
+   *  `lastError`/`lastApiError` after the resync). */
+  restartSession: (
+    override?: { settings?: unknown; participants?: ExperienceParticipant[] },
+  ) => Promise<ExperienceSessionResponse | null>;
   /** Submit one action intention against the active scope's session. The
    *  store supplies `requestId` + `expectedRevision`. Concurrent same-intent
    *  calls join one in-flight request. Rejects locally (no API call) when
@@ -630,6 +642,24 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
               scopeDraft(s, key).queuedAttachment = response;
             });
           }
+          return response;
+        } catch (err) {
+          return failMutation(chatId, branchId, key, activeEpoch, err);
+        }
+      },
+
+      restartSession: async (override) => {
+        const { chatId, branchId, key, activeEpoch } = requireActiveScope();
+        const session = requireSession(key);
+        set((s) => {
+          clearError(scopeDraft(s, key));
+        });
+        try {
+          const response = await restartExperienceSession(session.sessionId, override ?? {});
+          // The successor becomes the branch's active session server-side; a
+          // plain rehydrate discovers it. No terminal writeback (unlike
+          // endSession) — the old match's report, if any, is server-owned.
+          if (isActiveOperation(key, activeEpoch)) await get().rehydrate(chatId, branchId);
           return response;
         } catch (err) {
           return failMutation(chatId, branchId, key, activeEpoch, err);

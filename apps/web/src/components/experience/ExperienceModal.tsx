@@ -115,6 +115,13 @@ export interface ExperienceModalProps {
    * calls this. The visual's bridge `finish` request is forwarded here too.
    */
   readonly onFinishExperience?: () => void;
+  /** Privileged in-session settings entry (lobby Б4). When provided, a
+   *  Settings button is shown in the chrome; clicking it opens a system
+   *  confirmation that lives OUTSIDE the sandboxed frame (same trust rule as
+   *  finish — a compromised visual must not be able to trigger a privileged
+   *  restart-with-new-settings without a trusted prompt) and only then calls
+   *  this. Rendered only for ACTIVE matches by the parent. */
+  readonly onOpenSessionSettings?: () => void;
   /** Trusted report-control surface rendered in a stable footer OUTSIDE the
    *  sandboxed frame (IR-73C). The parent (launcher) builds the element from
    *  server-authoritative store selectors and supplies it here so the controls
@@ -154,6 +161,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
     pendingPhase,
     onDetach,
     onFinishExperience,
+    onOpenSessionSettings,
     reportControls,
     visualSource,
     sessionId,
@@ -167,6 +175,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
   } = props;
   const { t } = useT();
   const [confirmingFinish, setConfirmingFinish] = useState(false);
+  const [confirmingSettings, setConfirmingSettings] = useState(false);
   const [frameReady, setFrameReady] = useState(false);
   const frameRef = useRef<ExperienceFrameHandle>(null);
   /** Last revision pushed to the ready frame (prevents a redundant re-push of
@@ -179,10 +188,13 @@ export function ExperienceModal(props: ExperienceModalProps) {
   const cbRef = useRef({ onReady, onAction, onResize, onFinishExperience, onError });
   cbRef.current = { onReady, onAction, onResize, onFinishExperience, onError };
 
-  // Reset the finish-confirmation step whenever the modal closes so a reopen
+  // Reset the confirmation steps whenever the modal closes so a reopen
   // does not inherit a stale "are you sure?" state.
   useEffect(() => {
-    if (!open) setConfirmingFinish(false);
+    if (!open) {
+      setConfirmingFinish(false);
+      setConfirmingSettings(false);
+    }
   }, [open]);
 
   // Reset the ready/push-tracking state on a session change so a fresh
@@ -278,6 +290,11 @@ export function ExperienceModal(props: ExperienceModalProps) {
     onFinishExperience?.();
   };
 
+  const confirmSettings = () => {
+    setConfirmingSettings(false);
+    onOpenSessionSettings?.();
+  };
+
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <div className="flex h-full max-h-[85vh] w-[min(720px,92vw)] flex-col rounded-lg border border-neutral-700 bg-neutral-900 shadow-xl">
@@ -330,6 +347,16 @@ export function ExperienceModal(props: ExperienceModalProps) {
               {t("experience_finish")}
             </button>
           )}
+          {onOpenSessionSettings && !confirmingSettings && (
+            <button
+              type="button"
+              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+              onClick={() => setConfirmingSettings(true)}
+              data-testid="experience-session-settings"
+            >
+              {t("experience_session_settings")}
+            </button>
+          )}
           <button
             type="button"
             className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 max-md:min-h-9 max-md:min-w-9"
@@ -380,6 +407,37 @@ export function ExperienceModal(props: ExperienceModalProps) {
                     data-testid="experience-finish-confirm-btn"
                   >
                     {t("experience_finish")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {confirmingSettings && (
+            // System confirmation lives in the MODAL chrome (trusted), outside
+            // the user frame — same trust rule as the finish confirm: a
+            // compromised visual cannot forge this privileged prompt.
+            <div
+              className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 p-4"
+              data-testid="experience-settings-confirm"
+            >
+              <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-900 p-4 shadow-lg">
+                <p className="mb-4 text-sm text-neutral-200">{t("experience_session_settings_confirm")}</p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+                    onClick={() => setConfirmingSettings(false)}
+                    data-testid="experience-settings-cancel"
+                  >
+                    {t("experience_cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 max-md:min-h-9"
+                    onClick={confirmSettings}
+                    data-testid="experience-settings-confirm-btn"
+                  >
+                    {t("experience_session_settings")}
                   </button>
                 </div>
               </div>
