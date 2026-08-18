@@ -642,6 +642,66 @@ context.experience.register({
 		expect(deleted.status).toBe(200);
 		expect((await jsonBody(deleted)).ok).toBe(true);
 	});
+
+	test("restart returns a NEW session id with active status on the same branch", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: { difficulty: "hard" } }),
+		});
+		expect(start.status).toBe(200);
+		const started = await jsonBody(start);
+		const sid = started.sessionId;
+
+		const restart = await app.request(`/api/experience/sessions/${sid}/restart`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(restart.status).toBe(200);
+		const restarted = await jsonBody(restart);
+		expect(restarted.sessionId).not.toBe(sid);
+		expect(restarted.sessionId).toBeTruthy();
+		expect(restarted.status).toBe("active");
+		expect(restarted.branchId).toBe(branchId);
+		// Omitted override fields fall back to the source session's frozen snapshots.
+		expect(restarted.view.state).toEqual({ count: 0 });
+	});
+
+	test("restart on an unknown session is 404 session_not_found", async () => {
+		const { app } = await setupIntegration();
+		const res = await app.request("/api/experience/sessions/unknown/restart", {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(res.status).toBe(404);
+		const body = await jsonBody(res);
+		expect(body.error.details.code).toBe("session_not_found");
+	});
+
+	test("restart after disabling the chat's experience config is 409 not_enabled", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+
+		const disabled = await resources.updateConfig(chatId, { enabled: false });
+		expect(disabled.ok).toBe(true);
+
+		const restart = await app.request(`/api/experience/sessions/${sid}/restart`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(restart.status).toBe(409);
+		const body = await jsonBody(restart);
+		expect(body.error.details.code).toBe("not_enabled");
+	});
 });
 
 // ─── 3. IR-70A: branch-scoped discovery + queued-attachment read ──────────────

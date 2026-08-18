@@ -691,6 +691,14 @@ export const experienceFinishRequestSchema = z.object({
   expectedRevision: boundedRevision,
 }).strict();
 
+/** Restart as a NEW match on the same branch (lobby report LB-2/LB-3): fresh
+ * session id under a new seed. Both fields optional — omitted falls back to
+ * the source session's frozen snapshots; explicit values win. */
+export const experienceRestartRequestSchema = z.object({
+  settings: boundedState.optional(),
+  participants: z.array(experienceStartParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS).optional(),
+}).strict();
+
 /** Explicit queue/Add-later report freeze. The client must pin the exact live
  * revision; it can never silently include actions which arrived afterwards. */
 export const experienceReportQueueRequestSchema = z.object({
@@ -911,6 +919,7 @@ export const experiencePlaygroundAdvanceRequestSchema = z.object({
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
 export type ExperienceActionDto = z.infer<typeof experienceActionSchema>;
 export type ExperienceFinishRequestDto = z.infer<typeof experienceFinishRequestSchema>;
+export type ExperienceRestartRequestDto = z.infer<typeof experienceRestartRequestSchema>;
 export type ExperienceReportQueueRequestDto = z.infer<typeof experienceReportQueueRequestSchema>;
 export type ExperienceSessionResponseDto = z.infer<typeof experienceSessionResponseSchema>;
 export type ExperienceDefinitionDto = z.infer<typeof experienceDefinitionSchema>;

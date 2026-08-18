@@ -273,6 +273,7 @@ export {
   experienceStartRequestSchema,
   experienceActionRequestSchema,
   experienceFinishRequestSchema,
+  experienceRestartRequestSchema,
   experienceReportQueueRequestSchema,
   experienceSessionResponseSchema,
   // Runtime request/query envelopes (IR-32 routes)
@@ -317,6 +318,7 @@ export {
   type ExperienceStartRequestDto,
   type ExperienceActionDto,
   type ExperienceFinishRequestDto,
+  type ExperienceRestartRequestDto,
   type ExperienceSessionResponseDto,
   type ExperienceDefinitionDto,
   type ExperienceStarterManifestDto,

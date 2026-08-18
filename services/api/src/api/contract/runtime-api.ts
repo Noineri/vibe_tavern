@@ -670,6 +670,10 @@ export interface ExperienceRuntimeApi {
 	getActiveExperienceSession: (chatId: string, branchId: string) => Promise<ExperienceSessionResponse>;
 	/** Canonical explicit user finish: terminal snapshot is atomically queued. */
 	endExperienceSession: (sessionId: string, body: { expectedRevision: number }) => Promise<ExperienceQueuedAttachmentResponse>;
+	/** Restart as a NEW match on the same branch (lobby report LB-2/LB-3):
+	 *  fresh session id under a new seed; omitted override fields fall back to
+	 *  the source session's frozen snapshots. */
+	restartExperienceSession: (sessionId: string, body: { settings?: unknown; participants?: import("@vibe-tavern/domain").ExperienceParticipant[] }) => Promise<ExperienceSessionResponse>;
 	submitExperienceAction: (sessionId: string, body: import("@vibe-tavern/domain").ExperienceAction, signal?: AbortSignal) => Promise<ExperienceActionResponse>;
 
 	// ── Per-viewer projection reads ──

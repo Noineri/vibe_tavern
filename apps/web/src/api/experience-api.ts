@@ -28,6 +28,7 @@ import type {
   ExperienceEffectRow,
   ExperienceEffectRunResponse,
   ExperienceFinishRequest,
+  ExperienceRestartRequest,
   ExperienceProjection,
   ExperiencePlaygroundAdvanceRequest,
   ExperiencePlaygroundData,
@@ -167,6 +168,19 @@ export async function getActiveExperienceSession(chatId: string, branchId: strin
     param: { chatId },
     query: { branchId },
   });
+  return unwrapExperience<ExperienceSessionResponse>(response);
+}
+
+/** POST /api/experience/sessions/:sessionId/restart — restart as a NEW match on
+ * the same branch: fresh session id, fresh seed; the old match is finished
+ * (interrupted with a public «restarted» step, or report-frozen if already
+ * completed) and the branch slot passes to the successor. Omitted body fields
+ * reuse the source session's frozen settings/roster snapshots. */
+export async function restartExperienceSession(
+  sessionId: string,
+  body: ExperienceRestartRequest,
+): Promise<ExperienceSessionResponse> {
+  const response = await client.api.experience.sessions[":sessionId"].restart.$post({ param: { sessionId }, json: body });
   return unwrapExperience<ExperienceSessionResponse>(response);
 }
 

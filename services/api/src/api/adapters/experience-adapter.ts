@@ -214,6 +214,16 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		return this.toResponse(found.data, projection);
 	};
 
+	restartExperienceSession = async (
+		sessionId: string,
+		body: { settings?: unknown; participants?: ExperienceParticipant[] },
+	) => {
+		const restarted = await this.lifecycle.restartSession(sessionId, { settings: body.settings, participants: body.participants });
+		if (!restarted.ok) throw mapError(restarted.error);
+		const projection = await this.projectForHuman(restarted.data.sessionId, restarted.data.participants);
+		return this.toResponse(restarted.data, projection);
+	};
+
 	/** Canonical explicit user finish. The report service appends the durable
 	 * public system event, releases the slot, and freezes the terminal snapshot
 	 * in one synchronous SQLite transaction. */

@@ -76,6 +76,10 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     .post("/api/experience/sessions/:sessionId/end", zValidator("json", schemas.experienceFinishRequestSchema), async (c) => {
       return c.json(await runtime.endExperienceSession(c.req.param("sessionId"), c.req.valid("json")));
     })
+    .post("/api/experience/sessions/:sessionId/restart", zValidator("json", schemas.experienceRestartRequestSchema), async (c) => {
+      const sessionId = c.req.param("sessionId");
+      return c.json(await runtime.restartExperienceSession(sessionId, c.req.valid("json")));
+    })
     .post("/api/experience/sessions/:sessionId/actions", zValidator("json", schemas.experienceActionRequestSchema), async (c) => {
       return c.json(
         await runtime.submitExperienceAction(c.req.param("sessionId"), c.req.valid("json"), c.req.raw.signal),

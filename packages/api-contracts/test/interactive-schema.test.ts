@@ -15,6 +15,7 @@ import {
   INTERACTIVE_SCHEMA_MAX_DEPTH,
   INTERACTIVE_SCHEMA_MAX_ID,
   INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
+  INTERACTIVE_SCHEMA_MAX_PARTICIPANTS,
   INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
   INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
   INTERACTIVE_SCHEMA_MAX_STRING,
@@ -33,6 +34,7 @@ import {
   experienceStartParticipantSchema as experienceParticipantSchema,
   experienceProjectedViewSchema,
   experienceReducerStatusSchema,
+  experienceRestartRequestSchema,
   experienceSessionResponseSchema,
   experienceSessionStatusSchema,
   experienceSetupDefinitionSchema,
@@ -542,6 +544,36 @@ describe("experienceStartRequestSchema", () => {
 
   it("rejects a missing branchId", () => {
     expectReject(experienceStartRequestSchema.safeParse({ participants: [] }));
+  });
+});
+
+describe("experienceRestartRequestSchema", () => {
+  it("omitted body parses to an object WITHOUT settings/participants keys (snapshot fallback)", () => {
+    const data = expectData(experienceRestartRequestSchema.safeParse({})) as Record<string, unknown>;
+    expect(Object.hasOwn(data, "settings")).toBe(false);
+    expect(Object.hasOwn(data, "participants")).toBe(false);
+  });
+
+  it("explicit settings + roster are accepted", () => {
+    const parsed = experienceRestartRequestSchema.safeParse({
+      settings: { difficulty: "hard" },
+      participants: [{ id: "p1", label: "Player 1", controller: "human" }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects unknown keys (.strict)", () => {
+    expectReject(experienceRestartRequestSchema.safeParse({ branchId: "br_1" }));
+  });
+
+  it("enforces the participants max bound", () => {
+    const roster = Array.from({ length: INTERACTIVE_SCHEMA_MAX_PARTICIPANTS + 1 }, (_, i) => ({
+      id: `p${i}`,
+      label: `Player ${i}`,
+      controller: "human" as const,
+    }));
+    const parsed = experienceRestartRequestSchema.safeParse({ participants: roster });
+    expect(parsed.success).toBe(false);
   });
 });
 

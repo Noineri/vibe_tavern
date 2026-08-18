@@ -42,6 +42,7 @@ import type {
 	ExperienceActionDto,
 	ExperienceDefinitionDto,
 	ExperienceFinishRequestDto,
+	ExperienceRestartRequestDto,
 	ExperienceSeatLegality,
 	ExperienceSeatLegalityMatrix,
 	ExperienceSessionResponseDto,
@@ -666,6 +667,9 @@ export type ExperienceStartRequest = z.input<typeof experienceStartRequestSchema
 export type ExperienceActionRequest = ExperienceActionDto;
 /** POST /sessions/:id/end body (`{ expectedRevision }`, strict). */
 export type ExperienceFinishRequest = ExperienceFinishRequestDto;
+/** POST /sessions/:id/restart body — both fields optional, omitted falls back
+ *  to the source session's frozen snapshots. */
+export type ExperienceRestartRequest = ExperienceRestartRequestDto;
 /** POST /sessions/:id/reports/queue body (`{ expectedRevision }`). */
 export type ExperienceReportQueueRequest = z.input<typeof experienceReportQueueRequestSchema>;
 /** POST /sessions/:id/undo body (`{ targetRevision }`). */
