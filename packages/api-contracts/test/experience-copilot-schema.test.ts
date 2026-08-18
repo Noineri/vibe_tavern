@@ -8,6 +8,8 @@ import {
   experienceCopilotMessageSchema,
   experienceCopilotBoundVisualSchema,
   experienceCopilotContextMetricsSchema,
+  experienceCopilotContextLinkSchema,
+  setCopilotContextLinksSchema,
   copilotToolSetSchema,
   copilotProfileSchema,
   COPILOT_TOOL_KEYS,
@@ -68,6 +70,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
       metrics: null,
+      contextLinks: [],
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
@@ -82,6 +85,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-03T00:00:00.000Z",
       metrics: null,
+      contextLinks: [],
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
@@ -123,6 +127,7 @@ describe("experienceCopilotContextMetricsSchema (CM-1)", () => {
     systemTokens: 1000,
     digestTokens: 0,
     historyTokens: 500,
+    attachedTokens: 0,
     totalTokens: 1500,
     budgetTokens: 16000,
     reserveTokens: 1000,
@@ -303,3 +308,53 @@ describe("copilotProfileSchema (CP-1)", () => {
     expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 51 })).toThrow();
   });
 });
+
+// ─── CX-1: pinned-context links ─────────────────────────────────────────────
+
+describe("experienceCopilotContextLinkSchema + setCopilotContextLinksSchema (CX-1)", () => {
+  test("accepts all five target types including skill", () => {
+    for (const targetType of ["character", "persona", "lorebook", "script", "skill"] as const) {
+      expect(experienceCopilotContextLinkSchema.parse({ targetType, targetId: "id_1" })).toEqual({
+        targetType,
+        targetId: "id_1",
+      });
+    }
+  });
+
+  test("rejects an unknown targetType and an empty/oversized targetId", () => {
+    expect(() => experienceCopilotContextLinkSchema.parse({ targetType: "emoji", targetId: "x" })).toThrow();
+    expect(() => experienceCopilotContextLinkSchema.parse({ targetType: "character" })).toThrow();
+    expect(() => experienceCopilotContextLinkSchema.parse({ targetType: "character", targetId: "" })).toThrow();
+    expect(() =>
+      experienceCopilotContextLinkSchema.parse({ targetType: "character", targetId: "y".repeat(201) }),
+    ).toThrow();
+  });
+
+  test("set schema accepts a valid array and rejects extras/oversize", () => {
+    const links = [{ targetType: "skill" as const, targetId: "my-skill" }];
+    expect(setCopilotContextLinksSchema.parse({ links })).toEqual({ links });
+    expect(() => setCopilotContextLinksSchema.parse({ links, extra: 1 })).toThrow();
+    expect(() =>
+      setCopilotContextLinksSchema.parse({ links: Array.from({ length: 65 }, () => links[0]) }),
+    ).toThrow();
+  });
+});
+
+describe("experienceCopilotContextMetricsSchema (CX-1 additions)", () => {
+  test("requires attachedTokens (strict)", () => {
+    const base = {
+      systemTokens: 1000,
+      digestTokens: 0,
+      historyTokens: 500,
+      totalTokens: 1500,
+      budgetTokens: 16000,
+      reserveTokens: 1000,
+      source: "estimate" as const,
+      measuredAt: "2026-08-18T00:00:00.000Z",
+    };
+    expect(() => experienceCopilotContextMetricsSchema.parse(base)).toThrow();
+    expect(
+      experienceCopilotContextMetricsSchema.parse({ ...base, attachedTokens: 42 }).attachedTokens,
+    ).toBe(42);
+  });
+});;

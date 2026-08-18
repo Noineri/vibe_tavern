@@ -101,6 +101,10 @@ export const experienceCopilotContextMetricsSchema = z
     systemTokens: z.number().int(),
     digestTokens: z.number().int(),
     historyTokens: z.number().int(),
+    /** Tokens of the pinned-context attached block + recency anchor (CX-1,
+     *  additive). Rows written before this plan lack the field — the DB parse
+     *  guard defaults it to 0, so the wire can require it unconditionally. */
+    attachedTokens: z.number().int(),
     totalTokens: z.number().int(),
     budgetTokens: z.number().int(),
     reserveTokens: z.number().int(),
@@ -109,6 +113,41 @@ export const experienceCopilotContextMetricsSchema = z
   })
   .strict();
 export type ExperienceCopilotContextMetrics = z.infer<typeof experienceCopilotContextMetricsSchema>;
+
+/** Pinned-context target types the copilot picker offers (CX-1). Mirrors the
+ *  Co-Author CE-C1 set plus `skill` — skills are filesystem-scanned (id = the
+ *  skill directory name), and pinning one eagerly injects its `SKILL.md` body
+ *  (user decision 2026-08-18; `read_skill_file` stays for on-demand assets). */
+export const experienceCopilotContextTargetTypeSchema = z.enum([
+  "character",
+  "persona",
+  "lorebook",
+  "script",
+  "skill",
+]);
+export type ExperienceCopilotContextTargetType = z.infer<typeof experienceCopilotContextTargetTypeSchema>;
+
+/** One pinned-context link on a copilot thread: resolved by id at ASSEMBLY
+ *  time (never a stored copy), so dangling ids (deleted entities) are skipped
+ *  silently at the next turn — mirroring the co-author context-link loader. */
+export const experienceCopilotContextLinkSchema = z
+  .object({
+    targetType: experienceCopilotContextTargetTypeSchema,
+    targetId: z.string().min(1).max(200),
+  })
+  .strict();
+export type ExperienceCopilotContextLink = z.infer<typeof experienceCopilotContextLinkSchema>;
+
+/** Body for `PATCH /api/experience-copilot/:threadId/context-links` (CX-1): a
+ *  full replace of the thread's pinned-context set (the client sends the whole
+ *  array; add/remove are computed client-side). Array cap mirrors the
+ *  co-author's pragmatic bound — plenty for grounding, cheap to validate. */
+export const setCopilotContextLinksSchema = z
+  .object({
+    links: z.array(experienceCopilotContextLinkSchema).max(64),
+  })
+  .strict();
+export type SetCopilotContextLinksRequest = z.infer<typeof setCopilotContextLinksSchema>;
 
 /**
  * Wire shape of an experience-copilot thread (ER-7). Mirrors
@@ -131,6 +170,10 @@ export const experienceCopilotThreadSchema = z.object({
   /** Nullable context metrics (null until the thread's first turn reports
    *  usage). Mirrors the store's parsed `contextMetrics` (CM-2). */
   metrics: experienceCopilotContextMetricsSchema.nullable(),
+  /** Pinned-context links (CX-1): resolved fresh at assembly time; dangling
+   *  ids are skipped silently. Empty array = nothing pinned (the zero-pinned
+   *  assembly stays byte-identical to the pre-plan output). */
+  contextLinks: z.array(experienceCopilotContextLinkSchema),
 });
 export type ExperienceCopilotThreadWire = z.infer<typeof experienceCopilotThreadSchema>;
 

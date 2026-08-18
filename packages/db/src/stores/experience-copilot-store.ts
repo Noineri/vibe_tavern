@@ -28,6 +28,10 @@ export interface AppendMessageInput {
  */
 export interface CopilotContextMetrics {
   systemTokens: number;
+  /** Tokens of the pinned-context attached block + recency anchor (CX-1,
+   *  additive). Rows written before this plan lack the field — the parse guard
+   *  defaults a missing value to 0. */
+  attachedTokens: number;
   digestTokens: number;
   historyTokens: number;
   totalTokens: number;
@@ -53,6 +57,9 @@ export interface ExperienceCopilotThread {
   /** Parsed context metrics from the last turn, or null before the first turn
    *  (or when the stored JSON is malformed — logged, never fatal). */
   contextMetrics: CopilotContextMetrics | null;
+  /** Pinned-context links (CX-1); `[]` when none pinned or the stored JSON is
+   *  malformed (logged, never fatal). */
+  contextLinks: CopilotContextLink[];
   /** The provider/model the thread last used (persisted from the stream finish
    *  path); null before the first turn. */
   lastProviderProfileId: string | null;
@@ -61,6 +68,16 @@ export interface ExperienceCopilotThread {
   autoCompact: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Pinned-context link on a copilot thread (CX-1). Local structural twin of
+ *  the api-contracts `experienceCopilotContextLinkSchema` — the db package
+ *  cannot import api-contracts (dependency direction), same as
+ *  {@link CopilotContextMetrics} above. Links resolve by id at assembly time
+ *  (never a content copy). */
+export interface CopilotContextLink {
+  targetType: 'character' | 'persona' | 'lorebook' | 'script' | 'skill';
+  targetId: string;
 }
 
 export interface ExperienceCopilotMessage {
@@ -337,6 +354,29 @@ export class ExperienceCopilotStore {
       .run();
   }
 
+  // ─── Pinned-context links (CX-1) ────────────────────────────────────────────
+
+  /** Read the thread's pinned-context links (defensive parse: malformed → []). */
+  async getContextLinks(threadId: string): Promise<CopilotContextLink[]> {
+    const row = await this.db
+      .select({ linksJson: experienceCopilotThreads.contextLinksJson })
+      .from(experienceCopilotThreads)
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .get();
+    return row ? parseContextLinks(row.linksJson, threadId) : [];
+  }
+
+  /** Full-replace the thread's pinned-context links (the client computes
+   *  add/remove; this is the PATCH semantics). Bumps updated_at. */
+  async setContextLinks(threadId: string, links: readonly CopilotContextLink[]): Promise<void> {
+    const now = this.clock.now();
+    await this.db
+      .update(experienceCopilotThreads)
+      .set({ contextLinksJson: JSON.stringify(links), updatedAt: now })
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .run();
+  }
+
   // ─── Row mappers (brandId at the DB edge only) ─────────────────────────────
 
   private mapThread(row: typeof experienceCopilotThreads.$inferSelect): ExperienceCopilotThread {
@@ -347,6 +387,7 @@ export class ExperienceCopilotStore {
       title: row.title,
       archivedAt: row.archivedAt,
       contextMetrics: parseContextMetrics(row.contextMetricsJson, row.id),
+      contextLinks: parseContextLinks(row.contextLinksJson, row.id),
       lastProviderProfileId: row.lastProviderProfileId,
       lastModel: row.lastModel,
       autoCompact: row.autoCompact === 1,
@@ -370,8 +411,10 @@ export class ExperienceCopilotStore {
 
 // ─── Row-parse helpers (defensive, never fatal) ───────────────────────────
 
-/** Type guard for the parsed metrics JSON shape. */
-function isCopilotContextMetrics(value: unknown): value is CopilotContextMetrics {
+/** Type guard for the parsed metrics JSON shape. `attachedTokens` is additive
+ *  (CX-1): rows written before the plan lack it — the guard accepts those and
+ *  the caller defaults the value to 0. */
+function isCopilotContextMetrics(value: unknown): value is Omit<CopilotContextMetrics, "attachedTokens"> & { attachedTokens?: unknown } {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   return (
@@ -394,7 +437,12 @@ function parseContextMetrics(text: string | null, threadId: string): CopilotCont
   if (!text) return null;
   try {
     const parsed: unknown = JSON.parse(text);
-    if (isCopilotContextMetrics(parsed)) return parsed;
+    // Legacy rows (pre-CX-1) carry no attachedTokens — default to 0 rather than
+    // rejecting: "no attached context recorded" and "attached not yet metered"
+    // mean the same thing to the meter.
+    if (isCopilotContextMetrics(parsed)) {
+      return { ...parsed, attachedTokens: typeof parsed.attachedTokens === "number" ? parsed.attachedTokens : 0 };
+    }
   } catch (err) {
     console.error(
       `[experience-copilot-store] malformed context_metrics_json for thread '${threadId}':`,
@@ -406,4 +454,33 @@ function parseContextMetrics(text: string | null, threadId: string): CopilotCont
     `[experience-copilot-store] invalid context_metrics_json shape for thread '${threadId}'`,
   );
   return null;
+}
+
+const COPILOT_LINK_TARGET_TYPES = new Set(["character", "persona", "lorebook", "script", "skill"]);
+
+/** Parse `context_links_json` into validated {@link CopilotContextLink}s.
+ *  Malformed JSON or a wrong shape → `[]` (logged, never fatal): links are
+ *  advisory grounding — a corrupted column must never take the thread down,
+ *  and the next `setContextLinks` write heals it. */
+function parseContextLinks(text: string, threadId: string): CopilotContextLink[] {
+  if (!text) return [];
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed)) {
+      console.error(`[experience-copilot-store] invalid context_links_json for thread '${threadId}': not an array`);
+      return [];
+    }
+    const links: CopilotContextLink[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      if (typeof rec.targetType !== "string" || !COPILOT_LINK_TARGET_TYPES.has(rec.targetType)) continue;
+      if (typeof rec.targetId !== "string" || rec.targetId.length === 0) continue;
+      links.push({ targetType: rec.targetType as CopilotContextLink["targetType"], targetId: rec.targetId });
+    }
+    return links;
+  } catch (err) {
+    console.error(`[experience-copilot-store] malformed context_links_json for thread '${threadId}':`, err);
+    return [];
+  }
 }

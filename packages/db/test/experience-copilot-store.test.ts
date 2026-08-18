@@ -250,6 +250,7 @@ describe("ExperienceCopilotStore — context metrics (CM-2)", () => {
     systemTokens: 1000,
     digestTokens: 0,
     historyTokens: 500,
+    attachedTokens: 0,
     totalTokens: 1500,
     budgetTokens: 16000,
     reserveTokens: 1000,
@@ -316,5 +317,89 @@ describe("ExperienceCopilotStore — context metrics (CM-2)", () => {
     await store.setAutoCompact(thread.id, false);
     expect(await store.getAutoCompact(thread.id)).toBe(false);
     expect((await store.getById(thread.id))?.autoCompact).toBe(false);
+  });
+
+  test("legacy metrics JSON without attachedTokens parses with attachedTokens 0 (CX-1)", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession("script_legacy_metrics", "T");
+
+    // A pre-CX-1 row: every CM-1 field present, attachedTokens absent.
+    const legacy = { ...metrics };
+    delete (legacy as Partial<CopilotContextMetrics>).attachedTokens;
+    await db.update(experienceCopilotThreads)
+      .set({ contextMetricsJson: JSON.stringify(legacy) })
+      .where(eq(experienceCopilotThreads.id, thread.id))
+      .run();
+
+    const reloaded = await store.getById(thread.id);
+    expect(reloaded?.contextMetrics).toEqual({ ...metrics, attachedTokens: 0 });
+  });
+});
+
+describe("ExperienceCopilotStore — pinned-context links (CX-1)", () => {
+  test("contextLinks default to [] on a fresh thread; mapThread exposes them", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_links_fresh", "T");
+    expect(thread.contextLinks).toEqual([]);
+    expect(await store.getContextLinks(thread.id)).toEqual([]);
+  });
+
+  test("setContextLinks full-replace round-trips through getContextLinks and getById", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_links_set", "T");
+
+    const links = [
+      { targetType: "character", targetId: "char_1" },
+      { targetType: "lorebook", targetId: "lore_2" },
+      { targetType: "skill", targetId: "my-skill" },
+    ] as const;
+    await store.setContextLinks(thread.id, [...links]);
+
+    expect(await store.getContextLinks(thread.id)).toEqual(links);
+    expect((await store.getById(thread.id))?.contextLinks).toEqual(links);
+
+    // Full replace: setting a shorter list drops the removed link.
+    await store.setContextLinks(thread.id, [{ targetType: "persona", targetId: "persona_9" }]);
+    expect(await store.getContextLinks(thread.id)).toEqual([{ targetType: "persona", targetId: "persona_9" }]);
+  });
+
+  test("setContextLinks bumps updatedAt", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_links_ts", "T");
+    const before = thread.updatedAt;
+    await store.setContextLinks(thread.id, [{ targetType: "script", targetId: "script_z" }]);
+    expect((await store.getById(thread.id))?.updatedAt > before).toBe(true);
+  });
+
+  test("malformed context_links_json → [] (never fatal)", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession("script_links_malformed", "T");
+
+    await db.update(experienceCopilotThreads)
+      .set({ contextLinksJson: "not-json{" })
+      .where(eq(experienceCopilotThreads.id, thread.id))
+      .run();
+
+    expect(await store.getContextLinks(thread.id)).toEqual([]);
+    expect((await store.getById(thread.id))?.contextLinks).toEqual([]);
+  });
+
+  test("wrong-shape links JSON drops invalid entries, keeps valid ones", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession("script_links_wrongshape", "T");
+
+    // Mixed array: a valid link, an unknown targetType, a missing targetId,
+    // and a non-object — only the valid one survives.
+    await db.update(experienceCopilotThreads)
+      .set({ contextLinksJson: JSON.stringify([
+        { targetType: "character", targetId: "char_ok" },
+        { targetType: "emoji", targetId: "x" },
+        { targetType: "lorebook" },
+        42,
+      ]) })
+      .where(eq(experienceCopilotThreads.id, thread.id))
+      .run();
+
+    expect(await store.getContextLinks(thread.id)).toEqual([{ targetType: "character", targetId: "char_ok" }]);
   });
 });

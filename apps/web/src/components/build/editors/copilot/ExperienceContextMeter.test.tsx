@@ -50,6 +50,7 @@ function metrics(over: Partial<ExperienceCopilotContextMetrics> = {}): Experienc
     systemTokens: 2500,
     digestTokens: 1000,
     historyTokens: 500,
+    attachedTokens: 0,
     totalTokens: 4000,
     budgetTokens: 10000,
     reserveTokens: 1000,

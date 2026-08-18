@@ -1,0 +1,1 @@
+ALTER TABLE `experience_copilot_threads` ADD `context_links_json` text DEFAULT '[]' NOT NULL;

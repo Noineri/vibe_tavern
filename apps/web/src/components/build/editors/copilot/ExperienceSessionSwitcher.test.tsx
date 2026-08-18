@@ -40,6 +40,7 @@ function session(id: string, over: Partial<Omit<ExperienceCopilotThreadWire, "me
     createdAt: "",
     updatedAt: "",
     metrics: null,
+    contextLinks: [],
     ...over,
   };
 }

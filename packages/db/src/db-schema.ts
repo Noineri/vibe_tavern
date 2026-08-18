@@ -1283,6 +1283,11 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // budget/reserve tokens + source + measuredAt). Nullable: null until the first
   // turn reports usage. Malformed JSON on read → null (logged), never fatal.
   contextMetricsJson: text('context_metrics_json'),
+  // Pinned-context links (CX-1): JSON array of {targetType, targetId}. Always
+  // written via JSON.stringify of validated links; read via a defensive parse
+  // (malformed → [], logged, never fatal). Resolved by id at ASSEMBLY time —
+  // never a stored content copy, so a pinned entity can never go stale.
+  contextLinksJson: text('context_links_json').notNull().default('[]'),
   // The provider/model the thread LAST used (persisted from the stream finish
   // path) — the compaction service (CM-5) reuses this pair when the manual
   // compact endpoint omits one. Nullable: null before the first turn.

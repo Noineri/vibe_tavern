@@ -561,6 +561,10 @@ export async function* streamExperienceCopilot(
     digestTokens: assembled.tokenAccounting.digest,
     historyTokens: assembled.tokenAccounting.history,
     totalTokens: metricsTotalTokens,
+    // CX-1: additive segment; the assembler does not report it yet (CX-3 wires
+    // the attached block's accounting) — 0 until then, which is also the exact
+    // truth for a thread with nothing pinned.
+    attachedTokens: 0,
     budgetTokens: COPILOT_CONTEXT_BUDGET_TOKENS,
     reserveTokens: COPILOT_RESPONSE_RESERVE_TOKENS,
     source: metricsSource,

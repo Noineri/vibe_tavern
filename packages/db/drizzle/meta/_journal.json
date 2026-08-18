@@ -309,6 +309,13 @@
       "when": 1786877161136,
       "tag": "0043_zippy_mauler",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1787054289295,
+      "tag": "0044_friendly_hex",
+      "breakpoints": true
     }
   ]
 }

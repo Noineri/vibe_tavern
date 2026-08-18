@@ -196,6 +196,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
       metrics: t.contextMetrics ? this.toMetricsWire(t.contextMetrics) : null,
+      contextLinks: t.contextLinks,
     };
   }
 
@@ -208,6 +209,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       digestTokens: m.digestTokens,
       historyTokens: m.historyTokens,
       totalTokens: m.totalTokens,
+      attachedTokens: m.attachedTokens,
       budgetTokens: m.budgetTokens,
       reserveTokens: m.reserveTokens,
       source: m.source,

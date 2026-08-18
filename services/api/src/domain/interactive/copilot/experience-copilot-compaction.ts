@@ -268,6 +268,9 @@ export class ExperienceCopilotCompactionService {
       digestTokens,
       historyTokens,
       totalTokens: systemTokens + digestTokens + historyTokens,
+      // Compaction does not touch the pinned-context block — carry the prior
+      // segment forward (0 for legacy rows, defaulted at parse).
+      attachedTokens: priorMetrics?.attachedTokens ?? 0,
       budgetTokens: priorMetrics?.budgetTokens ?? 0,
       reserveTokens: priorMetrics?.reserveTokens ?? 0,
       source: "estimate",

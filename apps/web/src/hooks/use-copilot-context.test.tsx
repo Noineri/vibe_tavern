@@ -30,6 +30,7 @@ function metrics(total: number): ExperienceCopilotContextMetrics {
     systemTokens: 100,
     digestTokens: 100,
     historyTokens: 200,
+    attachedTokens: 0,
     totalTokens: total,
     budgetTokens: 10000,
     reserveTokens: 1000,
