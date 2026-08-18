@@ -23,7 +23,7 @@ import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema } from "@vibe-tavern/api-contracts";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -453,6 +453,35 @@ export function useChatController(): ChatControllerActions {
               toolName: info.toolName,
               status: info.isError || !lore.success ? "error" : "done",
               ...(lore.success ? { loreBundle: lore.data.bundle, summary: lore.data.summary } : {}),
+            });
+            return;
+          }
+          // CE-D2: a search_context result is {results:[...locator rows]} — a
+          // read-only search, NOT a proposal (the proposal parse below would
+          // flag it an error — the reported bug: a successful search rendered
+          // as a red error card). The query label comes from the args captured
+          // at onToolCall (this upsert merges into that same entry).
+          if (info.toolName === "search_context") {
+            const search = coauthorSearchOutputSchema.safeParse(info.output);
+            useCoauthorTurnStore.getState().upsertActivity(chatId, {
+              toolCallId: info.toolCallId,
+              toolName: info.toolName,
+              status: info.isError || !search.success ? "error" : "done",
+              ...(search.success ? { search: { results: search.data.results } } : {}),
+            });
+            return;
+          }
+          // CE-D2: a read_context_item result is {type,id,title,content} — a
+          // read of one located entity, NOT a proposal. The body is dropped
+          // (large); only the locator reaches the card, mirroring the
+          // read_skill_file precedent.
+          if (info.toolName === "read_context_item") {
+            const ctxRead = coauthorContextReadOutputSchema.safeParse(info.output);
+            useCoauthorTurnStore.getState().upsertActivity(chatId, {
+              toolCallId: info.toolCallId,
+              toolName: info.toolName,
+              status: info.isError || !ctxRead.success ? "error" : "done",
+              ...(ctxRead.success ? { contextRead: { type: ctxRead.data.type, title: ctxRead.data.title } } : {}),
             });
             return;
           }

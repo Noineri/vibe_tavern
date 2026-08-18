@@ -480,6 +480,112 @@ describe("ToolActivityCard — lore tool previews (CTX-L3)", () => {
 		});
 	});
 
+	describe("ToolActivityCard — context search activities (CE-D2)", () => {
+		const result = (type: string, id: string, title: string) => ({
+			type, id, title, scope: "library", ownerId: null, parentId: null, meta: {}, matchKind: "content",
+		});
+
+		it("renders a done search with the query label and hit count, NOT an error card", () => {
+			const { getByText, queryByText } = render(
+				<ToolActivityCard
+					activity={activity({
+						toolName: "search_context",
+						status: "done",
+						summary: undefined,
+						target: undefined,
+						proposed: undefined,
+						args: { query: "морской бой" },
+						search: { results: [result("character", "char_1", "Морской бой"), result("lorebook", "lb_1", "Флот")] },
+					})}
+				/>,
+			);
+			expect(getByText("coauthor_tool_search_label: морской бой")).toBeDefined();
+			expect(queryByText("coauthor_tool_error")).toBeNull();
+		});
+
+		it("expands to the located-item list (type chip + title) on click", () => {
+			const { getByText, queryByText } = render(
+				<ToolActivityCard
+					activity={activity({
+						toolName: "search_context",
+						status: "done",
+						summary: undefined,
+						target: undefined,
+						proposed: undefined,
+						args: { query: "флот" },
+						search: { results: [result("character", "char_1", "Морской бой"), result("script", "sc_9", "Дайс")] },
+					})}
+				/>,
+			);
+			fireEvent.click(getByText("coauthor_tool_search_label: флот"));
+			expect(getByText("Морской бой")).toBeDefined();
+			expect(getByText("Дайс")).toBeDefined();
+			// The i18n mock returns the key verbatim, which the miss-fallback in
+		// searchTypeLabel treats as an untranslated type → the raw type string
+		// renders (the production-localized label asserts nothing here).
+			expect(getByText("character")).toBeDefined();
+			expect(getByText("script")).toBeDefined();
+			// The operation preview never renders for a search (no proposal payload).
+			expect(queryByText("coauthor_tool_op_unavailable")).toBeNull();
+		});
+
+		it("renders an empty-results search with the no-matches label", () => {
+			const { getByText } = render(
+				<ToolActivityCard
+					activity={activity({
+						toolName: "search_context",
+						status: "done",
+						summary: undefined,
+						target: undefined,
+						proposed: undefined,
+						args: { query: "ночь" },
+						search: { results: [] },
+					})}
+				/>,
+			);
+			fireEvent.click(getByText("coauthor_tool_search_label: ночь"));
+			expect(getByText("coauthor_tool_search_empty")).toBeDefined();
+		});
+
+		it("falls back to the generic search label when args are lost (historical row)", () => {
+			const { getByText } = render(
+				<ToolActivityCard
+					activity={activity({
+						toolName: "search_context",
+						status: "done",
+						summary: undefined,
+						target: undefined,
+						proposed: undefined,
+						args: undefined,
+						search: { results: [result("persona", "p_1", "Кира")] },
+					})}
+				/>,
+			);
+			expect(getByText("coauthor_tool_search_label")).toBeDefined();
+		});
+
+		it("renders a done read_context_item as a located read (title label, no error)", () => {
+			const { getByText, queryByText } = render(
+				<ToolActivityCard
+					activity={activity({
+						toolName: "read_context_item",
+						status: "done",
+						summary: undefined,
+						target: undefined,
+						proposed: undefined,
+						args: { type: "character", id: "char_1" },
+						contextRead: { type: "character", title: "Морской бой" },
+					})}
+				/>,
+			);
+			expect(getByText("coauthor_tool_read_context: Морской бой")).toBeDefined();
+			expect(queryByText("coauthor_tool_error")).toBeNull();
+			// Reads are not expandable — no operation preview after a click.
+			fireEvent.click(getByText("coauthor_tool_read_context: Морской бой"));
+			expect(queryByText("coauthor_tool_op_unavailable")).toBeNull();
+		});
+	});
+
 	describe("ToolActivityCard — affordances (unchanged)", () => {
 	it("shows the streaming label, disables the toggle, and hides the preview", () => {
 		const { getByText, queryByText } = render(

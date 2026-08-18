@@ -289,6 +289,54 @@ export const coauthorSkillReadOutputSchema = z.object({
 export type CoauthorSkillReadOutput = z.infer<typeof coauthorSkillReadOutputSchema>;
 
 /**
+ * One `search_context` result row (CE-D2). Compact locator metadata only — no
+ * entity body (the model fetches full content separately via
+ * `read_context_item`, or `read_skill_file` for type "skill"). The backend
+ * canonical shape is `ContextSearchToolResult`
+ * (`services/api/src/domain/context/context-search-service.ts`); this schema is
+ * the single source of truth for the wire/persisted JSON shape.
+ */
+export const contextSearchResultItemSchema = z.object({
+  type: z.string(),
+  id: z.string(),
+  title: z.string(),
+  scope: z.string(),
+  ownerId: z.string().nullable(),
+  parentId: z.string().nullable(),
+  meta: z.record(z.string(), z.string().nullable()),
+  matchKind: z.string(),
+});
+export type ContextSearchResultItem = z.infer<typeof contextSearchResultItemSchema>;
+
+/**
+ * The `output` payload of a `search_context` `tool-result` SSE event (CE-D2).
+ * A search is NOT a proposal — it carries no `target`/`proposed`, never enters
+ * proposal aggregation and is never persisted as a draft; it renders as a
+ * glanceable search card (query + result count + located item titles). The
+ * backend tool returns at most `DEFAULT_SEARCH_LIMIT` (8) rows, so carrying
+ * the full array in an activity stays small.
+ */
+export const coauthorSearchOutputSchema = z.object({
+  results: z.array(contextSearchResultItemSchema),
+});
+export type CoauthorSearchOutput = z.infer<typeof coauthorSearchOutputSchema>;
+
+/**
+ * The `output` payload of a `read_context_item` `tool-result` SSE event
+ * (CE-D2). A read, like {@link coauthorSkillReadOutputSchema} — NOT a
+ * proposal. `content` is intentionally NOT carried into the activity card
+ * (it can be large); only the item's type + title are rendered as the card
+ * label. The backend canonical shape is `ContextSearchReadResult`.
+ */
+export const coauthorContextReadOutputSchema = z.object({
+  type: z.string(),
+  id: z.string(),
+  title: z.string(),
+  content: z.string(),
+});
+export type CoauthorContextReadOutput = z.infer<typeof coauthorContextReadOutputSchema>;
+
+/**
  * Metadata-only catalog entry for a Co-Author skill (CTX-S3 / CTX-S7). One row
  * per discovered skill directory (built-in or user); a user skill shadows a
  * same-id built-in. Deliberately carries NO file body (the manifest text is

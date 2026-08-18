@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, type CoauthorTarget, type CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type CoauthorTarget, type CoauthorLoreBundle, type ContextSearchResultItem } from "@vibe-tavern/api-contracts";
 import type { AppMessage } from "../api/types.js";
 // CA-15: persistence of unapplied proposals across reloads. Imported here (not
 // subscribed) so the two resolution points — finalize (upsert) and discard
@@ -65,6 +65,17 @@ export interface CoauthorToolActivity {
    *  arms); aggregation routes on `loreBundle` instead, taking the latest
    *  cumulative graph. Rendered as the structured lore review surface. */
   loreBundle?: CoauthorLoreBundle;
+  /** CE-D2: present iff this is a `search_context` activity (the model ran an
+   *  indexed library search). A read — carries NO `target`/`proposed`, never
+   *  enters proposal aggregation or draft persistence; renders as the search
+   *  card (query + located item locators). Only the RESULT rows live here —
+   *  the query label is derived by the card from `args` (single narrowing
+   *  point, mirroring every other tool's operation preview). */
+  search?: { results: ContextSearchResultItem[] };
+  /** CE-D2: present iff this is a `read_context_item` activity (the model read
+   *  the full content of one entity located via search). The body is NOT
+   *  carried (it can be large) — only the locator for the card label. */
+  contextRead?: { type: string; title: string };
 }
 
 /** Selected-variant metadata is the real chat-snapshot wire shape. Some older
@@ -163,6 +174,37 @@ export function extractPersistedCoauthorActivities(
         status: lore.success ? "done" : "error",
         summary: lore.success ? lore.data.summary : message.content,
         ...(lore.success ? { loreBundle: lore.data.bundle } : {}),
+      });
+      continue;
+    }
+    // CE-D2: a search_context result is {results: [...locator rows]} — NOT a
+    // proposal, so the proposal-schema parse below would flag it an error (the
+    // reported bug: a SUCCESSFUL search rendered as a red error card).
+    // Recognize it first so the card renders as a done search. The query label
+    // is derived by the card from the persisted tool-call args.
+    if (info?.name === "search_context") {
+      const search = coauthorSearchOutputSchema.safeParse(rawOutput);
+      activities.push({
+        toolCallId,
+        toolName: info.name,
+        args: info.args,
+        status: search.success ? "done" : "error",
+        ...(search.success ? { search: { results: search.data.results } } : { summary: message.content }),
+      });
+      continue;
+    }
+    // CE-D2: a read_context_item result is {type,id,title,content} — a READ of
+    // one located entity, not a proposal. The body is intentionally dropped
+    // here (large); only the locator reaches the card, mirroring the
+    // read_skill_file precedent.
+    if (info?.name === "read_context_item") {
+      const ctxRead = coauthorContextReadOutputSchema.safeParse(rawOutput);
+      activities.push({
+        toolCallId,
+        toolName: info.name,
+        args: info.args,
+        status: ctxRead.success ? "done" : "error",
+        ...(ctxRead.success ? { contextRead: { type: ctxRead.data.type, title: ctxRead.data.title } } : { summary: message.content }),
       });
       continue;
     }

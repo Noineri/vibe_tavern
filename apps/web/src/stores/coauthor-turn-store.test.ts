@@ -75,6 +75,96 @@ describe("useCoauthorTurnStore", () => {
     }]);
   });
 
+  it("CE-D2: recognizes a search_context result as a done search (not an error card)", () => {
+    // A search result is {results: [locator rows]} — it must NOT fall through
+    // the proposal schema (the reported bug: a SUCCESSFUL search was stamped
+    // status:"error"). The extractor keys off the carrier tool name and emits a
+    // done search activity carrying the located-item rows; the query stays in
+    // args (the card derives the label from it).
+    const messages = [
+      { id: "user_new", role: "user", content: "search my library" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_search", name: "search_context", args: { query: "морской бой" } }],
+      },
+      {
+        id: "tool_search",
+        role: "tool",
+        toolCallId: "call_search",
+        content: JSON.stringify({
+          results: [
+            { type: "character", id: "char_1", title: "Морской бой", scope: "library", ownerId: null, parentId: null, meta: {}, matchKind: "title_exact" },
+            { type: "lorebook", id: "lb_1", title: "Флот", scope: "library", ownerId: null, parentId: null, meta: {}, matchKind: "content" },
+          ],
+        }),
+      },
+      { id: "assistant_final", role: "assistant", content: "Done" },
+    ] as AppMessage[];
+
+    expect(extractPersistedCoauthorActivities(messages)).toEqual([{
+      toolCallId: "call_search",
+      toolName: "search_context",
+      args: { query: "морской бой" },
+      status: "done",
+      search: {
+        results: [
+          { type: "character", id: "char_1", title: "Морской бой", scope: "library", ownerId: null, parentId: null, meta: {}, matchKind: "title_exact" },
+          { type: "lorebook", id: "lb_1", title: "Флот", scope: "library", ownerId: null, parentId: null, meta: {}, matchKind: "content" },
+        ],
+      },
+    }]);
+  });
+
+  it("CE-D2: recognizes a read_context_item result as a done read (locator only)", () => {
+    // A context read is {type,id,title,content} — the body is dropped at the
+    // extractor (large); only the type+title locator reaches the card.
+    const messages = [
+      { id: "user_new", role: "user", content: "search and read" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_read", name: "read_context_item", args: { type: "character", id: "char_1" } }],
+      },
+      {
+        id: "tool_read",
+        role: "tool",
+        toolCallId: "call_read",
+        content: JSON.stringify({ type: "character", id: "char_1", title: "Морской бой", content: "# Морской бой\nПолное описание…" }),
+      },
+      { id: "assistant_final", role: "assistant", content: "Done" },
+    ] as AppMessage[];
+
+    expect(extractPersistedCoauthorActivities(messages)).toEqual([{
+      toolCallId: "call_read",
+      toolName: "read_context_item",
+      args: { type: "character", id: "char_1" },
+      status: "done",
+      contextRead: { type: "character", title: "Морской бой" },
+    }]);
+  });
+
+  it("CE-D2: a malformed search payload still degrades to an error activity", () => {
+    const messages = [
+      { id: "user_new", role: "user", content: "search" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_search", name: "search_context", args: { query: "x" } }],
+      },
+      { id: "tool_search", role: "tool", toolCallId: "call_search", content: JSON.stringify({ unexpected: true }) },
+      { id: "assistant_final", role: "assistant", content: "Done" },
+    ] as AppMessage[];
+
+    const acts = extractPersistedCoauthorActivities(messages);
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toMatchObject({ toolName: "search_context", status: "error" });
+    expect(acts[0].search).toBeUndefined();
+  });
+
   it("CTX-S6: a read activity coexists with a later proposal in the same turn", () => {
     const messages = [
       { id: "user_new", role: "user", content: "polish it" },

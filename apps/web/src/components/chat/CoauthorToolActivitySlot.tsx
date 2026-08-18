@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-slot-registry.js";
 import { useCoauthorTurnStore, extractPersistedCoauthorActivities, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
-import { coauthorSectionEditInputSchema, coauthorSectionWriteInputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorSectionEditInputSchema, coauthorSectionWriteInputSchema, type ContextSearchResultItem } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore } from "../../stores/index.js";
 import type { AppMessage } from "../../app-client.js";
@@ -261,6 +261,46 @@ function parseOperation(toolName: string, args: unknown): OpPreview {
   }
 }
 
+/** CE-D2: the search query from a `search_context` call's args (the card
+ * label). `null` when the input is missing/unparseable (historical row) —
+ * the card then falls back to the generic search label. Kept OUTSIDE
+ * `parseOperation` because the search card's expanded body renders the RESULT
+ * rows (activity-derived), not an args-derived operation preview. */
+function searchQueryFromArgs(args: unknown): string | null {
+  if (args == null || typeof args !== "object") return null;
+  const query = (args as { query?: unknown }).query;
+  return typeof query === "string" && query.trim().length > 0 ? query.trim() : null;
+}
+
+/** CE-D2: localized entity-type chip for one located search result. Unknown
+ * types (future backend additions) fall back to the raw type string — the
+ * dynamic-key miss pattern (tDynamic returns the key unchanged). */
+function searchTypeLabel(tDynamic: (key: string, opts?: { n?: number }) => string, type: string): string {
+  const key = `coauthor_tool_search_type_${type}`;
+  const localized = tDynamic(key);
+  return localized !== key ? localized : type;
+}
+
+/** CE-D2: located-item list for a search activity — mirrors the glanceable
+ * locator shape `search_context` itself returns: muted type chip + title, no
+ * bodies (the model reads those on demand via read_context_item). */
+function SearchResultsPreview({ results }: { results: ContextSearchResultItem[] }) {
+  const { t, tDynamic } = useT();
+  if (results.length === 0) {
+    return <div className={PREVIEW_LABEL_CLS}>{t("coauthor_tool_search_empty")}</div>;
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      {results.map((r, i) => (
+        <div key={`${r.type}-${r.id}-${i}`} className="flex items-center gap-1.5 font-ui text-[11px]">
+          <span className="shrink-0 rounded-full border border-border/60 bg-s3 px-1.5 py-px text-[10px] text-t3">{searchTypeLabel(tDynamic, r.type)}</span>
+          <span className="truncate text-msg-t2">{r.title}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const PREVIEW_PRE_CLS = "whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-msg-t2";
 const PREVIEW_LABEL_CLS = "font-ui text-[10px] uppercase tracking-wide text-t3";
 
@@ -357,28 +397,43 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
   const [open, setOpen] = useState(false);
 
   const isRead = activity.readPath !== undefined;
+  // CE-D2: the two context-search activity kinds — both are READS (never enter
+  // proposal aggregation), each with its own glanceable label.
+  const isContextRead = activity.contextRead !== undefined;
+  const isSearch = activity.search !== undefined;
   const streaming = activity.status === "streaming";
   const errored = activity.status === "error";
-  // Status icon + color: done proposal → check (success), read → file icon
-  // (success, but a distinct glyph so reads don't read as completed edits),
-  // error → close (danger), streaming → wrench (neutral, the AI is editing).
-  const statusIcon = isRead
-    ? <Icons.FileText />
-    : errored
-      ? <Icons.Close />
-      : streaming
-        ? <Icons.Wrench />
-        : <Icons.Check />;
+  // Status icon + color: done proposal → check (success), search → search glyph,
+  // read (skill file or context item) → file icon (success, but a distinct
+  // glyph so reads don't read as completed edits), error → close (danger),
+  // streaming → wrench (neutral, the AI is editing).
+  const statusIcon = isSearch
+    ? <Icons.Search />
+    : isRead || isContextRead
+      ? <Icons.FileText />
+      : errored
+        ? <Icons.Close />
+        : streaming
+          ? <Icons.Wrench />
+          : <Icons.Check />;
   const statusClass = errored
     ? "text-danger-text"
     : streaming
       ? "text-t3"
       : "text-success-text";
-  // A read activity's meaningful label is the path it read; proposals keep the
-  // model-supplied summary (commit-message label).
+  // A read activity's meaningful label is the path it read; a search's is the
+  // query it ran (args-derived; the generic label when the input is lost);
+  // proposals keep the model-supplied summary (commit-message label).
   const title = isRead
     ? activity.readPath!
-    : activity.summary?.trim() || t("coauthor_tool_activity");
+    : isContextRead
+      ? `${t("coauthor_tool_read_context")}: ${activity.contextRead!.title}`
+      : isSearch
+        ? (() => {
+            const query = searchQueryFromArgs(activity.args);
+            return query ? `${t("coauthor_tool_search_label")}: ${query}` : t("coauthor_tool_search_label");
+          })()
+        : activity.summary?.trim() || t("coauthor_tool_activity");
 
   return (
     <div className="overflow-hidden">
@@ -391,18 +446,27 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
         <span className={statusClass}>{statusIcon}</span>
         <span className="truncate">{title}</span>
         {streaming && <span className="italic text-t3">{t("coauthor_tool_streaming")}</span>}
+        {/* A done search carries its hit count next to the title — the
+            glanceable outcome before expanding the located-item list. */}
+        {isSearch && !streaming && !errored && (
+          <span className="ml-auto shrink-0 text-t3">{t("coauthor_tool_search_count", { n: activity.search!.results.length })}</span>
+        )}
         {/* Reads have no operation preview (the path IS the label; the file
             content is intentionally not surfaced — it can be large), so no caret. */}
-        {!streaming && !isRead && (
-          <span className="ml-auto text-t3">{open ? <Icons.Caret direction="u" /> : <Icons.Caret direction="d" />}</span>
+        {!streaming && !isRead && !isContextRead && (
+          <span className={isSearch ? "shrink-0 text-t3" : "ml-auto text-t3"}>{open ? <Icons.Caret direction="u" /> : <Icons.Caret direction="d" />}</span>
         )}
       </button>
       {errored && (
         <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("coauthor_tool_error")}</div>
       )}
-      <AnimatedDisclosure open={!streaming && !isRead && open}>
+      <AnimatedDisclosure open={!streaming && !isRead && !isContextRead && open}>
         <div className="ml-2 mt-1 max-h-48 overflow-auto border-l-2 border-border/50 px-3 py-2">
-          <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} />
+          {isSearch ? (
+            <SearchResultsPreview results={activity.search!.results} />
+          ) : (
+            <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} />
+          )}
         </div>
       </AnimatedDisclosure>
     </div>
