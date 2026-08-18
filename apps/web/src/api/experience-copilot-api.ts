@@ -21,6 +21,7 @@ import type {
   ExperienceCopilotThreadWire,
   ExperienceCopilotMessageWire,
   ExperienceCopilotContextMetrics,
+  ExperienceCopilotContextLink,
 } from "@vibe-tavern/api-contracts";
 
 /** Stream opts for the copilot endpoint — `StreamOpts` without the co-author
@@ -151,6 +152,28 @@ export async function patchExperienceCopilotContext(
     json: body,
   });
   return unwrapRpc<ExperienceCopilotContextState>(response);
+}
+
+/** Read a thread's pinned-context links (CX-1/CX-4). */
+export async function getExperienceCopilotContextLinks(
+  threadId: string,
+): Promise<ExperienceCopilotContextLink[]> {
+  const response = await client.api["experience-copilot"][":threadId"]["context-links"].$get({
+    param: { threadId },
+  });
+  return unwrapRpc<ExperienceCopilotContextLink[]>(response);
+}
+
+/** Full-replace a thread's pinned-context links (max 64, schema-enforced). */
+export async function setExperienceCopilotContextLinks(
+  threadId: string,
+  links: ExperienceCopilotContextLink[],
+): Promise<ExperienceCopilotContextLink[]> {
+  const response = await client.api["experience-copilot"][":threadId"]["context-links"].$patch({
+    param: { threadId },
+    json: { links },
+  });
+  return unwrapRpc<ExperienceCopilotContextLink[]>(response);
 }
 
 /** Manually compact a thread (LLM summarize-and-replace). The digest message is

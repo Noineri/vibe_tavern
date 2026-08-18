@@ -259,3 +259,87 @@ describe("ExperienceCopilotInputArea", () => {
     expect(textarea.value).toBe("digest from tester");
   });
 });
+
+// ─── CX-6: pinned-context pills + @-mention popover ─────────────────────────
+
+describe("ExperienceCopilotInputArea — pinned context (CX-6)", () => {
+  const CATALOG = [
+    { targetType: "character", id: "c1", label: "Alice", hint: "wanderer" },
+    { targetType: "skill", id: "sk1", label: "Skill A" },
+  ] as const;
+
+  const chatInput = () =>
+    document.querySelector('textarea[data-testid="copilot-chat-input"]') as HTMLTextAreaElement;
+
+  /** Type into the real AutoTextarea and surface the caret through the
+   *  `select` event the mention session recomputes on (mirrors the
+   *  auto-textarea test helper). */
+  const typeInto = (text: string, caret = text.length) => {
+    const ta = chatInput();
+    fireEvent.change(ta, { target: { value: text } });
+    ta.setSelectionRange(caret, caret);
+    fireEvent.select(ta);
+  };
+
+  it("renders pinned pills and the × fires onUnpinContext", () => {
+    const onUnpinContext = mock();
+    const { getByTestId } = renderInput({
+      pinnedContext: [{ targetType: "character", targetId: "c1", label: "Alice" }],
+      onUnpinContext,
+    });
+
+    const pill = getByTestId("copilot-context-pill-character-c1");
+    expect(pill.textContent).toContain("Alice");
+    fireEvent.click(getByTestId("copilot-context-pill-remove-character-c1"));
+    expect(onUnpinContext).toHaveBeenCalledWith("character", "c1");
+  });
+
+  it("no pinned pills when pinnedContext is empty or absent", () => {
+    const { queryByTestId } = renderInput();
+    expect(queryByTestId("copilot-context-pill-character-c1")).toBeNull();
+  });
+
+  it("typing @ opens the popover over the catalog; Enter picks → @query stripped + onPinContext", () => {
+    const onPinContext = mock();
+    renderInput({ mentionCatalog: CATALOG, onPinContext });
+
+    typeInto("pin @Al");
+
+    // Exactly one filtered row (Alice), the Skill row filtered out.
+    const options = Array.from(document.body.querySelectorAll('[role="option"]'));
+    expect(options).toHaveLength(1);
+    expect(options[0].textContent).toContain("Alice");
+
+    fireEvent.keyDown(chatInput(), { key: "Enter" });
+
+    // The @Al gesture is stripped from the draft; the full item is pinned.
+    expect(chatInput().value).toBe("pin ");
+    expect(onPinContext).toHaveBeenCalledTimes(1);
+    expect(onPinContext).toHaveBeenCalledWith({ targetType: "character", id: "c1", label: "Alice", hint: "wanderer" });
+  });
+
+  it("keyboard contract: ArrowDown cycles the active row, Escape closes", () => {
+    renderInput({ mentionCatalog: CATALOG, onPinContext: mock() });
+
+    typeInto("@");
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(2);
+    const opts = () => Array.from(document.body.querySelectorAll('[role="option"]'));
+    expect(opts()[0].getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.keyDown(chatInput(), { key: "ArrowDown" });
+    expect(opts()[1].getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.keyDown(chatInput(), { key: "Escape" });
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(0);
+  });
+
+  it("regression: plain Enter with no mention session still sends", () => {
+    const onSend = mock();
+    renderInput({ onSend });
+
+    typeInto("hello");
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(0);
+    fireEvent.keyDown(chatInput(), { key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("hello");
+  });
+});

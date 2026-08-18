@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
-import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
+import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
 import { useCopilotReviewRoundStore } from "../../../../stores/experience-copilot-review-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
@@ -33,6 +34,10 @@ interface RouterState {
   /** Hold the SSE stream open (freeze test): no events until `releaseStream()`. */
   holdStreamOpen: boolean;
   releaseStream: (() => void) | null;
+  /** CX-6: the pinned-context links served by GET/PATCH …/context-links. */
+  contextLinks: ExperienceCopilotContextLink[];
+  /** CX-6: when true the context-links PATCH returns 500 (revert-path test). */
+  contextLinksFail: boolean;
 }
 let router: RouterState;
 
@@ -91,6 +96,17 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     const body = JSON.parse(String(init?.body ?? "{}")) as { autoCompact?: boolean };
     return jsonResponse({ metrics: null, autoCompact: body.autoCompact ?? true });
   }
+  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+    return jsonResponse(router.contextLinks);
+  }
+  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+    if (router.contextLinksFail) {
+      return new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 });
+    }
+    const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
+    router.contextLinks = body.links ?? [];
+    return jsonResponse(router.contextLinks);
+  }
   if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/compact$/.test(path)) {
     const threadId = path.match(/\/api\/experience-copilot\/([^/]+)\/compact$/)?.[1] ?? "";
     return jsonResponse({ digest: makeDigest(threadId), metrics: null });
@@ -117,6 +133,13 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   // never exact equality.
   if (method === "POST" && path.endsWith("/api/experience/test/run")) return jsonResponse(TEST_RUN_DATA);
   if (method === "POST" && path.endsWith("/api/experience/playground/start")) return jsonResponse(PLAYGROUND_DATA);
+  // CX-6: the shell fetches the mention catalog on mount (best-effort). Serve
+  // the empty/default shapes so the picks come from the test-seeded snapshot
+  // store instead of the router.
+  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
+  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
+  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
+  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: SKILL_CATALOG_ENTRIES, errors: [] });
   // Unmodeled endpoints (e.g. best-effort model-favorites) get a 404 body —
   // callers treat it like any RPC failure and swallow it.
   if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
@@ -207,6 +230,19 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
 // above (POST /api/experience/test/run and /api/experience/playground/start),
 // so the ER-14 send-to-copilot flow is observable through the REAL shell →
 // child → callback → controller → client → router wiring — with no module mocks.
+// CX-6: the shell's mount-time catalog fetch hits the skills endpoint; the
+// loader test seeds one entry so the pinned pill resolves its display label.
+const SKILL_CATALOG_ENTRIES = [
+  {
+    id: "s1",
+    source: "builtin",
+    name: "My Skill",
+    description: "d",
+    manifestPath: "s1/SKILL.md",
+    shadowsBuiltin: false,
+  },
+];
+
 const TEST_RUN_DATA: Awaited<ReturnType<typeof import("../../../../api/experience-api.js").runExperienceTest>> = {
   definition: {
     apiVersion: 1,
@@ -352,6 +388,9 @@ beforeEach(() => {
   // previous test's hanging review leaks into the next mount.
   useCopilotReviewRoundStore.setState({ roundsByThread: {} });
   localStorage.clear();
+  // CX-6: the mention catalog reads the live snapshot store — reset it so a
+  // previous test's seeded characters don't leak into the next test's popover.
+  useSnapshotStore.setState({ allCharacters: [] });
   useProviderDataStore.setState({ profiles: PROFILES });
   // Reset the persisted copilot binding between tests (the shell restores it).
   const current = useBootstrapStore.getState().data;
@@ -367,6 +406,8 @@ beforeEach(() => {
     streamEvents: [FINISH_STOP],
     holdStreamOpen: false,
     releaseStream: null,
+    contextLinks: [],
+    contextLinksFail: false,
   };
   fetchRouter.mockClear();
 });
@@ -1690,5 +1731,144 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     await waitFor(() => expect(second.getByTestId("copilot-review-bar")).toBeDefined());
     await waitFor(() => expect(second.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
     expect(second.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!.dataset.hunkId).toBe("1");
+  });
+});
+
+// ─── CX-6: pinned-context pills + @-mention pick → PATCH ────────────────────
+
+describe("ExperienceCopilotShell — pinned context (CX-6)", () => {
+  /** The mention popover's listbox (i18n is uninitialized in this process, so
+   *  the aria-label is the raw key — the ONLY listbox with that label; cmdk
+   *  (the model DropdownSelect) renders its own role=option rows elsewhere). */
+  const mentionListbox = () =>
+    document.body.querySelector('[role="listbox"][aria-label="copilot_mention_picker_label"]');
+
+  it("loads the active thread's contextLinks and renders its pill with the catalog label", async () => {
+    router.activeThread = { ...thread("thread-1"), contextLinks: [{ targetType: "skill", targetId: "s1" }] };
+    router.messages = [msg({ id: "u1", role: "user", content: "hello" })];
+
+    const { getByTestId } = renderShell();
+    await flushSessionLoad();
+
+    // The pill resolves "My Skill" from the mounted catalog's skills entry.
+    await waitFor(() => expect(getByTestId("copilot-context-pill-skill-s1").textContent).toContain("My Skill"));
+  });
+
+  it("@-pick PATCHes the appended link and shows the new pill", async () => {
+    router.activeThread = thread("thread-1");
+    router.messages = [msg({ id: "u1", role: "user", content: "hello" })];
+    useSnapshotStore.setState({
+      allCharacters: [
+        {
+          id: "ch1",
+          name: "Alice",
+          subtitle: "wanderer",
+          tags: [],
+          avatarAssetId: null,
+          avatarFullAssetId: null,
+          avatarCropJson: null,
+          avatarExt: null,
+          avatarFullExt: null,
+          updatedAt: "",
+        },
+      ],
+    });
+
+    const { getByTestId } = renderShell();
+    await flushSessionLoad();
+
+    const ta = getByTestId("copilot-chat-input") as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "@Al" } });
+    ta.setSelectionRange(3, 3);
+    fireEvent.select(ta);
+
+    await waitFor(() =>
+      expect(mentionListbox()?.querySelectorAll('[role="option"]')).toHaveLength(1),
+    );
+    fireEvent.keyDown(ta, { key: "Enter" });
+
+    await waitFor(() => {
+      const patches = apiCalls("PATCH", /\/api\/experience-copilot\/thread-1\/context-links$/);
+      expect(patches).toHaveLength(1);
+      expect(patches[0]?.body).toEqual({ links: [{ targetType: "character", targetId: "ch1" }] });
+    });
+    await waitFor(() => expect(getByTestId("copilot-context-pill-character-ch1").textContent).toContain("Alice"));
+  });
+
+  it("a failing PATCH reverts the pill (optimistic rollback)", async () => {
+    router.activeThread = thread("thread-1");
+    router.messages = [msg({ id: "u1", role: "user", content: "hello" })];
+    router.contextLinksFail = true;
+    useSnapshotStore.setState({
+      allCharacters: [
+        {
+          id: "ch1",
+          name: "Alice",
+          subtitle: "wanderer",
+          tags: [],
+          avatarAssetId: null,
+          avatarFullAssetId: null,
+          avatarCropJson: null,
+          avatarExt: null,
+          avatarFullExt: null,
+          updatedAt: "",
+        },
+      ],
+    });
+
+    const { queryByTestId, getByTestId } = renderShell();
+    await flushSessionLoad();
+
+    const ta = getByTestId("copilot-chat-input") as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "@Al" } });
+    ta.setSelectionRange(3, 3);
+    fireEvent.select(ta);
+
+    await waitFor(() =>
+      expect(mentionListbox()?.querySelectorAll('[role="option"]')).toHaveLength(1),
+    );
+    fireEvent.keyDown(ta, { key: "Enter" });
+
+    await waitFor(() => expect(apiCalls("PATCH", /context-links$/)).toHaveLength(1));
+    // The optimistic pill appeared, then the 500 reverted it.
+    await waitFor(() => expect(queryByTestId("copilot-context-pill-character-ch1")).toBeNull());
+  });
+
+  it("unpinning a pill PATCHes the filtered set and removes it", async () => {
+    router.activeThread = {
+      ...thread("thread-1"),
+      contextLinks: [{ targetType: "character", targetId: "ch1" }],
+    };
+    router.messages = [msg({ id: "u1", role: "user", content: "hello" })];
+    useSnapshotStore.setState({
+      allCharacters: [
+        {
+          id: "ch1",
+          name: "Alice",
+          subtitle: "wanderer",
+          tags: [],
+          avatarAssetId: null,
+          avatarFullAssetId: null,
+          avatarCropJson: null,
+          avatarExt: null,
+          avatarFullExt: null,
+          updatedAt: "",
+        },
+      ],
+    });
+
+    const { queryByTestId, getByTestId } = renderShell();
+    await flushSessionLoad();
+
+    await waitFor(() => expect(getByTestId("copilot-context-pill-character-ch1")).toBeDefined());
+    fireEvent.click(getByTestId("copilot-context-pill-remove-character-ch1"));
+
+    await waitFor(() => {
+      const patches = apiCalls("PATCH", /\/api\/experience-copilot\/thread-1\/context-links$/);
+      expect(patches[0]?.body).toEqual({ links: [] });
+    });
+    // Optimistic removal: the pill disappears immediately (the PATCH succeeded,
+    // so there is no revert).
+    await waitFor(() => expect(queryByTestId("copilot-context-pill-character-ch1")).toBeNull());
   });
 });

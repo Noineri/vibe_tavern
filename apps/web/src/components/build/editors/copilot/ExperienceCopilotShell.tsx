@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import type {
+  ExperienceCopilotContextLink,
+  ExperienceCopilotContextTargetType,
+  ExperienceCopilotMessageWire,
+  ExperienceCopilotThreadWire,
+} from "@vibe-tavern/api-contracts";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
 import { validateVisualSource } from "../../../../lib/visual-source-validator.js";
@@ -28,13 +33,21 @@ import {
   listExperienceCopilotSessions,
   activateExperienceCopilotSession,
   renameExperienceCopilotSession,
+  setExperienceCopilotContextLinks,
 } from "../../../../api/experience-copilot-api.js";
+import { listPersonas } from "../../../../api/persona-api.js";
+import { listAllLorebooks } from "../../../../api/lorebook-api.js";
+import { listAllScripts } from "../../../../api/script-api.js";
+import { listCoauthorSkills } from "../../../../api/skill-api.js";
+import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
+import type { MentionAutocompleteItem } from "../../../shared/mention-autocomplete-query.js";
 import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
 import { ExperienceContextMeter } from "./ExperienceContextMeter.js";
 import { CopilotProfileModal } from "./CopilotProfileModal.js";
 import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
 import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
 import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
+import type { CopilotContextPillItem } from "./CopilotContextPills.js";
 import {
   allReviewHunkIds,
   applyHunksToBuffer,
@@ -140,6 +153,114 @@ export function ExperienceCopilotShell({
   const [sessions, setSessions] = useState<ExperienceCopilotThreadWire[]>([]);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  // ── Pinned context (CX-6) ───────────────────────────────────────────────
+  // The thread's contextLinks (from every thread wire that arrives) + the
+  // merged mention catalog. Pins are optimistically PATCHed (full-replace).
+  const [contextLinks, setContextLinks] = useState<ExperienceCopilotContextLink[]>([]);
+  const [mentionCatalog, setMentionCatalog] = useState<MentionAutocompleteItem[]>([]);
+
+  // Characters come from the live snapshot store (already app-wide); the other
+  // four catalog sources are fetched ONCE per shell mount (best-effort — a
+  // transient failure simply leaves that type out of the picker, mirroring the
+  // fetchSessions swallow-with-comment style).
+  const allCharacters = useSnapshotStore((s) => s.allCharacters);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.allSettled([listPersonas(), listAllLorebooks(), listAllScripts(), listCoauthorSkills()]).then(
+      ([personas, lorebooks, scripts, skills]) => {
+        if (cancelled) return;
+        const next: MentionAutocompleteItem[] = [];
+        if (personas.status === "fulfilled") {
+          for (const p of personas.value) next.push({ targetType: "persona", id: p.id, label: p.name, hint: p.description || undefined });
+        }
+        if (lorebooks.status === "fulfilled") {
+          for (const l of lorebooks.value) {
+            if (!l.enabled) continue; // a disabled lorebook contributes nothing when pinned
+            next.push({ targetType: "lorebook", id: l.id, label: l.name, hint: l.description || undefined });
+          }
+        }
+        if (scripts.status === "fulfilled") {
+          for (const s of scripts.value) {
+            if (!s.enabled) continue; // a disabled script contributes nothing when pinned
+            next.push({ targetType: "script", id: s.id, label: s.name, hint: s.description || undefined });
+          }
+        }
+        if (skills.status === "fulfilled") {
+          for (const e of skills.value.entries) next.push({ targetType: "skill", id: e.id, label: e.name, hint: e.description || undefined });
+        }
+        setMentionCatalog(next);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The live character list is folded in reactively (it changes as the user
+  // edits/creates characters elsewhere). Fixed order: characters, personas,
+  // lorebooks, scripts, skills.
+  const catalog = useMemo<MentionAutocompleteItem[]>(() => {
+    const characters: MentionAutocompleteItem[] = allCharacters.map((c) => ({
+      targetType: "character",
+      id: c.id,
+      label: c.name,
+      hint: c.subtitle || undefined,
+    }));
+    return [...characters, ...mentionCatalog];
+  }, [allCharacters, mentionCatalog]);
+
+  // Pills: resolve each link's display label from the catalog; a dangling
+  // target (deleted entity) falls back to the raw id.
+  const pinnedContext = useMemo<CopilotContextPillItem[]>(
+    () =>
+      contextLinks.map((l) => ({
+        targetType: l.targetType,
+        targetId: l.targetId,
+        label: catalog.find((c) => c.targetType === l.targetType && c.id === l.targetId)?.label ?? l.targetId,
+      })),
+    [contextLinks, catalog],
+  );
+
+  // Optimistic full-replace PATCH: the pills update immediately; on failure
+  // they revert to the previous set and a toast surfaces (the next turn would
+  // otherwise run with server-state ≠ UI).
+  const handleSetContextLinks = useCallback(
+    (next: ExperienceCopilotContextLink[]) => {
+      if (!threadId) return;
+      const prev = contextLinks;
+      setContextLinks(next);
+      void setExperienceCopilotContextLinks(threadId, next).catch(() => {
+        setContextLinks(prev);
+        toast.error(t("copilot_context_pin_error"));
+      });
+    },
+    [threadId, contextLinks, t],
+  );
+
+  const handlePinContext = useCallback(
+    (item: MentionAutocompleteItem) => {
+      if (contextLinks.length >= 64) return; // schema max — the PATCH would 400
+      if (contextLinks.some((l) => l.targetType === item.targetType && l.targetId === item.id)) return; // already pinned
+      // Narrow cast: the catalog is built in this shell from the five fixed
+      // target types only (see the catalog effect), so the generic
+      // MentionAutocompleteItem.targetType is always a valid link type here.
+      handleSetContextLinks([
+        ...contextLinks,
+        { targetType: item.targetType as ExperienceCopilotContextTargetType, targetId: item.id },
+      ]);
+    },
+    [contextLinks, handleSetContextLinks],
+  );
+
+  const handleUnpinContext = useCallback(
+    (targetType: string, targetId: string) => {
+      handleSetContextLinks(
+        contextLinks.filter((l) => !(l.targetType === targetType && l.targetId === targetId)),
+      );
+    },
+    [contextLinks, handleSetContextLinks],
+  );
+
 
   // ── Provider / model selection (persisted binding, then controlled) ───────
   // The selection lives in server-side uiSettings (copilotProviderId /
@@ -175,7 +296,6 @@ export function ExperienceCopilotShell({
   // UX 2026-08-16 remark 6 — prefill handed to the chat input on "send to
   // copilot" (see handleSendToCopilot). Object identity is the trigger.
   const [inputPrefill, setInputPrefill] = useState<{ text: string } | null>(null);
-
   // Resolve the provider ONCE per pass: the saved binding wins when it still
   // exists; a dangling/absent saved id falls back to the first available
   // profile. (One effect — a separate "default" effect would race the restore
@@ -227,11 +347,13 @@ export function ExperienceCopilotShell({
       const active = await getExperienceCopilotActive(scriptId);
       if (active) {
         setThreadId(active.id);
+        setContextLinks(active.contextLinks ?? []); // CX-6: seed the pinned pills
         const msgs = await listExperienceCopilotMessages(active.id);
         setMessages(msgs);
       } else {
         const thread = await startExperienceCopilotSession(scriptId);
         setThreadId(thread.id);
+        setContextLinks(thread.contextLinks ?? []); // CX-6: a fresh thread has no pins
         setMessages([]);
       }
     } catch (error) {
@@ -663,6 +785,7 @@ export function ExperienceCopilotShell({
           return;
         }
         setThreadId(targetThreadId);
+        setContextLinks(activated.contextLinks ?? []); // CX-6: switch → that thread's pins
         const msgs = await listExperienceCopilotMessages(targetThreadId);
         setMessages(msgs);
         await fetchSessions();
@@ -679,6 +802,7 @@ export function ExperienceCopilotShell({
     try {
       const thread = await startExperienceCopilotSession(scriptId);
       setThreadId(thread.id);
+      setContextLinks(thread.contextLinks ?? []); // CX-6: new session → no pins
       setMessages([]);
       await fetchSessions();
     } catch {
@@ -878,6 +1002,10 @@ export function ExperienceCopilotShell({
               providerProfileId={providerProfileId}
               model={model}
               onProviderChange={handleProviderChange}
+              mentionCatalog={catalog}
+              pinnedContext={pinnedContext}
+              onPinContext={handlePinContext}
+              onUnpinContext={handleUnpinContext}
             />
           ) : (
             <ExperienceCopilotInputArea
@@ -896,6 +1024,10 @@ export function ExperienceCopilotShell({
               providerProfileId={providerProfileId}
               model={model}
               onProviderChange={handleProviderChange}
+              mentionCatalog={catalog}
+              pinnedContext={pinnedContext}
+              onPinContext={handlePinContext}
+              onUnpinContext={handleUnpinContext}
             />
           )}
         </>

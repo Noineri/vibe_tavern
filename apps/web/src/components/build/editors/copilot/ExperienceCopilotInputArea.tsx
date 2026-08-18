@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
@@ -9,6 +9,9 @@ import { useProviderDataStore } from "../../../../stores/provider-data-store.js"
 import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useCopilotModelFavorites } from "../../../../hooks/use-copilot-model-favorites.js";
 import { useT } from "../../../../i18n/context.js";
+import { useCopilotMention } from "./use-copilot-mention.js";
+import type { MentionAutocompleteItem } from "../../../shared/mention-autocomplete-query.js";
+import { CopilotContextPills, type CopilotContextPillItem } from "./CopilotContextPills.js";
 
 /**
  * Experience-copilot input area (ER-11c, desktop). Props-driven and CONTROLLED:
@@ -34,12 +37,46 @@ export interface ExperienceCopilotInputAreaProps {
  *  dispatching the turn — the user presses send themselves. Applied whenever
  *  a new object arrives (replaces the current draft). */
   prefill?: { text: string };
+  /** CX-6: catalog for the @-mention popover (shared MentionAutocompleteItem
+   *  shape). Default [] — absent means the picker is inert. */
+  mentionCatalog?: readonly MentionAutocompleteItem[];
+  /** CX-6: currently pinned context (rendered as removable pills above the
+   *  textarea). Default [] — absent renders no pills. */
+  pinnedContext?: readonly CopilotContextPillItem[];
+  /** CX-6: fired when an item is picked from the @-popover (the @query is
+   *  ALREADY stripped from the draft). */
+  onPinContext?: (item: MentionAutocompleteItem) => void;
+  /** CX-6: fired when a pill's × is clicked. */
+  onUnpinContext?: (targetType: string, targetId: string) => void;
 }
 
 export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProps) {
-  const { isSending, onSend, onCancel, providerProfileId, model, onProviderChange, prefill } = props;
+  const {
+    isSending,
+    onSend,
+    onCancel,
+    providerProfileId,
+    model,
+    onProviderChange,
+    prefill,
+    mentionCatalog,
+    pinnedContext,
+    onPinContext,
+    onUnpinContext,
+  } = props;
 
   const [draft, setDraft] = useState("");
+  // CX-6: the @-popover anchors to the input CARD (not the textarea —
+  // AutoTextarea forwards no ref).
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  const mention = useCopilotMention({
+    draft,
+    setDraft,
+    catalog: mentionCatalog ?? [],
+    onPick: (item) => onPinContext?.(item),
+    anchorEl: cardRef.current,
+  });
 
   // UX 2026-08-16 remark 6 — see `prefill` above. Object identity is the
   // trigger: the Shell mints a fresh object per copy click.
@@ -93,15 +130,20 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
 
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5">
-      <div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
+      <div ref={cardRef} className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
+        <CopilotContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
         <AutoTextarea
           className="min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
           maxRows={12}
           minRows={3}
+          data-testid="copilot-chat-input"
           placeholder={t("experience_copilot_input_placeholder")}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={handleKeyDown}
+          onChange={mention.handleChange}
+          onSelect={mention.handleSelect}
+          onClick={mention.handleClick}
+          onBlur={mention.handleBlur}
+          onKeyDown={(e) => mention.handleKeyDown(e, handleKeyDown)}
         />
 
         <div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
@@ -204,6 +246,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
           </div>
         </div>
       </div>
+      {mention.popover}
     </div>
   );
 }

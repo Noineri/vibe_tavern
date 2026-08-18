@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "../../../../lib/cn.js";
 import { Icons } from "../../../shared/icons.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
@@ -7,6 +7,8 @@ import { useProviderDataStore } from "../../../../stores/provider-data-store.js"
 import { useProviderModels } from "../../../../hooks/use-provider-models.js";
 import { useCopilotModelFavorites } from "../../../../hooks/use-copilot-model-favorites.js";
 import { useT } from "../../../../i18n/context.js";
+import { useCopilotMention } from "./use-copilot-mention.js";
+import { CopilotContextPills } from "./CopilotContextPills.js";
 import type { ExperienceCopilotInputAreaProps } from "./ExperienceCopilotInputArea.js";
 
 /**
@@ -20,9 +22,32 @@ import type { ExperienceCopilotInputAreaProps } from "./ExperienceCopilotInputAr
  * repeat).
  */
 export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAreaProps) {
-  const { isSending, onSend, onCancel, providerProfileId, model, onProviderChange, prefill } = props;
+  const {
+    isSending,
+    onSend,
+    onCancel,
+    providerProfileId,
+    model,
+    onProviderChange,
+    prefill,
+    mentionCatalog,
+    pinnedContext,
+    onPinContext,
+    onUnpinContext,
+  } = props;
 
   const [draft, setDraft] = useState("");
+  // CX-6: the @-popover anchors to the input CARD (not the textarea —
+  // AutoTextarea forwards no ref).
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  const mention = useCopilotMention({
+    draft,
+    setDraft,
+    catalog: mentionCatalog ?? [],
+    onPick: (item) => onPinContext?.(item),
+    anchorEl: cardRef.current,
+  });
 
   // UX 2026-08-16 remark 6 — see `prefill` on the shared props interface. Same
   // contract as the desktop input area: fresh object → replace the draft.
@@ -74,7 +99,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
 
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2">
-      <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
+      <div ref={cardRef} className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
         {/* Toolbar row: provider + model pills (mobile → BottomSheet via ToolbarSelect). */}
         <div className="flex flex-wrap items-center gap-2">
           <ToolbarSelect
@@ -138,16 +163,23 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
           />
         </div>
 
+        {/* CX-6: pinned-context pills between the toolbar row and the input. */}
+        <CopilotContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
+
         {/* Input row. */}
         <div className="flex items-end gap-2">
           <AutoTextarea
             className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4"
             minRows={1}
             maxRows={6}
+            data-testid="copilot-chat-input"
             placeholder={t("experience_copilot_input_placeholder")}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onChange={mention.handleChange}
+            onSelect={mention.handleSelect}
+            onClick={mention.handleClick}
+            onBlur={mention.handleBlur}
+            onKeyDown={(e) => mention.handleKeyDown(e, handleKeyDown)}
           />
           <div className="flex shrink-0 items-center">
             {isSending ? (
@@ -176,6 +208,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
           </div>
         </div>
       </div>
+      {mention.popover}
     </div>
   );
 }
