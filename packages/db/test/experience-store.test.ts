@@ -374,9 +374,11 @@ describe("ExperienceStore — context bundle + attachments", () => {
       mode: "recent",
       sourceCharacterId: "char_1",
       sourceChatId: "chat_1",
+      sourcePersonaId: "persona_1",
     });
     expect(withSource.sourceCharacterId).toBe("char_1");
     expect(withSource.sourceChatId).toBe("chat_1");
+    expect(withSource.sourcePersonaId).toBe("persona_1");
 
     // Re-capture without the fields nulls them (ambient source), not stale leftovers.
     const withoutSource = await store.captureContextBundle("xs_test_1", {
@@ -385,6 +387,7 @@ describe("ExperienceStore — context bundle + attachments", () => {
     });
     expect(withoutSource.sourceCharacterId).toBeNull();
     expect(withoutSource.sourceChatId).toBeNull();
+    expect(withoutSource.sourcePersonaId).toBeNull();
   });
 
   test("queue → bind → getForMessage; rollback releases back to queued", async () => {

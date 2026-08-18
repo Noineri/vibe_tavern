@@ -1026,6 +1026,10 @@ export const experienceChatConfigs = sqliteTable('experience_chat_configs', {
   // config survives; the next capture falls back to ambient). NULL = ambient.
   contextSourceCharacterId: text('context_source_character_id').references(() => characters.id, { onDelete: 'set null' }),
   contextSourceChatId: text('context_source_chat_id').references(() => chats.id, { onDelete: 'set null' }),
+  // Wave 3: persona source pointer — the user-identity override for the RP
+  // context. Live pointer, SET NULL on persona delete; NULL = ambient host
+  // chat persona. Same semantics as the character/chat source pointers above.
+  contextSourcePersonaId: text('context_source_persona_id').references(() => personas.id, { onDelete: 'set null' }),
   launcherVisible: integer('launcher_visible', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -1178,6 +1182,9 @@ export const experienceContextBundles = sqliteTable('experience_context_bundles'
   // survive source deletion. NULL = captured from the ambient host chat.
   sourceCharacterId: text('source_character_id'),
   sourceChatId: text('source_chat_id'),
+  // Wave 3: persona-source provenance (the frozen user identity). Plain text,
+  // no FK — same snapshot-isolation rationale as the character/chat ids above.
+  sourcePersonaId: text('source_persona_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({

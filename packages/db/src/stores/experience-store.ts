@@ -92,6 +92,7 @@ export interface ExperienceContextBundleRow {
   modelId: string | null;
   sourceCharacterId: string | null;
   sourceChatId: string | null;
+  sourcePersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -179,6 +180,7 @@ export interface CaptureContextBundleData {
   modelId?: string | null;
   sourceCharacterId?: string | null;
   sourceChatId?: string | null;
+  sourcePersonaId?: string | null;
 }
 
 export interface QueueAttachmentData {
@@ -844,6 +846,7 @@ export class ExperienceStore {
       modelId: data.modelId ?? null,
       sourceCharacterId: data.sourceCharacterId ?? null,
       sourceChatId: data.sourceChatId ?? null,
+      sourcePersonaId: data.sourcePersonaId ?? null,
       updatedAt: now,
     };
     if (existing !== null) {
@@ -1518,6 +1521,7 @@ export class ExperienceStore {
       modelId: row.modelId,
       sourceCharacterId: row.sourceCharacterId,
       sourceChatId: row.sourceChatId,
+      sourcePersonaId: row.sourcePersonaId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

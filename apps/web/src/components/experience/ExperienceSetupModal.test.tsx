@@ -181,6 +181,7 @@ function makeConfig(over: Partial<ExperienceChatConfigRow> = {}): ExperienceChat
     contextMode: "none",
     contextSourceCharacterId: null,
     contextSourceChatId: null,
+    contextSourcePersonaId: null,
     launcherVisible: true,
     createdAt: "t",
     updatedAt: "t",

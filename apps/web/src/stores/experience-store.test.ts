@@ -125,6 +125,7 @@ function makeConfig(chatId: string): ExperienceChatConfigRow {
     contextMode: "none",
     contextSourceCharacterId: null,
     contextSourceChatId: null,
+    contextSourcePersonaId: null,
     launcherVisible: true,
     createdAt: T0,
     updatedAt: T0,

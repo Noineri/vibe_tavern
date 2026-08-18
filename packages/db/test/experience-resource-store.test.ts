@@ -208,6 +208,33 @@ describe("ExperienceResourceStore — chat configs (one per chat)", () => {
     expect(cleared.contextSourceChatId).toBeNull();
   });
 
+  test("persona context-source column round-trips (Wave 3) and default null", async () => {
+    const created = await store.getOrCreateConfigForChat("chat_1");
+    expect(created.contextSourcePersonaId).toBeNull();
+
+    const updated = await store.updateConfig("chat_1", {
+      contextSourcePersonaId: "persona_1",
+    });
+    expect(updated.contextSourcePersonaId).toBe("persona_1");
+
+    // Explicit null clears the pointer.
+    const cleared = await store.updateConfig("chat_1", {
+      contextSourcePersonaId: null,
+    });
+    expect(cleared.contextSourcePersonaId).toBeNull();
+  });
+
+  test("deleting a referenced source persona sets the config pointer null (SET NULL)", async () => {
+    // persona_2 is referenced ONLY by the config pointer — deleting it must
+    // null the pointer, not cascade the config away (personas has no cascade
+    // from chats, unlike characters).
+    await db.run(sql`INSERT INTO personas (id, name, description, default_for_new_chats, has_file_on_disk, created_at, updated_at) VALUES ('persona_2', 'Side', '', 0, 0, '2026-01-01', '2026-01-01')`);
+    await store.updateConfig("chat_1", { contextSourcePersonaId: "persona_2" });
+    await db.run(sql`DELETE FROM personas WHERE id = 'persona_2'`);
+    const after = await store.getOrCreateConfigForChat("chat_1");
+    expect(after.contextSourcePersonaId).toBeNull();
+  });
+
   test("deleting a referenced source character sets the config pointer null (SET NULL)", async () => {
     // A second character referenced ONLY by the config pointer — deleting it must
     // NOT cascade the config away (the chat's own character has cascade via
