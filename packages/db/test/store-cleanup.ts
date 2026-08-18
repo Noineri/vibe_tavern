@@ -13,4 +13,10 @@ import { closeAllDbs } from "../src/db-connection.js";
 // sweep only removes dirs created during THIS run.
 const startedAt = Date.now();
 
-afterAll(() => closeAllDbs({ sweepSince: startedAt }));
+// The explicit { timeout } is LOAD-BEARING for direct `bun test` runs (no
+// --timeout flag, so bun's 5s hook default applies): the close + WAL temp-dir
+// sweep can exceed 5s under load and bun then reports a PHANTOM `(unnamed)
+// a beforeEach/afterEach hook timed out` failure attributed to the last file
+// (see services/api/test/store-cleanup.ts for the full mechanism — same
+// wiring here). Object-form hook options work on bun >= 1.3.13 (#24039).
+afterAll(() => closeAllDbs({ sweepSince: startedAt }), { timeout: 60_000 });

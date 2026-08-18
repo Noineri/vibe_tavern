@@ -38,9 +38,13 @@ const BUN = process.execPath;
  * services/api/test/store-cleanup.ts). That hook is legitimate long-pole work,
  * NOT a hung test: measured 16.6s / 18.7s on the GitHub Windows runner with
  * 2–4 suites sweeping concurrently, and ~26s locally under a full-suite load —
- * all over a previous 15s budget while every actual test passed. Bun ignores
- * a per-hook timeout override (verified empirically: `afterAll(fn, ms)` still
- * fails at the global --timeout), so the global budget is the only lever.
+ * all over a previous 15s budget while every actual test passed. That was
+ * historically the only lever (the old numeric form `afterAll(fn, ms)` never
+ * worked), but as of bun 1.3.13 the object form does: each preload hook now
+ * carries its own explicit `{ timeout: 60_000 }` (covers direct `bun test`
+ * runs in a workspace, which don't pass --timeout and would otherwise burst
+ * bun's 5s hook default with a phantom `(unnamed)` failure). This global
+ * budget remains for the TESTS themselves under CI contention.
  */
 export const TEST_TIMEOUT_MS = 45_000;
 

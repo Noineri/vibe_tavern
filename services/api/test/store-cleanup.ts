@@ -19,4 +19,14 @@ import { closeAllDbs } from "@vibe-tavern/db";
 // sweep only removes dirs created during THIS run.
 const startedAt = Date.now();
 
-afterAll(() => closeAllDbs({ sweepSince: startedAt }));
+// The explicit { timeout } is LOAD-BEARING for direct `bun test` runs (no
+// --timeout flag, so bun's 5s hook default applies): closing hundreds of
+// SQLite handles + sweeping their WAL temp dirs takes up to ~26s on Windows
+// under full-suite load, and when the 5s budget bursts bun reports a PHANTOM
+// `(unnamed) — a beforeEach/afterEach hook timed out` failure attributed to
+// whichever file ran LAST (observed pinned on vision-gate.test.ts; moves to
+// any other last file when that one is removed). The object-form options work
+// on bun >= 1.3.13 (oven-sh/bun#24039); the old numeric form `afterAll(fn, ms)`
+// never did — scripts/test.ts documents that older finding. 60s = >2x the
+// worst measured sweep, cleanup-only work, no downside when not needed.
+afterAll(() => closeAllDbs({ sweepSince: startedAt }), { timeout: 60_000 });
