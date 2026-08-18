@@ -182,6 +182,7 @@ function makeThread(scriptId: string | null = null): ExperienceCopilotThread {
     title: "Test thread",
     archivedAt: null,
     contextMetrics: null,
+    contextLinks: [],
     lastProviderProfileId: null,
     lastModel: null,
     autoCompact: true,
@@ -784,5 +785,108 @@ describe("experience-copilot stream — digest pre-split + auto-compact (CM-5/CM
     // (so the service reads fresh lastProviderProfileId/lastModel/contextMetrics).
     expect(autoCompactCalls).toEqual(["thread_1"]);
     expect(store.metricsCalls).toHaveLength(1);
+  });
+});
+
+// ─── CX-3: attached-context resolution + metrics ─────────────────────────────
+
+describe("experience-copilot stream — attached context (CX-3)", () => {
+  it("pinned links resolve → attachedTokens > 0 in finish metrics; synth messages never persist", async () => {
+    // This test needs NON-zero estimates (it asserts attachedTokens > 0), so it
+    // installs a char-length counter for its duration. Restored in finally to
+    // the unset-equivalent (fn returning 0): estimateTokens is process-global
+    // under bun:test, and the rest of this file (and later files in the same
+    // process) expects the unset behavior (0 estimates, as warned).
+    const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
+    setTokenCountFn((text: string) => text.length);
+    try {
+    const thread = makeThread();
+    thread.contextLinks = [
+      { targetType: "character", targetId: "char_1" },
+      { targetType: "skill", targetId: "my-skill" },
+    ];
+    const store = createFakeStore(thread);
+    const resolvedLinks: unknown[] = [];
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store, {
+          resolveContextItems: async (links) => {
+            resolvedLinks.push(links);
+            return [
+              { type: "character", id: "char_1", title: "Alice", content: "alice profile" },
+              { type: "skill", id: "my-skill", title: "My Skill", content: "# skill body" },
+            ];
+          },
+        }),
+      ),
+    );
+
+    // The resolver saw exactly the thread's links.
+    expect(resolvedLinks).toHaveLength(1);
+    expect(resolvedLinks[0]).toEqual(thread.contextLinks);
+
+    const finish = events.find((e) => e.event === "finish");
+    const metrics = (finish!.data as { metrics: Record<string, unknown> }).metrics;
+    expect(metrics.attachedTokens).toBeGreaterThan(0);
+    // Persisted metrics carry the same segment.
+    expect(store.metricsCalls[0].metrics).toEqual(metrics);
+
+    // ONLY the real trigger + assistant reply were stored — the attached block
+    // and the recency anchor are transient model-window content, never rows.
+    expect(store.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(store.messages[0].content).toBe("hi");
+    } finally {
+      setTokenCountFn(() => 0);
+    }
+  });
+
+  it("zero links or absent resolver → attachedTokens 0 and the resolver is never called", async () => {
+    const store = createFakeStore(makeThread()); // contextLinks: []
+    let resolverCalls = 0;
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store, {
+          resolveContextItems: async () => {
+            resolverCalls++;
+            return [];
+          },
+        }),
+      ),
+    );
+
+    expect(resolverCalls).toBe(0); // short-circuited by the zero-link guard
+    const events2 = store.metricsCalls[0].metrics as Record<string, unknown>;
+    expect(events2.attachedTokens).toBe(0);
+  });
+
+  it("a resolver rejection fails the turn (bad store) — no silent context-free answer", async () => {
+    const thread = makeThread();
+    thread.contextLinks = [{ targetType: "character", targetId: "char_1" }];
+    const store = createFakeStore(thread);
+    streamTextImpl = () => makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+          makeDeps(store, {
+            resolveContextItems: async () => {
+              throw new Error("store down");
+            },
+          }),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(store.metricsCalls).toHaveLength(0); // no metrics persisted for the failed turn
   });
 });

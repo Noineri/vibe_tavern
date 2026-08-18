@@ -11,6 +11,8 @@ import {
   type ExperienceCopilotStreamDeps,
 } from "../../domain/interactive/copilot/experience-copilot-stream.js";
 import { ExperienceCopilotCompactionService } from "../../domain/interactive/copilot/experience-copilot-compaction.js";
+import { getCopilotContextItems } from "../../domain/interactive/copilot/experience-copilot-context.js";
+import { readSkillFile } from "../../domain/coauthor/skills/skill-read-tool.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { resolveEffectiveSettings } from "@vibe-tavern/domain";
 
@@ -76,6 +78,34 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       ...(this.copilotSkillService !== undefined
         ? { skillUserRoot: this.copilotSkillService.roots().userRoot }
         : {}),
+      // CX-3: pinned-context resolution over the REAL stores + copilot skill
+      // library. getCopilotContextItems is pure over its deps, and the store
+      // subset is structural (method syntax → bivariance for branded ids), so
+      // the StoreContainer slots in without adapters. The skill arm reads the
+      // manifest through the same sandboxed readSkillFile the tool uses (user
+      // root first, so a user shadow of a built-in wins — catalog precedence).
+      resolveContextItems: (links) => {
+        const skillService = this.copilotSkillService!;
+        const { userRoot, builtinRoot } = skillService.roots();
+        return getCopilotContextItems(links, {
+          characters: this.stores.characters,
+          personas: this.stores.personas,
+          lorebooks: this.stores.lorebooks,
+          scripts: this.stores.scripts,
+          skills: {
+            readCatalogEntry: (id) => skillService.readCatalogEntry(id),
+            readFile: async (path) => {
+              try {
+                return (await readSkillFile(path, [userRoot, builtinRoot])).content;
+              } catch {
+                // Missing/unreadable manifest — the CX-2 skip contract (the
+                // catalog entry exists but its file does not resolve).
+                return null;
+              }
+            },
+          },
+        });
+      },
       // CM-6: fire-and-forget auto-compaction trigger (absent when the adapter
       // has no provider profile service — legacy/lifecycle-only harnesses).
       ...(this.compaction !== null

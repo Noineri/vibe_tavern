@@ -49,6 +49,8 @@ import {
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS } from "./copilot-limits.js";
 import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
+import { renderAttachedContext, type CopilotContextItem } from "./experience-copilot-context.js";
+import type { ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 
 // ─── Request / response types ────────────────────────────────────────────────
 
@@ -127,6 +129,14 @@ export interface ExperienceCopilotStreamDeps {
   /** Optional copilot user-skill root for the two-root catalog (CP-4). Absent →
    *  built-in root only. */
   readonly skillUserRoot?: string;
+  /** CX-3: resolve the thread's pinned-context links into rendered-block input.
+   *  The adapter supplies this over the real stores + copilot skill library;
+   *  absent (tests, legacy harnesses) → no attached context, byte-identical
+   *  pre-CX-3 assembly. Dangling links resolve to skipped items inside
+   *  `getCopilotContextItems` — a missing entity never fails the turn. */
+  readonly resolveContextItems?: (
+    links: readonly ExperienceCopilotContextLink[],
+  ) => Promise<CopilotContextItem[]>;
   /** Max tool-loop steps for the multi-step loop (mirrors co-author maxSteps).
    *  Defaults to the resolved profile's maxSteps (the built-in seed = 20). */
   readonly maxSteps?: number;
@@ -361,6 +371,21 @@ export async function* streamExperienceCopilot(
   // where the DB buffers are empty) and the buffer the user has switched to.
   const rules = request.rules ?? context.rules;
   const visual = request.visual ?? context.visual;
+  // CX-3: resolve the thread's pinned links into the rendered attached block.
+  // Live by-id resolution EVERY turn — never persisted, so a later
+  // rename/delete/edit re-resolves on the next turn (dangling ids just
+  // vanish). No dep or no links → empty string → byte-identical pre-CX-3
+  // assembly (the assembler omits the section entirely).
+  const contextItems = deps.resolveContextItems && thread.contextLinks.length > 0
+    ? await deps.resolveContextItems(thread.contextLinks)
+    : [];
+  const attachedContextBlock = renderAttachedContext(contextItems);
+  debug("attached-context-resolved", {
+    threadId: request.threadId,
+    linkCount: thread.contextLinks.length,
+    itemCount: contextItems.length,
+    blockLength: attachedContextBlock.length,
+  });
   const assembled = await assembleExperienceCopilotPrompt({
     history,
     rules,
@@ -375,6 +400,7 @@ export async function* streamExperienceCopilot(
     responseReserve: COPILOT_RESPONSE_RESERVE_TOKENS,
     profile: copilotProfile,
     ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
+    ...(attachedContextBlock ? { attachedContextBlock } : {}),
   });
 
   debug("prompt-assembled", {
@@ -561,10 +587,10 @@ export async function* streamExperienceCopilot(
     digestTokens: assembled.tokenAccounting.digest,
     historyTokens: assembled.tokenAccounting.history,
     totalTokens: metricsTotalTokens,
-    // CX-1: additive segment; the assembler does not report it yet (CX-3 wires
-    // the attached block's accounting) — 0 until then, which is also the exact
-    // truth for a thread with nothing pinned.
-    attachedTokens: 0,
+    // CX-3: the attached block + recency anchor, straight from the assembler's
+    // segmented accounting (0 when nothing is pinned — also the exact legacy
+    // value, so pre-CX-3 threads meter unchanged).
+    attachedTokens: assembled.tokenAccounting.attached,
     budgetTokens: COPILOT_CONTEXT_BUDGET_TOKENS,
     reserveTokens: COPILOT_RESPONSE_RESERVE_TOKENS,
     source: metricsSource,
