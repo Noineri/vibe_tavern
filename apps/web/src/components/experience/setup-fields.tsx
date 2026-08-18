@@ -28,6 +28,8 @@ import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { Checkbox } from "../shared/Checkbox.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
+import { Ic } from "../shared/icons.js";
 import type Resources from "../../i18n/resources.js";
 
 /** The four canonical setup-field kinds (IR-70F), discriminated by `kind`. */
@@ -231,11 +233,6 @@ export function FieldError({ text }: { text: string }) {
   );
 }
 
-/** One labeled description line under a control (author `description`). */
-function FieldDescription({ text }: { text: string }) {
-  return <p className="font-ui text-[11px] leading-relaxed text-t4">{text}</p>;
-}
-
 interface SetupFieldRowProps {
   field: SetupField;
   value: string | boolean | undefined;
@@ -251,11 +248,17 @@ export function SetupFieldRow({ field, value, error, t, onText, onNumber, onTogg
   const requiredMark = "required" in field && field.required ? ` — ${t("experience_setup_field_required")}` : "";
   return (
     <div className="flex flex-col gap-1" data-field-id={field.id}>
-      <label className="font-ui text-[12px] font-medium text-t2">
-        {field.label}
-        {requiredMark}
-      </label>
-      {field.description && <FieldDescription text={field.description} />}
+      <div className="flex items-center gap-1">
+        <label className="font-ui text-[12px] font-medium text-t2">
+          {field.label}
+          {requiredMark}
+        </label>
+        {field.description && (
+          <CustomTooltip content={field.description}>
+            <span className="mt-px shrink-0 text-t3"><Ic.help /></span>
+          </CustomTooltip>
+        )}
+      </div>
       {field.kind === "text" && (
         <AutoTextarea
           className="rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-[13px] text-t1 outline-none focus:border-accent"

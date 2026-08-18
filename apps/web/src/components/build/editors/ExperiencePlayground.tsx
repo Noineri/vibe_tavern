@@ -157,6 +157,15 @@ const CONTROLLER_LABEL_KEY = {
   [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_model",
 } as const;
 
+/** Short parens role for the «За кого вы играете» seat dropdown (LB-1 polish):
+ *  «Имя (короткая роль)». Only this short DropdownSelect uses it; the roster
+ *  editor and the setup-summary line keep the full CONTROLLER_LABEL_KEY. */
+const SHORT_ROLE_KEY = {
+  [EXPERIENCE_CONTROLLER.human]: "experience_playground_role_short_human",
+  [EXPERIENCE_CONTROLLER.script]: "experience_playground_role_short_script",
+  [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_short_model",
+} as const;
+
 const CAPABILITIES = [
   EXPERIENCE_CAPABILITY.participants,
   EXPERIENCE_CAPABILITY.deterministicRandom,
@@ -1401,31 +1410,38 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div>
-              <label className={lblCls}>{t("experience_playground_seed_label")}</label>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <label className={lblCls}>{t("experience_playground_seed_label")}</label>
+                  <CustomTooltip content={t("experience_playground_seed_hint")}>
+                    <span className="mt-px shrink-0 text-t3"><Ic.help /></span>
+                  </CustomTooltip>
+                </span>
+                <span className="flex items-center gap-2">
+                  <Toggle
+                    checked={randomStart}
+                    onChange={handleRandomStartChange}
+                    aria-label={t("experience_playground_random_start")}
+                  />
+                  <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
+                </span>
+              </div>
               <input
-                className={cn(inputCls, "mt-1.5 h-[34px]", randomStart && "opacity-60")}
+                className={cn(inputCls, "mt-1.5 w-full h-[34px]", randomStart && "opacity-60")}
                 value={randomStart ? lastUsedSeed : seed}
                 placeholder={t(randomStart ? "experience_playground_seed_random_on" : "experience_tester_seed_placeholder")}
                 disabled={randomStart}
                 onChange={(e) => setSeed(e.target.value)}
               />
-              <div className="mt-1.5 flex items-center gap-2">
-                <Toggle
-                  checked={randomStart}
-                  onChange={handleRandomStartChange}
-                  aria-label={t("experience_playground_random_start")}
-                />
-                <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
-              </div>
             </div>
             <div>
               <label className={lblCls}>{t("experience_playground_human_seat_label")}</label>
               <div className="mt-1.5">
                 <DropdownSelect
                   value={humanSeatId}
-                  options={participants.map((p) => ({ id: p.id, label: `${p.label} (${t(CONTROLLER_LABEL_KEY[p.controller])})` }))}
+                  options={participants.map((p) => ({ id: p.id, label: `${p.label} (${t(SHORT_ROLE_KEY[p.controller])})` }))}
                   searchable={false}
                   placeholder={t("experience_playground_human_seat_auto")}
                   defaultOption={t("experience_playground_human_seat_auto")}
@@ -1434,56 +1450,61 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 />
               </div>
             </div>
-            <div>
-              <label className={lblCls}>{t("experience_setup_settings_label")}</label>
-              {/* LOBBY-A: the package's declared setup fields render as a real
-                  form (author defaults seeded into the JSON). The raw JSON
-                  textarea is ALWAYS under a collapsed "advanced" disclosure
-                  (verbatim: «жсон для технических пользователей под аккордеон
-                  прятать») — never the default view, fields or not. */}
-              {setupFormAvailable && (
-                <div className="mt-1.5 flex flex-col gap-2.5" data-testid="playground-setup-form">
-                  {setupFields.map((field) => (
-                    <SetupFieldRow
-                      key={field.id}
-                      field={field}
-                      value={setupForm.values[field.id]}
-                      error={fieldErrors[field.id]}
-                      t={t}
-                      onText={(v) => applySetupFieldValue(field, v)}
-                      onNumber={(v) => applySetupFieldValue(field, v)}
-                      onToggle={() => toggleSetupBoolean(field)}
-                      onSelect={(v) => applySetupFieldValue(field, v)}
-                    />
-                  ))}
-                </div>
-              )}
-              {setupFields.length > 0 && settingsObject === null && (
-                <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
-                  {t("experience_playground_settings_json_invalid")}
-                </p>
-              )}
-              {/* The raw JSON is ALWAYS under the collapsed "advanced"
-                  disclosure — with or without declared fields (verbatim quote:
-                  «жсон для технических пользователей под аккордеон прятать»);
-                  a non-technical user never faces a raw textarea by default. */}
-              <div className="mt-1.5">
-                <button
-                  type="button"
-                  className="flex cursor-pointer items-center gap-1.5 font-ui text-[11px] text-t3 transition-colors hover:text-t1"
-                  onClick={() => setSettingsJsonOpen((v) => !v)}
-                  aria-expanded={settingsJsonOpen}
-                  data-testid="playground-settings-advanced-toggle"
-                >
-                  <span className={cn("inline-block shrink-0 transition-transform", settingsJsonOpen && "rotate-90")}>
-                    {Ic.caret("r")}
-                  </span>
-                  {t("experience_playground_settings_advanced")}
-                </button>
-                <AnimatedDisclosure open={settingsJsonOpen}>
-                  {settingsJsonTextarea}
-                </AnimatedDisclosure>
+          </div>
+          <div className="mt-2">
+            <label className={lblCls}>{t("experience_setup_settings_label")}</label>
+            {/* LOBBY-A: the package's declared setup fields render as a real
+                form (author defaults seeded into the JSON). The raw JSON
+                textarea is ALWAYS under a collapsed "advanced" disclosure
+                (verbatim: «жсон для технических пользователей под аккордеон
+                прятать») — never the default view, fields or not. */}
+            {setupFormAvailable && (
+              <div className="mt-1.5 flex flex-col gap-2.5" data-testid="playground-setup-form">
+                {setupFields.map((field) => (
+                  <SetupFieldRow
+                    key={field.id}
+                    field={field}
+                    value={setupForm.values[field.id]}
+                    error={fieldErrors[field.id]}
+                    t={t}
+                    onText={(v) => applySetupFieldValue(field, v)}
+                    onNumber={(v) => applySetupFieldValue(field, v)}
+                    onToggle={() => toggleSetupBoolean(field)}
+                    onSelect={(v) => applySetupFieldValue(field, v)}
+                  />
+                ))}
               </div>
+            )}
+            {setupFields.length === 0 && (
+              <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-t3" data-testid="playground-no-fields">
+                {t("experience_playground_no_fields")}
+              </p>
+            )}
+            {setupFields.length > 0 && settingsObject === null && (
+              <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
+                {t("experience_playground_settings_json_invalid")}
+              </p>
+            )}
+            {/* The raw JSON is ALWAYS under the collapsed "advanced"
+                disclosure — with or without declared fields (verbatim quote:
+                «жсон для технических пользователей под аккордеон прятать»);
+                a non-technical user never faces a raw textarea by default. */}
+            <div className="mt-1.5">
+              <button
+                type="button"
+                className="flex cursor-pointer items-center gap-1.5 font-ui text-[11px] text-t3 transition-colors hover:text-t1"
+                onClick={() => setSettingsJsonOpen((v) => !v)}
+                aria-expanded={settingsJsonOpen}
+                data-testid="playground-settings-advanced-toggle"
+              >
+                <span className={cn("inline-block shrink-0 transition-transform", settingsJsonOpen && "rotate-90")}>
+                  {Ic.caret("r")}
+                </span>
+                {t("experience_playground_settings_advanced")}
+              </button>
+              <AnimatedDisclosure open={settingsJsonOpen}>
+                {settingsJsonTextarea}
+              </AnimatedDisclosure>
             </div>
           </div>
             </AnimatedDisclosure>

@@ -2013,7 +2013,7 @@
   "experience_wizard_validating": "Checking…",
   "experience_wizard_rules_valid": "Rules are valid",
   "experience_wizard_rules_invalid": "Rules failed validation",
-  "experience_tester_seed_placeholder": "deterministic default",
+  "experience_tester_seed_placeholder": "e.g. 12345",
   "experience_tester_settings_invalid": "Settings must be valid JSON.",
   "experience_tester_run": "Discover & create",
   "experience_tester_send_to_copilot": "Send result to assistant",
@@ -2053,7 +2053,7 @@
   "experience_playground_settings_advanced": "Advanced: settings JSON",
   "experience_playground_settings_json_invalid": "Settings JSON is not a valid object — the settings form is unavailable until it is fixed.",
   "experience_playground_settings_field_errors": "Some settings fields are invalid — fix the highlighted fields.",
-  "experience_playground_human_seat_auto": "Auto — first human seat",
+  "experience_playground_human_seat_auto": "Auto (human)",
   "experience_playground_session_label": "Session",
   "experience_playground_visual_label": "Visual (isolated frame)",
   "experience_playground_no_visual": "No visual selected — the frame is hidden.",
@@ -2269,5 +2269,10 @@
   "copilot_model_unstar": "Remove from favorites",
   "experience_copilot_rename_session": "Rename session",
   "experience_copilot_rename_error": "Failed to rename the session",
-  "experience_editor_new_visual_name": "New visual"
+  "experience_editor_new_visual_name": "New visual",
+  "experience_playground_seed_hint": "Seed pins the random stream — same seed + same settings = same match. Empty = deterministic default.",
+  "experience_playground_role_short_human": "human",
+  "experience_playground_role_short_script": "auto",
+  "experience_playground_role_short_model": "AI",
+  "experience_playground_no_fields": "This game has no configurable parameters"
 }

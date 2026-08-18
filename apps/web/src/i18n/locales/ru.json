@@ -2031,7 +2031,7 @@
   "experience_wizard_validating": "Проверка…",
   "experience_wizard_rules_valid": "Правила корректны",
   "experience_wizard_rules_invalid": "Правила не прошли проверку",
-  "experience_tester_seed_placeholder": "детерминированное по умолчанию",
+  "experience_tester_seed_placeholder": "напр. 12345",
   "experience_tester_settings_invalid": "Настройки должны быть корректным JSON.",
   "experience_tester_run": "Проверить и создать",
   "experience_tester_send_to_copilot": "Отправить результат помощнику",
@@ -2071,7 +2071,7 @@
   "experience_playground_settings_advanced": "Дополнительно: JSON настроек",
   "experience_playground_settings_json_invalid": "JSON настроек не является корректным объектом — форма настроек недоступна, пока он не исправлен.",
   "experience_playground_settings_field_errors": "Некоторые поля настроек заполнены неверно — исправьте подсвеченные поля.",
-  "experience_playground_human_seat_auto": "Авто — первое место человека",
+  "experience_playground_human_seat_auto": "Авто (человек)",
   "experience_playground_session_label": "Сессия",
   "experience_playground_visual_label": "Визуал (изолированный фрейм)",
   "experience_playground_no_visual": "Визуал не выбран — фрейм скрыт.",
@@ -2289,5 +2289,10 @@
   "copilot_model_unstar": "Убрать из избранного",
   "experience_copilot_rename_session": "Переименовать сессию",
   "experience_copilot_rename_error": "Не удалось переименовать сессию",
-  "experience_editor_new_visual_name": "Новое представление"
+  "experience_editor_new_visual_name": "Новое представление",
+  "experience_playground_seed_hint": "Зерно фиксирует поток случайности: одно зерно + те же настройки = та же партия. Пусто = детерминированное зерно.",
+  "experience_playground_role_short_human": "человек",
+  "experience_playground_role_short_script": "автомат",
+  "experience_playground_role_short_model": "ИИ",
+  "experience_playground_no_fields": "У этой игры нет настраиваемых параметров"
 }

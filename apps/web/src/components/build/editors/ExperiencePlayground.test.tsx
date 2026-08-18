@@ -411,7 +411,7 @@ describe("ExperiencePlayground", () => {
     // manual (empty) seed path is exercised — the deterministic-default
     // boundary this test pins.
     fireEvent.click(getByRole("switch"));
-    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "Alice (experience_playground_role_human)");
+    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "Alice (experience_playground_role_short_human)");
 
     fireEvent.click(getByText("experience_playground_start"));
 
@@ -962,7 +962,7 @@ describe("ExperiencePlayground", () => {
     fireEvent.click(getByRole("switch"));
     // The MODEL seat is listed (the list is built uniformly from participants
     // for every controller, so the script branch shares this code path).
-    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "AI (experience_playground_role_model)");
+    await pickDropdown(utils, container, "experience_playground_human_seat_auto", "AI (experience_playground_role_short_model)");
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
     expect(startExperiencePlayground).toHaveBeenCalledWith(expect.objectContaining({ humanSeatId: "ai" }));
@@ -1524,6 +1524,9 @@ describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY
     const utils = renderPlayground();
     await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
     expect(utils.container.querySelector('[data-testid="playground-setup-form"]')).toBeNull();
+    // LB-1: a package with no declared fields shows an explicit line (no bare
+    // empty space above the advanced disclosure).
+    expect(utils.getByTestId("playground-no-fields").textContent).toBe("experience_playground_no_fields");
     // The JSON is collapsed behind the advanced toggle — NOT rendered directly.
     expect(utils.getByTestId("playground-settings-advanced-toggle")).toBeTruthy();
     expect(utils.container.querySelector('[data-testid="auto-textarea"]')).toBeNull();
