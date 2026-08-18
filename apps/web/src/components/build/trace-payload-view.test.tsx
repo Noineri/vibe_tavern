@@ -11,7 +11,7 @@
  * See PROMPT_TRACE_PAYLOAD_FIX_PLAN.md, Wave C.
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
-import type { PayloadMessage } from "./trace-payload-view.js";
+import type { InjectEntry, PayloadMessage } from "./trace-payload-view.js";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 
@@ -71,7 +71,7 @@ describe("groupPayloadForTrace", () => {
 		];
 		const g = groupPayloadForTrace(messages, layers);
 		expect(g.hasHistory).toBe(true);
-		expect(g.preamble.map((l) => l.id)).toEqual(["prompt_preset_system", "character_base"]);
+		expect(g.preamble.map((e) => e.layer.id)).toEqual(["prompt_preset_system", "character_base"]);
 		// History: one message group (m1,m2) then one inject divider.
 		expect(g.history).toHaveLength(2);
 		expect(g.history[0]!.kind).toBe("messages");
@@ -92,7 +92,7 @@ describe("groupPayloadForTrace", () => {
 				{ role: "user", content: "u1", messageId: "m1" },
 				{ role: "assistant", content: "a1", messageId: "m2" },
 			] },
-			{ kind: "inject", layerId: "mid_inject", sourceName: "mid_inject", sourceType: "prompt_preset", depth: 2, tokenCount: 10, text: "text-mid_inject" },
+			{ kind: "inject", layerId: "mid_inject", sourceName: "mid_inject", sourceType: "prompt_preset", depth: 2, tokenCount: 10, text: "inj", mergedFrom: [] },
 			{ kind: "messages", start: 3, end: 3, count: 1, messages: [
 				{ role: "user", content: "u2", messageId: "m3" },
 			] },
@@ -107,7 +107,41 @@ describe("groupPayloadForTrace", () => {
 		const g = groupPayloadForTrace(messages, layers);
 		expect(g.hasHistory).toBe(false);
 		expect(g.history).toEqual([]);
-		expect(g.preamble.map((l) => l.id)).toEqual(["prompt_preset_system"]);
+		expect(g.preamble.map((e) => e.layer.id)).toEqual(["prompt_preset_system"]);
+	});
+
+	it("keeps merged preamble entries payload-faithful (survivor text + absorbed layer refs)", () => {
+		const messages: PayloadMessage[] = [
+			{ role: "system", content: "A\n\nB", layerId: "character_base", mergedFrom: [{ layerId: "character_scenario" }] },
+		];
+		const layers = [
+			layer({ id: "character_base" }),
+			layer({ id: "character_scenario", sourceName: "Scenario" }),
+		];
+		const g = groupPayloadForTrace(messages, layers);
+		expect(g.hasHistory).toBe(false);
+		expect(g.preamble).toHaveLength(1);
+		expect(g.preamble[0]!.layer.id).toBe("character_base");
+		// Payload-faithful: the merged entry carries the FULL concatenated text,
+		// not the survivor layer's own fragment.
+		expect(g.preamble[0]!.text).toBe("A\n\nB");
+		expect(g.preamble[0]!.mergedLayerIds).toEqual(["character_scenario"]);
+		// mergedNames resolve through the layerMap (sourceName, not raw id).
+		expect(g.preamble[0]!.mergedNames).toEqual(["Scenario"]);
+	});
+
+	it("keeps an in-chat inject that absorbed messages payload-faithful", () => {
+		const messages: PayloadMessage[] = [
+			{ role: "user", content: "u1", messageId: "m1" },
+			{ role: "system", content: "merged-inj", layerId: "mid_inject", mergedFrom: [{ messageId: "m9" }] },
+		];
+		const layers = [layer({ id: "mid_inject", position: "in_chat", injectionDepth: 0 })];
+		const g = groupPayloadForTrace(messages, layers);
+		const inject = g.history.find((h): h is InjectEntry => h.kind === "inject");
+		expect(inject).toBeDefined();
+		expect(inject!.mergedFrom).toEqual([{ messageId: "m9" }]);
+		// Payload content wins over the layer's own text (text-mid_inject).
+		expect(inject!.text).toBe("merged-inj");
 	});
 });
 
@@ -229,5 +263,59 @@ describe("TracePayloadView (DOM)", () => {
 		expect(getByText("System Prompt")).toBeTruthy();
 		// No history accordion without messages.
 		expect(queryByText("trace_chat_history")).toBeNull();
+	});
+
+	it("a merged preamble card shows the merged badge and reveals the payload content", () => {
+		const trace = {
+			layers: [
+				layer({ id: "character_base", sourceName: "Character", tokenCount: 30, text: "A" }),
+				layer({ id: "character_scenario", sourceName: "Scenario", tokenCount: 20, text: "SCENARIO_FRAGMENT" }),
+			],
+			tokenAccounting: { total: 50 },
+			activatedLoreEntries: [],
+			scriptInjections: [],
+			retrievedMemories: [],
+			finalPayload: {
+				messages: [
+					{ role: "system", content: "A\n\nB", layerId: "character_base", mergedFrom: [{ layerId: "character_scenario" }] },
+				],
+			},
+		};
+		const { getByText, queryByText, container } = render(
+			<TracePayloadView trace={trace as never} searchQuery="" formatTokens={formatTokens} />,
+		);
+		// Collapsed header shows the card title + the merged badge (i18n key verbatim).
+		expect(getByText("Character")).toBeTruthy();
+		expect(getByText("trace_merged_badge")).toBeTruthy();
+		// The absorbed layer's own fragment must NOT appear anywhere.
+		expect(queryByText("SCENARIO_FRAGMENT")).toBeNull();
+		// Expanding reveals the merged payload text exactly once.
+		fireEvent.click(getByText("Character"));
+		expect(container.textContent.match(/A\n\nB/g)).toHaveLength(1);
+		expect(container.textContent).not.toContain("SCENARIO_FRAGMENT");
+	});
+
+	it("a merged message row shows the badge once; unmerged rows add none", () => {
+		const trace = {
+			layers: [],
+			tokenAccounting: { total: 10 },
+			activatedLoreEntries: [],
+			scriptInjections: [],
+			retrievedMemories: [],
+			finalPayload: {
+				messages: [
+					{ role: "user", content: "u1", messageId: "m1" },
+					{ role: "assistant", content: "a1", messageId: "m2", mergedFrom: [{ messageId: "mX" }] },
+				],
+			},
+		};
+		const { getByText, container } = render(
+			<TracePayloadView trace={trace as never} searchQuery="" formatTokens={formatTokens} />,
+		);
+		// Expand history, then the message group.
+		fireEvent.click(getByText("trace_chat_history"));
+		fireEvent.click(getByText("trace_message_group_range"));
+		// Exactly one merged badge in the group — only the assistant row merged.
+		expect((container.textContent.match(/trace_merged_badge/g) || []).length).toBe(1);
 	});
 });

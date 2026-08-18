@@ -71,12 +71,33 @@ function LoreReasonBadge({ reason }: { reason: LoreActivationReason }) {
   );
 }
 
+/** Badge surfacing a merge-squashed payload entry: "+N merged" with the
+ *  absorbed ids/names as the tooltip. Keeps the trace payload-faithful —
+ *  without it a merged entry renders as a truncated fragment because the
+ *  absorbed sources have no payload entries of their own. */
+function MergedBadge({ count, names }: { count: number; names?: string[] }) {
+	const { t } = useT();
+	if (count <= 0) return null;
+	return (
+		<span
+			className="shrink-0 rounded bg-s3 px-1 py-0.5 font-ui text-[10px] font-medium text-t3"
+			title={names && names.length > 0 ? names.join(", ") : undefined}
+		>
+			{t("trace_merged_badge", { n: count })}
+		</span>
+	);
+}
+
 /** One entry of `finalPayload.messages`. Content may be a string or a vision part-array. */
 export interface PayloadMessage {
 	role?: string;
 	content?: unknown;
 	layerId?: string;
 	messageId?: string;
+	/** Present when `mergeConsecutiveRoles` squashed same-role neighbours into
+	 *  this entry — lists the absorbed refs (their ids no longer have their own
+	 *  payload entries). Payload-faithful rendering surfaces these as badges. */
+	mergedFrom?: Array<{ messageId?: string; layerId?: string }>;
 }
 
 /** Enriched in-chat inject (a `layerId` entry inside the history region). */
@@ -88,6 +109,8 @@ export interface InjectEntry {
 	depth: number | undefined;
 	tokenCount: number;
 	text: string;
+	/** Absorbed same-role neighbours (see `PayloadMessage.mergedFrom`). */
+	mergedFrom: Array<{ messageId?: string; layerId?: string }>;
 }
 
 /** A run of consecutive chat messages between two dividers. */
@@ -98,12 +121,26 @@ export interface MessageGroupEntry {
 	/** 1-based display index of the last message in this group. */
 	end: number;
 	count: number;
-	messages: Array<{ role: string; content: string; messageId?: string }>;
+	messages: Array<{ role: string; content: string; messageId?: string; mergedFrom?: Array<{ messageId?: string; layerId?: string }> }>;
+}
+
+/** A preamble payload entry — the layer card plus payload-faithful content.
+ *  With `mergeConsecutiveRoles` ON, same-role preamble layers squash into one
+ *  payload entry whose `content` is the concatenation; `mergedLayerIds` lists
+ *  the absorbed layer ids (empty when the entry wasn't merged). */
+export interface PreambleEntry {
+	layer: PromptLayerDto;
+	/** The payload entry's own content (survivor text + absorbed texts). */
+	text: string;
+	/** Layer ids absorbed into this entry (empty = not merged). */
+	mergedLayerIds: string[];
+	/** Display names for the absorbed layers (sourceName, falling back to the raw id). */
+	mergedNames: string[];
 }
 
 export interface PayloadGrouping {
-	/** Preamble layer cards (leading `layerId` entries before any chat message). */
-	preamble: PromptLayerDto[];
+	/** Preamble entries (leading `layerId` entries before any chat message). */
+	preamble: PreambleEntry[];
 	/** Ordered injects + message groups that make up the Chat History region. */
 	history: Array<InjectEntry | MessageGroupEntry>;
 	/** Whether the payload had any chat-message entries at all. */
@@ -141,14 +178,26 @@ export function groupPayloadForTrace(
 	const hasHistory = firstMsgIdx !== -1;
 
 	const preambleRaw = hasHistory ? messages.slice(0, firstMsgIdx) : messages;
-	const preamble = preambleRaw
-		.map((m) => (m.layerId ? layerMap.get(m.layerId) : undefined))
-		.filter((l): l is PromptLayerDto => Boolean(l));
+	const preamble: PreambleEntry[] = preambleRaw.flatMap((m) => {
+		if (!m.layerId) return [];
+		const layer = layerMap.get(m.layerId);
+		if (!layer) return [];
+		const mergedLayerIds = (m.mergedFrom ?? []).flatMap((r) => (r.layerId ? [r.layerId] : []));
+		return [{
+			layer,
+			// Payload-faithful: with merge ON the payload content is the
+			// concatenation of the survivor + absorbed layers, while layer.text
+			// holds only the survivor's own text (the visible-truncation bug).
+			text: contentToString(m.content) || layer.text,
+			mergedLayerIds,
+			mergedNames: mergedLayerIds.map((id) => layerMap.get(id)?.sourceName ?? id),
+		}];
+	});
 
 	const historyRegion = hasHistory ? messages.slice(firstMsgIdx) : [];
 	const history: Array<InjectEntry | MessageGroupEntry> = [];
 
-	let currentRun: Array<{ role: string; content: string; messageId?: string }> = [];
+	let currentRun: Array<{ role: string; content: string; messageId?: string; mergedFrom?: Array<{ messageId?: string; layerId?: string }> }> = [];
 	let runStart = 0;
 	let msgCounter = 0;
 
@@ -175,7 +224,11 @@ export function groupPayloadForTrace(
 				sourceType: layer?.sourceType ?? "",
 				depth: layer?.injectionDepth,
 				tokenCount: layer?.tokenCount ?? 0,
-				text: layer?.text ?? contentToString(entry.content),
+				// Payload-first: when this inject absorbed same-role chat messages,
+				// the payload content is the merged text — layer.text would show
+				// only the inject's own text and silently hide the absorbed part.
+				text: contentToString(entry.content) || layer?.text || "",
+				mergedFrom: entry.mergedFrom ?? [],
 			});
 		} else if (entry.messageId) {
 			msgCounter += 1;
@@ -184,6 +237,7 @@ export function groupPayloadForTrace(
 				role: entry.role ?? "system",
 				content: contentToString(entry.content),
 				messageId: entry.messageId,
+				...(entry.mergedFrom ? { mergedFrom: entry.mergedFrom } : {}),
 			});
 		}
 	}
@@ -257,8 +311,8 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 	const recentHistoryLayer = trace.layers.find((l) => l.id === "recent_history");
 	const historyTokens = recentHistoryLayer?.tokenCount;
 
-	const visiblePreamble = grouping.preamble.filter((layer) =>
-		matches(layer.sourceName, layer.sourceType, layer.sourceId, layer.text),
+	const visiblePreamble = grouping.preamble.filter((entry) =>
+		matches(entry.layer.sourceName, entry.layer.sourceType, entry.layer.sourceId, entry.text),
 	);
 
 	// When searching, force-expand the history accordion so matches inside
@@ -268,15 +322,18 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 	return (
 		<div className="flex flex-col gap-2">
 			<ScriptRunsAccordion runs={trace.scriptInjections} q={q} matches={matches} />
-			{visiblePreamble.map((layer) => (
+			{visiblePreamble.map((entry) => (
 				<LayerCard
-					key={layer.id}
-					layer={layer}
-					expanded={openLayers.has(layer.id)}
-					onToggle={() => toggleInSet(setOpenLayers, layer.id)}
+					key={entry.layer.id}
+					layer={entry.layer}
+					expanded={openLayers.has(entry.layer.id)}
+					onToggle={() => toggleInSet(setOpenLayers, entry.layer.id)}
 					formatTokens={formatTokens}
 					compact={compact}
-					reason={layer.sourceType === "lore_entry" ? loreReasonByEntryId.get(layer.sourceId) : undefined}
+					reason={entry.layer.sourceType === "lore_entry" ? loreReasonByEntryId.get(entry.layer.sourceId) : undefined}
+					text={entry.text}
+					mergedCount={entry.mergedLayerIds.length}
+					mergedNames={entry.mergedNames}
 				/>
 			))}
 
@@ -317,6 +374,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 												{item.sourceType === "lore_entry" && loreReasonByLayerId.has(item.layerId) && (
 													<LoreReasonBadge reason={loreReasonByLayerId.get(item.layerId)!} />
 												)}
+												<MergedBadge count={item.mergedFrom.length} names={item.mergedFrom.map((r) => r.layerId ?? r.messageId ?? "")} />
 												{item.depth != null && <span className="shrink-0 rounded bg-s3 px-1 text-t4">{t("trace_inject_depth", { n: item.depth })}</span>}
 												<span className="h-px flex-1 bg-border2" />
 												<span className="shrink-0 tabular-nums">{formatTokens(item.tokenCount)}</span>
@@ -358,6 +416,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 												{item.messages.map((m, i) => (
 													<div key={m.messageId ?? `${item.start}-${i}`} className="whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-t1">
 														<span className="mr-1.5 rounded bg-s3 px-1 text-[9px] uppercase text-t3">{m.role}</span>
+														<MergedBadge count={m.mergedFrom?.length ?? 0} names={m.mergedFrom?.map((r) => r.layerId ?? r.messageId ?? "")} />
 														{m.content}
 													</div>
 												))}
@@ -498,6 +557,9 @@ function LayerCard({
 	formatTokens,
 	compact = false,
 	reason,
+	text,
+	mergedCount,
+	mergedNames,
 }: {
 	layer: PromptLayerDto;
 	expanded: boolean;
@@ -506,6 +568,12 @@ function LayerCard({
 	compact?: boolean;
 	/** Lore-activation reason badge (only for lore_entry layers). */
 	reason?: LoreActivationReason;
+	/** Payload-faithful content override (the merged entry's own text). */
+	text?: string;
+	/** Absorbed-layer count — renders the merged badge when > 0. */
+	mergedCount?: number;
+	/** Display names of the absorbed layers (badge tooltip). */
+	mergedNames?: string[];
 }) {
 	const isPreset = layer.sourceType === "prompt_preset";
 	const isRetrieval = layer.sourceType.includes("memory") || layer.sourceType === "lore_entry";
@@ -528,6 +596,7 @@ function LayerCard({
 					<div className="flex min-w-0 items-baseline gap-1.5">
 						<span className="shrink-0 font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</span>
 						{reason && <LoreReasonBadge reason={reason} />}
+						{mergedCount != null && mergedCount > 0 && <MergedBadge count={mergedCount} names={mergedNames} />}
 						<span className="min-w-0 truncate text-t4">{layer.sourceId || layer.sourceType}</span>
 					</div>
 					<div className="flex shrink-0 items-center gap-1.5 text-t3">
@@ -545,6 +614,7 @@ function LayerCard({
 					<div className="flex min-w-0 items-center gap-2">
 						<div className="min-w-0 flex-1 font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</div>
 						{reason && <LoreReasonBadge reason={reason} />}
+						{mergedCount != null && mergedCount > 0 && <MergedBadge count={mergedCount} names={mergedNames} />}
 						<span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
 					</div>
 					<div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-t3">
@@ -557,7 +627,7 @@ function LayerCard({
 				open={expanded}
 				className="whitespace-pre-wrap border-t border-border bg-input-bg p-3 font-mono text-[11px] leading-[1.55] text-t1"
 			>
-				{layer.text}
+				{text ?? layer.text}
 			</AnimatedDisclosure>
 		</div>
 	);
