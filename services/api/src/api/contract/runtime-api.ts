@@ -747,7 +747,7 @@ export interface ExperienceRuntimeApi {
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -817,6 +817,10 @@ export interface ExperienceCopilotRuntimeApi {
 	/** Toggle the thread's auto-compact flag (CM-4). Returns the full context
 	 *  state (`{ metrics, autoCompact }`) so the client can replace its local copy. */
 	experienceCopilotPatchContext: (threadId: string, body: { autoCompact?: boolean }) => Promise<ExperienceCopilotContextState>;
+
+	// CX-4: pinned-context links — GET reads, set is a full replace (the client computes add/remove).
+	experienceCopilotGetContextLinks: (threadId: string) => Promise<ExperienceCopilotContextLink[]>;
+	experienceCopilotSetContextLinks: (threadId: string, links: ExperienceCopilotContextLink[]) => Promise<ExperienceCopilotContextLink[]>;
 
 	/** Manually compact a thread (CM-5): LLM-summarize everything older than the
 	 *  keep-window into a new `role: "digest"` message (anchor in `toolCallId`).

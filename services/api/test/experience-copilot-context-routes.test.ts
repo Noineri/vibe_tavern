@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { createExperienceCopilotRoutes } from "../src/api/routes/experience-copilot.js";
+import type { ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 import type {
   ExperienceCopilotRuntimeApi,
   ExperienceCopilotContextState,
@@ -14,8 +15,12 @@ import type {
  */
 
 function makeApp() {
-  const calls: { patch: Array<{ threadId: string; body: { autoCompact?: boolean } }> } = { patch: [] };
+  const calls: {
+    patch: Array<{ threadId: string; body: { autoCompact?: boolean } }>;
+    setContextLinks: Array<{ threadId: string; links: ExperienceCopilotContextLink[] }>;
+  } = { patch: [], setContextLinks: [] };
   const state: ExperienceCopilotContextState = { metrics: null, autoCompact: true };
+  let links: ExperienceCopilotContextLink[] = [];
 
   const runtime = {
     experienceCopilotGetContext: async (): Promise<ExperienceCopilotContextState> => state,
@@ -26,6 +31,15 @@ function makeApp() {
       calls.patch.push({ threadId, body });
       if (body.autoCompact !== undefined) state.autoCompact = body.autoCompact;
       return state;
+    },
+    experienceCopilotGetContextLinks: async (): Promise<ExperienceCopilotContextLink[]> => links,
+    experienceCopilotSetContextLinks: async (
+      threadId: string,
+      body: ExperienceCopilotContextLink[],
+    ): Promise<ExperienceCopilotContextLink[]> => {
+      calls.setContextLinks.push({ threadId, links: body });
+      links = body;
+      return links;
     },
   } as unknown as ExperienceCopilotRuntimeApi;
 
@@ -73,6 +87,65 @@ describe("GET/PATCH /api/experience-copilot/:threadId/context (CM-4)", () => {
     expect(res.status).toBe(200);
     expect(calls.patch).toEqual([{ threadId: "thread_1", body: {} }]);
     expect(await res.json()).toEqual(state);
+  });
+});
+
+describe("GET/PATCH /api/experience-copilot/:threadId/context-links (CX-4)", () => {
+  test("GET returns the runtime's links", async () => {
+    const { app } = makeApp();
+    const res = await app.request("/api/experience-copilot/thread_1/context-links");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  test("PATCH forwards the links and returns the updated array", async () => {
+    const { app, calls } = makeApp();
+    const links = [
+      { targetType: "character", targetId: "char_1" },
+      { targetType: "skill", targetId: "my-skill" },
+    ];
+    const res = await app.request("/api/experience-copilot/thread_1/context-links", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ links }),
+    });
+    expect(res.status).toBe(200);
+    expect(calls.setContextLinks).toEqual([{ threadId: "thread_1", links }]);
+    expect(await res.json()).toEqual(links);
+  });
+
+  test("PATCH with an unknown targetType is rejected with 400", async () => {
+    const { app, calls } = makeApp();
+    const res = await app.request("/api/experience-copilot/thread_1/context-links", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ links: [{ targetType: "emoji", targetId: "x" }] }),
+    });
+    expect(res.status).toBe(400);
+    expect(calls.setContextLinks).toHaveLength(0); // rejected before reaching the runtime
+  });
+
+  test("PATCH with an extra top-level key is rejected with 400", async () => {
+    const { app, calls } = makeApp();
+    const res = await app.request("/api/experience-copilot/thread_1/context-links", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ links: [], extra: 1 }),
+    });
+    expect(res.status).toBe(400);
+    expect(calls.setContextLinks).toHaveLength(0);
+  });
+
+  test("PATCH with 65 links is rejected with 400", async () => {
+    const { app, calls } = makeApp();
+    const many = Array.from({ length: 65 }, () => ({ targetType: "character", targetId: "char_1" }));
+    const res = await app.request("/api/experience-copilot/thread_1/context-links", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ links: many }),
+    });
+    expect(res.status).toBe(400);
+    expect(calls.setContextLinks).toHaveLength(0);
   });
 });
 

@@ -1,6 +1,6 @@
 import type { ExperienceCopilotRuntimeApi, ExperienceCopilotContextState, ExperienceCopilotCompactResult } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceCopilotThread, ExperienceCopilotMessage, CopilotContextMetrics } from "@vibe-tavern/db";
-import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
@@ -160,6 +160,28 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       metrics: refreshed?.contextMetrics ? this.toMetricsWire(refreshed.contextMetrics) : null,
       autoCompact: refreshed?.autoCompact ?? true,
     };
+  };
+
+  experienceCopilotGetContextLinks = async (threadId: string): Promise<ExperienceCopilotContextLink[]> => {
+    const thread = await this.stores.experienceCopilot.getById(threadId);
+    if (!thread) {
+      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
+    }
+    return thread.contextLinks;
+  };
+
+  experienceCopilotSetContextLinks = async (
+    threadId: string,
+    links: ExperienceCopilotContextLink[],
+  ): Promise<ExperienceCopilotContextLink[]> => {
+    const thread = await this.stores.experienceCopilot.getById(threadId);
+    if (!thread) {
+      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
+    }
+    await this.stores.experienceCopilot.setContextLinks(threadId, links);
+    // Re-read so the response reflects the persisted links (full-replace semantics).
+    const refreshed = await this.stores.experienceCopilot.getById(threadId);
+    return refreshed ? refreshed.contextLinks : links;
   };
 
   experienceCopilotCompact = async (

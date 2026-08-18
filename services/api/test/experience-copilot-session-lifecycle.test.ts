@@ -63,6 +63,7 @@ describe("ExperienceCopilotAdapter session lifecycle (ER-12a)", () => {
       createdAt: newer.createdAt,
       updatedAt: newer.updatedAt,
       metrics: null,
+      contextLinks: [],
     });
   });
 
@@ -126,6 +127,7 @@ describe("ExperienceCopilotAdapter context (CM-4)", () => {
     systemTokens: 1000,
     digestTokens: 0,
     historyTokens: 500,
+    attachedTokens: 0,
     totalTokens: 1500,
     budgetTokens: 16000,
     reserveTokens: 1000,
@@ -174,5 +176,53 @@ describe("ExperienceCopilotAdapter context (CM-4)", () => {
     const { adapter } = await setup();
     await expect(adapter.experienceCopilotGetContext("nope")).rejects.toThrow();
     await expect(adapter.experienceCopilotPatchContext("nope", { autoCompact: false })).rejects.toThrow();
+  });
+});
+
+// ─── CX-4: pinned-context links round-trip ───────────────────────────────────
+
+describe("ExperienceCopilotAdapter context-links (CX-4)", () => {
+  it("GET context-links returns [] before anything is pinned", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+
+    expect(await adapter.experienceCopilotGetContextLinks(thread.id)).toEqual([]);
+  });
+
+  it("set context-links round-trips through the adapter, in order, incl. a skill link", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+    const links = [
+      { targetType: "character", targetId: "char_1" },
+      { targetType: "skill", targetId: "my-skill" },
+      { targetType: "lorebook", targetId: "lore_2" },
+    ];
+
+    const returned = await adapter.experienceCopilotSetContextLinks(thread.id, links);
+    expect(returned).toEqual(links);
+    expect(await adapter.experienceCopilotGetContextLinks(thread.id)).toEqual(links);
+  });
+
+  it("set is a full replace — a shorter list drops the removed link", async () => {
+    const { store, adapter } = await setup();
+    const thread = await store.startNewSession("script_a", "T");
+    await adapter.experienceCopilotSetContextLinks(thread.id, [
+      { targetType: "character", targetId: "char_1" },
+      { targetType: "persona", targetId: "persona_9" },
+    ]);
+
+    const shortened = await adapter.experienceCopilotSetContextLinks(thread.id, [
+      { targetType: "persona", targetId: "persona_9" },
+    ]);
+    expect(shortened).toEqual([{ targetType: "persona", targetId: "persona_9" }]);
+    expect(await adapter.experienceCopilotGetContextLinks(thread.id)).toEqual([
+      { targetType: "persona", targetId: "persona_9" },
+    ]);
+  });
+
+  it("GET / set context-links on a missing thread reject (notFound)", async () => {
+    const { adapter } = await setup();
+    await expect(adapter.experienceCopilotGetContextLinks("nope")).rejects.toThrow();
+    await expect(adapter.experienceCopilotSetContextLinks("nope", [])).rejects.toThrow();
   });
 });

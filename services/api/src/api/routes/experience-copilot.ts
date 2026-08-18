@@ -183,6 +183,18 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
         return c.json(await runtime.experienceCopilotPatchContext(threadId, body));
       },
     )
+    .get("/api/experience-copilot/:threadId/context-links", async (c) => {
+      const threadId = c.req.param("threadId");
+      return c.json(await runtime.experienceCopilotGetContextLinks(threadId));
+    })
+    .patch(
+      "/api/experience-copilot/:threadId/context-links",
+      zValidator("json", schemas.setCopilotContextLinksSchema),
+      async (c) => {
+        const threadId = c.req.param("threadId");
+        return c.json(await runtime.experienceCopilotSetContextLinks(threadId, c.req.valid("json").links));
+      },
+    )
     .post(
       "/api/experience-copilot/:threadId/compact",
       zValidator("json", z.object({ providerProfileId: z.string().optional(), model: z.string().optional() })),
