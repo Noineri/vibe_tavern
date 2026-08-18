@@ -1,9 +1,37 @@
 import { describe, test, expect } from "bun:test";
 import {
   readMentionQuery,
+  mentionQueryStart,
   filterMentionItems,
   MAX_MENTION_QUERY_LEN,
 } from "./mention-autocomplete-query.js";
+
+describe("mentionQueryStart (CX-5/CX-6)", () => {
+  test("returns the @ index for an active session", () => {
+    expect(mentionQueryStart("pin @alice", 10)).toBe(4);
+    expect(mentionQueryStart("@a", 2)).toBe(0);
+  });
+
+  test("mirrors readMentionQuery's nulls exactly", () => {
+    for (const [value, caret] of [
+      ["mail a@b", 8],
+      ["@a b", 4],
+      ["plain", 3],
+      ["", 0],
+    ] as const) {
+      expect(mentionQueryStart(value, caret)).toBeNull();
+      expect(readMentionQuery(value, caret)).toBeNull();
+    }
+  });
+
+  test("strip arithmetic: slice(start, caret) is exactly the @query", () => {
+    const value = "pin @alice! and more";
+    const caret = 10; // after "@alice"
+    const start = mentionQueryStart(value, caret)!;
+    expect(value.slice(start, caret)).toBe("@alice");
+    expect(value.slice(0, start) + value.slice(caret)).toBe("pin ! and more");
+  });
+});
 
 describe("readMentionQuery (CX-5)", () => {
   test("reads the query after a word-start @ at position 0", () => {

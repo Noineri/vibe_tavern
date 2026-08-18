@@ -37,6 +37,26 @@ export interface MentionAutocompleteItem {
 export const MAX_MENTION_QUERY_LEN = 40;
 
 /**
+ * Index of the `@` that opens the active mention session (see
+ * {@link readMentionQuery}), or null when no session is active. The owning
+ * surface uses it to STRIP the `@query` from the text when an item is picked
+ * (CX-6): `value.slice(0, start) + value.slice(caret)` drops the gesture.
+ * Pure input→output, unit-tested with its sibling.
+ */
+export function mentionQueryStart(value: string, caret: number): number | null {
+  const before = value.slice(0, caret);
+  for (let i = before.length - 1; i >= 0; i--) {
+    const ch = before[i];
+    if (/\s/.test(ch)) return null;
+    if (ch === "@") {
+      if (i > 0 && !/\s/.test(before[i - 1])) return null;
+      return i;
+    }
+  }
+  return null;
+}
+
+/**
  * Read the active `@` query for a text field: the text between the last
  * word-start `@` before the caret and the caret itself. Returns null when no
  * mention session is active:
@@ -50,21 +70,10 @@ export const MAX_MENTION_QUERY_LEN = 40;
  * Pure input→output, exported for unit testing without the React component.
  */
 export function readMentionQuery(value: string, caret: number): string | null {
-  const before = value.slice(0, caret);
-  // Scan back from the caret: any whitespace before an `@` is found means the
-  // session was already closed by that space.
-  for (let i = before.length - 1; i >= 0; i--) {
-    const ch = before[i];
-    if (/\s/.test(ch)) return null;
-    if (ch === "@") {
-      // Word start: beginning of the value or preceded by whitespace. A
-      // mid-word `@` (email handle) is not a mention trigger.
-      if (i > 0 && !/\s/.test(before[i - 1])) return null;
-      const q = before.slice(i + 1);
-      return q.length > MAX_MENTION_QUERY_LEN ? null : q;
-    }
-  }
-  return null;
+  const start = mentionQueryStart(value, caret);
+  if (start === null) return null;
+  const q = value.slice(start + 1, caret);
+  return q.length > MAX_MENTION_QUERY_LEN ? null : q;
 }
 
 /**
