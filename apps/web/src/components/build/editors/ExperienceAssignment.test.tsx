@@ -44,6 +44,7 @@ const mocks = {
   listAllScripts: mock(),
   testScript: mock(),
   listExperienceVisuals: mock(),
+  listPersonas: mock(),
   onPatch: mock(),
   onValidityChange: mock(),
 };
@@ -70,6 +71,9 @@ mock.module("../../../api/script-api.js", () => ({
   listAllScripts: mocks.listAllScripts,
   testScript: mocks.testScript,
 }));
+
+const realPersonaApi = await import("../../../api/persona-api.js");
+mock.module("../../../api/persona-api.js", () => ({ ...realPersonaApi, listPersonas: mocks.listPersonas }));
 
 mock.module("../../../api/experience-api.js", () => ({
   ...realExperienceApi,
@@ -194,6 +198,7 @@ describe("ExperienceAssignment (IR-72A)", () => {
     mocks.listAllScripts.mockResolvedValue([]);
     mocks.listExperienceVisuals.mockResolvedValue([]);
     mocks.testScript.mockResolvedValue(interactiveOk("m", "M", []));
+    mocks.listPersonas.mockResolvedValue([] as never);
   });
 
   it("lists only interactive-kind scripts; selecting one clears grants + context; visual is independent and optional", async () => {
@@ -605,6 +610,7 @@ describe("ExperienceAssignment — RP-context source row", () => {
     mocks.listAllScripts.mockResolvedValue([scriptRec("s1", "Echo", "interactive")]);
     mocks.listExperienceVisuals.mockResolvedValue([]);
     mocks.testScript.mockResolvedValue(interactiveOk("echo", "Echo", [{ capability: "rp_context" }]));
+    mocks.listPersonas.mockResolvedValue([{ id: "persona_v", name: "Vera" }] as never);
     mocks.onPatch.mockReset();
   });
 
@@ -632,5 +638,24 @@ describe("ExperienceAssignment — RP-context source row", () => {
     view.rerender(<ExperienceAssignment {...propsFor({ ...base, sourceChatId: "chat_7" })} />);
     await view.findByRole("radiogroup");
     expect(view.getByTestId("experience-assign-source").textContent).toBe("experience_setup_source_preview_chat");
+  });
+  it("persona source (Wave 3): persona-only shows the identity row; combined with a chat both lines render", async () => {
+    const base = { scriptId: "s1", capabilityGrants: ["rp_context"] as ExperienceCapability[], contextMode: "recent" as const };
+
+    // Persona-only → the source row appears with the identity line (no
+    // char/chat line above it).
+    const view = renderAssignment({ ...base, sourcePersonaId: "persona_v" });
+    await view.findByRole("radiogroup");
+    expect(view.getByTestId("experience-assign-source").textContent).toBe("experience_setup_source_preview_persona");
+
+    // Persona + chat → both lines inside the one row (name resolved from
+    // the mocked persona list).
+    view.rerender(
+      <ExperienceAssignment {...propsFor({ ...base, sourceChatId: "chat_7", sourcePersonaId: "persona_v" })} />,
+    );
+    await view.findByRole("radiogroup");
+    const row = view.getByTestId("experience-assign-source");
+    expect(row.textContent).toContain("experience_setup_source_preview_chat");
+    expect(row.textContent).toContain("experience_setup_source_preview_persona");
   });
 });

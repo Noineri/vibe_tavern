@@ -290,6 +290,7 @@ export function InsightsPanel() {
           contextMode={assignContextMode}
           sourceCharacterId={experienceConfig.contextSourceCharacterId}
           sourceChatId={experienceConfig.contextSourceChatId}
+          sourcePersonaId={experienceConfig.contextSourcePersonaId}
           launcherVisible={assignLauncherVisible}
           onPatch={(p) => void persistExperience(p)}
           pending={pending !== null}

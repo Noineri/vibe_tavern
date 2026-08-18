@@ -50,6 +50,7 @@ import { useAllCharacters, useChatList } from "../../../stores/snapshot-store.js
 import type Resources from "../../../i18n/resources.js";
 import { listAllScripts, testScript } from "../../../api/script-api.js";
 import { listExperienceVisuals } from "../../../api/experience-api.js";
+import { listPersonas } from "../../../api/persona-api.js";
 import type { ExperienceConfigUpdateRequest, ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 
 type TKey = keyof Resources["en"];
@@ -124,6 +125,8 @@ export interface ExperienceAssignmentProps {
   sourceCharacterId?: string | null;
   /** User-chosen RP-context source — chat pointer, or null. */
   sourceChatId?: string | null;
+  /** Wave 3: persona source — the user-identity override pointer, or null. */
+  sourcePersonaId?: string | null;
   /** Whether the chat surfaces the experience launcher. */
   launcherVisible: boolean;
   /** Partial config PATCH — the ONLY write channel; the component persists
@@ -148,6 +151,7 @@ export function ExperienceAssignment({
   contextMode,
   sourceCharacterId = null,
   sourceChatId = null,
+  sourcePersonaId = null,
   launcherVisible,
   onPatch,
   pending,
@@ -170,6 +174,30 @@ export function ExperienceAssignment({
     if (charName !== null && chatTitle !== null) return t("experience_setup_source_preview_both", { character: charName, chat: chatTitle });
     if (chatTitle !== null) return t("experience_setup_source_preview_chat", { chat: chatTitle });
     return t("experience_setup_source_preview_character", { character: charName ?? "" });
+  })();
+
+  // Wave 3 (PS-4): persona names for the identity-override row — fetched
+  // once per mount, best-effort (raw-id fallback covers a failed fetch).
+  const [personaList, setPersonaList] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listPersonas()
+      .then((personas) => {
+        if (cancelled) return;
+        setPersonaList(personas.map((p) => ({ id: p.id, name: p.name })));
+      })
+      .catch(() => {
+        /* best-effort: the preview falls back to the raw id */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sourcePersonaPreviewText = (() => {
+    if (sourcePersonaId === null) return null;
+    const name = personaList.find((p) => p.id === sourcePersonaId)?.name ?? sourcePersonaId;
+    return t("experience_setup_source_preview_persona", { persona: name });
   })();
 
   const [scriptsLoad, setScriptsLoad] = useState<ListLoad<ScriptRecord>>({ status: "loading" });
@@ -434,9 +462,15 @@ export function ExperienceAssignment({
                   wrap
                   disabled={pending}
                 />
-                {sourcePreviewText !== null && (
+                {(sourcePreviewText !== null || sourcePersonaPreviewText !== null) && (
                   <p className="font-ui text-[11px] leading-relaxed text-t3" data-testid="experience-assign-source">
                     {sourcePreviewText}
+                    {sourcePersonaPreviewText !== null && (
+                      <>
+                        {sourcePreviewText !== null && <br />}
+                        {sourcePersonaPreviewText}
+                      </>
+                    )}
                   </p>
                 )}
               </div>

@@ -77,6 +77,7 @@ function setFakeState(patch: Partial<FakeState>): void {
 
 const mocks = {
   testScript: mock(),
+  listPersonas: mock(),
   listProviderProfiles: mock(),
   fetchProviderProfileModels: mock(),
   getExperiencePromptOverrides: mock(),
@@ -147,6 +148,9 @@ mock.module("../../api/experience-api.js", () => ({
   updateExperienceGlobalOverride: mocks.updateGlobalOverride,
   updateExperienceCharacterOverride: mocks.updateCharacterOverride,
 }));
+const realPersonaApi = await import("../../api/persona-api.js");
+mock.module("../../api/persona-api.js", () => ({ ...realPersonaApi, listPersonas: mocks.listPersonas }));
+
 mock.module("../../api/provider-api.js", () => ({
   ...realProviderApi,
   listProviderProfiles: mocks.listProviderProfiles,
@@ -241,6 +245,7 @@ function makeOverrides(global: string | null, character: string | null): Experie
 
 function setupDefaultMocks(): void {
   mocks.testScript.mockResolvedValue(interactiveOk(def([])));
+  mocks.listPersonas.mockResolvedValue([] as never);
   mocks.listProviderProfiles.mockResolvedValue([profile("p1", "Acme", "model-a"), profile("p2", "Beta")]);
   mocks.fetchProviderProfileModels.mockResolvedValue({ models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] });
   mocks.getExperiencePromptOverrides.mockResolvedValue(makeOverrides(null, null));
@@ -806,6 +811,7 @@ describe("ExperienceSetupModal — context mode", () => {
         contextMode: "current_branch",
         contextSourceCharacterId: null,
         contextSourceChatId: null,
+        contextSourcePersonaId: null,
       }),
     );
     await waitFor(() => expect(mocks.rehydrate).toHaveBeenCalledWith(CHAT_ID, BRANCH_ID));
@@ -1070,6 +1076,10 @@ describe("ExperienceSetupModal — layout", () => {
 
 describe("ExperienceSetupModal — context source picker", () => {
   beforeEach(() => {
+    mocks.listPersonas.mockResolvedValue([
+      { id: "persona_v", name: "Vera" },
+      { id: "persona_k", name: "Kat" },
+    ] as never);
     fakeAllCharacters = [
       { id: "char_a", name: "Aria" },
       { id: "char_b", name: "Bruno" },
@@ -1101,6 +1111,7 @@ describe("ExperienceSetupModal — context source picker", () => {
       expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
         contextSourceCharacterId: "char_b",
         contextSourceChatId: "chat_b1",
+        contextSourcePersonaId: null,
       }),
     );
   });
@@ -1120,6 +1131,7 @@ describe("ExperienceSetupModal — context source picker", () => {
       expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
         contextSourceCharacterId: "char_a",
         contextSourceChatId: null,
+        contextSourcePersonaId: null,
       }),
     );
   });
@@ -1140,5 +1152,64 @@ describe("ExperienceSetupModal — context source picker", () => {
     fireEvent.click(view.getByTestId("experience-setup-start"));
     await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
     expect(mocks.updateExperienceConfig).not.toHaveBeenCalled();
+  });
+
+  // ─── Wave 3 (PS-4): persona source — the user-identity picker ─────────────
+
+  it("no persona chosen → no persona preview line; no config write at start", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    expect(view.queryByTestId("experience-setup-source-persona-preview")).toBeNull();
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
+    expect(mocks.updateExperienceConfig).not.toHaveBeenCalled();
+  });
+
+  it("picking a persona shows the identity preview and persists it at start (independent of char/chat)", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    await pickDropdown(view, view.baseElement, "experience_setup_source_persona_placeholder", "Vera");
+    expect(view.getByTestId("experience-setup-source-persona-preview").textContent).toBe(
+      "experience_setup_source_preview_persona",
+    );
+    // The char/chat source preview is untouched (ambient).
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_ambient");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() =>
+      expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
+        contextSourceCharacterId: null,
+        contextSourceChatId: null,
+        contextSourcePersonaId: "persona_v",
+      }),
+    );
+  });
+
+  it("persona init-once from the confirmed config; picking a chat does not clobber the persona", async () => {
+    setFakeState({
+      config: makeConfig({
+        capabilityGrants: ["rp_context"],
+        contextMode: "recent",
+        contextSourcePersonaId: "persona_k",
+      }),
+    });
+    const view = renderModal();
+    await whenReady(view);
+    // Config-seeded persona renders its preview without any interaction.
+    expect(view.getByTestId("experience-setup-source-persona-preview").textContent).toBe(
+      "experience_setup_source_preview_persona",
+    );
+    await pickDropdown(view, view.baseElement, "experience_setup_source_chat_placeholder", "Bruno thread");
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_both");
+    expect(view.getByTestId("experience-setup-source-persona-preview").textContent).toBe(
+      "experience_setup_source_preview_persona",
+    );
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() =>
+      expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
+        contextSourceCharacterId: "char_b",
+        contextSourceChatId: "chat_b1",
+        contextSourcePersonaId: "persona_k",
+      }),
+    );
   });
 });

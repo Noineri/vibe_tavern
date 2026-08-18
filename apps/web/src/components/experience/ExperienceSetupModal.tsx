@@ -51,6 +51,7 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { Ic } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
+import { listPersonas } from "../../api/persona-api.js";
 import type Resources from "../../i18n/resources.js";
 import { useAllCharacters, useChatList } from "../../stores/snapshot-store.js";
 import {
@@ -227,7 +228,7 @@ export function ExperienceSetupModal({
   const [localContextMode, setLocalContextMode] = useState<ExperienceContextMode | null>(null);
   // ── User-chosen RP-context source (report item 6): null = uninitialized,
   //  mirrors the localContextMode init-once pattern. ───────────────────────
-  const [localSource, setLocalSource] = useState<{ characterId: string | null; chatId: string | null } | null>(null);
+  const [localSource, setLocalSource] = useState<{ characterId: string | null; chatId: string | null; personaId: string | null } | null>(null);
   const [phase, setPhase] = useState<Phase>("config");
   const [phaseError, setPhaseError] = useState<string | null>(null);
   const [pendingStart, setPendingStart] = useState(false);
@@ -298,11 +299,14 @@ export function ExperienceSetupModal({
   // Same init-once pattern for the RP-context source (report item 6).
   const configSourceCharacterId = config?.contextSourceCharacterId ?? null;
   const configSourceChatId = config?.contextSourceChatId ?? null;
+  const configSourcePersonaId = config?.contextSourcePersonaId ?? null;
   useEffect(() => {
-    if (localSource === null) setLocalSource({ characterId: configSourceCharacterId, chatId: configSourceChatId });
-  }, [configSourceCharacterId, configSourceChatId, localSource]);
+    if (localSource === null)
+      setLocalSource({ characterId: configSourceCharacterId, chatId: configSourceChatId, personaId: configSourcePersonaId });
+  }, [configSourceCharacterId, configSourceChatId, configSourcePersonaId, localSource]);
   const sourceCharacterId = localSource?.characterId ?? configSourceCharacterId;
   const sourceChatId = localSource?.chatId ?? configSourceChatId;
+  const sourcePersonaId = localSource?.personaId ?? configSourcePersonaId;
 
   // ── Source picker data (report item 6) ──
   const allCharacters = useAllCharacters();
@@ -326,13 +330,48 @@ export function ExperienceSetupModal({
       .map((c) => ({ id: c.id, label: c.title }));
   }, [chatList, sourceCharacterId]);
 
+  // Wave 3 (PS-4): the persona list for the identity picker — fetched once per
+  // modal mount, best-effort (a transient failure just leaves the picker empty,
+  // same swallow-with-comment style as the copilot catalog fetch).
+  const [personaList, setPersonaList] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listPersonas()
+      .then((personas) => {
+        if (cancelled) return;
+        setPersonaList(personas.map((p) => ({ id: p.id, name: p.name })));
+      })
+      .catch(() => {
+        /* best-effort: empty picker, ambient identity stays available */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const sourcePersonaOptions = useMemo(
+    () => [...personaList].sort((a, b) => a.name.localeCompare(b.name)).map((p) => ({ id: p.id, label: p.name })),
+    [personaList],
+  );
+
+  /** Pick the persona source (Wave 3 user-identity override); "" selects the
+   *  ambient host-chat persona. Independent of the character/chat source. */
+  function pickSourcePersona(id: string): void {
+    setLocalSource({ characterId: sourceCharacterId, chatId: sourceChatId, personaId: id === "" ? null : id });
+  }
+
+  const sourcePersonaPreviewText = (() => {
+    if (sourcePersonaId === null) return null;
+    const name = personaList.find((p) => p.id === sourcePersonaId)?.name ?? sourcePersonaId;
+    return t("experience_setup_source_preview_persona", { persona: name });
+  })();
+
   /** Pick a source character; "" selects the ambient default. A chat that
    *  does not belong to the newly chosen character is dropped. */
   function pickSourceCharacter(id: string): void {
     const characterId = id === "" ? null : id;
     const chatStillFits =
       sourceChatId !== null && chatList.some((c) => c.id === sourceChatId && c.characterId === characterId);
-    setLocalSource({ characterId, chatId: chatStillFits ? sourceChatId : null });
+    setLocalSource({ characterId, chatId: chatStillFits ? sourceChatId : null, personaId: sourcePersonaId });
   }
 
   /** Pick a source chat; "" clears it. Picking a chat auto-substitutes its
@@ -341,7 +380,7 @@ export function ExperienceSetupModal({
     const chatId = id === "" ? null : id;
     const chat = chatId !== null ? chatList.find((c) => c.id === chatId) : undefined;
     const characterId = chat ? (chat.characterId as string) : sourceCharacterId;
-    setLocalSource({ characterId, chatId });
+    setLocalSource({ characterId, chatId, personaId: sourcePersonaId });
   }
 
   const sourcePreviewText = (() => {
@@ -755,12 +794,16 @@ export function ExperienceSetupModal({
       //    The capture that follows start-up reads the persisted config — one
       //    source of truth, no per-capture override needed on this path.
       const mode = localContextMode ?? configContextMode;
-      const sourceDirty = sourceCharacterId !== configSourceCharacterId || sourceChatId !== configSourceChatId;
+      const sourceDirty =
+        sourceCharacterId !== configSourceCharacterId ||
+        sourceChatId !== configSourceChatId ||
+        sourcePersonaId !== configSourcePersonaId;
       if (rpContextGranted && (mode !== configContextMode || sourceDirty)) {
         await updateExperienceConfig(chatId, {
           ...(mode !== configContextMode ? { contextMode: mode } : {}),
           contextSourceCharacterId: sourceCharacterId,
           contextSourceChatId: sourceChatId,
+          contextSourcePersonaId: sourcePersonaId,
         });
         if (scopeRef.current !== gen) return;
         await useExperienceStore.getState().rehydrate(chatId, branchId);
@@ -1068,9 +1111,28 @@ export function ExperienceSetupModal({
                       />
                     </div>
                   </div>
+                  {/* Wave 3 (PS-4): persona source — a SEPARATE picker row
+                      (user identity override, independent of char/chat). */}
+                  <div className="flex flex-col gap-1.5 sm:flex-row">
+                    <div className="flex-1">
+                      <DropdownSelect
+                        value={sourcePersonaId ?? ""}
+                        options={sourcePersonaOptions}
+                        defaultOption={t("experience_setup_source_persona_ambient")}
+                        placeholder={t("experience_setup_source_persona_placeholder")}
+                        onChange={pickSourcePersona}
+                        disabled={pendingStart}
+                      />
+                    </div>
+                  </div>
                   <p className="text-xs text-text-secondary" data-testid="experience-setup-source-preview">
                     {sourcePreviewText}
                   </p>
+                  {sourcePersonaPreviewText !== null && (
+                    <p className="text-xs text-text-secondary" data-testid="experience-setup-source-persona-preview">
+                      {sourcePersonaPreviewText}
+                    </p>
+                  )}
                 </div>
               </Section>
             )}
