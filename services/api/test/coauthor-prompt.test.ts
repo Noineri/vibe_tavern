@@ -456,6 +456,69 @@ describe("assembleCoauthorPrompt", () => {
     }]);
   });
 
+  test("live repro (chat_b73be5c9116b): history window must not orphan a tool pair at its head", async () => {
+    // Live 400 on the Gate provider (2026-08-19): with a hard HISTORY_LIMIT=20
+    // the window opened at the tool result of position 3, whose carrier
+    // assistant (position 2, carrying call_857157) fell outside the window.
+    // The replayed history then STARTED with an orphaned functionResponse
+    // whose name could not even resolve ("fr:unknown_tool" in the gateway
+    // trace) and Gemini rejected the request: "Please ensure that function
+    // response turn comes immediately after a function call turn". The window
+    // must come from the provider budget (planHistoryCompaction), never a
+    // hard message count.
+    const rows = [
+      { id: "m0", role: "assistant", content: "Let's develop {{char}} together" },
+      { id: "m1", role: "user", content: "прочитай скилл антислоп для начал" },
+      {
+        id: "m2",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_857157", name: "read_skill_file", args: { path: "janitor-card-antislop/SKILL.md" } }],
+      },
+      { id: "m3", role: "tool", toolCallId: "call_857157", content: "{\"path\":\"janitor-card-antislop/SKILL.md\"}" },
+      ...Array.from({ length: 18 }, (_, i) =>
+        i % 2 === 0
+          ? { id: `m${4 + i}`, role: "user", content: `filler ${i}` }
+          : { id: `m${4 + i}`, role: "assistant", content: `filler ${i}` },
+      ),
+      { id: "m22", role: "user", content: "да, давай смешаем." },
+    ] as never[]; // 23 rows, positions 0..22 — same shape as the live chat
+
+    const base = makeLoaders({ messages: rows });
+    // Mimic the REAL loader (session-runtime.ts buildChatModeLoaders):
+    // `limit && limit > 0 ? msgs.slice(-limit) : msgs`. The default test mock
+    // ignores the limit argument entirely — which is exactly why the
+    // truncation bug was invisible to this suite.
+    const loaders: ChatModeAssembleLoaders = {
+      ...base,
+      getMessages: async (_chatId, _branchId, limit) =>
+        limit && limit > 0 ? rows.slice(-limit) as never[] : rows,
+    };
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const history = (result.prompt.finalPayload as { messages: Array<Record<string, unknown>> }).messages;
+
+    // Full history survives: system + all 23 rows. A hard cap of 20 would drop
+    // the carrier assistant (m2) and orphan m3's tool result at the head.
+    expect(history.length).toBe(24);
+    expect(history[1]).toMatchObject({ role: "assistant", content: "Let's develop {{char}} together" });
+
+    // The carrier of call_857157 is present with its tool call…
+    const carrier = history.find((m) =>
+      m.role === "assistant" && Array.isArray(m.toolCalls) &&
+      m.toolCalls.some((tc) => tc.toolCallId === "call_857157"));
+    expect(carrier).toBeDefined();
+
+    // …and every replayed tool result carries a NON-EMPTY tool name. In the
+    // live failure the name resolved to "" (the gateway logged
+    // "unknown_tool") because the carrier sat outside the window.
+    const toolMessages = history.filter((m) => m.role === "tool");
+    expect(toolMessages.length).toBeGreaterThan(0);
+    for (const m of toolMessages) {
+      const part = (m.content as Array<{ toolName?: string }>)[0];
+      expect(part.toolName).toBe("read_skill_file");
+    }
+  });
+
   test("compacts when response reserve makes an otherwise fitting prompt exceed context", async () => {
     const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
     setTokenCountFn((text: string) => text.length);

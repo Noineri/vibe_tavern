@@ -25,17 +25,18 @@
  * DSL (`interactive-rules.md`, `context.experience.register({...})`) and the
  * host↔visual bridge (`interactive-visual.md`, the `VibeExperience` SDK).
  *
- * History compaction: `HISTORY_LIMIT = 20` caps the recent window (tool-pair-
- * safe via {@link findSafeCompactionBoundary}); {@link planHistoryCompaction}
- * then budget-trims within that window, preserving tool-call/tool-result pairs
- * (the prompt-pipeline compaction invariant — never split a tool call from its
- * result).
+ * History compaction: budget-only ({@link planHistoryCompaction} with the
+ * copilot's fixed 300k budget — copilot-limits.ts), preserving tool-call/
+ * tool-result pairs (the prompt-pipeline compaction invariant — never split a
+ * tool call from its result). A count-based window cap once lived here too;
+ * it silently dropped affordable context and was removed (2026-08-19) — the
+ * live path always passes a positive constant budget, so the cap guarded
+ * nothing.
  */
 
 import { dirname } from "node:path";
 import {
   estimateTokens,
-  findSafeCompactionBoundary,
   planHistoryCompaction,
   setModelHint,
 } from "@vibe-tavern/prompt-pipeline";
@@ -52,9 +53,6 @@ import {
   resolveExperienceCopilotSkillCatalog,
   renderExperienceCopilotSkillCatalog,
 } from "./experience-copilot-module.js";
-
-/** How many of the most recent history messages to include before budget trimming. */
-const HISTORY_LIMIT = 20;
 
 /** CX-3: the recency anchor — a SHORT user-role reminder injected immediately
  *  after the attached-context block, before the final user message. Kills the
@@ -269,7 +267,7 @@ export interface ExperienceCopilotAssembleInput {
    *  Injected as TWO transient user-role messages — the block itself, then the
    *  recency anchor — immediately before the final user message. Omitted/empty
    *  → byte-identical assembly to the pre-CX-3 shape (pinned by test). Never
-   *  persisted and never windowed: it is injected AFTER compaction, at the
+   *  persisted and never compacted: it is injected AFTER compaction, at the
    *  bottom of the prompt (recency), where the model weighs it most. */
   readonly attachedContextBlock?: string;
 }
@@ -297,7 +295,7 @@ export interface ExperienceCopilotAssembleResult {
     readonly attached: number;
     readonly total: number;
   };
-  /** Compaction summary when history was windowed or budget-trimmed; undefined
+  /** Compaction summary when history was budget-trimmed; undefined
    *  when no history was dropped. */
   readonly compactionSummary?: string;
   /** Skill roots derived from the resolved skill catalog (ER-16) — the stream
@@ -442,10 +440,8 @@ export function estimateHistoryTokens(messages: ReadonlyArray<ExperienceCopilotF
  * message + compacted history ready for the AI SDK `streamText`/`generateText`,
  * plus the skill roots the stream forwards to the tool builder.
  *
- * Compaction has two layers: (1) the history is windowed to the last
- * {@link HISTORY_LIMIT} messages (tool-pair-safe via
- * {@link findSafeCompactionBoundary}); (2) {@link planHistoryCompaction} then
- * budget-trims within that window, preserving tool-call/tool-result pairs.
+ * Compaction is budget-only: {@link planHistoryCompaction} trims the history
+ * to the context budget, preserving tool-call/tool-result pairs.
  */
 export async function assembleExperienceCopilotPrompt(
   input: ExperienceCopilotAssembleInput,
@@ -559,42 +555,27 @@ export async function assembleExperienceCopilotPrompt(
     ? estimateTokens(input.attachedContextBlock) + estimateTokens(COPILOT_RECENCY_ANCHOR_TEXT)
     : 0;
 
-  // ── Window to HISTORY_LIMIT (tool-pair-safe) ───────────────────────────────
+  // ── Budget-based compaction (the only windowing - tool-pair-safe) ────────────────
   const fullHistory = [...historyFlow];
-  const windowedFrom = fullHistory.length > HISTORY_LIMIT
-    ? findSafeCompactionBoundary(fullHistory, HISTORY_LIMIT)
-    : 0;
-  const windowed = fullHistory.slice(windowedFrom);
-
-  // ── Budget-based compaction within the window ──────────────────────────────
   const nonHistoryTokens = systemTokens + digestTokens + attachedTokens;
   const plan = planHistoryCompaction({
-    messages: windowed,
+    messages: fullHistory,
     nonHistoryTokens,
     contextBudget: input.contextBudget,
     responseReserve: input.responseReserve,
     countHistoryTokens: estimateHistoryTokens,
   });
-  const recentMessages = plan ? plan.messages : windowed;
+  const recentMessages = plan ? plan.messages : fullHistory;
 
   const recentHistoryTokens = estimateHistoryTokens(recentMessages);
   const totalTokenEstimate = systemTokens + digestTokens + attachedTokens + recentHistoryTokens;
 
   // ── Compaction summary ─────────────────────────────────────────────────────
   let compactionSummary: string | undefined;
-  if (windowedFrom > 0 || plan) {
-    const parts: string[] = [];
-    if (windowedFrom > 0) {
-      parts.push(
-        `windowed from ${fullHistory.length} to ${windowed.length} (HISTORY_LIMIT=${HISTORY_LIMIT})`,
-      );
-    }
-    if (plan) {
-      parts.push(
-        `budget-trimmed to ${recentMessages.length} (~${plan.preservedHistoryTokens} tokens, budget=${input.contextBudget}, reserve=${plan.responseReserve})`,
-      );
-    }
-    compactionSummary = `Kept ${recentMessages.length} of ${fullHistory.length} recent messages (${parts.join("; ")}).`;
+  if (plan) {
+    compactionSummary =
+      `Kept ${recentMessages.length} of ${fullHistory.length} recent messages ` +
+      `(budget-trimmed to ~${plan.preservedHistoryTokens} tokens, budget=${input.contextBudget}, reserve=${plan.responseReserve}).`;
   }
 
   // ── Final messages (system + compacted history) ────────────────────────────

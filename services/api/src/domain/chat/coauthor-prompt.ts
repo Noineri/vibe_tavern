@@ -32,9 +32,6 @@ import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-regi
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
 
-/** How many of the chat's most recent messages to include as conversation history. */
-const HISTORY_LIMIT = 20;
-
 /** The assembled co-author history message shape (matches SDK message parts
  *  one-to-one). Tool calls/results use the SDK v6 field names: a tool call
  *  carries `input` (the parsed args), a tool result carries `output`. Earlier
@@ -167,13 +164,17 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   const { chatId, model, loaders, loreDelegate, loreEntityLookup, contextSearchSession } = input;
 
   // Pull the card state + conversation history up front. Co-author is a flat
-  // editor chat — no branches, no compaction. (Skills are catalog-only in the
-  // prompt; the model reads them on demand via read_skill_file — CTX-S4.)
+  // editor chat — no branches. (Skills are catalog-only in the prompt; the
+  // model reads them on demand via read_skill_file — CTX-S4.) History is
+  // forwarded WHOLE: the only windowing is the provider-budget compaction
+  // below (planHistoryCompaction), whose boundary walk preserves tool-call/
+  // result pairs. A hard message cap here once orphaned a tool result at the
+  // window head and Gemini 400ed the whole request (live 2026-08-19).
   const [chat, character, history] = await Promise.all([
     loaders.getChat(chatId),
     loaders.getCharacter(chatId),
     loaders
-      .getMessages(chatId, undefined, HISTORY_LIMIT)
+      .getMessages(chatId)
       .then((msgs) => {
         const excludeSet = new Set<string>(input.excludeMessageIds || []);
         const historyMsgs = msgs
