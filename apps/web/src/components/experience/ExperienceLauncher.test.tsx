@@ -125,6 +125,7 @@ const storeMocks = {
   endSession: mock(async () => null as unknown),
   restartSession: mock(async () => null as unknown),
   runEffect: mock(async (_effectId: string, _signal?: AbortSignal) => null as unknown),
+  retryEffect: mock(async (_effectId: string) => null as unknown),
   queueReport: mock(async () => null as unknown),
 };
 
@@ -205,6 +206,7 @@ mock.module("../../stores/experience-store.js", () => ({
       endSession: storeMocks.endSession,
       restartSession: storeMocks.restartSession,
       runEffect: storeMocks.runEffect,
+      retryEffect: storeMocks.retryEffect,
       queueReport: storeMocks.queueReport,
     }),
   },
@@ -271,6 +273,9 @@ mock.module("./ExperienceModal.js", () => ({
         <button data-testid="modal-finish" onClick={() => (props.onFinishExperience as () => void)()}>finish</button>
         {props.onOpenSessionSettings ? (
           <button data-testid="modal-session-settings" onClick={() => (props.onOpenSessionSettings as () => void)()}>settings</button>
+        ) : null}
+        {props.effectDiagnostics ? (
+          <div data-testid="modal-effect-diagnostics">{props.effectDiagnostics as ReactNode}</div>
         ) : null}
       </div>
     ) : null;
@@ -665,6 +670,57 @@ describe("ExperienceLauncher — LB-10 Option C: effect runner lifetime", () => 
       await new Promise((r) => setTimeout(r, TIMER_RESYNC_INTERVAL_MS + 150));
     });
     expect(storeMocks.rehydrate.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ─── Lobby pos 1: effect diagnostics + retry in the trusted modal chrome ────
+describe("ExperienceLauncher — effect diagnostics + retry", () => {
+  it("a failed row renders in the modal chrome; retry hits store.retryEffect and the runner drains the re-pending row", async () => {
+    storeMocks.retryEffect.mockClear();
+    storeMocks.runEffect.mockClear();
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", kind: "model", status: "failed" }],
+      modalOpen: true,
+    });
+    const { getByTestId } = render(<ExperienceLauncher />);
+
+    // The trusted-chrome diagnostics render INSIDE the modal surface (the
+    // real component tree, not the visual) with the failed status + retry.
+    expect(getByTestId("modal-effect-diagnostics")).toBeTruthy();
+    expect(getByTestId("experience-effect-row-eff_1").textContent).toContain("experience_effect_status_failed");
+
+    // Retry click → the launcher callback routes to the store action.
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-effect-retry-eff_1"));
+    });
+    expect(storeMocks.retryEffect).toHaveBeenCalledTimes(1);
+    expect(storeMocks.retryEffect.mock.calls[0]![0]).toBe("eff_1");
+
+    // The store resync flips the row back to pending; the chat-page runner
+    // (LB-10 Option C) picks it up from the authoritative effects list.
+    act(() => {
+      setScopeState(SCOPE_KEY, {
+        effects: [{ id: "eff_1", kind: "model", status: "pending" }],
+      });
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    expect(storeMocks.runEffect.mock.calls[0]![0]).toBe("eff_1");
+  });
+
+  it("no retryable rows → no diagnostics surface in the modal", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", kind: "model", status: "succeeded" }],
+      modalOpen: true,
+    });
+    const { queryByTestId } = render(<ExperienceLauncher />);
+    expect(queryByTestId("modal-effect-diagnostics")).toBeNull();
   });
 });
 

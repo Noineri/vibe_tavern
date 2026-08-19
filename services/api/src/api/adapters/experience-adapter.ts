@@ -348,6 +348,16 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		};
 	};
 
+	/** Explicit user retry (lobby effect diagnostics): a failed/cancelled/
+	 *  unknown effect returns to `pending`; the host runner (chat-page lifetime)
+	 *  picks the model rows back up, the scheduler owns timer rows — this path
+	 *  never runs the effect itself. Typed 404/409 via the shared envelope. */
+	retryExperienceEffect = async (effectId: string): Promise<import("@vibe-tavern/db").ExperienceEffectRow> => {
+		const retried = await this.lifecycle.retryEffect(effectId);
+		if (!retried.ok) throw mapError(retried.error);
+		return retried.data;
+	};
+
 	// ─── Context capture + status (IR-70D) ────────────────────────────────────
 
 	/** Explicit cancellable context capture. Requires `rp_context`. The signal

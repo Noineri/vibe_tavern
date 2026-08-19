@@ -693,9 +693,14 @@ export interface ExperienceRuntimeApi {
 	undoExperienceSession: (sessionId: string, body: { targetRevision: number }) => Promise<ExperienceActionResponse>;
 	previewExperienceRecalculation: (sessionId: string, body: { rulesCode: string }) => Promise<RecalculationPreview>;
 
-	// ── Effects (read-only; retry/resolve lands in Wave 4) ──
+	// ── Effects (run + explicit retry; further resolve logic is Wave 4) ──
 	getExperienceEffects: (sessionId: string) => Promise<ExperienceEffectRow[]>;
 	runExperienceEffect: (effectId: string, signal?: AbortSignal) => Promise<ExperienceEffectRunResponse>;
+	/** Explicit user retry: a failed/cancelled/unknown effect returns to `pending`
+	 *  (attemptCount+1, error cleared); the host runner owns re-running it —
+	 *  this never runs the effect. Typed 404 for a missing effect, 409 when the
+	 *  current status is not retryable. */
+	retryExperienceEffect: (effectId: string) => Promise<ExperienceEffectRow>;
 
 	// ── Context capture + status (IR-70D) ──
 	/** Explicit cancellable context capture. Requires immutable session grant

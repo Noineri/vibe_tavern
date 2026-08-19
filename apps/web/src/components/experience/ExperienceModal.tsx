@@ -128,6 +128,12 @@ export interface ExperienceModalProps {
    *  are reachable while playing. Omit when the modal is closed (the launcher
    *  renders the same controls in its popover/sheet instead — never both). */
   readonly reportControls?: ReactNode;
+  /** Trusted-chrome effect-diagnostics surface rendered in a stable block
+   *  OUTSIDE the sandboxed frame (lobby effect diagnostics + retry). The
+   *  parent (launcher) builds the element from server-authoritative effect
+   *  rows and the store retry action; the component itself renders nothing
+   *  when no row is retryable. Omitted while the modal is closed. */
+  readonly effectDiagnostics?: ReactNode;
   // ── ExperienceFrame pass-through ──────────────────────────────────────────
   readonly visualSource: string;
   readonly sessionId: string;
@@ -163,6 +169,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
     onFinishExperience,
     onOpenSessionSettings,
     reportControls,
+    effectDiagnostics,
     visualSource,
     sessionId,
     initialRevision,
@@ -444,6 +451,14 @@ export function ExperienceModal(props: ExperienceModalProps) {
             </div>
           )}
         </div>
+        {effectDiagnostics && (
+          <div
+            className="border-t border-neutral-800 px-4 py-2"
+            data-testid="experience-effect-diagnostics-slot"
+          >
+            {effectDiagnostics}
+          </div>
+        )}
         {/* Trusted report-control footer — OUTSIDE the sandboxed frame
             (IR-73C). Rendered only when the parent supplies controls; the
             launcher omits this prop while the modal is closed so the same

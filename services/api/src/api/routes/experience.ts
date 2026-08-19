@@ -18,8 +18,9 @@ import type { ExperienceRuntimeApi } from "../contract/runtime-api.js";
  *   visuals   — CRUD under /api/experience/visuals (scoped by query)
  *   sessions  — start under the chat; lifecycle/view/actions/undo/recalculate/
  *               effects under /api/experience/sessions/:sessionId
+ *   effects   — run + retry under /api/experience/effects/:effectId
  *
- * Deferred: effect retry/resolve (Wave 4 model effects), report formatting
+ * Deferred: effect resolve semantics (Wave 4 model effects), report formatting
  * (IR-52 prompt binding), standalone definition-authoring (Wave 8 playground).
  */
 export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
@@ -143,6 +144,14 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     .post("/api/experience/effects/:effectId/run", async (c) => {
       const result = await runtime.runExperienceEffect(c.req.param("effectId"), c.req.raw.signal);
       return c.json(result, result.hostScheduled ? 202 : 200);
+    })
+    // Explicit user retry (lobby effect diagnostics): a failed/cancelled/
+    // unknown effect returns to `pending`; the host runner (chat-page
+    // lifetime) picks model rows back up and the scheduler owns timer rows —
+    // this route never runs the effect. Typed 404 (missing) / 409 (not
+    // retryable) surface through the shared DomainError envelope.
+    .post("/api/experience/effects/:effectId/retry", async (c) => {
+      return c.json(await runtime.retryExperienceEffect(c.req.param("effectId")));
     })
 
     // ── Context capture + status (IR-70D) ────────────────────────────────────

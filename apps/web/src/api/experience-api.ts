@@ -321,6 +321,15 @@ export async function runExperienceEffect(
   return unwrapExperience<ExperienceEffectRunResponse>(response);
 }
 
+/** POST /api/experience/effects/:effectId/retry — return a failed/cancelled/
+ *  unknown effect to `pending` (attemptCount+1, error cleared). The host
+ *  runner picks the row back up; this call never runs the effect. Typed 404
+ *  (missing) / 409 (not retryable) reject as ExperienceApiError. */
+export async function retryExperienceEffect(effectId: string): Promise<ExperienceEffectRow> {
+  const response = await client.api.experience.effects[":effectId"].retry.$post({ param: { effectId } });
+  return unwrapExperience<ExperienceEffectRow>(response);
+}
+
 // ─── Context capture + status (IR-70D) ───────────────────────────────────────
 
 /** POST /api/experience/sessions/:sessionId/context/capture — explicit

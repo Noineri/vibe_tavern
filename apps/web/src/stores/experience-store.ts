@@ -29,6 +29,7 @@ import {
   getExperienceReportStatus,
   queueExperienceReport,
   restartExperienceSession,
+  retryExperienceEffect,
   runExperienceEffect,
   startExperienceSession,
   submitExperienceAction,
@@ -157,6 +158,10 @@ export interface ExperienceActions {
   submitAction: (intent: ExperienceActionIntent) => Promise<ExperienceActionResponse | null>;
   /** Run one pending model effect to a terminal state (abortable). */
   runEffect: (effectId: string, signal?: AbortSignal) => Promise<ExperienceEffectRunResponse | null>;
+  /** Explicit user retry: return a failed/cancelled/unknown effect to `pending`.
+   *  The runner picks the row back up after the resync — this never runs the
+   *  effect. Null return = server-side failure (see `lastError`/`lastApiError`). */
+  retryEffect: (effectId: string) => Promise<ExperienceEffectRow | null>;
   /** Freeze a report attachment at the current server revision. The server
    *  response replaces the queued attachment. */
   queueReport: () => Promise<ExperienceQueuedAttachmentView | null>;
@@ -711,6 +716,22 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
           const response = await runExperienceEffect(effectId, { signal });
           if (isActiveOperation(key, activeEpoch)) await get().rehydrate(chatId, branchId);
           return response;
+        } catch (err) {
+          return failMutation(chatId, branchId, key, activeEpoch, err);
+        }
+      },
+
+      retryEffect: async (effectId) => {
+        const { chatId, branchId, key, activeEpoch } = requireActiveScope();
+        set((s) => {
+          clearError(scopeDraft(s, key));
+        });
+        try {
+          const row = await retryExperienceEffect(effectId);
+          // The resync brings the pending row into `effects`; the chat-page
+          // runner (LB-10) picks it up from there — this action never runs it.
+          if (isActiveOperation(key, activeEpoch)) await get().rehydrate(chatId, branchId);
+          return row;
         } catch (err) {
           return failMutation(chatId, branchId, key, activeEpoch, err);
         }

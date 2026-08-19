@@ -5,7 +5,8 @@
  * {@link ExperienceSetupModal}, resumes the exact persisted session through the
  * Experience store, renders the immutable session-pinned visual source in the
  * Wave 6 sandboxed host, submits visual actions through the authoritative
- * store, runs durable pending model effects, supports trusted finish/detach,
+ * store, runs durable pending model effects, surfaces failed-effect
+ * diagnostics + retry in the trusted modal chrome, supports trusted finish/detach,
  * and keeps every closing UI non-destructive (close never ends the session).
  *
  * Non-goals (IR-73D): composer/send binding, authoring, API/backend/store
@@ -55,6 +56,7 @@ import {
   type ExperienceActionOutcome,
 } from "./ExperienceModal.js";
 import { ExperienceReportControls } from "./ExperienceReportControls.js";
+import { ExperienceEffectDiagnostics, RETRYABLE_EFFECT_STATUSES } from "./ExperienceEffectDiagnostics.js";
 import { ExperienceSetupModal } from "./ExperienceSetupModal.js";
 import {
   openExperienceDetachedWindow,
@@ -331,6 +333,15 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     if (result === null) throw new Error("experience queue failed");
   }
 
+  // ── Effect retry (lobby diagnostics): reject on a null store result so the ─
+  // diagnostics surface can show a fail-closed error. On success the store
+  // resync brings the pending row back and the chat-page runner (LB-10)
+  // picks it up — this callback never runs the effect itself.
+  async function handleRetryEffect(effectId: string): Promise<void> {
+    const row = await useExperienceStore.getState().retryEffect(effectId);
+    if (row === null) throw new Error("experience effect retry failed");
+  }
+
   // ── Detach: open the persisted detached window with the pinned descriptor ─
   function handleDetach(): void {
     if (!session) return;
@@ -527,6 +538,15 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
                 queuedAttachment={queuedAttachment}
                 reportStatus={reportStatus}
                 onQueue={handleQueueReport}
+              />
+            ) : undefined
+          }
+          effectDiagnostics={
+            modalOpen && effects.some((e) => RETRYABLE_EFFECT_STATUSES.includes(e.status)) ? (
+              <ExperienceEffectDiagnostics
+                key={surfaceKey ?? undefined}
+                effects={effects}
+                onRetry={handleRetryEffect}
               />
             ) : undefined
           }

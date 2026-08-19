@@ -870,6 +870,45 @@ export class ExperienceService {
     return ok(effect);
   }
 
+  /** Explicit user retry (lobby effect diagnostics): a `failed`/`cancelled`/
+   *  `unknown` effect returns to `pending` with `attemptCount+1` and its error
+   *  cleared (same effect id, audit history preserved). The caller NEVER runs
+   *  the effect here — the host runner (chat-page lifetime) picks the pending
+   *  model row back up, the host scheduler owns pending timer rows. Typed 404
+   *  for a missing effect, 409 when the current status is not retryable
+   *  (`succeeded`/`running`/`pending`, or a concurrent transition won the race
+   *  between the read and the store's own legality re-check). */
+  async retryEffect(effectId: string): Promise<ExperienceResult<ExperienceEffectRow>> {
+    const effect = await this.stores.experiences.getEffectById(effectId);
+    if (effect === null) {
+      return err({ status: 404, code: "effect_not_found", message: `Effect '${effectId}' not found` });
+    }
+    if (
+      effect.status === "succeeded" ||
+      effect.status === "running" ||
+      effect.status === "pending"
+    ) {
+      return err({
+        status: 409,
+        code: "effect_not_retryable",
+        message: `Effect '${effectId}' is ${effect.status} — only failed/cancelled/unknown effects can be retried`,
+        currentStatus: effect.status,
+      });
+    }
+    const row = await this.stores.experiences.retryEffect(effectId);
+    if (row === null) {
+      // The store re-checks legality atomically; null here means the row moved
+      // under us (e.g. the scheduler claimed it) — surface the observed status.
+      return err({
+        status: 409,
+        code: "effect_not_retryable",
+        message: `Effect '${effectId}' transitioned away from ${effect.status} before the retry`,
+        currentStatus: effect.status,
+      });
+    }
+    return ok(row);
+  }
+
   // ─── Queued-attachment read (IR-70A) ───────────────────────────────────────
 
   /**

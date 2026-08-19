@@ -55,6 +55,7 @@ interface Impl {
   ) => Promise<ExperienceActionResponse>;
   queueExperienceReport: (sessionId: string, body: ExperienceReportQueueRequest) => Promise<ExperienceQueuedAttachmentView>;
   runExperienceEffect: (effectId: string, options?: { signal?: AbortSignal }) => Promise<ExperienceEffectRunResponse>;
+  retryExperienceEffect: (effectId: string) => Promise<ExperienceEffectRow>;
   captureExperienceContext: (
     sessionId: string,
     body: ExperienceContextCaptureRequest,
@@ -100,6 +101,7 @@ mock.module("../api/experience-api.js", () => {
       return impl.queueExperienceReport(sessionId, body);
     },
     runExperienceEffect: (effectId: string, options?: { signal?: AbortSignal }) => impl.runExperienceEffect(effectId, options),
+    retryExperienceEffect: (effectId: string) => impl.retryExperienceEffect(effectId),
     captureExperienceContext: (sessionId: string, body: ExperienceContextCaptureRequest, options?: { signal?: AbortSignal }) =>
       impl.captureExperienceContext(sessionId, body, options),
   };
@@ -285,6 +287,7 @@ beforeEach(() => {
     submitExperienceAction: async () => makeActionResponse(),
     queueExperienceReport: async () => makeAttachment(),
     runExperienceEffect: async (effectId) => ({ effect: makeEffect({ id: effectId, status: "completed" }), delivered: true }),
+    retryExperienceEffect: async (effectId) => makeEffect({ id: effectId, status: "pending", attemptCount: 1, error: null }),
     captureExperienceContext: async () => makeContextStatus(),
   };
 });
@@ -816,6 +819,49 @@ describe("experience-store — lifecycle + effect + context actions", () => {
     const scope = scopeState(KEY_C1B1);
     expect(scope?.effects[0]?.status).toBe("completed");
     expect(scope?.session?.revision).toBe(3);
+  });
+
+  test("retryEffect returns the pending row after the resync — the runner picks it up from there", async () => {
+    const failed = makeEffect({ id: "eff-9", status: "failed", error: "provider down", attemptCount: 0 });
+    impl.getExperienceEffects = async () => [failed];
+    await seedActiveScope(makeSession({ revision: 2 }));
+    expect(scopeState(KEY_C1B1)?.effects[0]?.status).toBe("failed");
+
+    const pending = makeEffect({ id: "eff-9", status: "pending", error: null, attemptCount: 1 });
+    impl.retryExperienceEffect = async (effectId) => {
+      expect(effectId).toBe("eff-9");
+      return pending;
+    };
+    impl.getExperienceEffects = async () => [pending];
+
+    const result = await useExperienceStore.getState().retryEffect("eff-9");
+    expect(result?.status).toBe("pending");
+    expect(result?.attemptCount).toBe(1);
+    // The resync put the pending row into the scope — the chat-page runner
+    // (LB-10) drains it from exactly this state; retry itself never runs it.
+    const scope = scopeState(KEY_C1B1);
+    expect(scope?.effects[0]?.status).toBe("pending");
+    expect(scope?.effects[0]?.error).toBeNull();
+    expect(scope?.lastError).toBeNull();
+  });
+
+  test("retryEffect failure returns null and populates lastError after the resync", async () => {
+    const failed = makeEffect({ id: "eff-9", status: "failed" });
+    impl.getExperienceEffects = async () => [failed];
+    await seedActiveScope(makeSession({ revision: 2 }));
+
+    impl.retryExperienceEffect = async () => {
+      throw new ExperienceApiError(409, "Effect is not retryable", "effect_not_retryable");
+    };
+
+    const result = await useExperienceStore.getState().retryEffect("eff-9");
+    expect(result).toBeNull();
+    const scope = scopeState(KEY_C1B1);
+    expect(scope?.lastError).toBe("Effect is not retryable");
+    expect(scope?.lastApiError).toBeInstanceOf(ExperienceApiError);
+    expect(scope?.lastApiError?.code).toBe("effect_not_retryable");
+    // The failure resync kept the failed row authoritative.
+    expect(scope?.effects[0]?.status).toBe("failed");
   });
 
   test("captureContext reflects the server context status after resync", async () => {
