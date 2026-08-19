@@ -15,7 +15,10 @@
  * Session-preservation invariant: closing the modal calls ONLY
  * `store.closeModal` — never `endSession`. Reopening resumes the same persisted
  * session. The detached surface and the modal are mutually exclusive; only one
- * runs durable effects at a time.
+ * runs durable effects at a time. Effect ownership (LB-10, Option C): the
+ * runner lives while the CHAT PAGE is open — closing the modal keeps draining
+ * the queue; leaving the chat unmounts the launcher and stops the runner
+ * (durable pending rows stay frozen client-side, resumed on return).
  *
  * Visual source: an active session MUST have a non-null pinned `visualSource`
  * (IR-70G). The launcher surfaces a localized incompatible state when it is
@@ -126,8 +129,8 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   // ── Visibility computed before the effect-runner hooks (Rules of Hooks) ───
   // `visible` is part of effect ownership: a launcher whose config became
-  // invisible must NOT keep `modalOpen` owning/running model effects while no
-  // surface is rendered.
+  // invisible must NOT keep owning/running model effects while no surface is
+  // rendered — the modal is force-closed below.
   const configReady = config !== null;
   const visible =
     chatId !== null
@@ -151,14 +154,17 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   // These are computed BEFORE the visibility gate so the effect-runner and
   // session-abort hooks below always run in the same order (Rules of Hooks).
-  // Effect ownership requires the surface to be rendered AND the modal open —
-  // a hidden launcher never owns/running model effects.
+  // Effect ownership (LB-10, Option C): the chat page being open owns the
+  // effects — the launcher chip renders while the chat page is open, so the
+  // queue drains with the modal closed too. A hidden/invisible launcher and a
+  // detached surface never own them; the detached window runs its own runner.
   const hasSession = session !== null;
-  const surfaceOwnsEffects = visible && modalOpen && !detached && hasSession;
+  const surfaceOwnsEffects = visible && !detached && hasSession;
   const sessionId = session?.sessionId ?? null;
 
-  // ── Durable model effect runner (only while the modal surface owns effects) ─
-  // Runs only `pending` MODEL rows, one at a time, through an abortable
+  // ── Durable model effect runner (while the chat-page surface owns effects) ─
+  // LB-10 Option C: the runner lives while the chat page is open — the modal
+  // state is irrelevant. Runs only `pending` MODEL rows, one at a time, through an abortable
   // store.runEffect. Timer effects are host-scheduled (fix step 2c): the
   // server answers 202 without running them, so they MUST be skipped here or
   // this loop would re-call the route forever. Never auto-repeats
@@ -200,7 +206,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   // terminal effect row arrive without user interaction. Self-disarms when no
   // live timer remains. Runs BEFORE the visibility gate like every other hook
   // (Rules of Hooks: the gate's early return must never change hook count).
-  useExperienceTimerResync({ chatId, branchId, effects, view: session?.view ?? null, active: visible && modalOpen && !detached && hasSession });
+  useExperienceTimerResync({ chatId, branchId, effects, view: session?.view ?? null, active: visible && !detached && hasSession });
 
   if (!visible) return null;
 

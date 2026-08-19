@@ -33,6 +33,7 @@ import type { ReactNode } from "react";
 useDomEnv();
 const { render, fireEvent, act } = await import("@testing-library/react");
 const { useSyncExternalStore } = await import("react");
+const { TIMER_RESYNC_INTERVAL_MS } = await import("../../hooks/use-experience-timer-resync.js");
 
 const CHAT_ID = "chat_1";
 const BRANCH_ID = "branch_1";
@@ -571,6 +572,99 @@ describe("ExperienceLauncher — durable pending effects", () => {
     });
     render(<ExperienceLauncher />);
     expect(storeMocks.runEffect).not.toHaveBeenCalled();
+  });
+});
+
+// ─── LB-10 (Option C): runner lifetime = chat page ──────────────────────────
+describe("ExperienceLauncher — LB-10 Option C: effect runner lifetime", () => {
+  it("drains a pending model effect with the modal CLOSED (chat page open)", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", kind: "model", status: "pending" }],
+      modalOpen: false,
+    });
+    render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    expect(storeMocks.runEffect.mock.calls[0]![0]).toBe("eff_1");
+  });
+
+  it("closing the modal does not freeze the queue — the next pending row still runs", async () => {
+    storeMocks.runEffect.mockResolvedValue({ effect: { id: "eff_1", status: "succeeded" }, delivered: true });
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", kind: "model", status: "pending" }],
+      modalOpen: true,
+    });
+    const { rerender } = render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    // The user closes the modal while a SECOND durable row is pending —
+    // under Option C the queue must keep draining (chat page still open).
+    act(() => {
+      setScopeState(SCOPE_KEY, {
+        effects: [
+          { id: "eff_1", kind: "model", status: "succeeded" },
+          { id: "eff_2", kind: "model", status: "pending" },
+        ],
+        modalOpen: false,
+      });
+      rerender(<ExperienceLauncher />);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(2);
+    expect(storeMocks.runEffect.mock.calls[1]![0]).toBe("eff_2");
+  });
+
+  it("leaving the chat (unmount) aborts the in-flight run and starts nothing else", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    storeMocks.runEffect.mockImplementation((_effectId: string, signal?: AbortSignal) => {
+      capturedSignal = signal;
+      return new Promise(() => {});
+    });
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [
+        { id: "eff_1", kind: "model", status: "pending" },
+        { id: "eff_2", kind: "model", status: "pending" },
+      ],
+      modalOpen: true,
+    });
+    const { unmount } = render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    // One at a time: eff_1 in flight, eff_2 blocked.
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    unmount();
+    // The in-flight run is aborted; durable eff_2 stays frozen client-side
+    // (still pending server-side — resumed when the chat page is reopened).
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+  });
+
+  it("timer resync stays active with the modal closed (live timer)", async () => {
+    storeMocks.rehydrate.mockClear();
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_t", kind: "timer", status: "pending" }],
+      modalOpen: false,
+    });
+    render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, TIMER_RESYNC_INTERVAL_MS + 150));
+    });
+    expect(storeMocks.rehydrate.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 });
 
