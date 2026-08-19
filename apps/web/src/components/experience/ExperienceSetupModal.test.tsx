@@ -794,6 +794,34 @@ describe("ExperienceSetupModal — context mode", () => {
     expect(view.queryByText("experience_setup_context_label")).toBeNull();
   });
 
+  it("ready phase: no context section without the rp_context grant, ready-note still visible", async () => {
+    // No grant → contextControls is false; a contextMode of none drives the
+    // ready phase directly (no capture), so PreparationBody runs the gate.
+    setFakeState({ config: makeConfig({ capabilityGrants: [], contextMode: "none" }) });
+    mocks.testScript.mockResolvedValue(interactiveOk(def([])));
+    const view = renderModal();
+    await whenReady(view);
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(view.getByTestId("experience-setup-continue")).toBeTruthy());
+    // Gated section absent in the ready phase…
+    expect(view.queryByText("experience_setup_context_label")).toBeNull();
+    // …but the ready-note moved out of the gated block stays visible.
+    expect(view.queryByText("experience_setup_ready_note")).not.toBeNull();
+  });
+
+  it("ready phase: context section renders with the rp_context grant, ready-note visible", async () => {
+    setFakeState({ config: makeConfig({ capabilityGrants: ["rp_context"], contextMode: "none" }) });
+    mocks.testScript.mockResolvedValue(interactiveOk(def([{ capability: "rp_context" }])));
+    const view = renderModal();
+    await whenReady(view);
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(view.getByTestId("experience-setup-continue")).toBeTruthy());
+    // With the grant the context section renders in the ready phase…
+    expect(view.queryByText("experience_setup_context_label")).not.toBeNull();
+    // …and the ready-note is still visible.
+    expect(view.queryByText("experience_setup_ready_note")).not.toBeNull();
+  });
+
   it("renders all five canonical context modes", async () => {
     const view = renderModal();
     await whenReady(view);

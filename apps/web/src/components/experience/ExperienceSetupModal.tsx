@@ -1246,6 +1246,7 @@ export function ExperienceSetupModal({
             modelOptions={summaryProviderId ? modelOptionsFor(summaryProviderId) : []}
             summaryProviderId={summaryProviderId}
             summaryModelId={summaryModelId}
+            contextControls={contextControls}
             t={t}
             onSummaryProvider={(p) => { setSummaryProviderId(p); setSummaryModelId(""); if (p !== "") ensureModels(p); }}
             onSummaryModel={(m) => setSummaryModelId(m)}
@@ -1478,6 +1479,7 @@ interface PreparationBodyProps {
   modelOptions: Array<{ id: string; label: string }>;
   summaryProviderId: string;
   summaryModelId: string;
+  contextControls: boolean;
   t: (key: TKey, opts?: Record<string, unknown>) => string;
   onSummaryProvider: (p: string) => void;
   onSummaryModel: (m: string) => void;
@@ -1493,93 +1495,97 @@ function PreparationBody(props: PreparationBodyProps) {
   const {
     phase, mode, phaseError, pendingCapture, modelGranted, overrides, overrideDrafts,
     saveError, pendingSave, providerOptions, modelsLoading, modelOptions, summaryProviderId,
-    summaryModelId, t, onSummaryProvider, onSummaryModel, onGenerate, onChangeMode, onRetryCapture,
-    onGlobalOverride, onCharacterOverride,
+    summaryModelId, contextControls, t, onSummaryProvider, onSummaryModel, onGenerate,
+    onChangeMode, onRetryCapture, onGlobalOverride, onCharacterOverride,
   } = props;
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Context preparation status */}
-      <Section label={t("experience_setup_context_label")}>
-        <SegmentedControl
-          value={mode}
-          options={CONTEXT_MODE_ORDER.map((m) => ({ value: m, label: t(CONTEXT_MODE_LABEL_KEYS[m]) }))}
-          onChange={(v) => onChangeMode(v as ExperienceContextMode)}
-          compact
-          wrap
-          disabled={pendingCapture}
-        />
+      {/* Context preparation status (capability gate: same grant as the config phase) */}
+      {contextControls && (
+        <Section label={t("experience_setup_context_label")}>
+          <SegmentedControl
+            value={mode}
+            options={CONTEXT_MODE_ORDER.map((m) => ({ value: m, label: t(CONTEXT_MODE_LABEL_KEYS[m]) }))}
+            onChange={(v) => onChangeMode(v as ExperienceContextMode)}
+            compact
+            wrap
+            disabled={pendingCapture}
+          />
 
-        {phase === "capturing" && (
-          <div className="flex items-center gap-2">
-            {pendingCapture ? (
-              <>
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                <span className="font-ui text-[12px] text-t3">{t("experience_setup_capturing")}</span>
-              </>
-            ) : (
-              <>
-                <span className="font-ui text-[12px] text-t3">{t("experience_setup_context_ready")}</span>
-                <button
-                  type="button"
-                  className="rounded px-2 py-0.5 font-ui text-[11px] text-accent hover:bg-s3"
-                  onClick={onRetryCapture}
-                  data-testid="experience-setup-retry-capture"
-                >
-                  {t("experience_setup_capture_retry")}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {phase === "awaiting-summary" && (
-          <div className="flex flex-col gap-2">
-            <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_summary_intro")}</p>
-            <div className="flex flex-col gap-1.5 sm:flex-row">
-              <div className="flex-1">
-                <DropdownSelect
-                  value={summaryProviderId}
-                  options={providerOptions}
-                  placeholder={t("experience_setup_provider_placeholder")}
-                  onChange={onSummaryProvider}
-                />
-              </div>
-              <div className="flex-1">
-                <DropdownSelect
-                  value={summaryModelId}
-                  options={modelOptions}
-                  placeholder={modelsLoading ? t("experience_setup_loading_models") : t("experience_setup_model_placeholder")}
-                  onChange={onSummaryModel}
-                  disabled={summaryProviderId === ""}
-                />
-              </div>
+          {phase === "capturing" && (
+            <div className="flex items-center gap-2">
+              {pendingCapture ? (
+                <>
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                  <span className="font-ui text-[12px] text-t3">{t("experience_setup_capturing")}</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-ui text-[12px] text-t3">{t("experience_setup_context_ready")}</span>
+                  <button
+                    type="button"
+                    className="rounded px-2 py-0.5 font-ui text-[11px] text-accent hover:bg-s3"
+                    onClick={onRetryCapture}
+                    data-testid="experience-setup-retry-capture"
+                  >
+                    {t("experience_setup_capture_retry")}
+                  </button>
+                </>
+              )}
             </div>
-            <button
-              type="button"
-              className="self-start rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
-              onClick={onGenerate}
-              disabled={pendingCapture}
-              data-testid="experience-setup-generate-summary"
-            >
-              {t("experience_setup_generate_summary")}
-            </button>
-          </div>
-        )}
+          )}
 
-        {phase === "generating-summary" && (
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            <span className="font-ui text-[12px] text-t3">{t("experience_setup_generating")}</span>
-          </div>
-        )}
+          {phase === "awaiting-summary" && (
+            <div className="flex flex-col gap-2">
+              <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_summary_intro")}</p>
+              <div className="flex flex-col gap-1.5 sm:flex-row">
+                <div className="flex-1">
+                  <DropdownSelect
+                    value={summaryProviderId}
+                    options={providerOptions}
+                    placeholder={t("experience_setup_provider_placeholder")}
+                    onChange={onSummaryProvider}
+                  />
+                </div>
+                <div className="flex-1">
+                  <DropdownSelect
+                    value={summaryModelId}
+                    options={modelOptions}
+                    placeholder={modelsLoading ? t("experience_setup_loading_models") : t("experience_setup_model_placeholder")}
+                    onChange={onSummaryModel}
+                    disabled={summaryProviderId === ""}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className="self-start rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
+                onClick={onGenerate}
+                disabled={pendingCapture}
+                data-testid="experience-setup-generate-summary"
+              >
+                {t("experience_setup_generate_summary")}
+              </button>
+            </div>
+          )}
 
-        {phase === "ready" && (
-          <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_ready_note")}</p>
-        )}
+          {phase === "generating-summary" && (
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+              <span className="font-ui text-[12px] text-t3">{t("experience_setup_generating")}</span>
+            </div>
+          )}
 
-        {phaseError && <FieldError text={phaseError} />}
-      </Section>
+          {phaseError && <FieldError text={phaseError} />}
+        </Section>
+      )}
+
+      {/* Ready note lives OUTSIDE the gated context section so the ready screen
+          keeps content even for scripts without the rp_context grant. */}
+      {phase === "ready" && (
+        <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_ready_note")}</p>
+      )}
 
       {/* Model-only prompt overrides (capability gate, post-start) */}
       {modelGranted && (
