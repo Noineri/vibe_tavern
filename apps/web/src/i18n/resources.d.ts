@@ -808,6 +808,7 @@ export default interface Resources {
     "experience_effect_retrying": "Retrying…",
     "experience_finish": "Finish",
     "experience_finish_confirm": "Finish this mini-app? It interrupts the session and freezes the final report for your next message.",
+    "experience_finish_quiet": "End without report",
     "experience_incompatible": "This session’s visual is no longer available.",
     "experience_launcher_active": "Session active",
     "experience_launcher_finished": "Game over",

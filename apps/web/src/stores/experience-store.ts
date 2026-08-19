@@ -138,8 +138,12 @@ export interface ExperienceActions {
    *  snapshot is returned to the caller AND retained as the scope's
    *  queuedAttachment — the post-end resync clears the now-inactive session
    *  resources but preserves the terminal attachment for send binding
-   *  (IR-73C/D). */
-  endSession: () => Promise<ExperienceQueuedAttachmentResponse>;
+   *  (IR-73C/D). When `quiet` is true the session ends WITHOUT any public
+   *  report card: the server returns null and the scope's queuedAttachment is
+   *  cleared (pos 2 quiet close — nothing experience-related binds on the next
+   *  message). Returns the (possibly null) attachment view, or null on a
+   *  server-side failure (see `lastError`/`lastApiError` after the resync). */
+  endSession: (quiet?: boolean) => Promise<ExperienceQueuedAttachmentResponse>;
   /** Restart as a NEW match on the same branch (lobby Б3/Б4). The server
    *  finishes the old match and the successor becomes the branch's active
    *  session, so a plain rehydrate after success discovers it — there is NO
@@ -623,7 +627,7 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
         }
       },
 
-      endSession: async () => {
+      endSession: async (quiet = false) => {
         const { chatId, branchId, key, activeEpoch } = requireActiveScope();
         const session = requireSession(key);
         set((s) => {
@@ -632,6 +636,7 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
         try {
           const response = await endExperienceSession(session.sessionId, {
             expectedRevision: session.revision,
+            ...(quiet ? { quiet: true } : {}),
           });
           // Resync: discovery now answers no_active_session, clearing the
           // session-owned resources (server wins). clearActiveSessionResources
@@ -643,6 +648,8 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
           // queuedAttachment so the send controller can bind it on the next
           // message. The scope-epoch guard prevents a stale Finish from
           // contaminating a scope that changed while the end was in flight.
+          // A quiet end returns null, so the writeback also clears the queue
+          // client-side (nothing experience-related binds on the next message).
           if (isActiveOperation(key, activeEpoch)) {
             set((s) => {
               scopeDraft(s, key).queuedAttachment = response;
@@ -895,6 +902,16 @@ export function useExperienceLastError(
   branchId: string | null | undefined,
 ): string | null {
   return useExperienceStore(useShallow((s) => selectScope(s, chatId, branchId).lastError));
+}
+
+/** Sync counterpart of {@link useExperienceLastError} for imperative handlers
+ *  (e.g. deciding whether a quiet end succeeded: a null store result is only
+ *  a real success when no error was recorded). */
+export function getExperienceLastError(
+  chatId: string | null | undefined,
+  branchId: string | null | undefined,
+): string | null {
+  return selectScope(useExperienceStore.getState(), chatId, branchId).lastError;
 }
 
 /** Whether the scope is currently rehydrating. */

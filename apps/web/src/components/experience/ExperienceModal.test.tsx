@@ -157,6 +157,29 @@ describe("ExperienceModal — finish confirmation lives in the chrome", () => {
     const { queryByTestId } = renderModal({ onFinishExperience: undefined });
     expect(queryByTestId("experience-finish")).toBeNull();
   });
+
+  it("shows a quiet-end option in the confirm and runs onEndSessionQuiet (not the with-report finish)", () => {
+    const onEndSessionQuiet = mock(() => {});
+    const { getByTestId, queryByTestId, onFinishExperience } = renderModal({
+      onFinishExperience: () => {},
+      onEndSessionQuiet,
+    });
+    fireEvent.click(getByTestId("experience-finish"));
+    // The trusted overlay offers BOTH: with-report (primary) and quiet (secondary).
+    expect(getByTestId("experience-finish-confirm-btn")).toBeTruthy();
+    expect(getByTestId("experience-finish-quiet")).toBeTruthy();
+    fireEvent.click(getByTestId("experience-finish-quiet"));
+    expect(onEndSessionQuiet).toHaveBeenCalledTimes(1);
+    expect(onFinishExperience).not.toHaveBeenCalled();
+    // The quiet choice dismisses the confirm overlay in the same way finish does.
+    expect(queryByTestId("experience-finish-confirm")).toBeNull();
+  });
+
+  it("hides the quiet-end option when onEndSessionQuiet is absent", () => {
+    const { getByTestId, queryByTestId } = renderModal();
+    fireEvent.click(getByTestId("experience-finish"));
+    expect(queryByTestId("experience-finish-quiet")).toBeNull();
+  });
 });
 
 describe("ExperienceModal — in-session settings entry (lobby Б4)", () => {

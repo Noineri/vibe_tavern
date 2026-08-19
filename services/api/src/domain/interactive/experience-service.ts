@@ -943,9 +943,11 @@ export class ExperienceService {
     return this.reports.getStatus(sessionId);
   }
 
-  /** Explicit user finish: durable public system event + terminal frozen report. */
-  finishWithReport(sessionId: string, expectedRevision: number) {
-    return this.reports.finish(sessionId, expectedRevision);
+  /** Explicit user finish: durable public system event + terminal frozen report.
+   *  When `quiet` is set the session ends with NO public artifact and null is
+   *  returned (see ExperienceReportService.finish). */
+  finishWithReport(sessionId: string, expectedRevision: number, quiet = false) {
+    return this.reports.finish(sessionId, expectedRevision, { quiet });
   }
 
   // ─── Model-effect VM ops (Wave 4 / IR-43) ─────────────────────────────────

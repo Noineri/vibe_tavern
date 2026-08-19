@@ -192,8 +192,9 @@ export async function getExperienceSession(sessionId: string): Promise<Experienc
 }
 
 /** POST /api/experience/sessions/:sessionId/end — canonical explicit user
- *  finish (host-owned `interrupted`); the terminal snapshot is atomically
- *  queued and returned through the privacy-safe attachment DTO. */
+ *  finish (host-owned `interrupted`). `quiet` (pos 2) ends the session WITHOUT
+ *  any public report card and returns null; otherwise the terminal snapshot is
+ *  atomically queued and returned through the privacy-safe attachment DTO. */
 export async function endExperienceSession(
   sessionId: string,
   body: ExperienceFinishRequest,

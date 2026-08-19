@@ -761,6 +761,34 @@ describe("experience-store — lifecycle + effect + context actions", () => {
     expect(scope?.lastError).toBeNull();
   });
 
+  test("endSession(quiet) sends quiet:true and clears the queue (nothing posts to the chat)", async () => {
+    const attachment = makeAttachment();
+    impl.getExperienceQueuedAttachment = async () => attachment;
+    impl.getExperienceReportStatus = async () => makeReportStatus({ queuedAttachment: attachment });
+    await seedActiveScope(makeSession({ revision: 6 }));
+    // The user previously queued a card (e.g. an earlier Add-later) — a quiet
+    // close must NOT leave it behind for the next message.
+    expect(scopeState(KEY_C1B1)?.queuedAttachment?.id).toBe("att-1");
+
+    impl.endExperienceSession = async () => null; // quiet: server returns null
+    impl.getActiveExperienceSession = async (_c, branchId) => {
+      throw noActiveSession(branchId);
+    };
+
+    const result = await useExperienceStore.getState().endSession(true);
+    expect(endCalls).toHaveLength(1);
+    expect(endCalls[0].sessionId).toBe(S1);
+    expect(endCalls[0].body.expectedRevision).toBe(6);
+    expect(endCalls[0].body.quiet).toBe(true);
+    expect(result).toBeNull(); // caller sees "nothing to bind"
+
+    const scope = scopeState(KEY_C1B1);
+    // Quiet end also clears the previously queued attachment client-side.
+    expect(scope?.queuedAttachment).toBeNull();
+    expect(scope?.session).toBeNull();
+    expect(scope?.lastError).toBeNull();
+  });
+
   test("restartSession sends the scope's sessionId with an EMPTY body, then a plain rehydrate discovers the successor", async () => {
     await seedActiveScope(makeSession({ sessionId: S1, revision: 6 }));
 

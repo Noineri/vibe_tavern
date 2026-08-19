@@ -39,6 +39,7 @@ import {
   useExperienceDetached,
   useExperienceEffects,
   useExperienceLastError,
+  getExperienceLastError,
   useExperienceLoading,
   useExperienceModalOpen,
   useExperienceQueuedAttachment,
@@ -322,6 +323,26 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     }
   }
 
+  // ── Quiet end (pos 2 quiet close): trusted confirmation → endSession(true)
+  //    → close ONLY on a genuine success ────────────────────────────────────
+  // A quiet end returns null BY DESIGN (nothing posted to the chat), so the
+  // finish handler's `result !== null` gate does not apply. Success is instead
+  // judged by whether the store recorded an error after the resync: null return
+  // + no lastError = server ended the session quietly → close. null return +
+  // lastError set (409/404) = server did NOT end it → keep the modal open so
+  // the fail-closed error stays visible and retryable.
+  async function handleEndSessionQuiet(): Promise<void> {
+    try {
+      await useExperienceStore.getState().endSession(true);
+      if (getExperienceLastError(chatId, branchId) === null) {
+        useExperienceStore.getState().closeModal();
+      }
+    } catch (err) {
+      // Same keep-open-and-retryable guard as the with-report finish.
+      if (typeof console !== "undefined") console.warn("[experience] quiet finish rejected", err);
+    }
+  }
+
   // ── Queue / Add later: the SAME server operation (store.queueReport) backs ─
   // both the initial manual Queue and a replacement/Add-later. The store owns
   // race guards + the server resync; this callback rejects on a null store
@@ -525,6 +546,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           onAction={handleAction}
           onDetach={handleDetach}
           onFinishExperience={() => void handleFinishExperience()}
+          onEndSessionQuiet={handleEndSessionQuiet}
           // Б4 is the RUNNING-game entry: terminal games use the popover
           // restart pair instead, so the in-session settings entry is wired
           // only for an active, compatible match.

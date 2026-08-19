@@ -686,9 +686,14 @@ export const experienceStartRequestSchema = z.object({
 export const experienceActionRequestSchema = experienceActionSchema;
 
 /** Explicit user finish. The client pins the live revision; termination is
- * always host-owned `interrupted`, never a client-selected terminal status. */
+ * always host-owned `interrupted`, never a client-selected terminal status.
+ * `quiet`: end the session WITHOUT any public report card — no `experience_finished`
+ * system event, no frozen terminal attachment, and any still-unbound queued
+ * attachment is dropped (nothing experience-related binds on the next message).
+ * Defaults to false (the with-report finish). */
 export const experienceFinishRequestSchema = z.object({
   expectedRevision: boundedRevision,
+  quiet: z.boolean().optional(),
 }).strict();
 
 /** Restart as a NEW match on the same branch (lobby report LB-2/LB-3): fresh

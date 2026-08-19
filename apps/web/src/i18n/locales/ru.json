@@ -1799,6 +1799,7 @@
   "experience_cancel": "Отмена",
   "experience_finish": "Завершить",
   "experience_finish_confirm": "Завершить это мини-приложение? Это прерывает сессию и замораживает итоговый отчёт для вашего следующего сообщения.",
+  "experience_finish_quiet": "Завершить без отчёта",
   "experience_detach_title": "Открыть в отдельном окне",
   "experience_pending_typing": "печатает…",
   "experience_pending_timer": "ожидает…",

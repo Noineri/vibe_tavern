@@ -180,7 +180,7 @@ mock.module("../../stores/experience-store.js", () => ({
     getState: () => ({
       activeScope: state.activeScope,
       byScope: Object.fromEntries(
-        Object.entries(state.byScope).map(([k, v]) => [k, { lastApiError: v.lastApiError, session: v.session }]),
+        Object.entries(state.byScope).map(([k, v]) => [k, { lastApiError: v.lastApiError, lastError: v.lastError, session: v.session }]),
       ),
       setScope: (chatId: string, branchId: string) => {
         storeMocks.setScope(chatId, branchId);
@@ -786,6 +786,34 @@ describe("ExperienceLauncher — finish", () => {
     } finally {
       console.warn = originalWarn;
     }
+  });
+
+  it("quiet end on SUCCESS calls endSession(true) then closeModal (nothing posts to chat)", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ revision: 3 }), modalOpen: true, lastError: null });
+    // Quiet success: the server returns null (no attachment). No error recorded.
+    storeMocks.endSession.mockResolvedValue(null);
+    render(<ExperienceLauncher />);
+    await act(async () => {
+      await ((modalProps.onEndSessionQuiet as () => Promise<void>)());
+    });
+    expect(storeMocks.endSession).toHaveBeenCalledWith(true);
+    // A quiet end returns null by design, so unlike the with-report finish it
+    // must still close the modal — the caller judged success via no-store-error.
+    expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
+  });
+
+  it("quiet end with a recorded server error keeps the modal open (fail-closed + retryable)", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ revision: 3 }), modalOpen: true, lastError: null });
+    storeMocks.endSession.mockResolvedValue(null);
+    render(<ExperienceLauncher />);
+    // Simulate failMutation: the store records lastError and returns null.
+    act(() => setScopeState(SCOPE_KEY, { lastError: "quiet rejected" }));
+    await act(async () => {
+      await ((modalProps.onEndSessionQuiet as () => Promise<void>)());
+    });
+    expect(storeMocks.endSession).toHaveBeenCalledWith(true);
+    // Error present → session was NOT quietly ended → keep the modal open.
+    expect(storeMocks.closeModal).not.toHaveBeenCalled();
   });
 });
 

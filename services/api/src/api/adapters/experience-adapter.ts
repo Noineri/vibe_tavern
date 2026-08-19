@@ -224,11 +224,12 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		return this.toResponse(restarted.data, projection);
 	};
 
-	/** Canonical explicit user finish. The report service appends the durable
-	 * public system event, releases the slot, and freezes the terminal snapshot
-	 * in one synchronous SQLite transaction. */
-	endExperienceSession = async (sessionId: string, body: { expectedRevision: number }) => {
-		const finished = await this.lifecycle.finishWithReport(sessionId, body.expectedRevision);
+	/** Canonical explicit user finish. When `quiet` is false the report service
+	 * appends the durable public system event, releases the slot, and freezes
+	 * the terminal snapshot in one synchronous SQLite transaction. When `quiet`
+	 * is true the session ends with NO public artifact (pos 2 quiet close). */
+	endExperienceSession = async (sessionId: string, body: { expectedRevision: number; quiet?: boolean }) => {
+		const finished = await this.lifecycle.finishWithReport(sessionId, body.expectedRevision, body.quiet === true);
 		if (!finished.ok) throw mapError(finished.error);
 		return finished.data;
 	};

@@ -1296,3 +1296,58 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
   });
 });
 
+
+describe("ExperienceService — quiet finish (pos 2: close without a public card)", () => {
+  test("finishWithReport(quiet) ends the session with NO report/attachment and no public step", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const sid = started.data.sessionId;
+    expect(started.data.revision).toBe(0);
+
+    const quiet = await service.finishWithReport(sid, 0, true);
+    expect(quiet.ok).toBe(true);
+    if (!quiet.ok) return;
+    // Quiet end returns null — nothing to bind into the host chat.
+    expect(quiet.data).toBeNull();
+
+    const finalized = await stores.experiences.getSessionById(sid);
+    expect(finalized?.status).toBe("interrupted");
+    expect(finalized?.activeSlot).toBeNull();
+    expect(finalized?.revision).toBe(1);
+    // No public experience_finished step was written.
+    expect(await stores.experiences.getSteps(sid)).toHaveLength(0);
+    expect(await stores.experiences.getQueuedAttachmentForSession(sid)).toBeNull();
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+  });
+
+  test("quiet finish rejects a stale revision with a 409", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    if (!started.ok) return;
+    const result = await service.finishWithReport(started.data.sessionId, 99, true);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.status).toBe(409);
+    // Slot must be untouched.
+    expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(started.data.sessionId);
+  });
+
+  test("the non-quiet finish path is unchanged (still freezes the terminal report)", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    if (!started.ok) return;
+    const sid = started.data.sessionId;
+    const report = await service.finishWithReport(sid, 0, false);
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    // With-report keeps the card for the next message.
+    expect(report.data).not.toBeNull();
+    expect(report.data?.publicReport?.events.some((e) => e.type === "experience_finished")).toBe(true);
+  });
+});

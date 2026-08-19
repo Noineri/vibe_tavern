@@ -668,8 +668,10 @@ export interface ExperienceRuntimeApi {
 	 *  active session and project it for the human viewer. Returns the SAME
 	 *  response shape as {@link getExperienceSession}. */
 	getActiveExperienceSession: (chatId: string, branchId: string) => Promise<ExperienceSessionResponse>;
-	/** Canonical explicit user finish: terminal snapshot is atomically queued. */
-	endExperienceSession: (sessionId: string, body: { expectedRevision: number }) => Promise<ExperienceQueuedAttachmentResponse>;
+	/** Canonical explicit user finish: terminal snapshot is atomically queued.
+	 *  `quiet` (pos 2) ends the session WITHOUT any public report card and
+	 *  returns null. */
+	endExperienceSession: (sessionId: string, body: { expectedRevision: number; quiet?: boolean }) => Promise<ExperienceQueuedAttachmentResponse>;
 	/** Restart as a NEW match on the same branch (lobby report LB-2/LB-3):
 	 *  fresh session id under a new seed; omitted override fields fall back to
 	 *  the source session's frozen snapshots. */

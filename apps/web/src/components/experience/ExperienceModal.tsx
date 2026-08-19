@@ -115,6 +115,12 @@ export interface ExperienceModalProps {
    * calls this. The visual's bridge `finish` request is forwarded here too.
    */
   readonly onFinishExperience?: () => void;
+  /** Privileged QUIET end (pos 2 quiet close): ends the session WITHOUT any
+   *  public report card. Shown as a secondary option inside the same finish
+   *  confirmation overlay (trusted chrome, NOT the frame). When both finish &
+   *  quiet are provided the overlay offers «Завершить» (with report) and
+   *  «Завершить без отчёта» (quiet). */
+  readonly onEndSessionQuiet?: () => void;
   /** Privileged in-session settings entry (lobby Б4). When provided, a
    *  Settings button is shown in the chrome; clicking it opens a system
    *  confirmation that lives OUTSIDE the sandboxed frame (same trust rule as
@@ -167,6 +173,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
     pendingPhase,
     onDetach,
     onFinishExperience,
+    onEndSessionQuiet,
     onOpenSessionSettings,
     reportControls,
     effectDiagnostics,
@@ -297,6 +304,11 @@ export function ExperienceModal(props: ExperienceModalProps) {
     onFinishExperience?.();
   };
 
+  const confirmQuietFinish = () => {
+    setConfirmingFinish(false);
+    onEndSessionQuiet?.();
+  };
+
   const confirmSettings = () => {
     setConfirmingSettings(false);
     onOpenSessionSettings?.();
@@ -407,6 +419,16 @@ export function ExperienceModal(props: ExperienceModalProps) {
                   >
                     {t("experience_cancel")}
                   </button>
+                  {onEndSessionQuiet && (
+                    <button
+                      type="button"
+                      className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+                      onClick={confirmQuietFinish}
+                      data-testid="experience-finish-quiet"
+                    >
+                      {t("experience_finish_quiet")}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 max-md:min-h-9"
