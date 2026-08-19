@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
+import { randomUUID } from "../lib/uuid.js";
 import type {
   ExperienceActionRequest,
   ExperienceActionResponse,
@@ -67,7 +68,7 @@ import {
  * scope so an obsolete in-flight rehydrate can neither overwrite the new
  * scope nor repopulate stale data into the old one.
  *
- * Idempotency: `submitAction` mints one `crypto.randomUUID()` per in-flight
+ * Idempotency: `submitAction` mints one `randomUUID()` (secure-context-proof
  * action intent and JOINS concurrent same-intent calls onto a single in-flight
  * Promise (one HTTP call, one `requestId`); the join entry clears only when
  * the joined request settles, so a deliberate later action mints a fresh id.
@@ -673,7 +674,7 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
         const joinKey = `${key}\n${intentId}`;
         const existing = inFlightActionPromises.get(joinKey);
         if (existing) return existing;
-        const requestId = crypto.randomUUID();
+        const requestId = randomUUID();
         const expectedRevision = session.revision;
         set((s) => {
           const scope = scopeDraft(s, key);

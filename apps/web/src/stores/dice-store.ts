@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
+import { randomUUID } from "../lib/uuid.js";
 import type {
   DiceDefinitionsResponse,
   DiceLaneState,
@@ -29,7 +30,7 @@ import {
  * remove/clear) additionally flip optimistically for instant UI feedback and
  * roll back to the pre-mutation snapshot on failure before resyncing.
  *
- * Idempotency: `roll` mints one `crypto.randomUUID()` `requestId` per
+ * Idempotency: `roll` mints one `randomUUID()` (secure-context-proof
  * in-flight roll intent and REUSES it while that intent is still in flight, so
  * a rapid double-click (or a retry of the same in-flight request) hits the
  * server's DB-unique `requestId` constraint and cannot duplicate the roll. The
@@ -179,7 +180,7 @@ export const useDiceStore = create<DiceState & DiceActions>()(
       const iKey = intentKey(intent);
       // Reuse the in-flight requestId for this intent (idempotent retry / rapid
       // click), else mint a fresh one for a genuinely new roll.
-      const requestId = get().byScope[key]?.rollingRequestIds[iKey] ?? crypto.randomUUID();
+      const requestId = get().byScope[key]?.rollingRequestIds[iKey] ?? randomUUID();
       set((s) => {
         const scope = scopeDraft(s, key);
         scope.rollingRequestIds[iKey] = requestId;

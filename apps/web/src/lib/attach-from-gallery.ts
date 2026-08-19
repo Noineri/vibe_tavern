@@ -16,6 +16,7 @@
  */
 import type { Attachment, CharacterAsset } from "@vibe-tavern/domain";
 import { getGatewayBaseUrl, getMobileToken } from "../api/client.js";
+import { randomUUID } from "./uuid.js";
 
 /** `POST /api/characters/:cid/assets/:rowId/promote-to-attachment` response. */
 interface PromoteResult {
@@ -43,7 +44,7 @@ export async function attachGalleryImageAsFlatAsset(
 ): Promise<Attachment> {
   const { assetId, name, mimeType, sizeBytes } = await promoteGalleryAsset(characterId, row.id as string);
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     assetId,
     type: "image",
     name,
