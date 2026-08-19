@@ -1575,3 +1575,92 @@ describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY
     expect(second.getByText("Hard")).toBeTruthy();
   });
 });
+
+// ── LB-6: post-game strip (EXPERIENCE_ENGINE_LOBBY_REPORT) ─────────────
+
+/** LB-6: a completed envelope — status/stopReason completed, no legal actions. */
+function makeCompletedData(overrides: Partial<ExperiencePlaygroundData> = {}): ExperiencePlaygroundData {
+  return makeStartData({
+    status: "completed",
+    stopReason: "completed",
+    projection: { state: { round: 9 }, actions: [] },
+    ...overrides,
+  });
+}
+
+describe("ExperiencePlayground — post-game strip (LB-6)", () => {
+  it("completed: the strip renders next to the status line with both actions", async () => {
+    startExperiencePlayground.mockImplementation(async () => makeCompletedData());
+    const utils = renderPlayground();
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    const strip = await utils.findByTestId("playground-postgame-strip");
+    expect(strip.textContent).toContain("experience_playground_postgame_title");
+    expect(utils.getByText("experience_restart_play_again")).toBeTruthy();
+    expect(utils.getByText("experience_restart_change_settings")).toBeTruthy();
+  });
+
+  it("active: no strip — the surface is completed-only (header buttons unchanged)", async () => {
+    const utils = renderPlayground();
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    expect(utils.queryByTestId("playground-postgame-strip")).toBeNull();
+    // The pre-existing header controls are still there (unchanged by LB-6).
+    expect(utils.getByText("experience_playground_restart")).toBeTruthy();
+    expect(utils.getByText("experience_playground_reset")).toBeTruthy();
+  });
+
+  it("play-again: restarts with the SAME config and a fresh seed, landing on a live run", async () => {
+    let call = 0;
+    startExperiencePlayground.mockImplementation(async () => {
+      call += 1;
+      return call === 1 ? makeCompletedData() : makeStartData();
+    });
+    const utils = renderPlayground();
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(utils.getByText("experience_restart_play_again"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(2));
+
+    type StartCall = {
+      rulesCode: string;
+      settings: Record<string, unknown>;
+      participants: unknown[];
+      capabilityGrants: unknown[];
+      seed?: string;
+    };
+    const first = startExperiencePlayground.mock.calls[0]![0] as StartCall;
+    const second = startExperiencePlayground.mock.calls[1]![0] as StartCall;
+    // Same settings/seats/roster (randomStart is ON by default → fresh seed).
+    expect(second.rulesCode).toBe(first.rulesCode);
+    expect(second.settings).toEqual(first.settings);
+    expect(second.participants).toEqual(first.participants);
+    expect(second.capabilityGrants).toEqual(first.capabilityGrants);
+    expect(first.seed).toBeTruthy();
+    expect(second.seed).toBeTruthy();
+    expect(second.seed).not.toBe(first.seed);
+    // The restarted run is live again: legal actions render, strip is gone.
+    await waitFor(() => expect(utils.queryByTestId("playground-postgame-strip")).toBeNull());
+    expect(await utils.findByText("Score")).toBeTruthy();
+  });
+
+  it("change-settings: tears the run down and restores the expanded setup state", async () => {
+    startExperiencePlayground.mockImplementation(async () => makeCompletedData());
+    const utils = renderPlayground();
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    // While live the setup accordion auto-collapsed (XU-3) — the reset must
+    // restore the expanded default.
+    const setupToggle = () => utils.getByText("experience_playground_setup_title").closest("button") as HTMLButtonElement;
+    expect(setupToggle().getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(utils.getByText("experience_restart_change_settings"));
+    await waitFor(() => expect(utils.queryByTestId("playground-postgame-strip")).toBeNull());
+    expect(utils.queryByText("experience_playground_turn_title")).toBeNull();
+    await waitFor(() => expect(setupToggle().getAttribute("aria-expanded")).toBe("true"));
+  });
+});

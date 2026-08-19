@@ -2067,6 +2067,7 @@
   "experience_playground_status_model": "Model is responding…",
   "experience_playground_status_waiting": "Waiting — no actions available right now.",
   "experience_playground_status_default": "Ready.",
+  "experience_playground_postgame_title": "Game over",
   "experience_playground_diagnostics": "Developer diagnostics",
   "experience_playground_send_diagnostics": "Send diagnostics to assistant",
   "experience_playground_diagnostics_hint": "Raw state, actions, events, effects, revision, request id, payload JSON, and console output from the kernel.",

@@ -2085,6 +2085,7 @@
   "experience_playground_status_model": "Модель отвечает…",
   "experience_playground_status_waiting": "Ожидание — нет доступных действий.",
   "experience_playground_status_default": "Готово.",
+  "experience_playground_postgame_title": "Игра окончена",
   "experience_playground_diagnostics": "Диагностика разработчика",
   "experience_playground_send_diagnostics": "Отправить диагностику помощнику",
   "experience_playground_diagnostics_hint": "Сырое состояние, действия, события, эффекты, ревизия, идентификатор запроса, JSON полезной нагрузки и вывод консоли из ядра.",

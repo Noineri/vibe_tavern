@@ -1613,6 +1613,42 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 </div>
               </div>
 
+              {/* LB-6 (EXPERIENCE_ENGINE_LOBBY_REPORT): the post-game strip — a
+                  DISTINCT prominent completed-state surface next to the status
+                  line. «Играть снова» restarts with the SAME settings/seats/roster
+                  and a fresh seed (handleRestart); «Изменить настройки» tears
+                  the run down to the expanded setup state (handleReset). The
+                  header restart/reset buttons stay (pre/post-game utility). */}
+              {session.status === "completed" && (
+                <div
+                  data-testid="playground-postgame-strip"
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-accent bg-accent-dim"
+                  style={{ padding: 10 }}
+                >
+                  <span className={cn(blockLabelCls, "text-accent-t")}>
+                    {t("experience_playground_postgame_title")}
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+                      disabled={busy !== null}
+                      onClick={handleRestart}
+                    >
+                      {t("experience_restart_play_again")}
+                    </button>
+                    <button
+                      type="button"
+                      className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                      disabled={busy !== null}
+                      onClick={handleReset}
+                    >
+                      {t("experience_restart_change_settings")}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* The REAL visual against the current playground state — primary view. */}
               <div className={blockCls} style={{ padding: 10 }}>
                 <div className={blockLabelCls}>{t("experience_playground_visual_label")}</div>

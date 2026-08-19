@@ -824,6 +824,7 @@ export default interface Resources {
     "experience_playground_participant_id": "ID",
     "experience_playground_participant_id_edit": "Edit ID",
     "experience_playground_participant_name": "Name",
+    "experience_playground_postgame_title": "Game over",
     "experience_playground_random_start": "Random start",
     "experience_playground_reset": "Reset",
     "experience_playground_restart": "Restart (same settings)",
