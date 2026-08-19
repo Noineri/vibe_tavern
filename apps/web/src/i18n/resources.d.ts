@@ -930,6 +930,7 @@ export default interface Resources {
     "experience_setup_provider_placeholder": "Select provider…",
     "experience_setup_ready_note": "The session is ready. Continue to open the mini-app.",
     "experience_setup_remove_participant": "Remove participant",
+    "experience_setup_restart": "Restart match",
     "experience_setup_roster_duplicate_id": "Participant identifiers must be unique.",
     "experience_setup_roster_full": "Maximum of 16 participants reached.",
     "experience_setup_roster_human_count": "Exactly one human participant is required.",

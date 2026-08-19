@@ -369,7 +369,7 @@ export class ExperienceReplayService {
   private toView(session: {
     id: string; chatId: string; branchId: string; status: string; revision: number;
     manifestId: string; manifestName: string; apiVersion: number;
-    participantsJson: string; capabilityGrantsJson: string; contextMode: string;
+    participantsJson: string; initialSettingsJson: string; capabilityGrantsJson: string; contextMode: string;
     rulesRevision: number; rulesSourceHash: string; visualId: string | null;
     visualSource: string | null; visualSourceHash: string | null; reportFrontier: number;
   }): ExperienceSessionView {
@@ -382,6 +382,7 @@ export class ExperienceReplayService {
       manifest: { id: session.manifestId, name: session.manifestName },
       apiVersion: session.apiVersion,
       participants: parseJson<ExperienceParticipant[]>(session.participantsJson, []),
+      initialSettings: parseJson<unknown>(session.initialSettingsJson, {}),
       capabilityGrants: parseJson<ExperienceCapability[]>(session.capabilityGrantsJson, []),
       contextMode: session.contextMode as never,
       rulesRevision: session.rulesRevision,

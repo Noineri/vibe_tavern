@@ -153,6 +153,7 @@ function makeSession(overrides: Partial<ExperienceSessionResponse> = {}): Experi
     capabilityGrants: [],
     contextMode: "none",
     participants: [{ id: "p1", label: "Hero", controller: "human" }],
+    initialSettings: {},
     rulesRevision: 1,
     rulesSourceHash: "hash-1",
     visualId: null,

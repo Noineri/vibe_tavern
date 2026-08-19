@@ -125,6 +125,13 @@ export interface ExperienceSetupModalProps {
    *  `none`) and prompt overrides are settled, so IR-73B can launch the frame.
    *  The modal does NOT auto-close — the parent controls `open`. */
   readonly onReady?: (session: ExperienceSessionResponse) => void;
+  /** RESTART mode (lobby LB-5 / Б3+Б4): the source session whose frozen
+   *  snapshots prefill the form. When non-null, Start becomes a restart —
+   *  the server finishes the source match and creates a NEW session under
+   *  a fresh seed; `initialSettings`/`participants` overlay the authored
+   *  defaults (fields the author added since keep their defaults; snapshot
+   *  keys without a current field are ignored). */
+  readonly restartSource?: ExperienceSessionResponse | null;
 }
 
 /** Canonical display order for the context-mode segmented control. */
@@ -174,12 +181,65 @@ function toMessage(err: unknown): string {
   return String(err);
 }
 
+/** Overlay a frozen settings snapshot onto seeded defaults (lobby LB-5).
+ * Only declared fields with a type-compatible snapshot value are prefilled:
+ * select values no longer in the authored option list are DROPPED (the UI must
+ * never display an option that does not exist), numbers must be finite, and a
+ * no-default boolean maps false back to absent (unchecked). */
+function applySnapshotPrefill(
+  fields: SetupField[],
+  snapshot: Record<string, unknown>,
+): { values: Record<string, string | boolean | undefined>; entered: Set<string> } {
+  const values: Record<string, string | boolean | undefined> = {};
+  const entered = new Set<string>();
+  for (const field of fields) {
+    if (!(field.id in snapshot)) continue;
+    const raw = snapshot[field.id];
+    if (field.kind === "text" && typeof raw === "string") {
+      values[field.id] = raw;
+    } else if (field.kind === "number" && typeof raw === "number" && Number.isFinite(raw)) {
+      values[field.id] = String(raw);
+      entered.add(field.id);
+    } else if (field.kind === "boolean" && typeof raw === "boolean") {
+      values[field.id] = field.default === undefined ? (raw === true ? true : undefined) : raw;
+    } else if (field.kind === "select" && typeof raw === "string" && field.options.some((o) => o.value === raw)) {
+      values[field.id] = raw;
+    }
+  }
+  return { values, entered };
+}
+
+/** Map a frozen roster snapshot onto editable seats (lobby LB-5). Seat ids are
+ *  reused verbatim (stable, unique); the counter moves past every parseable
+ *  `seat_N` suffix AND the roster length so a later Add never collides. */
+function seatsFromSnapshot(participants: ExperienceSessionResponse["participants"]): {
+  seats: RosterSeat[];
+  nextCounter: number;
+} {
+  const seats: RosterSeat[] = participants.map((p) => {
+    const seat: RosterSeat = { id: p.id, label: p.label, controller: p.controller };
+    if (p.controller === "model") {
+      if (p.providerProfileId !== undefined) seat.providerProfileId = p.providerProfileId;
+      if (p.modelId !== undefined) seat.modelId = p.modelId;
+      if (p.characterId !== undefined) seat.characterId = p.characterId;
+    }
+    return seat;
+  });
+  let maxN = 0;
+  for (const seat of seats) {
+    const m = /^seat_(\d+)$/.exec(seat.id);
+    if (m) maxN = Math.max(maxN, Number(m[1]));
+  }
+  return { seats, nextCounter: Math.max(maxN, seats.length) + 1 };
+}
+
 export function ExperienceSetupModal({
   open,
   chatId,
   branchId,
   onClose,
   onReady,
+  restartSource = null,
 }: ExperienceSetupModalProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -454,11 +514,35 @@ export function ExperienceSetupModal({
   // a default are marked `entered` so they submit as real values.
   useEffect(() => {
     if (discovery.status !== "ok") return;
-    const { values, entered } = seedSetupDefaults(discovery.definition.setup?.fields ?? []);
+    const fields = discovery.definition.setup?.fields ?? [];
+    const { values, entered } = seedSetupDefaults(fields);
+    // Restart prefill (LB-5): overlay the frozen settings snapshot over the
+    // authored defaults, and rebuild the roster from the frozen participants.
+    if (restartSource !== null) {
+      const snapshot = restartSource.initialSettings;
+      if (typeof snapshot === "object" && snapshot !== null && !Array.isArray(snapshot)) {
+        const prefill = applySnapshotPrefill(fields, snapshot as Record<string, unknown>);
+        Object.assign(values, prefill.values);
+        for (const id of prefill.entered) entered.add(id);
+      }
+      if (restartSource.participants.length > 0) {
+        const { seats, nextCounter } = seatsFromSnapshot(restartSource.participants);
+        setRoster(seats);
+        seatCounterRef.current = nextCounter;
+        // Prefilled model seats need their provider's model list loaded so the
+        // dropdown renders the pinned model instead of a blank option.
+        for (const seat of seats) {
+          if (seat.controller === "model" && seat.providerProfileId !== undefined) ensureModels(seat.providerProfileId);
+        }
+      }
+    }
     setFieldValues(values);
     setNumberEntered(entered);
     setFieldErrors({});
-  }, [discovery]);
+    // restartSource is a stable parent-held snapshot keyed to the open that
+    // produced it; re-running only on a fresh discovery would drop the
+    // prefill if discovery re-fires (e.g. a config-driven scriptId change).
+  }, [discovery, restartSource]);
 
   // ── Load provider profiles when a provider/model selector is live ─────────
   // Model seats need them (model capability), and compact-summary generation
@@ -810,8 +894,17 @@ export function ExperienceSetupModal({
         if (scopeRef.current !== gen) return;
       }
 
-      // 4. Start the session through the store (server-authoritative).
-      const session = await useExperienceStore.getState().startSession(settings, participants);
+      // 4. Start — or RESTART — the session through the store (server-
+      //    authoritative). In restart mode (LB-5) the server finishes the
+      //    source match and creates the successor; the roster is sent only
+      //    when the participants capability is granted, else the server falls
+       //   back to the source's frozen roster.
+      const session = restartSource !== null
+        ? await useExperienceStore.getState().restartSession({
+            settings,
+            ...(participantsGranted ? { participants } : {}),
+          })
+        : await useExperienceStore.getState().startSession(settings, participants);
       if (scopeRef.current !== gen) return;
       if (!session) {
         // The store surfaced a structured error (stale/conflict/no_provider…)
@@ -1229,7 +1322,11 @@ export function ExperienceSetupModal({
               disabled={startDisabled}
               data-testid="experience-setup-start"
             >
-              {pendingStart ? t("experience_setup_starting") : t("experience_setup_start")}
+              {pendingStart
+                ? t("experience_setup_starting")
+                : restartSource !== null
+                  ? t("experience_setup_restart")
+                  : t("experience_setup_start")}
             </button>
           )}
           {phase === "generating-summary" && (

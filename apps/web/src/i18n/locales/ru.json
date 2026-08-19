@@ -2191,6 +2191,7 @@
   "experience_setup_source_preview_chat": "Источник контекста: чат «{chat}».",
   "experience_setup_source_preview_both": "Источник контекста: {character} · чат «{chat}».",
   "experience_setup_start": "Запустить",
+  "experience_setup_restart": "Перезапустить",
   "experience_setup_starting": "Запуск…",
   "experience_setup_start_error": "Не удалось запустить мини-приложение.",
   "experience_setup_scope_error": "Эта настройка больше не соответствует активной ветке.",

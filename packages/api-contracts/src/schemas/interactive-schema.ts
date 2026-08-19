@@ -728,6 +728,10 @@ export const experienceSessionResponseSchema = z
     capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES),
     contextMode: experienceContextModeSchema,
     participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS),
+    /** Frozen initial-settings snapshot (lobby LB-5) — the restart
+     * modal's prefill source; bounded by the same limits as the start
+     * settings input. Never authoritative state. */
+    initialSettings: boundedState,
     /** Pinned visual resource id (snapshot at session start; no FK — survives
      *  source delete). Null when the session has no visual. */
     visualId: boundedId.nullable(),

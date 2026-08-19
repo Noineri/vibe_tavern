@@ -168,6 +168,9 @@ export interface ExperienceSessionView {
   manifest: { id: string; name: string };
   apiVersion: number;
   participants: ExperienceParticipant[];
+  /** Frozen initial-settings snapshot (`initialSettingsJson`) — the
+   * restart prefill source (lobby LB-5), not authoritative state. */
+  initialSettings: unknown;
   capabilityGrants: ExperienceCapability[];
   contextMode: ExperienceContextMode;
   rulesRevision: number;
@@ -1184,7 +1187,7 @@ export class ExperienceService {
   private toSessionView(session: {
     id: string; chatId: string; branchId: string; status: string; revision: number;
     manifestId: string; manifestName: string; apiVersion: number;
-    participantsJson: string; capabilityGrantsJson: string; contextMode: string;
+    participantsJson: string; initialSettingsJson: string; capabilityGrantsJson: string; contextMode: string;
     rulesRevision: number; rulesSourceHash: string; visualId: string | null;
     visualSource: string | null; visualSourceHash: string | null; reportFrontier: number;
   }): ExperienceSessionView {
@@ -1197,6 +1200,7 @@ export class ExperienceService {
       manifest: { id: session.manifestId, name: session.manifestName },
       apiVersion: session.apiVersion,
       participants: parseJson<ExperienceParticipant[]>(session.participantsJson, []),
+      initialSettings: parseJson<unknown>(session.initialSettingsJson, {}),
       capabilityGrants: parseJson<ExperienceCapability[]>(session.capabilityGrantsJson, []),
       contextMode: session.contextMode as ExperienceContextMode,
       rulesRevision: session.rulesRevision,

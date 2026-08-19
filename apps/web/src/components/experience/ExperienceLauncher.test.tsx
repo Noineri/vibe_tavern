@@ -235,11 +235,12 @@ mock.module("../shared/BottomSheet.js", () => ({
 // Mock ExperienceSetupModal to a thin shell so Start/onReady are observable.
 let setupOnReady: ((s: unknown) => void) | null = null;
 mock.module("./ExperienceSetupModal.js", () => ({
-  ExperienceSetupModal: ({ open, onClose, onReady }: { open: boolean; onClose: () => void; onReady?: (s: unknown) => void }) => {
+  ExperienceSetupModal: ({ open, onClose, onReady, restartSource }: { open: boolean; onClose: () => void; onReady?: (s: unknown) => void; restartSource?: unknown }) => {
     setupOnReady = onReady ?? null;
     return open ? (
       <div data-testid="setup-modal">
         <button data-testid="setup-close" onClick={onClose}>close</button>
+        {restartSource ? <span data-testid="setup-restart-src" /> : null}
         <button
           data-testid="setup-ready"
           onClick={() => onReady?.({ sessionId: "sess_new", visualSource: "<div>new</div>", revision: 1, status: "active", view: { revision: 1, status: "active", state: {}, actions: [] }, manifest: { name: "Game" } })}
@@ -1086,6 +1087,14 @@ describe("ExperienceLauncher — endgame restart pair (Б3)", () => {
     expect(storeMocks.openModal).not.toHaveBeenCalled();
   });
 
+  it("Change settings opens the setup modal PREFILLED (restartSource = the finished session, LB-5)", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }) });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    fireEvent.click(getByTestId("experience-restart-settings"));
+    expect(getByTestId("setup-restart-src")).toBeTruthy();
+  });
+
   it("interrupted session behaves like completed: both restart buttons, no primary", () => {
     setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "interrupted" }) });
     const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
@@ -1107,6 +1116,13 @@ describe("ExperienceLauncher — in-session settings entry (Б4)", () => {
     expect(getByTestId("setup-modal")).toBeTruthy();
     expect(queryByTestId("experience-modal")).toBeNull();
     expect(storeMocks.restartSession).not.toHaveBeenCalled();
+  });
+
+  it("the Б4 settings entry ALSO prefill-opens the setup modal (restartSource = the active session, LB-5)", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("modal-session-settings"));
+    expect(getByTestId("setup-restart-src")).toBeTruthy();
   });
 
   it("TERMINAL session: the settings entry is NOT wired into the modal (the popover restart pair owns the endgame)", () => {

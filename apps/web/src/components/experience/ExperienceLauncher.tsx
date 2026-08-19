@@ -100,6 +100,9 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   // ── Local UI state (reset on scope/config changes) ───────────────────────
   const [setupOpen, setSetupOpen] = useState(false);
+  // The source session whose snapshots prefill the setup modal when it is
+  // opened in restart mode (lobby LB-5); null for a plain Start.
+  const [setupRestartSource, setSetupRestartSource] = useState<ExperienceSessionResponse | null>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popupError, setPopupError] = useState(false);
   const scopeKey = chatId && branchId ? JSON.stringify([chatId, branchId]) : null;
@@ -115,6 +118,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     if (lastSurfaceKey.current !== surfaceKey) {
       lastSurfaceKey.current = surfaceKey;
       setSetupOpen(false);
+      setSetupRestartSource(null);
       setPopoverOpen(false);
       setPopupError(false);
     }
@@ -229,12 +233,14 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   // ── Start: open the setup modal for the exact chat/branch ────────────────
   function handleStart(): void {
     setPopoverOpen(false);
+    setSetupRestartSource(null);
     setSetupOpen(true);
   }
 
   // ── Setup onReady: close setup, open the persisted modal ─────────────────
   function handleSetupReady(_session: ExperienceSessionResponse): void {
     setSetupOpen(false);
+    setSetupRestartSource(null);
     useExperienceStore.getState().openModal();
   }
 
@@ -270,10 +276,11 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     }
   }
 
-  // ── Endgame «Изменить настройки» (Б3): open the setup modal (the prefill
-  // from the finished match's snapshots lands in a later unit).
+  // ── Endgame «Изменить настройки» (Б3): open the setup modal PREFILLED from
+  //  the finished match's frozen snapshots (LB-5) — Start then restarts.
   function handleRestartChangeSettings(): void {
     setPopoverOpen(false);
+    setSetupRestartSource(session);
     setSetupOpen(true);
   }
 
@@ -282,6 +289,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   // is the only open surface.
   function handleOpenSessionSettings(): void {
     useExperienceStore.getState().closeModal();
+    setSetupRestartSource(session);
     setSetupOpen(true);
   }
 
@@ -481,8 +489,9 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           open={setupOpen}
           chatId={chatId}
           branchId={branchId}
-          onClose={() => setSetupOpen(false)}
+          onClose={() => { setSetupOpen(false); setSetupRestartSource(null); }}
           onReady={handleSetupReady}
+          restartSource={setupRestartSource}
         />
       )}
       {hasSession && !incompatible && (

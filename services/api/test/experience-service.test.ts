@@ -1195,6 +1195,8 @@ describe("ExperienceService — restart (lobby report LB-2)", () => {
     expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(restarted.data.sessionId);
     const fresh = await stores.experiences.getSessionById(restarted.data.sessionId);
     expect(fresh?.randomSeed).not.toBe(old?.randomSeed);
+    // The response carries the frozen initial-settings snapshot (LB-5 prefill source).
+    expect(restarted.data.initialSettings).toEqual({ target: 1 });
   });
 
   test("explicit settings/participants win; omitted override falls back to the source snapshots", async () => {

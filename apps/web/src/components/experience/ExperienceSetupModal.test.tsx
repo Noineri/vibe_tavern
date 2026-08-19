@@ -86,6 +86,7 @@ const mocks = {
   updateCharacterOverride: mock(),
   setScope: mock(),
   startSession: mock(),
+  restartSession: mock(),
   captureContext: mock(),
   rehydrate: mock(),
   endSession: mock(),
@@ -133,6 +134,7 @@ mock.module("../../stores/experience-store.js", () => ({
       byScope: { [SCOPE_KEY]: { lastError: state.lastError } },
       setScope: mocks.setScope,
       startSession: mocks.startSession,
+      restartSession: mocks.restartSession,
       captureContext: mocks.captureContext,
       rehydrate: mocks.rehydrate,
       endSession: mocks.endSession,
@@ -223,6 +225,7 @@ function makeSession(id = "sess_1"): ExperienceSessionResponse {
     capabilityGrants: [],
     contextMode: "none",
     participants: [],
+    initialSettings: {},
     view: { revision: 1, state: {}, actions: [], events: [], status: "active" },
     rulesRevision: 1,
     rulesSourceHash: "h",
@@ -257,6 +260,11 @@ function setupDefaultMocks(): void {
   });
   mocks.startSession.mockImplementation(async () => {
     const session = makeSession();
+    setFakeState({ session, lastError: null });
+    return session;
+  });
+  mocks.restartSession.mockImplementation(async () => {
+    const session = makeSession("sess_new");
     setFakeState({ session, lastError: null });
     return session;
   });
@@ -1211,5 +1219,85 @@ describe("ExperienceSetupModal — context source picker", () => {
         contextSourcePersonaId: "persona_k",
       }),
     );
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 14. Restart mode (lobby LB-5): snapshot prefill + Start=restart
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("ExperienceSetupModal — restart mode (lobby LB-5)", () => {
+  const ROSTER = [
+    { id: "seat_1", label: "Hero", controller: "human" as const },
+    { id: "seat_2", label: "Villain", controller: "model" as const, providerProfileId: "p1", modelId: "model-a" },
+  ];
+
+  function restartSourceFixture() {
+    return {
+      ...makeSession("sess_old"),
+      status: "completed" as const,
+      participants: ROSTER,
+      // "ghost" exercises the dropped-key rule: a settings key the author has
+      // since removed must not reach the restart request.
+      initialSettings: { name: "Veteran", rounds: 7, hardcore: true, style: "calm", ghost: "dropped" },
+    };
+  }
+
+  beforeEach(() => {
+    setFakeState({ config: makeConfig({ capabilityGrants: ["participants", "model"] }) });
+    mocks.testScript.mockResolvedValue(
+      interactiveOk(def([{ capability: "participants" }, { capability: "model" }], fieldDefs().setup?.fields)),
+    );
+  });
+
+  it("overlays the frozen snapshot over authored defaults and rebuilds the roster", async () => {
+    const view = renderModal({ restartSource: restartSourceFixture() });
+    await whenReady(view);
+    const text = view.baseElement.querySelector('[data-field-id="name"] textarea') as HTMLTextAreaElement;
+    expect(text.value).toBe("Veteran");
+    const num = await waitFor(() => {
+      const el = view.baseElement.querySelector('[data-field-id="rounds"] input') as HTMLInputElement;
+      expect(el.value).toBe("7");
+      return el;
+    });
+    expect(num).toBeTruthy();
+    const checkbox = view.baseElement.querySelector('[data-field-id="hardcore"] [role="checkbox"]');
+    expect(checkbox?.getAttribute("aria-checked")).toBe("true");
+    // Select prefill renders the option's LABEL in the trigger.
+    expect(view.getByText("Calm")).toBeTruthy();
+    // Roster rebuilt from the frozen participants (labels ride the snapshot).
+    const seat1 = view.baseElement.querySelector('[data-seat-id="seat_1"] input[type="text"]') as HTMLInputElement;
+    const seat2 = view.baseElement.querySelector('[data-seat-id="seat_2"] input[type="text"]') as HTMLInputElement;
+    expect(seat1.value).toBe("Hero");
+    expect(seat2.value).toBe("Villain");
+  });
+
+  it("Start restarts through the store with the edited settings+roster, never startSession", async () => {
+    const view = renderModal({ restartSource: restartSourceFixture() });
+    await whenReady(view);
+    // The primary action labels itself as the restart (t returns keys verbatim).
+    expect(view.getByTestId("experience-setup-start").textContent).toBe("experience_setup_restart");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.restartSession).toHaveBeenCalledTimes(1));
+    const [override] = mocks.restartSession.mock.calls[0];
+    expect(override.settings).toEqual({ name: "Veteran", rounds: 7, hardcore: true, style: "calm" });
+    expect("ghost" in override.settings).toBe(false);
+    expect("optional_note" in override.settings).toBe(false);
+    expect(override.participants).toEqual(ROSTER);
+    expect(mocks.startSession).not.toHaveBeenCalled();
+    // Post-restart flow is the normal one: context none → ready → Continue.
+    await waitFor(() => expect(view.getByTestId("experience-setup-continue")).toBeTruthy());
+  });
+
+  it("without restartSource the plain Start path is untouched (regression)", async () => {
+    // Plain path: no grants → roster hidden, defaults submit directly.
+    setFakeState({ config: makeConfig() });
+    mocks.testScript.mockResolvedValue(interactiveOk(fieldDefs()));
+    const view = renderModal();
+    await whenReady(view);
+    expect(view.getByTestId("experience-setup-start").textContent).toBe("experience_setup_start");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
+    expect(mocks.restartSession).not.toHaveBeenCalled();
   });
 });

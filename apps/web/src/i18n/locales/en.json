@@ -2173,6 +2173,7 @@
   "experience_setup_source_preview_chat": "Context source: chat “{chat}”.",
   "experience_setup_source_preview_both": "Context source: {character} · chat “{chat}”.",
   "experience_setup_start": "Start",
+  "experience_setup_restart": "Restart match",
   "experience_setup_starting": "Starting…",
   "experience_setup_start_error": "Couldn't start the mini-app.",
   "experience_setup_scope_error": "This setup no longer matches the active branch.",

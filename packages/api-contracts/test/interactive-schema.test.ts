@@ -275,6 +275,7 @@ describe("experienceParticipantSchema (IR-70E model-seat assignment)", () => {
       capabilityGrants: ["model"],
       contextMode: "none",
       participants: [legacy],
+      initialSettings: {},
       visualId: null,
       visualSource: null,
       visualSourceHash: null,
@@ -592,6 +593,7 @@ describe("experienceSessionResponseSchema", () => {
       capabilityGrants: [],
       contextMode: "none",
       participants: [],
+      initialSettings: {},
       visualId: null,
       visualSource: null,
       visualSourceHash: null,
@@ -600,6 +602,19 @@ describe("experienceSessionResponseSchema", () => {
 
   it("accepts a valid session response", () => {
     expect(experienceSessionResponseSchema.safeParse(validResponse()).success).toBe(true);
+  });
+
+  it("carries the frozen initial-settings snapshot (lobby LB-5 restart prefill)", () => {
+    const withSettings = { ...validResponse(), initialSettings: { difficulty: "hard", seedCount: 3 } };
+    const parsed = experienceSessionResponseSchema.safeParse(withSettings);
+    expect(parsed.success).toBe(true);
+    // Bounded like the start settings input: an over-deep snapshot is rejected.
+    let deep: unknown = { v: 0 };
+    for (let i = 0; i < INTERACTIVE_SCHEMA_MAX_DEPTH + 2; i++) deep = { nested: deep };
+    expect(experienceSessionResponseSchema.safeParse({ ...validResponse(), initialSettings: deep }).success).toBe(false);
+    // Required: an absent snapshot is not a valid response.
+    const { initialSettings: _omit, ...withoutSnapshot } = validResponse();
+    expect(experienceSessionResponseSchema.safeParse(withoutSnapshot).success).toBe(false);
   });
 
   it("rejects a response missing the projected view", () => {
