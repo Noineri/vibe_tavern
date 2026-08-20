@@ -224,15 +224,14 @@ export const coauthorModules = sqliteTable('coauthor_modules', {
 // Mirrors `coauthor_modules` minus `description` and `openingMessage` (the
 // copilot is not a chat-mode and does not greet). `basePrompt` is inline text
 // (never a file path) so the editor works on one field for both built-in and
-// user profiles. `max_steps` defaults to 20 (the copilot tool-loop default,
-// NOT Co-Author's 5).
+// user profiles. `max_steps` was dropped in TAG-4b (the tool-loop is unbounded —
+// see COPILOT_TOOL_LOOP_CEILING).
 export const copilotProfiles = sqliteTable('copilot_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   basePrompt: text('base_prompt').notNull(),
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
   toolSetJson: text('tool_set_json').notNull().default('{}'),
-  maxSteps: integer('max_steps').notNull().default(20),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
