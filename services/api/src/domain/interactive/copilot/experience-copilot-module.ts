@@ -13,9 +13,10 @@
  * The skill system is REUSED wholesale from Co-Author (scanner + catalog +
  * `read_skill_file`), not reimplemented: the copilot simply has its OWN skill
  * root (`assets/experience-copilot/skills/`) so its catalog is isolated from the
- * Co-Author character skills. The single built-in skill today is
+ * Co-Author character skills. The two built-in skills today are
  * `experience-authoring` (craft guidance read on demand via `read_skill_file` —
- * progressive disclosure, keeping the system prompt lean).
+ * progressive disclosure, keeping the system prompt lean) and `grill-me`
+ * (adversarial design review of the current experience draft — TAG-11).
  */
 
 import { dirname, resolve } from "node:path";
@@ -63,7 +64,7 @@ export const EXPERIENCE_COPILOT_MODULE: ExperienceCopilotModuleDef = {
   description:
     "The copilot mode for authoring an interactive experience's rules and visual source. Proposes buffer edits via tools, self-tests, and never binds.",
   basePromptFile: "experience-copilot/base.md",
-  skillIds: ["experience-authoring"],
+  skillIds: ["experience-authoring", "grill-me"],
   toolSet: {
     write_buffer: true,
     edit_buffer: true,

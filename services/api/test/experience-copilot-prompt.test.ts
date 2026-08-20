@@ -455,9 +455,11 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // experience-authoring skill DESCRIPTION changed (commit ad893b75) and
     // again after the human-side user-flow doc (experience-copilot/
     // user-flow.md) became an always-on tail section (2026-08-17) — an
-    // intentional system-prompt content change, not drift.
+    // intentional system-prompt content change, not drift. Re-captured again
+    // when the built-in `grill-me` skill joined the catalog (TAG-11) — the
+    // catalog section legitimately gained one entry.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("65aa170588bad615c8b3d6c5fecd2c6677e66b4e52b9e8132d450add1b9637d8");
+      .toBe("298e2ce40a3cbe87a713c9155c48a1f56f0da55e2f2fd2f0dd69c2ccc9295cfc");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -574,9 +576,10 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     });
     expect(result.systemMessage).not.toContain("Current step plan");
     // The zero-todo SHA is still the pinned pre-feature digest — the omission
-    // is total, not a substituted empty header.
+    // is total, not a substituted empty header. (Re-captured TAG-11: the
+    // `grill-me` skill catalog entry is present in the baseline system message.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("65aa170588bad615c8b3d6c5fecd2c6677e66b4e52b9e8132d450add1b9637d8");
+      .toBe("298e2ce40a3cbe87a713c9155c48a1f56f0da55e2f2fd2f0dd69c2ccc9295cfc");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -637,8 +640,10 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     expect(result.systemMessage).not.toContain("Pinned context");
     expect(result.tokenAccounting.attached).toBe(0);
     // The zero-attached system message is STILL the pinned pre-CX-3 SHA.
+    // (Re-captured TAG-11: the `grill-me` skill catalog entry is present in the
+    // zero-attached baseline system message.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("65aa170588bad615c8b3d6c5fecd2c6677e66b4e52b9e8132d450add1b9637d8");
+      .toBe("298e2ce40a3cbe87a713c9155c48a1f56f0da55e2f2fd2f0dd69c2ccc9295cfc");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

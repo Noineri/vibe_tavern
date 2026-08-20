@@ -24,7 +24,7 @@ import {
 describe("experience-copilot module (ER-16)", () => {
   test("the single fixed module definition has the expected shape", () => {
     expect(EXPERIENCE_COPILOT_MODULE.id).toBe("experience-authoring");
-    expect(EXPERIENCE_COPILOT_MODULE.skillIds).toEqual(["experience-authoring"]);
+    expect(EXPERIENCE_COPILOT_MODULE.skillIds).toEqual(["experience-authoring", "grill-me"]);
     expect(EXPERIENCE_COPILOT_MODULE.basePromptFile).toBe("experience-copilot/base.md");
     // The seven authoring/diagnostic tools are declared. `read_skill_file` is
     // always available on top (mirroring Co-Author — the universal read-only
@@ -48,15 +48,21 @@ describe("experience-copilot module (ER-16)", () => {
     expect(module.basePrompt).toContain("read_skill_file");
   });
 
-  test("resolveExperienceCopilotSkillCatalog discovers the experience-authoring skill from the copilot root", async () => {
+  test("resolveExperienceCopilotSkillCatalog discovers the experience-authoring and grill-me skills from the copilot root", async () => {
     const { entries } = await resolveExperienceCopilotSkillCatalog();
-    expect(entries.length).toBeGreaterThanOrEqual(1);
+    expect(entries.length).toBeGreaterThanOrEqual(2);
     const skill = entries.find((e) => e.id === "experience-authoring");
     expect(skill).toBeDefined();
     expect(skill?.source).toBe("builtin");
     expect(skill?.rootRelativeManifestPath).toBe("experience-authoring/SKILL.md");
     expect(skill?.name.trim().length).toBeGreaterThan(0);
     expect(skill?.description.trim().length).toBeGreaterThan(0);
+    const grill = entries.find((e) => e.id === "grill-me");
+    expect(grill).toBeDefined();
+    expect(grill?.source).toBe("builtin");
+    expect(grill?.rootRelativeManifestPath).toBe("grill-me/SKILL.md");
+    expect(grill?.name).toBe("grill-me");
+    expect(grill?.description.trim().length).toBeGreaterThan(0);
   });
 
   test("renderExperienceCopilotSkillCatalog lists the discovered entry and is empty for none", async () => {
