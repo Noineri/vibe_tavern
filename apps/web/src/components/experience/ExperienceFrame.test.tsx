@@ -277,3 +277,117 @@ describe("ExperienceFrame — session-scoped bridge lifetime (IR-73B seam #4)", 
     expect(nonceB).toMatch(/^[0-9a-f]{32}$/);
   });
 });
+
+// ─── realtime frame document (RM-4) ─────────────────────────────────────────
+
+import {
+  buildRealtimeExperienceFrameDocument,
+  EXPERIENCE_FRAME_REALTIME_CSP,
+} from "./ExperienceFrame.js";
+import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
+import { waitFor } from "@testing-library/react";
+
+const RUNTIME_STUB = "/*__RUNTIME_STUB__*/ var __vtFrameRuntime = 1;";
+
+const REALTIME_CONFIG: ExperienceLoopConfig = {
+  rulesSource: 'context.experience.register({ apiVersion: 1 });',
+  tickMs: 100,
+  initialState: { remaining: 1000 },
+  seed: 42,
+  viewer: { kind: "human", participantId: "p1" },
+  scriptSeats: [],
+};
+
+function roundtripDocConfig(doc: string): unknown {
+  const open = '<script type="application/json" id="__vt_round_config">';
+  const start = doc.indexOf(open);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = doc.indexOf("</script>", start);
+  expect(end).toBeGreaterThan(start);
+  return JSON.parse(doc.slice(start + open.length, end));
+}
+
+describe("buildRealtimeExperienceFrameDocument", () => {
+  it("embeds runtime + config + boot, in order, under the realtime CSP", () => {
+    const doc = buildRealtimeExperienceFrameDocument(VISUAL, RUNTIME_STUB, REALTIME_CONFIG);
+    expect(doc).toContain(EXPERIENCE_FRAME_REALTIME_CSP);
+    expect(EXPERIENCE_FRAME_REALTIME_CSP).toContain("'unsafe-eval'");
+    expect(EXPERIENCE_FRAME_REALTIME_CSP).toContain("connect-src 'none'");
+    expect(doc).toContain(VIBE_EXPERIENCE_SDK_SOURCE);
+    expect(doc).toContain(RUNTIME_STUB);
+    // SDK → runtime → visual → boot (the boot line must come LAST so a visual
+    // that registers listeners at load sees every loop event).
+    expect(doc.indexOf(VIBE_EXPERIENCE_SDK_SOURCE)).toBeLessThan(doc.indexOf(RUNTIME_STUB));
+    expect(doc.indexOf(RUNTIME_STUB)).toBeLessThan(doc.indexOf(VISUAL));
+    expect(doc.indexOf(VISUAL)).toBeLessThan(doc.lastIndexOf("bootFromDocument"));
+    expect(doc).toContain("globalThis.__vtFrameRuntime.bootFromDocument();");
+  });
+
+  it("round-trips the config JSON through the tag byte-safely", () => {
+    const hostile: ExperienceLoopConfig = {
+      ...REALTIME_CONFIG,
+      rulesSource: '</script><script>alert(1)</script>',
+    };
+    const doc = buildRealtimeExperienceFrameDocument(VISUAL, RUNTIME_STUB, hostile);
+    // The config JSON must not contain a raw `</script>` (it would terminate
+    // the tag early and inject markup into the frame document).
+    const parsed = roundtripDocConfig(doc) as { rulesSource: string };
+    expect(parsed.rulesSource).toBe(hostile.rulesSource);
+  });
+
+  it("leaves the TURN document untouched: no runtime, no realtime CSP", () => {
+    const doc = buildExperienceFrameDocument(VISUAL);
+    expect(doc).not.toContain("__vt_round_config");
+    expect(doc).not.toContain("bootFromDocument");
+    expect(doc).not.toContain("'unsafe-eval'");
+    expect(doc).toContain(EXPERIENCE_FRAME_CSP);
+  });
+});
+
+describe("ExperienceFrame (realtime path)", () => {
+  it("builds a realtime blob document when realtime config is present", async () => {
+    installUrlSpies();
+    await act(async () => {
+      render(
+        <ExperienceFrame
+          visualSource={VISUAL}
+          sessionId="sess_rt"
+          initialRevision={0}
+          onAction={() => {}}
+          realtime={{ config: REALTIME_CONFIG }}
+        />,
+      );
+    });
+    // The artifact loads lazily — the blob appears once it resolves.
+    await waitFor(() => {
+      expect(createdBlobs.length).toBe(1);
+    });
+    const blob = createdBlobs[0]!;
+    const doc = await blob.text();
+    expect(doc).toContain("__vt_round_config");
+    expect(doc).toContain("bootFromDocument");
+    expect(doc).toContain(EXPERIENCE_FRAME_REALTIME_CSP);
+    expect(doc).toContain(VISUAL);
+    const parsed = roundtripDocConfig(doc) as { seed: number; tickMs: number };
+    expect(parsed.seed).toBe(42);
+    expect(parsed.tickMs).toBe(100);
+  });
+
+  it("never loads the runtime artifact on the turn-based path", async () => {
+    installUrlSpies();
+    await act(async () => {
+      render(
+        <ExperienceFrame
+          visualSource={VISUAL}
+          sessionId="sess_turn"
+          initialRevision={0}
+          onAction={() => {}}
+        />,
+      );
+    });
+    expect(createdBlobs.length).toBe(1);
+    const doc = await createdBlobs[0]!.text();
+    expect(doc).not.toContain("__vt_round_config");
+    expect(doc).not.toContain("unsafe-eval");
+  });
+});

@@ -83,7 +83,18 @@ import { z } from "zod";
 // Re-exports for frame hosts (the loop host builds the seeded cursor from the
 // round seed through the SAME domain primitive the server replay uses).
 export { createDeterministicRandom, createEphemeralRandom } from "@vibe-tavern/domain";
-export type { DeterministicRandom, EphemeralRandom } from "@vibe-tavern/domain";
+export type {
+  DeterministicRandom,
+  EphemeralRandom,
+  ExperienceAction,
+  ExperienceActionDescriptor,
+  ExperienceDeclaredCapability,
+  ExperienceManifest,
+  ExperienceParticipant,
+  ExperienceSetupDefinition,
+  ExperienceTransition,
+  ExperienceViewer,
+} from "@vibe-tavern/domain";
 
 // ─── Console capture (mirrors the sandbox's capturing console) ───────────────
 
