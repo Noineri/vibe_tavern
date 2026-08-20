@@ -136,6 +136,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       updatedAt: "2026-01-02T00:00:00.000Z",
       metrics: null,
       contextLinks: [],
+      todo: [],
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
@@ -151,8 +152,44 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       updatedAt: "2026-01-03T00:00:00.000Z",
       metrics: null,
       contextLinks: [],
+      todo: [],
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("accepts a thread carrying a todo step-plan (TAG-6)", () => {
+    const payload = {
+      id: "thread_004",
+      scriptId: "script_abc",
+      draftSessionId: null,
+      title: "Plan",
+      archivedAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      metrics: null,
+      contextLinks: [],
+      todo: [
+        { title: "Write the rules buffer", status: "active" as const },
+        { title: "Bind a visual", status: "pending" as const },
+      ],
+    };
+    expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("rejects a thread missing the todo field (required — TAG-6)", () => {
+    expect(() =>
+      experienceCopilotThreadSchema.parse({
+        id: "thread_005",
+        scriptId: null,
+        draftSessionId: null,
+        title: "No todo",
+        archivedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        metrics: null,
+        contextLinks: [],
+      }),
+    ).toThrow();
   });
 
   test("rejects a thread missing the id field", () => {

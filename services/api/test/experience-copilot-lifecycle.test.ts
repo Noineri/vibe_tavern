@@ -108,6 +108,23 @@ describe("ExperienceCopilotAdapter lifecycle (ER-11a)", () => {
     expect(await adapter.experienceCopilotGetActive("script_1")).toBeNull();
   });
 
+  it("maps the thread's todo step-plan to the wire (TAG-6)", async () => {
+    const thread = makeThread({
+      todo: [
+        { title: "Write the rules buffer", status: "active" },
+        { title: "Bind a visual", status: "pending" },
+      ],
+    });
+    const { store } = makeStore({ getActive: async () => thread });
+    const adapter = makeAdapter(store);
+
+    const wire = await adapter.experienceCopilotGetActive("script_1");
+    expect(wire?.todo).toEqual([
+      { title: "Write the rules buffer", status: "active" },
+      { title: "Bind a visual", status: "pending" },
+    ]);
+  });
+
   it("listMessages returns wire-mapped messages in store order (oldest → newest)", async () => {
     const messages = [
       makeMessage({ id: "msg_1", role: "user", content: "first" }),

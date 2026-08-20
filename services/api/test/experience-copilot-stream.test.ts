@@ -35,14 +35,16 @@ let streamTextImpl: ((opts: unknown) => unknown) | undefined;
 
 function createFakeStore(
   thread: ExperienceCopilotThread,
-): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> } {
+): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> } {
   const messages: ExperienceCopilotMessage[] = [];
   const metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> = [];
+  const todoCalls: Array<{ threadId: string; items: unknown }> = [];
   let counter = 0;
   const now = () => new Date(Date.now() + counter++ * 1000).toISOString();
   return {
     messages,
     metricsCalls,
+    todoCalls,
     async getActive() { return null; },
     async getById() { return thread; },
     async listSessions() { return [thread]; },
@@ -68,6 +70,14 @@ function createFakeStore(
     },
     async getAutoCompact() { return true; },
     async setAutoCompact() {},
+    // TAG-6: the todo tool's full-list rewrite persists onto the thread row.
+    // The fake mirrors the real store: records the call AND mutates the in-
+    // memory thread's todo so the NEXT turn's `getById` (this same thread
+    // object) already carries the plan — the session-scoped lifetime behavior.
+    async updateTodo(threadId: string, items: readonly { title: string; status: string }[]) {
+      todoCalls.push({ threadId, items });
+      thread.todo = items as ExperienceCopilotThread["todo"];
+    },
     // TAG-5: the fake mirrors the real store's semantics — rewrite the ONE
     // tool row matching threadId+toolCallId (threadId ignored in the fake; one
     // thread per test), null when no row matches.
@@ -81,7 +91,7 @@ function createFakeStore(
       row.content = JSON.stringify(payload);
       return row;
     },
-  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> };
+  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> };
 }
 
 // ─── Fake streamText result ──────────────────────────────────────────────────
@@ -197,6 +207,7 @@ function makeThread(scriptId: string | null = null): ExperienceCopilotThread {
     archivedAt: null,
     contextMetrics: null,
     contextLinks: [],
+    todo: [],
     lastProviderProfileId: null,
     lastModel: null,
     autoCompact: true,
@@ -1164,5 +1175,96 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
     }
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toContain("either `content` or `answer`");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TAG-6: todo wiring (saveTodo → updateTodo + prompt section)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("experience-copilot stream — todo wiring (TAG-6)", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  it("wires the todo tool's saveTodo to the store: a todo call persists via updateTodo", async () => {
+    const store = createFakeStore(makeThread());
+    let captured: { tools?: Record<string, { execute?: (input: unknown) => Promise<unknown> }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "plan this out", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // The built tool set carries the todo tool (builtin seed has todo: true).
+    const todoTool = captured!.tools!["todo"];
+    expect(todoTool).toBeDefined();
+
+    // Invoking the tool's execute — the same path the real SDK loop drives —
+    // must flow through the wired saveTodo → store.updateTodo(threadId, items).
+    const items = [
+      { title: "Write rules", status: "active" },
+      { title: "Bind visual", status: "pending" },
+    ];
+    const result = await todoTool.execute!(items);
+    expect(result).toMatchObject({ ok: true, remaining: 2, activeTitle: "Write rules" });
+
+    expect(store.todoCalls).toHaveLength(1);
+    expect(store.todoCalls[0].threadId).toBe("thread_1");
+    expect(store.todoCalls[0].items).toEqual(items);
+  });
+
+  it("the NEXT turn's assembly carries the persisted todo section (session-scoped lifetime)", async () => {
+    // A prior turn already persisted a plan onto the thread (the fake's
+    // updateTodo mutates thread.todo; here we seed it directly to isolate the
+    // turn-over read path).
+    const thread = makeThread();
+    thread.todo = [
+      { title: "Write the rules buffer", status: "active" },
+      { title: "Bind a visual", status: "pending" },
+    ];
+    const store = createFakeStore(thread);
+    let captured: { messages?: Array<{ role: string; content: string }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("continuing")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "continue", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const system = captured!.messages![0];
+    expect(system.role).toBe("system");
+    expect(system.content).toContain("# Current step plan");
+    expect(system.content).toContain("[active] Write the rules buffer");
+    expect(system.content).toContain("[pending] Bind a visual");
+  });
+
+  it("an empty todo → no todo section in the assembled prompt (byte-identical pre-TAG-6)", async () => {
+    const store = createFakeStore(makeThread()); // todo: []
+    let captured: { messages?: Array<{ role: string; content: string }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    expect(captured!.messages![0].content).not.toContain("Current step plan");
   });
 });

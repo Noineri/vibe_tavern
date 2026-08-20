@@ -41,6 +41,7 @@ function session(id: string, over: Partial<Omit<ExperienceCopilotThreadWire, "me
     updatedAt: "",
     metrics: null,
     contextLinks: [],
+    todo: [],
     ...over,
   };
 }

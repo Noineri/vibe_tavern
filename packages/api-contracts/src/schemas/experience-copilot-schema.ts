@@ -205,6 +205,36 @@ export const setCopilotContextLinksSchema = z
   .strict();
 export type SetCopilotContextLinksRequest = z.infer<typeof setCopilotContextLinksSchema>;
 
+// ─── Copilot todo (EXPERIENCE_COPILOT_TODO_ASK_GRILL_PLAN, TAG-1) ───────────
+
+/**
+ * One step in the copilot's todo list (TAG-1). The `todo` tool (Wave 2) has
+ * the model maintain a step-by-step action plan for the authoring session via
+ * full-list rewrites; the list persists on the thread row (`todo_json`, TAG-2)
+ * and re-enters the prompt every turn as a context section (TAG-6), surviving
+ * history compaction. The four statuses mirror the objective tracker's
+ * `objectiveTaskStatusSchema` (insights-schema.ts) — a deliberate match so the
+ * pinned panel (TAG-8) reuses the tracker's visual language (`NodeGlyph`,
+ * `statusClass`) unchanged. `.strict()` rejects unknown keys: a model-authored
+ * list must not smuggle extra fields through persistence.
+ */
+export const copilotTodoItemSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    status: z.enum(["pending", "active", "completed", "abandoned"]),
+  })
+  .strict();
+export type CopilotTodoItem = z.infer<typeof copilotTodoItemSchema>;
+
+/**
+ * A complete todo list as the `todo` tool sends it (rewrite semantics — every
+ * call carries the FULL list, never a delta; Cline-style). The cap is a
+ * pragmatic bound: room for a real development plan, bounded cost for the
+ * per-turn context section and the pinned panel render.
+ */
+export const copilotTodoListSchema = z.array(copilotTodoItemSchema).max(30);
+export type CopilotTodoList = z.infer<typeof copilotTodoListSchema>;
+
 /**
  * Wire shape of an experience-copilot thread (ER-7). Mirrors
  * `ExperienceCopilotThread` (packages/db/src/stores/experience-copilot-store.ts)
@@ -230,6 +260,12 @@ export const experienceCopilotThreadSchema = z.object({
    *  ids are skipped silently. Empty array = nothing pinned (the zero-pinned
    *  assembly stays byte-identical to the pre-plan output). */
   contextLinks: z.array(experienceCopilotContextLinkSchema),
+  /** The model's step-plan (TAG-6): `[]` until the first `todo` call, then the
+   *  full-list rewrite the tool persists every call. Mirrors the store's parsed
+   *  `todo` (TAG-2). REQUIRED (always present, empty = no plan yet) so the
+   *  client never has to null-check — the adapter maps the store row's todo
+   *  into this field on every thread read. */
+  todo: z.array(copilotTodoItemSchema),
 });
 export type ExperienceCopilotThreadWire = z.infer<typeof experienceCopilotThreadSchema>;
 
@@ -273,36 +309,6 @@ export const experienceCopilotBoundVisualSchema = z.object({
   kind: z.string(),
 });
 export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBoundVisualSchema>;
-
-// ─── Copilot todo (EXPERIENCE_COPILOT_TODO_ASK_GRILL_PLAN, TAG-1) ───────────
-
-/**
- * One step in the copilot's todo list (TAG-1). The `todo` tool (Wave 2) has
- * the model maintain a step-by-step action plan for the authoring session via
- * full-list rewrites; the list persists on the thread row (`todo_json`, TAG-2)
- * and re-enters the prompt every turn as a context section (TAG-6), surviving
- * history compaction. The four statuses mirror the objective tracker's
- * `objectiveTaskStatusSchema` (insights-schema.ts) — a deliberate match so the
- * pinned panel (TAG-8) reuses the tracker's visual language (`NodeGlyph`,
- * `statusClass`) unchanged. `.strict()` rejects unknown keys: a model-authored
- * list must not smuggle extra fields through persistence.
- */
-export const copilotTodoItemSchema = z
-  .object({
-    title: z.string().min(1).max(200),
-    status: z.enum(["pending", "active", "completed", "abandoned"]),
-  })
-  .strict();
-export type CopilotTodoItem = z.infer<typeof copilotTodoItemSchema>;
-
-/**
- * A complete todo list as the `todo` tool sends it (rewrite semantics — every
- * call carries the FULL list, never a delta; Cline-style). The cap is a
- * pragmatic bound: room for a real development plan, bounded cost for the
- * per-turn context section and the pinned panel render.
- */
-export const copilotTodoListSchema = z.array(copilotTodoItemSchema).max(30);
-export type CopilotTodoList = z.infer<typeof copilotTodoListSchema>;
 
 // ─── Copilot profiles (EXPERIENCE_COPILOT_PROFILES_PLAN, CP-1) ────────────────
 // A configurable, reusable copilot "personality" (system prompt + skills + tool

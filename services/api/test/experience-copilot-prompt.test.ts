@@ -563,6 +563,61 @@ describe("resolveDigestBoundary (CM-5)", () => {
   });
 });
 
+// ─── TAG-6: todo step-plan section ────────────────────────────────────────
+
+describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", () => {
+  test("empty todo → section omitted, system message byte-identical to pre-TAG-6", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    expect(result.systemMessage).not.toContain("Current step plan");
+    // The zero-todo SHA is still the pinned pre-feature digest — the omission
+    // is total, not a substituted empty header.
+    expect(createHash("sha256").update(result.systemMessage).digest("hex"))
+      .toBe("65aa170588bad615c8b3d6c5fecd2c6677e66b4e52b9e8132d450add1b9637d8");
+  });
+
+  test("non-empty todo renders [status] title lines with a preamble", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      todo: [
+        { title: "Write the rules buffer", status: "active" },
+        { title: "Add the reduce loop", status: "pending" },
+        { title: "Sketch the visual", status: "completed" },
+        { title: "Old idea", status: "abandoned" },
+      ],
+    });
+    expect(result.systemMessage).toContain("# Current step plan");
+    expect(result.systemMessage).toContain("keep it current via the `todo` tool");
+    expect(result.systemMessage).toContain("[active] Write the rules buffer");
+    expect(result.systemMessage).toContain("[pending] Add the reduce loop");
+    expect(result.systemMessage).toContain("[completed] Sketch the visual");
+    expect(result.systemMessage).toContain("[abandoned] Old idea");
+  });
+
+  test("the todo section is injected into the SYSTEM message (survives history compaction)", async () => {
+    // Feed a LONG history that budget-compaction would trim — the todo section
+    // is system-level, so it must ride OUTSIDE the compacted history flow.
+    const result = await assembleExperienceCopilotPrompt({
+      history: makeMessages(40),
+      rules: VALID_RULES,
+      step: "rules",
+      contextBudget: 800,
+      responseReserve: 100,
+      todo: [{ title: "Finish the plan", status: "active" }],
+    });
+    expect(result.systemMessage).toContain("# Current step plan");
+    expect(result.systemMessage).toContain("[active] Finish the plan");
+    // The plan is NOT a history flow message.
+    expect(result.messages.some((m) => m.role !== "system")).toBe(true);
+    expect(result.messages[0].role).toBe("system");
+  });
+});
+
 // ─── CX-3: attached-context injection ────────────────────────────────────────
 
 describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {

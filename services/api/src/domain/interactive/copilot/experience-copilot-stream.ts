@@ -501,6 +501,7 @@ export async function* streamExperienceCopilot(
     contextBudget: COPILOT_CONTEXT_BUDGET_TOKENS,
     responseReserve: COPILOT_RESPONSE_RESERVE_TOKENS,
     profile: copilotProfile,
+    todo: thread.todo,
     ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
     ...(attachedContextBlock ? { attachedContextBlock } : {}),
   });
@@ -522,6 +523,12 @@ export async function* streamExperienceCopilot(
     ...(visual !== undefined ? { visual } : {}),
     toolSet: copilotProfile.toolSet,
     skillRoots: assembled.skillRoots,
+    // TAG-6: the todo tool's full-list rewrite persists onto the thread row via
+    // the ER-3 store (session-scoped lifetime — survives turns, reloads, and
+    // compaction via the prompt section above). The tool's dep signature is
+    // `(items: readonly CopilotTodoItem[]) => Promise<void>`; the store's
+    // `updateTodo(threadId, items)` is its structural twin.
+    saveTodo: (items) => deps.store.updateTodo(request.threadId, items),
   });
 
   // ── 8. Resolve the model + start streaming ──
