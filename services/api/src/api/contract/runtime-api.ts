@@ -678,6 +678,16 @@ export interface ExperienceRuntimeApi {
 	restartExperienceSession: (sessionId: string, body: { settings?: unknown; participants?: import("@vibe-tavern/domain").ExperienceParticipant[] }) => Promise<ExperienceSessionResponse>;
 	submitExperienceAction: (sessionId: string, body: import("@vibe-tavern/domain").ExperienceAction, signal?: AbortSignal) => Promise<ExperienceActionResponse>;
 
+	// ── Realtime round commit + model seam (RM-7 / RM-8) ──
+	/** Realtime round commit (RM-7 contract, RM-8 service): the client-authoritative
+	 *  round claim — replay-verified server-side before ONE terminal transition
+	 *  and the existing finish-writeback chat card. */
+	commitExperienceRound: (sessionId: string, body: import("@vibe-tavern/api-contracts").ExperienceRoundCommitRequestDto) => Promise<ExperienceQueuedAttachmentResponse>;
+	/** One-shot non-streaming generation for a model seat (realtime rounds).
+	 *  Stateless: read-only provider resolution, NO effect row — the reply is
+	 *  DATA for the round log. */
+	runExperienceRoundModel: (body: import("@vibe-tavern/api-contracts").ExperienceRoundModelRequestDto, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ExperienceRoundModelResponseDto>;
+
 	// ── Per-viewer projection reads ──
 	getExperienceView: (sessionId: string, participantId?: string) => Promise<ExperienceProjection>;
 	getExperienceActions: (sessionId: string, participantId?: string) => Promise<ExperienceActionDescriptor[]>;

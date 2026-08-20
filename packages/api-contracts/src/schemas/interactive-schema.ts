@@ -123,6 +123,12 @@ export const INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT = 4000;
 export const INTERACTIVE_SCHEMA_TICK_MS_MIN = 16;
 /** Maximum fixed timestep (ms) of a realtime round loop (1 tick/s floor). */
 export const INTERACTIVE_SCHEMA_TICK_MS_MAX = 1000;
+/** Max events in one committed realtime round log (RM-7). Authoritative server
+ *  bound; the frame↔host bridge's `BRIDGE_MAX_ROUND_LOG_EVENTS` (apps/web) is
+ *  the client-side copy of the same cap. */
+export const INTERACTIVE_SCHEMA_MAX_ROUND_LOG_EVENTS = 10_000;
+/** Max chars of a round-commit summary (RM-7; mirrors the bridge bound). */
+export const INTERACTIVE_SCHEMA_MAX_ROUND_SUMMARY_CHARS = 4_000;
 
 const boundedId = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_ID);
 const boundedLabel = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_LABEL);
@@ -970,6 +976,109 @@ export const experiencePlaygroundTimerRequestSchema = z.object({
   playgroundSessionId: boundedId,
 });
 
+// ─── Realtime round commit + model seam (RM-7 / REALTIME_EXPERIENCE_MODE_PLAN) ─
+
+/**
+ * A single logged action in a realtime round log. Mirrors the loop host's
+ * `ExperienceLoopLoggedAction` (apps/web/src/lib/experience-loop-host.ts),
+ * which ALWAYS logs `requestId` + `expectedRevision` for idempotency/CAS — a
+ * realtime round is the same replayable record as a turn-based session, so
+ * every input/script move must carry them.
+ */
+export const experienceRoundLogActionSchema = z.object({
+  type: boundedId,
+  requestId: boundedRequestId,
+  expectedRevision: boundedRevision,
+  participantId: boundedId.optional(),
+  payload: boundedPayload.optional(),
+});
+
+/**
+ * The ordered round-log vocabulary (RM-7). Mirrors the loop host's
+ * `ExperienceLoopEvent` union VERBATIM — the log is the single source of truth
+ * RM-8 replays through the real kernel before accepting a commit. `finalState`
+ * carries the claim; the event stream is how the replay reconstructs it.
+ */
+export const experienceRoundLogEventSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("round_started"),
+    seed: z.number().int().min(0),
+    // `settings` is bounded JSON (may be null) — the loop always pushes it,
+    // the visual suppresses it, the replay uses the pinned session seed.
+    settings: boundedState,
+  }),
+  z.object({
+    kind: z.literal("ticks"),
+    count: z.number().int().min(1),
+  }),
+  z.object({
+    kind: z.literal("input"),
+    action: experienceRoundLogActionSchema,
+  }),
+  z.object({
+    kind: z.literal("script_move"),
+    participantId: boundedId,
+    action: experienceRoundLogActionSchema,
+  }),
+  z.object({
+    kind: z.literal("model_request"),
+    seatId: boundedId,
+    prompt: boundedPayload,
+    requestId: boundedRequestId.optional(),
+  }),
+  z.object({
+    kind: z.literal("model_result"),
+    seatId: boundedId,
+    // The model reply — DATA for the log; replay never re-generates it.
+    result: boundedPayload,
+    requestId: boundedRequestId.optional(),
+  }),
+  z.object({
+    kind: z.literal("round_finished"),
+    status: z.enum(["completed", "interrupted"]),
+  }),
+]);
+
+/**
+ * POST /api/experience/sessions/:sessionId/round/commit — the client-authoritative
+ * round claim (RM-7 contract). The body is exactly the bridge's `round_commit`
+ * vocabulary: status, finalState, the bounded ordered event log, and optional
+ * score/summary for the chat card. There is deliberately NO revision/CAS pair:
+ * RM-8 replay-verifies the log against the session's pinned seed + rules source
+ * (mismatch → typed 422, nothing applied), not a number compare.
+ */
+export const experienceRoundCommitRequestSchema = z.object({
+  status: z.enum(["completed", "interrupted"]),
+  finalState: boundedState,
+  log: z.array(experienceRoundLogEventSchema).max(INTERACTIVE_SCHEMA_MAX_ROUND_LOG_EVENTS),
+  score: z.number().optional(),
+  summary: z.string().max(INTERACTIVE_SCHEMA_MAX_ROUND_SUMMARY_CHARS).optional(),
+});
+
+/**
+ * POST /api/experience/round-model — one-shot non-streaming generation for a
+ * model seat. Session-less and stateless (shared by the live modal host and the
+ * playground realtime panel). Provider routing comes from the model seat's
+ * participant fields (`providerProfileId`/`modelId`) and is supplied by the
+ * trusted HOST surface, never the frame. `prompt` is OPAQUE author data at the
+ * schema level — the seam interprets it as the model-effect request vocabulary.
+ */
+export const experienceRoundModelRequestSchema = z.object({
+  seatId: boundedId,
+  requestId: boundedRequestId.optional(),
+  providerProfileId: boundedId,
+  modelId: boundedId,
+  prompt: boundedPayload,
+});
+
+/** One-shot round-model reply: the model's reply as DATA, echoed back with the
+ *  correlation ids the host needs to post it into the frame (sendModelResult). */
+export const experienceRoundModelResponseSchema = z.object({
+  seatId: boundedId,
+  requestId: boundedRequestId.optional(),
+  result: boundedPayload,
+});
+
 // ─── DTO types (wire-only shapes; canonical envelopes come from Domain) ──────
 
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
@@ -993,6 +1102,9 @@ export type ExperienceTestSimulateRequestDto = z.infer<typeof experienceTestSimu
 export type ExperiencePlaygroundStartRequestDto = z.infer<typeof experiencePlaygroundStartRequestSchema>;
 export type ExperiencePlaygroundAdvanceRequestDto = z.infer<typeof experiencePlaygroundAdvanceRequestSchema>;
 export type ExperiencePlaygroundTimerRequestDto = z.infer<typeof experiencePlaygroundTimerRequestSchema>;
+export type ExperienceRoundCommitRequestDto = z.infer<typeof experienceRoundCommitRequestSchema>;
+export type ExperienceRoundModelRequestDto = z.infer<typeof experienceRoundModelRequestSchema>;
+export type ExperienceRoundModelResponseDto = z.infer<typeof experienceRoundModelResponseSchema>;
 export type ExperienceSetupFieldOptionDto = z.infer<typeof experienceSetupFieldOptionSchema>;
 export type ExperienceSetupFieldDto = z.infer<typeof experienceSetupFieldSchema>;
 export type ExperienceSetupDefinitionDto = z.infer<typeof experienceSetupDefinitionSchema>;

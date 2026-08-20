@@ -17,7 +17,13 @@ import type {
 	ExperienceActionResponse,
 	ExperienceContextStatusDto,
 	ExperiencePromptOverridesResponse,
+	ExperienceQueuedAttachmentResponse,
 } from "../contract/runtime-api.js";
+import type {
+	ExperienceRoundCommitRequestDto,
+	ExperienceRoundModelRequestDto,
+	ExperienceRoundModelResponseDto,
+} from "@vibe-tavern/api-contracts";
 import type {
 	ExperienceService,
 	ExperienceSessionView,
@@ -50,6 +56,10 @@ import {
 	type PlaygroundChatter,
 } from "../../domain/interactive/experience-playground.js";
 import { createPlaygroundModelDeps } from "../../domain/interactive/experience-playground-model.js";
+import {
+	createRoundModelDeps,
+	type ExperienceRoundModelInput,
+} from "../../domain/interactive/experience-round-model.js";
 import { ExperienceChatterService } from "../../domain/interactive/experience-chatter-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { DomainError } from "../../shared/errors.js";
@@ -80,6 +90,14 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		 * undefined — static flavor passes through unchanged).
 		 */
 		explicitPlaygroundChatter?: PlaygroundChatter,
+		/**
+		 * RM-7: explicit test-injection seam for the round-model deps. When
+		 * supplied, used directly (so tests can inject a deterministic model
+		 * seam without a real ProviderProfileService). When omitted, the
+		 * constructor derives it from `providerProfiles` via
+		 * {@link createRoundModelDeps}.
+		 */
+		explicitRoundModelDeps?: ReturnType<typeof createRoundModelDeps>,
 	) {
 		this.playgroundModelDeps = explicitPlaygroundModelDeps !== undefined
 			? explicitPlaygroundModelDeps
@@ -91,10 +109,16 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 			: providerProfiles !== undefined
 				? new ExperienceChatterService({ providerProfiles })
 				: undefined;
+		this.roundModelDeps = explicitRoundModelDeps !== undefined
+			? explicitRoundModelDeps
+			: providerProfiles !== undefined
+				? createRoundModelDeps({ providerProfiles })
+				: undefined;
 	}
 
 	private readonly playgroundModelDeps?: PlaygroundModelDeps;
 	private readonly playgroundChatter?: PlaygroundChatter;
+	private readonly roundModelDeps?: ReturnType<typeof createRoundModelDeps>;
 
 	// ─── Response shaping ────────────────────────────────────────────────────
 
@@ -490,6 +514,63 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		if (!modelResult.ok) throw mapTestError(modelResult.error);
 		return modelResult.data;
 	}
+
+	// ── Realtime round commit + model seam (RM-7 / RM-8) ────────────────────
+
+	/** RM-7 contract, RM-8 service: replay-verify the round log, then ONE
+	 *  terminal transition + the finish-writeback chat card. Until RM-8 the
+	 *  route validates the body shape (zValidator) and fails typed here. */
+	commitExperienceRound = async (
+		_sessionId: string,
+		_body: ExperienceRoundCommitRequestDto,
+	): Promise<ExperienceQueuedAttachmentResponse> => {
+		// RM-8 wires the replay-verify round service behind this; until then the
+		// route validates the body shape and fails typed here.
+		throw new DomainError({
+			kind: "Unprocessable",
+			message: "Round commit is not implemented yet",
+			details: { code: "not_implemented" },
+		});
+	};
+
+	/** RM-7: one-shot non-streaming generation for a model seat. Session-less
+	 *  and stateless — read-only provider resolution, NO effect row, the reply
+	 *  is DATA the host posts back into the frame. The abort signal forwards to
+	 *  the executor (client disconnect cancels the HTTP call). */
+	runExperienceRoundModel = async (
+		body: ExperienceRoundModelRequestDto,
+		signal?: AbortSignal,
+	): Promise<ExperienceRoundModelResponseDto> => {
+		if (this.roundModelDeps === undefined) {
+			throw new DomainError({
+				kind: "Unprocessable",
+				message: "No provider profiles available; cannot run a model seat",
+				details: { code: "no_provider" },
+			});
+		}
+		const input: ExperienceRoundModelInput = {
+			seatId: body.seatId,
+			...(body.requestId !== undefined ? { requestId: body.requestId } : {}),
+			providerProfileId: body.providerProfileId,
+			modelId: body.modelId,
+			prompt: body.prompt,
+			signal,
+		};
+		const result = await this.roundModelDeps.run(input);
+		if (!result.ok) throw mapRoundModelError(result.error);
+		return result.data;
+	};
+}
+
+/**
+ * Map a typed round-model failure to a {@link DomainError}. 422 → Unprocessable
+ * (invalid prompt / unknown provider / missing key / bad output shape), 500 →
+ * Internal (the provider IO failed). The structured code + message ride in
+ * `details` so the client can react to the specific failure.
+ */
+function mapRoundModelError(e: { code: string; message: string; status: 422 | 500 }): never {
+	const kind = e.status === 422 ? "Unprocessable" : "Internal";
+	throw new DomainError({ kind, message: e.message, details: { code: e.code } });
 }
 
 /**

@@ -91,6 +91,8 @@ function stubRuntime(throws?: { kind: any; message: string }): { runtime: Experi
 		getExperiencePromptOverrides: async (sessionId: string) => { rec("getExperiencePromptOverrides").push({ sessionId }); maybeThrow(); return { global: null, character: null }; },
 		updateExperienceGlobalOverride: async (sessionId: string, body: any) => { rec("updateExperienceGlobalOverride").push({ sessionId, body }); maybeThrow(); return { global: { scope: "global", content: body.content, characterId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }, character: null }; },
 		updateExperienceCharacterOverride: async (sessionId: string, body: any) => { rec("updateExperienceCharacterOverride").push({ sessionId, body }); maybeThrow(); return { global: null, character: { scope: "character", content: body.content, characterId: "c_1", createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" } }; },
+		commitExperienceRound: async (sessionId: string, body: any) => { rec("commitExperienceRound").push({ sessionId, body }); maybeThrow(); return null; },
+		runExperienceRoundModel: async (body: any, signal?: AbortSignal) => { rec("runExperienceRoundModel").push({ body, signal }); maybeThrow(); return { seatId: body.seatId, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}), result: { actionId: "move" } }; },
 	};
 	return { runtime: base as unknown as ExperienceRuntimeApi, calls };
 }
@@ -318,6 +320,56 @@ describe("Experience routes — HTTP layer (stub)", () => {
 		const status = await app.request("/api/experience/sessions/s_1/reports/status");
 		expect(status.status).toBe(200);
 		expect(calls.getExperienceReportStatus[0]).toEqual({ sessionId: "s_1" });
+	});
+
+	test("round/commit: schema-rejects a malformed body (400) and forwards a valid one", async () => {
+		const { runtime, calls } = stubRuntime();
+		const app = mount(runtime);
+
+		// Missing status + finalState → 400 before the runtime is reached.
+		const malformed = await app.request("/api/experience/sessions/s_1/round/commit", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ log: [] }),
+		});
+		expect(malformed.status).toBe(400);
+		expect(calls.commitExperienceRound).toBeUndefined();
+
+		const valid = await app.request("/api/experience/sessions/s_1/round/commit", {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ status: "completed", finalState: { count: 1 }, log: [{ kind: "ticks", count: 1 }] }),
+		});
+		expect(valid.status).toBe(200);
+		expect(calls.commitExperienceRound[0]).toEqual({
+			sessionId: "s_1",
+			body: { status: "completed", finalState: { count: 1 }, log: [{ kind: "ticks", count: 1 }] },
+		});
+	});
+
+	test("round-model: schema-rejects a missing routing field (400) and forwards a valid request", async () => {
+		const { runtime, calls } = stubRuntime();
+		const app = mount(runtime);
+
+		const malformed = await app.request("/api/experience/round-model", {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ seatId: "ai", prompt: { viewer: "ai", mode: "text" } }), // no providerProfileId/modelId
+		});
+		expect(malformed.status).toBe(400);
+		expect(calls.runExperienceRoundModel).toBeUndefined();
+
+		const valid = await app.request("/api/experience/round-model", {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				seatId: "ai", requestId: "rq-7", providerProfileId: "pp1", modelId: "gpt-test",
+				prompt: { viewer: "ai", mode: "text", instruction: "Reply" },
+			}),
+		});
+		expect(valid.status).toBe(200);
+		expect(calls.runExperienceRoundModel[0]).toEqual({
+			body: {
+				seatId: "ai", requestId: "rq-7", providerProfileId: "pp1", modelId: "gpt-test",
+				prompt: { viewer: "ai", mode: "text", instruction: "Reply" },
+			},
+			signal: expect.any(AbortSignal),
+		});
 	});
 });
 

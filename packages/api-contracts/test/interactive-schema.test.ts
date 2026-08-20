@@ -21,6 +21,8 @@ import {
   INTERACTIVE_SCHEMA_MAX_STRING,
   INTERACTIVE_SCHEMA_TICK_MS_MIN,
   INTERACTIVE_SCHEMA_TICK_MS_MAX,
+  INTERACTIVE_SCHEMA_MAX_ROUND_LOG_EVENTS,
+  INTERACTIVE_SCHEMA_MAX_ROUND_SUMMARY_CHARS,
   boundedJsonValue,
   experienceActionSchema,
   experienceCapabilitySchema,
@@ -43,6 +45,10 @@ import {
   experienceSetupDefinitionSchema,
   experienceSetupFieldSchema,
   experienceStartRequestSchema,
+  experienceRoundCommitRequestSchema,
+  experienceRoundLogEventSchema,
+  experienceRoundModelRequestSchema,
+  experienceRoundModelResponseSchema,
   experienceTransitionSchema,
   experienceViewerKindSchema,
   experienceViewerSchema,
@@ -1075,5 +1081,155 @@ describe("experienceChatterRequestSchema / experienceChatterViewSchema (async fl
         text: "x".repeat(INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT + 1),
       }),
     );
+  });
+});
+
+// ─── Realtime round commit + model seam (RM-7) ───────────────────────────────
+
+describe("experienceRoundLogEventSchema (RM-7 ordered round-log vocabulary)", () => {
+  const validAction = {
+    type: "move",
+    requestId: "req-1",
+    expectedRevision: 0,
+    participantId: "p1",
+    payload: { dx: 1 },
+  };
+
+  it("round_started with object settings", () => {
+    expectData(
+      experienceRoundLogEventSchema.safeParse({ kind: "round_started", seed: 42, settings: { difficulty: 2 } }),
+    );
+  });
+
+  it("round_started with null settings", () => {
+    expectData(experienceRoundLogEventSchema.safeParse({ kind: "round_started", seed: 42, settings: null }));
+  });
+
+  it("round_started rejects a negative seed", () => {
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "round_started", seed: -1, settings: null }));
+  });
+
+  it("ticks accepts a positive count", () => {
+    expectData(experienceRoundLogEventSchema.safeParse({ kind: "ticks", count: 1 }));
+  });
+
+  it("ticks rejects 0 / negative / non-integer counts", () => {
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "ticks", count: 0 }));
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "ticks", count: -3 }));
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "ticks", count: 1.5 }));
+  });
+
+  it("input carries a full logged action", () => {
+    expectData(experienceRoundLogEventSchema.safeParse({ kind: "input", action: validAction }));
+  });
+
+  it("script_move carries participantId + full logged action", () => {
+    expectData(
+      experienceRoundLogEventSchema.safeParse({ kind: "script_move", participantId: "ai", action: validAction }),
+    );
+  });
+
+  it("input/script_move action REQUIRES requestId + expectedRevision (loop always logs them)", () => {
+    const { requestId: _r, ...noReqId } = validAction;
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "input", action: noReqId }));
+    const { expectedRevision: _e, ...noRev } = validAction;
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "script_move", participantId: "ai", action: noRev }));
+  });
+
+  it("model_request / model_result carry seatId + bounded payload", () => {
+    expectData(
+      experienceRoundLogEventSchema.safeParse({ kind: "model_request", seatId: "ai", prompt: { viewer: "ai", mode: "text" } }),
+    );
+    expectData(
+      experienceRoundLogEventSchema.safeParse({ kind: "model_result", seatId: "ai", result: { actionId: "move" } }),
+    );
+  });
+
+  it("round_finished accepts both statuses", () => {
+    expectData(experienceRoundLogEventSchema.safeParse({ kind: "round_finished", status: "completed" }));
+    expectData(experienceRoundLogEventSchema.safeParse({ kind: "round_finished", status: "interrupted" }));
+  });
+
+  it("rejects an unknown kind", () => {
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "nope", count: 1 }));
+  });
+});
+
+describe("experienceRoundCommitRequestSchema (RM-7)", () => {
+  const valid = {
+    status: "completed",
+    finalState: { board: [null, "x", "o"] },
+    log: [{ kind: "ticks", count: 1 } as const],
+  };
+
+  it("accepts a minimal valid commit (no score/summary)", () => {
+    expectData(experienceRoundCommitRequestSchema.safeParse(valid));
+  });
+
+  it("accepts optional score + summary within bounds", () => {
+    expectData(
+      experienceRoundCommitRequestSchema.safeParse({ ...valid, score: 120, summary: "You won!" }),
+    );
+  });
+
+  it("rejects a bad status enum", () => {
+    expectReject(experienceRoundCommitRequestSchema.safeParse({ ...valid, status: "paused" }));
+  });
+
+  it("rejects a whole-string score", () => {
+    expectReject(experienceRoundCommitRequestSchema.safeParse({ ...valid, score: "10" }));
+  });
+
+  it("rejects a summary over the 4000-char bound", () => {
+    expectReject(
+      experienceRoundCommitRequestSchema.safeParse({
+        ...valid,
+        summary: "x".repeat(INTERACTIVE_SCHEMA_MAX_ROUND_SUMMARY_CHARS + 1),
+      }),
+    );
+  });
+
+  it("rejects a log over the 10_000-event bound", () => {
+    const log = Array.from({ length: INTERACTIVE_SCHEMA_MAX_ROUND_LOG_EVENTS + 1 }, () => ({ kind: "ticks", count: 1 }));
+    expectReject(experienceRoundCommitRequestSchema.safeParse({ ...valid, log }));
+  });
+});
+
+describe("experienceRoundModelRequestSchema / response (RM-7)", () => {
+  const validRequest = {
+    seatId: "ai",
+    requestId: "rq-7",
+    providerProfileId: "pp1",
+    modelId: "gpt-test",
+    prompt: { viewer: "ai", mode: "text", instruction: "Reply in character." },
+  };
+
+  it("accepts a valid request", () => {
+    expectData(experienceRoundModelRequestSchema.safeParse(validRequest));
+  });
+
+  it("requestId is optional", () => {
+    const { requestId: _r, ...rest } = validRequest;
+    expectData(experienceRoundModelRequestSchema.safeParse(rest));
+  });
+
+  it("rejects when any required routing field is missing", () => {
+    const { providerProfileId: _pp, ...noProvider } = validRequest;
+    expectReject(experienceRoundModelRequestSchema.safeParse(noProvider));
+    const { modelId: _m, ...noModel } = validRequest;
+    expectReject(experienceRoundModelRequestSchema.safeParse(noModel));
+    const { seatId: _s, ...noSeat } = validRequest;
+    expectReject(experienceRoundModelRequestSchema.safeParse(noSeat));
+    const { prompt: _p, ...noPrompt } = validRequest;
+    expectReject(experienceRoundModelRequestSchema.safeParse(noPrompt));
+  });
+
+  it("rejects an oversized/unsafe prompt", () => {
+    expectReject(experienceRoundModelRequestSchema.safeParse({ ...validRequest, prompt: { fn: () => 1 } }));
+  });
+
+  it("round-trips a valid response", () => {
+    expectData(experienceRoundModelResponseSchema.safeParse({ seatId: "ai", result: { actionId: "move" } }));
+    expectData(experienceRoundModelResponseSchema.safeParse({ seatId: "ai", requestId: "rq-7", result: "hi" }));
   });
 });

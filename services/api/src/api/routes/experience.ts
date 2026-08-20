@@ -240,5 +240,33 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     // start/advance: the sleep must never lag a click's response.
     .post("/api/experience/playground/timer", zValidator("json", schemas.experiencePlaygroundTimerRequestSchema), async (c) => {
       return c.json(await runtime.runExperiencePlaygroundTimer(c.req.valid("json")));
-    });
+    })
+
+    // ── Realtime round commit + model seam (RM-7 / REALTIME_EXPERIENCE_MODE_PLAN) ──
+    // Commit: the visual loop's client-authoritative round claim. There is
+    // deliberately NO revision/CAS compare — RM-8 replay-verifies the log
+    // against the session's pinned seed + rules source (mismatch → typed 422,
+    // nothing applied) before ONE terminal transition + the finish-writeback
+    // chat card. The body is exactly the bridge's round_commit vocabulary.
+    .post(
+      "/api/experience/sessions/:sessionId/round/commit",
+      zValidator("json", schemas.experienceRoundCommitRequestSchema),
+      async (c) => {
+        return c.json(
+          await runtime.commitExperienceRound(c.req.param("sessionId"), c.req.valid("json")),
+        );
+      },
+    )
+    // Round-model: one-shot non-streaming generation for a model seat. This is
+    // SESSION-LESS and STATELESS (read-only provider resolution, NO effect row)
+    // precisely so the playground realtime panel and the live modal host share
+    // the same route — the round stays client-authoritative and the reply is
+    // just DATA the host posts back into the frame's log.
+    .post(
+      "/api/experience/round-model",
+      zValidator("json", schemas.experienceRoundModelRequestSchema),
+      async (c) => {
+        return c.json(await runtime.runExperienceRoundModel(c.req.valid("json"), c.req.raw.signal));
+      },
+    );
 }
