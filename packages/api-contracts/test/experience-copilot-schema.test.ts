@@ -10,6 +10,8 @@ import {
   experienceCopilotContextMetricsSchema,
   experienceCopilotContextLinkSchema,
   setCopilotContextLinksSchema,
+  copilotTodoItemSchema,
+  copilotTodoListSchema,
   copilotToolSetSchema,
   copilotProfileSchema,
   COPILOT_TOOL_KEYS,
@@ -256,14 +258,62 @@ describe("copilotToolSetSchema (CP-1)", () => {
     expect(() => copilotToolSetSchema.parse({ read_skill_file: true })).toThrow();
   });
 
-  test("COPILOT_TOOL_KEYS lists exactly the 5 toggleable tools (no read_skill_file)", () => {
+  test("accepts todo/ask_user booleans (TAG-1)", () => {
+    const payload = { todo: true, ask_user: false };
+    expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("COPILOT_TOOL_KEYS lists exactly the 7 toggleable tools (no read_skill_file)", () => {
     expect(COPILOT_TOOL_KEYS).toEqual([
       "write_buffer",
       "edit_buffer",
       "run_test",
       "run_simulate",
       "suggest_visual_binding",
+      "todo",
+      "ask_user",
     ]);
+  });
+});
+
+// ─── TAG-1: copilot todo schemas ─────────────────────────────────────────────
+
+describe("copilotTodoItemSchema (TAG-1)", () => {
+  test("accepts a valid item in each status", () => {
+    for (const status of ["pending", "active", "completed", "abandoned"] as const) {
+      const payload = { title: "Write the reduce loop", status };
+      expect(copilotTodoItemSchema.parse(payload)).toEqual(payload);
+    }
+  });
+
+  test("rejects an unknown status", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "x", status: "in_progress" })).toThrow();
+  });
+
+  test("rejects an empty title", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "", status: "pending" })).toThrow();
+  });
+
+  test("rejects an oversized title (cap 200)", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "y".repeat(201), status: "pending" })).toThrow();
+  });
+
+  test("rejects an unknown key (strict)", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "x", status: "pending", done: true })).toThrow();
+  });
+});
+
+describe("copilotTodoListSchema (TAG-1)", () => {
+  const item = { title: "step", status: "active" as const };
+
+  test("accepts a list at the cap (30 items)", () => {
+    const list = Array.from({ length: 30 }, () => item);
+    expect(copilotTodoListSchema.parse(list).length).toBe(30);
+  });
+
+  test("rejects a list over the cap (31 items)", () => {
+    const list = Array.from({ length: 31 }, () => item);
+    expect(() => copilotTodoListSchema.parse(list)).toThrow();
   });
 });
 

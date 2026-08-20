@@ -218,6 +218,36 @@ export const experienceCopilotBoundVisualSchema = z.object({
 });
 export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBoundVisualSchema>;
 
+// ─── Copilot todo (EXPERIENCE_COPILOT_TODO_ASK_GRILL_PLAN, TAG-1) ───────────
+
+/**
+ * One step in the copilot's todo list (TAG-1). The `todo` tool (Wave 2) has
+ * the model maintain a step-by-step action plan for the authoring session via
+ * full-list rewrites; the list persists on the thread row (`todo_json`, TAG-2)
+ * and re-enters the prompt every turn as a context section (TAG-6), surviving
+ * history compaction. The four statuses mirror the objective tracker's
+ * `objectiveTaskStatusSchema` (insights-schema.ts) — a deliberate match so the
+ * pinned panel (TAG-8) reuses the tracker's visual language (`NodeGlyph`,
+ * `statusClass`) unchanged. `.strict()` rejects unknown keys: a model-authored
+ * list must not smuggle extra fields through persistence.
+ */
+export const copilotTodoItemSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    status: z.enum(["pending", "active", "completed", "abandoned"]),
+  })
+  .strict();
+export type CopilotTodoItem = z.infer<typeof copilotTodoItemSchema>;
+
+/**
+ * A complete todo list as the `todo` tool sends it (rewrite semantics — every
+ * call carries the FULL list, never a delta; Cline-style). The cap is a
+ * pragmatic bound: room for a real development plan, bounded cost for the
+ * per-turn context section and the pinned panel render.
+ */
+export const copilotTodoListSchema = z.array(copilotTodoItemSchema).max(30);
+export type CopilotTodoList = z.infer<typeof copilotTodoListSchema>;
+
 // ─── Copilot profiles (EXPERIENCE_COPILOT_PROFILES_PLAN, CP-1) ────────────────
 // A configurable, reusable copilot "personality" (system prompt + skills + tool
 // toggles + turn budget), mirroring Co-Author's module system. Unlike a
@@ -225,9 +255,10 @@ export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBound
 // `openingMessage` — the copilot is not a chat-mode and does not greet.
 
 /**
- * Which tools a profile may toggle. A PARTIAL record over exactly the 5
+ * Which tools a profile may toggle. A PARTIAL record over exactly the 7
  * toggleable copilot tools (write_buffer, edit_buffer, run_test, run_simulate,
- * suggest_visual_binding). `read_skill_file` is intentionally ABSENT — it is
+ * suggest_visual_binding, todo, ask_user — the last two are wired to their
+ * tool implementations in Wave 2). `read_skill_file` is intentionally ABSENT — it is
  * the always-on, read-only skill-access channel and is never gated by a
  * toolSet (mirroring Co-Author's `coauthorToolSetSchema`, which excludes
  * `read_skill_file` for the same reason). `.strict()` rejects any unknown key
@@ -241,6 +272,8 @@ export const copilotToolSetSchema = z
     run_test: z.boolean().optional(),
     run_simulate: z.boolean().optional(),
     suggest_visual_binding: z.boolean().optional(),
+    todo: z.boolean().optional(),
+    ask_user: z.boolean().optional(),
   })
   .strict();
 
