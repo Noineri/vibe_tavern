@@ -596,6 +596,10 @@ describe("ExperiencePlayground", () => {
     const { getByText, queryByText } = utils;
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    // Gate on the turn section actually rendering before driving it: on slow
+    // CI runners the projection lands a tick after the start mock resolves,
+    // and a sync getByText would race it (same family as the XU-3 gate).
+    await waitFor(() => expect(getByText("Score")).toBeTruthy());
 
     fireEvent.click(getByText("Score"));
     await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));

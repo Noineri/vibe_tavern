@@ -4,11 +4,19 @@
  * Two guards around the committed IIFE
  * (`src/generated/experience-frame-runtime.source.ts`):
  *
- * 1. FRESHNESS — re-run the exact generator bundle (same entry, same options)
- *    and byte-compare. The artifact must never drift from the source modules:
- *    its bytes ARE the frame-side kernel the RM-8 replay trusts. A mismatch
- *    fails with the regeneration instruction (run it after touching the
- *    entry's import graph or after a Bun upgrade shifts the minifier).
+ * 1. FRESHNESS — re-run the GENERATOR ITSELF as a subprocess in `--check`
+ *    mode (build in memory, byte-compare, no write) and assert exit 0. The
+ *    artifact must never drift from the source modules: its bytes ARE the
+ *    frame-side kernel the RM-8 replay trusts. Spawning the generator (rather
+ *    than calling Bun.build in-test) is load-bearing twice over: (a) the
+ *    freshness check can never drift from the generator's build options —
+ *    there is exactly ONE copy of the bundle config; (b) the generator
+ *    subprocess runs under the RUNTIME module resolver, which handles the
+ *    workspace-symlink node_modules layout of fresh CI installs — the
+ *    Bun.build bundler dereferences the symlink and resolves bare imports
+ *    from the real package path, where it cannot find `zod`/
+ *    `@vibe-tavern/domain` (oven-sh/bun#31957); that made the in-test variant
+ *    fail deterministically on Linux CI while passing on Windows.
  *
  * 2. SMOKE — eval the artifact the way the frame document does (plain script
  *    bytes, no modules) and boot a real round from a config override with
@@ -19,7 +27,7 @@
  * This file needs a DOM (CustomEvent/listeners) — it registers useDomEnv and
  * therefore runs in its own per-file process (apps/web test runner).
  */
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
 import { EXPERIENCE_FRAME_RUNTIME_SOURCE } from "../generated/experience-frame-runtime.source.js";
@@ -31,28 +39,25 @@ useDomEnv();
 
 describe("frame runtime artifact — freshness", () => {
   test("the committed artifact byte-matches a fresh generator run", async () => {
-    const webDir = join(import.meta.dir, "..", "..");
-    const result = await Bun.build({
-      entrypoints: [join(import.meta.dir, "experience-frame-runtime.entry.ts")],
-      target: "browser",
-      format: "iife",
-      minify: true,
-      tsconfig: join(webDir, "tsconfig.json"),
-      define: { "process.env.NODE_ENV": JSON.stringify("production") },
-    });
-    expect(result.success).toBe(true);
-    if (!result.success) {
-      for (const log of result.logs) console.error(log);
-      return;
+    // The generator lives at the repo root's scripts/ dir; the test file is at
+    // apps/web/src/lib/, so the repo root is four levels up from here.
+    const root = resolve(import.meta.dir, "..", "..", "..", "..");
+    const child = Bun.spawn(
+      [process.execPath, join(root, "scripts", "gen-experience-frame-runtime.ts"), "--check"],
+      { cwd: root, stdout: "pipe", stderr: "pipe", env: { ...Bun.env, FORCE_COLOR: "0", NO_COLOR: "1" } },
+    );
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    if (exitCode !== 0) {
+      throw new Error(`generator --check failed (exit ${exitCode}):\n${stdout}${stderr}`);
     }
-    const fresh = await result.outputs[0].text();
-    if (fresh !== EXPERIENCE_FRAME_RUNTIME_SOURCE) {
-      throw new Error(
-        "experience-frame-runtime.source.ts is STALE: the committed IIFE does not match a fresh build of experience-frame-runtime.entry.ts. " +
-          "Regenerate with: bun run gen:experience-frame-runtime",
-      );
-    }
-  }, 60_000);
+    // The subprocess is the byte gate; this assertion documents that the
+    // committed constant the smoke test evals is the very artifact checked.
+    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE.length).toBeGreaterThan(0);
+  }, 120_000);
 });
 
 // ─── smoke: eval + boot ────────────────────────────────────────────────────
