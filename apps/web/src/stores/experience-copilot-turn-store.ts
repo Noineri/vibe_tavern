@@ -2,8 +2,10 @@ import { create } from "zustand";
 import {
   experienceCopilotToolOutputSchema,
   coauthorSkillReadOutputSchema,
+  copilotTodoListSchema,
   type ExperienceCopilotMessageWire,
   type ExperienceCopilotTarget,
+  type CopilotTodoItem,
 } from "@vibe-tavern/api-contracts";
 
 /**
@@ -24,10 +26,47 @@ import {
  * Lifecycle: keyed by threadId → the LATEST turn's activities only (each turn
  * starts fresh). `clearTurn` is called at turn start (controller), on thread
  * switch, and on Apply/Reject (ER-9). Not persisted (no `persist` middleware).
+ *
+ * TAG-7 adds `todoByThread` — the SESSION-scoped live todo panel state (NOT
+ * turn-scoped): it mirrors the backend's `todo_json` on the thread row
+ * («время жизни туду должно быть на всю сессию»), so `clearTurn` deliberately
+ * does NOT drop it (a turn starting must not blank the pinned panel until the
+ * refetch re-seeds it). It is seeded from the thread wire (`thread.todo`) by
+ * the controller and upserted by live `todo` tool events — full-rewrite
+ * semantics: the newest call's list replaces the whole state.
  */
 
 /** Lifecycle of a single tool call within an experience-copilot turn. */
 export type ExperienceCopilotToolStatus = "streaming" | "done" | "error";
+
+/** The `todo` tool's result envelope, projected onto the activity card
+ *  payload (TAG-7). `items` is the FULL rewritten list (Cline-style — every
+ *  call replaces the session plan); `remaining` counts pending+active items
+ *  (the collapsed panel's "N remaining goals"), `activeTitle` is the current
+ *  step's title. The backend computes both; the parser recomputes them
+ *  defensively when an envelope omits one, so live and persisted renders of
+ *  the same call can never disagree. */
+export interface CopilotTodoActivityResult {
+  items: readonly CopilotTodoItem[];
+  remaining: number;
+  activeTitle?: string;
+}
+
+/** One `ask_user` call's lifecycle state (TAG-7), keyed by the activity's
+ *  `toolCallId`. `awaiting_answer` is the live/persisted marker the ask card
+ *  (TAG-9) renders interactively; `answered`/`skipped` are the REWRITTEN
+ *  tool-row payloads (the answer replaces the awaiting marker in place — no
+ *  separate user row). The question/options/recommended always come from the
+ *  carrier tool-call args (the answered/skipped rewrites carry no question),
+ *  with the awaiting marker's verbatim echo as the fallback. */
+export interface CopilotAskState {
+  question: string;
+  options?: readonly string[];
+  recommended?: string;
+  status: "awaiting_answer" | "answered" | "skipped";
+  /** The user's answer text — present iff `status === "answered"`. */
+  answer?: string;
+}
 
 /**
  * One tool call's accumulated state. The `tool-result` event finalizes the
@@ -55,6 +94,18 @@ export interface ExperienceCopilotToolActivity {
    *  never enter proposal aggregation (ER-9) — they render only as glanceable
    *  tool activity (the path read). */
   readPath?: string;
+  /** Present iff this is a `todo` activity whose result envelope parsed
+   *  (TAG-7): the card payload (items + remaining + activeTitle). A failed
+   *  save (`ok:false`) or malformed envelope leaves this unset and the card
+   *  renders as an error with the raw content — mirroring the write_buffer
+   *  branch's failure shape. */
+  todo?: CopilotTodoActivityResult;
+  /** Present iff this is an `ask_user` activity (TAG-7): the question/
+   *  options/recommended plus the awaiting/answered/skipped status the ask
+   *  card (TAG-9) renders. Produced by ONE parser (`parseCopilotAskState`)
+   *  from both the live SSE path and the persisted extraction, so the two
+   *  paths cannot drift. */
+  ask?: CopilotAskState;
 }
 
 /** TF-4: one ordered feed entry of the active turn — a closed-or-open TEXT
@@ -200,6 +251,37 @@ export function extractPersistedExperienceCopilotActivities(
       });
       continue;
     }
+    // A todo result is the {ok, items, activeTitle, remaining} envelope
+    // (TAG-3). A successful envelope carries the card payload (items + the
+    // collapsed-panel summary); a failed save (ok:false) or malformed shape
+    // renders as an error card with the raw content — the write_buffer
+    // branch's failure shape.
+    if (toolName === "todo") {
+      const todo = parseTodoToolResult(rawOutput);
+      activities.push({
+        toolCallId,
+        toolName,
+        args: info?.args,
+        status: todo ? "done" : "error",
+        ...(todo ? { todo } : { summary: message.content }),
+      });
+      continue;
+    }
+    // An ask_user row is the awaiting marker or the post-answer rewrite
+    // (TAG-5): awaiting carries the question verbatim; answered/skipped carry
+    // only the answer — the question/options/recommended are recovered from
+    // the carrier tool-call args this extractor already correlates.
+    if (toolName === "ask_user") {
+      const ask = parseCopilotAskState(info?.args, rawOutput);
+      activities.push({
+        toolCallId,
+        toolName,
+        args: info?.args,
+        status: ask ? "done" : "error",
+        ...(ask ? { ask } : { summary: message.content }),
+      });
+      continue;
+    }
     // run_test / run_simulate / suggest_visual_binding — non-proposal results
     // (informational digests that never enter proposal aggregation). Render a
     // graceful done-with-raw-content card.
@@ -237,6 +319,95 @@ function unwrapPersistedToolContent(rawContent: unknown): { output: unknown; too
     };
   }
   return { output: rawContent };
+}
+
+/** Structural read of a record field as a string (undefined when absent or
+ *  not a string) — shared by the todo/ask parsers below. */
+function readString(source: Record<string, unknown>, key: string): string | undefined {
+  const value = source[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+/** Structural read of a record field as a string array (undefined when absent
+ *  or not an every-string array). */
+function readStringArray(source: Record<string, unknown>, key: string): string[] | undefined {
+  const value = source[key];
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) return undefined;
+  return value;
+}
+
+/** Parse a `todo` tool-result envelope (TAG-7) into the activity card payload.
+ *  Accepts ONLY the success shape (`ok: true` + a contract-valid item list);
+ *  a failed save (`ok: false, error`) or anything malformed returns null —
+ *  the caller renders the error-card branch, exactly like a write_buffer
+ *  whose proposal fails to parse. `remaining`/`activeTitle` are recomputed
+ *  from the items when the envelope omits them, so a same-shape envelope
+ *  through either path yields the identical payload. Pure. */
+export function parseTodoToolResult(output: unknown): CopilotTodoActivityResult | null {
+  if (typeof output !== "object" || output === null) return null;
+  const record = output as Record<string, unknown>;
+  if (record.ok !== true) return null;
+  const items = copilotTodoListSchema.safeParse(record.items);
+  if (!items.success) return null;
+  const remainingFromEnvelope = record.remaining;
+  const remaining = typeof remainingFromEnvelope === "number" && Number.isInteger(remainingFromEnvelope) && remainingFromEnvelope >= 0
+    ? remainingFromEnvelope
+    : items.data.filter((item) => item.status === "pending" || item.status === "active").length;
+  const activeTitle = readString(record, "activeTitle")
+    ?? items.data.find((item) => item.status === "active")?.title;
+  return {
+    items: items.data,
+    remaining,
+    ...(activeTitle !== undefined ? { activeTitle } : {}),
+  };
+}
+
+/** Parse an `ask_user` tool-call's state (TAG-7) from the carrier args plus
+ *  the tool-result output. The output carries the STATUS: the awaiting marker
+ *  (`{status:"awaiting_answer", question, options?, recommended?}` — the
+ *  question echoed verbatim) or the post-answer rewrites
+ *  (`{status:"answered", answer}` / `{status:"skipped"}` — no question: it
+ *  lives only in the carrier args). Anything else → null (error card).
+ *  BOTH extraction paths (live SSE + persisted rows) call this one function,
+ *  which is what makes their payloads field-for-field identical. Pure. */
+export function parseCopilotAskState(args: unknown, output: unknown): CopilotAskState | null {
+  if (typeof output !== "object" || output === null) return null;
+  const out = output as Record<string, unknown>;
+  const argsRecord = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+  // options/recommended prefer the output's verbatim echo (awaiting), falling
+  // back to the carrier args (answered/skipped rewrites carry neither).
+  const options = readStringArray(out, "options") ?? readStringArray(argsRecord, "options");
+  const recommended = readString(out, "recommended") ?? readString(argsRecord, "recommended");
+  if (out.status === "awaiting_answer") {
+    const question = readString(out, "question") ?? readString(argsRecord, "question");
+    if (question === undefined || question === "") return null;
+    return {
+      question,
+      ...(options !== undefined ? { options } : {}),
+      ...(recommended !== undefined ? { recommended } : {}),
+      status: "awaiting_answer",
+    };
+  }
+  if (out.status === "answered") {
+    const answer = readString(out, "answer");
+    if (answer === undefined) return null;
+    return {
+      question: readString(argsRecord, "question") ?? "",
+      ...(options !== undefined ? { options } : {}),
+      ...(recommended !== undefined ? { recommended } : {}),
+      status: "answered",
+      answer,
+    };
+  }
+  if (out.status === "skipped") {
+    return {
+      question: readString(argsRecord, "question") ?? "",
+      ...(options !== undefined ? { options } : {}),
+      ...(recommended !== undefined ? { recommended } : {}),
+      status: "skipped",
+    };
+  }
+  return null;
 }
 
 /** One historical turn's audit cards for the chat-history renderer (CD-1).
@@ -338,12 +509,21 @@ interface ExperienceCopilotTurnState {
   turnsByThread: Record<string, ExperienceCopilotToolActivity[]>;
   /** TF-4: ordered arrival feed per thread (text segments + activity refs). */
   feedByThread: Record<string, CopilotFeedEntry[]>;
+  /** TAG-7: session-scoped live todo panel state per thread (mirrors the
+   *  backend thread row's `todo_json`; see the header lifecycle note). */
+  todoByThread: Record<string, CopilotTodoItem[]>;
   /** Insert or merge (by toolCallId) an activity for a thread. */
   upsertActivity: (threadId: string, activity: ExperienceCopilotToolActivity) => void;
   /** Drop the active turn's activities for a thread (turn start / switch / Apply / Reject). */
   clearTurn: (threadId: string) => void;
   /** Read the activities for a thread (empty array if none). */
   getActivities: (threadId: string) => ExperienceCopilotToolActivity[];
+  /** TAG-7: full-rewrite replace of a thread's live todo panel state (the
+   *  newest `todo` call's list IS the state — Cline-style). The items are
+   *  shallow-copied to detach them from the caller's parsed-JSON reference. */
+  setTodo: (threadId: string, items: readonly CopilotTodoItem[]) => void;
+  /** TAG-7: read a thread's live todo panel state (empty array if none). */
+  getTodo: (threadId: string) => CopilotTodoItem[];
   /** TF-4: append a text delta into the OPEN text segment (or open one). */
   appendTextDelta: (threadId: string, delta: string) => void;
   /** TF-4: close the OPEN text segment (noop when none is open). */
@@ -359,6 +539,7 @@ let nextFeedTextId = 1;
 export const useExperienceCopilotTurnStore = create<ExperienceCopilotTurnState>((set, get) => ({
   turnsByThread: {},
   feedByThread: {},
+  todoByThread: {},
   upsertActivity: (threadId, activity) => {
     set((s) => {
       const list = s.turnsByThread[threadId] ?? [];
@@ -387,6 +568,10 @@ export const useExperienceCopilotTurnStore = create<ExperienceCopilotTurnState>(
     // ER-10 wires draft persistence (experience-copilot-draft.ts) — not yet available.
   },
   getActivities: (threadId) => get().turnsByThread[threadId] ?? [],
+  setTodo: (threadId, items) => {
+    set((s) => ({ todoByThread: { ...s.todoByThread, [threadId]: [...items] } }));
+  },
+  getTodo: (threadId) => get().todoByThread[threadId] ?? [],
   appendTextDelta: (threadId, delta) => {
     if (delta === "") return;
     set((s) => {

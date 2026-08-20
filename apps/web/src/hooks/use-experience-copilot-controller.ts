@@ -1,14 +1,20 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import { streamExperienceCopilot } from "../api/experience-copilot-api.js";
-import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn-store.js";
+import {
+  useExperienceCopilotTurnStore,
+  parseTodoToolResult,
+  parseCopilotAskState,
+} from "../stores/experience-copilot-turn-store.js";
 import {
   coauthorSkillReadOutputSchema,
   experienceCopilotToolOutputSchema,
   experienceCopilotContextMetricsSchema,
+  copilotTodoListSchema,
   type ExperienceCopilotStep,
   type ExperienceCopilotContextMetrics,
+  type CopilotTodoItem,
 } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
@@ -40,6 +46,12 @@ export interface UseExperienceCopilotControllerArgs {
    *  the shell's meter immediately (before any context refetch round-trips).
    *  Null when the finish event carried no/ill-formed metrics. */
   onMetrics?: (metrics: ExperienceCopilotContextMetrics | null) => void;
+  /** TAG-7: the current thread wire's `todo` (the durable `todo_json` truth).
+   *  Seeds/resets the session-scoped live todo panel state on mount, thread
+   *  switch, and every thread refetch that produces a new array; live `todo`
+ *  tool events upsert on top between refetches. Omitted (undefined) leaves
+   *  the store untouched — TAG-8 wires the shell to pass `thread.todo`. */
+  threadTodo?: readonly CopilotTodoItem[];
 }
 
 /** Live draft buffers + active authoring step to send with a copilot message so
@@ -120,7 +132,7 @@ function summarizeToolOutput(output: unknown): string {
 export function useExperienceCopilotController(
   args: UseExperienceCopilotControllerArgs,
 ): ExperienceCopilotController {
-  const { threadId, providerProfileId, model, onTurnSettled, onMetrics } = args;
+  const { threadId, providerProfileId, model, onTurnSettled, onMetrics, threadTodo } = args;
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
@@ -135,6 +147,18 @@ export function useExperienceCopilotController(
   // so a rapid double-send in the same tick would otherwise both pass the
   // guard. Mirrors the RP controller reading generation state synchronously.
   const isSendingRef = useRef(false);
+
+  // TAG-7: seed/reset the session-scoped todo panel state from the persisted
+  // thread wire (the durable truth — `todo_json` on the thread row). Runs on
+  // mount, thread switch, and every thread refetch producing a new array;
+  // seeding with the wire value IS the thread-switch reset (an empty wire todo
+  // clears the panel for a thread with no plan yet). Live `todo` tool events
+  // upsert on top between refetches — the wire and the live state converge on
+  // settle+refetch because both describe the same persisted list.
+  useEffect(() => {
+    if (threadId === null || threadTodo === undefined) return;
+    useExperienceCopilotTurnStore.getState().setTodo(threadId, threadTodo);
+  }, [threadId, threadTodo]);
 
   const handleSend = useCallback(
     async (content: string, opts?: ExperienceCopilotSendOptions): Promise<void> => {
@@ -191,6 +215,17 @@ export function useExperienceCopilotController(
                 args: info.args,
                 status: "streaming",
               });
+              // TAG-7: full-rewrite semantics — the todo tool-call's args ARE
+              // the new session plan (Cline-style), so the panel updates
+              // immediately while the call streams; the tool-result envelope
+              // below re-confirms the same list. An ill-formed args value is
+              // silently skipped (the result envelope is the fallback path).
+              if (info.toolName === "todo") {
+                const todo = copilotTodoListSchema.safeParse(info.args);
+                if (todo.success) {
+                  useExperienceCopilotTurnStore.getState().setTodo(threadId, todo.data);
+                }
+              }
             },
             onToolInputStart: (info) => {
               useExperienceCopilotTurnStore.getState().closeTextSegment(threadId);
@@ -231,6 +266,46 @@ export function useExperienceCopilotController(
                         proposed: output.data.proposed,
                       }
                     : { summary: summarizeToolOutput(info.output) }),
+                });
+                return;
+              }
+              // TAG-7: a todo result is the {ok, items, activeTitle, remaining}
+              // envelope. A successful envelope carries the card payload AND
+              // confirms the panel state (same list the tool-call args already
+              // upserted); a failed save (ok:false — not an isError) renders
+              // the error card and leaves the panel at the optimistic value
+              // (the model retries the rewrite next step).
+              if (info.toolName === "todo") {
+                const todo = parseTodoToolResult(info.output);
+                if (todo) {
+                  useExperienceCopilotTurnStore.getState().setTodo(threadId, todo.items);
+                }
+                useExperienceCopilotTurnStore.getState().upsertActivity(threadId, {
+                  toolCallId: info.toolCallId,
+                  toolName: info.toolName,
+                  status: info.isError || !todo ? "error" : "done",
+                  ...(todo ? { todo } : { summary: summarizeToolOutput(info.output) }),
+                });
+                return;
+              }
+              // TAG-7: an ask result is the awaiting marker (the only ask
+              // output a live turn ever sees — answered/skipped rewrites only
+              // exist in persisted rows). The carrier args captured by
+              // onToolCall are read back from the streaming placeholder so
+              // this branch stays field-for-field with the persisted
+              // extraction (the parser prefers the output's verbatim echo and
+              // falls back to the args for question/options/recommended).
+              if (info.toolName === "ask_user") {
+                const liveArgs = useExperienceCopilotTurnStore
+                  .getState()
+                  .getActivities(threadId)
+                  .find((activity) => activity.toolCallId === info.toolCallId)?.args;
+                const ask = parseCopilotAskState(liveArgs, info.output);
+                useExperienceCopilotTurnStore.getState().upsertActivity(threadId, {
+                  toolCallId: info.toolCallId,
+                  toolName: info.toolName,
+                  status: info.isError || !ask ? "error" : "done",
+                  ...(ask ? { ask } : { summary: summarizeToolOutput(info.output) }),
                 });
                 return;
               }
