@@ -426,7 +426,6 @@ describe("copilotProfileSchema (CP-1)", () => {
       basePrompt: "You are a card-game experience author.",
       skillIds: ["experience-authoring"],
       toolSet: { edit_buffer: true, run_test: true },
-      maxSteps: 20,
     };
     expect(copilotProfileSchema.parse(payload)).toEqual(payload);
   });
@@ -440,12 +439,13 @@ describe("copilotProfileSchema (CP-1)", () => {
         basePrompt: "",
         skillIds: [],
         toolSet: {},
-        maxSteps: 20,
       }),
     ).toThrow();
   });
 
-  test("rejects maxSteps out of bounds", () => {
+  // maxSteps is REMOVED from the wire (TAG-10): the schema strips it — it is
+  // no longer a field at all, so a payload carrying it yields no maxSteps key.
+  test("strips maxSteps (removed from the wire — TAG-10)", () => {
     const base = {
       id: "x",
       name: "X",
@@ -454,20 +454,7 @@ describe("copilotProfileSchema (CP-1)", () => {
       skillIds: [],
       toolSet: {},
     };
-    expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 0 })).toThrow();
-    expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 51 })).toThrow();
-  });
-
-  test("accepts a profile without maxSteps (optional — TAG-4)", () => {
-    const base = {
-      id: "x",
-      name: "X",
-      isBuiltIn: false,
-      basePrompt: "p",
-      skillIds: [],
-      toolSet: {},
-    };
-    expect(copilotProfileSchema.parse(base).maxSteps).toBeUndefined();
+    expect(copilotProfileSchema.parse({ ...base, maxSteps: 5 })).not.toHaveProperty("maxSteps");
   });
 });
 

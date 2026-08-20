@@ -350,26 +350,15 @@ export type CopilotToolSet = z.infer<typeof copilotToolSetSchema>;
 export const COPILOT_TOOL_KEYS = Object.keys(copilotToolSetSchema.shape) as (keyof CopilotToolSet)[];
 
 /**
- * Bounds + default for a profile's `maxSteps` — the AI SDK multi-step tool-loop
- * limit. Centralized so Zod validation, the editor input bounds, and the
- * built-in seed default read one source (mirrors COAUTHOR_MAX_STEPS_*). The
- * TAG-4: the READ shape (`copilotProfileSchema.maxSteps`) is now OPTIONAL — the
- * stream no longer consumes it (the loop runs unbounded to
- * `COPILOT_TOOL_LOOP_CEILING`). The CREATE schema still requires it because the
- * `copilot_profiles.max_steps` column is alive until TAG-4b; the constants and
- * the create/update fields are fully purged in TAG-10.
- */
-export const COPILOT_MAX_STEPS_MIN = 1;
-export const COPILOT_MAX_STEPS_MAX = 50;
-export const COPILOT_MAX_STEPS_DEFAULT = 20;
-
-/**
  * A resolved copilot profile as served to the client / consumed by the prompt
  * assembler. `basePrompt` is INLINE prompt text (not a file reference): the
  * built-in seed loads its `.md` at resolve time, user profiles store text
  * directly in the DB. `isBuiltIn` marks the read-only "Experience Authoring"
  * seed (users only edit their own copies). Leaner than `CoauthorModule` — no
- * `description`, no `openingMessage`.
+ * `description`, no `openingMessage`. No `maxSteps`: the tool-loop bound was
+ * removed by user decision (TAG-4 → TAG-10) — the loop runs unbounded to
+ * `COPILOT_TOOL_LOOP_CEILING`, and the DB `copilot_profiles.max_steps` column
+ * was dropped in TAG-4b.
  */
 export const copilotProfileSchema = z.object({
   id: z.string().min(1),
@@ -378,7 +367,6 @@ export const copilotProfileSchema = z.object({
   basePrompt: z.string().min(1),
   skillIds: z.array(z.string().min(1)),
   toolSet: copilotToolSetSchema,
-  maxSteps: z.number().int().min(COPILOT_MAX_STEPS_MIN).max(COPILOT_MAX_STEPS_MAX).optional(),
 });
 
 export type CopilotProfile = z.infer<typeof copilotProfileSchema>;
@@ -396,7 +384,6 @@ export const copilotProfileCreateSchema = z.object({
   basePrompt: z.string().min(1),
   skillIds: z.array(z.string().min(1)),
   toolSet: copilotToolSetSchema,
-  maxSteps: z.number().int().min(COPILOT_MAX_STEPS_MIN).max(COPILOT_MAX_STEPS_MAX),
 });
 
 export type CopilotProfileCreate = z.infer<typeof copilotProfileCreateSchema>;

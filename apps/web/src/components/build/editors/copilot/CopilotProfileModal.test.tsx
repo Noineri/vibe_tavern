@@ -44,7 +44,6 @@ const BUILTIN: CopilotProfile = {
 	basePrompt: "You author interactive experiences.",
 	skillIds: ["experience-authoring"],
 	toolSet: { write_buffer: true, edit_buffer: true, run_test: true },
-	maxSteps: 20,
 };
 
 const USER: CopilotProfile = {
@@ -54,7 +53,6 @@ const USER: CopilotProfile = {
 	basePrompt: "You help author card-game experiences.",
 	skillIds: ["experience-authoring"],
 	toolSet: { write_buffer: true, run_test: true },
-	maxSteps: 20,
 };
 
 const ALL_PROFILES = [BUILTIN, USER];
@@ -239,6 +237,19 @@ describe("CopilotProfileModal — edit user profile", () => {
 		fireEvent.click(getByTestId("copilot-profile-save-btn"));
 		await waitFor(() => expect(updateCopilotProfile).toHaveBeenCalledTimes(1));
 		expect(updateCopilotProfile).toHaveBeenCalledWith("cprof_1", expect.objectContaining({ name: "Card games" }));
+	});
+
+	it("renders all seven tool toggles and no step-limit input (TAG-10)", async () => {
+		const { getByTestId, queryAllByTestId, getByRole, queryByRole, getByText } = renderModal();
+		await flush(getByTestId);
+		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		const toolKeys = ["edit_buffer", "write_buffer", "run_test", "run_simulate", "suggest_visual_binding", "todo", "ask_user"];
+		for (const key of toolKeys) {
+			expect(getByText(key)).toBeDefined();
+		}
+		// No step-limit number input remains.
+		expect(queryByRole("spinbutton")).toBeNull();
 	});
 });
 

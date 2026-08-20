@@ -1999,8 +1999,6 @@
   "copilot_profile_list_label": "Профили",
   "copilot_profile_loading": "Загрузка профилей…",
   "copilot_profile_manage_skills": "Управление навыками",
-  "copilot_profile_max_steps": "Максимум шагов",
-  "copilot_profile_max_steps_hint": "Максимум шагов инструментов за ход (1–50).",
   "copilot_profile_name_label": "Название",
   "copilot_profile_name_placeholder": "Название профиля",
   "copilot_profile_name_required": "Название обязательно.",

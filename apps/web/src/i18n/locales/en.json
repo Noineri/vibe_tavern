@@ -1981,8 +1981,6 @@
   "copilot_profile_list_label": "Profiles",
   "copilot_profile_loading": "Loading profiles…",
   "copilot_profile_manage_skills": "Manage skills",
-  "copilot_profile_max_steps": "Max steps",
-  "copilot_profile_max_steps_hint": "Max tool-call steps per turn (1–50).",
   "copilot_profile_name_label": "Name",
   "copilot_profile_name_placeholder": "Profile name",
   "copilot_profile_name_required": "Name is required.",

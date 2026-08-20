@@ -11,7 +11,7 @@ import { setCopilotProfile } from "../../../../api/copilot-profile-api.js";
 import { useT, type TFunc } from "../../../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../../../lib/cn.js";
-import { type CopilotProfile, type CopilotProfileCreate, type CopilotToolSet, type SkillCatalogEntryDto, COPILOT_TOOL_KEYS, COPILOT_MAX_STEPS_MIN, COPILOT_MAX_STEPS_MAX, COPILOT_MAX_STEPS_DEFAULT } from "@vibe-tavern/api-contracts";
+import { type CopilotProfile, type CopilotProfileCreate, type CopilotToolSet, type SkillCatalogEntryDto, COPILOT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { CopilotSkillModal } from "./CopilotSkillModal.js";
 
 /** The read-only built-in seed profile id (EXPERIENCE_COPILOT_PROFILES_PLAN). */
@@ -24,7 +24,6 @@ interface ProfileDraft {
 	basePrompt: string;
 	skillIds: string[];
 	toolSet: CopilotToolSet;
-	maxSteps: number;
 }
 
 const EMPTY_DRAFT: ProfileDraft = {
@@ -32,7 +31,6 @@ const EMPTY_DRAFT: ProfileDraft = {
 	basePrompt: "",
 	skillIds: [],
 	toolSet: {},
-	maxSteps: COPILOT_MAX_STEPS_DEFAULT,
 };
 
 function profileToDraft(p: CopilotProfile): ProfileDraft {
@@ -41,7 +39,6 @@ function profileToDraft(p: CopilotProfile): ProfileDraft {
 		basePrompt: p.basePrompt,
 		skillIds: [...p.skillIds],
 		toolSet: { ...p.toolSet },
-		maxSteps: p.maxSteps ?? COPILOT_MAX_STEPS_DEFAULT,
 	};
 }
 
@@ -51,7 +48,6 @@ function draftToCreateInput(d: ProfileDraft): CopilotProfileCreate {
 		basePrompt: d.basePrompt,
 		skillIds: d.skillIds,
 		toolSet: d.toolSet,
-		maxSteps: d.maxSteps,
 	};
 }
 
@@ -61,8 +57,8 @@ type DetailMode = "view" | "edit" | "create";
  * Copilot profile manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 / CP-9).
  * Mirrors `CoauthorModuleModal` MINUS description/openingMessage: profile list
  * (built-in seed shown read-only, user profiles), name + inline system prompt
- * (AutoTextarea), catalog-driven skill toggles, tool checkboxes (the 5 keys
- * from `COPILOT_TOOL_KEYS`), and a maxSteps number input. "Duplicate built-in"
+ * (AutoTextarea), catalog-driven skill toggles, tool checkboxes (the 7 keys
+ * from `COPILOT_TOOL_KEYS`). "Duplicate built-in"
  * pre-fills a new user profile. Assignment writes `scripts.copilotProfileId`
  * via `setCopilotProfile` (built-in → null = unassign).
  *
@@ -552,10 +548,6 @@ function ProfileView({ profile, t, onEdit, onDuplicate, onDelete }: ProfileViewP
 					<pre className="whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2">{profile.basePrompt}</pre>
 				</PreviewRow>
 
-				<PreviewRow label={t("copilot_profile_max_steps")}>
-					<span className="font-mono text-[13px] text-t1">{profile.maxSteps}</span>
-				</PreviewRow>
-
 				<PreviewRow label={t("copilot_profile_skills")}>
 					{profile.skillIds.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
@@ -681,17 +673,6 @@ function ProfileEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool
 						);
 					})}
 				</div>
-			</Field>
-
-			<Field label={t("copilot_profile_max_steps")} hint={t("copilot_profile_max_steps_hint")}>
-				<input
-					type="number"
-					min={COPILOT_MAX_STEPS_MIN}
-					max={COPILOT_MAX_STEPS_MAX}
-					className="w-20 rounded border border-border bg-bg px-2 py-1.5 font-mono text-[13px] text-t1 outline-none focus:border-accent"
-					value={draft.maxSteps}
-					onChange={(e) => onUpdate("maxSteps", Math.max(COPILOT_MAX_STEPS_MIN, Math.min(COPILOT_MAX_STEPS_MAX, Number(e.target.value) || COPILOT_MAX_STEPS_MIN)))}
-				/>
 			</Field>
 		</div>
 	);

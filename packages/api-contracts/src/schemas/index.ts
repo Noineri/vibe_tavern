@@ -216,9 +216,6 @@ export {
   copilotProfileCreateSchema,
   copilotProfileUpdateSchema,
   COPILOT_TOOL_KEYS,
-  COPILOT_MAX_STEPS_MIN,
-  COPILOT_MAX_STEPS_MAX,
-  COPILOT_MAX_STEPS_DEFAULT,
 } from "./experience-copilot-schema.js";
 export type {
   ExperienceCopilotTarget,
