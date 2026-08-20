@@ -185,7 +185,7 @@ describe("discoverExperienceDefinition", () => {
 		if (!result.ok) return;
 		expect(result.definition).toEqual({
 			apiVersion: 1,
-			manifest: { id: "counter", name: "Counter" },
+			manifest: { id: "counter", name: "Counter", mode: "turn" },
 			declaredCapabilities: [],
 			hasChoose: false,
 			hasFlavor: false,

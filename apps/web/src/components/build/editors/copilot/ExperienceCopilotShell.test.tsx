@@ -246,7 +246,7 @@ const SKILL_CATALOG_ENTRIES = [
 const TEST_RUN_DATA: Awaited<ReturnType<typeof import("../../../../api/experience-api.js").runExperienceTest>> = {
   definition: {
     apiVersion: 1,
-    manifest: { id: "round", name: "Round" },
+    manifest: { id: "round", name: "Round", mode: "turn" },
     declaredCapabilities: [{ capability: "participants", reason: "x" }],
     hasChoose: false,
     hasFlavor: false,

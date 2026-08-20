@@ -269,7 +269,7 @@ describe("testScript — interactive dispatch", () => {
     expect(result.definition).not.toBeNull();
     if (!result.definition) return;
     expect(result.definition.apiVersion).toBe(1);
-    expect(result.definition.manifest).toEqual({ id: "tictactoe", name: "Tic-Tac-Toe" });
+    expect(result.definition.manifest).toEqual({ id: "tictactoe", name: "Tic-Tac-Toe", mode: "turn" });
     expect(result.definition.declaredCapabilities).toEqual([]);
   });
 

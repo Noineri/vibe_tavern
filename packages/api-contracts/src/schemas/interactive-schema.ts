@@ -119,6 +119,10 @@ export const INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS = 32;
 export const INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS = 64;
 /** Max serialized length of a resolved chatter text (one model reply). */
 export const INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT = 4000;
+/** Minimum fixed timestep (ms) of a realtime round loop (≈ one 60fps frame). */
+export const INTERACTIVE_SCHEMA_TICK_MS_MIN = 16;
+/** Maximum fixed timestep (ms) of a realtime round loop (1 tick/s floor). */
+export const INTERACTIVE_SCHEMA_TICK_MS_MAX = 1000;
 
 const boundedId = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_ID);
 const boundedLabel = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_LABEL);
@@ -223,10 +227,43 @@ const boundedPayloadSchema = boundedJsonValue({
 
 // ─── Core envelopes (mirror domain entities) ─────────────────────────────────
 
-export const experienceManifestSchema = z.object({
-  id: boundedId,
-  name: boundedLabel,
-});
+export const experienceManifestSchema = z
+  .object({
+    id: boundedId,
+    name: boundedLabel,
+    /** Execution mode. "turn" is the classic host-driven reducer/CAS flow;
+     *  "realtime" runs a client-side fixed-timestep loop inside the visual
+     *  frame (round commit is replay-verified server-side). The default
+     *  keeps every existing package turn-based: mode is not required input.
+     */
+    mode: z.enum(["turn", "realtime"]).default("turn"),
+    /** Fixed timestep (ms) of a realtime round loop (bounded 16..1000,
+     *  see REALTIME_EXPERIENCE_MODE_PLAN). Required when mode is "realtime",
+     *  forbidden when it is "turn" (turn-based time is host timer effects,
+     *  never a loop). */
+    tickMs: z
+      .number()
+      .int()
+      .min(INTERACTIVE_SCHEMA_TICK_MS_MIN)
+      .max(INTERACTIVE_SCHEMA_TICK_MS_MAX)
+      .optional(),
+  })
+  .superRefine((m, ctx) => {
+    if (m.mode === "realtime" && m.tickMs === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tickMs"],
+        message: "realtime mode requires tickMs",
+      });
+    }
+    if (m.mode === "turn" && m.tickMs !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tickMs"],
+        message: "turn mode must not declare tickMs",
+      });
+    }
+  });
 
 export const experienceDeclaredCapabilitySchema = z.object({
   capability: experienceCapabilitySchema,
@@ -941,6 +978,7 @@ export type ExperienceFinishRequestDto = z.infer<typeof experienceFinishRequestS
 export type ExperienceRestartRequestDto = z.infer<typeof experienceRestartRequestSchema>;
 export type ExperienceReportQueueRequestDto = z.infer<typeof experienceReportQueueRequestSchema>;
 export type ExperienceSessionResponseDto = z.infer<typeof experienceSessionResponseSchema>;
+export type ExperienceManifestDto = z.infer<typeof experienceManifestSchema>;
 export type ExperienceDefinitionDto = z.infer<typeof experienceDefinitionSchema>;
 export type ExperienceStarterManifestDto = z.infer<typeof experienceStarterManifestSchema>;
 export type ExperienceConfigUpdateDto = z.infer<typeof experienceConfigUpdateSchema>;

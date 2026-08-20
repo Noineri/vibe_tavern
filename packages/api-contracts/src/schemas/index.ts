@@ -317,6 +317,8 @@ export {
   INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
   INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
   INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT,
+  INTERACTIVE_SCHEMA_TICK_MS_MIN,
+  INTERACTIVE_SCHEMA_TICK_MS_MAX,
   INTERACTIVE_SCHEMA_MAX_TEST_STEPS,
   // DTO types
   type ExperienceStartRequestDto,
@@ -324,6 +326,7 @@ export {
   type ExperienceFinishRequestDto,
   type ExperienceRestartRequestDto,
   type ExperienceSessionResponseDto,
+  type ExperienceManifestDto,
   type ExperienceDefinitionDto,
   type ExperienceStarterManifestDto,
   type ExperienceTestRunRequestDto,

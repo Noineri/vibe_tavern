@@ -146,7 +146,7 @@ function makeSession(overrides: Partial<ExperienceSessionResponse> = {}): Experi
     sessionId: S1,
     chatId: C1,
     branchId: B1,
-    manifest: { id: "game-1", name: "Test Game" },
+    manifest: { id: "game-1", name: "Test Game", mode: "turn" },
     apiVersion: 1,
     status: "active",
     revision: 1,

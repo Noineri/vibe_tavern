@@ -100,7 +100,7 @@ function makeStartData(overrides: Partial<ExperiencePlaygroundData> = {}): Exper
     playgroundSessionId: "pg-session-1",
     definition: {
       apiVersion: 1,
-      manifest: { id: "round", name: "Round" },
+      manifest: { id: "round", name: "Round", mode: "turn" },
       declaredCapabilities: [{ capability: "participants", reason: "scores" }],
       hasChoose: true,
       hasFlavor: false,
@@ -185,7 +185,7 @@ function makeTestRunData(): ExperienceTestRunData {
   return {
           definition: {
             apiVersion: 1,
-            manifest: { id: "model_conversation", name: "Model Conversation" },
+            manifest: { id: "model_conversation", name: "Model Conversation", mode: "turn" },
             declaredCapabilities: [
               { capability: "participants", reason: "human and model seats" },
               { capability: "model", reason: "AI replies" },
@@ -212,7 +212,7 @@ function makeDiscoverData(overrides: Partial<ExperienceTestRunData> = {}): Exper
   return {
     definition: {
       apiVersion: 1,
-      manifest: { id: "round", name: "Round" },
+      manifest: { id: "round", name: "Round", mode: "turn" },
       declaredCapabilities: [{ capability: "participants", reason: "scores" }],
       hasChoose: false,
       hasFlavor: false,
@@ -744,7 +744,7 @@ describe("ExperiencePlayground", () => {
     runExperienceTest.mockImplementation(async () => ({
       definition: {
         apiVersion: 1,
-        manifest: { id: "model_conversation", name: "Model Conversation" },
+        manifest: { id: "model_conversation", name: "Model Conversation", mode: "turn" },
         declaredCapabilities: [
           { capability: "participants", reason: "human and model seats" },
           { capability: "model", reason: "AI replies" },
@@ -769,7 +769,7 @@ describe("ExperiencePlayground", () => {
       playgroundSessionId: "pg-mc-1",
       definition: {
         apiVersion: 1,
-        manifest: { id: "model_conversation", name: "Model Conversation" },
+        manifest: { id: "model_conversation", name: "Model Conversation", mode: "turn" },
         declaredCapabilities: [{ capability: "participants", reason: "seats" }, { capability: "model", reason: "replies" }],
         hasChoose: false,
         hasFlavor: false,
@@ -905,7 +905,7 @@ describe("ExperiencePlayground", () => {
     runExperienceTest.mockImplementation(async () => ({
       definition: {
         apiVersion: 1,
-        manifest: { id: "model_conversation", name: "Model Conversation" },
+        manifest: { id: "model_conversation", name: "Model Conversation", mode: "turn" },
         declaredCapabilities: [
           { capability: "participants", reason: "human and model seats" },
           { capability: "model", reason: "AI-driven conversation replies" },
@@ -1417,7 +1417,7 @@ describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY
       makeDiscoverData({
         definition: {
           apiVersion: 1,
-          manifest: { id: "round", name: "Round" },
+          manifest: { id: "round", name: "Round", mode: "turn" },
           declaredCapabilities: [{ capability: "participants", reason: "scores" }],
           hasChoose: false,
           hasFlavor: false,

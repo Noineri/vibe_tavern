@@ -19,6 +19,8 @@ import {
   INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
   INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
   INTERACTIVE_SCHEMA_MAX_STRING,
+  INTERACTIVE_SCHEMA_TICK_MS_MIN,
+  INTERACTIVE_SCHEMA_TICK_MS_MAX,
   boundedJsonValue,
   experienceActionSchema,
   experienceCapabilitySchema,
@@ -30,6 +32,7 @@ import {
   experienceEffectKindSchema,
   experienceEffectStatusSchema,
   experienceEventVisibilitySchema,
+  experienceManifestSchema,
   experienceParticipantSchema as experienceParticipantResponseSchema,
   experienceStartParticipantSchema as experienceParticipantSchema,
   experienceProjectedViewSchema,
@@ -708,7 +711,7 @@ describe("experienceSessionResponseSchema", () => {
 function validDefinition() {
   return {
     apiVersion: 1,
-    manifest: { id: "ttt", name: "Tic-Tac-Toe" },
+    manifest: { id: "ttt", name: "Tic-Tac-Toe", mode: "turn" },
     declaredCapabilities: [],
   };
 }
@@ -903,6 +906,108 @@ describe("experienceDefinitionSchema setup (IR-70F)", () => {
         },
       }),
     );
+  });
+});
+
+describe("experienceManifestSchema mode/tickMs (RM-1)", () => {
+  it("omits mode -> default 'turn', tickMs stays undefined (backward compat)", () => {
+    const data = expectData(experienceManifestSchema.safeParse({ id: "x", name: "X" })) as {
+      mode: string;
+      tickMs: number | undefined;
+    };
+    expect(data.mode).toBe("turn");
+    expect(data.tickMs).toBeUndefined();
+  });
+
+  it("rejects realtime mode without tickMs (issue at path tickMs)", () => {
+    const result = experienceManifestSchema.safeParse({ id: "x", name: "X", mode: "realtime" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === "tickMs")).toBe(true);
+    }
+  });
+
+  it("accepts realtime mode at both tickMs bounds (16 and 1000 inclusive)", () => {
+    const lo = expectData(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: INTERACTIVE_SCHEMA_TICK_MS_MIN,
+      }),
+    ) as { mode: string; tickMs: number };
+    expect(lo.mode).toBe("realtime");
+    expect(lo.tickMs).toBe(INTERACTIVE_SCHEMA_TICK_MS_MIN);
+    const hi = expectData(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: INTERACTIVE_SCHEMA_TICK_MS_MAX,
+      }),
+    ) as { mode: string; tickMs: number };
+    expect(hi.tickMs).toBe(INTERACTIVE_SCHEMA_TICK_MS_MAX);
+  });
+
+  it("rejects realtime tickMs outside the 16..1000 bounds (15 and 1001)", () => {
+    expectReject(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: INTERACTIVE_SCHEMA_TICK_MS_MIN - 1,
+      }),
+    );
+    expectReject(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: INTERACTIVE_SCHEMA_TICK_MS_MAX + 1,
+      }),
+    );
+  });
+
+  it("rejects non-integer realtime tickMs", () => {
+    expectReject(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: 50.5,
+      }),
+    );
+  });
+
+  it("rejects turn mode that declares tickMs (forbidden in turn)", () => {
+    const result = experienceManifestSchema.safeParse({ id: "x", name: "X", mode: "turn", tickMs: 60 });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === "tickMs")).toBe(true);
+    }
+  });
+
+  it("rejects an unknown mode (enum bounds mode to turn|realtime)", () => {
+    expectReject(experienceManifestSchema.safeParse({ id: "x", name: "X", mode: "chess" }));
+  });
+
+  it("definition envelope inherits the manifest rule", () => {
+    const reject = experienceDefinitionSchema.safeParse({
+      apiVersion: 1,
+      manifest: { id: "x", name: "X", mode: "realtime" },
+      declaredCapabilities: [],
+    });
+    expect(reject.success).toBe(false);
+
+    const ok = expectData(
+      experienceDefinitionSchema.safeParse({
+        apiVersion: 1,
+        manifest: { id: "x", name: "X", mode: "realtime", tickMs: 100 },
+        declaredCapabilities: [],
+      }),
+    ) as { manifest: { mode: string; tickMs: number } };
+    expect(ok.manifest.mode).toBe("realtime");
+    expect(ok.manifest.tickMs).toBe(100);
   });
 });
 

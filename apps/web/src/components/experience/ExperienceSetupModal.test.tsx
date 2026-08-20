@@ -201,7 +201,7 @@ function def(
 ): ExperienceDefinitionDto {
   const d: ExperienceDefinitionDto = {
     apiVersion: 1,
-    manifest: { id: "m", name: "Game" },
+    manifest: { id: "m", name: "Game", mode: "turn" },
     declaredCapabilities,
   };
   if (fields) d.setup = { fields };
@@ -217,7 +217,7 @@ function makeSession(id = "sess_1"): ExperienceSessionResponse {
     sessionId: id,
     chatId: CHAT_ID,
     branchId: BRANCH_ID,
-    manifest: { id: "m", name: "Game" },
+    manifest: { id: "m", name: "Game", mode: "turn" },
     apiVersion: 1,
     status: "active",
     revision: 1,
