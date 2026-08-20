@@ -443,3 +443,16 @@ export async function advanceExperiencePlayground(body: ExperiencePlaygroundAdva
   const response = await client.api.experience.playground.advance.$post({ json: body });
   return unwrapExperience<ExperiencePlaygroundData>(response);
 }
+
+/** POST /api/experience/playground/timer — execute ONE timer beat for the
+ *  ephemeral session: the server sleeps the oldest pending timer's `afterMs`,
+ *  re-checks legality, then feeds the tick back through the real reducer.
+ *  The caller re-issues a beat whenever a response reports `pendingTimers > 0`
+ *  on an active session (the Try-it panel's beat loop) — that loop is what
+ *  makes timer-driven experiences actually tick in the sandbox. */
+export async function runExperiencePlaygroundTimer(
+  body: { readonly playgroundSessionId: string },
+): Promise<ExperiencePlaygroundData> {
+  const response = await client.api.experience.playground.timer.$post({ json: body });
+  return unwrapExperience<ExperiencePlaygroundData>(response);
+}

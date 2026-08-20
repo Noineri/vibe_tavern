@@ -870,6 +870,7 @@ describe("no-write invariant — zero persistence/binding/DB involvement", () =>
       "./experience-sandbox.js",
       "./experience-shared.js",
       "./experience-tester.js",
+      "./experience-payload-schema.js",
       "@vibe-tavern/domain",
     ]);
     // Collect every `from "..."` target that appears on an `import` line ONLY

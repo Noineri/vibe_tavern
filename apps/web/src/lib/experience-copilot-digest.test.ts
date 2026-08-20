@@ -83,6 +83,7 @@ function makePlayground(overrides: Partial<ExperiencePlaygroundData> = {}): Expe
     },
     events: [{ visibility: "public", type: "replied" }],
     effects: [{ kind: "model", request: { prompt: "n" } }],
+    pendingTimers: 0,
     console: [{ level: "log", args: ["hi"] }],
     revision: 7,
     status: "active",

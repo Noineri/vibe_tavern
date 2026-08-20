@@ -42,6 +42,7 @@ import {
 	startExperiencePlayground,
 	advanceExperiencePlayground,
 	executeModelTurnExperiencePlayground,
+	executeTimerTurnExperiencePlayground,
 	type ExperiencePlaygroundAdvanceInput,
 	type ExperiencePlaygroundData,
 	type ExperiencePlaygroundStartInput,
@@ -458,6 +459,17 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		const result = advanceExperiencePlayground(body);
 		if (!result.ok) throw mapTestError(result.error);
 		return this.continueModelTurn(result.data);
+	};
+
+	/** Timer beats are a SEPARATE call (never chained into start/advance): the
+	 *  sleep happens server-side, so chaining it would freeze the click's
+	 *  response for afterMs and lag every input. The Try-it panel issues one
+	 *  beat per response reporting pendingTimers > 0 (see
+	 *  executeTimerTurnExperiencePlayground for the full semantics). */
+	runExperiencePlaygroundTimer = async (body: { readonly playgroundSessionId: string }) => {
+		const result = await executeTimerTurnExperiencePlayground(body);
+		if (!result.ok) throw mapTestError(result.error);
+		return result.data;
 	};
 
 	/** IR-90E: chain the ephemeral model turn when a start/advance returns a

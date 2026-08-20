@@ -67,6 +67,7 @@ import {
 } from "./experience-kernel.js";
 import type { DeterministicRandom } from "./experience-kernel.js";
 import type { ExperienceConsoleEntry } from "./experience-sandbox.js";
+import { validatePayloadValue } from "./experience-payload-schema.js";
 import {
   buildCapabilityContext,
   undeclaredGrantedCapabilities,
@@ -219,6 +220,11 @@ export interface ExperiencePlaygroundData {
   /** Effects requested (reported, never executed): accumulated on start, this
    *  turn's delta on advance. */
   readonly effects: ExperienceEffectRequest[];
+  /** Unconsumed (never fed back) timer-effect slots at response time. > 0 on
+   *  an active session means the caller should issue a timer beat (see
+   *  {@link executeTimerTurnExperiencePlayground}) to keep real-time ticking
+   *  alive — the playground's analog of the persistent runtime's host clock. */
+  readonly pendingTimers: number;
   /** VM console captured so far (start) / this turn (advance). */
   readonly console: ExperienceConsoleEntry[];
   /** Host-managed monotonic revision (0 after create; +1 per applied reduce). */
@@ -664,6 +670,7 @@ export function startExperiencePlayground(
       projection,
       events: [...session.events],
       effects: [...session.effects],
+      pendingTimers: countPendingTimers(session),
       console: [...session.consoleBuf],
       revision: session.revision,
       status: session.status,
@@ -717,6 +724,7 @@ export function advanceExperiencePlayground(input: ExperiencePlaygroundAdvanceIn
         projection,
         events: [...prior.events],
         effects: [...prior.effects],
+        pendingTimers: countPendingTimers(session),
         console: session.consoleBuf.slice(consoleStart),
         revision: session.revision,
         status: session.status,
@@ -789,6 +797,7 @@ export function advanceExperiencePlayground(input: ExperiencePlaygroundAdvanceIn
       projection,
       events: turnEvents,
       effects: turnEffects,
+      pendingTimers: countPendingTimers(session),
       console: session.consoleBuf.slice(consoleStart),
       revision: session.revision,
       status: session.status,
@@ -890,6 +899,7 @@ export async function executeModelTurnExperiencePlayground(
           projection,
           events: turnEvents,
           effects: turnEffects,
+          pendingTimers: countPendingTimers(session),
           console: session.consoleBuf.slice(consoleStart),
           revision: session.revision,
           status: session.status,
@@ -1027,10 +1037,265 @@ export async function executeModelTurnExperiencePlayground(
       projection,
       events: turnEvents,
       effects: turnEffects,
+      pendingTimers: countPendingTimers(session),
       console: session.consoleBuf.slice(consoleStart),
       revision: session.revision,
       status: session.status,
       stopReason: session.stopReason,
     },
   };
+}
+
+// ─── executeTimerTurn — ephemeral timer beat (playground timers) ─────────────
+//
+// The playground's analog of the persistent runtime's host clock
+// (ExperienceTimerScheduler + ExperienceTimerEffectService): timer effects are
+// real-time beats the ephemeral session must actually fire, or every
+// timer-driven experience (a falling piece, a countdown) degenerates into a
+// turn-based shadow of itself. Nothing here persists — a beat is claim →
+// legality re-check → sleep(afterMs) → reduce, with parity with the durable
+// service's semantics:
+//  - ONE beat per call. The caller (the Try-it panel) keeps the loop alive by
+//    re-issuing a beat whenever a response reports pendingTimers > 0 on an
+//    active session; the sleep happens server-side, so the cadence is the
+//    declared afterMs plus one round-trip (the client stays dumb).
+//  - afterMs counts from the beat's claim (the sleep start), mirroring the
+//    durable "host owns the clock, delay counts from the claim".
+//  - Timer stale-drop parity (fix step 2c): if ANY transition lands between
+//    claim and fire (the human acted, a model reply arrived), the tick is
+//    DROPPED — consumed without a reduce. The persistent runtime deliberately
+//    never re-originates a late tick, and neither does this drain.
+//  - A tick that is illegal at claim time (missing from actions(), args
+//    failing payloadSchema, unknown viewer, malformed request) fails the
+//    effect silently — consumed, no reduce, no error — exactly the durable
+//    service's typed-fail-then-stop behavior. Ticking stops; the game does not.
+
+/** Structural narrowing of a timer effect's raw `request` (domain `unknown`) —
+ *  the same field rules the persistent runtime's parseTimerEffectRequest
+ *  enforces at the effect boundary: exactly viewer/actionType/afterMs (plus
+ *  optional args), non-empty string viewer + actionType, positive safe-integer
+ *  afterMs. Reimplemented locally (NOT imported from experience-service) to
+ *  keep this module's dependency graph kernel/sandbox/shared/domain/contracts
+ *  only. Returns null for anything else (a failed effect upstream). */
+function narrowTimerRequest(
+  request: unknown,
+): { viewer: string; actionType: string; afterMs: number; args?: unknown } | null {
+  if (typeof request !== "object" || request === null) return null;
+  const r = request as Record<string, unknown>;
+  const allowed = new Set(["viewer", "actionType", "afterMs", "args"]);
+  for (const key of Object.keys(r)) {
+    if (!allowed.has(key)) return null;
+  }
+  if (typeof r.viewer !== "string" || r.viewer.length === 0) return null;
+  if (typeof r.actionType !== "string" || r.actionType.length === 0) return null;
+  if (typeof r.afterMs !== "number" || !Number.isInteger(r.afterMs)) return null;
+  if (r.afterMs <= 0 || r.afterMs > 2_147_483_647) return null;
+  return {
+    viewer: r.viewer,
+    actionType: r.actionType,
+    afterMs: r.afterMs,
+    ...(r.args !== undefined ? { args: r.args } : {}),
+  };
+}
+
+/** Count unconsumed timer-kind effect slots (the pendingTimers response field
+ *  the client's beat loop keys on). */
+function countPendingTimers(session: EphemeralPlaygroundSession): number {
+  let count = 0;
+  for (let i = 0; i < session.effects.length; i += 1) {
+    if (session.consumedEffectSlots.has(i)) continue;
+    if (session.effects[i]!.kind === EXPERIENCE_EFFECT_KIND.timer) count += 1;
+  }
+  return count;
+}
+
+/** In-flight beat guard: one beat per playground session at a time (a second
+ *  concurrent call no-ops instead of double-ticking). Process-local, like the
+ *  sessions themselves. */
+const timerBeats = new Set<string>();
+
+/** Default wall-clock sleep; tests inject a recorder via deps. */
+function defaultTimerSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Injectable seams for the timer beat (mirrors the timer-effect service's
+ *  sleep seam — tests never wait wall-clock time). */
+export interface PlaygroundTimerDeps {
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Execute ONE timer beat for an ephemeral playground session: find the oldest
+ * unconsumed timer effect, re-check its legality for the declared viewer,
+ * sleep the declared delay, then feed the tick back into the reducer through
+ * the real kernel as a synthetic action (`participantId` = the effect's
+ * viewer, `expectedRevision` = the claim-time revision). Advances script seats
+ * after a fired tick and returns the standard turn envelope — whose
+ * `pendingTimers` tells the caller whether another beat is due.
+ *
+ * Silent-stop outcomes (consumed without a reduce, mirroring the durable
+ * service's typed effect failure): a malformed request, an unknown viewer, an
+ * action type missing from the viewer's legal set, args failing the action's
+ * payloadSchema, a session that completed during the sleep, or a transition
+ * that landed during the sleep (timer stale-drop parity). A VM fault inside
+ * the rules themselves is surfaced as the typed error envelope (an authoring
+ * bug the Try-it panel must show), with the slot consumed so a retry does not
+ * loop the same fault.
+ */
+export async function executeTimerTurnExperiencePlayground(
+  input: { readonly playgroundSessionId: string },
+  deps?: PlaygroundTimerDeps,
+): Promise<ExperiencePlaygroundAdvanceResult> {
+  const session = playgroundSessions.get(input.playgroundSessionId);
+  if (session === undefined) {
+    return {
+      ok: false,
+      error: testError(
+        422,
+        "session_not_found",
+        `Playground session '${input.playgroundSessionId}' not found`,
+        [],
+      ),
+    };
+  }
+
+  const sleep = deps?.sleep ?? defaultTimerSleep;
+  const consoleStart = session.consoleBuf.length;
+  const turnEvents: ExperienceEvent[] = [];
+  const turnEffects: ExperienceEffectRequest[] = [];
+
+  const envelope = (): ExperiencePlaygroundAdvanceResult => {
+    const projection = projectForResponse(session, session.state, session.projectionViewer);
+    return {
+      ok: true,
+      data: {
+        playgroundSessionId: session.playgroundSessionId,
+        initialState: session.initialState,
+        state: session.state,
+        projection,
+        events: turnEvents,
+        effects: turnEffects,
+        pendingTimers: countPendingTimers(session),
+        console: session.consoleBuf.slice(consoleStart),
+        revision: session.revision,
+        status: session.status,
+        stopReason: session.stopReason,
+      },
+    };
+  };
+
+  // One beat at a time per session; a terminal session has nothing to tick.
+  if (timerBeats.has(session.playgroundSessionId) || session.status !== EXPERIENCE_SESSION_STATUS.active) {
+    return envelope();
+  }
+  timerBeats.add(session.playgroundSessionId);
+  try {
+    for (let i = 0; i < session.effects.length; i += 1) {
+      if (session.consumedEffectSlots.has(i)) continue;
+      const effect = session.effects[i]!;
+      if (effect.kind !== EXPERIENCE_EFFECT_KIND.timer) continue;
+      const req = narrowTimerRequest(effect.request);
+      // Malformed request → failed effect (consumed, silent) — scan continues.
+      if (req === null) {
+        session.consumedEffectSlots.add(i);
+        continue;
+      }
+      const participant = session.participants.find((p) => p.id === req.viewer);
+      // Viewer is not a session participant → validation_error parity (consumed, silent).
+      if (participant === undefined) {
+        session.consumedEffectSlots.add(i);
+        continue;
+      }
+      const viewer: ExperienceViewer = {
+        kind: viewerKindForController(participant.controller),
+        participantId: participant.id,
+      };
+      const legal = runActions(
+        session.code,
+        session.scriptName,
+        session.state,
+        viewer,
+        buildCapabilityContext(session.grants, session.participants),
+      );
+      // A VM fault in actions() is a rules bug — surface it typed (durable
+      // parity: the resolve failure fails the effect), slot consumed.
+      if (!legal.ok) {
+        session.consumedEffectSlots.add(i);
+        return { ok: false, error: fromKernel(legal, session.consoleBuf) };
+      }
+      session.consoleBuf.push(...legal.console);
+      const descriptor = legal.value.find((a) => a.type === req.actionType);
+      // Illegal at claim time → illegal_action parity (consumed, silent).
+      if (descriptor === undefined) {
+        session.consumedEffectSlots.add(i);
+        continue;
+      }
+      if (descriptor.payloadSchema !== undefined && req.args !== undefined) {
+        const schemaResult = validatePayloadValue(req.args, descriptor.payloadSchema, "args");
+        if (!schemaResult.ok) {
+          // invalid_payload parity (consumed, silent).
+          session.consumedEffectSlots.add(i);
+          continue;
+        }
+      }
+
+      // Claim: the tick fires into THIS revision. Any transition landing during
+      // the sleep drops the tick (timer stale-drop parity — fix step 2c).
+      const originatingRevision = session.revision;
+      await sleep(req.afterMs);
+
+      if (
+        session.revision !== originatingRevision ||
+        session.status !== EXPERIENCE_SESSION_STATUS.active
+      ) {
+        // Dropped late tick: consumed, no reduce, no error. One slot per beat.
+        session.consumedEffectSlots.add(i);
+        break;
+      }
+
+      const tickAction: ExperienceAction = {
+        type: req.actionType,
+        requestId: `timer:pg:${session.playgroundSessionId}:${session.revision + 1}`,
+        expectedRevision: session.revision,
+        participantId: req.viewer,
+        ...(req.args !== undefined ? { payload: req.args } : {}),
+      };
+      const reduceCaps = buildCapabilityContext(session.grants, session.participants, session.rng);
+      const reduced = runReduce(session.code, session.scriptName, session.state, tickAction, reduceCaps);
+      if (!reduced.ok) {
+        // The reducer rejected the mapped action — an authoring fault the
+        // panel must see; consume so a retry cannot loop the same fault.
+        session.consumedEffectSlots.add(i);
+        return { ok: false, error: fromKernel(reduced, session.consoleBuf) };
+      }
+      session.consoleBuf.push(...reduced.console);
+      const transition = reduced.value;
+
+      session.consumedEffectSlots.add(i);
+      session.revision += 1;
+      session.state = transition.state;
+      session.status = transition.status;
+      for (const ev of transition.events) {
+        session.events.push(ev);
+        turnEvents.push(ev);
+      }
+      if (transition.effects !== undefined) {
+        for (const ef of transition.effects) {
+          session.effects.push(ef);
+          turnEffects.push(ef);
+        }
+      }
+
+      // Advance script seats after the fired tick, exactly like any other reduce.
+      const advanced = advanceScriptSeats(session, turnEvents, turnEffects);
+      if (!advanced.ok) return { ok: false, error: advanced.error };
+      session.stopReason = advanced.stopReason;
+      // ONE beat per call — the response's pendingTimers drives the next one.
+      break;
+    }
+    return envelope();
+  } finally {
+    timerBeats.delete(session.playgroundSessionId);
+  }
 }

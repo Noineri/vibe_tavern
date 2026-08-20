@@ -755,6 +755,11 @@ export interface ExperienceRuntimeApi {
 	 *  turn's state/projection/events/effects/console + bumped revision/status/
 	 *  stop-reason. requestId idempotency precedes expectedRevision CAS. */
 	advanceExperiencePlayground: (body: ExperiencePlaygroundAdvanceInput) => Promise<ExperiencePlaygroundData>;
+	/** Execute ONE timer beat: sleep the oldest pending timer's `afterMs`, then
+	 *  feed the tick back through the real reducer (claim-time legality
+	 *  re-check; late ticks are dropped, timer stale-drop parity). The client's
+	 *  beat loop keys on the response's `pendingTimers`. */
+	runExperiencePlaygroundTimer: (body: { readonly playgroundSessionId: string }) => Promise<ExperiencePlaygroundData>;
 }
 
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────

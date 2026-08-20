@@ -116,6 +116,7 @@ function makeStartData(overrides: Partial<ExperiencePlaygroundData> = {}): Exper
     },
     events: [],
     effects: [],
+    pendingTimers: 0,
     console: [],
     revision: 0,
     status: "active",
@@ -143,6 +144,7 @@ function makeAdvanceData(overrides: Partial<ExperiencePlaygroundData> = {}): Exp
       { visibility: "public", type: "dealer_drew" },
     ],
     effects: [{ kind: "model", request: { prompt: "narrate" } }],
+    pendingTimers: 0,
     console: [{ level: "log", args: ["scored one"] }],
     revision: 41,
     status: "active",
@@ -154,6 +156,7 @@ function makeAdvanceData(overrides: Partial<ExperiencePlaygroundData> = {}): Exp
 // ── Module-boundary mocks (hoisted above the component imports) ─────────────
 
 const startExperiencePlayground = mock((_body: Record<string, unknown>) => Promise.resolve(makeStartData()));
+const runExperiencePlaygroundTimer = mock((_body: { playgroundSessionId: string }) => Promise.resolve(makeAdvanceData()));
 const advanceExperiencePlayground = mock((_body: Record<string, unknown>) => Promise.resolve(makeAdvanceData()));
 const simulateExperienceTest = mock((_body: Record<string, unknown>) => Promise.resolve(makeSimData()));
 const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
@@ -248,6 +251,7 @@ mock.module("../../../api/experience-api.js", () => ({
   ...realExperienceApi,
   startExperiencePlayground,
   advanceExperiencePlayground,
+  runExperiencePlaygroundTimer,
   runExperienceTest,
   simulateExperienceTest,
   listExperienceVisuals,
@@ -312,6 +316,7 @@ beforeAll(async () => {
 beforeEach(() => {
   startExperiencePlayground.mockClear();
   advanceExperiencePlayground.mockClear();
+  runExperiencePlaygroundTimer.mockClear();
   simulateExperienceTest.mockClear();
   listExperienceVisuals.mockClear();
   listAllScripts.mockClear();
@@ -780,6 +785,7 @@ describe("ExperiencePlayground", () => {
       },
       events: [],
       effects: [],
+      pendingTimers: 0,
       console: [],
       revision: 0,
       status: "active",
@@ -799,6 +805,7 @@ describe("ExperiencePlayground", () => {
           projection: { state: { messages: [{ from: "you", text: "Hello!" }, { from: "them", text: "Hi there!" }], turn: 2 }, actions: [] },
           events: [{ visibility: "public", type: "finished" }],
           effects: [],
+          pendingTimers: 0,
           console: [],
           revision: 3,
           status: "completed",
@@ -815,6 +822,7 @@ describe("ExperiencePlayground", () => {
         },
         events: [{ visibility: "public", type: "user_replied" }, { visibility: "public", type: "model_replied" }],
         effects: [],
+        pendingTimers: 0,
         console: [],
         revision: 2,
         status: "active",
@@ -1662,5 +1670,54 @@ describe("ExperiencePlayground — post-game strip (LB-6)", () => {
     await waitFor(() => expect(utils.queryByTestId("playground-postgame-strip")).toBeNull());
     expect(utils.queryByText("experience_playground_turn_title")).toBeNull();
     await waitFor(() => expect(setupToggle().getAttribute("aria-expanded")).toBe("true"));
+  });
+});
+
+describe("ExperiencePlayground — timer beat loop (playground timers)", () => {
+  it("a live session with pendingTimers > 0 issues a beat and applies its response", async () => {
+    startExperiencePlayground.mockImplementation(async () => makeStartData({ pendingTimers: 1 }));
+    runExperiencePlaygroundTimer.mockImplementation(async () => makeAdvanceData({ pendingTimers: 0 }));
+    const utils = renderPlayground();
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    // The beat was issued for the live session and its ticked state landed
+    // (the turn block renders the advanced projection).
+    await waitFor(() => expect(runExperiencePlaygroundTimer).toHaveBeenCalledWith({ playgroundSessionId: "pg-session-1" }));
+    expect(await utils.findByText("experience_playground_turn_title")).toBeTruthy();
+  });
+
+  it("the loop stops once a beat response reports pendingTimers 0", async () => {
+    startExperiencePlayground.mockImplementation(async () => makeStartData({ pendingTimers: 1 }));
+    runExperiencePlaygroundTimer.mockImplementation(async () => makeAdvanceData({ pendingTimers: 0 }));
+    const utils = renderPlayground();
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(runExperiencePlaygroundTimer).toHaveBeenCalledTimes(1));
+
+    // No re-arm in the response → no further beat (settle window for a would-be
+    // second call that must never come).
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(runExperiencePlaygroundTimer).toHaveBeenCalledTimes(1);
+  });
+
+  it("the loop re-issues while the rules keep re-arming timers", async () => {
+    startExperiencePlayground.mockImplementation(async () => makeStartData({ pendingTimers: 1 }));
+    let calls = 0;
+    runExperiencePlaygroundTimer.mockImplementation(async () => {
+      calls += 1;
+      return makeAdvanceData({ pendingTimers: calls < 2 ? 1 : 0, revision: 40 + calls });
+    });
+    const utils = renderPlayground();
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(runExperiencePlaygroundTimer).toHaveBeenCalledTimes(2));
+  });
+
+  it("a session without pending timers never issues a beat", async () => {
+    startExperiencePlayground.mockImplementation(async () => makeStartData());
+    const utils = renderPlayground();
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runExperiencePlaygroundTimer).not.toHaveBeenCalled();
   });
 });

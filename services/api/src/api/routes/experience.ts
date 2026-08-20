@@ -233,5 +233,12 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     })
     .post("/api/experience/playground/advance", zValidator("json", schemas.experiencePlaygroundAdvanceRequestSchema), async (c) => {
       return c.json(await runtime.advanceExperiencePlayground(c.req.valid("json")));
+    })
+    // Timer beat: fire ONE pending timer effect (sleep + reduce server-side).
+    // The client's beat loop issues one call per response reporting
+    // pendingTimers > 0 — the sandbox's real-time axis. NOT chained into
+    // start/advance: the sleep must never lag a click's response.
+    .post("/api/experience/playground/timer", zValidator("json", schemas.experiencePlaygroundTimerRequestSchema), async (c) => {
+      return c.json(await runtime.runExperiencePlaygroundTimer(c.req.valid("json")));
     });
 }

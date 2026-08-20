@@ -955,6 +955,10 @@ export interface ExperiencePlaygroundData {
   projection: { state: unknown; actions: ExperienceActionDescriptor[] };
   events: ExperienceEvent[];
   effects: ExperienceEffectRequest[];
+  /** Unconsumed (never fed back) timer-effect slots at response time. > 0 on
+   *  an active session drives the client's timer beat loop — one
+   *  POST /playground/timer per response — the sandbox's real-time axis. */
+  pendingTimers: number;
   console: ExperienceTestConsoleEntry[];
   revision: number;
   status: ExperienceSessionStatus;

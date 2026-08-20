@@ -923,6 +923,16 @@ export const experiencePlaygroundAdvanceRequestSchema = z.object({
   humanAction: experienceActionSchema,
 });
 
+/** Execute ONE timer beat for an interactive playground session: fire the
+ *  oldest pending timer effect (sleep its `afterMs`, then feed the tick back
+ *  through the real reducer) and return the standard turn envelope. The
+ *  client re-issues a beat whenever a response reports `pendingTimers > 0` on
+ *  an active session — that loop is what makes real-time experiences
+ *  (falling pieces, countdowns) actually tick in the sandbox. */
+export const experiencePlaygroundTimerRequestSchema = z.object({
+  playgroundSessionId: boundedId,
+});
+
 // ─── DTO types (wire-only shapes; canonical envelopes come from Domain) ──────
 
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
@@ -944,6 +954,7 @@ export type ExperienceTestRunRequestDto = z.infer<typeof experienceTestRunReques
 export type ExperienceTestSimulateRequestDto = z.infer<typeof experienceTestSimulateRequestSchema>;
 export type ExperiencePlaygroundStartRequestDto = z.infer<typeof experiencePlaygroundStartRequestSchema>;
 export type ExperiencePlaygroundAdvanceRequestDto = z.infer<typeof experiencePlaygroundAdvanceRequestSchema>;
+export type ExperiencePlaygroundTimerRequestDto = z.infer<typeof experiencePlaygroundTimerRequestSchema>;
 export type ExperienceSetupFieldOptionDto = z.infer<typeof experienceSetupFieldOptionSchema>;
 export type ExperienceSetupFieldDto = z.infer<typeof experienceSetupFieldSchema>;
 export type ExperienceSetupDefinitionDto = z.infer<typeof experienceSetupDefinitionSchema>;

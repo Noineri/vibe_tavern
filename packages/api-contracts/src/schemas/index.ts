@@ -295,6 +295,7 @@ export {
   // Interactive playground requests (Wave 8 / IR-84A)
   experiencePlaygroundStartRequestSchema,
   experiencePlaygroundAdvanceRequestSchema,
+  experiencePlaygroundTimerRequestSchema,
   // Bounded-JSON guard + bounds
   jsonBoundsError,
   boundedJsonValue,
@@ -329,6 +330,7 @@ export {
   type ExperienceTestSimulateRequestDto,
   type ExperiencePlaygroundStartRequestDto,
   type ExperiencePlaygroundAdvanceRequestDto,
+  type ExperiencePlaygroundTimerRequestDto,
   type ExperienceSetupFieldOptionDto,
   type ExperienceSetupFieldDto,
   type ExperienceSetupDefinitionDto,

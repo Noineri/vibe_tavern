@@ -269,6 +269,7 @@ const PLAYGROUND_DATA: Awaited<ReturnType<typeof import("../../../../api/experie
   projection: { state: { round: 1 }, actions: [{ type: "score", label: "Score" }] },
   events: [],
   effects: [],
+  pendingTimers: 0,
   console: [],
   revision: 0,
   status: "active",

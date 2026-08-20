@@ -470,9 +470,13 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // Developer-diagnostics drawer placement + corrected verbatim labels,
     // and user-flow.md's sandbox-actions section was rewritten to match
     // the real UI (user-reported: the copilot guided users to a button
-    // they could not see).
+    // they could not see). Re-captured again (playground timers): the shared
+    // assets interactive-rules.md (timer viewer is required + sandbox fires
+    // timers), user-flow.md (sandbox Play bullet: timers tick), and
+    // interactive-visual.md (pending contract: a live timer never gates
+    // controls) all gained one intentional clarification each.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("42e6d3118279302af6ce2f2a850894ec64e57f510ccbc98a6f4ad96b8cbd41cf");
+      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -590,9 +594,11 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     expect(result.systemMessage).not.toContain("Current step plan");
     // The zero-todo SHA is still the pinned pre-feature digest — the omission
     // is total, not a substituted empty header. (Re-captured TAG-11: the
-    // `grill-me` skill catalog entry is present in the baseline system message.)
+    // `grill-me` skill catalog entry is present in the baseline system message.
+    // Re-captured again for the playground-timers asset update — see the
+    // zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("42e6d3118279302af6ce2f2a850894ec64e57f510ccbc98a6f4ad96b8cbd41cf");
+      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -654,9 +660,10 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     expect(result.tokenAccounting.attached).toBe(0);
     // The zero-attached system message is STILL the pinned pre-CX-3 SHA.
     // (Re-captured TAG-11: the `grill-me` skill catalog entry is present in the
-    // zero-attached baseline system message.)
+    // zero-attached baseline system message. Re-captured again for the
+    // playground-timers asset update — see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("42e6d3118279302af6ce2f2a850894ec64e57f510ccbc98a6f4ad96b8cbd41cf");
+      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

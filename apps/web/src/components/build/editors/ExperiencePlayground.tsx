@@ -61,6 +61,7 @@ import { useT } from "../../../i18n/context.js";
 import {
   ExperienceApiError,
   advanceExperiencePlayground,
+  runExperiencePlaygroundTimer,
   runExperienceTest,
   simulateExperienceTest,
   startExperiencePlayground,
@@ -1176,6 +1177,50 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       status: session.status,
     });
   }, [frameReady, session]);
+
+  // ── Timer beat loop (playground timers) ────────────────────────────────────
+  // The sandbox's real-time axis: while the live session reports unconsumed
+  // timer effects, issue ONE beat per response — the server sleeps the
+  // declared afterMs and feeds the tick back through the real reducer. The
+  // loop is fully derived from `session`: every setSession (start, a click, a
+  // beat response) re-evaluates it, so ticking continues until the rules stop
+  // re-arming timers or the session completes/reset. Beats never set `busy` —
+  // host controls stay clickable while the clock runs (a click racing a tick
+  // surfaces the typed stale_revision the panel already renders).
+  const timerBeats = useRef(new Set<string>());
+  useEffect(() => {
+    if (session === null || session.status !== "active" || session.pendingTimers <= 0) return;
+    const sessionId = session.playgroundSessionId;
+    if (timerBeats.current.has(sessionId)) return;
+    timerBeats.current.add(sessionId);
+    runExperiencePlaygroundTimer({ playgroundSessionId: sessionId })
+      .then((data) => {
+        // Apply the beat response only for the SAME session and never below
+        // the applied frontier: a beat whose tick stale-dropped under a click
+        // returns the click's state (revision equal — harmless), a tick that
+        // landed after it returns a newer revision (applied → loop continues).
+        // The revision guard also prevents a late response from regressing
+        // state after a faster human action. A different session id (reset +
+        // restart) drops the response entirely.
+        const current = sessionRef.current;
+        if (
+          current !== null &&
+          current.playgroundSessionId === data.playgroundSessionId &&
+          data.revision >= current.revision
+        ) {
+          setSession(data);
+        }
+      })
+      .catch((beatError: unknown) => {
+        // A typed beat error is a rules fault the author must see (e.g. the
+        // reducer rejected its own tick); the loop stops because the failed
+        // slot was consumed server-side and `pendingTimers` drops to 0.
+        setError(toPlaygroundError(beatError));
+      })
+      .finally(() => {
+        timerBeats.current.delete(sessionId);
+      });
+  }, [session]);
 
   // XU-3: auto-collapse the launch-setup accordion when a session becomes live
   // (derived from session state only; never persisted). The user may re-open it
