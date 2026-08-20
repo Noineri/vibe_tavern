@@ -1,0 +1,1 @@
+ALTER TABLE `experience_copilot_threads` ADD `todo_json` text;
