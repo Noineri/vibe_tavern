@@ -383,7 +383,7 @@ function hasHiddenClass(el: HTMLElement): boolean {
 
 beforeEach(() => {
   mobileOverride = false;
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   // The review round + the persisted localStorage draft now SURVIVE shell
   // unmounts (the whole point of the round store) — reset both, or a
   // previous test's hanging review leaks into the next mount.
@@ -498,6 +498,64 @@ describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", 
     expect(apiCalls("POST", /\/experience-copilot\/thread-1\/compact$/)[0]?.body).toMatchObject({ providerProfileId: "p1", model: "m1" });
     // onCompacted → handleTurnSettled → refetch messages so the digest card appears.
     expect(apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/).length).toBeGreaterThan(callsBefore);
+  });
+});
+
+describe("ExperienceCopilotShell — todo panel (TAG-8)", () => {
+  const PLAN = [
+    { status: "completed", title: "Design the turn loop" },
+    { status: "active", title: "Write the rules buffer" },
+    { status: "pending", title: "Bind the visual" },
+  ] as const;
+
+  it("mounts the panel DIRECTLY below the meter, seeded from the thread wire todo", async () => {
+    router.activeThread = { ...thread("thread-1"), todo: [...PLAN] };
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+
+    const { getByTestId, queryByTestId } = renderShell();
+    await flushSessionLoad();
+
+    const meter = getByTestId("copilot-context-meter");
+    const panel = getByTestId("copilot-todo-panel");
+    // Mount order: the panel is the meter's IMMEDIATE next sibling (the pinned
+    // stack is header → meter → panel → feed).
+    expect(meter.nextElementSibling).toBe(panel);
+    // Seeded from the wire: collapsed summary shows the active goal + remaining.
+    expect(panel.getAttribute("data-state")).toBe("collapsed");
+    expect(panel.textContent).toContain("Write the rules buffer");
+    expect(panel.textContent).toContain("· 2");
+    // The panel state went through the session-scoped store (not local).
+    expect(useExperienceCopilotTurnStore.getState().getTodo("thread-1")).toHaveLength(3);
+  });
+
+  it("stays hidden when the thread wire todo is empty", async () => {
+    router.activeThread = thread("thread-1"); // todo: []
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+
+    const { getByTestId, queryByTestId } = renderShell();
+    await flushSessionLoad();
+
+    expect(getByTestId("copilot-context-meter")).toBeDefined();
+    expect(queryByTestId("copilot-todo-panel")).toBeNull();
+  });
+
+  it("reflects the live `todo` tool call (store rewrite → panel re-renders)", async () => {
+    router.activeThread = thread("thread-1"); // todo: [] → hidden at first
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+
+    const { getByTestId, queryByTestId } = renderShell();
+    await flushSessionLoad();
+    expect(queryByTestId("copilot-todo-panel")).toBeNull();
+
+    act(() => {
+      useExperienceCopilotTurnStore.getState().setTodo("thread-1", [
+        { status: "active", title: "Fresh plan step" },
+      ]);
+    });
+
+    const panel = getByTestId("copilot-todo-panel");
+    expect(panel.textContent).toContain("Fresh plan step");
+    expect(panel.textContent).toContain("· 1");
   });
 });
 
@@ -1722,7 +1780,7 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     // stores and CLEAR the persisted key — on a real reload nothing is
     // mounted when the stores die.)
     first.unmount();
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
     useCopilotReviewRoundStore.setState({ roundsByThread: {} });
 
     // Fresh page load: the shell's mount effect rehydrates from localStorage.
