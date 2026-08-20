@@ -33,9 +33,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ExperienceFrame,
   type ExperienceFrameHandle,
+  type ExperienceModelSeatRequest,
+  type ExperienceRoundCommitClaim,
 } from "./ExperienceFrame.js";
 import { ExperienceReportControls } from "./ExperienceReportControls.js";
-import { experienceActionOutcome } from "./ExperienceModal.js";
+import {
+  experienceActionOutcome,
+  ExperienceRoundFinishedPanel,
+  type ExperienceModelSeam,
+} from "./ExperienceModal.js";
+import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 import { useExperienceTimerResync } from "../../hooks/use-experience-timer-resync.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
@@ -94,6 +101,8 @@ export interface DetachedExperienceDescriptor {
   readonly visualSource: string;
   readonly initialRevision: number;
   readonly initialView?: ProjectedView;
+  /** Realtime round configuration (RM-6); absent ⇒ the turn-based frame doc. */
+  readonly realtimeConfig?: ExperienceLoopConfig;
 }
 
 /**
@@ -137,6 +146,11 @@ export function readDetachedDescriptor(win: DetachWindow = defaultWindow()): Det
     if (typeof v !== "string" || v === "") return null;
   }
   if (typeof desc.initialRevision !== "number" || !Number.isFinite(desc.initialRevision)) return null;
+  // Optional realtime config (RM-6): trusted host data — checked for shape
+  // only (a non-null object); the loop validates the contents itself.
+  if (desc.realtimeConfig !== undefined && (typeof desc.realtimeConfig !== "object" || desc.realtimeConfig === null)) {
+    return null;
+  }
   return desc;
 }
 
@@ -148,6 +162,10 @@ export function isDetachedExperienceWindow(win: Pick<DetachWindow, "location"> =
 export interface ExperienceDetachedHostProps {
   /** Override the descriptor source (tests); defaults to readDetachedDescriptor(). */
   readonly descriptor?: DetachedExperienceDescriptor;
+  /** Realtime (RM-6): the model seam (stub until the wave-4 endpoint lands). */
+  readonly onModelRequest?: ExperienceModelSeam;
+  /** Realtime (RM-6): fired exactly once when the loop commits the round. */
+  readonly onRoundCommit?: (claim: ExperienceRoundCommitClaim) => void;
 }
 
 /** Read the current scope-keyed store error synchronously (callback-safe). */
@@ -177,6 +195,46 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
   const lastPushedRevision = useRef<number | null>(null);
   /** In-flight effect run (prevents a duplicate/running repeat). */
   const effectRunRef = useRef<AbortController | null>(null);
+  /** The finalized realtime round claim (RM-6), latched once. */
+  const [roundFinished, setRoundFinished] = useState<ExperienceRoundCommitClaim | null>(null);
+  const roundFinishedRef = useRef(false);
+
+  // Latest-prop ref: the session-scoped bridge captures the frame callbacks
+  // once at creation — route the realtime callbacks through here so a changed
+  // prop identity never strands them (same discipline as the modal's cbRef).
+  const realtimeCbRef = useRef({ onModelRequest: props.onModelRequest, onRoundCommit: props.onRoundCommit });
+  realtimeCbRef.current = { onModelRequest: props.onModelRequest, onRoundCommit: props.onRoundCommit };
+
+  /** Realtime (RM-6): forward a model seat's request to the seam and deliver
+   *  the reply into the round. Absent/failed seam → warn + send nothing (the
+   *  round lives; no reply is a valid outcome). No onError prop exists here —
+   *  observability goes to the console, mirroring handleFinishExperience. */
+  const handleModelRequest = useCallback((req: ExperienceModelSeatRequest): void => {
+    const seam = realtimeCbRef.current.onModelRequest;
+    if (!seam) {
+      if (typeof console !== "undefined") console.warn("[experience] model seam unavailable", req.seatId);
+      return;
+    }
+    void (async (): Promise<void> => {
+      try {
+        const result = await seam(req);
+        if (result !== null && result !== undefined) {
+          frameRef.current?.sendModelResult(req.seatId, result, req.requestId);
+        }
+      } catch (err) {
+        if (typeof console !== "undefined") console.warn("[experience] model seam failed", err);
+      }
+    })();
+  }, []);
+
+  /** Realtime (RM-6): the loop committed the round — latch once, then the
+   *  trusted finished panel replaces interaction (the loop is dead). */
+  const handleRoundCommit = useCallback((claim: ExperienceRoundCommitClaim): void => {
+    if (roundFinishedRef.current) return;
+    roundFinishedRef.current = true;
+    setRoundFinished(claim);
+    realtimeCbRef.current.onRoundCommit?.(claim);
+  }, []);
 
   useEffect(() => {
     if (!props.descriptor && !descriptor) {
@@ -260,15 +318,17 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
   useEffect(() => {
     setFrameReady(false);
     lastPushedRevision.current = null;
+    roundFinishedRef.current = false;
+    setRoundFinished(null);
   }, [sessionId]);
 
   // ── Push the authoritative view to the ready frame (seam #2) ──────────────
   useEffect(() => {
-    if (!frameReady || view === undefined) return;
+    if (!frameReady || view === undefined || roundFinished !== null) return;
     if (lastPushedRevision.current === view.revision) return;
     frameRef.current?.sendState(view);
     lastPushedRevision.current = view.revision;
-  }, [frameReady, view]);
+  }, [frameReady, view, roundFinished]);
 
   // ── Push the pending phase to the visual protocol (seam #5) ─────────────
   // ONLY model-kind work gates the visual: a live timer is the resting state
@@ -277,9 +337,9 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
   // lib/experience-pending.ts).
   const pendingPhase = visualPendingFromEffects(storeEffects);
   useEffect(() => {
-    if (!frameReady) return;
+    if (!frameReady || roundFinished !== null) return;
     frameRef.current?.sendPending(pendingPhase);
-  }, [frameReady, pendingPhase]);
+  }, [frameReady, pendingPhase, roundFinished]);
 
   // ── Timer tick pickup (fix step 2d) ────────────────────────────────────────
   // Host-fired ticks land server-side while this window may sit idle; while a
@@ -401,16 +461,32 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
           <Icons.Close className="h-4 w-4" />
         </button>
       </header>
-      <div className="flex-1 overflow-auto">
+      <div className="relative flex-1 overflow-auto">
         <ExperienceFrame
           ref={frameRef}
           visualSource={visualSource}
           sessionId={sessionId}
           initialRevision={revision}
           initialView={view}
+          realtime={
+            descriptor.realtimeConfig !== undefined
+              ? { config: descriptor.realtimeConfig }
+              : undefined
+          }
           onReady={() => setFrameReady(true)}
           onAction={handleAction}
+          onModelRequest={handleModelRequest}
+          onRoundCommit={handleRoundCommit}
         />
+        {roundFinished !== null && (
+          // The loop is dead and the round claim is in — trusted chrome; the
+          // header (Close) stays reachable above it.
+          <ExperienceRoundFinishedPanel
+            claim={roundFinished}
+            onClose={() => window.close()}
+            testId="experience-detached-round-finished"
+          />
+        )}
       </div>
       {/* Trusted report-control footer — OUTSIDE the sandboxed frame (IR-73C).
           The same surface the modal owns, with exact scope selectors. The

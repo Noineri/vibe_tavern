@@ -19,6 +19,7 @@
 import { describe, it, expect, beforeAll, mock, afterEach } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
 useDomEnv();
 
@@ -45,12 +46,47 @@ mock.module("../../i18n/context.js", () => ({
 // Mock ExperienceFrame to a thin shell that captures the onAction prop so the
 // rejection-handling regression can invoke the modal's internal handleAction
 // directly (the real frame requires a live handshake happy-dom cannot drive).
+// RM-6: the shell also captures the realtime props (onModelRequest /
+// onRoundCommit / realtime) and wires a fake ref handle whose sendModelResult
+// is a spy — the modal's seam round-trip is asserted through it.
 const realFrame = await import("./ExperienceFrame.js");
+import type {
+  ExperienceModelSeatRequest,
+  ExperienceRoundCommitClaim,
+} from "./ExperienceFrame.js";
 let capturedOnAction: ((action: { requestId: string }) => void) | null = null;
+let capturedOnModelRequest: ((req: ExperienceModelSeatRequest) => void) | null = null;
+let capturedOnRoundCommit: ((claim: ExperienceRoundCommitClaim) => void) | null = null;
+let capturedRealtime: { readonly config: ExperienceLoopConfig } | undefined;
+const sendModelResultSpy = mock((_seatId: string, _result: unknown, _requestId?: string) => {});
 mock.module("./ExperienceFrame.js", () => ({
   ...realFrame,
-  ExperienceFrame: (props: { onAction: (a: { requestId: string }) => void }) => {
+  ExperienceFrame: (props: {
+    onAction: (a: { requestId: string }) => void;
+    onModelRequest?: (req: ExperienceModelSeatRequest) => void;
+    onRoundCommit?: (claim: ExperienceRoundCommitClaim) => void;
+    realtime?: { readonly config: ExperienceLoopConfig };
+    ref?: React.Ref<unknown>;
+  }) => {
     capturedOnAction = props.onAction;
+    capturedOnModelRequest = props.onModelRequest ?? null;
+    capturedOnRoundCommit = props.onRoundCommit ?? null;
+    capturedRealtime = props.realtime;
+    // The modal reads frameRef.current after awaits; assigning during render
+    // matches this file's established mock style (side-effect capture).
+    const ref = props.ref;
+    if (ref !== null && typeof ref === "object" && "current" in ref) {
+      (ref as { current: unknown }).current = {
+        sendState: () => {},
+        sendResult: () => {},
+        sendError: () => {},
+        sendPending: () => {},
+        sendLifecycle: () => {},
+        sendModelResult: sendModelResultSpy,
+        isReady: true,
+        sessionNonce: "nonce-mock",
+      };
+    }
     return <div data-testid="mock-frame" />;
   },
 }));
@@ -430,5 +466,140 @@ describe("ExperienceModal — mobile touch targets + badge composition (4a phase
     expect(
       footer.className.includes("pb-[calc(env(safe-area-inset-bottom,0px)+8px)]"),
     ).toBe(true);
+  });
+});
+
+// ─── RM-6: realtime round plumb (model seam + round-finished panel) ────────
+
+const REALTIME_CONFIG: ExperienceLoopConfig = {
+  rulesSource: 'context.experience.register({ apiVersion: 1 });',
+  tickMs: 100,
+  initialState: { remaining: 1000 },
+  seed: 42,
+  viewer: { kind: "human", participantId: "p1" },
+  scriptSeats: [],
+};
+
+const COMMIT_CLAIM: ExperienceRoundCommitClaim = {
+  status: "completed",
+  finalState: { remaining: 0 },
+  log: [{ kind: "round_started", seed: 42 }, { kind: "round_finished", status: "completed" }],
+  score: 42,
+  summary: "Board cleared",
+};
+
+function resetRealtimeCaptures(): void {
+  capturedOnModelRequest = null;
+  capturedOnRoundCommit = null;
+  capturedRealtime = undefined;
+  sendModelResultSpy.mockClear();
+}
+
+describe("ExperienceModal — realtime round plumb (RM-6)", () => {
+  it("passes the realtime config through to the frame", () => {
+    resetRealtimeCaptures();
+    renderModal({ realtime: { config: REALTIME_CONFIG } });
+    expect(capturedRealtime?.config).toBe(REALTIME_CONFIG);
+  });
+
+  it("omits the realtime prop for a turn-based surface", () => {
+    resetRealtimeCaptures();
+    renderModal();
+    expect(capturedRealtime).toBeUndefined();
+  });
+
+  it("a resolved seam reply re-enters the frame via sendModelResult", async () => {
+    resetRealtimeCaptures();
+    const seam = mock((_req: ExperienceModelSeatRequest) => Promise.resolve<unknown | null>({ type: "speak" }));
+    renderModal({ realtime: { config: REALTIME_CONFIG }, onModelRequest: seam });
+    expect(capturedOnModelRequest).not.toBeNull();
+    await act(async () => {
+      capturedOnModelRequest!({ seatId: "m1", prompt: { q: "hi" }, requestId: "rq-1" });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(seam).toHaveBeenCalledTimes(1);
+    expect(seam.mock.calls[0]![0]).toEqual({ seatId: "m1", prompt: { q: "hi" }, requestId: "rq-1" });
+    expect(sendModelResultSpy).toHaveBeenCalledTimes(1);
+    expect(sendModelResultSpy.mock.calls[0]).toEqual(["m1", { type: "speak" }, "rq-1"]);
+  });
+
+  it("a null seam resolution sends nothing back into the round", async () => {
+    resetRealtimeCaptures();
+    const seam = mock((_req: ExperienceModelSeatRequest) => Promise.resolve<unknown | null>(null));
+    renderModal({ realtime: { config: REALTIME_CONFIG }, onModelRequest: seam });
+    await act(async () => {
+      capturedOnModelRequest!({ seatId: "m1", prompt: {}, requestId: "rq-2" });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(seam).toHaveBeenCalledTimes(1);
+    expect(sendModelResultSpy).not.toHaveBeenCalled();
+  });
+
+  it("a rejected seam reports via onError and sends nothing into the frame", async () => {
+    resetRealtimeCaptures();
+    const onError = mock((_reason: string) => {});
+    const seam = mock((_req: ExperienceModelSeatRequest) => Promise.reject<unknown | null>(new Error("provider down")));
+    renderModal({ realtime: { config: REALTIME_CONFIG }, onModelRequest: seam, onError });
+    await act(async () => {
+      capturedOnModelRequest!({ seatId: "m1", prompt: {}, requestId: "rq-3" });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0]![0]).toBe("provider down");
+    expect(sendModelResultSpy).not.toHaveBeenCalled();
+  });
+
+  it("an absent seam reports via onError and sends nothing", () => {
+    resetRealtimeCaptures();
+    const onError = mock((_reason: string) => {});
+    renderModal({ realtime: { config: REALTIME_CONFIG }, onError });
+    act(() => {
+      capturedOnModelRequest!({ seatId: "m1", prompt: {}, requestId: "rq-4" });
+    });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0]![0]).toBe("model seam unavailable");
+    expect(sendModelResultSpy).not.toHaveBeenCalled();
+  });
+
+  it("a round commit renders the trusted finished panel and fires the parent hook exactly once", () => {
+    resetRealtimeCaptures();
+    const onRoundCommit = mock((_claim: ExperienceRoundCommitClaim) => {});
+    const { getByTestId, queryAllByTestId } = renderModal({
+      realtime: { config: REALTIME_CONFIG },
+      onRoundCommit,
+    });
+    expect(capturedOnRoundCommit).not.toBeNull();
+    act(() => {
+      capturedOnRoundCommit!(COMMIT_CLAIM);
+    });
+    // The trusted panel shows the status / score / summary from the claim.
+    expect(getByTestId("experience-round-finished")).toBeTruthy();
+    expect(getByTestId("experience-round-finished-status").textContent).toBe("experience_round_finished");
+    expect(getByTestId("experience-round-finished-score").textContent).toContain("experience_round_score");
+    expect(getByTestId("experience-round-finished-score").textContent).toContain("42");
+    expect(getByTestId("experience-round-finished-summary").textContent).toBe("Board cleared");
+    expect(onRoundCommit).toHaveBeenCalledTimes(1);
+    expect(onRoundCommit.mock.calls[0]![0]).toBe(COMMIT_CLAIM);
+    // A duplicate commit (stale frame event) neither re-fires nor re-renders.
+    act(() => {
+      capturedOnRoundCommit!({ status: "interrupted", finalState: {}, log: [] });
+    });
+    expect(onRoundCommit).toHaveBeenCalledTimes(1);
+    expect(queryAllByTestId("experience-round-finished")).toHaveLength(1);
+    expect(getByTestId("experience-round-finished-status").textContent).toBe("experience_round_finished");
+  });
+
+  it("an interrupted claim renders the abandoned status without score/summary", () => {
+    resetRealtimeCaptures();
+    const { getByTestId, queryByTestId, onClose } = renderModal({ realtime: { config: REALTIME_CONFIG } });
+    act(() => {
+      capturedOnRoundCommit!({ status: "interrupted", finalState: {}, log: [] });
+    });
+    expect(getByTestId("experience-round-finished-status").textContent).toBe("experience_round_interrupted");
+    expect(queryByTestId("experience-round-finished-score")).toBeNull();
+    expect(queryByTestId("experience-round-finished-summary")).toBeNull();
+    // The panel's Close routes to the trusted close path.
+    fireEvent.click(getByTestId("experience-round-finished-close"));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

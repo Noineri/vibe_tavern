@@ -53,6 +53,30 @@ import { VIBE_EXPERIENCE_SDK_SOURCE } from "../../lib/experience-sdk.js";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
+/**
+ * Realtime (RM-5): a model seat's request forwarded by the bridge to the host
+ * seam. Structurally identical to the bridge's own option payload — declared
+ * here once so the host surfaces (modal/detached) share the contract without
+ * importing bridge internals.
+ */
+export interface ExperienceModelSeatRequest {
+  readonly seatId: string;
+  readonly requestId?: string;
+  readonly prompt: unknown;
+}
+
+/**
+ * Realtime (RM-5): the frame loop's finalized round claim. The host surface
+ * relays it to the commit flow; the server replay-verifies before applying.
+ */
+export interface ExperienceRoundCommitClaim {
+  readonly status: "completed" | "interrupted";
+  readonly finalState: unknown;
+  readonly log: readonly unknown[];
+  readonly score?: number;
+  readonly summary?: string;
+}
+
 /** The restrictive CSP applied inside the TURN-BASED frame document. */
 export const EXPERIENCE_FRAME_CSP = [
   "default-src 'none'",
@@ -221,6 +245,18 @@ export interface ExperienceFrameProps {
   readonly onFinish?: (revision: number) => void;
   /** Fired for dropped/malformed bridge messages (observability). */
   readonly onError?: (reason: string) => void;
+  /**
+   * Realtime (RM-5/RM-6): a model seat asked for a reply through the loop.
+   * The host forwards it to the model seam and answers via
+   * {@link ExperienceFrameHandle.sendModelResult}. Exempt from the one-action
+   * lock; never fires on the turn-based path.
+   */
+  readonly onModelRequest?: (req: ExperienceModelSeatRequest) => void;
+  /**
+   * Realtime (RM-5/RM-6): the frame loop finalized the round; the claim is
+   * replay-verified server-side — the host surface owns the commit flow.
+   */
+  readonly onRoundCommit?: (claim: ExperienceRoundCommitClaim) => void;
   readonly className?: string;
 }
 
@@ -231,6 +267,8 @@ export interface ExperienceFrameHandle {
   sendError: ExperienceHostBridge["sendError"];
   sendPending: ExperienceHostBridge["sendPending"];
   sendLifecycle: ExperienceHostBridge["sendLifecycle"];
+  /** Realtime (RM-5): deliver an async model-seam reply into the round. */
+  sendModelResult: ExperienceHostBridge["sendModelResult"];
   /** True after the frame completed the handshake. */
   readonly isReady: boolean;
   /** The active session nonce (for cross-surface identity in IR-62). */
@@ -248,6 +286,8 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
       onAction,
       onResize,
       onFinish,
+      onModelRequest,
+      onRoundCommit,
       onError,
       className,
     } = props;
@@ -328,6 +368,8 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
           onResize?.(size);
         },
         onFinish,
+        onModelRequest,
+        onRoundCommit,
         onProtocolError: (reason) => onError?.(reason),
       });
       bridgeRef.current = bridge;
@@ -338,10 +380,10 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
       // initialRevision/initialView are intentionally not dependencies:
       // initialRevision is the mount-time hello value; a later authoritative
       // revision for the SAME session arrives via sendState (not by recreating
-      // the bridge). onAction/onReady/etc. are callbacks read through the
-      // bridge closure at creation; callers provide stable wrappers that
-      // delegate through refs (IR-73B) so changing props do not strand the
-      // bridge.
+      // the bridge). onAction/onReady/onModelRequest/onRoundCommit/etc. are
+      // callbacks read through the bridge closure at creation; callers provide
+      // stable wrappers that delegate through refs (IR-73B) so changing props
+      // do not strand the bridge.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
@@ -364,6 +406,8 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
           bridgeRef.current?.sendError(code, msg, detail),
         sendPending: (phase) => bridgeRef.current?.sendPending(phase),
         sendLifecycle: (event) => bridgeRef.current?.sendLifecycle(event),
+        sendModelResult: (seatId, result, requestId) =>
+          bridgeRef.current?.sendModelResult(seatId, result, requestId),
         get isReady() {
           return bridgeRef.current?.isReady ?? false;
         },

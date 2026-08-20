@@ -20,6 +20,7 @@ import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { DetachWindow } from "./ExperienceDetachedWindow.js";
+import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
 useDomEnv();
 
@@ -65,6 +66,51 @@ mock.module("../../stores/experience-store.js", () => ({
       queueReport: storeMocks.queueReport,
       endSession: storeMocks.endSession,
     }),
+  },
+}));
+
+// Mock ExperienceFrame to a thin shell that still renders a real iframe with
+// the sandbox contract (the existing surface tests assert exactly that) while
+// capturing the RM-6 realtime props (onModelRequest / onRoundCommit /
+// realtime) and wiring a fake ref handle whose sendModelResult is a spy. The
+// real frame needs a live handshake happy-dom cannot drive; the bridge wiring
+// inside it is covered by ExperienceFrame.test.tsx + the bridge integration
+// tests, so the boundary this file pins (host chrome + prop threading) is
+// unchanged.
+const realFrame = await import("./ExperienceFrame.js");
+import type {
+  ExperienceModelSeatRequest,
+  ExperienceRoundCommitClaim,
+} from "./ExperienceFrame.js";
+let capturedOnModelRequest: ((req: ExperienceModelSeatRequest) => void) | null = null;
+let capturedOnRoundCommit: ((claim: ExperienceRoundCommitClaim) => void) | null = null;
+let capturedRealtime: { readonly config: ExperienceLoopConfig } | undefined;
+const sendModelResultSpy = mock((_seatId: string, _result: unknown, _requestId?: string) => {});
+mock.module("./ExperienceFrame.js", () => ({
+  ...realFrame,
+  ExperienceFrame: (props: {
+    onModelRequest?: (req: ExperienceModelSeatRequest) => void;
+    onRoundCommit?: (claim: ExperienceRoundCommitClaim) => void;
+    realtime?: { readonly config: ExperienceLoopConfig };
+    ref?: React.Ref<unknown>;
+  }) => {
+    capturedOnModelRequest = props.onModelRequest ?? null;
+    capturedOnRoundCommit = props.onRoundCommit ?? null;
+    capturedRealtime = props.realtime;
+    const ref = props.ref;
+    if (ref !== null && typeof ref === "object" && "current" in ref) {
+      (ref as { current: unknown }).current = {
+        sendState: () => {},
+        sendResult: () => {},
+        sendError: () => {},
+        sendPending: () => {},
+        sendLifecycle: () => {},
+        sendModelResult: sendModelResultSpy,
+        isReady: true,
+        sessionNonce: "nonce-mock",
+      };
+    }
+    return <iframe sandbox="allow-scripts" title="Interactive experience" data-testid="mock-frame" />;
   },
 }));
 
@@ -322,5 +368,110 @@ describe("ExperienceDetachedHost — trusted Finish + report controls (IR-73C)",
     // the null store reads) so no queue call happens automatically.
     expect(storeMocks.queueReport).not.toHaveBeenCalled();
     void getByTestId;
+  });
+});
+
+// ─── RM-6: realtime round plumb (descriptor config + seam + finished panel) ─
+
+const REALTIME_CONFIG: ExperienceLoopConfig = {
+  rulesSource: 'context.experience.register({ apiVersion: 1 });',
+  tickMs: 100,
+  initialState: { remaining: 1000 },
+  seed: 42,
+  viewer: { kind: "human", participantId: "p1" },
+  scriptSeats: [],
+};
+
+const REALTIME_DESCRIPTOR = { ...DESCRIPTOR, realtimeConfig: REALTIME_CONFIG };
+
+function resetRealtimeCaptures(): void {
+  capturedOnModelRequest = null;
+  capturedOnRoundCommit = null;
+  capturedRealtime = undefined;
+  sendModelResultSpy.mockClear();
+}
+
+describe("ExperienceDetachedHost — realtime round plumb (RM-6)", () => {
+  beforeEach(() => {
+    storeSessionValue = null;
+    for (const m of Object.values(storeMocks)) m.mockClear();
+    resetRealtimeCaptures();
+  });
+
+  it("a descriptor with realtimeConfig reaches the frame as the realtime prop", () => {
+    installUrlSpy();
+    render(<ExperienceDetachedHost descriptor={REALTIME_DESCRIPTOR} />);
+    expect(capturedRealtime).not.toBeUndefined();
+    expect(capturedRealtime?.config).toBe(REALTIME_CONFIG);
+  });
+
+  it("a turn-based descriptor omits the realtime prop", () => {
+    installUrlSpy();
+    render(<ExperienceDetachedHost descriptor={DESCRIPTOR} />);
+    expect(capturedRealtime).toBeUndefined();
+  });
+
+  it("readDetachedDescriptor round-trips a valid realtimeConfig and rejects a malformed one", () => {
+    expect(readDetachedDescriptor(fakePopup(REALTIME_DESCRIPTOR))).toEqual(REALTIME_DESCRIPTOR);
+    expect(
+      readDetachedDescriptor(fakePopup({ ...DESCRIPTOR, realtimeConfig: "nope" })),
+    ).toBeNull();
+  });
+
+  it("a resolved seam reply re-enters the frame via sendModelResult", async () => {
+    installUrlSpy();
+    const seam = mock((_req: ExperienceModelSeatRequest) => Promise.resolve<unknown | null>({ type: "speak" }));
+    render(<ExperienceDetachedHost descriptor={REALTIME_DESCRIPTOR} onModelRequest={seam} />);
+    expect(capturedOnModelRequest).not.toBeNull();
+    await act(async () => {
+      capturedOnModelRequest!({ seatId: "m1", prompt: { q: "hi" }, requestId: "rq-1" });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(seam).toHaveBeenCalledTimes(1);
+    expect(sendModelResultSpy).toHaveBeenCalledTimes(1);
+    expect(sendModelResultSpy.mock.calls[0]).toEqual(["m1", { type: "speak" }, "rq-1"]);
+  });
+
+  it("an absent or null seam sends nothing and the surface stays alive", async () => {
+    installUrlSpy();
+    render(<ExperienceDetachedHost descriptor={REALTIME_DESCRIPTOR} />);
+    await act(async () => {
+      capturedOnModelRequest!({ seatId: "m1", prompt: {}, requestId: "rq-2" });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(sendModelResultSpy).not.toHaveBeenCalled();
+  });
+
+  it("a round commit renders the trusted finished panel with status/score and fires the hook once", () => {
+    installUrlSpy();
+    const onRoundCommit = mock((_claim: ExperienceRoundCommitClaim) => {});
+    const { getByTestId, queryAllByTestId } = render(
+      <ExperienceDetachedHost descriptor={REALTIME_DESCRIPTOR} onRoundCommit={onRoundCommit} />,
+    );
+    expect(capturedOnRoundCommit).not.toBeNull();
+    act(() => {
+      capturedOnRoundCommit!({
+        status: "completed",
+        finalState: { remaining: 0 },
+        log: [],
+        score: 1500,
+        summary: "Top out",
+      });
+    });
+    expect(getByTestId("experience-detached-round-finished")).toBeTruthy();
+    expect(getByTestId("experience-detached-round-finished-status").textContent).toBe(
+      "experience_round_finished",
+    );
+    expect(getByTestId("experience-detached-round-finished-score").textContent).toContain("1500");
+    expect(getByTestId("experience-detached-round-finished-summary").textContent).toBe("Top out");
+    expect(onRoundCommit).toHaveBeenCalledTimes(1);
+    // A duplicate commit neither re-fires nor re-renders.
+    act(() => {
+      capturedOnRoundCommit!({ status: "interrupted", finalState: {}, log: [] });
+    });
+    expect(onRoundCommit).toHaveBeenCalledTimes(1);
+    expect(queryAllByTestId("experience-detached-round-finished")).toHaveLength(1);
+    // The trusted chrome above the panel stays reachable (header untouched).
+    expect(getByTestId("experience-detached-close")).toBeTruthy();
   });
 });

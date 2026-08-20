@@ -43,8 +43,11 @@ import { useT } from "../../i18n/context.js";
 import {
   ExperienceFrame,
   type ExperienceFrameHandle,
+  type ExperienceModelSeatRequest,
+  type ExperienceRoundCommitClaim,
 } from "./ExperienceFrame.js";
 import type { BridgeResize } from "../../lib/experience-bridge.js";
+import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
 import type { ExperienceSessionStatus } from "@vibe-tavern/domain";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
@@ -91,6 +94,63 @@ export function experienceActionOutcome(
     message: localizeMessage(code),
     ...(currentRevision !== undefined ? { revision: currentRevision } : {}),
   };
+}
+
+/**
+ * The model-seam contract for realtime rounds (RM-6; the real server endpoint
+ * lands in wave 4 — until then the launcher injects a stub). Resolves to the
+ * model's reply data (sent back into the round via sendModelResult), or null
+ * to leave the round without a reply.
+ */
+export type ExperienceModelSeam = (req: ExperienceModelSeatRequest) => Promise<unknown | null>;
+
+/**
+ * The trusted "round finished" panel (RM-6), shared by the modal and the
+ * detached window so both surfaces render the identical terminal card. It is
+ * trusted chrome: the sandboxed visual cannot forge it, and the round's loop
+ * is already dead when it shows.
+ */
+export function ExperienceRoundFinishedPanel(props: {
+  readonly claim: ExperienceRoundCommitClaim;
+  readonly onClose: () => void;
+  readonly testId: string;
+}): ReactNode {
+  const { t } = useT();
+  const { claim } = props;
+  return (
+    <div
+      className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 p-4"
+      data-testid={props.testId}
+    >
+      <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-900 p-4 shadow-lg">
+        <p className="mb-2 text-sm font-medium text-neutral-100" data-testid={`${props.testId}-status`}>
+          {claim.status === "interrupted"
+            ? t("experience_round_interrupted")
+            : t("experience_round_finished")}
+        </p>
+        {claim.score !== undefined && (
+          <p className="mb-1 text-sm text-neutral-200" data-testid={`${props.testId}-score`}>
+            {t("experience_round_score")}: {claim.score}
+          </p>
+        )}
+        {claim.summary !== undefined && (
+          <p className="mb-4 text-sm text-neutral-300" data-testid={`${props.testId}-summary`}>
+            {claim.summary}
+          </p>
+        )}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+            onClick={props.onClose}
+            data-testid={`${props.testId}-close`}
+          >
+            {t("experience_close")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export interface ExperienceModalProps {
@@ -163,6 +223,21 @@ export interface ExperienceModalProps {
   readonly onAction: (action: ExperienceActionDto) => Promise<ExperienceActionOutcome>;
   readonly onResize?: (size: BridgeResize) => void;
   readonly onError?: (reason: string) => void;
+  // ── Realtime round plumb (RM-6) ────────────────────────────────────────────
+  /** Realtime round configuration — passed through to the frame (RM-4 doc). */
+  readonly realtime?: { readonly config: ExperienceLoopConfig };
+  /**
+   * The model seam for realtime model seats (stub prop until the wave-4
+   * endpoint lands). Absent seam → the request is surfaced via onError and
+   * nothing is sent back into the round (the round lives).
+   */
+  readonly onModelRequest?: ExperienceModelSeam;
+  /**
+   * Fired exactly once when the frame loop commits a round. The modal itself
+   * renders the trusted round-finished panel; the parent (launcher) owns the
+   * real commit flow (later unit).
+   */
+  readonly onRoundCommit?: (claim: ExperienceRoundCommitClaim) => void;
 }
 
 export function ExperienceModal(props: ExperienceModalProps) {
@@ -187,6 +262,9 @@ export function ExperienceModal(props: ExperienceModalProps) {
     onAction,
     onResize,
     onError,
+    realtime,
+    onModelRequest,
+    onRoundCommit,
   } = props;
   const { t } = useT();
   const [confirmingFinish, setConfirmingFinish] = useState(false);
@@ -200,8 +278,14 @@ export function ExperienceModal(props: ExperienceModalProps) {
   // Latest-prop ref so the stable frame callbacks (captured once per session by
   // the session-scoped bridge) always delegate to the current parent callbacks
   // — a changing onAction/onReady identity does NOT strand the bridge.
-  const cbRef = useRef({ onReady, onAction, onResize, onFinishExperience, onError });
-  cbRef.current = { onReady, onAction, onResize, onFinishExperience, onError };
+  const cbRef = useRef({ onReady, onAction, onResize, onFinishExperience, onError, onModelRequest, onRoundCommit });
+  cbRef.current = { onReady, onAction, onResize, onFinishExperience, onError, onModelRequest, onRoundCommit };
+
+  /** The finalized realtime round claim (RM-6); set once, reset on a genuine
+   *  session change (a new session is a new round). While set, the modal shows
+   *  the trusted finished panel and stops pushing state/pending to the dead loop. */
+  const [roundFinished, setRoundFinished] = useState<ExperienceRoundCommitClaim | null>(null);
+  const roundFinishedRef = useRef(false);
 
   // Reset the confirmation steps whenever the modal closes so a reopen
   // does not inherit a stale "are you sure?" state.
@@ -217,6 +301,8 @@ export function ExperienceModal(props: ExperienceModalProps) {
   useEffect(() => {
     setFrameReady(false);
     lastPushedRevision.current = null;
+    roundFinishedRef.current = false;
+    setRoundFinished(null);
   }, [sessionId]);
 
   /** Stable frame ready handler: marks the frame ready, then forwards. */
@@ -281,16 +367,52 @@ export function ExperienceModal(props: ExperienceModalProps) {
     cbRef.current.onError?.(reason);
   }, []);
 
+  /**
+   * Realtime (RM-6): forward a model seat's request to the injected seam and
+   * deliver the reply back into the round. Fail-closed in BOTH directions:
+   * an absent/empty/failed seam sends NOTHING into the frame (the round
+   * lives; the loop simply never gets that reply) and reports via onError;
+   * raw exception text never reaches the visual.
+   */
+  const handleModelRequest = useCallback((req: ExperienceModelSeatRequest) => {
+    const seam = cbRef.current.onModelRequest;
+    if (!seam) {
+      cbRef.current.onError?.("model seam unavailable");
+      return;
+    }
+    void (async (): Promise<void> => {
+      try {
+        const result = await seam(req);
+        if (result !== null && result !== undefined) {
+          frameRef.current?.sendModelResult(req.seatId, result, req.requestId);
+        }
+      } catch (err) {
+        cbRef.current.onError?.(err instanceof Error ? err.message : "model seam failed");
+      }
+    })();
+  }, []);
+
+  /**
+   * Realtime (RM-6): the loop committed the round. Latched once — a duplicate
+   * commit is ignored (the round is over); the parent hook fires exactly once.
+   */
+  const handleRoundCommit = useCallback((claim: ExperienceRoundCommitClaim) => {
+    if (roundFinishedRef.current) return;
+    roundFinishedRef.current = true;
+    setRoundFinished(claim);
+    cbRef.current.onRoundCommit?.(claim);
+  }, []);
+
   // ── Push the authoritative view to the ready frame (seam #2) ──────────────
   // The frame pushes `initialView` itself on handshake; this effect covers the
   // subsequent revisions that arrive as the store projects a new view. Skipping
   // the already-pushed revision avoids a redundant re-push of the bootstrap.
   useEffect(() => {
-    if (!frameReady || !open || view === undefined) return;
+    if (!frameReady || !open || view === undefined || roundFinished !== null) return;
     if (lastPushedRevision.current === view.revision) return;
     frameRef.current?.sendState(view);
     lastPushedRevision.current = view.revision;
-  }, [frameReady, open, view]);
+  }, [frameReady, open, view, roundFinished]);
 
   // ── Push the pending phase to BOTH chrome AND the visual (seam #5) ────────
   // The chrome indicator is rendered below; this forwards the phase to the
@@ -300,9 +422,9 @@ export function ExperienceModal(props: ExperienceModalProps) {
   // visual's pending contract means "avoid double-submitting", which would
   // lock the player out for the whole session). See lib/experience-pending.ts.
   useEffect(() => {
-    if (!frameReady || !open) return;
+    if (!frameReady || !open || roundFinished !== null) return;
     frameRef.current?.sendPending(visualPendingFromPhase(pendingPhase));
-  }, [frameReady, open, pendingPhase]);
+  }, [frameReady, open, pendingPhase, roundFinished]);
 
   const confirmFinish = () => {
     setConfirmingFinish(false);
@@ -400,12 +522,24 @@ export function ExperienceModal(props: ExperienceModalProps) {
             sessionId={sessionId}
             initialRevision={initialRevision}
             initialView={initialView ?? view}
+            realtime={realtime}
             onReady={handleReady}
             onAction={handleAction}
             onResize={handleResize}
             onFinish={handleFrameFinishRequest}
+            onModelRequest={handleModelRequest}
+            onRoundCommit={handleRoundCommit}
             onError={handleError}
           />
+          {roundFinished !== null && (
+            // The loop is dead and the round claim is in — trusted chrome,
+            // never the visual. The parent commit flow runs separately.
+            <ExperienceRoundFinishedPanel
+              claim={roundFinished}
+              onClose={onClose}
+              testId="experience-round-finished"
+            />
+          )}
           {confirmingFinish && (
             // System confirmation lives in the MODAL chrome (trusted), outside
             // the user frame — a compromised visual cannot forge this prompt.

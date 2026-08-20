@@ -391,3 +391,22 @@ describe("ExperienceFrame (realtime path)", () => {
     expect(doc).not.toContain("unsafe-eval");
   });
 });
+
+describe("ExperienceFrame — realtime handle ripple (RM-6)", () => {
+  it("the ref handle exposes a callable sendModelResult that is a safe no-op before the bridge attaches", () => {
+    installUrlSpies();
+    const ref = createRef<ExperienceFrameHandle>();
+    render(
+      <ExperienceFrame
+        ref={ref}
+        visualSource={VISUAL}
+        sessionId="sess_rt_handle"
+        initialRevision={0}
+        onAction={() => {}}
+      />,
+    );
+    // The bridge exists post-mount but has no port yet — sending must not
+    // throw (the bridge reports via onProtocolError, covered by bridge tests).
+    expect(() => ref.current!.sendModelResult("m1", { type: "speak" }, "rq-1")).not.toThrow();
+  });
+});
