@@ -17,18 +17,17 @@ The "Try it" tab embeds a sandbox. A collapsible "Participants & launch settings
 - **"What the app is allowed to do"** — capability-grant checkboxes; the grants must cover what the rules declare.
 - **Seed** — empty means the deterministic default; the "Random start" toggle generates a fresh seed on every launch (shown read-only next to the toggle).
 - **Settings** — an optional JSON document passed to the rules' `create()`.
-- **"Which seat you play"** — which seat the USER drives while testing (default "Auto — first human seat").
+- **"Which seat you play"** — which seat the USER drives while testing (default "Auto (human)" — the first human seat).
 
 The sandbox actions:
 
-- **"Discover & create"** — a stateless create-only check (the same shape as your `run_test` tool): status, legal actions, per-seat legality matrix.
-- **"Auto-advance script seats"** — a bounded simulation (your `run_simulate` equivalent).
-- **"Play"** — starts a live ephemeral session rendering the visual in an isolated frame; the user takes turns via the legal-action buttons or inside the visual itself. "Reset" tears the session down; "Restart (same settings)" re-runs it from the current buffers with the same config.
-- **"Send result to assistant"** / **"Send diagnostics to assistant"** — pushes the latest digest into your chat; this is how test results arrive to you as user messages.
+- **"Play"** — starts a live ephemeral session rendering the visual in an isolated frame; the user takes turns via the legal-action buttons or inside the visual itself. "Reset" tears the session down; "Restart (same settings)" re-runs it from the current buffers with the same config. **"Send diagnostics to assistant"** (beside the error panel) pushes the session digest into your chat.
+- The one-shot tester lives INSIDE the collapsed **"Developer diagnostics"** panel at the bottom of the Try-it tab — NOT a top-level button. When pointing the user at it, name the "Developer diagnostics" panel first, then the button: **"Discover & create"** — a stateless create-only check (the same shape as your `run_test` tool): status, legal actions, per-seat legality matrix; **"Auto-advance script seats"** — a bounded simulation (your `run_simulate` equivalent); **"Send result to assistant"** — pushes the latest tester digest into your chat.
+- The surface-level rules check is **"Validate rules"** in the Rules editor toolbar (next to "API reference") — the same stateless discovery as your `run_test`. Prefer it when the user just needs a quick validity check.
 
 ## The live run
 
-In a roleplay chat the user starts the experience from the launcher beside Dice → the "Start mini-app" setup modal (its settings fields come from the rules) → a persisted session. A session PINS the visual source at start: after saving edits, the user must start a NEW session to see them. Closing the window never ends the session.
+In a roleplay chat the user starts the experience from the launcher beside Dice → the **"Mini-app"** popup's **"Start"** button (its settings fields come from the rules) → a persisted session. A session PINS the visual source at start: after saving edits, the user must start a NEW session to see them. Closing the window never ends the session.
 
 ## Guiding the user ("walk me through it")
 

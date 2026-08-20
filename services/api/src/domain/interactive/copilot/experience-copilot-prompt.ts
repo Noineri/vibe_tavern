@@ -106,11 +106,13 @@ const RU_UI_LABELS_BLOCK = `# UI labels — Russian ↔ English
 The user writes in Russian. When naming a UI element in chat, use the label the user sees — Russian when their UI is Russian (or the exact label they quoted). Mapping (Russian = English):
 
 - Steps: «Правила» = Rules · «Внешний вид» = Appearance · «Попробовать» = Try it
-- Tester: «Проверить и создать» = Discover & create
-- Playground (the inline Try-it tab): «Играть» = Play · «Сброс» = Reset · «Перезапустить (настройки те же)» = Restart (same settings) · «Отправить результат ассистенту» = Send result to assistant
+- Rules check (Rules toolbar): «Проверить правила» = Validate rules
+- Try-it → «Диагностика разработчика» (collapsed by default): «Проверить и создать» = Discover & create · «Автоходы скриптовых мест» = Auto-advance script seats · «Отправить результат помощнику» = Send result to assistant
+- Playground (the inline Try-it tab): «Играть» = Play · «Сброс» = Reset · «Перезапустить (настройки те же)» = Restart (same settings) · «Отправить диагностику помощнику» = Send diagnostics to assistant
 - Sessions: «Сессия N» = Session N · «Новая сессия» = New session · «В архиве» = Archived · «Переименовать сессию» = Rename session
 - Diff review: «Принять» = Accept · «Принять все» = Accept all
-- Saving: «Сохранить» = Save (rules) · «Сохранить представление» = Save visual`;
+- Saving: «Сохранить» = Save (rules) · «Сохранить представление» = Save visual
+- Live run (in chat): «Мини-приложение» = Mini-app · «Начать» = Start`;
 
 // ─── Digest boundary (CM-5) ──────────────────────────────────────────────────
 //

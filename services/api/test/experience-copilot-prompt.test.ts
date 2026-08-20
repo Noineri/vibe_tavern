@@ -405,7 +405,15 @@ describe("assembleExperienceCopilotPrompt — user-flow doc + RU labels", () => 
       step: "rules",
     });
     expect(ru.systemMessage).toContain("# UI labels — Russian ↔ English");
+    // The tester buttons live in the collapsed Developer-diagnostics drawer —
+    // the map must name the drawer, not present them as top-level buttons
+    // (user-reported: the copilot guided users to a button they couldn't see).
+    expect(ru.systemMessage).toContain("«Диагностика разработчика»");
     expect(ru.systemMessage).toContain("«Проверить и создать»");
+    // Verbatim from ru.json (experience_tester_send_to_copilot): «помощнику»,
+    // NOT a hand-written «ассистенту».
+    expect(ru.systemMessage).toContain("«Отправить результат помощнику»");
+    expect(ru.systemMessage).toContain("«Проверить правила» = Validate rules");
 
     const en = await assembleExperienceCopilotPrompt({
       history: [
@@ -457,9 +465,14 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // user-flow.md) became an always-on tail section (2026-08-17) — an
     // intentional system-prompt content change, not drift. Re-captured again
     // when the built-in `grill-me` skill joined the catalog (TAG-11) — the
-    // catalog section legitimately gained one entry.
+    // catalog section legitimately gained one entry. Re-captured again
+    // (2026-08-20, post-TAG label-map fix): the RU label map gained the
+    // Developer-diagnostics drawer placement + corrected verbatim labels,
+    // and user-flow.md's sandbox-actions section was rewritten to match
+    // the real UI (user-reported: the copilot guided users to a button
+    // they could not see).
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("04ceced4dcb504dbe54f5a01de094d4e0a3b19a2ef47c033f1ffe5b9f9773e33");
+      .toBe("42e6d3118279302af6ce2f2a850894ec64e57f510ccbc98a6f4ad96b8cbd41cf");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -579,7 +592,7 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // is total, not a substituted empty header. (Re-captured TAG-11: the
     // `grill-me` skill catalog entry is present in the baseline system message.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("04ceced4dcb504dbe54f5a01de094d4e0a3b19a2ef47c033f1ffe5b9f9773e33");
+      .toBe("42e6d3118279302af6ce2f2a850894ec64e57f510ccbc98a6f4ad96b8cbd41cf");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -643,7 +656,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // (Re-captured TAG-11: the `grill-me` skill catalog entry is present in the
     // zero-attached baseline system message.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("04ceced4dcb504dbe54f5a01de094d4e0a3b19a2ef47c033f1ffe5b9f9773e33");
+      .toBe("42e6d3118279302af6ce2f2a850894ec64e57f510ccbc98a6f4ad96b8cbd41cf");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {
