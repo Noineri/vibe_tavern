@@ -677,3 +677,26 @@ Unlike `<CustomTooltip>` (which always shows a tooltip), this one shows it only 
 **Settle animation is once-per-roll:** a `useRef<Set>` of seen `rollKey`s gates the `dice-settle` class (per-die stagger via `animationDelay`). Re-rendering an existing rollKey drops the class; a fresh rollKey re-animates. Both a CSS `@media (prefers-reduced-motion: reduce)` block and a JS `window.matchMedia` guard snap to the final state under reduced motion with the `aria-live` announcement intact. `DiceFace` exposes a lower-level `tone` (`"default" | "max" | "min"`) if you need to override the auto-derived tint.
 
 **Accessibility:** `role="list"`/`role="listitem"`, an `aria-label` enumerating every face (`dice_faces_enumeration`), and a visually-hidden full enumeration so the `+N more` overflow never hides results from screen readers. The d% glyph additionally renders a mono `%` badge.
+
+---
+
+## CopilotTodoPanel
+
+**File:** `build/editors/copilot/CopilotTodoPanel.tsx` — the Experience Copilot's step-plan panel, part of the [copilot subsystem](./experience-copilot.md). Mounted in the shell's chat tab as the context meter's immediate next sibling (pinned stack: header → meter → panel → scrolling feed — it does not scroll with the feed).
+
+- **Read-only by contract** — the plan is model-owned; the expanded tree contains exactly one button (the collapse chevron). No user editing controls exist.
+- **Hidden until the first `todo` call ever happens** on the thread (`items.length === 0` → `null`).
+- **Collapsed:** `[status glyph] current-title · N` + chevron; the whole row is the expand button. Current = first `active` item, falling back to first `pending` (mirrors the objective tracker's `pickActiveTask`); a fully-resolved plan shows the done label. N = remaining = `pending + active` (abandoned goals are given up, not remaining). The active glyph's dot pulses — the "live" indicator.
+- **Expanded:** `Ic.target` header + i18n title + remaining count, then the full ordered list with per-status glyphs (status classes/NodeGlyph styling borrowed verbatim from `chat/message-slots/objective-zone.tsx`).
+- Collapse/expand is per-mount local state (a UI toggle, deliberately NOT persisted to the store).
+- Data: the shell subscribes to the turn store's `todoByThread[threadId]`; the controller seeds it from the thread wire (`todo`) on mount/switch/refetch, and live `todo` tool calls rewrite it optimistically (full-list semantics).
+
+---
+
+## CopilotAskCard
+
+**File:** `build/editors/copilot/CopilotAskCard.tsx` — renders an `ask_user` activity from the [copilot](./experience-copilot.md) turn store, wherever it sits in the message feed (history anchor or live trailing turn).
+
+- **Interactive (trailing awaiting ask):** the question, option chips (click = answer), the single `recommended` chip accent-highlighted with a star marker (defensively only when it is actually one of `options`), a free-text `AutoTextarea` with Enter-submit, and a skip button. Submitting goes through the controller's `handleAnswer` → the stream endpoint in answer mode — the answer resumes the same logical turn (no user row is ever appended).
+- **Read-only states:** answered (shows the answer text), skipped (muted skip label), expired/unanswered (a later activity superseded this ask — rendered muted, non-interactive).
+- State comes from the activity's `ask` payload (`{ question, options?, recommended?, status, answer? }`), produced identically by live SSE ingestion and persisted hydration (the parity parsers in the turn store are the guarantee).

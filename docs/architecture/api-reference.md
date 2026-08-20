@@ -1049,6 +1049,64 @@ Count tokens for an AI Assistant request before running it (context-budget previ
 
 ---
 
+## Experience Copilot
+
+The authoring assistant for interactive experiences. Architecture: [Experience Copilot](./experience-copilot.md). All bodies/responses validate against `packages/api-contracts/src/schemas/experience-copilot-schema.ts`.
+
+### Sessions
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/experience-copilot/script/:scriptId/active` | The active thread (id + wire snapshot: title, step, `todo`, context fields) or `null` |
+| `POST /api/experience-copilot/script/:scriptId/session` | Start a new session for the script (archives the current one); optional body `{ title? }` |
+| `GET /api/experience-copilot/script/:scriptId/sessions` | Session list for the switcher |
+| `POST /api/experience-copilot/:threadId/activate` | Make an archived thread active |
+| `POST /api/experience-copilot/:threadId/archive` | Archive a thread |
+| `PATCH /api/experience-copilot/:threadId/title` | Rename (`{ title }`, max 120) |
+| `GET /api/experience-copilot/:threadId/messages` | Message history (user / assistant / tool rows, activities keyed by toolCallId) |
+
+The thread wire's `todo` is REQUIRED (`CopilotTodoItem[]`, `[]` = no plan yet) — the model's step plan, full-list-rewrite semantics; the model owns it, the UI renders it read-only.
+
+### Stream
+
+`POST /api/experience-copilot/:threadId/stream` — **Response:** `text/event-stream`. Events: `text-delta`, `reasoning-delta`, `tool-call`, `tool-result`, `reasoning-done`, `finish`, `abort`, `error`. A 15s SSE-comment heartbeat keeps the socket alive during long thinking. Client disconnect aborts the domain stream and persists partial state.
+
+**Body** (exactly one of `content` / `answer`):
+
+```json
+{
+  "content": "make gravity speed up over time",
+  "providerProfileId": "...", "model": "...",
+  "step": "rules",
+  "rules": "<live draft>", "visual": "<live draft>",
+  "testFeedback": { }
+}
+```
+
+or the **answer mode** (split-turn resume — the answer continues the logical turn, no user row is appended; the awaiting `ask_user` tool-result row is rewritten in place):
+
+```json
+{ "answer": { "toolCallId": "...", "text": "yes, use the keyboard" }, "providerProfileId": "..." }
+```
+
+`answer` carries exactly one of `text` / `skipped` (a skip carries no text). The `rules`/`visual` drafts are the editor's current unsaved sources — the backend prefers them over last-persisted buffers so the copilot is never blind to in-progress edits.
+
+### Context
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/experience-copilot/:threadId/context` | Context-meter metrics + auto-compact flag |
+| `PATCH /api/experience-copilot/:threadId/context` | `{ autoCompact?: boolean }` |
+| `GET /api/experience-copilot/:threadId/context-links` | Pinned context entities |
+| `PATCH /api/experience-copilot/:threadId/context-links` | Set links (`setCopilotContextLinksSchema`) — resolved by id at assembly time, never stored copies |
+| `POST /api/experience-copilot/:threadId/compact` | Manual compaction; optional `{ providerProfileId?, model? }` (defaults to the thread's last pair) |
+
+### Profiles
+
+CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry provider/model, `toolSet` toggles (7 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `todo`, `ask_user`) and `skillIds`. The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+
+---
+
 ## Assets
 
 ### `POST /api/assets/upload`
