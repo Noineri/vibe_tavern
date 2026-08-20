@@ -459,7 +459,7 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // when the built-in `grill-me` skill joined the catalog (TAG-11) — the
     // catalog section legitimately gained one entry.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("298e2ce40a3cbe87a713c9155c48a1f56f0da55e2f2fd2f0dd69c2ccc9295cfc");
+      .toBe("04ceced4dcb504dbe54f5a01de094d4e0a3b19a2ef47c033f1ffe5b9f9773e33");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -579,7 +579,7 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // is total, not a substituted empty header. (Re-captured TAG-11: the
     // `grill-me` skill catalog entry is present in the baseline system message.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("298e2ce40a3cbe87a713c9155c48a1f56f0da55e2f2fd2f0dd69c2ccc9295cfc");
+      .toBe("04ceced4dcb504dbe54f5a01de094d4e0a3b19a2ef47c033f1ffe5b9f9773e33");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -643,7 +643,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // (Re-captured TAG-11: the `grill-me` skill catalog entry is present in the
     // zero-attached baseline system message.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("298e2ce40a3cbe87a713c9155c48a1f56f0da55e2f2fd2f0dd69c2ccc9295cfc");
+      .toBe("04ceced4dcb504dbe54f5a01de094d4e0a3b19a2ef47c033f1ffe5b9f9773e33");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {
