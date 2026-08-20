@@ -148,6 +148,17 @@ export const hostLifecycleSchema = z.object({
   event: lifecycleEventSchema,
 });
 
+/** The async model-seam reply returning into a realtime round (RM-5). */
+export const hostModelResultSchema = z.object({
+  v: z.literal(BRIDGE_PROTOCOL_VERSION),
+  kind: z.literal("model_result"),
+  nonce: z.string().min(1),
+  seatId: z.string().min(1),
+  requestId: z.string().min(1).optional(),
+  /** The model's reply — DATA for the round log, never re-generated on replay. */
+  result: z.unknown(),
+});
+
 export const hostToVisualSchema = z.discriminatedUnion("kind", [
   hostHelloSchema,
   hostStateSchema,
@@ -155,6 +166,7 @@ export const hostToVisualSchema = z.discriminatedUnion("kind", [
   hostErrorSchema,
   hostPendingSchema,
   hostLifecycleSchema,
+  hostModelResultSchema,
 ]);
 
 export type HostToVisual = z.infer<typeof hostToVisualSchema>;
@@ -191,11 +203,51 @@ export const visualFinishSchema = z.object({
   revision: z.number().int().min(0),
 });
 
+// ─── Realtime round vocabulary (RM-5) ──────────────────────────────────────
+
+/**
+ * Bridge-side bound on a committed round log. The loop's own bound is
+ * structural (watchdog ticks / batched flushes); this cap only protects the
+ * host from an absurd payload — the authoritative log contract lives in the
+ * api-contracts commit route (RM-7).
+ */
+export const BRIDGE_MAX_ROUND_LOG_EVENTS = 10_000;
+
+/** A model seat asks the host seam for a reply (SDK auto-forward, RM-5). */
+export const visualModelRequestSchema = z.object({
+  v: z.literal(BRIDGE_PROTOCOL_VERSION),
+  kind: z.literal("model_request"),
+  nonce: z.string().min(1),
+  seatId: z.string().min(1),
+  /** Wire correlation id (the loop logged it; the host echoes it back). */
+  requestId: z.string().min(1).optional(),
+  /** Author-built prompt data (opaque to the bridge; the seam interprets it). */
+  prompt: z.unknown(),
+});
+
+/** The finished round, as the loop finalized it (SDK auto-forward, RM-5). */
+export const visualRoundCommitSchema = z.object({
+  v: z.literal(BRIDGE_PROTOCOL_VERSION),
+  kind: z.literal("round_commit"),
+  nonce: z.string().min(1),
+  /** `interrupted` is the visual-driven abandon claim ("completed" otherwise). */
+  status: z.enum(["completed", "interrupted"]),
+  /** The loop's final state claim — RM-8 replay-verifies it before applying. */
+  finalState: z.unknown(),
+  /** The ordered round-log events (bounded; opaque here, typed by RM-7). */
+  log: z.array(z.unknown()).max(BRIDGE_MAX_ROUND_LOG_EVENTS),
+  /** Commit metadata for the chat card (optional, visual-supplied). */
+  score: z.number().optional(),
+  summary: z.string().max(4000).optional(),
+});
+
 export const visualToHostSchema = z.discriminatedUnion("kind", [
   visualReadySchema,
   visualActionSchema,
   visualResizeSchema,
   visualFinishSchema,
+  visualModelRequestSchema,
+  visualRoundCommitSchema,
 ]);
 
 export type VisualToHost = z.infer<typeof visualToHostSchema>;
@@ -271,6 +323,23 @@ export function buildLifecycle(
   event: "suspend" | "resume" | "finish" | "reset",
 ): HostToVisual {
   return { v: BRIDGE_PROTOCOL_VERSION, kind: "lifecycle", nonce: env.nonce, event };
+}
+
+/** Deliver an async model-seam reply back into a realtime round (RM-5). */
+export function buildModelResult(
+  env: HostEnvelope,
+  seatId: string,
+  result: unknown,
+  requestId?: string,
+): HostToVisual {
+  return {
+    v: BRIDGE_PROTOCOL_VERSION,
+    kind: "model_result",
+    nonce: env.nonce,
+    seatId,
+    result,
+    ...(requestId !== undefined ? { requestId } : {}),
+  };
 }
 
 // ─── Parse entry points ─────────────────────────────────────────────────────

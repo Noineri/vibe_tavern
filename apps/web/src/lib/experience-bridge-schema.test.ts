@@ -8,11 +8,13 @@
  */
 import { describe, it, expect } from "bun:test";
 import {
+  BRIDGE_MAX_ROUND_LOG_EVENTS,
   BRIDGE_PROTOCOL_VERSION,
   bridgeErrorCodes,
   buildError,
   buildHello,
   buildLifecycle,
+  buildModelResult,
   buildPending,
   buildResult,
   buildState,
@@ -134,5 +136,94 @@ describe("experience-bridge-schema — host→host strict parse", () => {
   it("rejects a malformed host message", () => {
     expect(parseHostToVisualStrict({ v: 1, kind: "hello" /* missing nonce/sessionId/rev */ })).toBeNull();
     expect(parseHostToVisualStrict({ v: 1, kind: "state", nonce: "n" /* missing view */ })).toBeNull();
+  });
+});
+
+// ─── realtime round vocabulary (RM-5) ────────────────────────────────────────
+
+describe("experience-bridge-schema — realtime round vocabulary", () => {
+  it("round-trips a model_request (visual→host) with and without requestId", () => {
+    const msg = parseVisualToHost({
+      v: 1,
+      kind: "model_request",
+      nonce: "n",
+      seatId: "m1",
+      requestId: "rq-1",
+      prompt: { q: "hello" },
+    });
+    expect(msg).not.toBeNull();
+    expect(msg).toEqual({
+      v: BRIDGE_PROTOCOL_VERSION,
+      kind: "model_request",
+      nonce: "n",
+      seatId: "m1",
+      requestId: "rq-1",
+      prompt: { q: "hello" },
+    });
+    expect(
+      parseVisualToHost({ v: 1, kind: "model_request", nonce: "n", seatId: "m1", prompt: null }),
+    ).not.toBeNull();
+  });
+
+  it("rejects a model_request with an empty seatId", () => {
+    expect(parseVisualToHost({ v: 1, kind: "model_request", nonce: "n", seatId: "", prompt: {} })).toBeNull();
+  });
+
+  it("round-trips a round_commit and bounds the log + summary", () => {
+    const log = [{ kind: "round_started", seed: 1 }, { kind: "round_finished", status: "completed" }];
+    const msg = parseVisualToHost({
+      v: 1,
+      kind: "round_commit",
+      nonce: "n",
+      status: "completed",
+      finalState: { remaining: 0 },
+      log,
+      score: 42,
+      summary: "done",
+    });
+    expect(msg).toEqual({
+      v: BRIDGE_PROTOCOL_VERSION,
+      kind: "round_commit",
+      nonce: "n",
+      status: "completed",
+      finalState: { remaining: 0 },
+      log,
+      score: 42,
+      summary: "done",
+    });
+    // interrupted is the visual-driven abandon claim — also valid
+    expect(
+      parseVisualToHost({ v: 1, kind: "round_commit", nonce: "n", status: "interrupted", finalState: {}, log: [] }),
+    ).not.toBeNull();
+    // an active claim is not a terminal round — rejected
+    expect(
+      parseVisualToHost({ v: 1, kind: "round_commit", nonce: "n", status: "active", finalState: {}, log: [] }),
+    ).toBeNull();
+  });
+
+  it("rejects an oversized round_commit log", () => {
+    const huge = Array.from({ length: BRIDGE_MAX_ROUND_LOG_EVENTS + 1 }, () => ({ kind: "ticks", count: 1 }));
+    expect(
+      parseVisualToHost({ v: 1, kind: "round_commit", nonce: "n", status: "completed", finalState: {}, log: huge }),
+    ).toBeNull();
+  });
+
+  it("buildModelResult stamps v+nonce and round-trips host→visual", () => {
+    const msg = buildModelResult({ nonce: "n" }, "m1", { type: "speak" }, "rq-1");
+    expect(parseHostToVisualStrict(msg)).toEqual({
+      v: BRIDGE_PROTOCOL_VERSION,
+      kind: "model_result",
+      nonce: "n",
+      seatId: "m1",
+      requestId: "rq-1",
+      result: { type: "speak" },
+    });
+    expect(parseHostToVisualStrict(buildModelResult({ nonce: "n" }, "m1", "ramble"))).toEqual({
+      v: BRIDGE_PROTOCOL_VERSION,
+      kind: "model_result",
+      nonce: "n",
+      seatId: "m1",
+      result: "ramble",
+    });
   });
 });

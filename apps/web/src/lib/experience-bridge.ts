@@ -33,6 +33,7 @@ import {
   buildError,
   buildHello,
   buildLifecycle,
+  buildModelResult,
   buildPending,
   buildResult,
   buildState,
@@ -72,6 +73,22 @@ export interface ExperienceHostBridgeOptions {
   readonly onResize?: (size: BridgeResize) => void;
   /** Fired when the frame requests the privileged finish op. */
   readonly onFinish?: (revision: number) => void;
+  /** Realtime (RM-5): a model seat asked the host seam for a reply. NOT subject
+   * to the one-action lock — it is not a turn action. */
+  readonly onModelRequest?: (request: {
+    readonly seatId: string;
+    readonly requestId?: string;
+    readonly prompt: unknown;
+  }) => void;
+  /** Realtime (RM-5): the frame loop finished; the host runs the commit flow.
+   * The claim is replay-verified server-side (RM-8) — the bridge only relays. */
+  readonly onRoundCommit?: (claim: {
+    readonly status: "completed" | "interrupted";
+    readonly finalState: unknown;
+    readonly log: readonly unknown[];
+    readonly score?: number;
+    readonly summary?: string;
+  }) => void;
   /** Fired for dropped/malformed messages (observability; never throws). */
   readonly onProtocolError?: (reason: string, raw?: unknown) => void;
 }
@@ -193,6 +210,28 @@ export class ExperienceHostBridge {
         this.opts.onFinish?.(msg.revision);
         return;
       }
+      case "model_request": {
+        // Realtime seam: forwarded verbatim; the one-action lock does NOT
+        // apply (a model request is not a turn action).
+        this.opts.onModelRequest?.({
+          seatId: msg.seatId,
+          ...(msg.requestId !== undefined ? { requestId: msg.requestId } : {}),
+          prompt: msg.prompt,
+        });
+        return;
+      }
+      case "round_commit": {
+        // The loop finalized the round (game-driven or visual-driven); the
+        // host commit flow (RM-6) owns what happens next. Forwarded as-is.
+        this.opts.onRoundCommit?.({
+          status: msg.status,
+          finalState: msg.finalState,
+          log: msg.log,
+          ...(msg.score !== undefined ? { score: msg.score } : {}),
+          ...(msg.summary !== undefined ? { summary: msg.summary } : {}),
+        });
+        return;
+      }
       default: {
         // exhaustiveness guard — parseVisualToHost narrows to the union, so this
         // is unreachable unless the schema grows a kind without a case here.
@@ -277,6 +316,11 @@ export class ExperienceHostBridge {
 
   sendLifecycle(event: LifecycleEvent): void {
     this.post(buildLifecycle({ nonce: this.nonce }, event));
+  }
+
+  /** Deliver an async model-seam reply into a realtime round (RM-5). */
+  sendModelResult(seatId: string, result: unknown, requestId?: string): void {
+    this.post(buildModelResult({ nonce: this.nonce }, seatId, result, requestId));
   }
 
   // ─── Internals ───────────────────────────────────────────────────────────

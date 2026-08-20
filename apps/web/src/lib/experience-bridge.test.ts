@@ -560,3 +560,85 @@ describe("IR-90E: Conversation visual ↔ real bridge round-trip", () => {
     expect(harness.elements.get("xp-input")!.disabled).toBe(true);
   });
 });
+// ─── realtime round vocabulary dispatch (RM-5) ─────────────────────────────
+
+describe("ExperienceHostBridge — realtime model/commit dispatch", () => {
+  it("forwards model_request without touching the one-action lock", () => {
+    const received: Array<{ seatId: string; requestId?: string; prompt: unknown }> = [];
+    const actions: string[] = [];
+    const errors: string[] = [];
+    const bridge = new ExperienceHostBridge(
+      baseOpts({
+        onModelRequest: (r) => received.push(r),
+        onAction: (a) => actions.push(a.requestId),
+        onProtocolError: (r) => errors.push(r),
+      }),
+    );
+    const nonce = bridge.sessionNonce;
+    // An action is in flight (no sendResult yet) — the lock holds for turn
+    // actions, but a model request is not one and must sail through.
+    bridge.handleMessage({
+      v: 1,
+      kind: "action",
+      nonce,
+      action: { type: "play", requestId: "req-1", expectedRevision: bridge.revision, participantId: "p1" },
+    });
+    bridge.handleMessage({
+      v: 1,
+      kind: "model_request",
+      nonce,
+      seatId: "m1",
+      requestId: "rq-1",
+      prompt: { q: "hi" },
+    });
+    expect(received).toEqual([{ seatId: "m1", requestId: "rq-1", prompt: { q: "hi" } }]);
+    // The lock is still engaged for turn actions (the model request bypassed
+    // it, it did not clear it).
+    bridge.handleMessage({
+      v: 1,
+      kind: "action",
+      nonce,
+      action: { type: "play", requestId: "req-2", expectedRevision: bridge.revision, participantId: "p1" },
+    });
+    expect(actions).toEqual(["req-1"]);
+    expect(errors).toContain("busy");
+  });
+
+  it("rejects realtime kinds with a stale nonce", () => {
+    const commits: unknown[] = [];
+    const errors: string[] = [];
+    const bridge = new ExperienceHostBridge(
+      baseOpts({ onRoundCommit: (c) => commits.push(c), onProtocolError: (r) => errors.push(r) }),
+    );
+    bridge.handleMessage({ v: 1, kind: "round_commit", nonce: "stale", status: "completed", finalState: {}, log: [] });
+    expect(commits).toEqual([]);
+    expect(errors).toContain("stale_nonce");
+  });
+
+  it("forwards round_commit verbatim (status/finalState/log/score/summary)", () => {
+    const commits: Array<Record<string, unknown>> = [];
+    const bridge = new ExperienceHostBridge(baseOpts({ onRoundCommit: (c) => commits.push(c as unknown as Record<string, unknown>) }));
+    const log = [{ kind: "round_started", seed: 1 }];
+    bridge.handleMessage({
+      v: 1,
+      kind: "round_commit",
+      nonce: bridge.sessionNonce,
+      status: "interrupted",
+      finalState: { x: 1 },
+      log,
+      score: 7,
+      summary: "quit",
+    });
+    expect(commits).toEqual([{ status: "interrupted", finalState: { x: 1 }, log, score: 7, summary: "quit" }]);
+  });
+
+  it("sendModelResult posts a host→visual model_result", () => {
+    const port = recordedPort();
+    const bridge = new ExperienceHostBridge(baseOpts({}));
+    bridge.bindHostPort(port);
+    bridge.sendModelResult("m1", { type: "speak" }, "rq-1");
+    expect(port.sent).toEqual([
+      { v: 1, kind: "model_result", nonce: bridge.sessionNonce, seatId: "m1", requestId: "rq-1", result: { type: "speak" } },
+    ]);
+  });
+});

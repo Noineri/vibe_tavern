@@ -34,6 +34,21 @@
  * `project()` themselves, and logging them at tick rate would explode the
  * bounded log. The round log carries only the replay vocabulary.
  *
+ * The MODEL SEAT channel (RM-5): `requestModel` logs `model_request` for a
+ * DECLARED model seat (the SDK auto-forwards it to the host seam); the async
+ * reply returns through `applyModelResult`, which logs the reply VERBATIM as
+ * `model_result` (data — a replay never re-generates it) and, when the reply
+ * is a legal action intent for the seat, reduces it exactly like a script
+ * move. The replay re-derives the same apply-or-drop outcome from the logged
+ * result because legality is a pure function of state.
+ *
+ * VISUAL-DRIVEN FINISH (RM-5): `finishNow` ends the round from the surface
+ * (player "done"/"give up") at a tick boundary — the log flushes, the claim
+ * (`completed` by default, `interrupted` for a player abandon) is recorded on
+ * `round_finished`, and optional score/summary ride the finish payload into
+ * the commit (they are commit metadata, NOT log events — replay never needs
+ * them).
+ *
  * Bounds (host-side discipline — the kernel validates, the loop enforces
  * pacing): input queue depth, inputs applied per tick, catch-up ticks per
  * frame (tab-switch clamp), total round ticks (the frame-side watchdog — a
@@ -84,8 +99,10 @@ export interface ExperienceLoopInput {
 
 /**
  * The round log vocabulary (the plan's wave-3 event list + the `ticks` batch).
- * `model_request`/`model_result` are carried by the union so later waves log
- * them verbatim; the RM-4 loop itself never emits them.
+ * `model_request`/`model_result` carry the async model seam verbatim: the
+ * request is what the seat asked, the result is DATA (a replay never
+ * re-generates it — RM-8 re-derives the apply-or-drop outcome); `requestId`
+ * is wire correlation only, inert for replay.
  */
 export type ExperienceLoopEvent =
   | { readonly kind: "round_started"; readonly seed: number; readonly settings: unknown }
@@ -96,9 +113,10 @@ export type ExperienceLoopEvent =
       readonly kind: "model_request";
       readonly seatId: string;
       readonly prompt: unknown;
+      readonly requestId?: string;
     }
-  | { readonly kind: "model_result"; readonly seatId: string; readonly result: unknown }
-  | { readonly kind: "round_finished"; readonly status: "completed" };
+  | { readonly kind: "model_result"; readonly seatId: string; readonly result: unknown; readonly requestId?: string }
+  | { readonly kind: "round_finished"; readonly status: "completed" | "interrupted" };
 
 /**
  * A reduce application recorded in the log. The kernel's `experienceActionSchema`
@@ -131,6 +149,8 @@ export interface ExperienceLoopConfig {
   readonly viewer: ExperienceViewer;
   /** Script seats driven by `choose` (one move attempt per seat per tick). */
   readonly scriptSeats: readonly ExperienceViewer[];
+  /** Model seats answered through the async host seam (RM-5). */
+  readonly modelSeats?: readonly ExperienceViewer[];
   /** Participants surface granted when the package declares the capability. */
   readonly participants?: readonly {
     readonly id: string;
@@ -153,14 +173,25 @@ export interface ExperienceLoopCallbacks {
    * actions/project). No `onFinish` follows a fatal error.
    */
   readonly onError: (error: { readonly kind: string; readonly message: string }) => void;
-  /** Exactly once, when a transition completes the round: the commit payload. */
+  /** Exactly once, when the round ends: the commit payload. The status is the
+   * game-driven `"completed"` or the visual-driven claim (`finishNow`, RM-5);
+   * score/summary are commit metadata riding the finish, never log events. */
   readonly onFinish: (result: ExperienceLoopFinish) => void;
 }
 
 export interface ExperienceLoopFinish {
-  readonly status: "completed";
+  readonly status: "completed" | "interrupted";
   readonly finalState: unknown;
   readonly log: readonly ExperienceLoopEvent[];
+  readonly score?: unknown;
+  readonly summary?: unknown;
+}
+
+/** The visual-driven finish claim (`experience.finishRound`, RM-5). */
+export interface ExperienceLoopFinishClaim {
+  readonly status?: "completed" | "interrupted";
+  readonly score?: unknown;
+  readonly summary?: unknown;
 }
 
 /** Injectable frame drivers (browser: rAF + performance.now; tests: fakes). */
@@ -176,6 +207,12 @@ export interface ExperienceLoopHandle {
   readonly getState: () => unknown;
   /** Stop without finishing (host teardown — a stopped round is lost, by design). */
   readonly stop: () => void;
+  /** Log a `model_request` for a DECLARED model seat (false = dropped). RM-5. */
+  readonly requestModel: (seatId: string, prompt: unknown, requestId?: string) => boolean;
+  /** Record a model reply verbatim; reduce it when it is a legal seat action. */
+  readonly applyModelResult: (seatId: string, result: unknown, requestId?: string) => boolean;
+  /** End the round from the surface at a tick boundary (false = already over). */
+  readonly finishNow: (claim?: ExperienceLoopFinishClaim) => boolean;
 }
 
 /**
@@ -245,33 +282,46 @@ export function startExperienceLoopHost(
     callbacks.onError({ kind, message });
   }
 
-  function finishRound(): void {
+  function finishRound(status: "completed" | "interrupted", extras?: ExperienceLoopFinishClaim): void {
     if (stopped || finished) return;
     finished = true;
     stopped = true;
     flushTicks();
-    emit({ kind: "round_finished", status: "completed" });
-    callbacks.onFinish({ status: "completed", finalState: state, log });
+    emit({ kind: "round_finished", status });
+    callbacks.onFinish({
+      status,
+      finalState: state,
+      log,
+      ...(extras?.score !== undefined ? { score: extras.score } : {}),
+      ...(extras?.summary !== undefined ? { summary: extras.summary } : {}),
+    });
   }
 
   // ── reduce application (input + script_move share the shape) ─────────────
-  function applyAction(
+  /** Run one reduce; state/revision mutate, NOTHING is logged. */
+  function runTransition(action: ExperienceLoopLoggedAction): "applied" | "completed" | "fatal" {
+    const transition = runReduce(config.rulesSource, state, action, tickCaps());
+    if (!transition.ok) {
+      fatal(transition.kind, transition.message);
+      return "fatal";
+    }
+    state = transition.value.state;
+    revision += 1;
+    return transition.value.status === "completed" ? "completed" : "applied";
+  }
+
+  function applyLoggedAction(
     action: ExperienceLoopLoggedAction,
     event:
       | { kind: "input"; action: ExperienceLoopLoggedAction }
       | { kind: "script_move"; participantId: string; action: ExperienceLoopLoggedAction },
   ): boolean {
-    const transition = runReduce(config.rulesSource, state, action, tickCaps());
-    if (!transition.ok) {
-      fatal(transition.kind, transition.message);
-      return false;
-    }
-    state = transition.value.state;
-    revision += 1;
+    const outcome = runTransition(action);
+    if (outcome === "fatal") return false;
     flushTicks();
     emit(event);
-    if (transition.value.status === "completed") {
-      finishRound();
+    if (outcome === "completed") {
+      finishRound("completed");
       return false;
     }
     return true;
@@ -309,7 +359,7 @@ export function startExperienceLoopHost(
       pendingTicks += 1;
       if (pendingTicks >= EXPERIENCE_LOOP_MAX_BATCHED_TICKS) flushTicks();
       if (transition.value.status === "completed") {
-        finishRound();
+        finishRound("completed");
         return;
       }
     }
@@ -330,7 +380,7 @@ export function startExperienceLoopHost(
         callbacks.onDrop(`input "${input.type}" dropped: ${check.message}`);
         continue;
       }
-      if (!applyAction(action, { kind: "input", action })) return;
+      if (!applyLoggedAction(action, { kind: "input", action })) return;
       applied += 1;
     }
 
@@ -369,7 +419,7 @@ export function startExperienceLoopHost(
         callbacks.onDrop(`script move "${intent.type}" dropped: ${check.message}`);
         continue;
       }
-      if (!applyAction(action, { kind: "script_move", participantId, action })) return;
+      if (!applyLoggedAction(action, { kind: "script_move", participantId, action })) return;
     }
   }
 
@@ -419,7 +469,24 @@ export function startExperienceLoopHost(
       enqueueInput: () => undefined,
       getState: () => config.initialState,
       stop: () => undefined,
+      requestModel: () => false,
+      applyModelResult: () => false,
+      finishNow: () => false,
     };
+  }
+
+  /** A declared model seat lookup — undeclared seats are rejected at the door. */
+  function findModelSeat(seatId: string): ExperienceViewer | undefined {
+    return config.modelSeats?.find((seat) => seat.participantId === seatId);
+  }
+
+  /** A model reply is an action intent when it is `{ type: string, … }`. */
+  function asIntent(result: unknown): { type: string; payload?: unknown } | null {
+    if (typeof result !== "object" || result === null || Array.isArray(result)) return null;
+    const type = (result as { type?: unknown }).type;
+    if (typeof type !== "string") return null;
+    const payload = (result as { payload?: unknown }).payload;
+    return { type, ...(payload !== undefined ? { payload } : {}) };
   }
 
   return {
@@ -436,6 +503,68 @@ export function startExperienceLoopHost(
       // Teardown, not a finish: a stopped round is LOST by design (the plan's
       // disconnect rule) — no round_finished event, no commit payload.
       stopped = true;
+    },
+    requestModel: (seatId, prompt, requestId) => {
+      if (stopped || finished) return false;
+      if (findModelSeat(seatId) === undefined) {
+        callbacks.onDrop(`model request for unknown seat "${seatId}" dropped`);
+        return false;
+      }
+      flushTicks();
+      emit({
+        kind: "model_request",
+        seatId,
+        prompt,
+        ...(requestId !== undefined ? { requestId } : {}),
+      });
+      return true;
+    },
+    applyModelResult: (seatId, result, requestId) => {
+      if (stopped || finished) return false; // late reply after the round ended — noise
+      const seat = findModelSeat(seatId);
+      if (seat === undefined) {
+        callbacks.onDrop(`model result for unknown seat "${seatId}" dropped`);
+        return false;
+      }
+      // Verbatim first (wire truth): the replay reads the logged result and
+      // re-derives the same apply-or-drop outcome below.
+      flushTicks();
+      emit({
+        kind: "model_result",
+        seatId,
+        result,
+        ...(requestId !== undefined ? { requestId } : {}),
+      });
+      const intent = asIntent(result);
+      if (intent === null) {
+        callbacks.onDrop(`model result for seat "${seatId}" is not an action — recorded, not applied`);
+        return true;
+      }
+      const legal = runActions(config.rulesSource, state, seat, legalityCaps());
+      if (!legal.ok) {
+        fatal(legal.kind, legal.message);
+        return true;
+      }
+      const action = synthAction({
+        type: intent.type,
+        participantId: seatId,
+        ...(intent.payload !== undefined ? { payload: intent.payload } : {}),
+      });
+      const check = validateSubmittedAction(action, legal.value);
+      if (!check.ok) {
+        callbacks.onDrop(`model move "${intent.type}" dropped: ${check.message}`);
+        return true;
+      }
+      const outcome = runTransition(action);
+      if (outcome === "fatal") return true;
+      if (outcome === "completed") finishRound("completed");
+      return true;
+    },
+    finishNow: (claim) => {
+      if (stopped || finished) return false;
+      const status = claim?.status === "interrupted" ? "interrupted" : "completed";
+      finishRound(status, claim);
+      return true;
     },
   };
 }

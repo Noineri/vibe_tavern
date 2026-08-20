@@ -19,7 +19,10 @@
  *     CustomEvents, which the SDK (RM-5) wraps into `actLocal`/`onTick`/
  *     `finishRound`:
  *       dispatch: vt-loop:view | vt-loop:event | vt-loop:drop | vt-loop:error | vt-loop:finish
- *       listen:   vt-loop:input {type, participantId?, payload?} | vt-loop:stop | vt-loop:state
+ *       listen:   vt-loop:input {type, participantId?, payload?} | vt-loop:stop | vt-loop:state |
+ *                 vt-loop:model-request {seatId, prompt, requestId?} |
+ *                 vt-loop:model-result {seatId, result, requestId?} |
+ *                 vt-loop:finish-request {status?, score?, summary?}
  *
  * Determinism note: everything replay-relevant (rules execution, the round
  * cursor, the log) lives in this bundle; the host document only supplies DATA
@@ -74,7 +77,14 @@ export interface BootOptions {
 function bootFromDocument(opts: BootOptions = {}): void {
   const win = globalThis as unknown as {
     __vtLoopBooted?: boolean;
-    __vtLoopHandle?: { enqueueInput(i: { type: string }): void; stop(): void; getState(): unknown };
+    __vtLoopHandle?: {
+      enqueueInput(i: { type: string }): void;
+      stop(): void;
+      getState(): unknown;
+      requestModel(seatId: string, prompt: unknown, requestId?: string): boolean;
+      applyModelResult(seatId: string, result: unknown, requestId?: string): boolean;
+      finishNow(claim?: { status?: "completed" | "interrupted"; score?: unknown; summary?: unknown }): boolean;
+    };
     dispatchEvent?: (e: unknown) => boolean;
     addEventListener?: (type: string, cb: (e: { detail: unknown }) => void) => void;
     requestAnimationFrame?: (cb: (now: number) => void) => void;
@@ -137,6 +147,40 @@ function bootFromDocument(opts: BootOptions = {}): void {
       }
     });
     win.addEventListener("vt-loop:stop", () => handle.stop());
+    win.addEventListener("vt-loop:model-request", (e) => {
+      const d = e.detail as { seatId?: unknown; prompt?: unknown; requestId?: unknown } | null;
+      if (d !== null && typeof d === "object" && typeof d.seatId === "string") {
+        handle.requestModel(
+          d.seatId,
+          d.prompt,
+          typeof d.requestId === "string" ? d.requestId : undefined,
+        );
+      }
+    });
+    win.addEventListener("vt-loop:model-result", (e) => {
+      const d = e.detail as { seatId?: unknown; result?: unknown; requestId?: unknown } | null;
+      if (d !== null && typeof d === "object" && typeof d.seatId === "string") {
+        handle.applyModelResult(
+          d.seatId,
+          d.result,
+          typeof d.requestId === "string" ? d.requestId : undefined,
+        );
+      }
+    });
+    win.addEventListener("vt-loop:finish-request", (e) => {
+      const d = e.detail as
+        | { status?: unknown; score?: unknown; summary?: unknown }
+        | null;
+      if (d === null || typeof d !== "object") {
+        handle.finishNow();
+        return;
+      }
+      handle.finishNow({
+        ...(d.status === "interrupted" || d.status === "completed" ? { status: d.status } : {}),
+        ...(d.score !== undefined ? { score: d.score } : {}),
+        ...(d.summary !== undefined ? { summary: d.summary } : {}),
+      });
+    });
     win.addEventListener("vt-loop:state", (e) => {
       const detail = e.detail as { onState?: (s: unknown) => void } | null;
       if (detail !== null && typeof detail === "object" && typeof detail.onState === "function") {

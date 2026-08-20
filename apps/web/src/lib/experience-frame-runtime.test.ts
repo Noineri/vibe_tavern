@@ -67,9 +67,10 @@ context.experience.register({
     return { remaining: total, total };
   },
   project(context) { return { remaining: context.state.remaining }; },
-  actions() { return [{ type: "drain" }]; },
+  actions() { return [{ type: "drain" }, { type: "poke" }]; },
   reduce(context, action) {
     if (action.type === "drain") return { state: { ...context.state, remaining: 0 }, status: "completed", events: [] };
+    if (action.type === "poke") return { state: { ...context.state, pokes: (context.state.pokes || 0) + 1 }, status: "active", events: [] };
     return { state: context.state, status: "active", events: [] };
   },
   update(context, dt) {
@@ -142,16 +143,60 @@ describe("frame runtime artifact — eval smoke", () => {
 
     // The input channel enqueues through the same surface (RM-5's actLocal).
     window.dispatchEvent(
-      new CustomEvent("vt-loop:input", { detail: { type: "drain", participantId: "p1" } }),
+      new CustomEvent("vt-loop:input", { detail: { type: "poke", participantId: "p1" } }),
     );
     t += 50;
-    frame.cb?.(t); // tick: update (950→? ordering: update first, then the queued drain)
+    frame.cb?.(t); // tick: update, then the queued poke (non-completing)
+    const lastView2 = seen.filter((s) => s.type === "vt-loop:view").at(-1)?.detail;
+    expect((lastView2 as { remaining: number }).remaining).toBe(850);
+    const inputEvent = seen
+      .filter((s) => s.type === "vt-loop:event")
+      .map((s) => s.detail as { kind: string })
+      .find((e) => e.kind === "input");
+    expect(inputEvent).toBeTruthy();
+
+    // The model channel round-trips through the loop log (RM-5). "m9" is not
+    // a declared model seat → the request is rejected at the door.
+    window.dispatchEvent(
+      new CustomEvent("vt-loop:model-request", { detail: { seatId: "m9", prompt: { q: "hi" }, requestId: "rq-1" } }),
+    );
+    t += 50;
+    frame.cb?.(t);
+    const logKinds = seen
+      .filter((s) => s.type === "vt-loop:event")
+      .map((s) => s.detail as { kind: string })
+      .map((e) => e.kind);
+    expect(logKinds).not.toContain("model_request");
+    expect(seen.some((s) => s.type === "vt-loop:drop")).toBe(true);
+
+    // The visual-driven finish: finish-request carries score/summary onto the
+    // finish payload and ends the round at a tick boundary.
+    window.dispatchEvent(
+      new CustomEvent("vt-loop:finish-request", {
+        detail: { status: "completed", score: 1500, summary: "done early" },
+      }),
+    );
     const finish = seen.find((s) => s.type === "vt-loop:finish");
     expect(finish).toBeTruthy();
-    const detail = finish?.detail as { status: string; finalState: unknown; log: Array<{ kind: string }> };
+    const detail = finish?.detail as {
+      status: string;
+      finalState: { remaining: number; pokes?: number };
+      score?: number;
+      summary?: string;
+      log: Array<{ kind: string; status?: string }>;
+    };
     expect(detail.status).toBe("completed");
-    expect(detail.finalState).toEqual({ remaining: 0, total: 1000 });
-    expect(detail.log.map((e) => e.kind)).toEqual(["round_started", "ticks", "input", "round_finished"]);
+    expect(detail.score).toBe(1500);
+    expect(detail.summary).toBe("done early");
+    expect(detail.finalState.remaining).toBe(800); // stopped at the boundary, not drained
+    expect(detail.log.map((e) => e.kind)).toEqual([
+      "round_started",
+      "ticks",
+      "input",
+      "ticks",
+      "round_finished",
+    ]);
+    expect(detail.log.at(-1)?.status).toBe("completed");
 
     // Boot is idempotent (a double boot line must not start a second loop).
     api.bootFromDocument({ drivers, config: { rulesSource: TICKER_SCRIPT, tickMs: 50, initialState: { remaining: 5, total: 5 }, seed: 1, viewer: { kind: "human", participantId: "p1" }, scriptSeats: [] } });

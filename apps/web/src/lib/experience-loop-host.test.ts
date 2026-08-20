@@ -127,7 +127,13 @@ interface Recorded {
   views: unknown[];
   drops: string[];
   errors: Array<{ kind: string; message: string }>;
-  finishes: Array<{ status: string; finalState: unknown; log: readonly ExperienceLoopEvent[] }>;
+  finishes: Array<{
+    status: "completed" | "interrupted";
+    finalState: unknown;
+    log: readonly ExperienceLoopEvent[];
+    score?: unknown;
+    summary?: unknown;
+  }>;
 }
 
 function makeCallbacks(): { cb: ExperienceLoopCallbacks; recorded: Recorded } {
@@ -464,5 +470,196 @@ describe("loop host — stop", () => {
     expect(recorded.events.map((e) => e.kind)).toEqual(["round_started"]);
     handle.enqueueInput({ type: "pause" });
     expect(recorded.drops).toEqual([]); // inert after stop, not even a drop
+  });
+});
+
+// ─── model seats (RM-5) ─────────────────────────────────────────────────────
+
+/** Model-seat fixture: "speak" is the seat's legal action, "shout" is not. */
+const ORACLE_SCRIPT = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "oracle", name: "Oracle", mode: "realtime", tickMs: 50 },
+  capabilities: [{ capability: "participants" }],
+  create() { return { oracles: 0, junk: 0 }; },
+  project(context) { return { oracles: context.state.oracles }; },
+  actions() { return [{ type: "poke" }, { type: "speak" }]; },
+  reduce(context, action) {
+    if (action.type === "speak" && action.participantId === "m1") return { state: { ...context.state, oracles: context.state.oracles + 1 }, status: "active", events: [] };
+    if (action.type === "poke") return { state: { ...context.state, junk: context.state.junk + 1 }, status: "active", events: [] };
+    return { state: context.state, status: "active", events: [] };
+  },
+  update(context) { return { state: context.state, status: "active", events: [] }; },
+});
+`;
+
+function oracleConfig(overrides: Partial<ExperienceLoopConfig> = {}): ExperienceLoopConfig {
+  return {
+    rulesSource: ORACLE_SCRIPT,
+    tickMs: 50,
+    initialState: { oracles: 0, junk: 0 },
+    seed: 7,
+    viewer: { kind: "human", participantId: "p1" },
+    scriptSeats: [],
+    modelSeats: [{ kind: "model", participantId: "m1" }],
+    participants: [
+      { id: "p1", label: "P1", controller: "human" },
+      { id: "m1", label: "Oracle", controller: "model" },
+    ],
+    ...overrides,
+  };
+}
+
+describe("loop host — model seats", () => {
+  test("requestModel logs for a declared seat and rejects unknown seats", () => {
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(oracleConfig(), cb, clock.drivers);
+    expect(handle.requestModel("m1", { q: "hello" }, "rq-1")).toBe(true);
+    clock.advance(50); // a tick runs after the request
+    expect(handle.requestModel("ghost", { q: "?" })).toBe(false);
+    const kinds = recorded.events.map((e) => e.kind);
+    // The ticks batch is LAZY: one quiet tick after the request has no flush
+    // trigger yet, so the live stream shows only the request. (The finish-side
+    // log would carry the batch.)
+    expect(kinds).toEqual(["round_started", "model_request"]);
+    const req = recorded.events[1] as { kind: "model_request"; seatId: string; prompt: unknown; requestId?: string };
+    expect(req.seatId).toBe("m1");
+    expect(req.prompt).toEqual({ q: "hello" });
+    expect(req.requestId).toBe("rq-1");
+    expect(recorded.drops.length).toBe(1);
+    expect(recorded.drops[0]).toContain("ghost");
+  });
+
+  test("a legal model reply is recorded verbatim and applied via reduce", () => {
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(oracleConfig(), cb, clock.drivers);
+    clock.advance(50);
+    expect(handle.applyModelResult("m1", { type: "speak", payload: { text: "hi" } }, "rq-1")).toBe(true);
+    expect(handle.getState()).toEqual({ oracles: 1, junk: 0 });
+    const res = recorded.events.find((e) => e.kind === "model_result") as {
+      result: unknown;
+      requestId?: string;
+    };
+    expect(res.result).toEqual({ type: "speak", payload: { text: "hi" } });
+    expect(res.requestId).toBe("rq-1");
+  });
+
+  test("an illegal or malformed reply is recorded but NOT applied; the round lives", () => {
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(oracleConfig(), cb, clock.drivers);
+    clock.advance(50);
+    expect(handle.applyModelResult("m1", { type: "shout" })).toBe(true); // illegal for the seat
+    expect(handle.applyModelResult("m1", "the oracle rambles")).toBe(true); // not an action
+    expect(handle.getState()).toEqual({ oracles: 0, junk: 0 });
+    expect(recorded.drops.length).toBe(2);
+    expect(recorded.finishes).toEqual([]);
+    // Both replies are in the log — verbatim wire truth for the replay.
+    expect(recorded.events.filter((e) => e.kind === "model_result").length).toBe(2);
+  });
+
+  test("a reply for an undeclared seat is rejected at the door (nothing logged)", () => {
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(oracleConfig(), cb, clock.drivers);
+    expect(handle.applyModelResult("ghost", { type: "speak" })).toBe(false);
+    expect(recorded.events.map((e) => e.kind)).toEqual(["round_started"]);
+    expect(recorded.drops.length).toBe(1);
+  });
+
+  test("a completing model reply finishes the round (game-driven status)", () => {
+    const FINISHING_ORACLE = ORACLE_SCRIPT.replace(
+      'status: "active", events: [] };\n    if (action.type === "poke")',
+      'status: "completed", events: [] };\n    if (action.type === "poke")',
+    );
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(oracleConfig({ rulesSource: FINISHING_ORACLE }), cb, clock.drivers);
+    expect(handle.applyModelResult("m1", { type: "speak" })).toBe(true);
+    expect(recorded.finishes.length).toBe(1);
+    expect(recorded.finishes[0]?.status).toBe("completed");
+    expect(recorded.finishes[0]?.finalState).toEqual({ oracles: 1, junk: 0 });
+  });
+
+  test("late replies after the round ended are silent noise", () => {
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(oracleConfig(), cb, clock.drivers);
+    handle.stop();
+    expect(handle.applyModelResult("m1", { type: "speak" })).toBe(false);
+    expect(handle.requestModel("m1", {})).toBe(false);
+    expect(recorded.events.map((e) => e.kind)).toEqual(["round_started"]);
+    expect(recorded.drops).toEqual([]);
+  });
+
+  test("determinism: same seed + same model timing ⇒ identical state AND log", () => {
+    const run = (): { state: unknown; log: string } => {
+      const clock = makeFakeClock();
+      const { cb, recorded } = makeCallbacks();
+      const handle = startExperienceLoopHost(oracleConfig(), cb, clock.drivers);
+      handle.requestModel("m1", { q: "hello" }, "rq-1");
+      clock.advance(50);
+      handle.applyModelResult("m1", { type: "speak", payload: { text: "hi" } }, "rq-1");
+      clock.advance(50);
+      clock.advance(50);
+      return { state: handle.getState(), log: JSON.stringify(recorded.events) };
+    };
+    const a = run();
+    const b = run();
+    expect(a.state).toEqual(b.state);
+    expect(a.log).toBe(b.log);
+  });
+});
+
+// ─── visual-driven finish (RM-5) ─────────────────────────────────────────────
+
+describe("loop host — finishNow", () => {
+  test("claims the status, carries score/summary, and ends the round once", () => {
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(tickerConfig(), cb, clock.drivers);
+    clock.advance(100); // one tick: remaining 900
+    expect(handle.finishNow({ status: "interrupted", score: 42, summary: "player gave up" })).toBe(true);
+    const finish = recorded.finishes[0];
+    expect(finish?.status).toBe("interrupted");
+    expect(finish?.score).toBe(42);
+    expect(finish?.summary).toBe("player gave up");
+    expect(finish?.finalState).toEqual({ remaining: 900, total: 1000 });
+    expect(finish?.log.map((e) => e.kind)).toEqual(["round_started", "ticks", "round_finished"]);
+    expect((finish?.log.at(-1) as { status: string }).status).toBe("interrupted");
+    expect(handle.finishNow()).toBe(false); // already over — no double finish
+    clock.advance(100);
+    expect(recorded.finishes.length).toBe(1);
+    handle.enqueueInput({ type: "pause" });
+    expect(recorded.drops).toEqual([]); // inert after the finish
+  });
+
+  test("defaults to completed and drops nothing into the log for absent fields", () => {
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(tickerConfig(), cb, clock.drivers);
+    expect(handle.finishNow()).toBe(true);
+    const finish = recorded.finishes[0];
+    expect(finish?.status).toBe("completed");
+    expect(finish?.score).toBeUndefined();
+    expect(finish?.summary).toBeUndefined();
+    expect(JSON.stringify(finish?.log)).not.toContain("score");
+  });
+
+  test("a game-driven finish already took the round — finishNow is a no-op", () => {
+    const clock = makeFakeClock();
+    const { cb, recorded } = makeCallbacks();
+    const handle = startExperienceLoopHost(
+      tickerConfig({ initialState: { remaining: 40, total: 1000 } }),
+      cb,
+      clock.drivers,
+    );
+    clock.advance(100); // update completes the round
+    expect(recorded.finishes.length).toBe(1);
+    expect(handle.finishNow({ score: 1 })).toBe(false);
+    expect(recorded.finishes.length).toBe(1);
+    expect(recorded.finishes[0]?.score).toBeUndefined();
   });
 });
