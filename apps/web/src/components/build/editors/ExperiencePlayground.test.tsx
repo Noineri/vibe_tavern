@@ -1673,9 +1673,11 @@ describe("ExperiencePlayground — post-game strip (LB-6)", () => {
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
 
     // While live the setup accordion auto-collapsed (XU-3) — the reset must
-    // restore the expanded default.
+    // restore the expanded default. The collapse lands via an effect one
+    // commit after the start mock resolves, so it is awaited, not assumed
+    // (slow-CI race: a sync read saw the pre-collapse "true").
     const setupToggle = () => utils.getByText("experience_playground_setup_title").closest("button") as HTMLButtonElement;
-    expect(setupToggle().getAttribute("aria-expanded")).toBe("false");
+    await waitFor(() => expect(setupToggle().getAttribute("aria-expanded")).toBe("false"));
 
     fireEvent.click(utils.getByText("experience_restart_change_settings"));
     await waitFor(() => expect(utils.queryByTestId("playground-postgame-strip")).toBeNull());
