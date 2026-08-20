@@ -1153,6 +1153,7 @@ export class ExperienceService {
         declaredCapabilities: [], // not needed for runtime; re-discovery is Wave 8 trust
         hasChoose: false, // not stored on the session; lifecycle probes runChoose directly
         hasFlavor: false,
+        hasUpdate: false, // not stored; realtime rounds never run on the durable path
       },
       sourceHash: session.rulesSourceHash,
       revision: session.rulesRevision,

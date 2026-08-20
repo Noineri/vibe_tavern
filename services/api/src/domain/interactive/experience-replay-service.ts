@@ -345,6 +345,7 @@ export class ExperienceReplayService {
         declaredCapabilities: [],
         hasChoose: false, // not stored; replay re-runs create+reduce only (choose is ephemeral)
         hasFlavor: false,
+        hasUpdate: false, // not stored; turn-based replay never ticks
       },
       sourceHash: session.rulesSourceHash,
       revision: session.rulesRevision,

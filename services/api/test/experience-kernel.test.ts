@@ -189,6 +189,7 @@ describe("discoverExperienceDefinition", () => {
 			declaredCapabilities: [],
 			hasChoose: false,
 			hasFlavor: false,
+			hasUpdate: false,
 		});
 		expect(result.sourceHash.length).toBe(64);
 	});

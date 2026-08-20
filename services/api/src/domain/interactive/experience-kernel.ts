@@ -16,16 +16,20 @@
  *  - `reduce(context, action)`    → next transition `{state, status, events, effects?}`. [mandatory]
  *  - `choose(context, {viewer, legal})` → one chosen action for a script seat. [optional]
  *  - `flavor(context, viewer)`    → cosmetic display data for one viewer.    [optional]
+ *  - `update(context, dt)`        → one realtime tick's transition.           [optional]
  *
  * The method-call `context` the kernel injects is `{ state?, participants?,
  * random?, chance?, helpers }`. `state` is present for project/actions/choose/
- * reduce/flavor (frozen), absent for create. `participants` and `random` appear
+ * reduce/flavor/update (frozen), absent for create. `participants` and `random` appear
  * ONLY when the host grants those capabilities (and `random` only in create/
- * reduce); `chance` is an EPHEMERAL, non-recorded random source injected only
+ * reduce/update); `chance` is an EPHEMERAL, non-recorded random source injected only
  * into `choose` and `flavor` — it lets a script pick a varied move or cosmetic
  * detail without consuming the deterministic cursor, so the journal of create+
  * reduce draws alone reproduces the stream on replay (Variant Б of the
- * choose-randomness design). `model`, `rp_context`, and `rp_attachment` are NOT
+ * choose-randomness design). `update` deliberately gets NO `chance`: a
+ * realtime tick must replay bit-identically (round-commit verification re-runs
+ * `update` from the session seed), so ticks draw from the deterministic cursor
+ * exactly like `reduce`. `model`, `rp_context`, and `rp_attachment` are NOT
  * synchronous context APIs — a reducer requests them as durable effect data and
  * the host runs them out-of-band (Wave 4). `helpers` is the always-present,
  * frozen, optional pure-recipe namespace from {@link ./experience-helpers.ts}.
@@ -234,6 +238,9 @@ export interface ExperienceDefinition {
 	readonly hasChoose: boolean;
 	/** Whether the optional `flavor` method is present (display-time cosmetic). */
 	readonly hasFlavor: boolean;
+	/** Whether the optional `update` method is present (realtime fixed-timestep
+	 *  ticks; REALTIME_EXPERIENCE_MODE_PLAN). Absent on turn-based packages. */
+	readonly hasUpdate: boolean;
 	/** Optional package-authored setup-field descriptor, normalized by
 	 *  `experienceDefinitionSchema` (IR-70F). Absent when the package declares none. */
 	readonly setup?: ExperienceSetupDefinition;
@@ -283,6 +290,7 @@ export function discoverExperienceDefinition(
 			declaredCapabilities: parsed.data.declaredCapabilities,
 			hasChoose: discovery.hasChoose,
 			hasFlavor: discovery.hasFlavor,
+			hasUpdate: discovery.hasUpdate,
 			...(parsed.data.setup !== undefined ? { setup: parsed.data.setup } : {}),
 		},
 		sourceHash: discovery.sourceHash,
@@ -414,6 +422,49 @@ export function runReduce(
 		state,
 		caps,
 		cloneFrozen(actionParsed.data),
+		(raw, console) => validateTransition(raw, console),
+		timeoutMs,
+	);
+}
+
+// ─── update (optional realtime tick) ───────────────────────────────────────
+
+/**
+ * Run the OPTIONAL `update(context, dt)` realtime method and return the
+ * validated transition — the SAME validated transition shape as `reduce`
+ * (status narrowed to `active`/`completed`; state/events/effects bounded).
+ * `dt` is the manifest's fixed `tickMs`; the kernel accepts any positive
+ * integer so replay tooling can drive ticks without re-deriving the manifest,
+ * while the 16..1000 authoring bound stays owned by the contracts schema.
+ * The injected context is the reduce-shaped one (`state`, granted
+ * capabilities, `helpers`): a tick may draw from the DETERMINISTIC cursor but
+ * never receives the ephemeral `chance` — a realtime tick must replay
+ * bit-identically for round-commit verification (RM-8).
+ */
+export function runUpdate(
+	code: string,
+	scriptName: string,
+	state: unknown,
+	dtMs: number,
+	caps: ExperienceCapabilityContext,
+	timeoutMs: number = EXPERIENCE_VM_DEFAULT_TIMEOUT_MS,
+): ExperienceRunResult<ExperienceTransition> {
+	if (!Number.isInteger(dtMs) || dtMs <= 0) {
+		return kernelError(
+			"invalid_state",
+			`dtMs must be a positive integer (the manifest tickMs); got ${String(dtMs)}`,
+			[],
+		);
+	}
+	const stateError = validateStateInput(state);
+	if (stateError !== null) return stateError;
+	return runAndValidate(
+		code,
+		scriptName,
+		"update",
+		state,
+		caps,
+		dtMs,
 		(raw, console) => validateTransition(raw, console),
 		timeoutMs,
 	);

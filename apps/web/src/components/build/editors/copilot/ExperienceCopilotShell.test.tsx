@@ -250,6 +250,7 @@ const TEST_RUN_DATA: Awaited<ReturnType<typeof import("../../../../api/experienc
     declaredCapabilities: [{ capability: "participants", reason: "x" }],
     hasChoose: false,
     hasFlavor: false,
+    hasUpdate: false,
   },
   sourceHash: "h",
   initialState: {},

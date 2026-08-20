@@ -42,6 +42,7 @@ function makeRunData(overrides: Partial<ExperienceTestRunData> = {}): Experience
       declaredCapabilities: [{ capability: "participants", reason: "x" }],
       hasChoose: false,
       hasFlavor: false,
+      hasUpdate: false,
     },
     sourceHash: "h",
     initialState: {},

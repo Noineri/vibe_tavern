@@ -61,6 +61,7 @@ function makeTestRunData(): ExperienceTestRunData {
       declaredCapabilities: [],
       hasChoose: false,
       hasFlavor: false,
+      hasUpdate: false,
     },
     sourceHash: "abc123def456",
     initialState: {},

@@ -868,6 +868,8 @@ export interface ExperienceTestConsoleEntry {
 export interface ExperienceTestDefinition extends ExperienceDefinitionDto {
   hasChoose: boolean;
   hasFlavor: boolean;
+  /** Realtime fixed-timestep tick method present (RM-2; absent on turn-based). */
+  hasUpdate: boolean;
 }
 
 /** One replayed action's outcome inside a test run / simulation trace. Mirrors
