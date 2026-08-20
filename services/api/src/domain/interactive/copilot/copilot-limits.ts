@@ -30,6 +30,20 @@ export const COPILOT_CONTEXT_BUDGET_TOKENS = 300_000;
 export const COPILOT_RESPONSE_RESERVE_TOKENS = 32_000;
 
 /**
+ * Nominal ceiling for the multi-step tool loop (TAG-4). The profile-level
+ * `maxSteps` limit was removed entirely by user decision — verbatim: «по
+ * механике это должна быть карта пошаговых действий для модели, потому что
+ * мини-приложение - это полноценная разработка. поэтому лимит на 20 шагов
+ * надо вообще убрать, пользователь может просто нажать отмену генерации, он
+ * бессмысленен.» / «давай просто скопируем как у них» — pi parity: the loop
+ * runs until the model stops calling tools; the only stop is the user's cancel.
+ * The AI SDK still requires a finite `stopWhen` predicate, so the stream feeds
+ * it this deliberately unreachable bound (1,000,000 steps). No user-visible
+ * limit anywhere; the constant is a wire-level formality, not a nanny cap.
+ */
+export const COPILOT_TOOL_LOOP_CEILING = 1_000_000;
+
+/**
  * Auto-compaction (digest) call samplers. A digest must be a faithful, cool
  * summary: low temperature, and an output cap sized for a whole authoring
  * session (2k once let a reasoning model burn the entire cap on thinking and

@@ -46,7 +46,7 @@ import {
   type ExperienceCopilotStep,
   type ExperienceCopilotTestFeedback,
 } from "./experience-copilot-prompt.js";
-import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS } from "./copilot-limits.js";
+import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "./copilot-limits.js";
 import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 import { renderAttachedContext, type CopilotContextItem } from "./experience-copilot-context.js";
@@ -137,9 +137,6 @@ export interface ExperienceCopilotStreamDeps {
   readonly resolveContextItems?: (
     links: readonly ExperienceCopilotContextLink[],
   ) => Promise<CopilotContextItem[]>;
-  /** Max tool-loop steps for the multi-step loop (mirrors co-author maxSteps).
-   *  Defaults to the resolved profile's maxSteps (the built-in seed = 20). */
-  readonly maxSteps?: number;
   /** The AI SDK streaming function. Defaults to the real `streamText` from "ai".
    *  Injectable so tests can substitute a fake WITHOUT `mock.module("ai")` —
    *  under bun:test that mock is process-global and permanent (neither
@@ -155,9 +152,11 @@ export interface ExperienceCopilotStreamDeps {
   readonly autoCompact?: (threadId: string) => Promise<void>;
 }
 
-// DEFAULT_MAX_STEPS moved to the built-in profile's maxSteps (ER-16 / CP-4) —
-// the profile is the single declarative source for the tool-loop bound; an
-// assigned profile overrides it via `deps.maxSteps ?? copilotProfile.maxSteps`.
+// The tool-loop bound was REMOVED (TAG-4): the profile's `maxSteps` no longer
+// exists — the loop runs until the model stops calling tools (pi parity, the
+// user cancels). The AI SDK still requires a finite `stopWhen`, so the stream
+// feeds it COPILOT_TOOL_LOOP_CEILING (1,000,000 — a wire-level formality, not
+// a nanny cap). See copilot-limits.ts.
 
 // ─── History conversion (store ↔ prompt ↔ SDK) ───────────────────────────────
 
@@ -425,7 +424,6 @@ export async function* streamExperienceCopilot(
   // ── 8. Resolve the model + start streaming ──
   const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
   const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
-  const maxSteps = deps.maxSteps ?? copilotProfile.maxSteps;
 
   const modelMessages = toModelMessages(assembled.messages);
 
@@ -438,7 +436,7 @@ export async function* streamExperienceCopilot(
       allowSystemInMessages: true,
       abortSignal: signal,
       tools,
-      stopWhen: isStepCount(maxSteps),
+      stopWhen: isStepCount(COPILOT_TOOL_LOOP_CEILING),
     });
   } catch (err) {
     // Setup error (streamText() failed before iteration began).

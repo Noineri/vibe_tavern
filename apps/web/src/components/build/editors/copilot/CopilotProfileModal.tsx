@@ -41,7 +41,7 @@ function profileToDraft(p: CopilotProfile): ProfileDraft {
 		basePrompt: p.basePrompt,
 		skillIds: [...p.skillIds],
 		toolSet: { ...p.toolSet },
-		maxSteps: p.maxSteps,
+		maxSteps: p.maxSteps ?? COPILOT_MAX_STEPS_DEFAULT,
 	};
 }
 

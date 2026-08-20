@@ -357,6 +357,18 @@ describe("copilotProfileSchema (CP-1)", () => {
     expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 0 })).toThrow();
     expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 51 })).toThrow();
   });
+
+  test("accepts a profile without maxSteps (optional — TAG-4)", () => {
+    const base = {
+      id: "x",
+      name: "X",
+      isBuiltIn: false,
+      basePrompt: "p",
+      skillIds: [],
+      toolSet: {},
+    };
+    expect(copilotProfileSchema.parse(base).maxSteps).toBeUndefined();
+  });
 });
 
 // ─── CX-1: pinned-context links ─────────────────────────────────────────────

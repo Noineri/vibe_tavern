@@ -55,8 +55,6 @@ export interface ExperienceCopilotModuleDef {
    *  always available on top, mirroring Co-Author — it is the universal
    *  read-only skill channel, NOT gated by `toolSet`). */
   readonly toolSet: Record<string, boolean>;
-  /** Max tool-loop steps for the multi-step turn (mirrors Co-Author maxSteps). */
-  readonly maxSteps: number;
 }
 
 export const EXPERIENCE_COPILOT_MODULE: ExperienceCopilotModuleDef = {
@@ -72,8 +70,9 @@ export const EXPERIENCE_COPILOT_MODULE: ExperienceCopilotModuleDef = {
     run_test: true,
     run_simulate: true,
     suggest_visual_binding: true,
+    todo: true,
+    ask_user: true,
   },
-  maxSteps: 20,
 };
 
 // ─── Module resolution (lazy prompt load) ────────────────────────────────────
@@ -167,7 +166,6 @@ export async function resolveBuiltinCopilotProfile(): Promise<CopilotProfile> {
     basePrompt,
     skillIds: [...EXPERIENCE_COPILOT_MODULE.skillIds],
     toolSet,
-    maxSteps: EXPERIENCE_COPILOT_MODULE.maxSteps,
   };
 }
 

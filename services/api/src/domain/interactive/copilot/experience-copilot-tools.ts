@@ -22,11 +22,12 @@
  * working state. `read_skill_file` is REUSED from the Co-Author skill system
  * (same sandboxed reader, same progressive-disclosure flow).
  *
- * The model may call several tools per turn; the AI SDK multi-step loop
- * (`stopWhen: stepCountIs(maxSteps)`) feeds results back so the model stays
- * coherent. The closure working-state composes across calls in one turn (a
- * later call sees earlier mutations), serialized through a non-poisoning queue
- * so a rejected call cannot corrupt the buffers or block a later one.
+ * The model may call several tools per turn; the AI SDK multi-step loop feeds
+ * results back so the model stays coherent (bounded only by the nominal
+ * `COPILOT_TOOL_LOOP_CEILING` — the profile `maxSteps` was removed in TAG-4).
+ * The closure working-state composes across calls in one turn (a later call
+ * sees earlier mutations), serialized through a non-poisoning queue so a
+ * rejected call cannot corrupt the buffers or block a later one.
  */
 
 import { tool, type ToolSet } from "ai";

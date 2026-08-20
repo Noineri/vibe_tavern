@@ -13,6 +13,7 @@ import { streamExperienceCopilot } from "../src/domain/interactive/copilot/exper
 import {
   COPILOT_CONTEXT_BUDGET_TOKENS,
   COPILOT_RESPONSE_RESERVE_TOKENS,
+  COPILOT_TOOL_LOOP_CEILING,
 } from "../src/domain/interactive/copilot/copilot-limits.js";
 import type {
   ExperienceCopilotStreamDeps,
@@ -577,7 +578,7 @@ describe("experience-copilot stream (ER-6)", () => {
     expect(finish).toBeDefined();
   });
 
-  it("honors a resolved profile's base prompt, toolSet, and maxSteps (CP-7)", async () => {
+  it("honors a resolved profile's base prompt and toolSet (CP-7)", async () => {
     const store = createFakeStore(makeThread());
     const customProfile: CopilotProfile = {
       id: "custom",
@@ -586,7 +587,6 @@ describe("experience-copilot stream (ER-6)", () => {
       basePrompt: "CUSTOM STREAM PROMPT MARKER",
       skillIds: [],
       toolSet: { run_test: true },
-      maxSteps: 5,
     };
     let captured: Record<string, unknown> | null = null;
     streamTextImpl = (opts: unknown) => {
@@ -608,10 +608,12 @@ describe("experience-copilot stream (ER-6)", () => {
     // Only run_test + always-on read_skill_file survive the gated toolSet.
     const toolKeys = Object.keys(captured!.tools as Record<string, unknown>).sort();
     expect(toolKeys).toEqual(["read_skill_file", "run_test"]);
-    // maxSteps=5 flows into stopWhen: true at exactly 5 steps, false at 6.
+    // TAG-4: the profile no longer supplies maxSteps — the loop is bound by the
+    // nominal COPILOT_TOOL_LOOP_CEILING (a small step count no longer stops it).
     const stopWhen = captured!.stopWhen as (r: { steps: unknown[] }) => boolean;
-    expect(stopWhen({ steps: [1, 2, 3, 4, 5] })).toBe(true);
-    expect(stopWhen({ steps: [1, 2, 3, 4, 5, 6] })).toBe(false);
+    expect(stopWhen({ steps: [1, 2, 3, 4, 5] })).toBe(false);
+    expect(stopWhen({ steps: new Array(COPILOT_TOOL_LOOP_CEILING) })).toBe(true);
+    expect(stopWhen({ steps: new Array(COPILOT_TOOL_LOOP_CEILING - 1) })).toBe(false);
   });
 });
 

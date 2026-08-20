@@ -291,8 +291,11 @@ export const COPILOT_TOOL_KEYS = Object.keys(copilotToolSetSchema.shape) as (key
  * Bounds + default for a profile's `maxSteps` — the AI SDK multi-step tool-loop
  * limit. Centralized so Zod validation, the editor input bounds, and the
  * built-in seed default read one source (mirrors COAUTHOR_MAX_STEPS_*). The
- * copilot default stays 20 (the ER-16 value), NOT Co-Author's 5 — the copilot
- * tool-loop needs the headroom.
+ * TAG-4: the READ shape (`copilotProfileSchema.maxSteps`) is now OPTIONAL — the
+ * stream no longer consumes it (the loop runs unbounded to
+ * `COPILOT_TOOL_LOOP_CEILING`). The CREATE schema still requires it because the
+ * `copilot_profiles.max_steps` column is alive until TAG-4b; the constants and
+ * the create/update fields are fully purged in TAG-10.
  */
 export const COPILOT_MAX_STEPS_MIN = 1;
 export const COPILOT_MAX_STEPS_MAX = 50;
@@ -313,7 +316,7 @@ export const copilotProfileSchema = z.object({
   basePrompt: z.string().min(1),
   skillIds: z.array(z.string().min(1)),
   toolSet: copilotToolSetSchema,
-  maxSteps: z.number().int().min(COPILOT_MAX_STEPS_MIN).max(COPILOT_MAX_STEPS_MAX),
+  maxSteps: z.number().int().min(COPILOT_MAX_STEPS_MIN).max(COPILOT_MAX_STEPS_MAX).optional(),
 });
 
 export type CopilotProfile = z.infer<typeof copilotProfileSchema>;
