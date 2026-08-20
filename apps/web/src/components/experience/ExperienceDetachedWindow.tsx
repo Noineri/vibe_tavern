@@ -40,6 +40,7 @@ import { useExperienceTimerResync } from "../../hooks/use-experience-timer-resyn
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
 import { EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
+import { visualPendingFromEffects } from "../../lib/experience-pending.js";
 import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
 import {
   useExperienceEffects,
@@ -269,12 +270,12 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
     lastPushedRevision.current = view.revision;
   }, [frameReady, view]);
 
-  // ── Push the pending phase to the visual protocol (seam #5) ───────────────
-  const pendingPhase = storeEffects.some(
-    (e) => e.status === EXPERIENCE_EFFECT_STATUS.pending || e.status === EXPERIENCE_EFFECT_STATUS.running,
-  )
-    ? "effect"
-    : "idle";
+  // ── Push the pending phase to the visual protocol (seam #5) ─────────────
+  // ONLY model-kind work gates the visual: a live timer is the resting state
+  // of a timer-driven session, not host work — forwarding it would disable the
+  // visual's controls for the whole session (timer-freedom fix; see
+  // lib/experience-pending.ts).
+  const pendingPhase = visualPendingFromEffects(storeEffects);
   useEffect(() => {
     if (!frameReady) return;
     frameRef.current?.sendPending(pendingPhase);

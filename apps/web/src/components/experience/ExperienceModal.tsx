@@ -50,6 +50,7 @@ import type { ExperienceSessionStatus } from "@vibe-tavern/domain";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
 import type { ExperienceActionResponse } from "../../api/types.js";
 import type { ExperienceApiError } from "../../api/experience-api.js";
+import { visualPendingFromPhase } from "../../lib/experience-pending.js";
 
 /** The projected-view type the frame/host pushes (mirrors ExperienceFrame). */
 type ProjectedView = Parameters<ExperienceFrameHandle["sendState"]>[0];
@@ -293,10 +294,14 @@ export function ExperienceModal(props: ExperienceModalProps) {
 
   // ── Push the pending phase to BOTH chrome AND the visual (seam #5) ────────
   // The chrome indicator is rendered below; this forwards the phase to the
-  // frame's `sendPending` so the visual protocol mirrors the trusted label.
+  // frame's `sendPending` so the visual protocol mirrors the trusted label —
+  // EXCEPT timer waits: a live timer is the resting state of a timer-driven
+  // experience, not host work, so it must reach the visual as `idle` (the
+  // visual's pending contract means "avoid double-submitting", which would
+  // lock the player out for the whole session). See lib/experience-pending.ts.
   useEffect(() => {
     if (!frameReady || !open) return;
-    frameRef.current?.sendPending(pendingPhase === "timer" ? "effect" : pendingPhase ?? "idle");
+    frameRef.current?.sendPending(visualPendingFromPhase(pendingPhase));
   }, [frameReady, open, pendingPhase]);
 
   const confirmFinish = () => {

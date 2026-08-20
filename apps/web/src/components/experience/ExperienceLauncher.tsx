@@ -233,10 +233,23 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
       ...(action.payload !== undefined ? { payload: action.payload } : {}),
     };
     const store = useExperienceStore.getState();
-    const response = await store.submitAction(intent);
+    let response = await store.submitAction(intent);
     if (!chatId || !branchId) return { ok: false, code: "invalid_action", message: localizeError("invalid_action") };
-    const scope = store.byScope[JSON.stringify([chatId, branchId])];
-    return experienceActionOutcome(response, scope?.lastApiError ?? null, scope?.session?.revision, localizeError);
+    // Read the scope FRESH after each await (getState() at call time) — the
+    // submit/retry failure path rehydrates before surfacing the error, and the
+    // outcome mapping reads the error + revision from the current scope.
+    const scopeAfter = () => useExperienceStore.getState().byScope[JSON.stringify([chatId, branchId])] ?? null;
+    let outcome = experienceActionOutcome(response, scopeAfter()?.lastApiError ?? null, scopeAfter()?.session?.revision, localizeError);
+    // Timer-freedom fix: with controls enabled while timers are live, a click
+    // can race a host-fired tick (the client view is up to one resync behind
+    // the server). A stale click is not a user error — the store's failure
+    // path already rehydrated the fresh revision, so re-submit the SAME intent
+    // once. The second failure (if any) surfaces to the visual as before.
+    if (!outcome.ok && outcome.code === "stale_revision") {
+      response = await store.submitAction(intent);
+      outcome = experienceActionOutcome(response, scopeAfter()?.lastApiError ?? null, scopeAfter()?.session?.revision, localizeError);
+    }
+    return outcome;
   }
 
   // ── Start: open the setup modal for the exact chat/branch ────────────────
