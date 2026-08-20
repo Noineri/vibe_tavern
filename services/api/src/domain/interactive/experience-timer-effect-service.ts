@@ -38,7 +38,7 @@ import type {
 	ExperienceService,
 } from "./experience-service.js";
 import { type ExperienceResult, err, ok } from "./experience-shared.js";
-import { validatePayloadValue } from "./experience-payload-schema.js";
+import { validatePayloadValue } from "@vibe-tavern/domain";
 
 // ─── Public types ────────────────────────────────────────────────────────────
 

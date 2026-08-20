@@ -67,7 +67,7 @@ import {
 } from "./experience-kernel.js";
 import type { DeterministicRandom } from "./experience-kernel.js";
 import type { ExperienceConsoleEntry } from "./experience-sandbox.js";
-import { validatePayloadValue } from "./experience-payload-schema.js";
+import { validatePayloadValue } from "@vibe-tavern/domain";
 import {
   buildCapabilityContext,
   undeclaredGrantedCapabilities,

@@ -34,7 +34,7 @@ import {
 	pickDistinct,
 	shuffle,
 	sumScores,
-} from "../src/domain/interactive/experience-helpers.js";
+} from "@vibe-tavern/domain";
 import type { ExperienceAction, ExperienceActionDescriptor, ExperienceViewer } from "@vibe-tavern/domain";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
