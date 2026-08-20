@@ -407,6 +407,41 @@ export class ExperienceCopilotStore {
       .run();
   }
 
+  /** Rewrite the persisted output payload of ONE tool-result message row
+   *  (TAG-5 split-turn): the user answered a pending `ask_user` question, and
+   *  the answer REPLACES the awaiting marker in that row — there is no
+   *  separate user message row for an answer turn. Scoped to role "tool" rows
+   * of THIS thread (the toolCallId is unique per tool row; the role guard
+   *  keeps an assistant toolCallId-carrying row from ever matching). Bumps
+   *  updated_at so the thread surfaces as touched. Returns null when no row
+   *  matches (stale/foreign toolCallId — the caller decides whether that is an
+   *  error). */
+  async setToolResultOutput(
+    threadId: string,
+    toolCallId: string,
+    payload: { toolName: string; output: unknown },
+  ): Promise<ExperienceCopilotMessage | null> {
+    const now = this.clock.now();
+    const [row] = await this.db
+      .update(experienceCopilotMessages)
+      .set({ content: JSON.stringify(payload) })
+      .where(
+        and(
+          eq(experienceCopilotMessages.threadId, threadId),
+          eq(experienceCopilotMessages.toolCallId, toolCallId),
+          eq(experienceCopilotMessages.role, "tool"),
+        ),
+      )
+      .returning();
+    if (!row) return null;
+    await this.db
+      .update(experienceCopilotThreads)
+      .set({ updatedAt: now })
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .run();
+    return this.mapMessage(row);
+  }
+
   // ─── Row mappers (brandId at the DB edge only) ─────────────────────────────
 
   private mapThread(row: typeof experienceCopilotThreads.$inferSelect): ExperienceCopilotThread {

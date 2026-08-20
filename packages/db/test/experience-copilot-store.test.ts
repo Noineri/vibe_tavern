@@ -488,3 +488,52 @@ describe("ExperienceCopilotStore — step-plan todo (TAG-2)", () => {
     expect((await store.getById(thread.id))?.todo).toEqual([{ title: "valid", status: "active" }]);
   });
 });
+
+describe("ExperienceCopilotStore — setToolResultOutput (TAG-5)", () => {
+  test("rewrites ONE tool row's payload by threadId+toolCallId and bumps updatedAt", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ask_1", "T");
+
+    const marker = await store.appendMessage(thread.id, {
+      role: "tool",
+      content: JSON.stringify({
+        toolName: "ask_user",
+        output: { status: "awaiting_answer", question: "Blue or green?" },
+      }),
+      toolCallId: "tc_ask_1",
+    });
+    await store.appendMessage(thread.id, { role: "assistant", content: "unrelated" });
+    const before = (await store.getById(thread.id))!.updatedAt;
+
+    const rewritten = await store.setToolResultOutput(thread.id, "tc_ask_1", {
+      toolName: "ask_user",
+      output: { status: "answered", answer: "blue" },
+    });
+
+    expect(rewritten!.id).toBe(marker.id);
+    const rows = await store.listMessages(thread.id);
+    const toolRow = rows.find((r) => r.toolCallId === "tc_ask_1")!;
+    expect(JSON.parse(toolRow.content)).toEqual({
+      toolName: "ask_user",
+      output: { status: "answered", answer: "blue" },
+    });
+    // Other rows untouched.
+    expect(rows.filter((r) => r.role === "assistant").map((r) => r.content)).toEqual(["unrelated"]);
+    expect((await store.getById(thread.id))!.updatedAt > before).toBe(true);
+  });
+
+  test("returns null for a toolCallId that matches no tool row (stale/foreign)", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_ask_2", "T");
+    await store.appendMessage(thread.id, { role: "assistant", content: "no tool rows yet" });
+
+    expect(await store.setToolResultOutput(thread.id, "tc_missing", { toolName: "ask_user", output: {} })).toBeNull();
+
+    // A row that CARRIES the id but is not a tool row (defensive: the role
+    // guard keeps an assistant toolCall-carrying row from matching).
+    await store.appendMessage(thread.id, { role: "tool", content: "x", toolCallId: "tc_real" });
+    expect(
+      await store.setToolResultOutput(thread.id, "tc_other_thread", { toolName: "ask_user", output: {} }),
+    ).toBeNull();
+  });
+});

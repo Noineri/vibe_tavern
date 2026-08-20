@@ -49,13 +49,76 @@ describe("experienceCopilotStepSchema (ER-5, unchanged)", () => {
   });
 });
 
-describe("experienceCopilotStreamRequestSchema (ER-6, unchanged)", () => {
+describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
   test("accepts a minimal request body", () => {
     const payload = { content: "hi", providerProfileId: "p1" };
     expect(experienceCopilotStreamRequestSchema.parse(payload)).toEqual({
       content: "hi",
       providerProfileId: "p1",
     });
+  });
+});
+
+// ─── TAG-5: split-turn answer mode on the stream request body ─────────────────
+
+describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
+  const base = { providerProfileId: "p1" };
+
+  test("answer-only is accepted (with text)", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_1", text: "make it blue" },
+    });
+    expect(parsed.answer).toEqual({ toolCallId: "tc_1", text: "make it blue" });
+  });
+
+  test("answer-only is accepted (skip)", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_1", skipped: true },
+    });
+    expect(parsed.answer).toEqual({ toolCallId: "tc_1", skipped: true });
+  });
+
+  test("content + answer together are rejected (exactly-one-of)", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        content: "hi",
+        answer: { toolCallId: "tc_1", text: "blue" },
+      }),
+    ).toThrow(/not both/);
+  });
+
+  test("neither content nor answer is rejected (exactly-one-of)", () => {
+    expect(() => experienceCopilotStreamRequestSchema.parse(base)).toThrow(/either/);
+  });
+
+  test("a skipped answer carrying text is rejected", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_1", skipped: true, text: "but actually…" },
+      }),
+    ).toThrow(/skipped answer cannot carry text/i);
+  });
+
+  test("an answer with neither text nor skipped is rejected", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, answer: { toolCallId: "tc_1" } }),
+    ).toThrow(/either `text` or `skipped`/);
+  });
+
+  test("answer rejects unknown keys (strict) and empty toolCallId", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_1", text: "x", bogus: 1 },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, answer: { text: "x" } }),
+    ).toThrow();
   });
 });
 

@@ -58,6 +58,39 @@ export const experienceCopilotStepSchema = z.enum(["rules", "visual", "test"]);
 export type ExperienceCopilotStep = z.infer<typeof experienceCopilotStepSchema>;
 
 /**
+ * Answer payload for a pending `ask_user` question (TAG-5 split-turn, style
+ * B). `text` = the user's answer (a tapped chip's label or free text);
+ * `skipped` = the user pressed skip. The two are mutually exclusive: a skip
+ * carries no text, and an answer with neither is meaningless — both are
+ * rejected here. The referenced `toolCallId` must point at an `ask_user`
+ * tool-result row that is still awaiting an answer in THIS thread; that is
+ * thread state, so it is enforced by the stream (domain), not by the schema.
+ */
+export const experienceCopilotStreamAnswerSchema = z
+  .object({
+    toolCallId: z.string().min(1),
+    text: z.string().min(1).max(50_000).optional(),
+    skipped: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.skipped === true && val.text !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["skipped"],
+        message: "A skipped answer cannot carry text.",
+      });
+    }
+    if (val.skipped === undefined && val.text === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "An answer must carry either `text` or `skipped`.",
+      });
+    }
+  });
+export type ExperienceCopilotStreamAnswer = z.infer<typeof experienceCopilotStreamAnswerSchema>;
+
+/**
  * Request body for the experience-copilot stream endpoint (ER-6),
  * `POST /api/experience-copilot/:threadId/stream`. Mirrors the AI-assistant's
  * `{ providerProfileId, model }` resolution shape, plus the copilot-specific
@@ -70,16 +103,39 @@ export type ExperienceCopilotStep = z.infer<typeof experienceCopilotStepSchema>;
  * test panel (ER-5 renders it as context) — it is validated as a record, not
  * a typed digest, because the digest shapes live in the backend domain
  * (`experience-copilot-tools.ts`) and ER-7 will lift them into wire contracts.
+ *
+ * TAG-5 split-turn (style B): `content` and `answer` are exactly-one-of. A
+ * normal turn sends `content`; answering a pending `ask_user` question sends
+ * `answer` instead (no new user row — the answer replaces the awaiting marker
+ * of the referenced tool-result and the turn resumes as a continuation).
  */
-export const experienceCopilotStreamRequestSchema = z.object({
-  content: z.string().min(1).max(50_000),
-  providerProfileId: z.string().min(1),
-  model: z.string().min(1).optional(),
-  step: experienceCopilotStepSchema.optional(),
-  rules: z.string().max(200_000).optional(),
-  visual: z.string().max(200_000).optional(),
-  testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
-});
+export const experienceCopilotStreamRequestSchema = z
+  .object({
+    content: z.string().min(1).max(50_000).optional(),
+    providerProfileId: z.string().min(1),
+    model: z.string().min(1).optional(),
+    step: experienceCopilotStepSchema.optional(),
+    rules: z.string().max(200_000).optional(),
+    visual: z.string().max(200_000).optional(),
+    testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
+    answer: experienceCopilotStreamAnswerSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    const hasContent = val.content !== undefined;
+    const hasAnswer = val.answer !== undefined;
+    if (hasContent && hasAnswer) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide either `content` (a new message) or `answer` (answering the pending question), not both.",
+      });
+    }
+    if (!hasContent && !hasAnswer) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide either `content` (a new message) or `answer` (answering the pending question).",
+      });
+    }
+  });
 export type ExperienceCopilotStreamRequest = z.infer<typeof experienceCopilotStreamRequestSchema>;
 
 /**
