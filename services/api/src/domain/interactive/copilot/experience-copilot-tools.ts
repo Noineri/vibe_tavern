@@ -32,7 +32,12 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { applyExactEditsToBody, log } from "@vibe-tavern/domain";
-import type { ExperienceCopilotToolOutput, ExperienceSeatLegalityMatrix } from "@vibe-tavern/api-contracts";
+import {
+  copilotTodoListSchema,
+  type CopilotTodoItem,
+  type ExperienceCopilotToolOutput,
+  type ExperienceSeatLegalityMatrix,
+} from "@vibe-tavern/api-contracts";
 import {
   runExperienceTest,
   simulateExperienceTest,
@@ -107,6 +112,33 @@ export interface ExperienceCopilotBindingSuggestion {
   readonly reason: string;
 }
 
+/** Result envelope for the `todo` tool (TAG-3). Success carries the rewritten
+ *  list plus the collapsed-panel summary the frontend renders (`activeTitle` +
+ *  `remaining`); a `saveTodo` persistence failure returns `ok:false` (NOT a
+ *  throw — mirroring how `run_test` reports failures as a structured digest the
+ *  model can reason over) so a transient DB error does not surface as an opaque
+ *  tool-error. `remaining` counts non-completed, non-abandoned items (pending +
+ *  active) — the "N remaining goals" the collapsed panel shows. */
+export interface ExperienceCopilotTodoResult {
+  readonly ok: boolean;
+  readonly items?: readonly CopilotTodoItem[];
+  readonly activeTitle?: string;
+  readonly remaining?: number;
+  readonly error?: string;
+}
+
+/** Marker result for the `ask_user` tool (TAG-3): the tool does NOT persist and
+ *  does NOT wait — it only marks the turn as awaiting an answer. TAG-5's
+ *  stop-condition and the frontend read this envelope; the question/options/
+ *  recommended are echoed verbatim (options is a flat string list; `recommended`
+ *  names one of them). */
+export interface ExperienceCopilotAskResult {
+  readonly status: "awaiting_answer";
+  readonly question: string;
+  readonly options?: readonly string[];
+  readonly recommended?: string;
+}
+
 // ─── Tunables ─────────────────────────────────────────────────────────────────
 
 /** Max entries retained in a digest's `consoleTail` (the model needs recent
@@ -145,7 +177,10 @@ function summarizeState(state: unknown): string {
  * Build the experience-copilot tool set. Pure — no I/O, no store access. The
  * proposing tools validate and echo the proposal; `run_test`/`run_simulate` are
  * read-only diagnostics; `read_skill_file` is the reused Co-Author skill
- * reader; `suggest_visual_binding` is a non-binding recommendation. The caller
+ * reader; `suggest_visual_binding` is a non-binding recommendation; `todo`
+ * maintains the session step-plan (full-list rewrite through the injected
+ * `saveTodo`); `ask_user` ends the turn with a clarifying question (a marker —
+ * the stream, not this builder, persists/acts on it). The caller
  * passes this set to the executor (tools propose/diagnose; the BE-6 endpoints
  * are the sole write path).
  *
@@ -153,18 +188,23 @@ function summarizeState(state: unknown): string {
  *   script's rules at turn start). When absent, the model must `write_buffer`
  *   before `run_test`/`run_simulate` can run.
  * @param opts.visual  Seed visual source for the working buffer.
- * @param opts.toolSet Optional inclusion map for the five authoring/diagnostic
+ * @param opts.toolSet Optional inclusion map for the seven authoring/diagnostic
  *   tools (default: all on). `read_skill_file` is always included, mirroring
  *   the Co-Author convention (it is the universal read-only skill channel).
+ * @param opts.saveTodo Optional writer for the `todo` tool's full-list rewrite
+ *   (TAG-6 wires it to `ExperienceCopilotStore.updateTodo(threadId, items)`; the
+ *   test injects a fake). When absent, a `todo` call throws — a precondition
+ *   miss, mirroring `run_test`'s no-buffer guard.
  * @param opts.skillRoots  Roots for the reused `read_skill_file` tool.
  */
 export function buildExperienceCopilotTools(opts: {
   rules?: string;
   visual?: string;
   toolSet?: Record<string, boolean>;
+  saveTodo?: (items: readonly CopilotTodoItem[]) => Promise<void>;
   skillRoots?: readonly string[];
 } = {}): ToolSet {
-  const { toolSet, skillRoots } = opts;
+  const { toolSet, skillRoots, saveTodo } = opts;
 
   // ── Turn-local composable buffer state ─────────────────────────────────────
   // Two named text buffers (rules/visual) seeded from the turn-start source.
@@ -414,6 +454,71 @@ export function buildExperienceCopilotTools(opts: {
       execute: async ({ reason, visualId }): Promise<ExperienceCopilotBindingSuggestion> => {
         logger.info("suggest_visual_binding IN visualId=%s reasonLen=%d", visualId ?? "(none)", reason.length);
         return { ...(visualId !== undefined ? { suggestedVisualId: visualId } : {}), reason };
+      },
+    }),
+
+    todo: tool({
+      description:
+        "Maintain the step-by-step action plan for this authoring session. Send the FULL list every call (rewrite semantics, not incremental). " +
+        "One item should be `active` — the step you are on now. Use for any work that needs more than ~3 steps; this is a real development project, plan it.",
+      inputSchema: copilotTodoListSchema,
+      execute: async (items): Promise<ExperienceCopilotTodoResult> =>
+        runQueued(async () => {
+          const toolName = "todo";
+          logger.info("%s IN items=%d", toolName, items.length);
+          if (saveTodo === undefined) {
+            logger.warn("%s REJECTED no saveTodo writer wired", toolName);
+            throw new Error(`${toolName}: no todo writer wired — saveTodo is required for this tool`);
+          }
+          try {
+            await saveTodo(items);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.warn("%s FAIL message=%s", toolName, message);
+            return { ok: false, error: message };
+          }
+          const activeTitle = items.find((i) => i.status === "active")?.title;
+          const remaining = items.filter((i) => i.status === "pending" || i.status === "active").length;
+          logger.info("%s OK items=%d remaining=%d activeTitle=%s", toolName, items.length, remaining, activeTitle ?? "(none)");
+          return { ok: true, items, activeTitle, remaining };
+        }),
+    }),
+
+    ask_user: tool({
+      description:
+        "Ask the user ONE clarifying question and end your turn. Provide option chips when the answer space is small (mark your recommended option via `recommended`), or omit options for open questions. " +
+        "The user may answer with a chip, answer freely, or skip.",
+      inputSchema: z
+        .object({
+          question: z.string().min(1).describe("The single clarifying question to ask."),
+          options: z
+            .array(z.string().min(1))
+            .max(6)
+            .optional()
+            .describe("Optional answer chips for a small answer space. Omit for an open question."),
+          recommended: z
+            .string()
+            .min(1)
+            .optional()
+            .describe("Optional: which option you recommend. Must be one of `options` when present."),
+        })
+        .refine(
+          (data) =>
+            data.recommended === undefined ||
+            (data.options !== undefined && data.options.includes(data.recommended)),
+          {
+            message: "`recommended` must be one of `options` (omit both for a free-text-only question)",
+            path: ["recommended"],
+          },
+        ),
+      execute: async ({ question, options, recommended }): Promise<ExperienceCopilotAskResult> => {
+        logger.info("ask_user IN options=%d recommended=%s", options?.length ?? 0, recommended ?? "(none)");
+        return {
+          status: "awaiting_answer",
+          question,
+          ...(options !== undefined ? { options } : {}),
+          ...(recommended !== undefined ? { recommended } : {}),
+        };
       },
     }),
   };

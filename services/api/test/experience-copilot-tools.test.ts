@@ -48,6 +48,14 @@ context.experience.register({
 /** Shared tool-execution context stub (the tools ignore it). */
 const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
 
+/** Minimal view of a built tool exposing its zod input schema for direct
+ *  validation assertions — the AI SDK validates `inputSchema` at tool-call time
+ *  and `execute` receives already-validated args, so cap/status/enum/recommended
+ *  rejections are asserted against the schema, not through execute. */
+interface ToolSchemaProbe {
+  inputSchema: { safeParse(value: unknown): { success: boolean } };
+}
+
 describe("experience-copilot-tools: write_buffer (rules)", () => {
   test("valid rules → returns { target, proposed, summary } and advances the working buffer", async () => {
     const tools = buildExperienceCopilotTools();
@@ -285,18 +293,151 @@ describe("experience-copilot-tools: suggest_visual_binding", () => {
   });
 });
 
+describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => {
+  test("full-list rewrite — second call fully replaces the list and returns the summary", async () => {
+    const calls: { title: string; status: string }[][] = [];
+    const tools = buildExperienceCopilotTools({
+      saveTodo: async (items) => {
+        calls.push(items.map((i) => ({ title: i.title, status: i.status })));
+      },
+    });
+
+    const first = [
+      { title: "scaffold the mini-app", status: "pending" },
+      { title: "wire the reducer", status: "active" },
+    ];
+    const second = [{ title: "bind the visual", status: "active" }];
+
+    const r1 = (await tools.todo.execute(first, ctx)) as never;
+    const r2 = (await tools.todo.execute(second, ctx)) as never;
+
+    expect(r1.ok).toBe(true);
+    expect(r1.activeTitle).toBe("wire the reducer");
+    expect(r1.remaining).toBe(2);
+    expect(r2.ok).toBe(true);
+    expect(r2.activeTitle).toBe("bind the visual");
+    expect(r2.remaining).toBe(1);
+    // saveTodo saw exactly two full-list writes; the last is the replacement.
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual([{ title: "bind the visual", status: "active" }]);
+  });
+
+  test("saveTodo failure returns ok:false envelope (does NOT throw)", async () => {
+    const tools = buildExperienceCopilotTools({
+      saveTodo: async () => {
+        throw new Error("db down");
+      },
+    });
+    const r = (await tools.todo.execute([{ title: "a", status: "pending" }], ctx)) as never;
+    expect(r.ok).toBe(false);
+    expect(typeof r.error).toBe("string");
+    expect(r.error).toContain("db down");
+  });
+
+  test("throws when no saveTodo writer is wired (precondition miss)", async () => {
+    const tools = buildExperienceCopilotTools();
+    await expect(tools.todo.execute([{ title: "a", status: "pending" }], ctx)).rejects.toThrow(
+      /no todo writer wired/,
+    );
+  });
+
+  test("input schema rejects a list over the 30-item cap", () => {
+    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
+      todo: ToolSchemaProbe;
+    };
+    const items = Array.from({ length: 31 }, (_, i) => ({ title: `step ${i}`, status: "pending" }));
+    expect(tools.todo.inputSchema.safeParse(items).success).toBe(false);
+  });
+
+  test("input schema rejects an invalid status", () => {
+    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
+      todo: ToolSchemaProbe;
+    };
+    expect(tools.todo.inputSchema.safeParse([{ title: "a", status: "in-progress" }]).success).toBe(false);
+  });
+});
+
+describe("experience-copilot-tools: ask_user (awaiting marker)", () => {
+  test("returns awaiting_answer carrying question/options/recommended verbatim", async () => {
+    const tools = buildExperienceCopilotTools();
+    const r = (await tools.ask_user.execute(
+      { question: "Which layout?", options: ["tabs", "accordion"], recommended: "tabs" },
+      ctx,
+    )) as never;
+    expect(r.status).toBe("awaiting_answer");
+    expect(r.question).toBe("Which layout?");
+    expect(r.options).toEqual(["tabs", "accordion"]);
+    expect(r.recommended).toBe("tabs");
+  });
+
+  test("free-text question (no options) returns no options/recommended", async () => {
+    const tools = buildExperienceCopilotTools();
+    const r = (await tools.ask_user.execute({ question: "What should the win condition be?" }, ctx)) as never;
+    expect(r.status).toBe("awaiting_answer");
+    expect(r.question).toBe("What should the win condition be?");
+    expect(r.options).toBeUndefined();
+    expect(r.recommended).toBeUndefined();
+  });
+
+  test("input schema rejects recommended not in options", () => {
+    const tools = buildExperienceCopilotTools() as unknown as { ask_user: ToolSchemaProbe };
+    expect(
+      tools.ask_user.inputSchema.safeParse({ question: "q", options: ["A", "B"], recommended: "C" }).success,
+    ).toBe(false);
+  });
+
+  test("input schema rejects recommended without options", () => {
+    const tools = buildExperienceCopilotTools() as unknown as { ask_user: ToolSchemaProbe };
+    expect(tools.ask_user.inputSchema.safeParse({ question: "q", recommended: "A" }).success).toBe(false);
+  });
+
+  test("input schema rejects more than 6 options", () => {
+    const tools = buildExperienceCopilotTools() as unknown as { ask_user: ToolSchemaProbe };
+    expect(
+      tools.ask_user.inputSchema.safeParse({
+        question: "q",
+        options: ["1", "2", "3", "4", "5", "6", "7"],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("experience-copilot-tools: todo/ask_user gating", () => {
+  test("absent/disabled toolSet drops todo and ask_user", () => {
+    const tools = buildExperienceCopilotTools({ toolSet: { run_test: true } }) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(tools.todo).toBeUndefined();
+    expect(tools.ask_user).toBeUndefined();
+  });
+
+  test("enabled toolSet includes todo and ask_user, keeps read_skill_file", () => {
+    const tools = buildExperienceCopilotTools({ toolSet: { todo: true, ask_user: true } }) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(tools.todo).toBeDefined();
+    expect(tools.ask_user).toBeDefined();
+    expect(tools.run_test).toBeUndefined();
+    expect(tools.read_skill_file).toBeDefined();
+  });
+});
+
 describe("experience-copilot-tools: ToolSet shape + gating", () => {
-  test("all six tools are present by default", () => {
+  test("all eight tools are present by default", () => {
     const tools = buildExperienceCopilotTools() as unknown as Record<string, unknown>;
     expect(tools.write_buffer).toBeDefined();
     expect(tools.edit_buffer).toBeDefined();
     expect(tools.run_test).toBeDefined();
     expect(tools.run_simulate).toBeDefined();
     expect(tools.suggest_visual_binding).toBeDefined();
+    expect(tools.todo).toBeDefined();
+    expect(tools.ask_user).toBeDefined();
     // read_skill_file is always included (reused from the Co-Author skill system).
     expect(tools.read_skill_file).toBeDefined();
     expect(Object.keys(tools).sort()).toEqual(
-      ["edit_buffer", "read_skill_file", "run_simulate", "run_test", "suggest_visual_binding", "write_buffer"],
+      ["ask_user", "edit_buffer", "read_skill_file", "run_simulate", "run_test", "suggest_visual_binding", "todo", "write_buffer"],
     );
   });
 
