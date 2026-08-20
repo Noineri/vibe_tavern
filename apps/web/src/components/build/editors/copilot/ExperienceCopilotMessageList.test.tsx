@@ -1,10 +1,17 @@
-import { beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
 
 useDomEnv();
+
+// CustomTooltip (Radix) never anchors under happy-dom — the ask card's
+// recommended chip is wrapped in it. Render children inline; this test pins
+// the feed wiring, not tooltip internals (same mock as the card/panel tests).
+mock.module("../../../../components/shared/Tooltip.js", () => ({
+  CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
@@ -427,5 +434,168 @@ describe("ExperienceCopilotMessageList", () => {
       "user",
       "assistant",
     ]);
+  });
+});
+
+// ─── TAG-9: the ask_user card in the feed ───────────────────────────────────
+
+const ASK_ARGS = { question: "Which buffer owns the counter?", options: ["Rules", "Visual"], recommended: "Rules" };
+
+function askCarrier(id: string): ExperienceCopilotMessageWire {
+  return message({
+    id,
+    role: "assistant",
+    content: "",
+    toolCallsJson: JSON.stringify([
+      { type: "tool-call", toolCallId: "tc-ask", toolName: "ask_user", input: ASK_ARGS },
+    ]),
+  });
+}
+
+function askToolRow(output: unknown): ExperienceCopilotMessageWire {
+  return message({
+    id: `row-${Math.random().toString(36).slice(2)}`,
+    role: "tool",
+    content: JSON.stringify({ toolName: "ask_user", output }),
+    toolCallId: "tc-ask",
+  });
+}
+
+describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
+  const awaitingRow = () => askToolRow({ status: "awaiting_answer", ...ASK_ARGS });
+
+  it("renders a persisted awaiting ask as the interactive card when it is the last activity", () => {
+    const answers: [string, unknown][] = [];
+    const { getByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onAnswer={(id, a) => answers.push([id, a])}
+      />,
+    );
+
+    const card = getByTestId("copilot-ask-card");
+    expect(card.getAttribute("data-state")).toBe("awaiting");
+    fireEvent.click(getByTestId("copilot-ask-skip"));
+    expect(answers).toEqual([["tc-ask", { skipped: true }]]);
+  });
+
+  it("a later turn's activity expires the unanswered ask (read-only)", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          askCarrier("a1"),
+          awaitingRow(),
+          message({ id: "u2", role: "user", content: "never mind, do this" }),
+          message({
+            id: "a2",
+            role: "assistant",
+            content: "",
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "tc-todo", toolName: "todo", input: [{ title: "step", status: "active" }] },
+            ]),
+          }),
+          message({
+            id: "t2",
+            role: "tool",
+            content: JSON.stringify({
+              toolName: "todo",
+              output: { ok: true, items: [{ title: "step", status: "active" }], remaining: 1, activeTitle: "step" },
+            }),
+            toolCallId: "tc-todo",
+          }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("expired");
+    expect(queryByTestId("copilot-ask-skip")).toBeNull();
+  });
+
+  it("a persisted answered ask renders read-only even as the last activity", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          askCarrier("a1"),
+          askToolRow({ status: "answered", answer: "Rules" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("answered");
+    expect(getByTestId("copilot-ask-answer").textContent).toBe("Rules");
+    expect(queryByTestId("copilot-ask-input")).toBeNull();
+  });
+
+  it("the optimistic pendingAskAnswer override flips an awaiting card immediately", () => {
+    const { getByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        pendingAskAnswer={{ toolCallId: "tc-ask", status: "answered", answer: "Visual, actually" }}
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("answered");
+    expect(getByTestId("copilot-ask-answer").textContent).toBe("Visual, actually");
+  });
+
+  it("isSending blocks interactivity (no double-answer during the continuation stream)", () => {
+    const { getByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        isSending
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("expired");
+  });
+
+  it("renders a live-feed awaiting ask as the interactive card", () => {
+    useExperienceCopilotTurnStore.getState().upsertActivity("thread-1", {
+      toolCallId: "tc-live",
+      toolName: "ask_user",
+      status: "done",
+      ask: { ...ASK_ARGS, status: "awaiting_answer" },
+    });
+    useExperienceCopilotTurnStore.getState().appendActivityRef("thread-1", "tc-live");
+
+    const { getByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "plan it" })]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("awaiting");
+    expect(getByTestId("copilot-ask-question").textContent).toContain("Which buffer");
   });
 });

@@ -19,6 +19,9 @@ useDomEnv();
 const streamExperienceCopilot = mock<typeof import("../api/experience-copilot-api.js")["streamExperienceCopilot"]>(
   () => Promise.resolve({ finishReason: "stop" }),
 );
+const answerCopilotAsk = mock<typeof import("../api/experience-copilot-api.js")["answerCopilotAsk"]>(
+  () => Promise.resolve({ finishReason: "stop" }),
+);
 const toastError = mock();
 const toastInfo = mock();
 
@@ -28,6 +31,7 @@ const realLocaleHelpers = await import("../i18n/locale-helpers.js");
 mock.module("../api/experience-copilot-api.js", () => ({
   ...realCopilotApi,
   streamExperienceCopilot,
+  answerCopilotAsk,
 }));
 
 mock.module("../i18n/locale-helpers.js", () => ({
@@ -82,6 +86,7 @@ function rejectOnAbort(opts: { signal?: AbortSignal }): Promise<never> {
 
 beforeEach(() => {
   streamExperienceCopilot.mockReset();
+  answerCopilotAsk.mockReset();
   toastError.mockClear();
   toastInfo.mockClear();
   useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
@@ -702,5 +707,161 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
     expect(liveActivities.map((a) => a.todo ?? a.ask)).toEqual(
       persistedActivities.map((a) => a.todo ?? a.ask),
     );
+  });
+});
+
+describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", () => {
+  test("posts the answer body (no content), flips the card optimistically, settles", async () => {
+    const onTurnSettled = mock();
+    const d = deferred<{ finishReason: string }>();
+    let capturedThreadId!: string;
+    let capturedBody!: Record<string, unknown>;
+    answerCopilotAsk.mockImplementation((threadId, body, _opts) => {
+      capturedThreadId = threadId;
+      capturedBody = body as Record<string, unknown>;
+      return d.promise;
+    });
+
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleAnswer("tc-ask", { text: "  Rules, please  " }, {
+        rules: "rules-code",
+        visual: "visual-src",
+        step: "rules",
+      });
+      await Promise.resolve();
+    });
+
+    expect(answerCopilotAsk).toHaveBeenCalledTimes(1);
+    expect(streamExperienceCopilot).not.toHaveBeenCalled();
+    expect(capturedThreadId).toBe(THREAD);
+    // The answer body carries NO content (style B — no new user row) and the
+    // draft buffers flow through like a normal send.
+    expect(capturedBody).toEqual({
+      answer: { toolCallId: "tc-ask", text: "Rules, please" },
+      providerProfileId: PROVIDER,
+      rules: "rules-code",
+      visual: "visual-src",
+      step: "rules",
+    });
+    expect(result.current.isSending).toBe(true);
+    // The optimistic flip: the card shows the resolution immediately.
+    expect(result.current.pendingAskAnswer).toEqual({
+      toolCallId: "tc-ask",
+      status: "answered",
+      answer: "Rules, please",
+    });
+    // No optimistic USER bubble — the answer has no user row.
+    expect(result.current.pendingUserContent).toBe("");
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+
+    expect(result.current.isSending).toBe(false);
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    // The override LINGERS after settle (it matches the persisted row the
+    // refetch shows) — cleared only by the next turn / thread switch.
+    expect(result.current.pendingAskAnswer).toEqual({
+      toolCallId: "tc-ask",
+      status: "answered",
+      answer: "Rules, please",
+    });
+  });
+
+  test("skip sends { skipped: true } and flips to the skipped state", async () => {
+    let capturedBody!: Record<string, unknown>;
+    answerCopilotAsk.mockImplementation((_threadId, body, _opts) => {
+      capturedBody = body as Record<string, unknown>;
+      return Promise.resolve({ finishReason: "stop" });
+    });
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-ask", { skipped: true });
+    });
+
+    expect(capturedBody).toEqual({
+      answer: { toolCallId: "tc-ask", skipped: true },
+      providerProfileId: PROVIDER,
+    });
+    expect(result.current.pendingAskAnswer).toEqual({ toolCallId: "tc-ask", status: "skipped" });
+  });
+
+  test("guards: both text+skipped / neither / empty text → no stream call", async () => {
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-ask", { text: "x", skipped: true });
+      await result.current.handleAnswer("tc-ask", {});
+      await result.current.handleAnswer("tc-ask", { text: "   " });
+    });
+
+    expect(answerCopilotAsk).not.toHaveBeenCalled();
+    expect(result.current.pendingAskAnswer).toBeNull();
+  });
+
+  test("a PRE-stream failure rolls the optimistic flip back (the row was never rewritten)", async () => {
+    const onTurnSettled = mock();
+    answerCopilotAsk.mockImplementation(() => Promise.reject(new Error("validation 400")));
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-ask", { text: "Rules" });
+    });
+
+    expect(result.current.pendingAskAnswer).toBeNull();
+    expect(result.current.isSending).toBe(false);
+    expect(toastError).toHaveBeenCalled();
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+  });
+
+  test("a MID-stream failure keeps the resolution (the backend already persisted it)", async () => {
+    answerCopilotAsk.mockImplementation((_threadId, _body, opts) => {
+      opts.onStatus("streaming");
+      return Promise.reject(new Error("provider died mid-stream"));
+    });
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-ask", { text: "Rules" });
+    });
+
+    expect(result.current.pendingAskAnswer).toEqual({
+      toolCallId: "tc-ask",
+      status: "answered",
+      answer: "Rules",
+    });
+  });
+
+  test("handleSend clears a stale pendingAskAnswer at the next turn start", async () => {
+    answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-ask", { text: "Rules" });
+    });
+    expect(result.current.pendingAskAnswer).not.toBeNull();
+
+    await act(async () => {
+      await result.current.handleSend("next message");
+    });
+    expect(result.current.pendingAskAnswer).toBeNull();
   });
 });

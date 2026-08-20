@@ -1010,6 +1010,17 @@ export function ExperienceCopilotShell({
             pendingText={ctrl.pendingText}
             pendingReasoning={ctrl.pendingReasoning}
             pendingUserContent={ctrl.pendingUserContent}
+            isSending={ctrl.isSending}
+            pendingAskAnswer={ctrl.pendingAskAnswer}
+            onAnswer={(askToolCallId, answer) => {
+              captureDangling();
+              void ctrl.handleAnswer(askToolCallId, answer, {
+                rules: rulesCode,
+                visual: visualSource,
+                step: editorBuffer === "sandbox" ? "test" : codeBuffer === "visual" ? "visual" : "rules",
+                ...(testFeedback !== undefined ? { testFeedback } : {}),
+              });
+            }}
           />
           {isMobile ? (
             <ExperienceCopilotMobileInputArea
