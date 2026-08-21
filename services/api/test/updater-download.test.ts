@@ -407,18 +407,28 @@ describe("downloadAndSwap against a mock release server", () => {
 			return c;
 		};
 
+		// `pull` and not `start`: a `start` producer enqueues the entire body
+		// ahead of the socket, so the fixture's own backlog — not the
+		// downloader — dominates RSS. On Bun 1.4 that backlog stays resident
+		// (measured in-process: ~195 MB growth for this 128 MB payload, versus
+		// ~33 MB when the same download runs against an out-of-process server).
+		// `pull` is called only as the response stream drains, which is also
+		// what a real HTTP server does.
 		const serveChunks = (count: number) =>
 			Bun.serve({
 				port: 0,
-				fetch: () => new Response(new ReadableStream<Uint8Array>({
-					async start(controller) {
-						for (let i = 0; i < count; i++) {
-							controller.enqueue(chunkAt(i));
-							if (i % 64 === 0) await Bun.sleep(0);
-						}
-						controller.close();
-					},
-				})),
+				fetch: () => {
+					let next = 0;
+					return new Response(new ReadableStream<Uint8Array>({
+						pull(controller) {
+							if (next >= count) {
+								controller.close();
+								return;
+							}
+							controller.enqueue(chunkAt(next++));
+						},
+					}));
+				},
 			});
 
 		const warmup = serveChunks(256);
@@ -461,11 +471,20 @@ describe("downloadAndSwap against a mock release server", () => {
 		// downloader. The rest of the test — that 128 MB streams to disk and
 		// hashes correctly in one pass — runs on both platforms.
 		if (process.platform !== "win32") {
-			// Half the payload still fails loudly on a buffer-everything regression
-			// (that path needs >2x), while leaving room for allocator/runner variance:
-			// measured peaks — 17 MB warm on a 201 MB payload locally; 33.5 MB on a
-			// 128 MB payload on the GitHub Linux runner (which clipped the old
-			// payload/4 = 32 MB budget by ~5% without any buffering regression).
+			// Half the payload still fails loudly on a buffer-everything regression:
+			// measured on Bun 1.4 with this backpressured fixture, reading the body
+			// through `arrayBuffer()` instead of streaming costs 140 MB on a 64 MB
+			// payload and 259 MB on a 128 MB one — both well over payload/2.
+			//
+			// Streaming stays flat instead of tracking the payload. Measured here
+			// after the warm-up pass: 9.8-12.4 MB across five consecutive runs. In a
+			// cold process without the warm-up the same download costs 31 MB at
+			// 64 MB, 37 MB at 128 MB and 41 MB at 256 MB — it plateaus rather than
+			// scaling, which is the property this test exists to pin.
+			//
+			// Bun 1.4's fetch response stream does hold more than 1.3.14 did (4-6 MB
+			// for the same cold download against an out-of-process server), but the
+			// amount is bounded and independent of the archive size.
 			expect(peak - before).toBeLessThan(payloadSize / 2);
 		}
 	});
