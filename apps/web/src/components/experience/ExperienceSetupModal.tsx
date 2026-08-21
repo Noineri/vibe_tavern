@@ -51,6 +51,7 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { Ic } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
+import { listPersonas } from "../../api/persona-api.js";
 import type Resources from "../../i18n/resources.js";
 import { useAllCharacters, useChatList } from "../../stores/snapshot-store.js";
 import {
@@ -124,6 +125,13 @@ export interface ExperienceSetupModalProps {
    *  `none`) and prompt overrides are settled, so IR-73B can launch the frame.
    *  The modal does NOT auto-close — the parent controls `open`. */
   readonly onReady?: (session: ExperienceSessionResponse) => void;
+  /** RESTART mode (lobby LB-5 / Б3+Б4): the source session whose frozen
+   *  snapshots prefill the form. When non-null, Start becomes a restart —
+   *  the server finishes the source match and creates a NEW session under
+   *  a fresh seed; `initialSettings`/`participants` overlay the authored
+   *  defaults (fields the author added since keep their defaults; snapshot
+   *  keys without a current field are ignored). */
+  readonly restartSource?: ExperienceSessionResponse | null;
 }
 
 /** Canonical display order for the context-mode segmented control. */
@@ -173,12 +181,65 @@ function toMessage(err: unknown): string {
   return String(err);
 }
 
+/** Overlay a frozen settings snapshot onto seeded defaults (lobby LB-5).
+ * Only declared fields with a type-compatible snapshot value are prefilled:
+ * select values no longer in the authored option list are DROPPED (the UI must
+ * never display an option that does not exist), numbers must be finite, and a
+ * no-default boolean maps false back to absent (unchecked). */
+function applySnapshotPrefill(
+  fields: SetupField[],
+  snapshot: Record<string, unknown>,
+): { values: Record<string, string | boolean | undefined>; entered: Set<string> } {
+  const values: Record<string, string | boolean | undefined> = {};
+  const entered = new Set<string>();
+  for (const field of fields) {
+    if (!(field.id in snapshot)) continue;
+    const raw = snapshot[field.id];
+    if (field.kind === "text" && typeof raw === "string") {
+      values[field.id] = raw;
+    } else if (field.kind === "number" && typeof raw === "number" && Number.isFinite(raw)) {
+      values[field.id] = String(raw);
+      entered.add(field.id);
+    } else if (field.kind === "boolean" && typeof raw === "boolean") {
+      values[field.id] = field.default === undefined ? (raw === true ? true : undefined) : raw;
+    } else if (field.kind === "select" && typeof raw === "string" && field.options.some((o) => o.value === raw)) {
+      values[field.id] = raw;
+    }
+  }
+  return { values, entered };
+}
+
+/** Map a frozen roster snapshot onto editable seats (lobby LB-5). Seat ids are
+ *  reused verbatim (stable, unique); the counter moves past every parseable
+ *  `seat_N` suffix AND the roster length so a later Add never collides. */
+function seatsFromSnapshot(participants: ExperienceSessionResponse["participants"]): {
+  seats: RosterSeat[];
+  nextCounter: number;
+} {
+  const seats: RosterSeat[] = participants.map((p) => {
+    const seat: RosterSeat = { id: p.id, label: p.label, controller: p.controller };
+    if (p.controller === "model") {
+      if (p.providerProfileId !== undefined) seat.providerProfileId = p.providerProfileId;
+      if (p.modelId !== undefined) seat.modelId = p.modelId;
+      if (p.characterId !== undefined) seat.characterId = p.characterId;
+    }
+    return seat;
+  });
+  let maxN = 0;
+  for (const seat of seats) {
+    const m = /^seat_(\d+)$/.exec(seat.id);
+    if (m) maxN = Math.max(maxN, Number(m[1]));
+  }
+  return { seats, nextCounter: Math.max(maxN, seats.length) + 1 };
+}
+
 export function ExperienceSetupModal({
   open,
   chatId,
   branchId,
   onClose,
   onReady,
+  restartSource = null,
 }: ExperienceSetupModalProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -227,7 +288,7 @@ export function ExperienceSetupModal({
   const [localContextMode, setLocalContextMode] = useState<ExperienceContextMode | null>(null);
   // ── User-chosen RP-context source (report item 6): null = uninitialized,
   //  mirrors the localContextMode init-once pattern. ───────────────────────
-  const [localSource, setLocalSource] = useState<{ characterId: string | null; chatId: string | null } | null>(null);
+  const [localSource, setLocalSource] = useState<{ characterId: string | null; chatId: string | null; personaId: string | null } | null>(null);
   const [phase, setPhase] = useState<Phase>("config");
   const [phaseError, setPhaseError] = useState<string | null>(null);
   const [pendingStart, setPendingStart] = useState(false);
@@ -298,11 +359,14 @@ export function ExperienceSetupModal({
   // Same init-once pattern for the RP-context source (report item 6).
   const configSourceCharacterId = config?.contextSourceCharacterId ?? null;
   const configSourceChatId = config?.contextSourceChatId ?? null;
+  const configSourcePersonaId = config?.contextSourcePersonaId ?? null;
   useEffect(() => {
-    if (localSource === null) setLocalSource({ characterId: configSourceCharacterId, chatId: configSourceChatId });
-  }, [configSourceCharacterId, configSourceChatId, localSource]);
+    if (localSource === null)
+      setLocalSource({ characterId: configSourceCharacterId, chatId: configSourceChatId, personaId: configSourcePersonaId });
+  }, [configSourceCharacterId, configSourceChatId, configSourcePersonaId, localSource]);
   const sourceCharacterId = localSource?.characterId ?? configSourceCharacterId;
   const sourceChatId = localSource?.chatId ?? configSourceChatId;
+  const sourcePersonaId = localSource?.personaId ?? configSourcePersonaId;
 
   // ── Source picker data (report item 6) ──
   const allCharacters = useAllCharacters();
@@ -326,13 +390,48 @@ export function ExperienceSetupModal({
       .map((c) => ({ id: c.id, label: c.title }));
   }, [chatList, sourceCharacterId]);
 
+  // Wave 3 (PS-4): the persona list for the identity picker — fetched once per
+  // modal mount, best-effort (a transient failure just leaves the picker empty,
+  // same swallow-with-comment style as the copilot catalog fetch).
+  const [personaList, setPersonaList] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listPersonas()
+      .then((personas) => {
+        if (cancelled) return;
+        setPersonaList(personas.map((p) => ({ id: p.id, name: p.name })));
+      })
+      .catch(() => {
+        /* best-effort: empty picker, ambient identity stays available */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const sourcePersonaOptions = useMemo(
+    () => [...personaList].sort((a, b) => a.name.localeCompare(b.name)).map((p) => ({ id: p.id, label: p.name })),
+    [personaList],
+  );
+
+  /** Pick the persona source (Wave 3 user-identity override); "" selects the
+   *  ambient host-chat persona. Independent of the character/chat source. */
+  function pickSourcePersona(id: string): void {
+    setLocalSource({ characterId: sourceCharacterId, chatId: sourceChatId, personaId: id === "" ? null : id });
+  }
+
+  const sourcePersonaPreviewText = (() => {
+    if (sourcePersonaId === null) return null;
+    const name = personaList.find((p) => p.id === sourcePersonaId)?.name ?? sourcePersonaId;
+    return t("experience_setup_source_preview_persona", { persona: name });
+  })();
+
   /** Pick a source character; "" selects the ambient default. A chat that
    *  does not belong to the newly chosen character is dropped. */
   function pickSourceCharacter(id: string): void {
     const characterId = id === "" ? null : id;
     const chatStillFits =
       sourceChatId !== null && chatList.some((c) => c.id === sourceChatId && c.characterId === characterId);
-    setLocalSource({ characterId, chatId: chatStillFits ? sourceChatId : null });
+    setLocalSource({ characterId, chatId: chatStillFits ? sourceChatId : null, personaId: sourcePersonaId });
   }
 
   /** Pick a source chat; "" clears it. Picking a chat auto-substitutes its
@@ -341,7 +440,7 @@ export function ExperienceSetupModal({
     const chatId = id === "" ? null : id;
     const chat = chatId !== null ? chatList.find((c) => c.id === chatId) : undefined;
     const characterId = chat ? (chat.characterId as string) : sourceCharacterId;
-    setLocalSource({ characterId, chatId });
+    setLocalSource({ characterId, chatId, personaId: sourcePersonaId });
   }
 
   const sourcePreviewText = (() => {
@@ -415,11 +514,35 @@ export function ExperienceSetupModal({
   // a default are marked `entered` so they submit as real values.
   useEffect(() => {
     if (discovery.status !== "ok") return;
-    const { values, entered } = seedSetupDefaults(discovery.definition.setup?.fields ?? []);
+    const fields = discovery.definition.setup?.fields ?? [];
+    const { values, entered } = seedSetupDefaults(fields);
+    // Restart prefill (LB-5): overlay the frozen settings snapshot over the
+    // authored defaults, and rebuild the roster from the frozen participants.
+    if (restartSource !== null) {
+      const snapshot = restartSource.initialSettings;
+      if (typeof snapshot === "object" && snapshot !== null && !Array.isArray(snapshot)) {
+        const prefill = applySnapshotPrefill(fields, snapshot as Record<string, unknown>);
+        Object.assign(values, prefill.values);
+        for (const id of prefill.entered) entered.add(id);
+      }
+      if (restartSource.participants.length > 0) {
+        const { seats, nextCounter } = seatsFromSnapshot(restartSource.participants);
+        setRoster(seats);
+        seatCounterRef.current = nextCounter;
+        // Prefilled model seats need their provider's model list loaded so the
+        // dropdown renders the pinned model instead of a blank option.
+        for (const seat of seats) {
+          if (seat.controller === "model" && seat.providerProfileId !== undefined) ensureModels(seat.providerProfileId);
+        }
+      }
+    }
     setFieldValues(values);
     setNumberEntered(entered);
     setFieldErrors({});
-  }, [discovery]);
+    // restartSource is a stable parent-held snapshot keyed to the open that
+    // produced it; re-running only on a fresh discovery would drop the
+    // prefill if discovery re-fires (e.g. a config-driven scriptId change).
+  }, [discovery, restartSource]);
 
   // ── Load provider profiles when a provider/model selector is live ─────────
   // Model seats need them (model capability), and compact-summary generation
@@ -755,20 +878,33 @@ export function ExperienceSetupModal({
       //    The capture that follows start-up reads the persisted config — one
       //    source of truth, no per-capture override needed on this path.
       const mode = localContextMode ?? configContextMode;
-      const sourceDirty = sourceCharacterId !== configSourceCharacterId || sourceChatId !== configSourceChatId;
+      const sourceDirty =
+        sourceCharacterId !== configSourceCharacterId ||
+        sourceChatId !== configSourceChatId ||
+        sourcePersonaId !== configSourcePersonaId;
       if (rpContextGranted && (mode !== configContextMode || sourceDirty)) {
         await updateExperienceConfig(chatId, {
           ...(mode !== configContextMode ? { contextMode: mode } : {}),
           contextSourceCharacterId: sourceCharacterId,
           contextSourceChatId: sourceChatId,
+          contextSourcePersonaId: sourcePersonaId,
         });
         if (scopeRef.current !== gen) return;
         await useExperienceStore.getState().rehydrate(chatId, branchId);
         if (scopeRef.current !== gen) return;
       }
 
-      // 4. Start the session through the store (server-authoritative).
-      const session = await useExperienceStore.getState().startSession(settings, participants);
+      // 4. Start — or RESTART — the session through the store (server-
+      //    authoritative). In restart mode (LB-5) the server finishes the
+      //    source match and creates the successor; the roster is sent only
+      //    when the participants capability is granted, else the server falls
+       //   back to the source's frozen roster.
+      const session = restartSource !== null
+        ? await useExperienceStore.getState().restartSession({
+            settings,
+            ...(participantsGranted ? { participants } : {}),
+          })
+        : await useExperienceStore.getState().startSession(settings, participants);
       if (scopeRef.current !== gen) return;
       if (!session) {
         // The store surfaced a structured error (stale/conflict/no_provider…)
@@ -1068,9 +1204,28 @@ export function ExperienceSetupModal({
                       />
                     </div>
                   </div>
+                  {/* Wave 3 (PS-4): persona source — a SEPARATE picker row
+                      (user identity override, independent of char/chat). */}
+                  <div className="flex flex-col gap-1.5 sm:flex-row">
+                    <div className="flex-1">
+                      <DropdownSelect
+                        value={sourcePersonaId ?? ""}
+                        options={sourcePersonaOptions}
+                        defaultOption={t("experience_setup_source_persona_ambient")}
+                        placeholder={t("experience_setup_source_persona_placeholder")}
+                        onChange={pickSourcePersona}
+                        disabled={pendingStart}
+                      />
+                    </div>
+                  </div>
                   <p className="text-xs text-text-secondary" data-testid="experience-setup-source-preview">
                     {sourcePreviewText}
                   </p>
+                  {sourcePersonaPreviewText !== null && (
+                    <p className="text-xs text-text-secondary" data-testid="experience-setup-source-persona-preview">
+                      {sourcePersonaPreviewText}
+                    </p>
+                  )}
                 </div>
               </Section>
             )}
@@ -1091,6 +1246,7 @@ export function ExperienceSetupModal({
             modelOptions={summaryProviderId ? modelOptionsFor(summaryProviderId) : []}
             summaryProviderId={summaryProviderId}
             summaryModelId={summaryModelId}
+            contextControls={contextControls}
             t={t}
             onSummaryProvider={(p) => { setSummaryProviderId(p); setSummaryModelId(""); if (p !== "") ensureModels(p); }}
             onSummaryModel={(m) => setSummaryModelId(m)}
@@ -1167,7 +1323,11 @@ export function ExperienceSetupModal({
               disabled={startDisabled}
               data-testid="experience-setup-start"
             >
-              {pendingStart ? t("experience_setup_starting") : t("experience_setup_start")}
+              {pendingStart
+                ? t("experience_setup_starting")
+                : restartSource !== null
+                  ? t("experience_setup_restart")
+                  : t("experience_setup_start")}
             </button>
           )}
           {phase === "generating-summary" && (
@@ -1319,6 +1479,7 @@ interface PreparationBodyProps {
   modelOptions: Array<{ id: string; label: string }>;
   summaryProviderId: string;
   summaryModelId: string;
+  contextControls: boolean;
   t: (key: TKey, opts?: Record<string, unknown>) => string;
   onSummaryProvider: (p: string) => void;
   onSummaryModel: (m: string) => void;
@@ -1334,93 +1495,97 @@ function PreparationBody(props: PreparationBodyProps) {
   const {
     phase, mode, phaseError, pendingCapture, modelGranted, overrides, overrideDrafts,
     saveError, pendingSave, providerOptions, modelsLoading, modelOptions, summaryProviderId,
-    summaryModelId, t, onSummaryProvider, onSummaryModel, onGenerate, onChangeMode, onRetryCapture,
-    onGlobalOverride, onCharacterOverride,
+    summaryModelId, contextControls, t, onSummaryProvider, onSummaryModel, onGenerate,
+    onChangeMode, onRetryCapture, onGlobalOverride, onCharacterOverride,
   } = props;
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Context preparation status */}
-      <Section label={t("experience_setup_context_label")}>
-        <SegmentedControl
-          value={mode}
-          options={CONTEXT_MODE_ORDER.map((m) => ({ value: m, label: t(CONTEXT_MODE_LABEL_KEYS[m]) }))}
-          onChange={(v) => onChangeMode(v as ExperienceContextMode)}
-          compact
-          wrap
-          disabled={pendingCapture}
-        />
+      {/* Context preparation status (capability gate: same grant as the config phase) */}
+      {contextControls && (
+        <Section label={t("experience_setup_context_label")}>
+          <SegmentedControl
+            value={mode}
+            options={CONTEXT_MODE_ORDER.map((m) => ({ value: m, label: t(CONTEXT_MODE_LABEL_KEYS[m]) }))}
+            onChange={(v) => onChangeMode(v as ExperienceContextMode)}
+            compact
+            wrap
+            disabled={pendingCapture}
+          />
 
-        {phase === "capturing" && (
-          <div className="flex items-center gap-2">
-            {pendingCapture ? (
-              <>
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                <span className="font-ui text-[12px] text-t3">{t("experience_setup_capturing")}</span>
-              </>
-            ) : (
-              <>
-                <span className="font-ui text-[12px] text-t3">{t("experience_setup_context_ready")}</span>
-                <button
-                  type="button"
-                  className="rounded px-2 py-0.5 font-ui text-[11px] text-accent hover:bg-s3"
-                  onClick={onRetryCapture}
-                  data-testid="experience-setup-retry-capture"
-                >
-                  {t("experience_setup_capture_retry")}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {phase === "awaiting-summary" && (
-          <div className="flex flex-col gap-2">
-            <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_summary_intro")}</p>
-            <div className="flex flex-col gap-1.5 sm:flex-row">
-              <div className="flex-1">
-                <DropdownSelect
-                  value={summaryProviderId}
-                  options={providerOptions}
-                  placeholder={t("experience_setup_provider_placeholder")}
-                  onChange={onSummaryProvider}
-                />
-              </div>
-              <div className="flex-1">
-                <DropdownSelect
-                  value={summaryModelId}
-                  options={modelOptions}
-                  placeholder={modelsLoading ? t("experience_setup_loading_models") : t("experience_setup_model_placeholder")}
-                  onChange={onSummaryModel}
-                  disabled={summaryProviderId === ""}
-                />
-              </div>
+          {phase === "capturing" && (
+            <div className="flex items-center gap-2">
+              {pendingCapture ? (
+                <>
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                  <span className="font-ui text-[12px] text-t3">{t("experience_setup_capturing")}</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-ui text-[12px] text-t3">{t("experience_setup_context_ready")}</span>
+                  <button
+                    type="button"
+                    className="rounded px-2 py-0.5 font-ui text-[11px] text-accent hover:bg-s3"
+                    onClick={onRetryCapture}
+                    data-testid="experience-setup-retry-capture"
+                  >
+                    {t("experience_setup_capture_retry")}
+                  </button>
+                </>
+              )}
             </div>
-            <button
-              type="button"
-              className="self-start rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
-              onClick={onGenerate}
-              disabled={pendingCapture}
-              data-testid="experience-setup-generate-summary"
-            >
-              {t("experience_setup_generate_summary")}
-            </button>
-          </div>
-        )}
+          )}
 
-        {phase === "generating-summary" && (
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            <span className="font-ui text-[12px] text-t3">{t("experience_setup_generating")}</span>
-          </div>
-        )}
+          {phase === "awaiting-summary" && (
+            <div className="flex flex-col gap-2">
+              <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_summary_intro")}</p>
+              <div className="flex flex-col gap-1.5 sm:flex-row">
+                <div className="flex-1">
+                  <DropdownSelect
+                    value={summaryProviderId}
+                    options={providerOptions}
+                    placeholder={t("experience_setup_provider_placeholder")}
+                    onChange={onSummaryProvider}
+                  />
+                </div>
+                <div className="flex-1">
+                  <DropdownSelect
+                    value={summaryModelId}
+                    options={modelOptions}
+                    placeholder={modelsLoading ? t("experience_setup_loading_models") : t("experience_setup_model_placeholder")}
+                    onChange={onSummaryModel}
+                    disabled={summaryProviderId === ""}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className="self-start rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
+                onClick={onGenerate}
+                disabled={pendingCapture}
+                data-testid="experience-setup-generate-summary"
+              >
+                {t("experience_setup_generate_summary")}
+              </button>
+            </div>
+          )}
 
-        {phase === "ready" && (
-          <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_ready_note")}</p>
-        )}
+          {phase === "generating-summary" && (
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+              <span className="font-ui text-[12px] text-t3">{t("experience_setup_generating")}</span>
+            </div>
+          )}
 
-        {phaseError && <FieldError text={phaseError} />}
-      </Section>
+          {phaseError && <FieldError text={phaseError} />}
+        </Section>
+      )}
+
+      {/* Ready note lives OUTSIDE the gated context section so the ready screen
+          keeps content even for scripts without the rp_context grant. */}
+      {phase === "ready" && (
+        <p className="font-ui text-[12px] leading-relaxed text-t3">{t("experience_setup_ready_note")}</p>
+      )}
 
       {/* Model-only prompt overrides (capability gate, post-start) */}
       {modelGranted && (

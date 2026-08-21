@@ -119,6 +119,10 @@ export const INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS = 32;
 export const INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS = 64;
 /** Max serialized length of a resolved chatter text (one model reply). */
 export const INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT = 4000;
+/** Minimum fixed timestep (ms) of a realtime round loop (≈ one 60fps frame). */
+export const INTERACTIVE_SCHEMA_TICK_MS_MIN = 16;
+/** Maximum fixed timestep (ms) of a realtime round loop (1 tick/s floor). */
+export const INTERACTIVE_SCHEMA_TICK_MS_MAX = 1000;
 
 const boundedId = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_ID);
 const boundedLabel = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_LABEL);
@@ -223,10 +227,43 @@ const boundedPayloadSchema = boundedJsonValue({
 
 // ─── Core envelopes (mirror domain entities) ─────────────────────────────────
 
-export const experienceManifestSchema = z.object({
-  id: boundedId,
-  name: boundedLabel,
-});
+export const experienceManifestSchema = z
+  .object({
+    id: boundedId,
+    name: boundedLabel,
+    /** Execution mode. "turn" is the classic host-driven reducer/CAS flow;
+     *  "realtime" runs a client-side fixed-timestep loop inside the visual
+     *  frame (round commit is replay-verified server-side). The default
+     *  keeps every existing package turn-based: mode is not required input.
+     */
+    mode: z.enum(["turn", "realtime"]).default("turn"),
+    /** Fixed timestep (ms) of a realtime round loop (bounded 16..1000,
+     *  see REALTIME_EXPERIENCE_MODE_PLAN). Required when mode is "realtime",
+     *  forbidden when it is "turn" (turn-based time is host timer effects,
+     *  never a loop). */
+    tickMs: z
+      .number()
+      .int()
+      .min(INTERACTIVE_SCHEMA_TICK_MS_MIN)
+      .max(INTERACTIVE_SCHEMA_TICK_MS_MAX)
+      .optional(),
+  })
+  .superRefine((m, ctx) => {
+    if (m.mode === "realtime" && m.tickMs === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tickMs"],
+        message: "realtime mode requires tickMs",
+      });
+    }
+    if (m.mode === "turn" && m.tickMs !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tickMs"],
+        message: "turn mode must not declare tickMs",
+      });
+    }
+  });
 
 export const experienceDeclaredCapabilitySchema = z.object({
   capability: experienceCapabilitySchema,
@@ -686,9 +723,22 @@ export const experienceStartRequestSchema = z.object({
 export const experienceActionRequestSchema = experienceActionSchema;
 
 /** Explicit user finish. The client pins the live revision; termination is
- * always host-owned `interrupted`, never a client-selected terminal status. */
+ * always host-owned `interrupted`, never a client-selected terminal status.
+ * `quiet`: end the session WITHOUT any public report card — no `experience_finished`
+ * system event, no frozen terminal attachment, and any still-unbound queued
+ * attachment is dropped (nothing experience-related binds on the next message).
+ * Defaults to false (the with-report finish). */
 export const experienceFinishRequestSchema = z.object({
   expectedRevision: boundedRevision,
+  quiet: z.boolean().optional(),
+}).strict();
+
+/** Restart as a NEW match on the same branch (lobby report LB-2/LB-3): fresh
+ * session id under a new seed. Both fields optional — omitted falls back to
+ * the source session's frozen snapshots; explicit values win. */
+export const experienceRestartRequestSchema = z.object({
+  settings: boundedState.optional(),
+  participants: z.array(experienceStartParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS).optional(),
 }).strict();
 
 /** Explicit queue/Add-later report freeze. The client must pin the exact live
@@ -720,6 +770,10 @@ export const experienceSessionResponseSchema = z
     capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES),
     contextMode: experienceContextModeSchema,
     participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS),
+    /** Frozen initial-settings snapshot (lobby LB-5) — the restart
+     * modal's prefill source; bounded by the same limits as the start
+     * settings input. Never authoritative state. */
+    initialSettings: boundedState,
     /** Pinned visual resource id (snapshot at session start; no FK — survives
      *  source delete). Null when the session has no visual. */
     visualId: boundedId.nullable(),
@@ -764,9 +818,12 @@ export const experienceConfigUpdateSchema = z.object({
   enabled: z.boolean().optional(),
   scriptId: boundedId.nullable().optional(),
   visualId: boundedId.nullable().optional(),
-  /** User-chosen RP-context source (report item 6). Null clears to ambient. */
+  /** User-chosen RP-context source (report item 6 / Wave 3). Null clears to
+   *  ambient. Character + chat are the RP-context source; the persona is the
+   *  user-identity override (separate picker, PS-4). */
   contextSourceCharacterId: boundedId.nullable().optional(),
   contextSourceChatId: boundedId.nullable().optional(),
+  contextSourcePersonaId: boundedId.nullable().optional(),
   capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES).optional(),
   contextMode: experienceContextModeSchema.optional(),
   launcherVisible: z.boolean().optional(),
@@ -808,10 +865,11 @@ export const experienceContextCaptureRequestSchema = z.object({
   providerProfileId: boundedId.optional(),
   model: boundedString.min(1).optional(),
   recentMessageLimit: z.number().int().min(1).max(1000).optional(),
-  /** Per-capture source override (report item 6). Null explicitly opts back
-   *  into the ambient/config default. Resolution is CS-3. */
+  /** Per-capture source override (report item 6 / Wave 3). Null explicitly
+   *  opts back into the ambient/config default. Resolution is CS-3 / PS-3. */
   contextSourceCharacterId: boundedId.nullable().optional(),
   contextSourceChatId: boundedId.nullable().optional(),
+  contextSourcePersonaId: boundedId.nullable().optional(),
 }).strict();
 
 /**
@@ -902,13 +960,25 @@ export const experiencePlaygroundAdvanceRequestSchema = z.object({
   humanAction: experienceActionSchema,
 });
 
+/** Execute ONE timer beat for an interactive playground session: fire the
+ *  oldest pending timer effect (sleep its `afterMs`, then feed the tick back
+ *  through the real reducer) and return the standard turn envelope. The
+ *  client re-issues a beat whenever a response reports `pendingTimers > 0` on
+ *  an active session — that loop is what makes real-time experiences
+ *  (falling pieces, countdowns) actually tick in the sandbox. */
+export const experiencePlaygroundTimerRequestSchema = z.object({
+  playgroundSessionId: boundedId,
+});
+
 // ─── DTO types (wire-only shapes; canonical envelopes come from Domain) ──────
 
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
 export type ExperienceActionDto = z.infer<typeof experienceActionSchema>;
 export type ExperienceFinishRequestDto = z.infer<typeof experienceFinishRequestSchema>;
+export type ExperienceRestartRequestDto = z.infer<typeof experienceRestartRequestSchema>;
 export type ExperienceReportQueueRequestDto = z.infer<typeof experienceReportQueueRequestSchema>;
 export type ExperienceSessionResponseDto = z.infer<typeof experienceSessionResponseSchema>;
+export type ExperienceManifestDto = z.infer<typeof experienceManifestSchema>;
 export type ExperienceDefinitionDto = z.infer<typeof experienceDefinitionSchema>;
 export type ExperienceStarterManifestDto = z.infer<typeof experienceStarterManifestSchema>;
 export type ExperienceConfigUpdateDto = z.infer<typeof experienceConfigUpdateSchema>;
@@ -922,6 +992,7 @@ export type ExperienceTestRunRequestDto = z.infer<typeof experienceTestRunReques
 export type ExperienceTestSimulateRequestDto = z.infer<typeof experienceTestSimulateRequestSchema>;
 export type ExperiencePlaygroundStartRequestDto = z.infer<typeof experiencePlaygroundStartRequestSchema>;
 export type ExperiencePlaygroundAdvanceRequestDto = z.infer<typeof experiencePlaygroundAdvanceRequestSchema>;
+export type ExperiencePlaygroundTimerRequestDto = z.infer<typeof experiencePlaygroundTimerRequestSchema>;
 export type ExperienceSetupFieldOptionDto = z.infer<typeof experienceSetupFieldOptionSchema>;
 export type ExperienceSetupFieldDto = z.infer<typeof experienceSetupFieldSchema>;
 export type ExperienceSetupDefinitionDto = z.infer<typeof experienceSetupDefinitionSchema>;

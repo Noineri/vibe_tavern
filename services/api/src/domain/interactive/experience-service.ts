@@ -168,6 +168,9 @@ export interface ExperienceSessionView {
   manifest: { id: string; name: string };
   apiVersion: number;
   participants: ExperienceParticipant[];
+  /** Frozen initial-settings snapshot (`initialSettingsJson`) — the
+   * restart prefill source (lobby LB-5), not authoritative state. */
+  initialSettings: unknown;
   capabilityGrants: ExperienceCapability[];
   contextMode: ExperienceContextMode;
   rulesRevision: number;
@@ -378,10 +381,39 @@ export class ExperienceService {
     if (!setup.data.enabled || setup.data.rules === null) {
       return err({ status: 409, code: "not_enabled", message: "Interactive experience is not configured for this chat" });
     }
-    const rules = setup.data.rules;
-    const visual = setup.data.visual;
-    const grants = setup.data.capabilityGrants;
+    const { rules, visual, capabilityGrants: grants, contextMode } = setup.data;
+    return this.createSessionFromResolved({
+      chatId: input.chatId,
+      branchId: input.branchId,
+      rules,
+      visual,
+      grants,
+      contextMode,
+      settings: input.settings,
+      participants: input.participants,
+    });
+  }
 
+  /**
+   * Persist a NEW session from a fully-resolved effective setup — the shared
+   * tail of {@link startSession} and {@link restartSession} (lobby report
+   * LB-2). Validates the roster (V1 human-seat limit, IR-70E seat pinning),
+   * freezes character-backed seats, runs `create` + the revision-zero
+   * projections under the real VM, and writes the session row + initial
+   * report atomically. The typed branch_has_active conflict (another session
+   * claimed the branch slot meanwhile) surfaces as 409.
+   */
+  private async createSessionFromResolved(input: {
+    chatId: string;
+    branchId: string;
+    rules: ResolvedRulesSource;
+    visual: ResolvedVisualSource | null;
+    grants: ExperienceCapability[];
+    contextMode: ExperienceContextMode;
+    settings: unknown;
+    participants: ExperienceParticipant[];
+  }): Promise<ExperienceResult<ExperienceSessionView>> {
+    const { rules, visual, grants, contextMode } = input;
     // V1: at most one human-controlled seat.
     const humanSeats = input.participants.filter((p) => p.controller === EXPERIENCE_CONTROLLER.human);
     if (humanSeats.length > 1) {
@@ -471,7 +503,7 @@ export class ExperienceService {
       currentStateJson: safeStringify(initialState),
       participantsJson: safeStringify(enrichedParticipants),
       capabilityGrantsJson: safeStringify(grants),
-      contextMode: setup.data.contextMode,
+      contextMode: contextMode,
       randomSeed: seed,
       randomCursor: cursorAfterCreate,
     }, (session) => this.reports.buildStartReport(session, {
@@ -488,6 +520,71 @@ export class ExperienceService {
     }
 
     return ok(this.toSessionView(created_row.session));
+  }
+
+  /**
+   * Restart a session as a NEW match on the same chat+branch (lobby report
+   * LB-2 / Track B — «играть снова» / «изменить настройки»). A restart is a
+   * NEW session id, never a replay: the successor runs a fresh `create` under
+   * a NEW random seed; the source match's journal and reports are preserved.
+   *
+   * Resolution semantics:
+   *  - settings/participants default to the source session's frozen snapshots
+   *    (`initialSettingsJson` / `participantsJson`); explicit overrides win —
+   *    the lobby modal sends edited values, one-click «играть снова» sends
+   *    neither and gets the same match shape.
+   *  - The CURRENT effective setup is re-resolved (rules/visual/grants/
+   *    context): an author's rule fix or grant change lands in the new match;
+   *    a disabled or dangling script is the typed not_enabled error. The
+   *    source's pinned rules snapshot is NOT replayed — new match, new rules.
+   *  - An ACTIVE source is finished first: interrupted with a public
+   *    «restarted» system step + frozen final report, the slot released
+   *    atomically with the report freeze (revision CAS — a concurrent action
+   *    races to stale_revision, the caller retries); its still-pending
+   *    effects are cancelled so nothing wakes into the dead match. A
+   *    completed/interrupted source is left untouched.
+   */
+  async restartSession(sessionId: string, override?: {
+    settings?: unknown;
+    participants?: ExperienceParticipant[];
+  }): Promise<ExperienceResult<ExperienceSessionView>> {
+    const source = await this.stores.experiences.getSessionById(sessionId);
+    if (source === null) {
+      return err({ status: 404, code: "session_not_found", message: `Session '${sessionId}' not found` });
+    }
+    const setup = await this.resources.resolveEffectiveSetup(source.chatId);
+    if (!setup.ok) return setup;
+    if (!setup.data.enabled || setup.data.rules === null) {
+      return err({ status: 409, code: "not_enabled", message: "Interactive experience is not configured for this chat" });
+    }
+    const settings = override?.settings !== undefined ? override.settings : parseJson<unknown>(source.initialSettingsJson, {});
+    const participants = override?.participants ?? parseJson<ExperienceParticipant[]>(source.participantsJson, []);
+
+    if (source.activeSlot !== null) {
+      const finished = await this.reports.finish(sessionId, source.revision, {
+        finishDetail: "The user restarted the game — this match was ended.",
+      });
+      if (!finished.ok) return finished;
+      // Cancel still-pending effects of the dead match: timers would wake
+      // and CAS-fail forever, model calls would burn a provider turn.
+      for (const effect of await this.stores.experiences.getEffectsForSession(sessionId)) {
+        if (effect.status === "pending") {
+          await this.stores.experiences.cancelEffect(effect.id);
+        }
+      }
+    }
+
+    const { rules, visual, capabilityGrants, contextMode } = setup.data;
+    return this.createSessionFromResolved({
+      chatId: source.chatId,
+      branchId: source.branchId,
+      rules,
+      visual,
+      grants: capabilityGrants,
+      contextMode,
+      settings,
+      participants,
+    });
   }
 
   /** Load a session's current view (no VM call). */
@@ -773,6 +870,45 @@ export class ExperienceService {
     return ok(effect);
   }
 
+  /** Explicit user retry (lobby effect diagnostics): a `failed`/`cancelled`/
+   *  `unknown` effect returns to `pending` with `attemptCount+1` and its error
+   *  cleared (same effect id, audit history preserved). The caller NEVER runs
+   *  the effect here — the host runner (chat-page lifetime) picks the pending
+   *  model row back up, the host scheduler owns pending timer rows. Typed 404
+   *  for a missing effect, 409 when the current status is not retryable
+   *  (`succeeded`/`running`/`pending`, or a concurrent transition won the race
+   *  between the read and the store's own legality re-check). */
+  async retryEffect(effectId: string): Promise<ExperienceResult<ExperienceEffectRow>> {
+    const effect = await this.stores.experiences.getEffectById(effectId);
+    if (effect === null) {
+      return err({ status: 404, code: "effect_not_found", message: `Effect '${effectId}' not found` });
+    }
+    if (
+      effect.status === "succeeded" ||
+      effect.status === "running" ||
+      effect.status === "pending"
+    ) {
+      return err({
+        status: 409,
+        code: "effect_not_retryable",
+        message: `Effect '${effectId}' is ${effect.status} — only failed/cancelled/unknown effects can be retried`,
+        currentStatus: effect.status,
+      });
+    }
+    const row = await this.stores.experiences.retryEffect(effectId);
+    if (row === null) {
+      // The store re-checks legality atomically; null here means the row moved
+      // under us (e.g. the scheduler claimed it) — surface the observed status.
+      return err({
+        status: 409,
+        code: "effect_not_retryable",
+        message: `Effect '${effectId}' transitioned away from ${effect.status} before the retry`,
+        currentStatus: effect.status,
+      });
+    }
+    return ok(row);
+  }
+
   // ─── Queued-attachment read (IR-70A) ───────────────────────────────────────
 
   /**
@@ -807,9 +943,11 @@ export class ExperienceService {
     return this.reports.getStatus(sessionId);
   }
 
-  /** Explicit user finish: durable public system event + terminal frozen report. */
-  finishWithReport(sessionId: string, expectedRevision: number) {
-    return this.reports.finish(sessionId, expectedRevision);
+  /** Explicit user finish: durable public system event + terminal frozen report.
+   *  When `quiet` is set the session ends with NO public artifact and null is
+   *  returned (see ExperienceReportService.finish). */
+  finishWithReport(sessionId: string, expectedRevision: number, quiet = false) {
+    return this.reports.finish(sessionId, expectedRevision, { quiet });
   }
 
   // ─── Model-effect VM ops (Wave 4 / IR-43) ─────────────────────────────────
@@ -1015,6 +1153,7 @@ export class ExperienceService {
         declaredCapabilities: [], // not needed for runtime; re-discovery is Wave 8 trust
         hasChoose: false, // not stored on the session; lifecycle probes runChoose directly
         hasFlavor: false,
+        hasUpdate: false, // not stored; realtime rounds never run on the durable path
       },
       sourceHash: session.rulesSourceHash,
       revision: session.rulesRevision,
@@ -1090,7 +1229,7 @@ export class ExperienceService {
   private toSessionView(session: {
     id: string; chatId: string; branchId: string; status: string; revision: number;
     manifestId: string; manifestName: string; apiVersion: number;
-    participantsJson: string; capabilityGrantsJson: string; contextMode: string;
+    participantsJson: string; initialSettingsJson: string; capabilityGrantsJson: string; contextMode: string;
     rulesRevision: number; rulesSourceHash: string; visualId: string | null;
     visualSource: string | null; visualSourceHash: string | null; reportFrontier: number;
   }): ExperienceSessionView {
@@ -1103,6 +1242,7 @@ export class ExperienceService {
       manifest: { id: session.manifestId, name: session.manifestName },
       apiVersion: session.apiVersion,
       participants: parseJson<ExperienceParticipant[]>(session.participantsJson, []),
+      initialSettings: parseJson<unknown>(session.initialSettingsJson, {}),
       capabilityGrants: parseJson<ExperienceCapability[]>(session.capabilityGrantsJson, []),
       contextMode: session.contextMode as ExperienceContextMode,
       rulesRevision: session.rulesRevision,

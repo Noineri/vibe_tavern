@@ -58,6 +58,39 @@ export const experienceCopilotStepSchema = z.enum(["rules", "visual", "test"]);
 export type ExperienceCopilotStep = z.infer<typeof experienceCopilotStepSchema>;
 
 /**
+ * Answer payload for a pending `ask_user` question (TAG-5 split-turn, style
+ * B). `text` = the user's answer (a tapped chip's label or free text);
+ * `skipped` = the user pressed skip. The two are mutually exclusive: a skip
+ * carries no text, and an answer with neither is meaningless — both are
+ * rejected here. The referenced `toolCallId` must point at an `ask_user`
+ * tool-result row that is still awaiting an answer in THIS thread; that is
+ * thread state, so it is enforced by the stream (domain), not by the schema.
+ */
+export const experienceCopilotStreamAnswerSchema = z
+  .object({
+    toolCallId: z.string().min(1),
+    text: z.string().min(1).max(50_000).optional(),
+    skipped: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.skipped === true && val.text !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["skipped"],
+        message: "A skipped answer cannot carry text.",
+      });
+    }
+    if (val.skipped === undefined && val.text === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "An answer must carry either `text` or `skipped`.",
+      });
+    }
+  });
+export type ExperienceCopilotStreamAnswer = z.infer<typeof experienceCopilotStreamAnswerSchema>;
+
+/**
  * Request body for the experience-copilot stream endpoint (ER-6),
  * `POST /api/experience-copilot/:threadId/stream`. Mirrors the AI-assistant's
  * `{ providerProfileId, model }` resolution shape, plus the copilot-specific
@@ -70,16 +103,39 @@ export type ExperienceCopilotStep = z.infer<typeof experienceCopilotStepSchema>;
  * test panel (ER-5 renders it as context) — it is validated as a record, not
  * a typed digest, because the digest shapes live in the backend domain
  * (`experience-copilot-tools.ts`) and ER-7 will lift them into wire contracts.
+ *
+ * TAG-5 split-turn (style B): `content` and `answer` are exactly-one-of. A
+ * normal turn sends `content`; answering a pending `ask_user` question sends
+ * `answer` instead (no new user row — the answer replaces the awaiting marker
+ * of the referenced tool-result and the turn resumes as a continuation).
  */
-export const experienceCopilotStreamRequestSchema = z.object({
-  content: z.string().min(1).max(50_000),
-  providerProfileId: z.string().min(1),
-  model: z.string().min(1).optional(),
-  step: experienceCopilotStepSchema.optional(),
-  rules: z.string().max(200_000).optional(),
-  visual: z.string().max(200_000).optional(),
-  testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
-});
+export const experienceCopilotStreamRequestSchema = z
+  .object({
+    content: z.string().min(1).max(50_000).optional(),
+    providerProfileId: z.string().min(1),
+    model: z.string().min(1).optional(),
+    step: experienceCopilotStepSchema.optional(),
+    rules: z.string().max(200_000).optional(),
+    visual: z.string().max(200_000).optional(),
+    testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
+    answer: experienceCopilotStreamAnswerSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    const hasContent = val.content !== undefined;
+    const hasAnswer = val.answer !== undefined;
+    if (hasContent && hasAnswer) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide either `content` (a new message) or `answer` (answering the pending question), not both.",
+      });
+    }
+    if (!hasContent && !hasAnswer) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide either `content` (a new message) or `answer` (answering the pending question).",
+      });
+    }
+  });
 export type ExperienceCopilotStreamRequest = z.infer<typeof experienceCopilotStreamRequestSchema>;
 
 /**
@@ -149,6 +205,36 @@ export const setCopilotContextLinksSchema = z
   .strict();
 export type SetCopilotContextLinksRequest = z.infer<typeof setCopilotContextLinksSchema>;
 
+// ─── Copilot todo (EXPERIENCE_COPILOT_TODO_ASK_GRILL_PLAN, TAG-1) ───────────
+
+/**
+ * One step in the copilot's todo list (TAG-1). The `todo` tool (Wave 2) has
+ * the model maintain a step-by-step action plan for the authoring session via
+ * full-list rewrites; the list persists on the thread row (`todo_json`, TAG-2)
+ * and re-enters the prompt every turn as a context section (TAG-6), surviving
+ * history compaction. The four statuses mirror the objective tracker's
+ * `objectiveTaskStatusSchema` (insights-schema.ts) — a deliberate match so the
+ * pinned panel (TAG-8) reuses the tracker's visual language (`NodeGlyph`,
+ * `statusClass`) unchanged. `.strict()` rejects unknown keys: a model-authored
+ * list must not smuggle extra fields through persistence.
+ */
+export const copilotTodoItemSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    status: z.enum(["pending", "active", "completed", "abandoned"]),
+  })
+  .strict();
+export type CopilotTodoItem = z.infer<typeof copilotTodoItemSchema>;
+
+/**
+ * A complete todo list as the `todo` tool sends it (rewrite semantics — every
+ * call carries the FULL list, never a delta; Cline-style). The cap is a
+ * pragmatic bound: room for a real development plan, bounded cost for the
+ * per-turn context section and the pinned panel render.
+ */
+export const copilotTodoListSchema = z.array(copilotTodoItemSchema).max(30);
+export type CopilotTodoList = z.infer<typeof copilotTodoListSchema>;
+
 /**
  * Wire shape of an experience-copilot thread (ER-7). Mirrors
  * `ExperienceCopilotThread` (packages/db/src/stores/experience-copilot-store.ts)
@@ -174,6 +260,12 @@ export const experienceCopilotThreadSchema = z.object({
    *  ids are skipped silently. Empty array = nothing pinned (the zero-pinned
    *  assembly stays byte-identical to the pre-plan output). */
   contextLinks: z.array(experienceCopilotContextLinkSchema),
+  /** The model's step-plan (TAG-6): `[]` until the first `todo` call, then the
+   *  full-list rewrite the tool persists every call. Mirrors the store's parsed
+   *  `todo` (TAG-2). REQUIRED (always present, empty = no plan yet) so the
+   *  client never has to null-check — the adapter maps the store row's todo
+   *  into this field on every thread read. */
+  todo: z.array(copilotTodoItemSchema),
 });
 export type ExperienceCopilotThreadWire = z.infer<typeof experienceCopilotThreadSchema>;
 
@@ -225,9 +317,10 @@ export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBound
 // `openingMessage` — the copilot is not a chat-mode and does not greet.
 
 /**
- * Which tools a profile may toggle. A PARTIAL record over exactly the 5
+ * Which tools a profile may toggle. A PARTIAL record over exactly the 7
  * toggleable copilot tools (write_buffer, edit_buffer, run_test, run_simulate,
- * suggest_visual_binding). `read_skill_file` is intentionally ABSENT — it is
+ * suggest_visual_binding, todo, ask_user — the last two are wired to their
+ * tool implementations in Wave 2). `read_skill_file` is intentionally ABSENT — it is
  * the always-on, read-only skill-access channel and is never gated by a
  * toolSet (mirroring Co-Author's `coauthorToolSetSchema`, which excludes
  * `read_skill_file` for the same reason). `.strict()` rejects any unknown key
@@ -241,6 +334,8 @@ export const copilotToolSetSchema = z
     run_test: z.boolean().optional(),
     run_simulate: z.boolean().optional(),
     suggest_visual_binding: z.boolean().optional(),
+    todo: z.boolean().optional(),
+    ask_user: z.boolean().optional(),
   })
   .strict();
 
@@ -255,23 +350,15 @@ export type CopilotToolSet = z.infer<typeof copilotToolSetSchema>;
 export const COPILOT_TOOL_KEYS = Object.keys(copilotToolSetSchema.shape) as (keyof CopilotToolSet)[];
 
 /**
- * Bounds + default for a profile's `maxSteps` — the AI SDK multi-step tool-loop
- * limit. Centralized so Zod validation, the editor input bounds, and the
- * built-in seed default read one source (mirrors COAUTHOR_MAX_STEPS_*). The
- * copilot default stays 20 (the ER-16 value), NOT Co-Author's 5 — the copilot
- * tool-loop needs the headroom.
- */
-export const COPILOT_MAX_STEPS_MIN = 1;
-export const COPILOT_MAX_STEPS_MAX = 50;
-export const COPILOT_MAX_STEPS_DEFAULT = 20;
-
-/**
  * A resolved copilot profile as served to the client / consumed by the prompt
  * assembler. `basePrompt` is INLINE prompt text (not a file reference): the
  * built-in seed loads its `.md` at resolve time, user profiles store text
  * directly in the DB. `isBuiltIn` marks the read-only "Experience Authoring"
  * seed (users only edit their own copies). Leaner than `CoauthorModule` — no
- * `description`, no `openingMessage`.
+ * `description`, no `openingMessage`. No `maxSteps`: the tool-loop bound was
+ * removed by user decision (TAG-4 → TAG-10) — the loop runs unbounded to
+ * `COPILOT_TOOL_LOOP_CEILING`, and the DB `copilot_profiles.max_steps` column
+ * was dropped in TAG-4b.
  */
 export const copilotProfileSchema = z.object({
   id: z.string().min(1),
@@ -280,7 +367,6 @@ export const copilotProfileSchema = z.object({
   basePrompt: z.string().min(1),
   skillIds: z.array(z.string().min(1)),
   toolSet: copilotToolSetSchema,
-  maxSteps: z.number().int().min(COPILOT_MAX_STEPS_MIN).max(COPILOT_MAX_STEPS_MAX),
 });
 
 export type CopilotProfile = z.infer<typeof copilotProfileSchema>;
@@ -298,7 +384,6 @@ export const copilotProfileCreateSchema = z.object({
   basePrompt: z.string().min(1),
   skillIds: z.array(z.string().min(1)),
   toolSet: copilotToolSetSchema,
-  maxSteps: z.number().int().min(COPILOT_MAX_STEPS_MIN).max(COPILOT_MAX_STEPS_MAX),
 });
 
 export type CopilotProfileCreate = z.infer<typeof copilotProfileCreateSchema>;

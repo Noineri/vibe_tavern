@@ -24,7 +24,7 @@ import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
  * `isBuiltIn` is always false here (the built-in seed is code-defined, never a
  * row); `createdAt`/`updatedAt` are dropped (the wire profile has no timestamps).
  * The stored `toolSet` is a loose partial record — it is projected through
- * {@link COPILOT_TOOL_KEYS} so only the 5 known toggleable-tool keys (and only
+ * {@link COPILOT_TOOL_KEYS} so only the known toggleable-tool keys (and only
  * their `true` entries) survive, producing a strict `CopilotToolSet`.
  */
 export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile {
@@ -39,7 +39,6 @@ export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile 
 		basePrompt: row.basePrompt,
 		skillIds: row.skillIds,
 		toolSet,
-		maxSteps: row.maxSteps,
 	};
 }
 

@@ -110,11 +110,15 @@ export interface CaptureContextInput {
 	model?: string;
 	/** Overrides the recent-message window for windowed modes. */
 	recentMessageLimit?: number;
-	/** Per-capture RP-context SOURCE override (report item 6). Present keys
-	 *  override the chat-config columns; `null` explicitly clears back to the
-	 *  ambient host chat. Resolution: explicit override → config → ambient. */
+	/** Per-capture RP-context SOURCE override (report item 6 / Wave 3). Present
+	 *  keys override the chat-config columns; `null` explicitly clears back to
+	 *  the ambient host chat. Resolution: explicit override → config → ambient. */
 	contextSourceCharacterId?: string | null;
 	contextSourceChatId?: string | null;
+	/** Wave 3: the user-identity (persona) override. Same override → config →
+	 *  ambient precedence; ambient = the HOST chat's persona with its usual
+	 *  default/first fallback. Independent of the character/chat source above. */
+	contextSourcePersonaId?: string | null;
 	/** Cancellation for `compact_summary` generation. */
 	signal?: AbortSignal;
 }
@@ -133,6 +137,7 @@ export interface ExperienceContextStatus {
   modelId: string | null;
   sourceCharacterId: string | null;
   sourceChatId: string | null;
+  sourcePersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -189,14 +194,16 @@ export class ExperienceContextService {
 			throw notFound("Chat", `Chat '${chatId}' was not found.`);
 		}
 
-		// ── Source resolution (report item 6) ──
+		// ── Source resolution (report item 6 / Wave 3) ──
 		// Explicit per-capture override (a present `null` clears) → the chat-config
 		// columns → the ambient host chat. The RP history (messages, summaries,
 		// compact summary) follows the chosen source chat via its ACTIVE branch;
 		// the identity character is the explicit override, else the effective
-		// chat's own card; the persona ALWAYS stays the host chat's (it is the
-		// user's identity, not the source's). A dangling explicit source chat is a
-		// clean 404 BEFORE any persist, so the previous bundle stays intact.
+		// chat's own card. The persona is the user's identity: Wave 3 allows an
+		// explicit persona override (chosen picker, same precedence chain);
+		// otherwise it stays the host chat's (with its default/first fallback).
+		// A dangling explicit source chat OR persona is a clean 404 BEFORE any
+		// persist, so the previous bundle stays intact.
 		const config = await this.deps.stores.experienceResources.getConfigForChat(session.chatId);
 		const sourceChatId =
 			input.contextSourceChatId !== undefined ? input.contextSourceChatId : (config?.contextSourceChatId ?? null);
@@ -204,6 +211,10 @@ export class ExperienceContextService {
 			input.contextSourceCharacterId !== undefined
 				? input.contextSourceCharacterId
 				: (config?.contextSourceCharacterId ?? null);
+		const personaOverride =
+			input.contextSourcePersonaId !== undefined
+				? input.contextSourcePersonaId
+				: (config?.contextSourcePersonaId ?? null);
 		const sourceChat = sourceChatId ? await this.deps.stores.chats.getById(sourceChatId) : null;
 		if (sourceChatId && !sourceChat) {
 			throw notFound("Chat", `Context source chat '${sourceChatId}' was not found.`);
@@ -214,9 +225,12 @@ export class ExperienceContextService {
 		const effectiveCharacterId = characterOverride ?? historyChat.characterId ?? null;
 
 		// Resolve identity (mirrors buildPipelineContext: persona falls back to
-		// the default-for-new-chats persona, else the first persona).
+		// the default-for-new-chats persona, else the first persona). Wave 3: an
+		// explicitly chosen persona source REPLACES the whole fallback chain —
+		// the id was pinned by the user, so dangling is a 404, not a silent swap.
 		const character = effectiveCharacterId ? await this.loadCharacter(effectiveCharacterId) : null;
-		const persona = await this.loadPersona(chat.personaId);
+		const persona =
+			personaOverride !== null ? await this.loadPersonaSource(personaOverride) : await this.loadPersona(chat.personaId);
 
 		const includeSummaries = mode === "current_branch" || mode === "summaries_recent" || mode === "compact_summary";
 		const isFullBranch = mode === "current_branch";
@@ -271,10 +285,11 @@ export class ExperienceContextService {
 			}),
 			providerProfileId: compactSummary?.providerProfileId ?? null,
 			modelId: compactSummary?.modelId ?? null,
-			// Provenance of the chosen source (plain pointers, no content). Both
-			// null ⇔ ambient host-chat capture.
+			// Provenance of the chosen source (plain pointers, no content). All
+			// null ⇔ ambient host-chat capture (persona null ⇔ host-chat identity).
 			sourceChatId: sourceChat ? sourceChat.id : null,
 			sourceCharacterId: sourceChat === null && characterOverride === null ? null : effectiveCharacterId,
+			sourcePersonaId: personaOverride,
 		};
 		return this.deps.stores.experiences.captureContextBundle(input.sessionId, data);
 	}
@@ -306,6 +321,7 @@ export class ExperienceContextService {
 			modelId: row.modelId,
 			sourceCharacterId: row.sourceCharacterId,
 			sourceChatId: row.sourceChatId,
+			sourcePersonaId: row.sourcePersonaId,
 			createdAt: row.createdAt,
 			updatedAt: row.updatedAt,
 		};
@@ -434,6 +450,19 @@ export class ExperienceContextService {
 		if (!effectivePersonaId) return null;
 		const p = await this.deps.stores.personas.getById(effectivePersonaId);
 		if (!p) return null;
+		return { id: p.id, name: p.name, description: p.description };
+	}
+
+	/** Wave 3: the user-chosen persona source (PS-3). NO fallback chain — unlike
+	 *  {@link loadPersona}, a dangling id is a clean NotFound thrown BEFORE any
+	 *  persist (mirroring the dangling source-chat behavior), because the id was
+	 *  explicitly pinned by the user/config and silently swapping to the ambient
+	 *  persona would freeze the wrong identity. */
+	private async loadPersonaSource(personaId: string): Promise<ExperienceContextPersona> {
+		const p = await this.deps.stores.personas.getById(personaId);
+		if (!p) {
+			throw notFound("Persona", `Context source persona '${personaId}' was not found.`);
+		}
 		return { id: p.id, name: p.name, description: p.description };
 	}
 

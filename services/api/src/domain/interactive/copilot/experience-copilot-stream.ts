@@ -21,7 +21,7 @@
  * parts in one pass — so `splitReasoningFromText` is not needed separately here.
  */
 
-import { streamText, isStepCount } from "ai";
+import { streamText, isStepCount, hasToolCall } from "ai";
 import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart } from "ai";
 import type { ToolSet } from "ai";
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow } from "@vibe-tavern/db";
@@ -37,7 +37,7 @@ import type { ProviderStreamChunk } from "../../../infrastructure/ai/provider-ex
 import { classifyProviderError } from "../../../infrastructure/ai/provider-error-classifier.js";
 import { extractProviderErrorMessage } from "../../../infrastructure/ai/provider-error-message.js";
 import { logSendDebug } from "../../../shared/send-debug-log.js";
-import { notFound } from "../../../shared/errors.js";
+import { notFound, validation } from "../../../shared/errors.js";
 import {
   assembleExperienceCopilotPrompt,
   resolveDigestBoundary,
@@ -46,7 +46,7 @@ import {
   type ExperienceCopilotStep,
   type ExperienceCopilotTestFeedback,
 } from "./experience-copilot-prompt.js";
-import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS } from "./copilot-limits.js";
+import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "./copilot-limits.js";
 import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 import { renderAttachedContext, type CopilotContextItem } from "./experience-copilot-context.js";
@@ -54,11 +54,32 @@ import type { ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 
 // ─── Request / response types ────────────────────────────────────────────────
 
+/** Answer to a pending `ask_user` question (TAG-5 split-turn, style B). The
+ *  continuation turn runs with NO new user row — this answer is persisted as
+ *  the answered ask tool-result instead, and the model resumes the logical
+ *  turn from there. Wire twin of the api-contracts
+ *  `experienceCopilotStreamAnswerSchema` (kept structural — the domain does
+ *  not import the contracts for its own request type). */
+export interface ExperienceCopilotStreamAnswer {
+  /** The awaiting `ask_user` tool-result row being answered (in this thread). */
+  toolCallId: string;
+  /** The user's answer text (a tapped chip's label or free text). Mutually
+   *  exclusive with `skipped` (wire-enforced). */
+  text?: string;
+  /** The user pressed skip. Mutually exclusive with `text`. */
+  skipped?: boolean;
+}
+
 export interface ExperienceCopilotStreamRequest {
   /** The copilot thread id (path param on the route). */
   threadId: string;
-  /** User's message text for this turn. */
-  content: string;
+  /** User's message text for this turn. Exactly-one-of with `answer` (the
+   *  wire schema enforces it; the stream also guards direct domain callers). */
+  content?: string;
+  /** Answer to a pending `ask_user` question (TAG-5 split-turn): when set, NO
+   *  user row is appended — the referenced awaiting tool-result row is
+   *  rewritten with the answer and the turn continues the question turn. */
+  answer?: ExperienceCopilotStreamAnswer;
   /** Provider profile ID to use. */
   providerProfileId: string;
   /** Model name override (optional, uses profile default). */
@@ -137,9 +158,6 @@ export interface ExperienceCopilotStreamDeps {
   readonly resolveContextItems?: (
     links: readonly ExperienceCopilotContextLink[],
   ) => Promise<CopilotContextItem[]>;
-  /** Max tool-loop steps for the multi-step loop (mirrors co-author maxSteps).
-   *  Defaults to the resolved profile's maxSteps (the built-in seed = 20). */
-  readonly maxSteps?: number;
   /** The AI SDK streaming function. Defaults to the real `streamText` from "ai".
    *  Injectable so tests can substitute a fake WITHOUT `mock.module("ai")` —
    *  under bun:test that mock is process-global and permanent (neither
@@ -155,11 +173,56 @@ export interface ExperienceCopilotStreamDeps {
   readonly autoCompact?: (threadId: string) => Promise<void>;
 }
 
-// DEFAULT_MAX_STEPS moved to the built-in profile's maxSteps (ER-16 / CP-4) —
-// the profile is the single declarative source for the tool-loop bound; an
-// assigned profile overrides it via `deps.maxSteps ?? copilotProfile.maxSteps`.
+// The tool-loop bound was REMOVED (TAG-4): the profile's `maxSteps` no longer
+// exists — the loop runs until the model stops calling tools (pi parity, the
+// user cancels). The AI SDK still requires a finite `stopWhen`, so the stream
+// feeds it COPILOT_TOOL_LOOP_CEILING (1,000,000 — a wire-level formality, not
+// a nanny cap). See copilot-limits.ts.
 
 // ─── History conversion (store ↔ prompt ↔ SDK) ───────────────────────────────
+
+/** Is this parsed tool-result output an awaiting `ask_user` marker? (TAG-5) */
+function isAwaitingAskOutput(output: unknown): boolean {
+  return (
+    output !== null &&
+    typeof output === "object" &&
+    (output as { status?: unknown }).status === "awaiting_answer"
+  );
+}
+
+/** The model-visible text for an `ask_user` tool-result output (TAG-5
+ *  split-turn). The stored payload is STRUCTURED state for the UI
+ *  (`{ status: "awaiting_answer" | "answered" | "skipped", … }`); the model
+ *  reads plain prose instead of marker JSON: an answer → the user's text
+ *  verbatim; a skip → "(skipped)"; a still-awaiting marker (the user never
+ *  answered — they moved on and sent a normal message instead) → the
+ *  self-heal literal, so the model never sees a dangling promise. Prompt-side
+ *  only: the stored row is never mutated by this rendering. */
+function renderAskOutputText(output: unknown): string {
+  if (output !== null && typeof output === "object" && "status" in output) {
+    const status = (output as { status: unknown }).status;
+    if (status === "awaiting_answer") {
+      return "(the user did not answer this question; they moved on)";
+    }
+    if (status === "skipped") return "(skipped)";
+    if (status === "answered") {
+      const answer = (output as { answer?: unknown }).answer;
+      if (typeof answer === "string" && answer.length > 0) return answer;
+    }
+  }
+  return JSON.stringify(output);
+}
+
+/** Is this stored message row an awaiting `ask_user` tool-result? (TAG-5 —
+ *  the answer-mode precondition; parsed defensively, never throws.) */
+function isAwaitingAskRow(m: ExperienceCopilotMessage): boolean {
+  try {
+    const parsed = JSON.parse(m.content) as PersistedToolResult;
+    return parsed.toolName === "ask_user" && isAwaitingAskOutput(parsed.output);
+  } catch {
+    return false;
+  }
+}
 
 /** Convert stored copilot messages (ER-3) into the history shape ER-5 expects.
  *  Round-trips the {@link storeHistoryToSdk} serialization: assistant rows carry
@@ -187,6 +250,10 @@ export function storeMessagesToHistory(
         const parsed = JSON.parse(m.content) as PersistedToolResult;
         toolName = parsed.toolName ?? "";
         outputText = JSON.stringify(parsed.output);
+        // TAG-5: an ask_user result carries the CONVERSATION, not telemetry —
+        // the model reads plain prose (the answer / a skip / the self-heal
+        // literal for a never-answered ask), never the marker JSON.
+        if (toolName === "ask_user") outputText = renderAskOutputText(parsed.output);
       } catch {
         // Invalid JSON — use the raw content as the output text.
       }
@@ -324,18 +391,6 @@ export async function* streamExperienceCopilot(
     loadCopilotContext(thread.scriptId, deps),
   ]);
 
-  // ── Pre-split at the digest boundary (CM-5) ──────────────────────────────
-  // A digest REPLACES older messages in the MODEL window only. Before assembly,
-  // resolve the boundary: the LAST digest is re-placed at the front (so the
-  // assembler's CM-3 lifting renders it as a system section) and every message
-  // strictly before its anchor is dropped. Zero-digest threads pass through
-  // unchanged (byte-identical assembly preserved).
-  const boundary = resolveDigestBoundary(priorMessages);
-  const priorHistory: ExperienceCopilotHistoryMessage[] = [
-    ...(boundary.lastDigest ? storeMessagesToHistory([boundary.lastDigest]) : []),
-    ...storeMessagesToHistory(boundary.kept),
-  ];
-
   // ── 3. Resolve provider + model ──
   const profile = await deps.getProviderProfile(request.providerProfileId);
   if (!profile) {
@@ -344,11 +399,57 @@ export async function* streamExperienceCopilot(
   const modelName = request.model ?? profile.defaultModel ?? "gpt-4o-mini";
   const effectiveProfile = await deps.getEffectiveProviderProfile(request.providerProfileId, modelName);
 
-  // ── 4. Append the user's message (persist now so it survives a crash) ──
-  await deps.store.appendMessage(request.threadId, {
-    role: "user",
-    content: request.content,
-  });
+  // ── 4. Persist this turn's input ──
+  // Content mode: append the user's message row NOW so it survives a crash.
+  // Answer mode (TAG-5 split-turn, style B): NO user row — the answer replaces
+  // the awaiting marker of the referenced ask_user tool-result row, and the
+  // turn resumes as a continuation of the question turn. The rewrite is
+  // validated first (the row must be an awaiting ask in THIS thread) so a
+  // stale or foreign toolCallId can never overwrite another tool's result.
+  if (request.answer) {
+    const answer = request.answer;
+    const target = priorMessages.find(
+      (m) => m.role === "tool" && m.toolCallId === answer.toolCallId,
+    );
+    if (!target || !isAwaitingAskRow(target)) {
+      throw validation(
+        "The question being answered was not found (or is no longer awaiting) in this thread.",
+      );
+    }
+    const answerPayload: PersistedToolResult = {
+      toolName: "ask_user",
+      output: answer.skipped
+        ? { status: "skipped" }
+        : { status: "answered", answer: answer.text ?? "" },
+    };
+    await deps.store.setToolResultOutput(request.threadId, answer.toolCallId, answerPayload);
+    // Rewrite the in-memory copy so THIS turn's assembly sees the answered
+    // state without a re-fetch (the store row is the durable copy).
+    target.content = JSON.stringify(answerPayload);
+  } else if (request.content) {
+    await deps.store.appendMessage(request.threadId, {
+      role: "user",
+      content: request.content,
+    });
+  } else {
+    // The wire schema enforces exactly-one-of content/answer; this guards
+    // direct domain callers (tests, future internal callers).
+    throw validation("A copilot turn requires either `content` or `answer`.");
+  }
+
+  // ── Pre-split at the digest boundary (CM-5) ──────────────────────────────
+  // A digest REPLACES older messages in the MODEL window only. Before assembly,
+  // resolve the boundary: the LAST digest is re-placed at the front (so the
+  // assembler's CM-3 lifting renders it as a system section) and every message
+  // strictly before its anchor is dropped. Zero-digest threads pass through
+  // unchanged (byte-identical assembly preserved). Computed AFTER the input
+  // branch (TAG-5): an answered ask row must already carry its answer here, so
+  // the model window ends on the answered tool-result, never the marker.
+  const boundary = resolveDigestBoundary(priorMessages);
+  const priorHistory: ExperienceCopilotHistoryMessage[] = [
+    ...(boundary.lastDigest ? storeMessagesToHistory([boundary.lastDigest]) : []),
+    ...storeMessagesToHistory(boundary.kept),
+  ];
 
   // ── 5. Resolve the copilot profile (base prompt + skills + tools + budget) ──
   // Defaults to the built-in seed (CP-4) — zero behavior change for an
@@ -358,12 +459,13 @@ export async function* streamExperienceCopilot(
     : await resolveBuiltinCopilotProfile();
 
   // ── 6. Assemble the prompt (ER-5) ──
-  // The new user message is appended to the prior history for assembly; it was
-  // NOT in priorHistory (which is the pre-turn stored set).
-  const history: ExperienceCopilotHistoryMessage[] = [
-    ...priorHistory,
-    { role: "user", content: request.content },
-  ];
+  // Content mode: the new user message is appended to the prior history for
+  // assembly; it was NOT in priorHistory (which is the pre-turn stored set).
+  // Answer mode (TAG-5): NO user message is pushed — the history already ends
+  // with the answered ask tool-result, which IS the turn's input.
+  const history: ExperienceCopilotHistoryMessage[] = request.content
+    ? [...priorHistory, { role: "user", content: request.content }]
+    : priorHistory;
   const step: ExperienceCopilotStep = request.step ?? "rules";
   // Prefer the LIVE draft buffers the editor sent (unsaved in-progress edits)
   // over the last-persisted buffers loaded from the DB — the copilot must see
@@ -399,6 +501,7 @@ export async function* streamExperienceCopilot(
     contextBudget: COPILOT_CONTEXT_BUDGET_TOKENS,
     responseReserve: COPILOT_RESPONSE_RESERVE_TOKENS,
     profile: copilotProfile,
+    todo: thread.todo,
     ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
     ...(attachedContextBlock ? { attachedContextBlock } : {}),
   });
@@ -420,12 +523,17 @@ export async function* streamExperienceCopilot(
     ...(visual !== undefined ? { visual } : {}),
     toolSet: copilotProfile.toolSet,
     skillRoots: assembled.skillRoots,
+    // TAG-6: the todo tool's full-list rewrite persists onto the thread row via
+    // the ER-3 store (session-scoped lifetime — survives turns, reloads, and
+    // compaction via the prompt section above). The tool's dep signature is
+    // `(items: readonly CopilotTodoItem[]) => Promise<void>`; the store's
+    // `updateTodo(threadId, items)` is its structural twin.
+    saveTodo: (items) => deps.store.updateTodo(request.threadId, items),
   });
 
   // ── 8. Resolve the model + start streaming ──
   const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
   const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
-  const maxSteps = deps.maxSteps ?? copilotProfile.maxSteps;
 
   const modelMessages = toModelMessages(assembled.messages);
 
@@ -438,7 +546,17 @@ export async function* streamExperienceCopilot(
       allowSystemInMessages: true,
       abortSignal: signal,
       tools,
-      stopWhen: isStepCount(maxSteps),
+      // TAG-5 split-turn (style B): a question turn ENDS on the ask_user call.
+      // The SDK ships the exact primitive — `hasToolCall(name)` stops the loop
+      // when the most recent step contains a tool call with that name (verified
+      // against the installed ai@7.0.66: `stopWhen` is
+      // `Arrayable<StopCondition>`, and hasToolCall inspects
+      // `steps[len-1].toolCalls[].toolName`). The tool still EXECUTES — its
+      // awaiting marker streams to the client and persists via persistTurn —
+      // then the loop halts and the turn finishes normally (a finish event,
+      // never an error). The user's answer arrives later as a NEW stream
+      // request in `answer` mode, which rewrites the marker row (step 4).
+      stopWhen: [isStepCount(COPILOT_TOOL_LOOP_CEILING), hasToolCall("ask_user")],
     });
   } catch (err) {
     // Setup error (streamText() failed before iteration began).

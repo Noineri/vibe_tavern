@@ -84,7 +84,7 @@ Your document runs inside an iframe with `sandbox="allow-scripts"` and WITHOUT `
 # Handling every view phase
 A robust visual renders all of these gracefully (the package's preview fixtures exercise them):
 - **setup / ordinary** — the normal interactive turn: render `view.state`, offer `view.actions` as buttons (or inputs for `allowsText` actions).
-- **pending** — an action is in flight (`onPending` fires with `typing`/`effect`): show a working indicator and avoid double-submitting.
+- **pending** — an action is in flight (`onPending` fires with `typing`/`effect`): show a working indicator and avoid double-submitting. A live game timer never arrives as pending — during a timer wait the player is still expected to act; keep controls interactive.
 - **error** — `onError` fires: surface the message, keep the last good state visible, let the user retry.
 - **completed** — `view.status === "completed"`: show a terminal state and stop offering actions.
 

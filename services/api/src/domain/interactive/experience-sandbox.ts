@@ -55,12 +55,16 @@ export const EXPERIENCE_MANDATORY_METHODS = [
 ] as const;
 
 /**
- * The two optional methods. `choose` drives a script-controlled seat's turn
+ * The optional methods. `choose` drives a script-controlled seat's turn
  * (returns one of the legal actions); `flavor` produces cosmetic display data
- * at projection time. Both receive an EPHEMERAL `context.chance` (non-recorded
- * randomness) rather than the deterministic cursor — see the kernel doc.
+ * at projection time; `update` advances a realtime round by one fixed
+ * timestep (REALTIME_EXPERIENCE_MODE_PLAN RM-2). `choose` and `flavor` receive
+ * an EPHEMERAL `context.chance` (non-recorded randomness) rather than the
+ * deterministic cursor — see the kernel doc. `update` receives NO `chance`: a
+ * tick must replay deterministically (the round-commit replay re-runs it),
+ * so it draws from the deterministic cursor exactly like `reduce`.
  */
-export const EXPERIENCE_OPTIONAL_METHODS = ["choose", "flavor"] as const;
+export const EXPERIENCE_OPTIONAL_METHODS = ["choose", "flavor", "update"] as const;
 
 export type ExperienceMandatoryMethod = (typeof EXPERIENCE_MANDATORY_METHODS)[number];
 export type ExperienceOptionalMethod = (typeof EXPERIENCE_OPTIONAL_METHODS)[number];
@@ -108,6 +112,8 @@ export interface RawExperienceRegistration {
 	choose?: unknown;
 	/** Optional display-time cosmetic projection (may use ephemeral chance). */
 	flavor?: unknown;
+	/** Optional realtime tick (advances a fixed-timestep round by dt ms). */
+	update?: unknown;
 	/** Optional package-authored setup-field descriptor (IR-70F); the kernel
 	 *  schema-validates it as `experienceSetupDefinitionSchema`. */
 	setup?: unknown;
@@ -127,6 +133,8 @@ export interface ExperienceDiscoverySuccess {
 	readonly hasChoose: boolean;
 	/** Whether the optional `flavor` method is present as a function. */
 	readonly hasFlavor: boolean;
+	/** Whether the optional `update` method is present as a function. */
+	readonly hasUpdate: boolean;
 	/** Raw optional setup descriptor (the kernel schema-validates it, IR-70F). */
 	readonly setup: unknown;
 	/** SHA-256 of the source body — the snapshot-isolation hash for the session. */
@@ -278,6 +286,7 @@ export function discoverExperience(
 		capabilities: def?.capabilities,
 		hasChoose: def?.choose !== undefined && typeof def.choose === "function",
 		hasFlavor: def?.flavor !== undefined && typeof def.flavor === "function",
+		hasUpdate: def?.update !== undefined && typeof def.update === "function",
 		setup: def?.setup,
 		sourceHash: hashSource(code),
 		console: consoleBuffer,

@@ -549,4 +549,74 @@ describe("ExperienceContextService — context source (report item 6)", () => {
 		expect(row.compactSummaryJson).toBeTruthy();
 		expect(row.sourceChatId).toBe(source.chatId);
 	});
+
+	// ─── Wave 3 (PS-3): persona source — the user-identity override ────────────
+
+	test("persona source: config-pinned persona replaces the host identity; history/character ambient", async () => {
+		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." } as never);
+		const { chatId: hostChatId, sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		await resources.updateConfig(hostChatId, { contextSourcePersonaId: chosen.id });
+		const row = await makeContextService().captureContext({ sessionId });
+		// History and character stay ambient; only the identity swaps.
+		expect(parseVariants(row.variantsJson).messages.map((m) => m.content)).toEqual(["msg-0", "msg-1", "msg-2", "msg-3"]);
+		const character = row.characterSnapshotJson ? JSON.parse(row.characterSnapshotJson) : null;
+		expect(character?.name).toBe("Aria");
+		const persona = row.personaSnapshotJson ? JSON.parse(row.personaSnapshotJson) : null;
+		expect(persona?.name).toBe("Vera");
+		expect(persona?.description).toBe("Detective.");
+		expect(row.sourcePersonaId).toBe(chosen.id);
+		expect(row.sourceChatId).toBeNull();
+		expect(row.sourceCharacterId).toBeNull();
+	});
+
+	test("explicit persona capture override beats the config column; explicit null clears to ambient", async () => {
+		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." } as never);
+		const other = await stores.personas.create({ name: "Kat", description: "Pilot." } as never);
+		const { chatId: hostChatId, sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		await resources.updateConfig(hostChatId, { contextSourcePersonaId: chosen.id });
+		const overridden = await makeContextService().captureContext({ sessionId, contextSourcePersonaId: other.id });
+		expect(JSON.parse(overridden.personaSnapshotJson!).name).toBe("Kat");
+		expect(overridden.sourcePersonaId).toBe(other.id);
+
+		// Explicit null clears the config persona → ambient host identity (Olya,
+		// the default-for-new-chats persona).
+		const cleared = await makeContextService().captureContext({ sessionId, contextSourcePersonaId: null });
+		expect(JSON.parse(cleared.personaSnapshotJson!).name).toBe("Olya");
+		expect(cleared.sourcePersonaId).toBeNull();
+	});
+
+	test("persona source is independent of the chat/character source (both apply)", async () => {
+		const source = await seedSourceChat();
+		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." } as never);
+		const { sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		const row = await makeContextService().captureContext({
+			sessionId,
+			contextSourceChatId: source.chatId,
+			contextSourcePersonaId: chosen.id,
+		});
+		// Source-chat history + its character, chosen persona identity.
+		expect(parseVariants(row.variantsJson).messages.map((m) => m.content)).toEqual(["src-0", "src-1", "src-2"]);
+		expect(JSON.parse(row.characterSnapshotJson!).name).toBe("Mila");
+		expect(JSON.parse(row.personaSnapshotJson!).name).toBe("Vera");
+		expect(row.sourceChatId).toBe(source.chatId);
+		expect(row.sourceCharacterId).toBe(source.characterId);
+		expect(row.sourcePersonaId).toBe(chosen.id);
+	});
+
+	test("dangling explicit persona: NotFound, previous bundle intact", async () => {
+		const { sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
+		const svc = makeContextService();
+		const first = await svc.captureContext({ sessionId });
+		let caught: unknown;
+		try {
+			await svc.captureContext({ sessionId, contextSourcePersonaId: "no-such-persona" });
+		} catch (e) {
+			caught = e;
+		}
+		expect(caught).toBeInstanceOf(DomainError);
+		expect((caught as DomainError).kind).toBe("NotFound");
+		const after = await stores.experiences.getContextBundle(sessionId);
+		expect(after?.sourcePersonaId).toBe(first.sourcePersonaId);
+		expect(after?.messageFrontierPosition).toBe(first.messageFrontierPosition);
+	});
 });

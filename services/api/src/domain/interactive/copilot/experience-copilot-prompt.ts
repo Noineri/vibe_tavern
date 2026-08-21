@@ -25,22 +25,23 @@
  * DSL (`interactive-rules.md`, `context.experience.register({...})`) and the
  * host↔visual bridge (`interactive-visual.md`, the `VibeExperience` SDK).
  *
- * History compaction: `HISTORY_LIMIT = 20` caps the recent window (tool-pair-
- * safe via {@link findSafeCompactionBoundary}); {@link planHistoryCompaction}
- * then budget-trims within that window, preserving tool-call/tool-result pairs
- * (the prompt-pipeline compaction invariant — never split a tool call from its
- * result).
+ * History compaction: budget-only ({@link planHistoryCompaction} with the
+ * copilot's fixed 300k budget — copilot-limits.ts), preserving tool-call/
+ * tool-result pairs (the prompt-pipeline compaction invariant — never split a
+ * tool call from its result). A count-based window cap once lived here too;
+ * it silently dropped affordable context and was removed (2026-08-19) — the
+ * live path always passes a positive constant budget, so the cap guarded
+ * nothing.
  */
 
 import { dirname } from "node:path";
 import {
   estimateTokens,
-  findSafeCompactionBoundary,
   planHistoryCompaction,
   setModelHint,
 } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
-import type { CopilotProfile } from "@vibe-tavern/api-contracts";
+import type { CopilotProfile, CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import { runExperienceTest } from "../experience-tester.js";
 import type {
@@ -52,9 +53,6 @@ import {
   resolveExperienceCopilotSkillCatalog,
   renderExperienceCopilotSkillCatalog,
 } from "./experience-copilot-module.js";
-
-/** How many of the most recent history messages to include before budget trimming. */
-const HISTORY_LIMIT = 20;
 
 /** CX-3: the recency anchor — a SHORT user-role reminder injected immediately
  *  after the attached-context block, before the final user message. Kills the
@@ -108,11 +106,13 @@ const RU_UI_LABELS_BLOCK = `# UI labels — Russian ↔ English
 The user writes in Russian. When naming a UI element in chat, use the label the user sees — Russian when their UI is Russian (or the exact label they quoted). Mapping (Russian = English):
 
 - Steps: «Правила» = Rules · «Внешний вид» = Appearance · «Попробовать» = Try it
-- Tester: «Проверить и создать» = Discover & create
-- Playground (the inline Try-it tab): «Играть» = Play · «Сброс» = Reset · «Перезапустить (настройки те же)» = Restart (same settings) · «Отправить результат ассистенту» = Send result to assistant
+- Rules check (Rules toolbar): «Проверить правила» = Validate rules
+- Try-it → «Диагностика разработчика» (collapsed by default): «Проверить и создать» = Discover & create · «Автоходы скриптовых мест» = Auto-advance script seats · «Отправить результат помощнику» = Send result to assistant
+- Playground (the inline Try-it tab): «Играть» = Play · «Сброс» = Reset · «Перезапустить (настройки те же)» = Restart (same settings) · «Отправить диагностику помощнику» = Send diagnostics to assistant
 - Sessions: «Сессия N» = Session N · «Новая сессия» = New session · «В архиве» = Archived · «Переименовать сессию» = Rename session
 - Diff review: «Принять» = Accept · «Принять все» = Accept all
-- Saving: «Сохранить» = Save (rules) · «Сохранить представление» = Save visual`;
+- Saving: «Сохранить» = Save (rules) · «Сохранить представление» = Save visual
+- Live run (in chat): «Мини-приложение» = Mini-app · «Начать» = Start`;
 
 // ─── Digest boundary (CM-5) ──────────────────────────────────────────────────
 //
@@ -269,9 +269,15 @@ export interface ExperienceCopilotAssembleInput {
    *  Injected as TWO transient user-role messages — the block itself, then the
    *  recency anchor — immediately before the final user message. Omitted/empty
    *  → byte-identical assembly to the pre-CX-3 shape (pinned by test). Never
-   *  persisted and never windowed: it is injected AFTER compaction, at the
+   *  persisted and never compacted: it is injected AFTER compaction, at the
    *  bottom of the prompt (recency), where the model weighs it most. */
   readonly attachedContextBlock?: string;
+  /** The model's step-plan for this thread (TAG-6): `[]` when none. Rendered as
+   *  a system-message context section ONLY when non-empty (byte-identical
+   *  assembly otherwise). Injected into the SYSTEM message (counts toward
+   *  systemTokens), so it survives history compaction — the plan is the
+   *  session's durable working state, not a history message. */
+  readonly todo?: readonly CopilotTodoItem[];
 }
 
 /** One message in the final assembled prompt (system + compacted history). */
@@ -297,7 +303,7 @@ export interface ExperienceCopilotAssembleResult {
     readonly attached: number;
     readonly total: number;
   };
-  /** Compaction summary when history was windowed or budget-trimmed; undefined
+  /** Compaction summary when history was budget-trimmed; undefined
    *  when no history was dropped. */
   readonly compactionSummary?: string;
   /** Skill roots derived from the resolved skill catalog (ER-16) — the stream
@@ -400,6 +406,20 @@ function renderContextPackage(
   return sections.join("\n");
 }
 
+/** Render the model's step-plan as a context section (TAG-6). OMITTED ENTIRELY
+ *  when empty — the zero-todo assembly stays byte-identical to the pre-TAG-6
+ *  shape (pinned by test). The preamble tells the model this is ITS OWN plan
+ *  from earlier in the session and to keep it current via the `todo` tool
+ *  (full-list rewrite). Statuses render as `[status] title` lines so the model
+ *  reads each item's state at a glance (mirrors the panel's visual language). */
+function renderTodoSection(todo: readonly CopilotTodoItem[]): string {
+  if (todo.length === 0) return "";
+  return [
+    "# Current step plan (your own todo from earlier in this session — keep it current via the `todo` tool)",
+    ...todo.map((item) => `[${item.status}] ${item.title}`),
+  ].join("\n");
+}
+
 /** Render the compaction digest as a system-level JSON context section (CM-3).
  *  Mirrors the Co-Author compaction pattern: a compact `{"digest": "..."}`
  *  block the model reads as a single fact — the digest is a summary, NOT a
@@ -442,10 +462,8 @@ export function estimateHistoryTokens(messages: ReadonlyArray<ExperienceCopilotF
  * message + compacted history ready for the AI SDK `streamText`/`generateText`,
  * plus the skill roots the stream forwards to the tool builder.
  *
- * Compaction has two layers: (1) the history is windowed to the last
- * {@link HISTORY_LIMIT} messages (tool-pair-safe via
- * {@link findSafeCompactionBoundary}); (2) {@link planHistoryCompaction} then
- * budget-trims within that window, preserving tool-call/tool-result pairs.
+ * Compaction is budget-only: {@link planHistoryCompaction} trims the history
+ * to the context budget, preserving tool-call/tool-result pairs.
  */
 export async function assembleExperienceCopilotPrompt(
   input: ExperienceCopilotAssembleInput,
@@ -495,6 +513,7 @@ export async function assembleExperienceCopilotPrompt(
     input.testFeedback ?? null,
     input.step,
   );
+  const todoSection = renderTodoSection(input.todo ?? []);
 
   // ── Lift digest messages out of the history flow (CM-3) ───────────────────
   // A `digest` message is a compaction summary, not a chat turn. The LAST digest
@@ -519,6 +538,12 @@ export async function assembleExperienceCopilotPrompt(
     headSections.push("", skillCatalogBlock);
   }
   headSections.push("", contextPackage);
+  // TAG-6: the model's step-plan rides as a head section (after the context
+  // package, before the RU-label map) — omitted entirely when empty so the
+  // zero-todo system message stays byte-identical to the pre-TAG-6 shape.
+  if (todoSection) {
+    headSections.push("", todoSection);
+  }
   // RU-voice label map (see the Russian-voice section above): appended ONLY
   // when the user's own history carries Cyrillic, so an English thread stays
   // byte-identical to the pre-feature assembly (the CM-3 pin covers exactly
@@ -559,42 +584,27 @@ export async function assembleExperienceCopilotPrompt(
     ? estimateTokens(input.attachedContextBlock) + estimateTokens(COPILOT_RECENCY_ANCHOR_TEXT)
     : 0;
 
-  // ── Window to HISTORY_LIMIT (tool-pair-safe) ───────────────────────────────
+  // ── Budget-based compaction (the only windowing - tool-pair-safe) ────────────────
   const fullHistory = [...historyFlow];
-  const windowedFrom = fullHistory.length > HISTORY_LIMIT
-    ? findSafeCompactionBoundary(fullHistory, HISTORY_LIMIT)
-    : 0;
-  const windowed = fullHistory.slice(windowedFrom);
-
-  // ── Budget-based compaction within the window ──────────────────────────────
   const nonHistoryTokens = systemTokens + digestTokens + attachedTokens;
   const plan = planHistoryCompaction({
-    messages: windowed,
+    messages: fullHistory,
     nonHistoryTokens,
     contextBudget: input.contextBudget,
     responseReserve: input.responseReserve,
     countHistoryTokens: estimateHistoryTokens,
   });
-  const recentMessages = plan ? plan.messages : windowed;
+  const recentMessages = plan ? plan.messages : fullHistory;
 
   const recentHistoryTokens = estimateHistoryTokens(recentMessages);
   const totalTokenEstimate = systemTokens + digestTokens + attachedTokens + recentHistoryTokens;
 
   // ── Compaction summary ─────────────────────────────────────────────────────
   let compactionSummary: string | undefined;
-  if (windowedFrom > 0 || plan) {
-    const parts: string[] = [];
-    if (windowedFrom > 0) {
-      parts.push(
-        `windowed from ${fullHistory.length} to ${windowed.length} (HISTORY_LIMIT=${HISTORY_LIMIT})`,
-      );
-    }
-    if (plan) {
-      parts.push(
-        `budget-trimmed to ${recentMessages.length} (~${plan.preservedHistoryTokens} tokens, budget=${input.contextBudget}, reserve=${plan.responseReserve})`,
-      );
-    }
-    compactionSummary = `Kept ${recentMessages.length} of ${fullHistory.length} recent messages (${parts.join("; ")}).`;
+  if (plan) {
+    compactionSummary =
+      `Kept ${recentMessages.length} of ${fullHistory.length} recent messages ` +
+      `(budget-trimmed to ~${plan.preservedHistoryTokens} tokens, budget=${input.contextBudget}, reserve=${plan.responseReserve}).`;
   }
 
   // ── Final messages (system + compacted history) ────────────────────────────

@@ -43,13 +43,17 @@ import { useT } from "../../i18n/context.js";
 import {
   ExperienceFrame,
   type ExperienceFrameHandle,
+  type ExperienceModelSeatRequest,
+  type ExperienceRoundCommitClaim,
 } from "./ExperienceFrame.js";
 import type { BridgeResize } from "../../lib/experience-bridge.js";
+import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
 import type { ExperienceSessionStatus } from "@vibe-tavern/domain";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
 import type { ExperienceActionResponse } from "../../api/types.js";
 import type { ExperienceApiError } from "../../api/experience-api.js";
+import { visualPendingFromPhase } from "../../lib/experience-pending.js";
 
 /** The projected-view type the frame/host pushes (mirrors ExperienceFrame). */
 type ProjectedView = Parameters<ExperienceFrameHandle["sendState"]>[0];
@@ -92,6 +96,63 @@ export function experienceActionOutcome(
   };
 }
 
+/**
+ * The model-seam contract for realtime rounds (RM-6; the real server endpoint
+ * lands in wave 4 — until then the launcher injects a stub). Resolves to the
+ * model's reply data (sent back into the round via sendModelResult), or null
+ * to leave the round without a reply.
+ */
+export type ExperienceModelSeam = (req: ExperienceModelSeatRequest) => Promise<unknown | null>;
+
+/**
+ * The trusted "round finished" panel (RM-6), shared by the modal and the
+ * detached window so both surfaces render the identical terminal card. It is
+ * trusted chrome: the sandboxed visual cannot forge it, and the round's loop
+ * is already dead when it shows.
+ */
+export function ExperienceRoundFinishedPanel(props: {
+  readonly claim: ExperienceRoundCommitClaim;
+  readonly onClose: () => void;
+  readonly testId: string;
+}): ReactNode {
+  const { t } = useT();
+  const { claim } = props;
+  return (
+    <div
+      className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 p-4"
+      data-testid={props.testId}
+    >
+      <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-900 p-4 shadow-lg">
+        <p className="mb-2 text-sm font-medium text-neutral-100" data-testid={`${props.testId}-status`}>
+          {claim.status === "interrupted"
+            ? t("experience_round_interrupted")
+            : t("experience_round_finished")}
+        </p>
+        {claim.score !== undefined && (
+          <p className="mb-1 text-sm text-neutral-200" data-testid={`${props.testId}-score`}>
+            {t("experience_round_score")}: {claim.score}
+          </p>
+        )}
+        {claim.summary !== undefined && (
+          <p className="mb-4 text-sm text-neutral-300" data-testid={`${props.testId}-summary`}>
+            {claim.summary}
+          </p>
+        )}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+            onClick={props.onClose}
+            data-testid={`${props.testId}-close`}
+          >
+            {t("experience_close")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export interface ExperienceModalProps {
   /** Controls modal visibility. */
   readonly open: boolean;
@@ -115,12 +176,31 @@ export interface ExperienceModalProps {
    * calls this. The visual's bridge `finish` request is forwarded here too.
    */
   readonly onFinishExperience?: () => void;
+  /** Privileged QUIET end (pos 2 quiet close): ends the session WITHOUT any
+   *  public report card. Shown as a secondary option inside the same finish
+   *  confirmation overlay (trusted chrome, NOT the frame). When both finish &
+   *  quiet are provided the overlay offers «Завершить» (with report) and
+   *  «Завершить без отчёта» (quiet). */
+  readonly onEndSessionQuiet?: () => void;
+  /** Privileged in-session settings entry (lobby Б4). When provided, a
+   *  Settings button is shown in the chrome; clicking it opens a system
+   *  confirmation that lives OUTSIDE the sandboxed frame (same trust rule as
+   *  finish — a compromised visual must not be able to trigger a privileged
+   *  restart-with-new-settings without a trusted prompt) and only then calls
+   *  this. Rendered only for ACTIVE matches by the parent. */
+  readonly onOpenSessionSettings?: () => void;
   /** Trusted report-control surface rendered in a stable footer OUTSIDE the
    *  sandboxed frame (IR-73C). The parent (launcher) builds the element from
    *  server-authoritative store selectors and supplies it here so the controls
    *  are reachable while playing. Omit when the modal is closed (the launcher
    *  renders the same controls in its popover/sheet instead — never both). */
   readonly reportControls?: ReactNode;
+  /** Trusted-chrome effect-diagnostics surface rendered in a stable block
+   *  OUTSIDE the sandboxed frame (lobby effect diagnostics + retry). The
+   *  parent (launcher) builds the element from server-authoritative effect
+   *  rows and the store retry action; the component itself renders nothing
+   *  when no row is retryable. Omitted while the modal is closed. */
+  readonly effectDiagnostics?: ReactNode;
   // ── ExperienceFrame pass-through ──────────────────────────────────────────
   readonly visualSource: string;
   readonly sessionId: string;
@@ -143,6 +223,21 @@ export interface ExperienceModalProps {
   readonly onAction: (action: ExperienceActionDto) => Promise<ExperienceActionOutcome>;
   readonly onResize?: (size: BridgeResize) => void;
   readonly onError?: (reason: string) => void;
+  // ── Realtime round plumb (RM-6) ────────────────────────────────────────────
+  /** Realtime round configuration — passed through to the frame (RM-4 doc). */
+  readonly realtime?: { readonly config: ExperienceLoopConfig };
+  /**
+   * The model seam for realtime model seats (stub prop until the wave-4
+   * endpoint lands). Absent seam → the request is surfaced via onError and
+   * nothing is sent back into the round (the round lives).
+   */
+  readonly onModelRequest?: ExperienceModelSeam;
+  /**
+   * Fired exactly once when the frame loop commits a round. The modal itself
+   * renders the trusted round-finished panel; the parent (launcher) owns the
+   * real commit flow (later unit).
+   */
+  readonly onRoundCommit?: (claim: ExperienceRoundCommitClaim) => void;
 }
 
 export function ExperienceModal(props: ExperienceModalProps) {
@@ -154,7 +249,10 @@ export function ExperienceModal(props: ExperienceModalProps) {
     pendingPhase,
     onDetach,
     onFinishExperience,
+    onEndSessionQuiet,
+    onOpenSessionSettings,
     reportControls,
+    effectDiagnostics,
     visualSource,
     sessionId,
     initialRevision,
@@ -164,9 +262,13 @@ export function ExperienceModal(props: ExperienceModalProps) {
     onAction,
     onResize,
     onError,
+    realtime,
+    onModelRequest,
+    onRoundCommit,
   } = props;
   const { t } = useT();
   const [confirmingFinish, setConfirmingFinish] = useState(false);
+  const [confirmingSettings, setConfirmingSettings] = useState(false);
   const [frameReady, setFrameReady] = useState(false);
   const frameRef = useRef<ExperienceFrameHandle>(null);
   /** Last revision pushed to the ready frame (prevents a redundant re-push of
@@ -176,13 +278,22 @@ export function ExperienceModal(props: ExperienceModalProps) {
   // Latest-prop ref so the stable frame callbacks (captured once per session by
   // the session-scoped bridge) always delegate to the current parent callbacks
   // — a changing onAction/onReady identity does NOT strand the bridge.
-  const cbRef = useRef({ onReady, onAction, onResize, onFinishExperience, onError });
-  cbRef.current = { onReady, onAction, onResize, onFinishExperience, onError };
+  const cbRef = useRef({ onReady, onAction, onResize, onFinishExperience, onError, onModelRequest, onRoundCommit });
+  cbRef.current = { onReady, onAction, onResize, onFinishExperience, onError, onModelRequest, onRoundCommit };
 
-  // Reset the finish-confirmation step whenever the modal closes so a reopen
+  /** The finalized realtime round claim (RM-6); set once, reset on a genuine
+   *  session change (a new session is a new round). While set, the modal shows
+   *  the trusted finished panel and stops pushing state/pending to the dead loop. */
+  const [roundFinished, setRoundFinished] = useState<ExperienceRoundCommitClaim | null>(null);
+  const roundFinishedRef = useRef(false);
+
+  // Reset the confirmation steps whenever the modal closes so a reopen
   // does not inherit a stale "are you sure?" state.
   useEffect(() => {
-    if (!open) setConfirmingFinish(false);
+    if (!open) {
+      setConfirmingFinish(false);
+      setConfirmingSettings(false);
+    }
   }, [open]);
 
   // Reset the ready/push-tracking state on a session change so a fresh
@@ -190,6 +301,8 @@ export function ExperienceModal(props: ExperienceModalProps) {
   useEffect(() => {
     setFrameReady(false);
     lastPushedRevision.current = null;
+    roundFinishedRef.current = false;
+    setRoundFinished(null);
   }, [sessionId]);
 
   /** Stable frame ready handler: marks the frame ready, then forwards. */
@@ -254,28 +367,78 @@ export function ExperienceModal(props: ExperienceModalProps) {
     cbRef.current.onError?.(reason);
   }, []);
 
+  /**
+   * Realtime (RM-6): forward a model seat's request to the injected seam and
+   * deliver the reply back into the round. Fail-closed in BOTH directions:
+   * an absent/empty/failed seam sends NOTHING into the frame (the round
+   * lives; the loop simply never gets that reply) and reports via onError;
+   * raw exception text never reaches the visual.
+   */
+  const handleModelRequest = useCallback((req: ExperienceModelSeatRequest) => {
+    const seam = cbRef.current.onModelRequest;
+    if (!seam) {
+      cbRef.current.onError?.("model seam unavailable");
+      return;
+    }
+    void (async (): Promise<void> => {
+      try {
+        const result = await seam(req);
+        if (result !== null && result !== undefined) {
+          frameRef.current?.sendModelResult(req.seatId, result, req.requestId);
+        }
+      } catch (err) {
+        cbRef.current.onError?.(err instanceof Error ? err.message : "model seam failed");
+      }
+    })();
+  }, []);
+
+  /**
+   * Realtime (RM-6): the loop committed the round. Latched once — a duplicate
+   * commit is ignored (the round is over); the parent hook fires exactly once.
+   */
+  const handleRoundCommit = useCallback((claim: ExperienceRoundCommitClaim) => {
+    if (roundFinishedRef.current) return;
+    roundFinishedRef.current = true;
+    setRoundFinished(claim);
+    cbRef.current.onRoundCommit?.(claim);
+  }, []);
+
   // ── Push the authoritative view to the ready frame (seam #2) ──────────────
   // The frame pushes `initialView` itself on handshake; this effect covers the
   // subsequent revisions that arrive as the store projects a new view. Skipping
   // the already-pushed revision avoids a redundant re-push of the bootstrap.
   useEffect(() => {
-    if (!frameReady || !open || view === undefined) return;
+    if (!frameReady || !open || view === undefined || roundFinished !== null) return;
     if (lastPushedRevision.current === view.revision) return;
     frameRef.current?.sendState(view);
     lastPushedRevision.current = view.revision;
-  }, [frameReady, open, view]);
+  }, [frameReady, open, view, roundFinished]);
 
   // ── Push the pending phase to BOTH chrome AND the visual (seam #5) ────────
   // The chrome indicator is rendered below; this forwards the phase to the
-  // frame's `sendPending` so the visual protocol mirrors the trusted label.
+  // frame's `sendPending` so the visual protocol mirrors the trusted label —
+  // EXCEPT timer waits: a live timer is the resting state of a timer-driven
+  // experience, not host work, so it must reach the visual as `idle` (the
+  // visual's pending contract means "avoid double-submitting", which would
+  // lock the player out for the whole session). See lib/experience-pending.ts.
   useEffect(() => {
-    if (!frameReady || !open) return;
-    frameRef.current?.sendPending(pendingPhase === "timer" ? "effect" : pendingPhase ?? "idle");
-  }, [frameReady, open, pendingPhase]);
+    if (!frameReady || !open || roundFinished !== null) return;
+    frameRef.current?.sendPending(visualPendingFromPhase(pendingPhase));
+  }, [frameReady, open, pendingPhase, roundFinished]);
 
   const confirmFinish = () => {
     setConfirmingFinish(false);
     onFinishExperience?.();
+  };
+
+  const confirmQuietFinish = () => {
+    setConfirmingFinish(false);
+    onEndSessionQuiet?.();
+  };
+
+  const confirmSettings = () => {
+    setConfirmingSettings(false);
+    onOpenSessionSettings?.();
   };
 
   return (
@@ -330,6 +493,16 @@ export function ExperienceModal(props: ExperienceModalProps) {
               {t("experience_finish")}
             </button>
           )}
+          {onOpenSessionSettings && !confirmingSettings && (
+            <button
+              type="button"
+              className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+              onClick={() => setConfirmingSettings(true)}
+              data-testid="experience-session-settings"
+            >
+              {t("experience_session_settings")}
+            </button>
+          )}
           <button
             type="button"
             className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 max-md:min-h-9 max-md:min-w-9"
@@ -349,12 +522,24 @@ export function ExperienceModal(props: ExperienceModalProps) {
             sessionId={sessionId}
             initialRevision={initialRevision}
             initialView={initialView ?? view}
+            realtime={realtime}
             onReady={handleReady}
             onAction={handleAction}
             onResize={handleResize}
             onFinish={handleFrameFinishRequest}
+            onModelRequest={handleModelRequest}
+            onRoundCommit={handleRoundCommit}
             onError={handleError}
           />
+          {roundFinished !== null && (
+            // The loop is dead and the round claim is in — trusted chrome,
+            // never the visual. The parent commit flow runs separately.
+            <ExperienceRoundFinishedPanel
+              claim={roundFinished}
+              onClose={onClose}
+              testId="experience-round-finished"
+            />
+          )}
           {confirmingFinish && (
             // System confirmation lives in the MODAL chrome (trusted), outside
             // the user frame — a compromised visual cannot forge this prompt.
@@ -373,6 +558,16 @@ export function ExperienceModal(props: ExperienceModalProps) {
                   >
                     {t("experience_cancel")}
                   </button>
+                  {onEndSessionQuiet && (
+                    <button
+                      type="button"
+                      className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+                      onClick={confirmQuietFinish}
+                      data-testid="experience-finish-quiet"
+                    >
+                      {t("experience_finish_quiet")}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 max-md:min-h-9"
@@ -385,7 +580,46 @@ export function ExperienceModal(props: ExperienceModalProps) {
               </div>
             </div>
           )}
+          {confirmingSettings && (
+            // System confirmation lives in the MODAL chrome (trusted), outside
+            // the user frame — same trust rule as the finish confirm: a
+            // compromised visual cannot forge this privileged prompt.
+            <div
+              className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 p-4"
+              data-testid="experience-settings-confirm"
+            >
+              <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-900 p-4 shadow-lg">
+                <p className="mb-4 text-sm text-neutral-200">{t("experience_session_settings_confirm")}</p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 max-md:min-h-9"
+                    onClick={() => setConfirmingSettings(false)}
+                    data-testid="experience-settings-cancel"
+                  >
+                    {t("experience_cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 max-md:min-h-9"
+                    onClick={confirmSettings}
+                    data-testid="experience-settings-confirm-btn"
+                  >
+                    {t("experience_session_settings")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+        {effectDiagnostics && (
+          <div
+            className="border-t border-neutral-800 px-4 py-2"
+            data-testid="experience-effect-diagnostics-slot"
+          >
+            {effectDiagnostics}
+          </div>
+        )}
         {/* Trusted report-control footer — OUTSIDE the sandboxed frame
             (IR-73C). Rendered only when the parent supplies controls; the
             launcher omits this prop while the modal is closed so the same

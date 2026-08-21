@@ -43,6 +43,7 @@ export interface ExperienceChatConfigRow {
   contextMode: string;
   contextSourceCharacterId: string | null;
   contextSourceChatId: string | null;
+  contextSourcePersonaId: string | null;
   launcherVisible: boolean;
   createdAt: string;
   updatedAt: string;
@@ -91,6 +92,7 @@ export interface UpdateChatConfigData {
   contextMode?: string;
   contextSourceCharacterId?: string | null;
   contextSourceChatId?: string | null;
+  contextSourcePersonaId?: string | null;
   launcherVisible?: boolean;
 }
 
@@ -326,6 +328,7 @@ export class ExperienceResourceStore {
           contextMode: 'none',
           contextSourceCharacterId: null,
           contextSourceChatId: null,
+          contextSourcePersonaId: null,
           launcherVisible: true,
           createdAt: now,
           updatedAt: now,
@@ -353,6 +356,7 @@ export class ExperienceResourceStore {
     if (data.contextMode !== undefined) values.contextMode = data.contextMode;
     if (data.contextSourceCharacterId !== undefined) values.contextSourceCharacterId = data.contextSourceCharacterId;
     if (data.contextSourceChatId !== undefined) values.contextSourceChatId = data.contextSourceChatId;
+    if (data.contextSourcePersonaId !== undefined) values.contextSourcePersonaId = data.contextSourcePersonaId;
     if (data.launcherVisible !== undefined) values.launcherVisible = data.launcherVisible;
 
     const [row] = await this.db
@@ -512,6 +516,7 @@ export class ExperienceResourceStore {
       contextMode: row.contextMode,
       contextSourceCharacterId: row.contextSourceCharacterId,
       contextSourceChatId: row.contextSourceChatId,
+      contextSourcePersonaId: row.contextSourcePersonaId,
       launcherVisible: row.launcherVisible,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

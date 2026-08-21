@@ -81,9 +81,30 @@ export class ExperienceReportService {
     });
   }
 
-  async finish(sessionId: string, expectedRevision: number): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
+  /** LB-2 (lobby report): `finishDetail` overrides the public system event
+   * text of a manual finish (restart uses it to say the match was restarted
+   * rather than simply ended); omitted = the default user-ended wording.
+   *
+   * `quiet` (pending queue pos 2): end an active session WITHOUT any public
+   * artifact — no report is built, no `experience_finished` step, no terminal
+   * attachment; the db-level quiet end purges unbound queued attachments and
+   * returns null. Natural rule-completions (slot already released) are an
+   * idempotent no-op that still purges unbound rows. */
+  async finish(
+    sessionId: string,
+    expectedRevision: number,
+    opts: { finishDetail?: string; quiet?: boolean } = {},
+  ): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
     const session = await this.stores.experiences.getSessionById(sessionId);
     if (session === null) return this.sessionNotFound(sessionId);
+    if (opts.quiet) {
+      const quiet = this.stores.experiences.finishSessionQuiet(sessionId, expectedRevision);
+      if (!quiet.ok) {
+        if (quiet.conflict === 'session_not_found') return this.sessionNotFound(sessionId);
+        return this.staleRevision(expectedRevision, session.revision);
+      }
+      return ok(null);
+    }
     if (session.activeSlot === null) {
       const existing = await this.stores.experiences.getQueuedAttachmentForSession(sessionId);
       return ok(existing ? toQueuedAttachmentView(existing) : null);
@@ -95,7 +116,7 @@ export class ExperienceReportService {
     const report = this.mergeReport(session, existing, steps);
     const manualFinish = session.status === "active";
     if (manualFinish) {
-      report.events.push({ type: "experience_finished", detail: "The user decided to end the game." });
+      report.events.push({ type: "experience_finished", detail: opts.finishDetail ?? "The user decided to end the game." });
     }
     const checkpointSession = manualFinish
       ? { ...session, activeSlot: null, revision: session.revision + 1, reportFrontier: session.revision + 1, status: "interrupted" }
@@ -104,6 +125,8 @@ export class ExperienceReportService {
       sessionId,
       expectedRevision,
       this.atomicData(checkpointSession, report),
+      undefined,
+      opts.finishDetail,
     );
     if (!finished.ok) {
       if (finished.conflict === "session_not_found") return this.sessionNotFound(sessionId);

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
+import { randomUUID } from "../lib/uuid.js";
 import type {
   ExperienceActionRequest,
   ExperienceActionResponse,
@@ -9,6 +10,7 @@ import type {
   ExperienceContextStatusDto,
   ExperienceEffectRow,
   ExperienceEffectRunResponse,
+  ExperienceParticipant,
   ExperienceQueuedAttachmentResponse,
   ExperienceQueuedAttachmentView,
   ExperienceReportStatus,
@@ -26,6 +28,8 @@ import {
   getExperienceQueuedAttachment,
   getExperienceReportStatus,
   queueExperienceReport,
+  restartExperienceSession,
+  retryExperienceEffect,
   runExperienceEffect,
   startExperienceSession,
   submitExperienceAction,
@@ -65,7 +69,7 @@ import {
  * scope so an obsolete in-flight rehydrate can neither overwrite the new
  * scope nor repopulate stale data into the old one.
  *
- * Idempotency: `submitAction` mints one `crypto.randomUUID()` per in-flight
+ * Idempotency: `submitAction` mints one `randomUUID()` (secure-context-proof
  * action intent and JOINS concurrent same-intent calls onto a single in-flight
  * Promise (one HTTP call, one `requestId`); the join entry clears only when
  * the joined request settles, so a deliberate later action mints a fresh id.
@@ -134,8 +138,22 @@ export interface ExperienceActions {
    *  snapshot is returned to the caller AND retained as the scope's
    *  queuedAttachment — the post-end resync clears the now-inactive session
    *  resources but preserves the terminal attachment for send binding
-   *  (IR-73C/D). */
-  endSession: () => Promise<ExperienceQueuedAttachmentResponse>;
+   *  (IR-73C/D). When `quiet` is true the session ends WITHOUT any public
+   *  report card: the server returns null and the scope's queuedAttachment is
+   *  cleared (pos 2 quiet close — nothing experience-related binds on the next
+   *  message). Returns the (possibly null) attachment view, or null on a
+   *  server-side failure (see `lastError`/`lastApiError` after the resync). */
+  endSession: (quiet?: boolean) => Promise<ExperienceQueuedAttachmentResponse>;
+  /** Restart as a NEW match on the same branch (lobby Б3/Б4). The server
+   *  finishes the old match and the successor becomes the branch's active
+   *  session, so a plain rehydrate after success discovers it — there is NO
+   *  terminal attachment writeback here (unlike `endSession`). Omitted
+   *  `override` fields reuse the source session's frozen snapshots.
+   *  Returns the NEW session, or null on a server failure (see
+   *  `lastError`/`lastApiError` after the resync). */
+  restartSession: (
+    override?: { settings?: unknown; participants?: ExperienceParticipant[] },
+  ) => Promise<ExperienceSessionResponse | null>;
   /** Submit one action intention against the active scope's session. The
    *  store supplies `requestId` + `expectedRevision`. Concurrent same-intent
    *  calls join one in-flight request. Rejects locally (no API call) when
@@ -144,6 +162,10 @@ export interface ExperienceActions {
   submitAction: (intent: ExperienceActionIntent) => Promise<ExperienceActionResponse | null>;
   /** Run one pending model effect to a terminal state (abortable). */
   runEffect: (effectId: string, signal?: AbortSignal) => Promise<ExperienceEffectRunResponse | null>;
+  /** Explicit user retry: return a failed/cancelled/unknown effect to `pending`.
+   *  The runner picks the row back up after the resync — this never runs the
+   *  effect. Null return = server-side failure (see `lastError`/`lastApiError`). */
+  retryEffect: (effectId: string) => Promise<ExperienceEffectRow | null>;
   /** Freeze a report attachment at the current server revision. The server
    *  response replaces the queued attachment. */
   queueReport: () => Promise<ExperienceQueuedAttachmentView | null>;
@@ -605,7 +627,7 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
         }
       },
 
-      endSession: async () => {
+      endSession: async (quiet = false) => {
         const { chatId, branchId, key, activeEpoch } = requireActiveScope();
         const session = requireSession(key);
         set((s) => {
@@ -614,6 +636,7 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
         try {
           const response = await endExperienceSession(session.sessionId, {
             expectedRevision: session.revision,
+            ...(quiet ? { quiet: true } : {}),
           });
           // Resync: discovery now answers no_active_session, clearing the
           // session-owned resources (server wins). clearActiveSessionResources
@@ -625,11 +648,31 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
           // queuedAttachment so the send controller can bind it on the next
           // message. The scope-epoch guard prevents a stale Finish from
           // contaminating a scope that changed while the end was in flight.
+          // A quiet end returns null, so the writeback also clears the queue
+          // client-side (nothing experience-related binds on the next message).
           if (isActiveOperation(key, activeEpoch)) {
             set((s) => {
               scopeDraft(s, key).queuedAttachment = response;
             });
           }
+          return response;
+        } catch (err) {
+          return failMutation(chatId, branchId, key, activeEpoch, err);
+        }
+      },
+
+      restartSession: async (override) => {
+        const { chatId, branchId, key, activeEpoch } = requireActiveScope();
+        const session = requireSession(key);
+        set((s) => {
+          clearError(scopeDraft(s, key));
+        });
+        try {
+          const response = await restartExperienceSession(session.sessionId, override ?? {});
+          // The successor becomes the branch's active session server-side; a
+          // plain rehydrate discovers it. No terminal writeback (unlike
+          // endSession) — the old match's report, if any, is server-owned.
+          if (isActiveOperation(key, activeEpoch)) await get().rehydrate(chatId, branchId);
           return response;
         } catch (err) {
           return failMutation(chatId, branchId, key, activeEpoch, err);
@@ -643,7 +686,7 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
         const joinKey = `${key}\n${intentId}`;
         const existing = inFlightActionPromises.get(joinKey);
         if (existing) return existing;
-        const requestId = crypto.randomUUID();
+        const requestId = randomUUID();
         const expectedRevision = session.revision;
         set((s) => {
           const scope = scopeDraft(s, key);
@@ -680,6 +723,22 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
           const response = await runExperienceEffect(effectId, { signal });
           if (isActiveOperation(key, activeEpoch)) await get().rehydrate(chatId, branchId);
           return response;
+        } catch (err) {
+          return failMutation(chatId, branchId, key, activeEpoch, err);
+        }
+      },
+
+      retryEffect: async (effectId) => {
+        const { chatId, branchId, key, activeEpoch } = requireActiveScope();
+        set((s) => {
+          clearError(scopeDraft(s, key));
+        });
+        try {
+          const row = await retryExperienceEffect(effectId);
+          // The resync brings the pending row into `effects`; the chat-page
+          // runner (LB-10) picks it up from there — this action never runs it.
+          if (isActiveOperation(key, activeEpoch)) await get().rehydrate(chatId, branchId);
+          return row;
         } catch (err) {
           return failMutation(chatId, branchId, key, activeEpoch, err);
         }
@@ -843,6 +902,16 @@ export function useExperienceLastError(
   branchId: string | null | undefined,
 ): string | null {
   return useExperienceStore(useShallow((s) => selectScope(s, chatId, branchId).lastError));
+}
+
+/** Sync counterpart of {@link useExperienceLastError} for imperative handlers
+ *  (e.g. deciding whether a quiet end succeeded: a null store result is only
+ *  a real success when no error was recorded). */
+export function getExperienceLastError(
+  chatId: string | null | undefined,
+  branchId: string | null | undefined,
+): string | null {
+  return selectScope(useExperienceStore.getState(), chatId, branchId).lastError;
 }
 
 /** Whether the scope is currently rehydrating. */

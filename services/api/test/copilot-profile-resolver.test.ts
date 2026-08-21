@@ -60,7 +60,8 @@ describe("CopilotProfileResolver", () => {
     expect(profile.skillIds).toEqual(["experience-authoring"]);
     // Only true keys survive the strict projection (run_test: false dropped).
     expect(profile.toolSet).toEqual({ write_buffer: true });
-    expect(profile.maxSteps).toBe(12);
+    // TAG-4: maxSteps is no longer projected to the wire shape.
+    expect(profile.maxSteps).toBeUndefined();
   });
 
   test("a dangling profile id (deleted profile) → built-in seed", async () => {

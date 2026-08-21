@@ -15,9 +15,12 @@ import {
   INTERACTIVE_SCHEMA_MAX_DEPTH,
   INTERACTIVE_SCHEMA_MAX_ID,
   INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
+  INTERACTIVE_SCHEMA_MAX_PARTICIPANTS,
   INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
   INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
   INTERACTIVE_SCHEMA_MAX_STRING,
+  INTERACTIVE_SCHEMA_TICK_MS_MIN,
+  INTERACTIVE_SCHEMA_TICK_MS_MAX,
   boundedJsonValue,
   experienceActionSchema,
   experienceCapabilitySchema,
@@ -29,10 +32,12 @@ import {
   experienceEffectKindSchema,
   experienceEffectStatusSchema,
   experienceEventVisibilitySchema,
+  experienceManifestSchema,
   experienceParticipantSchema as experienceParticipantResponseSchema,
   experienceStartParticipantSchema as experienceParticipantSchema,
   experienceProjectedViewSchema,
   experienceReducerStatusSchema,
+  experienceRestartRequestSchema,
   experienceSessionResponseSchema,
   experienceSessionStatusSchema,
   experienceSetupDefinitionSchema,
@@ -273,6 +278,7 @@ describe("experienceParticipantSchema (IR-70E model-seat assignment)", () => {
       capabilityGrants: ["model"],
       contextMode: "none",
       participants: [legacy],
+      initialSettings: {},
       visualId: null,
       visualSource: null,
       visualSourceHash: null,
@@ -545,6 +551,36 @@ describe("experienceStartRequestSchema", () => {
   });
 });
 
+describe("experienceRestartRequestSchema", () => {
+  it("omitted body parses to an object WITHOUT settings/participants keys (snapshot fallback)", () => {
+    const data = expectData(experienceRestartRequestSchema.safeParse({})) as Record<string, unknown>;
+    expect(Object.hasOwn(data, "settings")).toBe(false);
+    expect(Object.hasOwn(data, "participants")).toBe(false);
+  });
+
+  it("explicit settings + roster are accepted", () => {
+    const parsed = experienceRestartRequestSchema.safeParse({
+      settings: { difficulty: "hard" },
+      participants: [{ id: "p1", label: "Player 1", controller: "human" }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects unknown keys (.strict)", () => {
+    expectReject(experienceRestartRequestSchema.safeParse({ branchId: "br_1" }));
+  });
+
+  it("enforces the participants max bound", () => {
+    const roster = Array.from({ length: INTERACTIVE_SCHEMA_MAX_PARTICIPANTS + 1 }, (_, i) => ({
+      id: `p${i}`,
+      label: `Player ${i}`,
+      controller: "human" as const,
+    }));
+    const parsed = experienceRestartRequestSchema.safeParse({ participants: roster });
+    expect(parsed.success).toBe(false);
+  });
+});
+
 describe("experienceSessionResponseSchema", () => {
   function validResponse() {
     return {
@@ -560,6 +596,7 @@ describe("experienceSessionResponseSchema", () => {
       capabilityGrants: [],
       contextMode: "none",
       participants: [],
+      initialSettings: {},
       visualId: null,
       visualSource: null,
       visualSourceHash: null,
@@ -568,6 +605,19 @@ describe("experienceSessionResponseSchema", () => {
 
   it("accepts a valid session response", () => {
     expect(experienceSessionResponseSchema.safeParse(validResponse()).success).toBe(true);
+  });
+
+  it("carries the frozen initial-settings snapshot (lobby LB-5 restart prefill)", () => {
+    const withSettings = { ...validResponse(), initialSettings: { difficulty: "hard", seedCount: 3 } };
+    const parsed = experienceSessionResponseSchema.safeParse(withSettings);
+    expect(parsed.success).toBe(true);
+    // Bounded like the start settings input: an over-deep snapshot is rejected.
+    let deep: unknown = { v: 0 };
+    for (let i = 0; i < INTERACTIVE_SCHEMA_MAX_DEPTH + 2; i++) deep = { nested: deep };
+    expect(experienceSessionResponseSchema.safeParse({ ...validResponse(), initialSettings: deep }).success).toBe(false);
+    // Required: an absent snapshot is not a valid response.
+    const { initialSettings: _omit, ...withoutSnapshot } = validResponse();
+    expect(experienceSessionResponseSchema.safeParse(withoutSnapshot).success).toBe(false);
   });
 
   it("rejects a response missing the projected view", () => {
@@ -661,7 +711,7 @@ describe("experienceSessionResponseSchema", () => {
 function validDefinition() {
   return {
     apiVersion: 1,
-    manifest: { id: "ttt", name: "Tic-Tac-Toe" },
+    manifest: { id: "ttt", name: "Tic-Tac-Toe", mode: "turn" },
     declaredCapabilities: [],
   };
 }
@@ -856,6 +906,108 @@ describe("experienceDefinitionSchema setup (IR-70F)", () => {
         },
       }),
     );
+  });
+});
+
+describe("experienceManifestSchema mode/tickMs (RM-1)", () => {
+  it("omits mode -> default 'turn', tickMs stays undefined (backward compat)", () => {
+    const data = expectData(experienceManifestSchema.safeParse({ id: "x", name: "X" })) as {
+      mode: string;
+      tickMs: number | undefined;
+    };
+    expect(data.mode).toBe("turn");
+    expect(data.tickMs).toBeUndefined();
+  });
+
+  it("rejects realtime mode without tickMs (issue at path tickMs)", () => {
+    const result = experienceManifestSchema.safeParse({ id: "x", name: "X", mode: "realtime" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === "tickMs")).toBe(true);
+    }
+  });
+
+  it("accepts realtime mode at both tickMs bounds (16 and 1000 inclusive)", () => {
+    const lo = expectData(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: INTERACTIVE_SCHEMA_TICK_MS_MIN,
+      }),
+    ) as { mode: string; tickMs: number };
+    expect(lo.mode).toBe("realtime");
+    expect(lo.tickMs).toBe(INTERACTIVE_SCHEMA_TICK_MS_MIN);
+    const hi = expectData(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: INTERACTIVE_SCHEMA_TICK_MS_MAX,
+      }),
+    ) as { mode: string; tickMs: number };
+    expect(hi.tickMs).toBe(INTERACTIVE_SCHEMA_TICK_MS_MAX);
+  });
+
+  it("rejects realtime tickMs outside the 16..1000 bounds (15 and 1001)", () => {
+    expectReject(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: INTERACTIVE_SCHEMA_TICK_MS_MIN - 1,
+      }),
+    );
+    expectReject(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: INTERACTIVE_SCHEMA_TICK_MS_MAX + 1,
+      }),
+    );
+  });
+
+  it("rejects non-integer realtime tickMs", () => {
+    expectReject(
+      experienceManifestSchema.safeParse({
+        id: "x",
+        name: "X",
+        mode: "realtime",
+        tickMs: 50.5,
+      }),
+    );
+  });
+
+  it("rejects turn mode that declares tickMs (forbidden in turn)", () => {
+    const result = experienceManifestSchema.safeParse({ id: "x", name: "X", mode: "turn", tickMs: 60 });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === "tickMs")).toBe(true);
+    }
+  });
+
+  it("rejects an unknown mode (enum bounds mode to turn|realtime)", () => {
+    expectReject(experienceManifestSchema.safeParse({ id: "x", name: "X", mode: "chess" }));
+  });
+
+  it("definition envelope inherits the manifest rule", () => {
+    const reject = experienceDefinitionSchema.safeParse({
+      apiVersion: 1,
+      manifest: { id: "x", name: "X", mode: "realtime" },
+      declaredCapabilities: [],
+    });
+    expect(reject.success).toBe(false);
+
+    const ok = expectData(
+      experienceDefinitionSchema.safeParse({
+        apiVersion: 1,
+        manifest: { id: "x", name: "X", mode: "realtime", tickMs: 100 },
+        declaredCapabilities: [],
+      }),
+    ) as { manifest: { mode: string; tickMs: number } };
+    expect(ok.manifest.mode).toBe("realtime");
+    expect(ok.manifest.tickMs).toBe(100);
   });
 });
 

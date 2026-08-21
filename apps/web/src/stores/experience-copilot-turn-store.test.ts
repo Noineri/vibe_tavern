@@ -2,16 +2,19 @@ import { describe, expect, it, beforeEach } from "bun:test";
 import {
   extractHistoricalTurnActivities,
   extractPersistedExperienceCopilotActivities,
+  parseCopilotAskState,
+  parseTodoToolResult,
   useExperienceCopilotTurnStore,
   wireToToolSource,
 } from "./experience-copilot-turn-store.js";
 import type { AppMessage } from "../api/types.js";
+import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 
 describe("useExperienceCopilotTurnStore", () => {
   beforeEach(() => {
     // Reset to a clean state before each case (the store is process-global).
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
   });
 
   it("rebuilds only the latest committed non-streaming turn with tool names and proposals", () => {
@@ -480,7 +483,7 @@ describe("extractHistoricalTurnActivities", () => {
 describe("feed (TF-4)", () => {
   beforeEach(() => {
     // This describe lives outside the first describe's reset — restore here.
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
   });
 
   const feedOf = (threadId: string) =>
@@ -565,5 +568,215 @@ describe("feed (TF-4)", () => {
     expect(feedOf("t2")).toHaveLength(1);
     expect(feedOf("t1")[0]).toMatchObject({ kind: "text", text: "one" });
     expect(feedOf("t2")[0]).toMatchObject({ kind: "text", text: "two" });
+  });
+});
+
+// ─── TAG-7: todo/ask parsers, extractor branches, todoByThread state ───────
+
+const TODO_ITEMS: CopilotTodoItem[] = [
+  { title: "Draft the rules skeleton", status: "completed" },
+  { title: "Write the visual header", status: "active" },
+  { title: "Wire the score action", status: "pending" },
+];
+
+const TODO_ENVELOPE = {
+  ok: true,
+  items: TODO_ITEMS,
+  activeTitle: "Write the visual header",
+  remaining: 2,
+};
+
+const ASK_ARGS = {
+  question: "Which deck suits the tone?",
+  options: ["tarot", "playing cards"],
+  recommended: "tarot",
+};
+
+describe("parseTodoToolResult (TAG-7)", () => {
+  it("accepts the success envelope and echoes items/remaining/activeTitle", () => {
+    expect(parseTodoToolResult(TODO_ENVELOPE)).toEqual({
+      items: TODO_ITEMS,
+      remaining: 2,
+      activeTitle: "Write the visual header",
+    });
+  });
+
+  it("recomputes remaining/activeTitle from the items when the envelope omits them", () => {
+    const parsed = parseTodoToolResult({ ok: true, items: TODO_ITEMS });
+    expect(parsed).toEqual({ items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" });
+  });
+
+  it("returns null for a failed save (ok:false), a non-array items value, and an item with a bad status", () => {
+    expect(parseTodoToolResult({ ok: false, error: "db down" })).toBeNull();
+    expect(parseTodoToolResult({ ok: true, items: "not-a-list" })).toBeNull();
+    expect(parseTodoToolResult({ ok: true, items: [{ title: "x", status: "nope" }] })).toBeNull();
+    expect(parseTodoToolResult("junk")).toBeNull();
+  });
+});
+
+describe("parseCopilotAskState (TAG-7)", () => {
+  it("parses the awaiting marker verbatim (question/options/recommended from the output)", () => {
+    expect(parseCopilotAskState(ASK_ARGS, { status: "awaiting_answer", ...ASK_ARGS })).toEqual({
+      question: "Which deck suits the tone?",
+      options: ["tarot", "playing cards"],
+      recommended: "tarot",
+      status: "awaiting_answer",
+    });
+  });
+
+  it("parses the answered rewrite: status/answer from the output, question/options/recommended recovered from the carrier args", () => {
+    expect(parseCopilotAskState(ASK_ARGS, { status: "answered", answer: "tarot, definitely" })).toEqual({
+      question: "Which deck suits the tone?",
+      options: ["tarot", "playing cards"],
+      recommended: "tarot",
+      status: "answered",
+      answer: "tarot, definitely",
+    });
+  });
+
+  it("parses the skipped rewrite (no answer field)", () => {
+    expect(parseCopilotAskState(ASK_ARGS, { status: "skipped" })).toEqual({
+      question: "Which deck suits the tone?",
+      options: ["tarot", "playing cards"],
+      recommended: "tarot",
+      status: "skipped",
+    });
+  });
+
+  it("an answered rewrite with no carrier args degrades to an empty question", () => {
+    expect(parseCopilotAskState(undefined, { status: "answered", answer: "yes" })).toEqual({
+      question: "",
+      status: "answered",
+      answer: "yes",
+    });
+  });
+
+  it("returns null for an unknown status, an awaiting marker with no question anywhere, and an answered output with no answer", () => {
+    expect(parseCopilotAskState(ASK_ARGS, { status: "done" })).toBeNull();
+    expect(parseCopilotAskState(undefined, { status: "awaiting_answer" })).toBeNull();
+    expect(parseCopilotAskState(ASK_ARGS, { status: "answered" })).toBeNull();
+    expect(parseCopilotAskState(ASK_ARGS, null)).toBeNull();
+  });
+});
+
+describe("extractor todo/ask branches (TAG-7, persisted shapes)", () => {
+  it("a todo row (wrapped envelope) becomes a done activity carrying the card payload", () => {
+    const messages = [
+      { id: "u1", role: "user", content: "plan it" },
+      {
+        id: "carrier",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_todo", name: "todo", args: TODO_ITEMS }],
+      },
+      {
+        id: "tool_todo",
+        role: "tool",
+        toolCallId: "call_todo",
+        content: JSON.stringify({ toolName: "todo", output: TODO_ENVELOPE }),
+      },
+    ] as AppMessage[];
+
+    expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
+      toolCallId: "call_todo",
+      toolName: "todo",
+      args: TODO_ITEMS,
+      status: "done",
+      todo: { items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" },
+    }]);
+  });
+
+  it("a failed todo save (ok:false) renders the error card with the raw content", () => {
+    const messages = [
+      { id: "u1", role: "user", content: "plan it" },
+      {
+        id: "tool_todo",
+        role: "tool",
+        toolCallId: "call_todo",
+        content: JSON.stringify({ toolName: "todo", output: { ok: false, error: "db down" } }),
+      },
+    ] as AppMessage[];
+
+    const [activity] = extractPersistedExperienceCopilotActivities(messages);
+    expect(activity).toMatchObject({ toolCallId: "call_todo", toolName: "todo", status: "error" });
+    expect(activity!.todo).toBeUndefined();
+    expect(activity!.summary).toBe(JSON.stringify({ toolName: "todo", output: { ok: false, error: "db down" } }));
+  });
+
+  it("ask rows parse into awaiting/answered/skipped ask states (question recovered from carrier args)", () => {
+    const awaiting = { status: "awaiting_answer", ...ASK_ARGS };
+    const answered = { status: "answered", answer: "tarot, definitely" };
+    const skipped = { status: "skipped" };
+    const messages = [
+      { id: "u1", role: "user", content: "grill me" },
+      {
+        id: "carrier",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          { id: "c1", name: "ask_user", args: ASK_ARGS },
+          { id: "c2", name: "ask_user", args: ASK_ARGS },
+          { id: "c3", name: "ask_user", args: ASK_ARGS },
+        ],
+      },
+      { id: "t1", role: "tool", toolCallId: "c1", content: JSON.stringify({ toolName: "ask_user", output: awaiting }) },
+      { id: "t2", role: "tool", toolCallId: "c2", content: JSON.stringify({ toolName: "ask_user", output: answered }) },
+      { id: "t3", role: "tool", toolCallId: "c3", content: JSON.stringify({ toolName: "ask_user", output: skipped }) },
+    ] as AppMessage[];
+
+    const acts = extractPersistedExperienceCopilotActivities(messages);
+    expect(acts.map((a) => a.ask!.status)).toEqual(["awaiting_answer", "answered", "skipped"]);
+    expect(acts[0]!.ask).toEqual({
+      question: "Which deck suits the tone?",
+      options: ["tarot", "playing cards"],
+      recommended: "tarot",
+      status: "awaiting_answer",
+    });
+    expect(acts[1]!.ask).toEqual({
+      question: "Which deck suits the tone?",
+      options: ["tarot", "playing cards"],
+      recommended: "tarot",
+      status: "answered",
+      answer: "tarot, definitely",
+    });
+    expect(acts[2]!.ask).toMatchObject({ status: "skipped" });
+    expect(acts[2]!.ask!.answer).toBeUndefined();
+    expect(acts.every((a) => a.status === "done")).toBe(true);
+  });
+});
+
+describe("todoByThread panel state (TAG-7)", () => {
+  beforeEach(() => {
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+  });
+
+  it("setTodo is a full-rewrite replace (the newest list IS the state)", () => {
+    const s = () => useExperienceCopilotTurnStore.getState();
+    s().setTodo("t1", TODO_ITEMS);
+    expect(s().getTodo("t1")).toEqual(TODO_ITEMS);
+    s().setTodo("t1", [{ title: "Only step", status: "active" }]);
+    expect(s().getTodo("t1")).toEqual([{ title: "Only step", status: "active" }]);
+    // Seeding the empty list (a wire todo of []) clears the panel state.
+    s().setTodo("t1", []);
+    expect(s().getTodo("t1")).toEqual([]);
+  });
+
+  it("getTodo defaults to [] and threads are isolated", () => {
+    const s = () => useExperienceCopilotTurnStore.getState();
+    expect(s().getTodo("unknown")).toEqual([]);
+    s().setTodo("t1", TODO_ITEMS);
+    expect(s().getTodo("t2")).toEqual([]);
+  });
+
+  it("clearTurn does NOT drop todoByThread (session lifetime, not turn lifetime)", () => {
+    // «время жизни туду должно быть на всю сессию» — clearTurn fires at every
+    // turn start; wiping the panel state there would blank the pinned panel
+    // during every generation until the settle refetch re-seeds it.
+    const s = () => useExperienceCopilotTurnStore.getState();
+    s().setTodo("t1", TODO_ITEMS);
+    s().upsertActivity("t1", { toolCallId: "c1", toolName: "todo", status: "done" });
+    s().clearTurn("t1");
+    expect(s().getActivities("t1")).toEqual([]);
+    expect(s().getTodo("t1")).toEqual(TODO_ITEMS);
   });
 });

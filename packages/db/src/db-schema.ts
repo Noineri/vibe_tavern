@@ -224,15 +224,14 @@ export const coauthorModules = sqliteTable('coauthor_modules', {
 // Mirrors `coauthor_modules` minus `description` and `openingMessage` (the
 // copilot is not a chat-mode and does not greet). `basePrompt` is inline text
 // (never a file path) so the editor works on one field for both built-in and
-// user profiles. `max_steps` defaults to 20 (the copilot tool-loop default,
-// NOT Co-Author's 5).
+// user profiles. `max_steps` was dropped in TAG-4b (the tool-loop is unbounded —
+// see COPILOT_TOOL_LOOP_CEILING).
 export const copilotProfiles = sqliteTable('copilot_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   basePrompt: text('base_prompt').notNull(),
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
   toolSetJson: text('tool_set_json').notNull().default('{}'),
-  maxSteps: integer('max_steps').notNull().default(20),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -1026,6 +1025,10 @@ export const experienceChatConfigs = sqliteTable('experience_chat_configs', {
   // config survives; the next capture falls back to ambient). NULL = ambient.
   contextSourceCharacterId: text('context_source_character_id').references(() => characters.id, { onDelete: 'set null' }),
   contextSourceChatId: text('context_source_chat_id').references(() => chats.id, { onDelete: 'set null' }),
+  // Wave 3: persona source pointer — the user-identity override for the RP
+  // context. Live pointer, SET NULL on persona delete; NULL = ambient host
+  // chat persona. Same semantics as the character/chat source pointers above.
+  contextSourcePersonaId: text('context_source_persona_id').references(() => personas.id, { onDelete: 'set null' }),
   launcherVisible: integer('launcher_visible', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -1178,6 +1181,9 @@ export const experienceContextBundles = sqliteTable('experience_context_bundles'
   // survive source deletion. NULL = captured from the ambient host chat.
   sourceCharacterId: text('source_character_id'),
   sourceChatId: text('source_chat_id'),
+  // Wave 3: persona-source provenance (the frozen user identity). Plain text,
+  // no FK — same snapshot-isolation rationale as the character/chat ids above.
+  sourcePersonaId: text('source_persona_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -1288,6 +1294,13 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // (malformed → [], logged, never fatal). Resolved by id at ASSEMBLY time —
   // never a stored content copy, so a pinned entity can never go stale.
   contextLinksJson: text('context_links_json').notNull().default('[]'),
+  // The model's step-plan for this thread (copilot todo/ask plan, TAG-2): JSON
+  // array of {title, status: pending|active|completed|abandoned}. The model
+  // owns it (read-only for the user); every `todo` tool call is a full-list
+  // rewrite. Nullable: null until the first todo call. Malformed JSON on read
+  // → [] (logged, never fatal) — same defensive-parse contract as
+  // context_links_json above.
+  todoJson: text('todo_json'),
   // The provider/model the thread LAST used (persisted from the stream finish
   // path) — the compaction service (CM-5) reuses this pair when the manual
   // compact endpoint omits one. Nullable: null before the first turn.

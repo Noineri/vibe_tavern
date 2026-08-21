@@ -24,10 +24,9 @@ import {
 describe("experience-copilot module (ER-16)", () => {
   test("the single fixed module definition has the expected shape", () => {
     expect(EXPERIENCE_COPILOT_MODULE.id).toBe("experience-authoring");
-    expect(EXPERIENCE_COPILOT_MODULE.skillIds).toEqual(["experience-authoring"]);
+    expect(EXPERIENCE_COPILOT_MODULE.skillIds).toEqual(["experience-authoring", "grill-me"]);
     expect(EXPERIENCE_COPILOT_MODULE.basePromptFile).toBe("experience-copilot/base.md");
-    expect(EXPERIENCE_COPILOT_MODULE.maxSteps).toBe(20);
-    // The five authoring/diagnostic tools are declared. `read_skill_file` is
+    // The seven authoring/diagnostic tools are declared. `read_skill_file` is
     // always available on top (mirroring Co-Author — the universal read-only
     // skill channel), so it is NOT part of the gated toolSet.
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.write_buffer).toBe(true);
@@ -35,6 +34,9 @@ describe("experience-copilot module (ER-16)", () => {
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.run_test).toBe(true);
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.run_simulate).toBe(true);
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.suggest_visual_binding).toBe(true);
+    // TAG-4: the todo + ask_user tools are enabled in the built-in seed.
+    expect(EXPERIENCE_COPILOT_MODULE.toolSet.todo).toBe(true);
+    expect(EXPERIENCE_COPILOT_MODULE.toolSet.ask_user).toBe(true);
   });
 
   test("resolveExperienceCopilotModule loads the base-prompt asset (the ER-16 gate: module loads)", async () => {
@@ -46,15 +48,21 @@ describe("experience-copilot module (ER-16)", () => {
     expect(module.basePrompt).toContain("read_skill_file");
   });
 
-  test("resolveExperienceCopilotSkillCatalog discovers the experience-authoring skill from the copilot root", async () => {
+  test("resolveExperienceCopilotSkillCatalog discovers the experience-authoring and grill-me skills from the copilot root", async () => {
     const { entries } = await resolveExperienceCopilotSkillCatalog();
-    expect(entries.length).toBeGreaterThanOrEqual(1);
+    expect(entries.length).toBeGreaterThanOrEqual(2);
     const skill = entries.find((e) => e.id === "experience-authoring");
     expect(skill).toBeDefined();
     expect(skill?.source).toBe("builtin");
     expect(skill?.rootRelativeManifestPath).toBe("experience-authoring/SKILL.md");
     expect(skill?.name.trim().length).toBeGreaterThan(0);
     expect(skill?.description.trim().length).toBeGreaterThan(0);
+    const grill = entries.find((e) => e.id === "grill-me");
+    expect(grill).toBeDefined();
+    expect(grill?.source).toBe("builtin");
+    expect(grill?.rootRelativeManifestPath).toBe("grill-me/SKILL.md");
+    expect(grill?.name).toBe("grill-me");
+    expect(grill?.description.trim().length).toBeGreaterThan(0);
   });
 
   test("renderExperienceCopilotSkillCatalog lists the discovered entry and is empty for none", async () => {
@@ -74,19 +82,22 @@ describe("experience-copilot module (ER-16)", () => {
     expect(profile.id).toBe("builtin");
     expect(profile.isBuiltIn).toBe(true);
     expect(profile.name).toBe(EXPERIENCE_COPILOT_MODULE.name);
-    expect(profile.maxSteps).toBe(EXPERIENCE_COPILOT_MODULE.maxSteps);
     expect(profile.skillIds).toEqual([...EXPERIENCE_COPILOT_MODULE.skillIds]);
     // The loaded base-prompt asset carries the role framing.
     expect(profile.basePrompt.trim().length).toBeGreaterThan(0);
     expect(profile.basePrompt).toContain("EXPERIENCE ASSISTANT");
-    // toolSet projected through COPILOT_TOOL_KEYS → all 5 declared tools on.
+    // toolSet projected through COPILOT_TOOL_KEYS → all 7 declared tools on
+    // (TAG-4: todo + ask_user join the seed). maxSteps is no longer carried.
     expect(profile.toolSet).toEqual({
       write_buffer: true,
       edit_buffer: true,
       run_test: true,
       run_simulate: true,
       suggest_visual_binding: true,
+      todo: true,
+      ask_user: true,
     });
+    expect(profile.maxSteps).toBeUndefined();
   });
 });
 

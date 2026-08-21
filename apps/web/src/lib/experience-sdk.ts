@@ -26,6 +26,19 @@
  *   experience.finish() -> void — request the privileged finish op.
  *   experience.session -> { sessionId, revision } (after handshake).
  *
+ * Realtime surface (RM-5; inert in turn-based frames — no vt-loop:* events
+ * ever fire there, and every dispatch guards on the DOM CustomEvent surface):
+ *   experience.actLocal(type, payload?, opts?) -> void — frame-local intention
+ *     for the loop (no host round-trip; the one-action lock does not apply).
+ *   experience.modelRequest(seatId, prompt) -> requestId — ask the host model
+ *     seam; the reply returns as a `model_result` round-log event.
+ *   experience.finishRound({ status, score?, summary? }) -> void — end the
+ *     round from the surface; the loop finalizes and the SDK auto-commits.
+ *   experience.onTick(cb) / onLoopEvent(cb) / onRoundFinish(cb) /
+ *     onRoundError(cb) — loop subscriptions; early events (the SDK loads
+ *     before the loop boots) are buffered: a late connect still sees the
+ *     latest view and the bounded round-log tail.
+ *
  *   view.flavor may carry a host-normalized chatter view — { status:
  *   "pending"|"resolved"|"failed", seatId, text?, fallback? } — when the
  *   author's flavor method returns an experienceChatter marker. "pending"
@@ -115,6 +128,15 @@ export const VIBE_EXPERIENCE_SDK_SOURCE = String.raw`
         send({ v: PROTOCOL_V, kind: "ready", nonce: nonce });
         return;
       }
+      case "model_result": {
+        // Realtime seam (RM-5): the host's async model reply re-enters the
+        // frame as a loop channel event; the runtime applies it to the round.
+        if (msg.nonce !== nonce) return;
+        var m = { seatId: msg.seatId, result: msg.result };
+        if (msg.requestId) m.requestId = msg.requestId;
+        loopDispatch("vt-loop:model-result", m);
+        return;
+      }
       case "state": {
         if (msg.nonce !== nonce) return;    // stale frame — ignore
         var view = msg.view;
@@ -189,6 +211,110 @@ export const VIBE_EXPERIENCE_SDK_SOURCE = String.raw`
   Experience.prototype.finish = function () {
     if (!nonce) return;
     send({ v: PROTOCOL_V, kind: "finish", nonce: nonce, revision: revision });
+  };
+
+  // ── realtime loop channel (RM-5) ────────────────────────────────────────
+  // In a REALTIME frame the loop runtime (booted after this SDK loads) drives
+  // vt-loop:* CustomEvents on the frame window; the SDK wraps them into the
+  // author-facing loop API and auto-forwards the two host-bound kinds over the
+  // port bridge: 'model_request' (to the host's model seam) and the finished
+  // round (as 'round_commit'). In a turn-based frame none of these events ever
+  // fire — this whole surface is inert and the turn path above is untouched.
+
+  var latestLoopView = null;         // cached latest projection (late connect)
+  var loopEventBuf = [];             // bounded replay of round-log events
+  var LOOP_EVENT_BUF_MAX = 512;      // a pathological round must not grow it
+  var loopCbs = { tick: null, event: null, finish: null, error: null };
+
+  function loopDispatch(type, detail) {
+    try {
+      if (typeof window.dispatchEvent === "function" && typeof CustomEvent === "function") {
+        window.dispatchEvent(new CustomEvent(type, { detail: detail }));
+      }
+    } catch (_) { /* no DOM CustomEvent (turn-only harness) — inert */ }
+  }
+
+  function deliverLoop(kind, detail) {
+    var cb = loopCbs[kind];
+    if (cb) { try { cb(detail); } catch (_) {} }
+  }
+
+  window.addEventListener("vt-loop:view", function (ev) {
+    latestLoopView = ev.detail;
+    deliverLoop("tick", ev.detail);
+  });
+  window.addEventListener("vt-loop:event", function (ev) {
+    var e = ev.detail;
+    if (!isPlainObject(e)) return;
+    loopEventBuf.push(e);
+    if (loopEventBuf.length > LOOP_EVENT_BUF_MAX) loopEventBuf.shift();
+    if (e.kind === "model_request" && nonce) {
+      // Auto-forward to the host seam: the round log is the single source of
+      // truth — the wire mirrors what the loop recorded, never the reverse.
+      var req = { v: PROTOCOL_V, kind: "model_request", nonce: nonce, seatId: e.seatId, prompt: e.prompt };
+      if (e.requestId) req.requestId = e.requestId;
+      send(req);
+    }
+    deliverLoop("event", e);
+  });
+  window.addEventListener("vt-loop:finish", function (ev) {
+    var f = ev.detail;
+    if (!isPlainObject(f)) return;
+    if (nonce) {
+      var commit = { v: PROTOCOL_V, kind: "round_commit", nonce: nonce, status: f.status, finalState: f.finalState, log: f.log };
+      if (f.score !== undefined) commit.score = f.score;
+      if (f.summary !== undefined) commit.summary = f.summary;
+      send(commit);
+    }
+    deliverLoop("finish", f);
+  });
+  window.addEventListener("vt-loop:error", function (ev) {
+    deliverLoop("error", ev.detail);
+  });
+
+  // Frame-local intention for the realtime loop: no host round-trip, no
+  // one-action lock, legal before the handshake (the loop owns the bounds).
+  Experience.prototype.actLocal = function (type, payload, opts) {
+    opts = opts || {};
+    loopDispatch("vt-loop:input", {
+      type: String(type),
+      participantId: opts.participantId,
+      payload: payload,
+    });
+  };
+  // Ask the model seam for a declared seat. Returns the requestId (wire
+  // correlation); the reply arrives as a 'model_result' loop event.
+  Experience.prototype.modelRequest = function (seatId, prompt) {
+    var requestId = uuid4();
+    loopDispatch("vt-loop:model-request", { seatId: String(seatId), prompt: prompt, requestId: requestId });
+    return requestId;
+  };
+  // End the round from the surface: { status: "completed"|"interrupted", score?, summary? }.
+  Experience.prototype.finishRound = function (payload) {
+    payload = isPlainObject(payload) ? payload : {};
+    loopDispatch("vt-loop:finish-request", {
+      status: payload.status,
+      score: payload.score,
+      summary: payload.summary,
+    });
+  };
+  Experience.prototype.onTick = function (cb) {
+    loopCbs.tick = cb;
+    if (latestLoopView !== null) { try { cb(latestLoopView); } catch (_) {} }
+    return this;
+  };
+  Experience.prototype.onLoopEvent = function (cb) {
+    loopCbs.event = cb;
+    for (var i = 0; i < loopEventBuf.length; i++) { try { cb(loopEventBuf[i]); } catch (_) {} }
+    return this;
+  };
+  Experience.prototype.onRoundFinish = function (cb) {
+    loopCbs.finish = cb;
+    return this;
+  };
+  Experience.prototype.onRoundError = function (cb) {
+    loopCbs.error = cb;
+    return this;
   };
 
   function connect(onView, opts) {

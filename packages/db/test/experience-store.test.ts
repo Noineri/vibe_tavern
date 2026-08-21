@@ -374,9 +374,11 @@ describe("ExperienceStore — context bundle + attachments", () => {
       mode: "recent",
       sourceCharacterId: "char_1",
       sourceChatId: "chat_1",
+      sourcePersonaId: "persona_1",
     });
     expect(withSource.sourceCharacterId).toBe("char_1");
     expect(withSource.sourceChatId).toBe("chat_1");
+    expect(withSource.sourcePersonaId).toBe("persona_1");
 
     // Re-capture without the fields nulls them (ambient source), not stale leftovers.
     const withoutSource = await store.captureContextBundle("xs_test_1", {
@@ -385,6 +387,7 @@ describe("ExperienceStore — context bundle + attachments", () => {
     });
     expect(withoutSource.sourceCharacterId).toBeNull();
     expect(withoutSource.sourceChatId).toBeNull();
+    expect(withoutSource.sourcePersonaId).toBeNull();
   });
 
   test("queue → bind → getForMessage; rollback releases back to queued", async () => {
@@ -430,5 +433,110 @@ describe("ExperienceStore — context bundle + attachments", () => {
     await store.bindAttachment(att.id, "msg_2");
     await store.deleteAttachmentsWithMessage("msg_2");
     expect(await store.getAttachmentById(att.id)).toBeNull();
+  });
+});
+
+
+describe("ExperienceStore — finishSessionQuiet (quiet close, pos 2)", () => {
+  let db: AppDb;
+  let store: ExperienceStore;
+  beforeEach(async () => {
+    db = await setupDb();
+    await seedParents(db);
+    store = new ExperienceStore(db, { clock: fixedClock, idGenerator: idGen });
+    counter = 0;
+  });
+
+  test("active session: slot released, interrupted, revision+1, NO step, unbound attachment purged", async () => {
+    const created = await store.createSession(baseSession());
+    if (!created.ok) return;
+    const sid = created.session.id;
+    await store.queueAttachment({
+      chatId: "chat_1",
+      branchId: "branch_1",
+      sessionId: sid,
+      sessionRevision: 0,
+      queueRevision: 1,
+      kind: "report",
+      publicEventsJson: '[{"type":"started"}]',
+      hiddenStateCheckpointJson: "{}",
+      rulesSourceHash: "abc123",
+    });
+
+    const out = await store.finishSessionQuiet(sid, 0);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.session.status).toBe("interrupted");
+    expect(out.session.activeSlot).toBeNull();
+    expect(out.session.revision).toBe(1);
+    expect(out.session.reportFrontier).toBe(1);
+    expect(out.attachment).toBeNull();
+    expect(await store.getSteps(sid)).toHaveLength(0);
+    expect(await store.getQueuedAttachmentForSession(sid)).toBeNull();
+    expect(await store.getActiveSessionForBranch("branch_1")).toBeNull();
+  });
+
+  test("stale expectedRevision is a typed stale_revision conflict", async () => {
+    const created = await store.createSession(baseSession());
+    if (!created.ok) return;
+    const out = await store.finishSessionQuiet(created.session.id, 99);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.conflict).toBe("stale_revision");
+    expect((await store.getActiveSessionForBranch("branch_1"))?.id).toBe(created.session.id);
+  });
+
+  test("already-released (completed) session: idempotent no-op that still purges unbound rows", async () => {
+    const created = await store.createSession(baseSession());
+    if (!created.ok) return;
+    const sid = created.session.id;
+    await store.finishSession(sid, "completed");
+    await store.queueAttachment({
+      chatId: "chat_1",
+      branchId: "branch_1",
+      sessionId: sid,
+      sessionRevision: 1,
+      queueRevision: 1,
+      kind: "report",
+      publicEventsJson: "[]",
+      hiddenStateCheckpointJson: "{}",
+      rulesSourceHash: "abc123",
+    });
+    const before = await store.getSessionById(sid);
+    const out = await store.finishSessionQuiet(sid, before?.revision ?? -1);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.idempotent).toBe(true);
+    expect(out.attachment).toBeNull();
+    expect((await store.getQueuedAttachmentForSession(sid))).toBeNull();
+  });
+
+  test("missing session → typed session_not_found conflict", async () => {
+    const out = await store.finishSessionQuiet("xs_missing", 0);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.conflict).toBe("session_not_found");
+  });
+
+  test("bound attachments are NEVER deleted by a quiet end", async () => {
+    const created = await store.createSession(baseSession());
+    if (!created.ok) return;
+    const sid = created.session.id;
+    await seedMessage(db, "msg_q");
+    const att = await store.queueAttachment({
+      chatId: "chat_1",
+      branchId: "branch_1",
+      sessionId: sid,
+      sessionRevision: 0,
+      queueRevision: 1,
+      kind: "report",
+      publicEventsJson: "[]",
+      hiddenStateCheckpointJson: "{}",
+      rulesSourceHash: "abc123",
+    });
+    await store.bindAttachment(att.id, "msg_q");
+    const out = await store.finishSessionQuiet(sid, 0);
+    expect(out.ok).toBe(true);
+    expect(await store.getAttachmentsForMessage("msg_q")).toHaveLength(1);
   });
 });

@@ -18,6 +18,7 @@ import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 import type {
   ExperienceCopilotStreamRequest,
+  ExperienceCopilotStreamAnswer,
   ExperienceCopilotThreadWire,
   ExperienceCopilotMessageWire,
   ExperienceCopilotContextMetrics,
@@ -35,6 +36,23 @@ export const streamExperienceCopilot = (
   body: ExperienceCopilotStreamRequest,
   opts: CopilotStreamOpts,
 ) => streamChatEndpoint(`/api/experience-copilot/${threadId}/stream`, body, opts);
+
+/** TAG-9: the answer payload for a pending `ask_user` question (TAG-5
+ *  split-turn), minus the `toolCallId` the caller supplies — either `text`
+ *  (a tapped chip's label or free text) or `skipped: true`, never both. */
+export type CopilotAskAnswerInput = Omit<ExperienceCopilotStreamAnswer, "toolCallId">;
+
+/** Answer a pending `ask_user` question (TAG-5 split-turn, style B): POSTs
+ *  the SAME stream endpoint with the `answer` body instead of `content` —
+ *  the answer replaces the awaiting tool-result row server-side (no new
+ *  user row) and the turn resumes as a continuation. Delegates to
+ *  `streamExperienceCopilot`, so the SSE consumption is literally the send
+ *  path's (no parser fork). */
+export const answerCopilotAsk = (
+  threadId: string,
+  request: Omit<ExperienceCopilotStreamRequest, "content" | "answer"> & { answer: ExperienceCopilotStreamAnswer },
+  opts: CopilotStreamOpts,
+) => streamExperienceCopilot(threadId, request, opts);
 
 // ─── Lifecycle REST methods (ER-11a) ────────────────────────────────────────
 //

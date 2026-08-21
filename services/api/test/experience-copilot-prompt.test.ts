@@ -3,8 +3,8 @@
  *
  * Pins what the model sees each turn: the system message carries role framing +
  * the context package (rules/visual/bound-visuals/contract/test-feedback/step) +
- * the canonical experience SDK API reference; history is windowed to
- * HISTORY_LIMIT (20) and budget-trimmed while preserving tool-call/tool-result
+ * the canonical experience SDK API reference; history is forwarded whole and
+ * budget-trimmed (no count-based cap) while preserving tool-call/tool-result
  * pairs. Pure — no store; history and context come in as function input.
  */
 
@@ -16,6 +16,7 @@ import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import {
   assembleExperienceCopilotPrompt,
   resolveDigestBoundary,
+  estimateHistoryTokens,
   COPILOT_RECENCY_ANCHOR_TEXT,
   type ExperienceCopilotHistoryMessage,
 } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
@@ -193,10 +194,13 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
   });
 });
 
-// ─── (b) History > 20 compacts ───────────────────────────────────────────────
+// ─── (b) History compaction — budget-only, no count cap ────────────────────────
 
 describe("assembleExperienceCopilotPrompt — history compaction", () => {
-  test("history > HISTORY_LIMIT is windowed to at most 20 messages", async () => {
+  test("long history is forwarded whole when the budget allows (no count-based cap)", async () => {
+    // The count-based 20-message window was removed (2026-08-19): it silently
+    // dropped affordable context while the fixed 300k budget already trims
+    // pair-safely. 30 messages, no budget → everything survives.
     const messages = makeMessages(30);
     const result = await assembleExperienceCopilotPrompt({
       history: messages,
@@ -205,17 +209,15 @@ describe("assembleExperienceCopilotPrompt — history compaction", () => {
     });
 
     const historyCount = result.messages.length - 1; // subtract system
-    expect(historyCount).toBeLessThanOrEqual(20);
-    expect(historyCount).toBeLessThan(30);
-    expect(result.compactionSummary).toBeDefined();
-    expect(result.compactionSummary).toContain("windowed");
+    expect(historyCount).toBe(30);
+    expect(result.compactionSummary).toBeUndefined();
     expect(result.tokenAccounting.history).toBeGreaterThan(0);
     expect(result.tokenAccounting.total).toBe(
       result.tokenAccounting.system + result.tokenAccounting.digest + result.tokenAccounting.history,
     );
   });
 
-  test("history <= HISTORY_LIMIT is not windowed (no summary)", async () => {
+  test("short history is not compacted (no summary)", async () => {
     const messages = makeMessages(15);
     const result = await assembleExperienceCopilotPrompt({
       history: messages,
@@ -228,7 +230,7 @@ describe("assembleExperienceCopilotPrompt — history compaction", () => {
     expect(result.compactionSummary).toBeUndefined();
   });
 
-  test("budget-based compaction further trims within the window", async () => {
+  test("budget-based compaction trims the full history", async () => {
     const messages = makeMessages(15);
     // Baseline (no budget): all 15 messages kept.
     const baseline = await assembleExperienceCopilotPrompt({
@@ -255,7 +257,7 @@ describe("assembleExperienceCopilotPrompt — history compaction", () => {
 // ─── (c) Tool-call/tool-result pairs preserved across compaction ─────────────
 
 describe("assembleExperienceCopilotPrompt — tool-pair safety", () => {
-  test("tool-call/tool-result pair within the window is preserved", async () => {
+  test("tool-call/tool-result pair is preserved in whole-history forwarding", async () => {
     const messages: ExperienceCopilotHistoryMessage[] = [];
     for (let i = 0; i < 18; i++) {
       messages.push({ role: i % 2 === 0 ? "user" : "assistant", content: `Message ${i}` });
@@ -276,7 +278,7 @@ describe("assembleExperienceCopilotPrompt — tool-pair safety", () => {
     messages.push({ role: "tool", content: [toolResult] });
     messages.push({ role: "user", content: "Nice." });
     messages.push({ role: "assistant", content: "Great." });
-    // Total: 22 messages; window keeps last 20; pair at indices 18-19 is inside.
+    // Total: 22 messages; no count cap — the pair rides anywhere in history.
 
     const result = await assembleExperienceCopilotPrompt({
       history: messages,
@@ -298,10 +300,15 @@ describe("assembleExperienceCopilotPrompt — tool-pair safety", () => {
     expect(hasToolResult).toBe(true);
   });
 
-  test("pair straddling the window boundary is preserved (boundary walks back)", async () => {
-    // Construct 21 messages where the raw window boundary (index 1) falls on a
-    // tool result; findSafeCompactionBoundary must walk back to include the
-    // parent assistant (index 0), keeping all 21 instead of splitting the pair.
+  test("pair straddling the budget-trim cut is preserved (boundary walks back)", async () => {
+    // Budget-compaction translation of the old window test: the raw
+    // largest-fitting-suffix cut must never land between a carrier assistant
+    // and its tool result. The budget below is sized to fit messages[1..] (the
+    // suffix WITHOUT the carrier) but NOT the full 21 — so the raw cut lands
+    // exactly on the tool result at index 1. findSafeCompactionBoundary
+    // (inside planHistoryCompaction) then walks back to the carrier, reaches
+    // index 0, and planHistoryCompaction returns null (keeps everything)
+    // rather than orphan the result — pair integrity wins over the budget.
     const messages: ExperienceCopilotHistoryMessage[] = [];
     messages.push({
       role: "assistant",
@@ -325,12 +332,28 @@ describe("assembleExperienceCopilotPrompt — tool-pair safety", () => {
     for (let i = 2; i < 21; i++) {
       messages.push({ role: i % 2 === 0 ? "user" : "assistant", content: `Message ${i}` });
     }
-    // Total: 21 messages; raw window of 20 starts at index 1 (the tool result).
+    // Total: 21 messages; the pair sits at indices 0-1.
+
+    const baseline = await assembleExperienceCopilotPrompt({
+      history: messages,
+      rules: VALID_RULES,
+      step: "test",
+    });
+    const nonHistoryTokens = baseline.tokenAccounting.total - baseline.tokenAccounting.history;
+    const reserve = 200;
+    const tokensWithoutCarrier = estimateHistoryTokens(messages.slice(1));
+    const tokensFull = estimateHistoryTokens(messages);
+    // The budget genuinely demands dropping the carrier: it fits the suffix
+    // without it but not the whole history.
+    expect(tokensWithoutCarrier).toBeLessThan(tokensFull);
+    const budget = nonHistoryTokens + tokensWithoutCarrier + reserve;
 
     const result = await assembleExperienceCopilotPrompt({
       history: messages,
       rules: VALID_RULES,
       step: "test",
+      contextBudget: budget,
+      responseReserve: reserve,
     });
 
     const historyMessages = result.messages.slice(1);
@@ -346,8 +369,12 @@ describe("assembleExperienceCopilotPrompt — tool-pair safety", () => {
     );
     expect(hasToolCall).toBe(true);
     expect(hasToolResult).toBe(true);
-    // 21 preserved (not 20) because boundary safety pulled in the parent assistant.
+    // 21 preserved (not 20) because boundary safety pulled in the parent
+    // assistant — pair integrity beats the budget, same as the old window walk.
     expect(historyMessages.length).toBe(21);
+    // And the head of the kept history is never a bare tool result (the
+    // orphaned-functionResponse 400 the co-author live incident hit).
+    expect(historyMessages[0]?.role).not.toBe("tool");
   });
 });
 
@@ -378,7 +405,15 @@ describe("assembleExperienceCopilotPrompt — user-flow doc + RU labels", () => 
       step: "rules",
     });
     expect(ru.systemMessage).toContain("# UI labels — Russian ↔ English");
+    // The tester buttons live in the collapsed Developer-diagnostics drawer —
+    // the map must name the drawer, not present them as top-level buttons
+    // (user-reported: the copilot guided users to a button they couldn't see).
+    expect(ru.systemMessage).toContain("«Диагностика разработчика»");
     expect(ru.systemMessage).toContain("«Проверить и создать»");
+    // Verbatim from ru.json (experience_tester_send_to_copilot): «помощнику»,
+    // NOT a hand-written «ассистенту».
+    expect(ru.systemMessage).toContain("«Отправить результат помощнику»");
+    expect(ru.systemMessage).toContain("«Проверить правила» = Validate rules");
 
     const en = await assembleExperienceCopilotPrompt({
       history: [
@@ -428,9 +463,20 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // experience-authoring skill DESCRIPTION changed (commit ad893b75) and
     // again after the human-side user-flow doc (experience-copilot/
     // user-flow.md) became an always-on tail section (2026-08-17) — an
-    // intentional system-prompt content change, not drift.
+    // intentional system-prompt content change, not drift. Re-captured again
+    // when the built-in `grill-me` skill joined the catalog (TAG-11) — the
+    // catalog section legitimately gained one entry. Re-captured again
+    // (2026-08-20, post-TAG label-map fix): the RU label map gained the
+    // Developer-diagnostics drawer placement + corrected verbatim labels,
+    // and user-flow.md's sandbox-actions section was rewritten to match
+    // the real UI (user-reported: the copilot guided users to a button
+    // they could not see). Re-captured again (playground timers): the shared
+    // assets interactive-rules.md (timer viewer is required + sandbox fires
+    // timers), user-flow.md (sandbox Play bullet: timers tick), and
+    // interactive-visual.md (pending contract: a live timer never gates
+    // controls) all gained one intentional clarification each.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("65aa170588bad615c8b3d6c5fecd2c6677e66b4e52b9e8132d450add1b9637d8");
+      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -536,6 +582,64 @@ describe("resolveDigestBoundary (CM-5)", () => {
   });
 });
 
+// ─── TAG-6: todo step-plan section ────────────────────────────────────────
+
+describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", () => {
+  test("empty todo → section omitted, system message byte-identical to pre-TAG-6", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+    expect(result.systemMessage).not.toContain("Current step plan");
+    // The zero-todo SHA is still the pinned pre-feature digest — the omission
+    // is total, not a substituted empty header. (Re-captured TAG-11: the
+    // `grill-me` skill catalog entry is present in the baseline system message.
+    // Re-captured again for the playground-timers asset update — see the
+    // zero-digest pin's trail.)
+    expect(createHash("sha256").update(result.systemMessage).digest("hex"))
+      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
+  });
+
+  test("non-empty todo renders [status] title lines with a preamble", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      todo: [
+        { title: "Write the rules buffer", status: "active" },
+        { title: "Add the reduce loop", status: "pending" },
+        { title: "Sketch the visual", status: "completed" },
+        { title: "Old idea", status: "abandoned" },
+      ],
+    });
+    expect(result.systemMessage).toContain("# Current step plan");
+    expect(result.systemMessage).toContain("keep it current via the `todo` tool");
+    expect(result.systemMessage).toContain("[active] Write the rules buffer");
+    expect(result.systemMessage).toContain("[pending] Add the reduce loop");
+    expect(result.systemMessage).toContain("[completed] Sketch the visual");
+    expect(result.systemMessage).toContain("[abandoned] Old idea");
+  });
+
+  test("the todo section is injected into the SYSTEM message (survives history compaction)", async () => {
+    // Feed a LONG history that budget-compaction would trim — the todo section
+    // is system-level, so it must ride OUTSIDE the compacted history flow.
+    const result = await assembleExperienceCopilotPrompt({
+      history: makeMessages(40),
+      rules: VALID_RULES,
+      step: "rules",
+      contextBudget: 800,
+      responseReserve: 100,
+      todo: [{ title: "Finish the plan", status: "active" }],
+    });
+    expect(result.systemMessage).toContain("# Current step plan");
+    expect(result.systemMessage).toContain("[active] Finish the plan");
+    // The plan is NOT a history flow message.
+    expect(result.messages.some((m) => m.role !== "system")).toBe(true);
+    expect(result.messages[0].role).toBe("system");
+  });
+});
+
 // ─── CX-3: attached-context injection ────────────────────────────────────────
 
 describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
@@ -555,8 +659,11 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     expect(result.systemMessage).not.toContain("Pinned context");
     expect(result.tokenAccounting.attached).toBe(0);
     // The zero-attached system message is STILL the pinned pre-CX-3 SHA.
+    // (Re-captured TAG-11: the `grill-me` skill catalog entry is present in the
+    // zero-attached baseline system message. Re-captured again for the
+    // playground-timers asset update — see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("65aa170588bad615c8b3d6c5fecd2c6677e66b4e52b9e8132d450add1b9637d8");
+      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

@@ -42,6 +42,7 @@ import {
 	startExperiencePlayground,
 	advanceExperiencePlayground,
 	executeModelTurnExperiencePlayground,
+	executeTimerTurnExperiencePlayground,
 	type ExperiencePlaygroundAdvanceInput,
 	type ExperiencePlaygroundData,
 	type ExperiencePlaygroundStartInput,
@@ -126,6 +127,7 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 			visualId?: string | null;
 			contextSourceCharacterId?: string | null;
 			contextSourceChatId?: string | null;
+			contextSourcePersonaId?: string | null;
 			capabilityGrants?: import("@vibe-tavern/domain").ExperienceCapability[];
 			contextMode?: import("@vibe-tavern/domain").ExperienceContextMode;
 			launcherVisible?: boolean;
@@ -213,11 +215,22 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		return this.toResponse(found.data, projection);
 	};
 
-	/** Canonical explicit user finish. The report service appends the durable
-	 * public system event, releases the slot, and freezes the terminal snapshot
-	 * in one synchronous SQLite transaction. */
-	endExperienceSession = async (sessionId: string, body: { expectedRevision: number }) => {
-		const finished = await this.lifecycle.finishWithReport(sessionId, body.expectedRevision);
+	restartExperienceSession = async (
+		sessionId: string,
+		body: { settings?: unknown; participants?: ExperienceParticipant[] },
+	) => {
+		const restarted = await this.lifecycle.restartSession(sessionId, { settings: body.settings, participants: body.participants });
+		if (!restarted.ok) throw mapError(restarted.error);
+		const projection = await this.projectForHuman(restarted.data.sessionId, restarted.data.participants);
+		return this.toResponse(restarted.data, projection);
+	};
+
+	/** Canonical explicit user finish. When `quiet` is false the report service
+	 * appends the durable public system event, releases the slot, and freezes
+	 * the terminal snapshot in one synchronous SQLite transaction. When `quiet`
+	 * is true the session ends with NO public artifact (pos 2 quiet close). */
+	endExperienceSession = async (sessionId: string, body: { expectedRevision: number; quiet?: boolean }) => {
+		const finished = await this.lifecycle.finishWithReport(sessionId, body.expectedRevision, body.quiet === true);
 		if (!finished.ok) throw mapError(finished.error);
 		return finished.data;
 	};
@@ -337,6 +350,16 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		};
 	};
 
+	/** Explicit user retry (lobby effect diagnostics): a failed/cancelled/
+	 *  unknown effect returns to `pending`; the host runner (chat-page lifetime)
+	 *  picks the model rows back up, the scheduler owns timer rows — this path
+	 *  never runs the effect itself. Typed 404/409 via the shared envelope. */
+	retryExperienceEffect = async (effectId: string): Promise<import("@vibe-tavern/db").ExperienceEffectRow> => {
+		const retried = await this.lifecycle.retryEffect(effectId);
+		if (!retried.ok) throw mapError(retried.error);
+		return retried.data;
+	};
+
 	// ─── Context capture + status (IR-70D) ────────────────────────────────────
 
 	/** Explicit cancellable context capture. Requires `rp_context`. The signal
@@ -344,12 +367,13 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 	 *  prior bundle. */
 	captureExperienceContext = async (
 		sessionId: string,
-		body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null },
+		body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null; contextSourcePersonaId?: string | null },
 		signal?: AbortSignal,
 	): Promise<ExperienceContextStatusDto> => {
 		// Source override fields are carried on the body but not resolved here —
-		// CS-3 wires them into `CaptureContextInput`. The spread below forwards
-		// them harmlessly (the domain input ignores unknown keys until then).
+		// CS-3 wires the character/chat ones into `CaptureContextInput`; Wave 3
+		// (persona) lands in PS-3. The spread below forwards them harmlessly
+		// (the domain input ignores unknown keys until then).
 		const row = await this.contextService.captureContext({ sessionId, ...body, signal });
 		return {
 			sessionId: row.sessionId,
@@ -360,6 +384,7 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 			modelId: row.modelId,
 			sourceCharacterId: row.sourceCharacterId,
 			sourceChatId: row.sourceChatId,
+			sourcePersonaId: row.sourcePersonaId,
 			createdAt: row.createdAt,
 			updatedAt: row.updatedAt,
 		};
@@ -434,6 +459,17 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		const result = advanceExperiencePlayground(body);
 		if (!result.ok) throw mapTestError(result.error);
 		return this.continueModelTurn(result.data);
+	};
+
+	/** Timer beats are a SEPARATE call (never chained into start/advance): the
+	 *  sleep happens server-side, so chaining it would freeze the click's
+	 *  response for afterMs and lag every input. The Try-it panel issues one
+	 *  beat per response reporting pendingTimers > 0 (see
+	 *  executeTimerTurnExperiencePlayground for the full semantics). */
+	runExperiencePlaygroundTimer = async (body: { readonly playgroundSessionId: string }) => {
+		const result = await executeTimerTurnExperiencePlayground(body);
+		if (!result.ok) throw mapTestError(result.error);
+		return result.data;
 	};
 
 	/** IR-90E: chain the ephemeral model turn when a start/advance returns a

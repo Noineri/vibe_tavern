@@ -18,8 +18,9 @@ import type { ExperienceRuntimeApi } from "../contract/runtime-api.js";
  *   visuals   — CRUD under /api/experience/visuals (scoped by query)
  *   sessions  — start under the chat; lifecycle/view/actions/undo/recalculate/
  *               effects under /api/experience/sessions/:sessionId
+ *   effects   — run + retry under /api/experience/effects/:effectId
  *
- * Deferred: effect retry/resolve (Wave 4 model effects), report formatting
+ * Deferred: effect resolve semantics (Wave 4 model effects), report formatting
  * (IR-52 prompt binding), standalone definition-authoring (Wave 8 playground).
  */
 export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
@@ -75,6 +76,10 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     })
     .post("/api/experience/sessions/:sessionId/end", zValidator("json", schemas.experienceFinishRequestSchema), async (c) => {
       return c.json(await runtime.endExperienceSession(c.req.param("sessionId"), c.req.valid("json")));
+    })
+    .post("/api/experience/sessions/:sessionId/restart", zValidator("json", schemas.experienceRestartRequestSchema), async (c) => {
+      const sessionId = c.req.param("sessionId");
+      return c.json(await runtime.restartExperienceSession(sessionId, c.req.valid("json")));
     })
     .post("/api/experience/sessions/:sessionId/actions", zValidator("json", schemas.experienceActionRequestSchema), async (c) => {
       return c.json(
@@ -139,6 +144,14 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     .post("/api/experience/effects/:effectId/run", async (c) => {
       const result = await runtime.runExperienceEffect(c.req.param("effectId"), c.req.raw.signal);
       return c.json(result, result.hostScheduled ? 202 : 200);
+    })
+    // Explicit user retry (lobby effect diagnostics): a failed/cancelled/
+    // unknown effect returns to `pending`; the host runner (chat-page
+    // lifetime) picks model rows back up and the scheduler owns timer rows —
+    // this route never runs the effect. Typed 404 (missing) / 409 (not
+    // retryable) surface through the shared DomainError envelope.
+    .post("/api/experience/effects/:effectId/retry", async (c) => {
+      return c.json(await runtime.retryExperienceEffect(c.req.param("effectId")));
     })
 
     // ── Context capture + status (IR-70D) ────────────────────────────────────
@@ -220,5 +233,12 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     })
     .post("/api/experience/playground/advance", zValidator("json", schemas.experiencePlaygroundAdvanceRequestSchema), async (c) => {
       return c.json(await runtime.advanceExperiencePlayground(c.req.valid("json")));
+    })
+    // Timer beat: fire ONE pending timer effect (sleep + reduce server-side).
+    // The client's beat loop issues one call per response reporting
+    // pendingTimers > 0 — the sandbox's real-time axis. NOT chained into
+    // start/advance: the sleep must never lag a click's response.
+    .post("/api/experience/playground/timer", zValidator("json", schemas.experiencePlaygroundTimerRequestSchema), async (c) => {
+      return c.json(await runtime.runExperiencePlaygroundTimer(c.req.valid("json")));
     });
 }

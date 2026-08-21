@@ -127,7 +127,11 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
       (c) => {
         const threadId = c.req.param("threadId");
         const body = c.req.valid("json");
-        logSendDebug("api.route.experience-copilot-stream.post", { threadId, contentLength: body.content?.length ?? 0 });
+        logSendDebug("api.route.experience-copilot-stream.post", {
+          threadId,
+          contentLength: body.content?.length ?? 0,
+          answerToolCallId: body.answer?.toolCallId ?? null,
+        });
         const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.experience-copilot-stream", { threadId });
         const gen = runtime.experienceCopilotStream(threadId, body, abortBridge.signal);
         return streamSSE(c, async (stream) => writeCopilotSseEvents(stream, gen, abortBridge));

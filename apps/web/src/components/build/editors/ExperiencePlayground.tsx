@@ -61,6 +61,7 @@ import { useT } from "../../../i18n/context.js";
 import {
   ExperienceApiError,
   advanceExperiencePlayground,
+  runExperiencePlaygroundTimer,
   runExperienceTest,
   simulateExperienceTest,
   startExperiencePlayground,
@@ -155,6 +156,15 @@ const CONTROLLER_LABEL_KEY = {
   [EXPERIENCE_CONTROLLER.human]: "experience_playground_role_human",
   [EXPERIENCE_CONTROLLER.script]: "experience_playground_role_script",
   [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_model",
+} as const;
+
+/** Short parens role for the «За кого вы играете» seat dropdown (LB-1 polish):
+ *  «Имя (короткая роль)». Only this short DropdownSelect uses it; the roster
+ *  editor and the setup-summary line keep the full CONTROLLER_LABEL_KEY. */
+const SHORT_ROLE_KEY = {
+  [EXPERIENCE_CONTROLLER.human]: "experience_playground_role_short_human",
+  [EXPERIENCE_CONTROLLER.script]: "experience_playground_role_short_script",
+  [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_short_model",
 } as const;
 
 const CAPABILITIES = [
@@ -1168,6 +1178,50 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     });
   }, [frameReady, session]);
 
+  // ── Timer beat loop (playground timers) ────────────────────────────────────
+  // The sandbox's real-time axis: while the live session reports unconsumed
+  // timer effects, issue ONE beat per response — the server sleeps the
+  // declared afterMs and feeds the tick back through the real reducer. The
+  // loop is fully derived from `session`: every setSession (start, a click, a
+  // beat response) re-evaluates it, so ticking continues until the rules stop
+  // re-arming timers or the session completes/reset. Beats never set `busy` —
+  // host controls stay clickable while the clock runs (a click racing a tick
+  // surfaces the typed stale_revision the panel already renders).
+  const timerBeats = useRef(new Set<string>());
+  useEffect(() => {
+    if (session === null || session.status !== "active" || session.pendingTimers <= 0) return;
+    const sessionId = session.playgroundSessionId;
+    if (timerBeats.current.has(sessionId)) return;
+    timerBeats.current.add(sessionId);
+    runExperiencePlaygroundTimer({ playgroundSessionId: sessionId })
+      .then((data) => {
+        // Apply the beat response only for the SAME session and never below
+        // the applied frontier: a beat whose tick stale-dropped under a click
+        // returns the click's state (revision equal — harmless), a tick that
+        // landed after it returns a newer revision (applied → loop continues).
+        // The revision guard also prevents a late response from regressing
+        // state after a faster human action. A different session id (reset +
+        // restart) drops the response entirely.
+        const current = sessionRef.current;
+        if (
+          current !== null &&
+          current.playgroundSessionId === data.playgroundSessionId &&
+          data.revision >= current.revision
+        ) {
+          setSession(data);
+        }
+      })
+      .catch((beatError: unknown) => {
+        // A typed beat error is a rules fault the author must see (e.g. the
+        // reducer rejected its own tick); the loop stops because the failed
+        // slot was consumed server-side and `pendingTimers` drops to 0.
+        setError(toPlaygroundError(beatError));
+      })
+      .finally(() => {
+        timerBeats.current.delete(sessionId);
+      });
+  }, [session]);
+
   // XU-3: auto-collapse the launch-setup accordion when a session becomes live
   // (derived from session state only; never persisted). The user may re-open it
   // anytime; reset (session → null) restores the expanded default on the next
@@ -1401,31 +1455,38 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div>
-              <label className={lblCls}>{t("experience_playground_seed_label")}</label>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <label className={lblCls}>{t("experience_playground_seed_label")}</label>
+                  <CustomTooltip content={t("experience_playground_seed_hint")}>
+                    <span className="mt-px shrink-0 text-t3"><Ic.help /></span>
+                  </CustomTooltip>
+                </span>
+                <span className="flex items-center gap-2">
+                  <Toggle
+                    checked={randomStart}
+                    onChange={handleRandomStartChange}
+                    aria-label={t("experience_playground_random_start")}
+                  />
+                  <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
+                </span>
+              </div>
               <input
-                className={cn(inputCls, "mt-1.5 h-[34px]", randomStart && "opacity-60")}
+                className={cn(inputCls, "mt-1.5 w-full h-[34px]", randomStart && "opacity-60")}
                 value={randomStart ? lastUsedSeed : seed}
                 placeholder={t(randomStart ? "experience_playground_seed_random_on" : "experience_tester_seed_placeholder")}
                 disabled={randomStart}
                 onChange={(e) => setSeed(e.target.value)}
               />
-              <div className="mt-1.5 flex items-center gap-2">
-                <Toggle
-                  checked={randomStart}
-                  onChange={handleRandomStartChange}
-                  aria-label={t("experience_playground_random_start")}
-                />
-                <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
-              </div>
             </div>
             <div>
               <label className={lblCls}>{t("experience_playground_human_seat_label")}</label>
               <div className="mt-1.5">
                 <DropdownSelect
                   value={humanSeatId}
-                  options={participants.map((p) => ({ id: p.id, label: `${p.label} (${t(CONTROLLER_LABEL_KEY[p.controller])})` }))}
+                  options={participants.map((p) => ({ id: p.id, label: `${p.label} (${t(SHORT_ROLE_KEY[p.controller])})` }))}
                   searchable={false}
                   placeholder={t("experience_playground_human_seat_auto")}
                   defaultOption={t("experience_playground_human_seat_auto")}
@@ -1434,56 +1495,61 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 />
               </div>
             </div>
-            <div>
-              <label className={lblCls}>{t("experience_setup_settings_label")}</label>
-              {/* LOBBY-A: the package's declared setup fields render as a real
-                  form (author defaults seeded into the JSON). The raw JSON
-                  textarea is ALWAYS under a collapsed "advanced" disclosure
-                  (verbatim: «жсон для технических пользователей под аккордеон
-                  прятать») — never the default view, fields or not. */}
-              {setupFormAvailable && (
-                <div className="mt-1.5 flex flex-col gap-2.5" data-testid="playground-setup-form">
-                  {setupFields.map((field) => (
-                    <SetupFieldRow
-                      key={field.id}
-                      field={field}
-                      value={setupForm.values[field.id]}
-                      error={fieldErrors[field.id]}
-                      t={t}
-                      onText={(v) => applySetupFieldValue(field, v)}
-                      onNumber={(v) => applySetupFieldValue(field, v)}
-                      onToggle={() => toggleSetupBoolean(field)}
-                      onSelect={(v) => applySetupFieldValue(field, v)}
-                    />
-                  ))}
-                </div>
-              )}
-              {setupFields.length > 0 && settingsObject === null && (
-                <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
-                  {t("experience_playground_settings_json_invalid")}
-                </p>
-              )}
-              {/* The raw JSON is ALWAYS under the collapsed "advanced"
-                  disclosure — with or without declared fields (verbatim quote:
-                  «жсон для технических пользователей под аккордеон прятать»);
-                  a non-technical user never faces a raw textarea by default. */}
-              <div className="mt-1.5">
-                <button
-                  type="button"
-                  className="flex cursor-pointer items-center gap-1.5 font-ui text-[11px] text-t3 transition-colors hover:text-t1"
-                  onClick={() => setSettingsJsonOpen((v) => !v)}
-                  aria-expanded={settingsJsonOpen}
-                  data-testid="playground-settings-advanced-toggle"
-                >
-                  <span className={cn("inline-block shrink-0 transition-transform", settingsJsonOpen && "rotate-90")}>
-                    {Ic.caret("r")}
-                  </span>
-                  {t("experience_playground_settings_advanced")}
-                </button>
-                <AnimatedDisclosure open={settingsJsonOpen}>
-                  {settingsJsonTextarea}
-                </AnimatedDisclosure>
+          </div>
+          <div className="mt-2">
+            <label className={lblCls}>{t("experience_setup_settings_label")}</label>
+            {/* LOBBY-A: the package's declared setup fields render as a real
+                form (author defaults seeded into the JSON). The raw JSON
+                textarea is ALWAYS under a collapsed "advanced" disclosure
+                (verbatim: «жсон для технических пользователей под аккордеон
+                прятать») — never the default view, fields or not. */}
+            {setupFormAvailable && (
+              <div className="mt-1.5 flex flex-col gap-2.5" data-testid="playground-setup-form">
+                {setupFields.map((field) => (
+                  <SetupFieldRow
+                    key={field.id}
+                    field={field}
+                    value={setupForm.values[field.id]}
+                    error={fieldErrors[field.id]}
+                    t={t}
+                    onText={(v) => applySetupFieldValue(field, v)}
+                    onNumber={(v) => applySetupFieldValue(field, v)}
+                    onToggle={() => toggleSetupBoolean(field)}
+                    onSelect={(v) => applySetupFieldValue(field, v)}
+                  />
+                ))}
               </div>
+            )}
+            {setupFields.length === 0 && (
+              <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-t3" data-testid="playground-no-fields">
+                {t("experience_playground_no_fields")}
+              </p>
+            )}
+            {setupFields.length > 0 && settingsObject === null && (
+              <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
+                {t("experience_playground_settings_json_invalid")}
+              </p>
+            )}
+            {/* The raw JSON is ALWAYS under the collapsed "advanced"
+                disclosure — with or without declared fields (verbatim quote:
+                «жсон для технических пользователей под аккордеон прятать»);
+                a non-technical user never faces a raw textarea by default. */}
+            <div className="mt-1.5">
+              <button
+                type="button"
+                className="flex cursor-pointer items-center gap-1.5 font-ui text-[11px] text-t3 transition-colors hover:text-t1"
+                onClick={() => setSettingsJsonOpen((v) => !v)}
+                aria-expanded={settingsJsonOpen}
+                data-testid="playground-settings-advanced-toggle"
+              >
+                <span className={cn("inline-block shrink-0 transition-transform", settingsJsonOpen && "rotate-90")}>
+                  {Ic.caret("r")}
+                </span>
+                {t("experience_playground_settings_advanced")}
+              </button>
+              <AnimatedDisclosure open={settingsJsonOpen}>
+                {settingsJsonTextarea}
+              </AnimatedDisclosure>
             </div>
           </div>
             </AnimatedDisclosure>
@@ -1591,6 +1657,42 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   </button>
                 </div>
               </div>
+
+              {/* LB-6 (EXPERIENCE_ENGINE_LOBBY_REPORT): the post-game strip — a
+                  DISTINCT prominent completed-state surface next to the status
+                  line. «Играть снова» restarts with the SAME settings/seats/roster
+                  and a fresh seed (handleRestart); «Изменить настройки» tears
+                  the run down to the expanded setup state (handleReset). The
+                  header restart/reset buttons stay (pre/post-game utility). */}
+              {session.status === "completed" && (
+                <div
+                  data-testid="playground-postgame-strip"
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-accent bg-accent-dim"
+                  style={{ padding: 10 }}
+                >
+                  <span className={cn(blockLabelCls, "text-accent-t")}>
+                    {t("experience_playground_postgame_title")}
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+                      disabled={busy !== null}
+                      onClick={handleRestart}
+                    >
+                      {t("experience_restart_play_again")}
+                    </button>
+                    <button
+                      type="button"
+                      className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                      disabled={busy !== null}
+                      onClick={handleReset}
+                    >
+                      {t("experience_restart_change_settings")}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* The REAL visual against the current playground state — primary view. */}
               <div className={blockCls} style={{ padding: 10 }}>

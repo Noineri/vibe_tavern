@@ -484,9 +484,20 @@ export interface DiceRollSnapshot {
  * and session, not on the manifest itself (mirrors the design's
  * `register({ apiVersion, manifest, … })` shape).
  */
+/** The interaction mode a manifest declares (RM-1): turn-based (the default,
+ *  host-mediated advance calls) or realtime (fixed-timestep ticks, frame-side
+ *  loop). Mirrors `experienceManifestSchema`'s enum in api-contracts. */
+export type ExperienceManifestMode = "turn" | "realtime";
+
 export interface ExperienceManifest {
   id: string;
   name: string;
+  /** Interaction mode. Absent on stored turn-based sessions (pre-RM-1 data);
+  *  discovery output always carries it (the schema defaults it to "turn"). */
+  mode?: ExperienceManifestMode;
+  /** The realtime fixed timestep in ms — present IFF mode is "realtime"
+  *  (16..1000, enforced by the contracts schema's iff rule). */
+  tickMs?: number;
 }
 
 /**

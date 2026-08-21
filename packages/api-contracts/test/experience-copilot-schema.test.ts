@@ -10,6 +10,8 @@ import {
   experienceCopilotContextMetricsSchema,
   experienceCopilotContextLinkSchema,
   setCopilotContextLinksSchema,
+  copilotTodoItemSchema,
+  copilotTodoListSchema,
   copilotToolSetSchema,
   copilotProfileSchema,
   COPILOT_TOOL_KEYS,
@@ -47,13 +49,76 @@ describe("experienceCopilotStepSchema (ER-5, unchanged)", () => {
   });
 });
 
-describe("experienceCopilotStreamRequestSchema (ER-6, unchanged)", () => {
+describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
   test("accepts a minimal request body", () => {
     const payload = { content: "hi", providerProfileId: "p1" };
     expect(experienceCopilotStreamRequestSchema.parse(payload)).toEqual({
       content: "hi",
       providerProfileId: "p1",
     });
+  });
+});
+
+// ─── TAG-5: split-turn answer mode on the stream request body ─────────────────
+
+describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
+  const base = { providerProfileId: "p1" };
+
+  test("answer-only is accepted (with text)", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_1", text: "make it blue" },
+    });
+    expect(parsed.answer).toEqual({ toolCallId: "tc_1", text: "make it blue" });
+  });
+
+  test("answer-only is accepted (skip)", () => {
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_1", skipped: true },
+    });
+    expect(parsed.answer).toEqual({ toolCallId: "tc_1", skipped: true });
+  });
+
+  test("content + answer together are rejected (exactly-one-of)", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        content: "hi",
+        answer: { toolCallId: "tc_1", text: "blue" },
+      }),
+    ).toThrow(/not both/);
+  });
+
+  test("neither content nor answer is rejected (exactly-one-of)", () => {
+    expect(() => experienceCopilotStreamRequestSchema.parse(base)).toThrow(/either/);
+  });
+
+  test("a skipped answer carrying text is rejected", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_1", skipped: true, text: "but actually…" },
+      }),
+    ).toThrow(/skipped answer cannot carry text/i);
+  });
+
+  test("an answer with neither text nor skipped is rejected", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, answer: { toolCallId: "tc_1" } }),
+    ).toThrow(/either `text` or `skipped`/);
+  });
+
+  test("answer rejects unknown keys (strict) and empty toolCallId", () => {
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_1", text: "x", bogus: 1 },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, answer: { text: "x" } }),
+    ).toThrow();
   });
 });
 
@@ -71,6 +136,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       updatedAt: "2026-01-02T00:00:00.000Z",
       metrics: null,
       contextLinks: [],
+      todo: [],
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
@@ -86,8 +152,44 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       updatedAt: "2026-01-03T00:00:00.000Z",
       metrics: null,
       contextLinks: [],
+      todo: [],
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("accepts a thread carrying a todo step-plan (TAG-6)", () => {
+    const payload = {
+      id: "thread_004",
+      scriptId: "script_abc",
+      draftSessionId: null,
+      title: "Plan",
+      archivedAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      metrics: null,
+      contextLinks: [],
+      todo: [
+        { title: "Write the rules buffer", status: "active" as const },
+        { title: "Bind a visual", status: "pending" as const },
+      ],
+    };
+    expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("rejects a thread missing the todo field (required — TAG-6)", () => {
+    expect(() =>
+      experienceCopilotThreadSchema.parse({
+        id: "thread_005",
+        scriptId: null,
+        draftSessionId: null,
+        title: "No todo",
+        archivedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        metrics: null,
+        contextLinks: [],
+      }),
+    ).toThrow();
   });
 
   test("rejects a thread missing the id field", () => {
@@ -256,14 +358,62 @@ describe("copilotToolSetSchema (CP-1)", () => {
     expect(() => copilotToolSetSchema.parse({ read_skill_file: true })).toThrow();
   });
 
-  test("COPILOT_TOOL_KEYS lists exactly the 5 toggleable tools (no read_skill_file)", () => {
+  test("accepts todo/ask_user booleans (TAG-1)", () => {
+    const payload = { todo: true, ask_user: false };
+    expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("COPILOT_TOOL_KEYS lists exactly the 7 toggleable tools (no read_skill_file)", () => {
     expect(COPILOT_TOOL_KEYS).toEqual([
       "write_buffer",
       "edit_buffer",
       "run_test",
       "run_simulate",
       "suggest_visual_binding",
+      "todo",
+      "ask_user",
     ]);
+  });
+});
+
+// ─── TAG-1: copilot todo schemas ─────────────────────────────────────────────
+
+describe("copilotTodoItemSchema (TAG-1)", () => {
+  test("accepts a valid item in each status", () => {
+    for (const status of ["pending", "active", "completed", "abandoned"] as const) {
+      const payload = { title: "Write the reduce loop", status };
+      expect(copilotTodoItemSchema.parse(payload)).toEqual(payload);
+    }
+  });
+
+  test("rejects an unknown status", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "x", status: "in_progress" })).toThrow();
+  });
+
+  test("rejects an empty title", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "", status: "pending" })).toThrow();
+  });
+
+  test("rejects an oversized title (cap 200)", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "y".repeat(201), status: "pending" })).toThrow();
+  });
+
+  test("rejects an unknown key (strict)", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "x", status: "pending", done: true })).toThrow();
+  });
+});
+
+describe("copilotTodoListSchema (TAG-1)", () => {
+  const item = { title: "step", status: "active" as const };
+
+  test("accepts a list at the cap (30 items)", () => {
+    const list = Array.from({ length: 30 }, () => item);
+    expect(copilotTodoListSchema.parse(list).length).toBe(30);
+  });
+
+  test("rejects a list over the cap (31 items)", () => {
+    const list = Array.from({ length: 31 }, () => item);
+    expect(() => copilotTodoListSchema.parse(list)).toThrow();
   });
 });
 
@@ -276,7 +426,6 @@ describe("copilotProfileSchema (CP-1)", () => {
       basePrompt: "You are a card-game experience author.",
       skillIds: ["experience-authoring"],
       toolSet: { edit_buffer: true, run_test: true },
-      maxSteps: 20,
     };
     expect(copilotProfileSchema.parse(payload)).toEqual(payload);
   });
@@ -290,12 +439,13 @@ describe("copilotProfileSchema (CP-1)", () => {
         basePrompt: "",
         skillIds: [],
         toolSet: {},
-        maxSteps: 20,
       }),
     ).toThrow();
   });
 
-  test("rejects maxSteps out of bounds", () => {
+  // maxSteps is REMOVED from the wire (TAG-10): the schema strips it — it is
+  // no longer a field at all, so a payload carrying it yields no maxSteps key.
+  test("strips maxSteps (removed from the wire — TAG-10)", () => {
     const base = {
       id: "x",
       name: "X",
@@ -304,8 +454,7 @@ describe("copilotProfileSchema (CP-1)", () => {
       skillIds: [],
       toolSet: {},
     };
-    expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 0 })).toThrow();
-    expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 51 })).toThrow();
+    expect(copilotProfileSchema.parse({ ...base, maxSteps: 5 })).not.toHaveProperty("maxSteps");
   });
 });
 

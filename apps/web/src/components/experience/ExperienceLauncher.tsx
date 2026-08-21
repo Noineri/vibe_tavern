@@ -5,7 +5,8 @@
  * {@link ExperienceSetupModal}, resumes the exact persisted session through the
  * Experience store, renders the immutable session-pinned visual source in the
  * Wave 6 sandboxed host, submits visual actions through the authoritative
- * store, runs durable pending model effects, supports trusted finish/detach,
+ * store, runs durable pending model effects, surfaces failed-effect
+ * diagnostics + retry in the trusted modal chrome, supports trusted finish/detach,
  * and keeps every closing UI non-destructive (close never ends the session).
  *
  * Non-goals (IR-73D): composer/send binding, authoring, API/backend/store
@@ -15,7 +16,10 @@
  * Session-preservation invariant: closing the modal calls ONLY
  * `store.closeModal` — never `endSession`. Reopening resumes the same persisted
  * session. The detached surface and the modal are mutually exclusive; only one
- * runs durable effects at a time.
+ * runs durable effects at a time. Effect ownership (LB-10, Option C): the
+ * runner lives while the CHAT PAGE is open — closing the modal keeps draining
+ * the queue; leaving the chat unmounts the launcher and stops the runner
+ * (durable pending rows stay frozen client-side, resumed on return).
  *
  * Visual source: an active session MUST have a non-null pinned `visualSource`
  * (IR-70G). The launcher surfaces a localized incompatible state when it is
@@ -35,6 +39,7 @@ import {
   useExperienceDetached,
   useExperienceEffects,
   useExperienceLastError,
+  getExperienceLastError,
   useExperienceLoading,
   useExperienceModalOpen,
   useExperienceQueuedAttachment,
@@ -52,6 +57,7 @@ import {
   type ExperienceActionOutcome,
 } from "./ExperienceModal.js";
 import { ExperienceReportControls } from "./ExperienceReportControls.js";
+import { ExperienceEffectDiagnostics, RETRYABLE_EFFECT_STATUSES } from "./ExperienceEffectDiagnostics.js";
 import { ExperienceSetupModal } from "./ExperienceSetupModal.js";
 import {
   openExperienceDetachedWindow,
@@ -100,6 +106,9 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   // ── Local UI state (reset on scope/config changes) ───────────────────────
   const [setupOpen, setSetupOpen] = useState(false);
+  // The source session whose snapshots prefill the setup modal when it is
+  // opened in restart mode (lobby LB-5); null for a plain Start.
+  const [setupRestartSource, setSetupRestartSource] = useState<ExperienceSessionResponse | null>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popupError, setPopupError] = useState(false);
   const scopeKey = chatId && branchId ? JSON.stringify([chatId, branchId]) : null;
@@ -115,6 +124,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     if (lastSurfaceKey.current !== surfaceKey) {
       lastSurfaceKey.current = surfaceKey;
       setSetupOpen(false);
+      setSetupRestartSource(null);
       setPopoverOpen(false);
       setPopupError(false);
     }
@@ -122,8 +132,8 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   // ── Visibility computed before the effect-runner hooks (Rules of Hooks) ───
   // `visible` is part of effect ownership: a launcher whose config became
-  // invisible must NOT keep `modalOpen` owning/running model effects while no
-  // surface is rendered.
+  // invisible must NOT keep owning/running model effects while no surface is
+  // rendered — the modal is force-closed below.
   const configReady = config !== null;
   const visible =
     chatId !== null
@@ -147,14 +157,17 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   // These are computed BEFORE the visibility gate so the effect-runner and
   // session-abort hooks below always run in the same order (Rules of Hooks).
-  // Effect ownership requires the surface to be rendered AND the modal open —
-  // a hidden launcher never owns/running model effects.
+  // Effect ownership (LB-10, Option C): the chat page being open owns the
+  // effects — the launcher chip renders while the chat page is open, so the
+  // queue drains with the modal closed too. A hidden/invisible launcher and a
+  // detached surface never own them; the detached window runs its own runner.
   const hasSession = session !== null;
-  const surfaceOwnsEffects = visible && modalOpen && !detached && hasSession;
+  const surfaceOwnsEffects = visible && !detached && hasSession;
   const sessionId = session?.sessionId ?? null;
 
-  // ── Durable model effect runner (only while the modal surface owns effects) ─
-  // Runs only `pending` MODEL rows, one at a time, through an abortable
+  // ── Durable model effect runner (while the chat-page surface owns effects) ─
+  // LB-10 Option C: the runner lives while the chat page is open — the modal
+  // state is irrelevant. Runs only `pending` MODEL rows, one at a time, through an abortable
   // store.runEffect. Timer effects are host-scheduled (fix step 2c): the
   // server answers 202 without running them, so they MUST be skipped here or
   // this loop would re-call the route forever. Never auto-repeats
@@ -196,12 +209,16 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   // terminal effect row arrive without user interaction. Self-disarms when no
   // live timer remains. Runs BEFORE the visibility gate like every other hook
   // (Rules of Hooks: the gate's early return must never change hook count).
-  useExperienceTimerResync({ chatId, branchId, effects, view: session?.view ?? null, active: visible && modalOpen && !detached && hasSession });
+  useExperienceTimerResync({ chatId, branchId, effects, view: session?.view ?? null, active: visible && !detached && hasSession });
 
   if (!visible) return null;
 
   const title = session?.manifest.name ?? config!.scriptId ?? "";
   const incompatible = hasSession && session!.visualSource === null;
+  // Endgame (lobby Б3): a terminal branch session (completed or interrupted)
+  // swaps the primary launcher action for the restart pair. Status is a plain
+  // string union — no domain constant is needed.
+  const terminal = hasSession && (session!.status === "completed" || session!.status === "interrupted");
 
   // ── Localized bridge-error message for the fail-closed action outcome ────
   function localizeError(code: BridgeErrorCode): string {
@@ -216,21 +233,36 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
       ...(action.payload !== undefined ? { payload: action.payload } : {}),
     };
     const store = useExperienceStore.getState();
-    const response = await store.submitAction(intent);
+    let response = await store.submitAction(intent);
     if (!chatId || !branchId) return { ok: false, code: "invalid_action", message: localizeError("invalid_action") };
-    const scope = store.byScope[JSON.stringify([chatId, branchId])];
-    return experienceActionOutcome(response, scope?.lastApiError ?? null, scope?.session?.revision, localizeError);
+    // Read the scope FRESH after each await (getState() at call time) — the
+    // submit/retry failure path rehydrates before surfacing the error, and the
+    // outcome mapping reads the error + revision from the current scope.
+    const scopeAfter = () => useExperienceStore.getState().byScope[JSON.stringify([chatId, branchId])] ?? null;
+    let outcome = experienceActionOutcome(response, scopeAfter()?.lastApiError ?? null, scopeAfter()?.session?.revision, localizeError);
+    // Timer-freedom fix: with controls enabled while timers are live, a click
+    // can race a host-fired tick (the client view is up to one resync behind
+    // the server). A stale click is not a user error — the store's failure
+    // path already rehydrated the fresh revision, so re-submit the SAME intent
+    // once. The second failure (if any) surfaces to the visual as before.
+    if (!outcome.ok && outcome.code === "stale_revision") {
+      response = await store.submitAction(intent);
+      outcome = experienceActionOutcome(response, scopeAfter()?.lastApiError ?? null, scopeAfter()?.session?.revision, localizeError);
+    }
+    return outcome;
   }
 
   // ── Start: open the setup modal for the exact chat/branch ────────────────
   function handleStart(): void {
     setPopoverOpen(false);
+    setSetupRestartSource(null);
     setSetupOpen(true);
   }
 
   // ── Setup onReady: close setup, open the persisted modal ─────────────────
   function handleSetupReady(_session: ExperienceSessionResponse): void {
     setSetupOpen(false);
+    setSetupRestartSource(null);
     useExperienceStore.getState().openModal();
   }
 
@@ -247,6 +279,40 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   function handleCloseModal(): void {
     setPopupError(false);
     useExperienceStore.getState().closeModal();
+  }
+
+  // ── Endgame «Играть снова» (Б3): one-shot restart, NO setup modal — an
+  // empty body makes the server reuse the source match's frozen snapshots,
+  // the plain rehydrate discovers the successor as the branch's active
+  // session, and the session modal opens on the NEW match.
+  async function handlePlayAgain(): Promise<void> {
+    setPopoverOpen(false);
+    try {
+      const result = await useExperienceStore.getState().restartSession();
+      if (result !== null) useExperienceStore.getState().openModal();
+    } catch (err) {
+      // The session (or scope) may disappear between render and click — the
+      // store then rejects locally. Keep this surface quiet rather than leaking
+      // an unhandled rejection (same guard as handleFinishExperience).
+      if (typeof console !== "undefined") console.warn("[experience] restart rejected", err);
+    }
+  }
+
+  // ── Endgame «Изменить настройки» (Б3): open the setup modal PREFILLED from
+  //  the finished match's frozen snapshots (LB-5) — Start then restarts.
+  function handleRestartChangeSettings(): void {
+    setPopoverOpen(false);
+    setSetupRestartSource(session);
+    setSetupOpen(true);
+  }
+
+  // ── In-session settings entry (Б4): the session modal's trusted-chrome
+  // confirm routed here — close the session modal FIRST so the setup modal
+  // is the only open surface.
+  function handleOpenSessionSettings(): void {
+    useExperienceStore.getState().closeModal();
+    setSetupRestartSource(session);
+    setSetupOpen(true);
   }
 
   // ── Finish: trusted confirmation → endSession → close ONLY on success ─────
@@ -270,6 +336,26 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     }
   }
 
+  // ── Quiet end (pos 2 quiet close): trusted confirmation → endSession(true)
+  //    → close ONLY on a genuine success ────────────────────────────────────
+  // A quiet end returns null BY DESIGN (nothing posted to the chat), so the
+  // finish handler's `result !== null` gate does not apply. Success is instead
+  // judged by whether the store recorded an error after the resync: null return
+  // + no lastError = server ended the session quietly → close. null return +
+  // lastError set (409/404) = server did NOT end it → keep the modal open so
+  // the fail-closed error stays visible and retryable.
+  async function handleEndSessionQuiet(): Promise<void> {
+    try {
+      await useExperienceStore.getState().endSession(true);
+      if (getExperienceLastError(chatId, branchId) === null) {
+        useExperienceStore.getState().closeModal();
+      }
+    } catch (err) {
+      // Same keep-open-and-retryable guard as the with-report finish.
+      if (typeof console !== "undefined") console.warn("[experience] quiet finish rejected", err);
+    }
+  }
+
   // ── Queue / Add later: the SAME server operation (store.queueReport) backs ─
   // both the initial manual Queue and a replacement/Add-later. The store owns
   // race guards + the server resync; this callback rejects on a null store
@@ -279,6 +365,15 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   async function handleQueueReport(): Promise<void> {
     const result = await useExperienceStore.getState().queueReport();
     if (result === null) throw new Error("experience queue failed");
+  }
+
+  // ── Effect retry (lobby diagnostics): reject on a null store result so the ─
+  // diagnostics surface can show a fail-closed error. On success the store
+  // resync brings the pending row back and the chat-page runner (LB-10)
+  // picks it up — this callback never runs the effect itself.
+  async function handleRetryEffect(effectId: string): Promise<void> {
+    const row = await useExperienceStore.getState().retryEffect(effectId);
+    if (row === null) throw new Error("experience effect retry failed");
   }
 
   // ── Detach: open the persisted detached window with the pinned descriptor ─
@@ -327,9 +422,11 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
       ? lastError
       : loading
         ? t("experience_launcher_loading")
-        : hasSession
-          ? t("experience_launcher_active")
-          : "";
+        : terminal
+          ? t("experience_launcher_finished")
+          : hasSession
+            ? t("experience_launcher_active")
+            : "";
 
   const body = (
     <div className="flex flex-col gap-2 p-2">
@@ -337,7 +434,27 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
         <span className="font-ui text-[12px] font-medium text-t1">{title || t("experience_launcher_title")}</span>
         {statusLine && <span className="font-ui text-[11px] text-t4">{statusLine}</span>}
       </div>
-      {!incompatible && (
+      {terminal && !incompatible ? (
+        // Endgame (Б3): the primary action is replaced by the restart pair.
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90"
+            onClick={() => void handlePlayAgain()}
+            data-testid="experience-restart-again"
+          >
+            {t("experience_restart_play_again")}
+          </button>
+          <button
+            type="button"
+            className="rounded bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 hover:bg-s3"
+            onClick={handleRestartChangeSettings}
+            data-testid="experience-restart-settings"
+          >
+            {t("experience_restart_change_settings")}
+          </button>
+        </div>
+      ) : !incompatible && (
         <button
           type="button"
           className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90"
@@ -423,8 +540,9 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           open={setupOpen}
           chatId={chatId}
           branchId={branchId}
-          onClose={() => setSetupOpen(false)}
+          onClose={() => { setSetupOpen(false); setSetupRestartSource(null); }}
           onReady={handleSetupReady}
+          restartSource={setupRestartSource}
         />
       )}
       {hasSession && !incompatible && (
@@ -441,6 +559,13 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           onAction={handleAction}
           onDetach={handleDetach}
           onFinishExperience={() => void handleFinishExperience()}
+          onEndSessionQuiet={handleEndSessionQuiet}
+          // Б4 is the RUNNING-game entry: terminal games use the popover
+          // restart pair instead, so the in-session settings entry is wired
+          // only for an active, compatible match.
+          onOpenSessionSettings={
+            hasSession && !terminal && !incompatible ? handleOpenSessionSettings : undefined
+          }
           reportControls={
             modalOpen ? (
               <ExperienceReportControls
@@ -448,6 +573,15 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
                 queuedAttachment={queuedAttachment}
                 reportStatus={reportStatus}
                 onQueue={handleQueueReport}
+              />
+            ) : undefined
+          }
+          effectDiagnostics={
+            modalOpen && effects.some((e) => RETRYABLE_EFFECT_STATUSES.includes(e.status)) ? (
+              <ExperienceEffectDiagnostics
+                key={surfaceKey ?? undefined}
+                effects={effects}
+                onRetry={handleRetryEffect}
               />
             ) : undefined
           }

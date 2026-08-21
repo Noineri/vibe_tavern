@@ -13,6 +13,7 @@ import { streamExperienceCopilot } from "../src/domain/interactive/copilot/exper
 import {
   COPILOT_CONTEXT_BUDGET_TOKENS,
   COPILOT_RESPONSE_RESERVE_TOKENS,
+  COPILOT_TOOL_LOOP_CEILING,
 } from "../src/domain/interactive/copilot/copilot-limits.js";
 import type {
   ExperienceCopilotStreamDeps,
@@ -34,14 +35,16 @@ let streamTextImpl: ((opts: unknown) => unknown) | undefined;
 
 function createFakeStore(
   thread: ExperienceCopilotThread,
-): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> } {
+): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> } {
   const messages: ExperienceCopilotMessage[] = [];
   const metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> = [];
+  const todoCalls: Array<{ threadId: string; items: unknown }> = [];
   let counter = 0;
   const now = () => new Date(Date.now() + counter++ * 1000).toISOString();
   return {
     messages,
     metricsCalls,
+    todoCalls,
     async getActive() { return null; },
     async getById() { return thread; },
     async listSessions() { return [thread]; },
@@ -67,7 +70,28 @@ function createFakeStore(
     },
     async getAutoCompact() { return true; },
     async setAutoCompact() {},
-  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> };
+    // TAG-6: the todo tool's full-list rewrite persists onto the thread row.
+    // The fake mirrors the real store: records the call AND mutates the in-
+    // memory thread's todo so the NEXT turn's `getById` (this same thread
+    // object) already carries the plan — the session-scoped lifetime behavior.
+    async updateTodo(threadId: string, items: readonly { title: string; status: string }[]) {
+      todoCalls.push({ threadId, items });
+      thread.todo = items as ExperienceCopilotThread["todo"];
+    },
+    // TAG-5: the fake mirrors the real store's semantics — rewrite the ONE
+    // tool row matching threadId+toolCallId (threadId ignored in the fake; one
+    // thread per test), null when no row matches.
+    async setToolResultOutput(
+      _threadId: string,
+      toolCallId: string,
+      payload: { toolName: string; output: unknown },
+    ) {
+      const row = messages.find((m) => m.role === "tool" && m.toolCallId === toolCallId);
+      if (!row) return null;
+      row.content = JSON.stringify(payload);
+      return row;
+    },
+  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> };
 }
 
 // ─── Fake streamText result ──────────────────────────────────────────────────
@@ -183,6 +207,7 @@ function makeThread(scriptId: string | null = null): ExperienceCopilotThread {
     archivedAt: null,
     contextMetrics: null,
     contextLinks: [],
+    todo: [],
     lastProviderProfileId: null,
     lastModel: null,
     autoCompact: true,
@@ -577,7 +602,7 @@ describe("experience-copilot stream (ER-6)", () => {
     expect(finish).toBeDefined();
   });
 
-  it("honors a resolved profile's base prompt, toolSet, and maxSteps (CP-7)", async () => {
+  it("honors a resolved profile's base prompt and toolSet (CP-7)", async () => {
     const store = createFakeStore(makeThread());
     const customProfile: CopilotProfile = {
       id: "custom",
@@ -586,7 +611,6 @@ describe("experience-copilot stream (ER-6)", () => {
       basePrompt: "CUSTOM STREAM PROMPT MARKER",
       skillIds: [],
       toolSet: { run_test: true },
-      maxSteps: 5,
     };
     let captured: Record<string, unknown> | null = null;
     streamTextImpl = (opts: unknown) => {
@@ -608,10 +632,15 @@ describe("experience-copilot stream (ER-6)", () => {
     // Only run_test + always-on read_skill_file survive the gated toolSet.
     const toolKeys = Object.keys(captured!.tools as Record<string, unknown>).sort();
     expect(toolKeys).toEqual(["read_skill_file", "run_test"]);
-    // maxSteps=5 flows into stopWhen: true at exactly 5 steps, false at 6.
-    const stopWhen = captured!.stopWhen as (r: { steps: unknown[] }) => boolean;
-    expect(stopWhen({ steps: [1, 2, 3, 4, 5] })).toBe(true);
-    expect(stopWhen({ steps: [1, 2, 3, 4, 5, 6] })).toBe(false);
+    // TAG-4/TAG-5: the profile no longer supplies maxSteps — the loop is bound
+    // by the nominal COPILOT_TOOL_LOOP_CEILING (a small step count no longer
+    // stops it). TAG-5 made stopWhen an ARRAY (ceiling + the ask_user
+    // split-turn stop); the step-count condition is the FIRST entry.
+    const stopWhen = captured!.stopWhen as Array<(r: { steps: unknown[] }) => boolean>;
+    expect(Array.isArray(stopWhen)).toBe(true);
+    expect(stopWhen[0]({ steps: [1, 2, 3, 4, 5] })).toBe(false);
+    expect(stopWhen[0]({ steps: new Array(COPILOT_TOOL_LOOP_CEILING) })).toBe(true);
+    expect(stopWhen[0]({ steps: new Array(COPILOT_TOOL_LOOP_CEILING - 1) })).toBe(false);
   });
 });
 
@@ -888,5 +917,354 @@ describe("experience-copilot stream — attached context (CX-3)", () => {
     }
     expect(caught).toBeInstanceOf(Error);
     expect(store.metricsCalls).toHaveLength(0); // no metrics persisted for the failed turn
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TAG-5: ask split-turn (style B)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  /** Seed an awaiting ask_user tool-result row (what a question turn's
+   *  persistTurn leaves behind) + the assistant row that carried the call. */
+  function seedAwaitingAsk(store: ReturnType<typeof createFakeStore>, toolCallId = "tc_ask_1") {
+    store.messages.push(
+      {
+        id: "msg_seed_q",
+        threadId: "thread_1",
+        role: "assistant",
+        content: "One question first:",
+        toolCallsJson: JSON.stringify([
+          { type: "tool-call", toolCallId, toolName: "ask_user", input: { question: "Blue or green?" } },
+        ]),
+        toolCallId: null,
+        createdAt: "2025-01-01T00:00:00.000Z",
+      },
+      {
+        id: "msg_seed_r",
+        threadId: "thread_1",
+        role: "tool",
+        content: JSON.stringify({
+          toolName: "ask_user",
+          output: { status: "awaiting_answer", question: "Blue or green?", options: ["blue", "green"], recommended: "blue" },
+        }),
+        toolCallsJson: null,
+        toolCallId,
+        createdAt: "2025-01-01T00:00:01.000Z",
+      },
+    );
+    return toolCallId;
+  }
+
+  /** Pull the LAST tool-role message's first tool-result part value (the
+   *  model-visible text of the seeded ask row) from the captured modelMessages. */
+  function lastAskResultText(modelMessages: Array<{ role: string; content: unknown }>): string {
+    const toolMsg = [...modelMessages].reverse().find((m) => m.role === "tool");
+    const part = (toolMsg!.content as Array<{ type: string; output?: { value?: string } }>)[0];
+    return part.output!.value!;
+  }
+
+  it("stopWhen wires the ceiling AND the ask_user stop condition (verified ai@7.0.66 API)", async () => {
+    const store = createFakeStore(makeThread());
+    let captured: { stopWhen?: unknown } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { stopWhen?: unknown };
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // Array of conditions: [isStepCount(CEILING), hasToolCall("ask_user")].
+    const stopWhen = captured!.stopWhen as Array<(o: { steps: Array<{ toolCalls?: Array<{ toolName: string }> }> }) => boolean>;
+    expect(Array.isArray(stopWhen)).toBe(true);
+    expect(stopWhen).toHaveLength(2);
+    // The second condition behaves as the SDK's hasToolCall: true iff the LAST
+    // step's tool calls include ask_user.
+    expect(stopWhen[1]({ steps: [{ toolCalls: [{ toolName: "write_buffer" }, { toolName: "ask_user" }] }] })).toBe(true);
+    expect(stopWhen[1]({ steps: [{ toolCalls: [{ toolName: "write_buffer" }] }] })).toBe(false);
+    expect(stopWhen[1]({ steps: [{}] })).toBe(false);
+    expect(stopWhen[1]({ steps: [] })).toBe(false);
+  });
+
+  it("a question turn streams the ask tool-call + awaiting marker and persists them; finish, not error", async () => {
+    const store = createFakeStore(makeThread());
+    streamTextImpl = () =>
+      makeFakeStreamTextResult({
+        parts: [
+          textDelta("I need one thing decided."),
+          toolCall("tc_q", "ask_user", { question: "Blue or green?", options: ["blue", "green"], recommended: "blue" }),
+          toolResult("tc_q", "ask_user", { status: "awaiting_answer", question: "Blue or green?", options: ["blue", "green"], recommended: "blue" }),
+        ],
+      });
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "make a theme", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const toolCallEvt = events.find((e) => e.event === "tool-call");
+    expect((toolCallEvt!.data as { toolName: string }).toolName).toBe("ask_user");
+    const toolResultEvt = events.find((e) => e.event === "tool-result");
+    expect((toolResultEvt!.data as { output: { status: string } }).output.status).toBe("awaiting_answer");
+    // The turn ends NORMALLY — a finish event, never an error.
+    expect(events.find((e) => e.event === "finish")).toBeDefined();
+    expect(events.find((e) => e.event === "error")).toBeUndefined();
+
+    // Persisted: user + assistant(text) + assistant(toolCalls) + tool(awaiting marker).
+    const toolRow = store.messages.find((m) => m.role === "tool");
+    expect(toolRow!.toolCallId).toBe("tc_q");
+    expect(JSON.parse(toolRow!.content)).toEqual({
+      toolName: "ask_user",
+      output: { status: "awaiting_answer", question: "Blue or green?", options: ["blue", "green"], recommended: "blue" },
+    });
+  });
+
+  it("answer mode: NO user row; the marker row is rewritten; the model sees the answer text as the tool-result", async () => {
+    const store = createFakeStore(makeThread());
+    seedAwaitingAsk(store);
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("Blue it is.")] });
+    };
+
+    const events = await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", answer: { toolCallId: "tc_ask_1", text: "blue" }, providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // No user row for an answer turn — the answer IS the tool-result.
+    expect(store.messages.filter((m) => m.role === "user")).toHaveLength(0);
+    // The marker row was rewritten to the answered payload.
+    const toolRow = store.messages.find((m) => m.toolCallId === "tc_ask_1")!;
+    expect(JSON.parse(toolRow.content)).toEqual({
+      toolName: "ask_user",
+      output: { status: "answered", answer: "blue" },
+    });
+    // The model window ends on the answered tool-result with the ANSWER TEXT
+    // (not the marker JSON), and the continuation persists normally.
+    expect(lastAskResultText(captured!.messages!)).toBe("blue");
+    const finish = events.find((e) => e.event === "finish");
+    expect(finish).toBeDefined();
+    expect(store.messages.at(-1)!.role).toBe("assistant");
+    expect(store.messages.at(-1)!.content).toBe("Blue it is.");
+  });
+
+  it("answer mode with skipped: the model sees (skipped)", async () => {
+    const store = createFakeStore(makeThread());
+    seedAwaitingAsk(store, "tc_skip_1");
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("Fine — I'll pick.")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", answer: { toolCallId: "tc_skip_1", skipped: true }, providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const toolRow = store.messages.find((m) => m.toolCallId === "tc_skip_1")!;
+    expect(JSON.parse(toolRow.content)).toEqual({
+      toolName: "ask_user",
+      output: { status: "skipped" },
+    });
+    expect(lastAskResultText(captured!.messages!)).toBe("(skipped)");
+  });
+
+  it("a dangling ask self-heals at the next assembly: the model reads the heal literal; the stored row is NOT mutated", async () => {
+    const store = createFakeStore(makeThread());
+    seedAwaitingAsk(store);
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("Alright, different topic.")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "never mind, do something else", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // The model sees the heal literal for the never-answered ask...
+    expect(lastAskResultText(captured!.messages!)).toBe("(the user did not answer this question; they moved on)");
+    // ...while the STORED row keeps its awaiting marker (prompt-side only —
+    // the UI still renders the unanswered state, and a LATE answer can still
+    // rewrite it).
+    const toolRow = store.messages.find((m) => m.toolCallId === "tc_ask_1")!;
+    expect((JSON.parse(toolRow.content) as { output: { status: string } }).output.status).toBe("awaiting_answer");
+    // The normal message still persisted as a user row.
+    expect(store.messages.filter((m) => m.role === "user")).toHaveLength(1);
+  });
+
+  it("an answer for a toolCallId that is not an awaiting ask in this thread is rejected", async () => {
+    const store = createFakeStore(makeThread());
+    seedAwaitingAsk(store);
+
+    // Unknown toolCallId.
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", answer: { toolCallId: "tc_bogus", text: "x" }, providerProfileId: "prov_1" },
+          makeDeps(store),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("not found");
+
+    // A REAL tool row, but not an ask (the rewrite guard must not fire on it).
+    store.messages.push({
+      id: "msg_seed_other",
+      threadId: "thread_1",
+      role: "tool",
+      content: JSON.stringify({ toolName: "write_buffer", output: { summary: "wrote" } }),
+      toolCallsJson: null,
+      toolCallId: "tc_wb_1",
+      createdAt: "2025-01-01T00:00:02.000Z",
+    });
+    caught = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", answer: { toolCallId: "tc_wb_1", text: "x" }, providerProfileId: "prov_1" },
+          makeDeps(store),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    // The write_buffer row was NOT rewritten.
+    const wbRow = store.messages.find((m) => m.toolCallId === "tc_wb_1")!;
+    expect((JSON.parse(wbRow.content) as { toolName: string }).toolName).toBe("write_buffer");
+  });
+
+  it("neither content nor answer (direct domain call) is rejected", async () => {
+    const store = createFakeStore(makeThread());
+    let caught: unknown = null;
+    try {
+      await collect(
+        streamExperienceCopilot(
+          { threadId: "thread_1", providerProfileId: "prov_1" } as never,
+          makeDeps(store),
+        ),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("either `content` or `answer`");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TAG-6: todo wiring (saveTodo → updateTodo + prompt section)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("experience-copilot stream — todo wiring (TAG-6)", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  it("wires the todo tool's saveTodo to the store: a todo call persists via updateTodo", async () => {
+    const store = createFakeStore(makeThread());
+    let captured: { tools?: Record<string, { execute?: (input: unknown) => Promise<unknown> }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "plan this out", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // The built tool set carries the todo tool (builtin seed has todo: true).
+    const todoTool = captured!.tools!["todo"];
+    expect(todoTool).toBeDefined();
+
+    // Invoking the tool's execute — the same path the real SDK loop drives —
+    // must flow through the wired saveTodo → store.updateTodo(threadId, items).
+    const items = [
+      { title: "Write rules", status: "active" },
+      { title: "Bind visual", status: "pending" },
+    ];
+    const result = await todoTool.execute!(items);
+    expect(result).toMatchObject({ ok: true, remaining: 2, activeTitle: "Write rules" });
+
+    expect(store.todoCalls).toHaveLength(1);
+    expect(store.todoCalls[0].threadId).toBe("thread_1");
+    expect(store.todoCalls[0].items).toEqual(items);
+  });
+
+  it("the NEXT turn's assembly carries the persisted todo section (session-scoped lifetime)", async () => {
+    // A prior turn already persisted a plan onto the thread (the fake's
+    // updateTodo mutates thread.todo; here we seed it directly to isolate the
+    // turn-over read path).
+    const thread = makeThread();
+    thread.todo = [
+      { title: "Write the rules buffer", status: "active" },
+      { title: "Bind a visual", status: "pending" },
+    ];
+    const store = createFakeStore(thread);
+    let captured: { messages?: Array<{ role: string; content: string }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("continuing")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "continue", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    const system = captured!.messages![0];
+    expect(system.role).toBe("system");
+    expect(system.content).toContain("# Current step plan");
+    expect(system.content).toContain("[active] Write the rules buffer");
+    expect(system.content).toContain("[pending] Bind a visual");
+  });
+
+  it("an empty todo → no todo section in the assembled prompt (byte-identical pre-TAG-6)", async () => {
+    const store = createFakeStore(makeThread()); // todo: []
+    let captured: { messages?: Array<{ role: string; content: string }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "hi", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    expect(captured!.messages![0].content).not.toContain("Current step plan");
   });
 });

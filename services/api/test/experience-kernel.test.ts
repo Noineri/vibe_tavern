@@ -34,7 +34,7 @@ import {
 	pickDistinct,
 	shuffle,
 	sumScores,
-} from "../src/domain/interactive/experience-helpers.js";
+} from "@vibe-tavern/domain";
 import type { ExperienceAction, ExperienceActionDescriptor, ExperienceViewer } from "@vibe-tavern/domain";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -185,10 +185,11 @@ describe("discoverExperienceDefinition", () => {
 		if (!result.ok) return;
 		expect(result.definition).toEqual({
 			apiVersion: 1,
-			manifest: { id: "counter", name: "Counter" },
+			manifest: { id: "counter", name: "Counter", mode: "turn" },
 			declaredCapabilities: [],
 			hasChoose: false,
 			hasFlavor: false,
+			hasUpdate: false,
 		});
 		expect(result.sourceHash.length).toBe(64);
 	});

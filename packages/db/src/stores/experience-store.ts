@@ -92,6 +92,7 @@ export interface ExperienceContextBundleRow {
   modelId: string | null;
   sourceCharacterId: string | null;
   sourceChatId: string | null;
+  sourcePersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -179,6 +180,7 @@ export interface CaptureContextBundleData {
   modelId?: string | null;
   sourceCharacterId?: string | null;
   sourceChatId?: string | null;
+  sourcePersonaId?: string | null;
 }
 
 export interface QueueAttachmentData {
@@ -443,12 +445,17 @@ export class ExperienceStore {
    * gains the public user-ended system step. A rule-completed state keeps its
    * status/revision and only releases the slot while freezing its accumulated
    * public result. The optional synchronous seam proves rollback atomicity.
+   * The optional `manualFinishDetail` (LB-2 restart) overrides the public
+   * system-step text of a manual finish («The user decided to end the game.»
+   * by default); a rule-completed finish never writes that step, so the
+   * override only applies to the active-source path.
    */
   finishSessionWithFinalReport(
     sessionId: string,
     expectedRevision: number,
     report: AtomicReportData,
     beforeFreeze?: () => void,
+    manualFinishDetail?: string,
   ): FinishSessionWithReportResult {
     return this.db.transaction((tx) => {
       const current = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
@@ -491,10 +498,10 @@ export class ExperienceStore {
             appliedRevision: finalRevision,
             actorSnapshotJson: null,
             inputJson: null,
-            emittedEventsJson: JSON.stringify([{ visibility: 'public', type: 'experience_finished', detail: 'The user decided to end the game.' }]),
+            emittedEventsJson: JSON.stringify([{ visibility: 'public', type: 'experience_finished', detail: manualFinishDetail ?? 'The user decided to end the game.' }]),
             emittedEffectsJson: '[]',
             stateHash: null,
-            message: 'The user decided to end the game.',
+            message: manualFinishDetail ?? 'The user decided to end the game.',
             createdAt: now,
           })
           .run();
@@ -504,6 +511,52 @@ export class ExperienceStore {
       const attachment = this.writeFinalAttachmentInTx(tx, this.mapRowSession(current), finalRevision, report, now);
       const updated = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
       return { ok: true, session: this.mapRowSession(updated!), attachment, idempotent: false };
+    });
+  }
+
+  /**
+   * Quiet end of an ACTIVE session (lobby report, pending queue pos 2:
+   * «закрыть модалку так, чтобы ничего не отправлялось в чат»). Releases the
+   * host-owned active slot WITHOUT any public artifact: no `experience_finished`
+   * system step is inserted and no terminal attachment is frozen. Instead the
+   * transaction DELETES every still-unbound attachment row for the session (a
+   * card the user queued earlier, or one left unbound — nothing experience-
+   * related may bind on the next host message). Never touches attachments that
+   * are already bound to a sent message (history stays intact).
+   *
+   * Same CAS + idempotency contract as {@link finishSessionWithFinalReport}:
+   * `session_not_found` / `stale_revision` conflicts; when the slot is already
+   * released (e.g. a rule-completed session) the quiet end is an idempotent
+   * no-op that still purges unbound attachments and returns `attachment: null`.
+   * The unbound-attachment purge runs only AFTER the CAS check passes on the
+   * active path — a stale attempt must not delete a card a concurrent action
+   * just queued on the still-live session.
+   */
+  finishSessionQuiet(sessionId: string, expectedRevision: number): FinishSessionWithReportResult {
+    return this.db.transaction((tx) => {
+      const current = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
+      if (!current) return { ok: false, conflict: 'session_not_found' };
+      const purgeUnbound = () =>
+        tx
+          .delete(experienceAttachments)
+          .where(and(eq(experienceAttachments.sessionId, sessionId), isNull(experienceAttachments.boundMessageId)))
+          .run();
+      if (current.activeSlot === null) {
+        // Already terminal: idempotent no-op that still purges unbound rows.
+        purgeUnbound();
+        return { ok: true, session: this.mapRowSession(current), attachment: null, idempotent: true };
+      }
+      if (current.revision !== expectedRevision) return { ok: false, conflict: 'stale_revision' };
+      purgeUnbound();
+      const finalRevision = current.revision + 1;
+      const now = this.clock.now();
+      tx
+        .update(experienceSessions)
+        .set({ status: 'interrupted', activeSlot: null, revision: finalRevision, reportFrontier: finalRevision, updatedAt: now })
+        .where(eq(experienceSessions.id, sessionId))
+        .run();
+      const updated = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
+      return { ok: true, session: this.mapRowSession(updated!), attachment: null, idempotent: false };
     });
   }
 
@@ -844,6 +897,7 @@ export class ExperienceStore {
       modelId: data.modelId ?? null,
       sourceCharacterId: data.sourceCharacterId ?? null,
       sourceChatId: data.sourceChatId ?? null,
+      sourcePersonaId: data.sourcePersonaId ?? null,
       updatedAt: now,
     };
     if (existing !== null) {
@@ -1518,6 +1572,7 @@ export class ExperienceStore {
       modelId: row.modelId,
       sourceCharacterId: row.sourceCharacterId,
       sourceChatId: row.sourceChatId,
+      sourcePersonaId: row.sourcePersonaId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

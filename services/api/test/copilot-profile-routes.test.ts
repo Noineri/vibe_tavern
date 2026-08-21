@@ -111,9 +111,11 @@ describe("PATCH /api/copilot/profiles/:id", () => {
       body: JSON.stringify({ name: "Card games v2", maxSteps: 12 }),
     });
     expect(update.status).toBe(200);
-    const updated = (await update.json()) as { name: string; maxSteps: number; basePrompt: string };
+    const updated = (await update.json()) as { name: string; maxSteps: number | undefined; basePrompt: string };
     expect(updated.name).toBe("Card games v2");
-    expect(updated.maxSteps).toBe(12);
+    // TAG-4: maxSteps is accepted on update (the live column still stores it)
+    // but no longer projected to the wire shape.
+    expect(updated.maxSteps).toBeUndefined();
     expect(updated.basePrompt).toBe("You help author card-game experiences.");
   });
 });

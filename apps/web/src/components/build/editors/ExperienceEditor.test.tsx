@@ -57,10 +57,11 @@ function makeTestRunData(): ExperienceTestRunData {
   return {
     definition: {
       apiVersion: 1,
-      manifest: { id: "test", name: "Test" },
+      manifest: { id: "test", name: "Test", mode: "turn" },
       declaredCapabilities: [],
       hasChoose: false,
       hasFlavor: false,
+      hasUpdate: false,
     },
     sourceHash: "abc123def456",
     initialState: {},

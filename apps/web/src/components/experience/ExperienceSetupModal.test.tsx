@@ -77,6 +77,7 @@ function setFakeState(patch: Partial<FakeState>): void {
 
 const mocks = {
   testScript: mock(),
+  listPersonas: mock(),
   listProviderProfiles: mock(),
   fetchProviderProfileModels: mock(),
   getExperiencePromptOverrides: mock(),
@@ -85,6 +86,7 @@ const mocks = {
   updateCharacterOverride: mock(),
   setScope: mock(),
   startSession: mock(),
+  restartSession: mock(),
   captureContext: mock(),
   rehydrate: mock(),
   endSession: mock(),
@@ -132,6 +134,7 @@ mock.module("../../stores/experience-store.js", () => ({
       byScope: { [SCOPE_KEY]: { lastError: state.lastError } },
       setScope: mocks.setScope,
       startSession: mocks.startSession,
+      restartSession: mocks.restartSession,
       captureContext: mocks.captureContext,
       rehydrate: mocks.rehydrate,
       endSession: mocks.endSession,
@@ -147,6 +150,9 @@ mock.module("../../api/experience-api.js", () => ({
   updateExperienceGlobalOverride: mocks.updateGlobalOverride,
   updateExperienceCharacterOverride: mocks.updateCharacterOverride,
 }));
+const realPersonaApi = await import("../../api/persona-api.js");
+mock.module("../../api/persona-api.js", () => ({ ...realPersonaApi, listPersonas: mocks.listPersonas }));
+
 mock.module("../../api/provider-api.js", () => ({
   ...realProviderApi,
   listProviderProfiles: mocks.listProviderProfiles,
@@ -181,6 +187,7 @@ function makeConfig(over: Partial<ExperienceChatConfigRow> = {}): ExperienceChat
     contextMode: "none",
     contextSourceCharacterId: null,
     contextSourceChatId: null,
+    contextSourcePersonaId: null,
     launcherVisible: true,
     createdAt: "t",
     updatedAt: "t",
@@ -194,7 +201,7 @@ function def(
 ): ExperienceDefinitionDto {
   const d: ExperienceDefinitionDto = {
     apiVersion: 1,
-    manifest: { id: "m", name: "Game" },
+    manifest: { id: "m", name: "Game", mode: "turn" },
     declaredCapabilities,
   };
   if (fields) d.setup = { fields };
@@ -210,7 +217,7 @@ function makeSession(id = "sess_1"): ExperienceSessionResponse {
     sessionId: id,
     chatId: CHAT_ID,
     branchId: BRANCH_ID,
-    manifest: { id: "m", name: "Game" },
+    manifest: { id: "m", name: "Game", mode: "turn" },
     apiVersion: 1,
     status: "active",
     revision: 1,
@@ -218,6 +225,7 @@ function makeSession(id = "sess_1"): ExperienceSessionResponse {
     capabilityGrants: [],
     contextMode: "none",
     participants: [],
+    initialSettings: {},
     view: { revision: 1, state: {}, actions: [], events: [], status: "active" },
     rulesRevision: 1,
     rulesSourceHash: "h",
@@ -240,6 +248,7 @@ function makeOverrides(global: string | null, character: string | null): Experie
 
 function setupDefaultMocks(): void {
   mocks.testScript.mockResolvedValue(interactiveOk(def([])));
+  mocks.listPersonas.mockResolvedValue([] as never);
   mocks.listProviderProfiles.mockResolvedValue([profile("p1", "Acme", "model-a"), profile("p2", "Beta")]);
   mocks.fetchProviderProfileModels.mockResolvedValue({ models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] });
   mocks.getExperiencePromptOverrides.mockResolvedValue(makeOverrides(null, null));
@@ -251,6 +260,11 @@ function setupDefaultMocks(): void {
   });
   mocks.startSession.mockImplementation(async () => {
     const session = makeSession();
+    setFakeState({ session, lastError: null });
+    return session;
+  });
+  mocks.restartSession.mockImplementation(async () => {
+    const session = makeSession("sess_new");
     setFakeState({ session, lastError: null });
     return session;
   });
@@ -780,6 +794,34 @@ describe("ExperienceSetupModal — context mode", () => {
     expect(view.queryByText("experience_setup_context_label")).toBeNull();
   });
 
+  it("ready phase: no context section without the rp_context grant, ready-note still visible", async () => {
+    // No grant → contextControls is false; a contextMode of none drives the
+    // ready phase directly (no capture), so PreparationBody runs the gate.
+    setFakeState({ config: makeConfig({ capabilityGrants: [], contextMode: "none" }) });
+    mocks.testScript.mockResolvedValue(interactiveOk(def([])));
+    const view = renderModal();
+    await whenReady(view);
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(view.getByTestId("experience-setup-continue")).toBeTruthy());
+    // Gated section absent in the ready phase…
+    expect(view.queryByText("experience_setup_context_label")).toBeNull();
+    // …but the ready-note moved out of the gated block stays visible.
+    expect(view.queryByText("experience_setup_ready_note")).not.toBeNull();
+  });
+
+  it("ready phase: context section renders with the rp_context grant, ready-note visible", async () => {
+    setFakeState({ config: makeConfig({ capabilityGrants: ["rp_context"], contextMode: "none" }) });
+    mocks.testScript.mockResolvedValue(interactiveOk(def([{ capability: "rp_context" }])));
+    const view = renderModal();
+    await whenReady(view);
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(view.getByTestId("experience-setup-continue")).toBeTruthy());
+    // With the grant the context section renders in the ready phase…
+    expect(view.queryByText("experience_setup_context_label")).not.toBeNull();
+    // …and the ready-note is still visible.
+    expect(view.queryByText("experience_setup_ready_note")).not.toBeNull();
+  });
+
   it("renders all five canonical context modes", async () => {
     const view = renderModal();
     await whenReady(view);
@@ -805,6 +847,7 @@ describe("ExperienceSetupModal — context mode", () => {
         contextMode: "current_branch",
         contextSourceCharacterId: null,
         contextSourceChatId: null,
+        contextSourcePersonaId: null,
       }),
     );
     await waitFor(() => expect(mocks.rehydrate).toHaveBeenCalledWith(CHAT_ID, BRANCH_ID));
@@ -1069,6 +1112,10 @@ describe("ExperienceSetupModal — layout", () => {
 
 describe("ExperienceSetupModal — context source picker", () => {
   beforeEach(() => {
+    mocks.listPersonas.mockResolvedValue([
+      { id: "persona_v", name: "Vera" },
+      { id: "persona_k", name: "Kat" },
+    ] as never);
     fakeAllCharacters = [
       { id: "char_a", name: "Aria" },
       { id: "char_b", name: "Bruno" },
@@ -1100,6 +1147,7 @@ describe("ExperienceSetupModal — context source picker", () => {
       expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
         contextSourceCharacterId: "char_b",
         contextSourceChatId: "chat_b1",
+        contextSourcePersonaId: null,
       }),
     );
   });
@@ -1119,6 +1167,7 @@ describe("ExperienceSetupModal — context source picker", () => {
       expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
         contextSourceCharacterId: "char_a",
         contextSourceChatId: null,
+        contextSourcePersonaId: null,
       }),
     );
   });
@@ -1139,5 +1188,144 @@ describe("ExperienceSetupModal — context source picker", () => {
     fireEvent.click(view.getByTestId("experience-setup-start"));
     await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
     expect(mocks.updateExperienceConfig).not.toHaveBeenCalled();
+  });
+
+  // ─── Wave 3 (PS-4): persona source — the user-identity picker ─────────────
+
+  it("no persona chosen → no persona preview line; no config write at start", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    expect(view.queryByTestId("experience-setup-source-persona-preview")).toBeNull();
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
+    expect(mocks.updateExperienceConfig).not.toHaveBeenCalled();
+  });
+
+  it("picking a persona shows the identity preview and persists it at start (independent of char/chat)", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    await pickDropdown(view, view.baseElement, "experience_setup_source_persona_placeholder", "Vera");
+    expect(view.getByTestId("experience-setup-source-persona-preview").textContent).toBe(
+      "experience_setup_source_preview_persona",
+    );
+    // The char/chat source preview is untouched (ambient).
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_ambient");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() =>
+      expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
+        contextSourceCharacterId: null,
+        contextSourceChatId: null,
+        contextSourcePersonaId: "persona_v",
+      }),
+    );
+  });
+
+  it("persona init-once from the confirmed config; picking a chat does not clobber the persona", async () => {
+    setFakeState({
+      config: makeConfig({
+        capabilityGrants: ["rp_context"],
+        contextMode: "recent",
+        contextSourcePersonaId: "persona_k",
+      }),
+    });
+    const view = renderModal();
+    await whenReady(view);
+    // Config-seeded persona renders its preview without any interaction.
+    expect(view.getByTestId("experience-setup-source-persona-preview").textContent).toBe(
+      "experience_setup_source_preview_persona",
+    );
+    await pickDropdown(view, view.baseElement, "experience_setup_source_chat_placeholder", "Bruno thread");
+    expect(view.getByTestId("experience-setup-source-preview").textContent).toBe("experience_setup_source_preview_both");
+    expect(view.getByTestId("experience-setup-source-persona-preview").textContent).toBe(
+      "experience_setup_source_preview_persona",
+    );
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() =>
+      expect(mocks.updateExperienceConfig).toHaveBeenCalledWith(CHAT_ID, {
+        contextSourceCharacterId: "char_b",
+        contextSourceChatId: "chat_b1",
+        contextSourcePersonaId: "persona_k",
+      }),
+    );
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 14. Restart mode (lobby LB-5): snapshot prefill + Start=restart
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("ExperienceSetupModal — restart mode (lobby LB-5)", () => {
+  const ROSTER = [
+    { id: "seat_1", label: "Hero", controller: "human" as const },
+    { id: "seat_2", label: "Villain", controller: "model" as const, providerProfileId: "p1", modelId: "model-a" },
+  ];
+
+  function restartSourceFixture() {
+    return {
+      ...makeSession("sess_old"),
+      status: "completed" as const,
+      participants: ROSTER,
+      // "ghost" exercises the dropped-key rule: a settings key the author has
+      // since removed must not reach the restart request.
+      initialSettings: { name: "Veteran", rounds: 7, hardcore: true, style: "calm", ghost: "dropped" },
+    };
+  }
+
+  beforeEach(() => {
+    setFakeState({ config: makeConfig({ capabilityGrants: ["participants", "model"] }) });
+    mocks.testScript.mockResolvedValue(
+      interactiveOk(def([{ capability: "participants" }, { capability: "model" }], fieldDefs().setup?.fields)),
+    );
+  });
+
+  it("overlays the frozen snapshot over authored defaults and rebuilds the roster", async () => {
+    const view = renderModal({ restartSource: restartSourceFixture() });
+    await whenReady(view);
+    const text = view.baseElement.querySelector('[data-field-id="name"] textarea') as HTMLTextAreaElement;
+    expect(text.value).toBe("Veteran");
+    const num = await waitFor(() => {
+      const el = view.baseElement.querySelector('[data-field-id="rounds"] input') as HTMLInputElement;
+      expect(el.value).toBe("7");
+      return el;
+    });
+    expect(num).toBeTruthy();
+    const checkbox = view.baseElement.querySelector('[data-field-id="hardcore"] [role="checkbox"]');
+    expect(checkbox?.getAttribute("aria-checked")).toBe("true");
+    // Select prefill renders the option's LABEL in the trigger.
+    expect(view.getByText("Calm")).toBeTruthy();
+    // Roster rebuilt from the frozen participants (labels ride the snapshot).
+    const seat1 = view.baseElement.querySelector('[data-seat-id="seat_1"] input[type="text"]') as HTMLInputElement;
+    const seat2 = view.baseElement.querySelector('[data-seat-id="seat_2"] input[type="text"]') as HTMLInputElement;
+    expect(seat1.value).toBe("Hero");
+    expect(seat2.value).toBe("Villain");
+  });
+
+  it("Start restarts through the store with the edited settings+roster, never startSession", async () => {
+    const view = renderModal({ restartSource: restartSourceFixture() });
+    await whenReady(view);
+    // The primary action labels itself as the restart (t returns keys verbatim).
+    expect(view.getByTestId("experience-setup-start").textContent).toBe("experience_setup_restart");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.restartSession).toHaveBeenCalledTimes(1));
+    const [override] = mocks.restartSession.mock.calls[0];
+    expect(override.settings).toEqual({ name: "Veteran", rounds: 7, hardcore: true, style: "calm" });
+    expect("ghost" in override.settings).toBe(false);
+    expect("optional_note" in override.settings).toBe(false);
+    expect(override.participants).toEqual(ROSTER);
+    expect(mocks.startSession).not.toHaveBeenCalled();
+    // Post-restart flow is the normal one: context none → ready → Continue.
+    await waitFor(() => expect(view.getByTestId("experience-setup-continue")).toBeTruthy());
+  });
+
+  it("without restartSource the plain Start path is untouched (regression)", async () => {
+    // Plain path: no grants → roster hidden, defaults submit directly.
+    setFakeState({ config: makeConfig() });
+    mocks.testScript.mockResolvedValue(interactiveOk(fieldDefs()));
+    const view = renderModal();
+    await whenReady(view);
+    expect(view.getByTestId("experience-setup-start").textContent).toBe("experience_setup_start");
+    fireEvent.click(view.getByTestId("experience-setup-start"));
+    await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
+    expect(mocks.restartSession).not.toHaveBeenCalled();
   });
 });

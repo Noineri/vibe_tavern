@@ -27,7 +27,6 @@ export interface CopilotProfileRow {
   basePrompt: string;
   skillIds: string[];
   toolSet: StoredCopilotToolSet;
-  maxSteps: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,7 +36,6 @@ export interface CreateCopilotProfileData {
   basePrompt: string;
   skillIds: string[];
   toolSet: StoredCopilotToolSet;
-  maxSteps: number;
 }
 
 export type UpdateCopilotProfileData = Partial<CreateCopilotProfileData>;
@@ -82,7 +80,6 @@ export class CopilotProfileStore {
         basePrompt: data.basePrompt,
         skillIdsJson: JSON.stringify(data.skillIds),
         toolSetJson: JSON.stringify(data.toolSet),
-        maxSteps: data.maxSteps,
         createdAt: now,
         updatedAt: now,
       })
@@ -101,7 +98,6 @@ export class CopilotProfileStore {
     if (data.basePrompt !== undefined) values.basePrompt = data.basePrompt;
     if (data.skillIds !== undefined) values.skillIdsJson = JSON.stringify(data.skillIds);
     if (data.toolSet !== undefined) values.toolSetJson = JSON.stringify(data.toolSet);
-    if (data.maxSteps !== undefined) values.maxSteps = data.maxSteps;
 
     await this.db.update(copilotProfiles).set(values).where(eq(copilotProfiles.id, id)).run();
     const row = await this.getById(id);
@@ -120,7 +116,6 @@ export class CopilotProfileStore {
       basePrompt: row.basePrompt,
       skillIds: parseStringArray(row.skillIdsJson),
       toolSet: parseToolSet(row.toolSetJson),
-      maxSteps: row.maxSteps,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

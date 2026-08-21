@@ -96,6 +96,7 @@ export interface UpdateConfigInput {
   visualId?: string | null;
   contextSourceCharacterId?: string | null;
   contextSourceChatId?: string | null;
+  contextSourcePersonaId?: string | null;
   capabilityGrants?: ExperienceCapability[];
   contextMode?: ExperienceContextMode;
   launcherVisible?: boolean;
@@ -347,6 +348,7 @@ export class ExperienceResourceService {
       visualId: input.visualId,
       contextSourceCharacterId: input.contextSourceCharacterId,
       contextSourceChatId: input.contextSourceChatId,
+      contextSourcePersonaId: input.contextSourcePersonaId,
       capabilityGrants,
       contextMode: contextMode as string | undefined,
       launcherVisible: input.launcherVisible,

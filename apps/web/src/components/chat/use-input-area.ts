@@ -20,6 +20,7 @@ import { useCharacterController } from "../../hooks/use-character-controller.js"
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { enqueueGenerateMore } from "../../hooks/use-generation-queue.js";
+import { randomUUID } from "../../lib/uuid.js";
 import { useChatStore, useProviderStore, useIsSending } from "../../stores/index.js";
 import { useDiceLanes, useDiceStore } from "../../stores/dice-store.js";
 import { useActiveTrace, useChatMeta, useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
@@ -96,7 +97,7 @@ export function useInputArea() {
     try {
       const { assetId } = await uploadAsset(file);
       addDraftAttachment({
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         assetId,
         type: "image",
         name: file.name,

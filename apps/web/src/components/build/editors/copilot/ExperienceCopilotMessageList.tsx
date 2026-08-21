@@ -4,12 +4,16 @@ import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import {
   extractHistoricalTurnActivities,
   useExperienceCopilotTurnStore,
+  type CopilotAskState,
   type CopilotFeedEntry,
   type ExperienceCopilotToolActivity,
 } from "../../../../stores/experience-copilot-turn-store.js";
+import type { CopilotAskAnswerInput } from "../../../../api/experience-copilot-api.js";
+import type { ExperienceCopilotPendingAskAnswer } from "../../../../hooks/use-experience-copilot-controller.js";
 import { orderMessagesWithDigests } from "../../../../lib/copilot-context.js";
 import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.js";
 import { CopilotActivityCard } from "./CopilotActivityCard.js";
+import { CopilotAskCard } from "./CopilotAskCard.js";
 import { MessageReasoning } from "../../../chat/MessageReasoning.js";
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
@@ -44,6 +48,14 @@ export interface ExperienceCopilotMessageListProps {
   /** The user's just-sent message, shown optimistically while the model
    *  generates (the persisted user row only lands after the turn settles). */
   pendingUserContent: string;
+  /** TAG-9: disables ask-card interactivity while a stream runs. */
+  isSending?: boolean;
+  /** TAG-9: answer handler for the live awaiting ask card — bound by the
+   *  shell with the current draft buffers (mirrors the input area's onSend). */
+  onAnswer?: (toolCallId: string, answer: CopilotAskAnswerInput) => void;
+  /** TAG-9: the controller's optimistic resolution of the just-answered ask —
+   *  flips the card immediately, before the settle+refetch round-trip. */
+  pendingAskAnswer?: ExperienceCopilotPendingAskAnswer | null;
 }
 
 export function ExperienceCopilotMessageList({
@@ -52,6 +64,9 @@ export function ExperienceCopilotMessageList({
   pendingText,
   pendingReasoning,
   pendingUserContent,
+  isSending = false,
+  onAnswer,
+  pendingAskAnswer = null,
 }: ExperienceCopilotMessageListProps) {
   const { t } = useT();
   const activities = useExperienceCopilotTurnStore(
@@ -107,6 +122,62 @@ export function ExperienceCopilotMessageList({
     () => new Map(activities.map((a) => [a.toolCallId, a])),
     [activities],
   );
+
+  // TAG-9: the chronologically LAST activity of the thread (live feed first —
+  // it is the current turn; then trailing history cards; then the anchor
+  // cards of the last flow message). Only an awaiting `ask_user` activity
+  // that IS this last one renders interactively; an awaiting ask with any
+  // later activity renders as expired (the user moved on). Raw `messages`
+  // order is chronological for flow rows (digests are a separate role and
+  // never hold anchor cards), so the scan runs on `messages` directly.
+  const lastActivityId = useMemo(() => {
+    for (let i = feed.length - 1; i >= 0; i--) {
+      const entry = feed[i];
+      if (entry && entry.kind === "activity") return entry.id;
+    }
+    const lastTrailing = trailingCards[trailingCards.length - 1];
+    if (lastTrailing) return lastTrailing.toolCallId;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (!m || (m.role !== "user" && m.role !== "assistant")) continue;
+      const cards = anchorCards.get(m.id);
+      const last = cards?.[cards.length - 1];
+      if (last) return last.toolCallId;
+    }
+    return null;
+  }, [feed, trailingCards, anchorCards, messages]);
+
+  // TAG-9: render an `ask_user` activity as the interactive ask card instead
+  // of the generic activity card — everywhere an activity can appear (history
+  // anchors, trailing cards, the live feed). The optimistic controller
+  // override (`pendingAskAnswer`) flips the just-answered card immediately.
+  const renderActivity = (activity: ExperienceCopilotToolActivity) => {
+    const ask = activity.ask;
+    if (ask) {
+      const resolved: CopilotAskState =
+        pendingAskAnswer && pendingAskAnswer.toolCallId === activity.toolCallId
+          ? {
+              ...ask,
+              status: pendingAskAnswer.status,
+              ...(pendingAskAnswer.answer !== undefined ? { answer: pendingAskAnswer.answer } : {}),
+            }
+          : ask;
+      return (
+        <CopilotAskCard
+          key={activity.toolCallId}
+          ask={resolved}
+          interactive={
+            resolved.status === "awaiting_answer" &&
+            activity.toolCallId === lastActivityId &&
+            !isSending &&
+            onAnswer !== undefined
+          }
+          onSubmit={onAnswer ? (a) => onAnswer(activity.toolCallId, a) : undefined}
+        />
+      );
+    }
+    return <CopilotActivityCard key={activity.toolCallId} activity={activity} />;
+  };
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
@@ -168,9 +239,7 @@ export function ExperienceCopilotMessageList({
         <div className="flex flex-col gap-3">
           {visibleMessages.map((entry) => (
             <Fragment key={entry.message.id}>
-              {anchorCards.get(entry.message.id)?.map((activity) => (
-                <CopilotActivityCard key={activity.toolCallId} activity={activity} />
-              ))}
+              {anchorCards.get(entry.message.id)?.map((activity) => renderActivity(activity))}
               <ExperienceCopilotMessageBlock
                 message={entry.message}
                 coveredCount={entry.coveredCount}
@@ -178,9 +247,7 @@ export function ExperienceCopilotMessageList({
             </Fragment>
           ))}
 
-          {trailingCards.map((activity) => (
-            <CopilotActivityCard key={activity.toolCallId} activity={activity} />
-          ))}
+          {trailingCards.map((activity) => renderActivity(activity))}
 
           {hasPendingUserContent && (
             <ExperienceCopilotMessageBlock
@@ -210,9 +277,7 @@ export function ExperienceCopilotMessageList({
           {feed.map((entry) => {
             if (entry.kind === "activity") {
               const activity = activityById.get(entry.id);
-              return activity ? (
-                <CopilotActivityCard key={entry.id} activity={activity} />
-              ) : null;
+              return activity ? renderActivity(activity) : null;
             }
             // Post-settle: the controller clears `pendingText`, so feed text is
             // suppressed while the refetched history owns the persisted rows;

@@ -38,10 +38,11 @@ function makeRunData(overrides: Partial<ExperienceTestRunData> = {}): Experience
   return {
     definition: {
       apiVersion: 1,
-      manifest: { id: "round", name: "Round" },
+      manifest: { id: "round", name: "Round", mode: "turn" },
       declaredCapabilities: [{ capability: "participants", reason: "x" }],
       hasChoose: false,
       hasFlavor: false,
+      hasUpdate: false,
     },
     sourceHash: "h",
     initialState: {},
@@ -83,6 +84,7 @@ function makePlayground(overrides: Partial<ExperiencePlaygroundData> = {}): Expe
     },
     events: [{ visibility: "public", type: "replied" }],
     effects: [{ kind: "model", request: { prompt: "n" } }],
+    pendingTimers: 0,
     console: [{ level: "log", args: ["hi"] }],
     revision: 7,
     status: "active",

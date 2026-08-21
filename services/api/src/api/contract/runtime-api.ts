@@ -601,6 +601,7 @@ export interface ExperienceContextStatusDto {
   modelId: string | null;
   sourceCharacterId: string | null;
   sourceChatId: string | null;
+  sourcePersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -631,6 +632,7 @@ export interface ExperienceRuntimeApi {
 		visualId?: string | null;
 		contextSourceCharacterId?: string | null;
 		contextSourceChatId?: string | null;
+		contextSourcePersonaId?: string | null;
 		capabilityGrants?: import("@vibe-tavern/domain").ExperienceCapability[];
 		contextMode?: import("@vibe-tavern/domain").ExperienceContextMode;
 		launcherVisible?: boolean;
@@ -666,8 +668,14 @@ export interface ExperienceRuntimeApi {
 	 *  active session and project it for the human viewer. Returns the SAME
 	 *  response shape as {@link getExperienceSession}. */
 	getActiveExperienceSession: (chatId: string, branchId: string) => Promise<ExperienceSessionResponse>;
-	/** Canonical explicit user finish: terminal snapshot is atomically queued. */
-	endExperienceSession: (sessionId: string, body: { expectedRevision: number }) => Promise<ExperienceQueuedAttachmentResponse>;
+	/** Canonical explicit user finish: terminal snapshot is atomically queued.
+	 *  `quiet` (pos 2) ends the session WITHOUT any public report card and
+	 *  returns null. */
+	endExperienceSession: (sessionId: string, body: { expectedRevision: number; quiet?: boolean }) => Promise<ExperienceQueuedAttachmentResponse>;
+	/** Restart as a NEW match on the same branch (lobby report LB-2/LB-3):
+	 *  fresh session id under a new seed; omitted override fields fall back to
+	 *  the source session's frozen snapshots. */
+	restartExperienceSession: (sessionId: string, body: { settings?: unknown; participants?: import("@vibe-tavern/domain").ExperienceParticipant[] }) => Promise<ExperienceSessionResponse>;
 	submitExperienceAction: (sessionId: string, body: import("@vibe-tavern/domain").ExperienceAction, signal?: AbortSignal) => Promise<ExperienceActionResponse>;
 
 	// ── Per-viewer projection reads ──
@@ -687,15 +695,20 @@ export interface ExperienceRuntimeApi {
 	undoExperienceSession: (sessionId: string, body: { targetRevision: number }) => Promise<ExperienceActionResponse>;
 	previewExperienceRecalculation: (sessionId: string, body: { rulesCode: string }) => Promise<RecalculationPreview>;
 
-	// ── Effects (read-only; retry/resolve lands in Wave 4) ──
+	// ── Effects (run + explicit retry; further resolve logic is Wave 4) ──
 	getExperienceEffects: (sessionId: string) => Promise<ExperienceEffectRow[]>;
 	runExperienceEffect: (effectId: string, signal?: AbortSignal) => Promise<ExperienceEffectRunResponse>;
+	/** Explicit user retry: a failed/cancelled/unknown effect returns to `pending`
+	 *  (attemptCount+1, error cleared); the host runner owns re-running it —
+	 *  this never runs the effect. Typed 404 for a missing effect, 409 when the
+	 *  current status is not retryable. */
+	retryExperienceEffect: (effectId: string) => Promise<ExperienceEffectRow>;
 
 	// ── Context capture + status (IR-70D) ──
 	/** Explicit cancellable context capture. Requires immutable session grant
 	 *  `rp_context`. The signal passes through to the compact-summary generation
 	 *  so a client disconnect persists nothing and preserves the prior bundle. */
-	captureExperienceContext: (sessionId: string, body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null }, signal?: AbortSignal) => Promise<ExperienceContextStatusDto>;
+	captureExperienceContext: (sessionId: string, body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number; contextSourceCharacterId?: string | null; contextSourceChatId?: string | null; contextSourcePersonaId?: string | null }, signal?: AbortSignal) => Promise<ExperienceContextStatusDto>;
 	/** Read the session's current frozen context-bundle metadata, or null when
 	 *  never captured. Returns ONLY session metadata + provider/model ids — never
 	 *  payload fields (variants, compact summary, character/persona snapshots, RP
@@ -742,6 +755,11 @@ export interface ExperienceRuntimeApi {
 	 *  turn's state/projection/events/effects/console + bumped revision/status/
 	 *  stop-reason. requestId idempotency precedes expectedRevision CAS. */
 	advanceExperiencePlayground: (body: ExperiencePlaygroundAdvanceInput) => Promise<ExperiencePlaygroundData>;
+	/** Execute ONE timer beat: sleep the oldest pending timer's `afterMs`, then
+	 *  feed the tick back through the real reducer (claim-time legality
+	 *  re-check; late ticks are dropped, timer stale-drop parity). The client's
+	 *  beat loop keys on the response's `pendingTimers`. */
+	runExperiencePlaygroundTimer: (body: { readonly playgroundSessionId: string }) => Promise<ExperiencePlaygroundData>;
 }
 
 // ─── Experience Copilot (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-6) ───────

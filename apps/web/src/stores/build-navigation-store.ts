@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { randomUUID } from "../lib/uuid.js";
 
 export type DiceScope =
   | { type: "chat"; id: string }
@@ -34,7 +35,7 @@ export const useBuildNavigationStore = create<BuildNavigationStore>()((set, get)
       tab: "scripts",
       action: "create",
       scriptKind: "dice",
-      createIntentId: crypto.randomUUID(),
+      createIntentId: randomUUID(),
     };
     set({ diceCreateIntent: intent });
     return intent;

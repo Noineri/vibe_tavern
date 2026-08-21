@@ -81,7 +81,7 @@ import type {
 	StructuredActionChoiceInput,
 	StructuredActionChoiceResult,
 } from "./experience-model-effect-structured.js";
-import { validatePayloadValue } from "./experience-payload-schema.js";
+import { validatePayloadValue } from "@vibe-tavern/domain";
 
 // ─── Public types ────────────────────────────────────────────────────────────
 

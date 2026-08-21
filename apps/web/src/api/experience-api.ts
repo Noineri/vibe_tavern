@@ -28,6 +28,7 @@ import type {
   ExperienceEffectRow,
   ExperienceEffectRunResponse,
   ExperienceFinishRequest,
+  ExperienceRestartRequest,
   ExperienceProjection,
   ExperiencePlaygroundAdvanceRequest,
   ExperiencePlaygroundData,
@@ -170,6 +171,19 @@ export async function getActiveExperienceSession(chatId: string, branchId: strin
   return unwrapExperience<ExperienceSessionResponse>(response);
 }
 
+/** POST /api/experience/sessions/:sessionId/restart — restart as a NEW match on
+ * the same branch: fresh session id, fresh seed; the old match is finished
+ * (interrupted with a public «restarted» step, or report-frozen if already
+ * completed) and the branch slot passes to the successor. Omitted body fields
+ * reuse the source session's frozen settings/roster snapshots. */
+export async function restartExperienceSession(
+  sessionId: string,
+  body: ExperienceRestartRequest,
+): Promise<ExperienceSessionResponse> {
+  const response = await client.api.experience.sessions[":sessionId"].restart.$post({ param: { sessionId }, json: body });
+  return unwrapExperience<ExperienceSessionResponse>(response);
+}
+
 /** GET /api/experience/sessions/:sessionId — session metadata + the projected
  *  view for the human viewer. */
 export async function getExperienceSession(sessionId: string): Promise<ExperienceSessionResponse> {
@@ -178,8 +192,9 @@ export async function getExperienceSession(sessionId: string): Promise<Experienc
 }
 
 /** POST /api/experience/sessions/:sessionId/end — canonical explicit user
- *  finish (host-owned `interrupted`); the terminal snapshot is atomically
- *  queued and returned through the privacy-safe attachment DTO. */
+ *  finish (host-owned `interrupted`). `quiet` (pos 2) ends the session WITHOUT
+ *  any public report card and returns null; otherwise the terminal snapshot is
+ *  atomically queued and returned through the privacy-safe attachment DTO. */
 export async function endExperienceSession(
   sessionId: string,
   body: ExperienceFinishRequest,
@@ -307,6 +322,15 @@ export async function runExperienceEffect(
   return unwrapExperience<ExperienceEffectRunResponse>(response);
 }
 
+/** POST /api/experience/effects/:effectId/retry — return a failed/cancelled/
+ *  unknown effect to `pending` (attemptCount+1, error cleared). The host
+ *  runner picks the row back up; this call never runs the effect. Typed 404
+ *  (missing) / 409 (not retryable) reject as ExperienceApiError. */
+export async function retryExperienceEffect(effectId: string): Promise<ExperienceEffectRow> {
+  const response = await client.api.experience.effects[":effectId"].retry.$post({ param: { effectId } });
+  return unwrapExperience<ExperienceEffectRow>(response);
+}
+
 // ─── Context capture + status (IR-70D) ───────────────────────────────────────
 
 /** POST /api/experience/sessions/:sessionId/context/capture — explicit
@@ -417,5 +441,18 @@ export async function startExperiencePlayground(body: ExperiencePlaygroundStartR
  *  stale_revision + currentRevision, session_not_found, vm_error + kind. */
 export async function advanceExperiencePlayground(body: ExperiencePlaygroundAdvanceRequest): Promise<ExperiencePlaygroundData> {
   const response = await client.api.experience.playground.advance.$post({ json: body });
+  return unwrapExperience<ExperiencePlaygroundData>(response);
+}
+
+/** POST /api/experience/playground/timer — execute ONE timer beat for the
+ *  ephemeral session: the server sleeps the oldest pending timer's `afterMs`,
+ *  re-checks legality, then feeds the tick back through the real reducer.
+ *  The caller re-issues a beat whenever a response reports `pendingTimers > 0`
+ *  on an active session (the Try-it panel's beat loop) — that loop is what
+ *  makes timer-driven experiences actually tick in the sandbox. */
+export async function runExperiencePlaygroundTimer(
+  body: { readonly playgroundSessionId: string },
+): Promise<ExperiencePlaygroundData> {
+  const response = await client.api.experience.playground.timer.$post({ json: body });
   return unwrapExperience<ExperiencePlaygroundData>(response);
 }

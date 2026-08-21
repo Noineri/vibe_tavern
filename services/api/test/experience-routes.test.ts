@@ -66,8 +66,8 @@ function stubRuntime(throws?: { kind: any; message: string }): { runtime: Experi
 		if (throws) throw new DomainError({ kind: throws.kind, message: throws.message });
 	};
 	const base = {
-		getExperienceConfig: async (chatId: string) => { rec("getExperienceConfig").push({ chatId }); maybeThrow(); return { id: "cfg", chatId, enabled: false, scriptId: null, visualId: null, contextSourceCharacterId: null, contextSourceChatId: null, capabilityGrants: [], contextMode: "none", launcherVisible: false, createdAt: "", updatedAt: "" }; },
-		updateExperienceConfig: async (chatId: string, body: any) => { rec("updateExperienceConfig").push({ chatId, body }); maybeThrow(); return { id: "cfg", chatId, enabled: !!body.enabled, scriptId: body.scriptId ?? null, visualId: null, contextSourceCharacterId: body.contextSourceCharacterId ?? null, contextSourceChatId: body.contextSourceChatId ?? null, capabilityGrants: [], contextMode: "none", launcherVisible: false, createdAt: "", updatedAt: "" }; },
+		getExperienceConfig: async (chatId: string) => { rec("getExperienceConfig").push({ chatId }); maybeThrow(); return { id: "cfg", chatId, enabled: false, scriptId: null, visualId: null, contextSourceCharacterId: null, contextSourceChatId: null, contextSourcePersonaId: null, capabilityGrants: [], contextMode: "none", launcherVisible: false, createdAt: "", updatedAt: "" }; },
+		updateExperienceConfig: async (chatId: string, body: any) => { rec("updateExperienceConfig").push({ chatId, body }); maybeThrow(); return { id: "cfg", chatId, enabled: !!body.enabled, scriptId: body.scriptId ?? null, visualId: null, contextSourceCharacterId: body.contextSourceCharacterId ?? null, contextSourceChatId: body.contextSourceChatId ?? null, contextSourcePersonaId: body.contextSourcePersonaId ?? null, capabilityGrants: [], contextMode: "none", launcherVisible: false, createdAt: "", updatedAt: "" }; },
 		listExperienceVisuals: async (scopeType: string, ownerId?: string) => { rec("listExperienceVisuals").push({ scopeType, ownerId }); maybeThrow(); return []; },
 		getExperienceVisual: async (id: string) => { rec("getExperienceVisual").push({ id }); maybeThrow(); return null; },
 		createExperienceVisual: async (body: any) => { rec("createExperienceVisual").push({ body }); maybeThrow(); return { id: "xv_1", ...body, sourceHash: "h", personaId: null, chatId: null, createdAt: "", updatedAt: "" }; },
@@ -178,11 +178,12 @@ describe("Experience routes — HTTP layer (stub)", () => {
 		const res = await app.request("/api/experience/sessions/s_1/context/capture", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ mode: "recent", contextSourceCharacterId: "char_9", contextSourceChatId: null }),
+			body: JSON.stringify({ mode: "recent", contextSourceCharacterId: "char_9", contextSourceChatId: null, contextSourcePersonaId: "persona_9" }),
 		});
 		expect(res.status).toBe(200);
 		expect(calls.captureExperienceContext[0].body.contextSourceCharacterId).toBe("char_9");
 		expect(calls.captureExperienceContext[0].body.contextSourceChatId).toBeNull();
+		expect(calls.captureExperienceContext[0].body.contextSourcePersonaId).toBe("persona_9");
 	});
 
 	test("config PUT accepts and round-trips context-source fields", async () => {
@@ -191,24 +192,27 @@ describe("Experience routes — HTTP layer (stub)", () => {
 		const put = await app.request("/api/chats/c_1/experience/config", {
 			method: "PUT",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ contextSourceCharacterId: "char_9", contextSourceChatId: "chat_9" }),
+			body: JSON.stringify({ contextSourceCharacterId: "char_9", contextSourceChatId: "chat_9", contextSourcePersonaId: "persona_9" }),
 		});
 		expect(put.status).toBe(200);
 		const body = await jsonBody(put);
 		expect(body.contextSourceCharacterId).toBe("char_9");
 		expect(body.contextSourceChatId).toBe("chat_9");
+		expect(body.contextSourcePersonaId).toBe("persona_9");
 		expect(calls.updateExperienceConfig[0].body.contextSourceCharacterId).toBe("char_9");
+		expect(calls.updateExperienceConfig[0].body.contextSourcePersonaId).toBe("persona_9");
 
 		// Explicit null clears the pointer (falls back to ambient).
 		const clear = await app.request("/api/chats/c_1/experience/config", {
 			method: "PUT",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ contextSourceCharacterId: null, contextSourceChatId: null }),
+			body: JSON.stringify({ contextSourceCharacterId: null, contextSourceChatId: null, contextSourcePersonaId: null }),
 		});
 		expect(clear.status).toBe(200);
 		const cleared = await jsonBody(clear);
 		expect(cleared.contextSourceCharacterId).toBeNull();
 		expect(cleared.contextSourceChatId).toBeNull();
+		expect(cleared.contextSourcePersonaId).toBeNull();
 	});
 
 	test("prompt override writes reject oversized content and unknown keys", async () => {
@@ -586,30 +590,34 @@ context.experience.register({
 	test("config PUT persists and clears context-source fields through the real DB", async () => {
 		const { stores, app } = await setupIntegration();
 		const character = await stores.characters.create({ name: "Hero" } as never);
+		const persona = await stores.personas.create({ name: "Them" });
 		const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
 
 		const put = await app.request(`/api/chats/${chat.id}/experience/config`, {
 			method: "PUT", headers: { "content-type": "application/json" },
-			body: JSON.stringify({ contextSourceCharacterId: character.id, contextSourceChatId: chat.id }),
+			body: JSON.stringify({ contextSourceCharacterId: character.id, contextSourceChatId: chat.id, contextSourcePersonaId: persona.id }),
 		});
 		expect(put.status).toBe(200);
 		const putBody = await jsonBody(put);
 		expect(putBody.contextSourceCharacterId).toBe(character.id);
 		expect(putBody.contextSourceChatId).toBe(chat.id);
+		expect(putBody.contextSourcePersonaId).toBe(persona.id);
 
 		const get = await app.request(`/api/chats/${chat.id}/experience/config`);
 		const getBody = await jsonBody(get);
 		expect(getBody.contextSourceCharacterId).toBe(character.id);
 		expect(getBody.contextSourceChatId).toBe(chat.id);
+		expect(getBody.contextSourcePersonaId).toBe(persona.id);
 
 		const clear = await app.request(`/api/chats/${chat.id}/experience/config`, {
 			method: "PUT", headers: { "content-type": "application/json" },
-			body: JSON.stringify({ contextSourceCharacterId: null, contextSourceChatId: null }),
+			body: JSON.stringify({ contextSourceCharacterId: null, contextSourceChatId: null, contextSourcePersonaId: null }),
 		});
 		expect(clear.status).toBe(200);
 		const cleared = await jsonBody(clear);
 		expect(cleared.contextSourceCharacterId).toBeNull();
 		expect(cleared.contextSourceChatId).toBeNull();
+		expect(cleared.contextSourcePersonaId).toBeNull();
 	});
 
 	test("visual CRUD round-trips through the typed routes", async () => {
@@ -633,6 +641,66 @@ context.experience.register({
 		const deleted = await app.request(`/api/experience/visuals/${v.id}`, { method: "DELETE" });
 		expect(deleted.status).toBe(200);
 		expect((await jsonBody(deleted)).ok).toBe(true);
+	});
+
+	test("restart returns a NEW session id with active status on the same branch", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: { difficulty: "hard" } }),
+		});
+		expect(start.status).toBe(200);
+		const started = await jsonBody(start);
+		const sid = started.sessionId;
+
+		const restart = await app.request(`/api/experience/sessions/${sid}/restart`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(restart.status).toBe(200);
+		const restarted = await jsonBody(restart);
+		expect(restarted.sessionId).not.toBe(sid);
+		expect(restarted.sessionId).toBeTruthy();
+		expect(restarted.status).toBe("active");
+		expect(restarted.branchId).toBe(branchId);
+		// Omitted override fields fall back to the source session's frozen snapshots.
+		expect(restarted.view.state).toEqual({ count: 0 });
+	});
+
+	test("restart on an unknown session is 404 session_not_found", async () => {
+		const { app } = await setupIntegration();
+		const res = await app.request("/api/experience/sessions/unknown/restart", {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(res.status).toBe(404);
+		const body = await jsonBody(res);
+		expect(body.error.details.code).toBe("session_not_found");
+	});
+
+	test("restart after disabling the chat's experience config is 409 not_enabled", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+
+		const disabled = await resources.updateConfig(chatId, { enabled: false });
+		expect(disabled.ok).toBe(true);
+
+		const restart = await app.request(`/api/experience/sessions/${sid}/restart`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(restart.status).toBe(409);
+		const body = await jsonBody(restart);
+		expect(body.error.details.code).toBe("not_enabled");
 	});
 });
 

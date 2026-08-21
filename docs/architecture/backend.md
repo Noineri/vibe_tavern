@@ -493,6 +493,20 @@ Registering `vision_describe` as a real mode (rather than a separate code path) 
 
 ---
 
+## Experience Copilot (authoring assistant)
+
+Mounted as the `experience-copilot` FeatureModule; domain code in `domain/interactive/copilot/`. Full architecture: [Experience Copilot](./experience-copilot.md). Key mechanics:
+
+- **Propose-only tool surface** — `write_buffer`/`edit_buffer`/`run_test`/`run_simulate`/`suggest_visual_binding` plus `todo` (full-list-rewrite session step-plan, persisted to `todo_json`) and `ask_user` (clarifying questions). `read_skill_file` is always on. Rules proposals are sandbox-validated before surfacing; the tool set is per-profile gated (7 toggleable keys).
+- **Unbounded tool loop** — `stopWhen: [isStepCount(1_000_000 formality), hasToolCall("ask_user")]`. No profile step cap exists (deliberately removed); the loop runs until the model stops or the user cancels.
+- **Ask split-turn** — a question ends the turn (the `ask_user` marker tool-result); the answer arrives as a stream request in answer mode, rewrites the awaiting tool-result row in place (no user row), and resumes the logical turn. Dangling asks self-heal at assembly time with a sentinel string (stored rows never mutated).
+- **Skills** — filesystem-scanned `SKILL.md` dirs under `assets/experience-copilot/skills/` (`experience-authoring`, `grill-me`); scanner/catalog reused from Co-Author with an isolated root.
+- **Compaction + context meter** — digest-based history folding (never splitting tool-call/result pairs) and persisted context metrics driving the meter UI.
+
+The engine the copilot authors against — kernel, sandbox, durable effects (`model`, `timer`), the visual bridge — is Interactive Experiences, documented in the copilot architecture doc's references and the shared asset references (`interactive-rules.md`, `interactive-visual.md`).
+
+---
+
 ## Vision and Attachment Pipeline
 
 **Modules:** `infrastructure/ai/vision-gate.ts`, `image-compress.ts`, the two provider executors, and `api/adapters/chat-adapter.ts`.

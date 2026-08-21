@@ -75,6 +75,11 @@ function isApiPath(pathname: string): boolean {
 const server = Bun.serve({
 	port: PORT,
 	hostname: "0.0.0.0",
+	// Prod parity (server-runtime.ts): Bun's default 10s idleTimeout kills slow
+	// non-streaming API responses (model effect runs routinely take 9–60s with
+	// zero bytes flowing) — the connection dies, the request signal aborts, and
+	// the effect persists as `cancelled`. 255s matches the prod server.
+	idleTimeout: 255,
 
 	routes: {
 		"/": indexHtml,

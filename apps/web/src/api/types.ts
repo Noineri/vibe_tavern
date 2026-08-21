@@ -42,6 +42,7 @@ import type {
 	ExperienceActionDto,
 	ExperienceDefinitionDto,
 	ExperienceFinishRequestDto,
+	ExperienceRestartRequestDto,
 	ExperienceSeatLegality,
 	ExperienceSeatLegalityMatrix,
 	ExperienceSessionResponseDto,
@@ -666,6 +667,9 @@ export type ExperienceStartRequest = z.input<typeof experienceStartRequestSchema
 export type ExperienceActionRequest = ExperienceActionDto;
 /** POST /sessions/:id/end body (`{ expectedRevision }`, strict). */
 export type ExperienceFinishRequest = ExperienceFinishRequestDto;
+/** POST /sessions/:id/restart body — both fields optional, omitted falls back
+ *  to the source session's frozen snapshots. */
+export type ExperienceRestartRequest = ExperienceRestartRequestDto;
 /** POST /sessions/:id/reports/queue body (`{ expectedRevision }`). */
 export type ExperienceReportQueueRequest = z.input<typeof experienceReportQueueRequestSchema>;
 /** POST /sessions/:id/undo body (`{ targetRevision }`). */
@@ -805,10 +809,12 @@ export interface ExperienceContextStatusDto {
   messageFrontierPosition: number | null;
   providerProfileId: string | null;
   modelId: string | null;
-  /** Provenance of the captured RP-context source (report item 6): bare ids,
-   *  never content. Both null ⇔ captured from the ambient host chat. */
+  /** Provenance of the captured RP-context source (report item 6 / Wave 3):
+   *  bare ids, never content. Null ⇔ captured from the ambient host chat
+   *  (sourcePersonaId adds the user-identity override provenance). */
   sourceCharacterId: string | null;
   sourceChatId: string | null;
+  sourcePersonaId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -862,6 +868,8 @@ export interface ExperienceTestConsoleEntry {
 export interface ExperienceTestDefinition extends ExperienceDefinitionDto {
   hasChoose: boolean;
   hasFlavor: boolean;
+  /** Realtime fixed-timestep tick method present (RM-2; absent on turn-based). */
+  hasUpdate: boolean;
 }
 
 /** One replayed action's outcome inside a test run / simulation trace. Mirrors
@@ -949,6 +957,10 @@ export interface ExperiencePlaygroundData {
   projection: { state: unknown; actions: ExperienceActionDescriptor[] };
   events: ExperienceEvent[];
   effects: ExperienceEffectRequest[];
+  /** Unconsumed (never fed back) timer-effect slots at response time. > 0 on
+   *  an active session drives the client's timer beat loop — one
+   *  POST /playground/timer per response — the sandbox's real-time axis. */
+  pendingTimers: number;
   console: ExperienceTestConsoleEntry[];
   revision: number;
   status: ExperienceSessionStatus;

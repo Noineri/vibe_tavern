@@ -23,6 +23,8 @@
  *  9. detach descriptor includes exact scope+pinned source; blocked popup error
  * 10. branch switch shows branch's own session + closes local surfaces
  * 11. desktop Popover / mobile BottomSheet
+ * 12. endgame restart pair replaces the primary for terminal sessions (Б3);
+ *     the in-session settings entry is wired only for ACTIVE matches (Б4)
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -31,6 +33,7 @@ import type { ReactNode } from "react";
 useDomEnv();
 const { render, fireEvent, act } = await import("@testing-library/react");
 const { useSyncExternalStore } = await import("react");
+const { TIMER_RESYNC_INTERVAL_MS } = await import("../../hooks/use-experience-timer-resync.js");
 
 const CHAT_ID = "chat_1";
 const BRANCH_ID = "branch_1";
@@ -120,7 +123,9 @@ const storeMocks = {
   setDetached: mock((_d: boolean) => {}),
   submitAction: mock(async (_intent: unknown) => null as unknown),
   endSession: mock(async () => null as unknown),
+  restartSession: mock(async () => null as unknown),
   runEffect: mock(async (_effectId: string, _signal?: AbortSignal) => null as unknown),
+  retryEffect: mock(async (_effectId: string) => null as unknown),
   queueReport: mock(async () => null as unknown),
 };
 
@@ -175,7 +180,7 @@ mock.module("../../stores/experience-store.js", () => ({
     getState: () => ({
       activeScope: state.activeScope,
       byScope: Object.fromEntries(
-        Object.entries(state.byScope).map(([k, v]) => [k, { lastApiError: v.lastApiError, session: v.session }]),
+        Object.entries(state.byScope).map(([k, v]) => [k, { lastApiError: v.lastApiError, lastError: v.lastError, session: v.session }]),
       ),
       setScope: (chatId: string, branchId: string) => {
         storeMocks.setScope(chatId, branchId);
@@ -199,7 +204,9 @@ mock.module("../../stores/experience-store.js", () => ({
       submitAction: storeMocks.submitAction,
       rehydrate: storeMocks.rehydrate,
       endSession: storeMocks.endSession,
+      restartSession: storeMocks.restartSession,
       runEffect: storeMocks.runEffect,
+      retryEffect: storeMocks.retryEffect,
       queueReport: storeMocks.queueReport,
     }),
   },
@@ -231,11 +238,12 @@ mock.module("../shared/BottomSheet.js", () => ({
 // Mock ExperienceSetupModal to a thin shell so Start/onReady are observable.
 let setupOnReady: ((s: unknown) => void) | null = null;
 mock.module("./ExperienceSetupModal.js", () => ({
-  ExperienceSetupModal: ({ open, onClose, onReady }: { open: boolean; onClose: () => void; onReady?: (s: unknown) => void }) => {
+  ExperienceSetupModal: ({ open, onClose, onReady, restartSource }: { open: boolean; onClose: () => void; onReady?: (s: unknown) => void; restartSource?: unknown }) => {
     setupOnReady = onReady ?? null;
     return open ? (
       <div data-testid="setup-modal">
         <button data-testid="setup-close" onClick={onClose}>close</button>
+        {restartSource ? <span data-testid="setup-restart-src" /> : null}
         <button
           data-testid="setup-ready"
           onClick={() => onReady?.({ sessionId: "sess_new", visualSource: "<div>new</div>", revision: 1, status: "active", view: { revision: 1, status: "active", state: {}, actions: [] }, manifest: { name: "Game" } })}
@@ -263,6 +271,12 @@ mock.module("./ExperienceModal.js", () => ({
         <button data-testid="modal-close" onClick={() => (props.onClose as () => void)()}>close</button>
         <button data-testid="modal-detach" onClick={() => (props.onDetach as () => void)()}>detach</button>
         <button data-testid="modal-finish" onClick={() => (props.onFinishExperience as () => void)()}>finish</button>
+        {props.onOpenSessionSettings ? (
+          <button data-testid="modal-session-settings" onClick={() => (props.onOpenSessionSettings as () => void)()}>settings</button>
+        ) : null}
+        {props.effectDiagnostics ? (
+          <div data-testid="modal-effect-diagnostics">{props.effectDiagnostics as ReactNode}</div>
+        ) : null}
       </div>
     ) : null;
   },
@@ -566,6 +580,150 @@ describe("ExperienceLauncher — durable pending effects", () => {
   });
 });
 
+// ─── LB-10 (Option C): runner lifetime = chat page ──────────────────────────
+describe("ExperienceLauncher — LB-10 Option C: effect runner lifetime", () => {
+  it("drains a pending model effect with the modal CLOSED (chat page open)", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", kind: "model", status: "pending" }],
+      modalOpen: false,
+    });
+    render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    expect(storeMocks.runEffect.mock.calls[0]![0]).toBe("eff_1");
+  });
+
+  it("closing the modal does not freeze the queue — the next pending row still runs", async () => {
+    storeMocks.runEffect.mockResolvedValue({ effect: { id: "eff_1", status: "succeeded" }, delivered: true });
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", kind: "model", status: "pending" }],
+      modalOpen: true,
+    });
+    const { rerender } = render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    // The user closes the modal while a SECOND durable row is pending —
+    // under Option C the queue must keep draining (chat page still open).
+    act(() => {
+      setScopeState(SCOPE_KEY, {
+        effects: [
+          { id: "eff_1", kind: "model", status: "succeeded" },
+          { id: "eff_2", kind: "model", status: "pending" },
+        ],
+        modalOpen: false,
+      });
+      rerender(<ExperienceLauncher />);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(2);
+    expect(storeMocks.runEffect.mock.calls[1]![0]).toBe("eff_2");
+  });
+
+  it("leaving the chat (unmount) aborts the in-flight run and starts nothing else", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    storeMocks.runEffect.mockImplementation((_effectId: string, signal?: AbortSignal) => {
+      capturedSignal = signal;
+      return new Promise(() => {});
+    });
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [
+        { id: "eff_1", kind: "model", status: "pending" },
+        { id: "eff_2", kind: "model", status: "pending" },
+      ],
+      modalOpen: true,
+    });
+    const { unmount } = render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    // One at a time: eff_1 in flight, eff_2 blocked.
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    unmount();
+    // The in-flight run is aborted; durable eff_2 stays frozen client-side
+    // (still pending server-side — resumed when the chat page is reopened).
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+  });
+
+  it("timer resync stays active with the modal closed (live timer)", async () => {
+    storeMocks.rehydrate.mockClear();
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_t", kind: "timer", status: "pending" }],
+      modalOpen: false,
+    });
+    render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, TIMER_RESYNC_INTERVAL_MS + 150));
+    });
+    expect(storeMocks.rehydrate.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ─── Lobby pos 1: effect diagnostics + retry in the trusted modal chrome ────
+describe("ExperienceLauncher — effect diagnostics + retry", () => {
+  it("a failed row renders in the modal chrome; retry hits store.retryEffect and the runner drains the re-pending row", async () => {
+    storeMocks.retryEffect.mockClear();
+    storeMocks.runEffect.mockClear();
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", kind: "model", status: "failed" }],
+      modalOpen: true,
+    });
+    const { getByTestId } = render(<ExperienceLauncher />);
+
+    // The trusted-chrome diagnostics render INSIDE the modal surface (the
+    // real component tree, not the visual) with the failed status + retry.
+    expect(getByTestId("modal-effect-diagnostics")).toBeTruthy();
+    expect(getByTestId("experience-effect-row-eff_1").textContent).toContain("experience_effect_status_failed");
+
+    // Retry click → the launcher callback routes to the store action.
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-effect-retry-eff_1"));
+    });
+    expect(storeMocks.retryEffect).toHaveBeenCalledTimes(1);
+    expect(storeMocks.retryEffect.mock.calls[0]![0]).toBe("eff_1");
+
+    // The store resync flips the row back to pending; the chat-page runner
+    // (LB-10 Option C) picks it up from the authoritative effects list.
+    act(() => {
+      setScopeState(SCOPE_KEY, {
+        effects: [{ id: "eff_1", kind: "model", status: "pending" }],
+      });
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    expect(storeMocks.runEffect.mock.calls[0]![0]).toBe("eff_1");
+  });
+
+  it("no retryable rows → no diagnostics surface in the modal", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", kind: "model", status: "succeeded" }],
+      modalOpen: true,
+    });
+    const { queryByTestId } = render(<ExperienceLauncher />);
+    expect(queryByTestId("modal-effect-diagnostics")).toBeNull();
+  });
+});
+
 // ─── 8. Finish confirmation ─────────────────────────────────────────────────
 describe("ExperienceLauncher — finish", () => {
   it("finish with a non-null server result calls endSession then closeModal", async () => {
@@ -628,6 +786,34 @@ describe("ExperienceLauncher — finish", () => {
     } finally {
       console.warn = originalWarn;
     }
+  });
+
+  it("quiet end on SUCCESS calls endSession(true) then closeModal (nothing posts to chat)", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ revision: 3 }), modalOpen: true, lastError: null });
+    // Quiet success: the server returns null (no attachment). No error recorded.
+    storeMocks.endSession.mockResolvedValue(null);
+    render(<ExperienceLauncher />);
+    await act(async () => {
+      await ((modalProps.onEndSessionQuiet as () => Promise<void>)());
+    });
+    expect(storeMocks.endSession).toHaveBeenCalledWith(true);
+    // A quiet end returns null by design, so unlike the with-report finish it
+    // must still close the modal — the caller judged success via no-store-error.
+    expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
+  });
+
+  it("quiet end with a recorded server error keeps the modal open (fail-closed + retryable)", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ revision: 3 }), modalOpen: true, lastError: null });
+    storeMocks.endSession.mockResolvedValue(null);
+    render(<ExperienceLauncher />);
+    // Simulate failMutation: the store records lastError and returns null.
+    act(() => setScopeState(SCOPE_KEY, { lastError: "quiet rejected" }));
+    await act(async () => {
+      await ((modalProps.onEndSessionQuiet as () => Promise<void>)());
+    });
+    expect(storeMocks.endSession).toHaveBeenCalledWith(true);
+    // Error present → session was NOT quietly ended → keep the modal open.
+    expect(storeMocks.closeModal).not.toHaveBeenCalled();
   });
 });
 
@@ -1029,5 +1215,98 @@ describe("ExperienceLauncher — report controls (IR-73C)", () => {
     expect(queryByTestId("experience-report-error")).toBeNull();
     // Still only the one manual call — no auto-queue after the remount.
     expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── 12. Endgame restart pair (lobby Б3) + in-session settings (Б4) ────────
+describe("ExperienceLauncher — endgame restart pair (Б3)", () => {
+  it("completed session: the restart pair replaces the primary action and the status reads finished", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }) });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // The primary Start/Resume action is replaced by the restart pair.
+    expect(queryByTestId("experience-launcher-primary")).toBeNull();
+    expect(getByTestId("experience-restart-again")).toBeTruthy();
+    expect(getByTestId("experience-restart-settings")).toBeTruthy();
+    // The status line reads the finished label, not "Session active".
+    expect(document.body.textContent).toContain("experience_launcher_finished");
+
+    // Play again is the one-shot restart: empty body via the store, then the
+    // modal opens on the NEW match only on a non-null result.
+    storeMocks.restartSession.mockResolvedValue({ sessionId: "sess_new" });
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-restart-again"));
+    });
+    expect(storeMocks.restartSession).toHaveBeenCalledTimes(1);
+    expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
+    // No setup modal in the one-shot path.
+    expect(queryByTestId("setup-modal")).toBeNull();
+  });
+
+  it("Play again with a NULL restart result does not open the modal (server failure, store surfaces the error)", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }) });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    storeMocks.restartSession.mockResolvedValue(null);
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-restart-again"));
+    });
+    expect(storeMocks.restartSession).toHaveBeenCalledTimes(1);
+    expect(storeMocks.openModal).not.toHaveBeenCalled();
+  });
+
+  it("Change settings opens the setup modal WITHOUT restarting", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }) });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    fireEvent.click(getByTestId("experience-restart-settings"));
+    expect(getByTestId("setup-modal")).toBeTruthy();
+    expect(storeMocks.restartSession).not.toHaveBeenCalled();
+    expect(storeMocks.openModal).not.toHaveBeenCalled();
+  });
+
+  it("Change settings opens the setup modal PREFILLED (restartSource = the finished session, LB-5)", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }) });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    fireEvent.click(getByTestId("experience-restart-settings"));
+    expect(getByTestId("setup-restart-src")).toBeTruthy();
+  });
+
+  it("interrupted session behaves like completed: both restart buttons, no primary", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "interrupted" }) });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    expect(queryByTestId("experience-launcher-primary")).toBeNull();
+    expect(getByTestId("experience-restart-again")).toBeTruthy();
+    expect(getByTestId("experience-restart-settings")).toBeTruthy();
+  });
+});
+
+describe("ExperienceLauncher — in-session settings entry (Б4)", () => {
+  it("ACTIVE session: invoking the modal's settings entry closes the session modal and opens the setup modal", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    expect(getByTestId("modal-session-settings")).toBeTruthy();
+    fireEvent.click(getByTestId("modal-session-settings"));
+    expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
+    // The setup modal is now the only open surface.
+    expect(getByTestId("setup-modal")).toBeTruthy();
+    expect(queryByTestId("experience-modal")).toBeNull();
+    expect(storeMocks.restartSession).not.toHaveBeenCalled();
+  });
+
+  it("the Б4 settings entry ALSO prefill-opens the setup modal (restartSource = the active session, LB-5)", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("modal-session-settings"));
+    expect(getByTestId("setup-restart-src")).toBeTruthy();
+  });
+
+  it("TERMINAL session: the settings entry is NOT wired into the modal (the popover restart pair owns the endgame)", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ status: "completed" }), modalOpen: true });
+    const { queryByTestId } = render(<ExperienceLauncher />);
+    expect(queryByTestId("modal-session-settings")).toBeNull();
+    expect(modalProps.onOpenSessionSettings).toBeUndefined();
   });
 });

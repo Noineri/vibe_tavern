@@ -1,0 +1,1 @@
+ALTER TABLE `copilot_profiles` DROP COLUMN `max_steps`;

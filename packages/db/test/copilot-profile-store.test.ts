@@ -32,7 +32,6 @@ const PAYLOAD = {
   basePrompt: "You are a card-game experience author.",
   skillIds: ["experience-authoring"],
   toolSet: { edit_buffer: true, run_test: true },
-  maxSteps: 20,
 };
 
 describe("CopilotProfileStore (CP-3)", () => {
@@ -44,7 +43,6 @@ describe("CopilotProfileStore (CP-3)", () => {
     expect(created.basePrompt).toBe("You are a card-game experience author.");
     expect(created.skillIds).toEqual(["experience-authoring"]);
     expect(created.toolSet).toEqual({ edit_buffer: true, run_test: true });
-    expect(created.maxSteps).toBe(20);
 
     const fetched = await store.getById(created.id);
     expect(fetched).toEqual(created);
@@ -62,10 +60,9 @@ describe("CopilotProfileStore (CP-3)", () => {
   test("update merges a partial (single field) and bumps updatedAt", async () => {
     const store = await mkStore();
     const created = await store.create(PAYLOAD);
-    const updated = await store.update(created.id, { maxSteps: 9 });
-    expect(updated.maxSteps).toBe(9);
-    expect(updated.name).toBe("Card games"); // untouched
-    expect(updated.basePrompt).toBe(PAYLOAD.basePrompt); // untouched
+    const updated = await store.update(created.id, { name: "Renamed only" });
+    expect(updated.name).toBe("Renamed only");
+    expect(created.basePrompt).toBe(PAYLOAD.basePrompt); // untouched
   });
 
   test("update with a full payload replaces every field", async () => {
@@ -76,18 +73,16 @@ describe("CopilotProfileStore (CP-3)", () => {
       basePrompt: "new prompt",
       skillIds: ["another-skill"],
       toolSet: { run_simulate: true },
-      maxSteps: 7,
     });
     expect(updated.name).toBe("Renamed");
     expect(updated.basePrompt).toBe("new prompt");
     expect(updated.skillIds).toEqual(["another-skill"]);
     expect(updated.toolSet).toEqual({ run_simulate: true });
-    expect(updated.maxSteps).toBe(7);
   });
 
   test("update throws when the id does not exist", async () => {
     const store = await mkStore();
-    await expect(store.update("cprof_missing", { maxSteps: 1 })).rejects.toThrow();
+    await expect(store.update("cprof_missing", { name: "X" })).rejects.toThrow();
   });
 
   test("delete removes the profile and is idempotent", async () => {
