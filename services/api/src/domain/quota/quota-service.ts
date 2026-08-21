@@ -173,7 +173,19 @@ export class QuotaService {
 		if (existing !== undefined) clearTimeout(existing);
 		const timer = setTimeout(() => {
 			this.timers.delete(profileId);
-			void this.pollProfile(profileId);
+			// The .catch is load-bearing: pollProfile's internal try/catch covers
+			// only the fetch/apply phase, and its pre-try store calls
+			// (getProviderProfile / getSettings / the no-capability snapshot
+			// upsert) can reject too — a transient SQLITE_BUSY escaped exactly
+			// this way on 2026-08-21 and the unhandled rejection killed the whole
+			// server process. A poll failure is logged, never fatal.
+			void this.pollProfile(profileId).catch((err: unknown) => {
+				log.warn(
+					"poll crashed for profile %s: %s",
+					profileId,
+					err instanceof Error ? err.message : String(err),
+				);
+			});
 		}, delayMs);
 		this.timers.set(profileId, timer);
 	}

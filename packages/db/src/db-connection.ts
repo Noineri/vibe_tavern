@@ -802,6 +802,13 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
   // dirs) in a single global afterAll — see closeAllDbs. No-op for production.
   openedDatabases.add(sqlite);
   sqlite.exec('PRAGMA journal_mode = WAL');
+  // Transient write contention (a second local process sharing this WAL db —
+  // dev server + prod server + ad-hoc probes) must WAIT, not throw instantly:
+  // bun:sqlite's default busy_timeout is 0, and on 2026-08-21 a live server
+  // died wholesale on an unguarded quota-poll INSERT hitting a momentary
+  // SQLITE_BUSY. 5s turns contention into a retry window that outlasts any
+  // local writer's transaction.
+  sqlite.exec(`PRAGMA busy_timeout = 5000`);
   sqlite.exec('PRAGMA foreign_keys = ON');
 
   const db = drizzle(sqlite, { schema });
