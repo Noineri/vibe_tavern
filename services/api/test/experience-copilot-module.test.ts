@@ -43,7 +43,7 @@ describe("experience-copilot module (ER-16)", () => {
     const module = await resolveExperienceCopilotModule();
     expect(module.basePrompt.trim().length).toBeGreaterThan(0);
     // The base prompt carries the role framing (moved out of inline TS in ER-16).
-    expect(module.basePrompt).toContain("EXPERIENCE ASSISTANT");
+    expect(module.basePrompt).toContain("MINI-APP ASSISTANT");
     expect(module.basePrompt).toContain("write_buffer");
     expect(module.basePrompt).toContain("read_skill_file");
   });
@@ -85,7 +85,7 @@ describe("experience-copilot module (ER-16)", () => {
     expect(profile.skillIds).toEqual([...EXPERIENCE_COPILOT_MODULE.skillIds]);
     // The loaded base-prompt asset carries the role framing.
     expect(profile.basePrompt.trim().length).toBeGreaterThan(0);
-    expect(profile.basePrompt).toContain("EXPERIENCE ASSISTANT");
+    expect(profile.basePrompt).toContain("MINI-APP ASSISTANT");
     // toolSet projected through COPILOT_TOOL_KEYS → all 7 declared tools on
     // (TAG-4: todo + ask_user join the seed). maxSteps is no longer carried.
     expect(profile.toolSet).toEqual({

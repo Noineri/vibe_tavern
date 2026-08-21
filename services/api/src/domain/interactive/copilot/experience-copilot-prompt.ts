@@ -335,6 +335,141 @@ function deriveContract(rules: string): ExperienceCopilotContract | null {
   };
 }
 
+// ─── Historical tool-echo stubbing (context economy, #16) ───────────────────
+//
+// The #1 context sink in an authoring session is ECHO: every write_buffer/
+// edit_buffer exchange puts the FULL buffer in the tool-call args (the model
+// wrote them) AND the full proposed buffer in the tool result (the UI diff's
+// echo). Ten edit turns of a ~2k-token buffer ≈ 40k tokens of superseded
+// copies — while the CURRENT buffer is already in the system context every
+// turn. Same for read_skill_file: the skill text stays in history forever.
+//
+// The fix mirrors Claude Code's microcompaction and OpenCode v2's tail
+// pruning (tool outputs capped in the retained tail; skill outputs treated
+// as operational and never fully pruned): at ASSEMBLY time — model window
+// only, the store/UI keep everything (the CM-3 "model window only" pattern) —
+// tool exchanges older than the last few user turns are replaced by compact
+// stubs. Tool-call/tool-result PAIRS are never split or removed (the
+// compaction invariant): both sides stay, structurally intact, with the
+// `summary` fields preserved — the one-line decision record the model and the
+// compaction summarizer actually need. The LAST skill read stays verbatim
+// (OpenCode's rule: skill text is operational instructions, and the newest
+// read is the live one).
+
+/** Placeholder for superseded buffer content in stubbed tool I/O. */
+export const BUFFER_ECHO_STUB =
+  "[omitted — superseded buffer content; the CURRENT buffer is in the system context]";
+
+/** Placeholder for an old skill-file read (the last read stays verbatim). */
+export const SKILL_READ_STUB =
+  "[skill file read earlier in this session — call read_skill_file again if you need its text]";
+
+/** Default keep-window: the previous user turn + the current one stay verbatim. */
+const ECHO_KEEP_USER_TURNS = 2;
+
+/** Replace a buffer tool call's bulky fields (write_buffer.content /
+ *  edit_buffer.edits) with the stub, keeping target/summary. Shared with the
+ *  compaction service so the summarizer transcript and the model window agree. */
+export function stubBufferToolCallInput(input: unknown): unknown {
+  if (input === null || typeof input !== "object") return input;
+  const obj = { ...(input as Record<string, unknown>) };
+  if (typeof obj.content === "string" && obj.content.length > 0) obj.content = BUFFER_ECHO_STUB;
+  if (Array.isArray(obj.edits)) {
+    obj.edits = obj.edits.map(() => ({ search: BUFFER_ECHO_STUB, replace: BUFFER_ECHO_STUB }));
+  }
+  return obj;
+}
+
+/** Replace a buffer tool result's `proposed` full-buffer echo with the stub,
+ *  keeping target/summary. Shared with the compaction service. */
+export function stubBufferToolResultOutput(output: unknown): unknown {
+  if (output === null || typeof output !== "object") return output;
+  const obj = { ...(output as Record<string, unknown>) };
+  if (typeof obj.proposed === "string" && obj.proposed.length > 0) obj.proposed = BUFFER_ECHO_STUB;
+  return obj;
+}
+
+export interface EchoStubOptions {
+  /** How many trailing user turns keep their tool I/O verbatim. `0` stubs
+   *  everything (used by the compaction transcript: the summarized prefix is
+   *  entirely superseded). Default 2. */
+  readonly keepUserTurns?: number;
+}
+
+/** The tool names whose args/results carry full-buffer echoes. */
+const BUFFER_TOOLS = new Set(["write_buffer", "edit_buffer"]);
+
+/** Stub superseded tool echoes in a flow history (model-window transform —
+ *  pure, returns a new array; untouched messages pass through by reference).
+ *  Tool-call/result pairs and message structure are preserved; only the
+ *  bulky fields inside them are replaced. */
+export function stubHistoricalToolEchoes(
+  messages: readonly ExperienceCopilotFlowMessage[],
+  opts: EchoStubOptions = {},
+): ExperienceCopilotFlowMessage[] {
+  const keepTurns = opts.keepUserTurns ?? ECHO_KEEP_USER_TURNS;
+  const userIdx: number[] = [];
+  messages.forEach((m, i) => {
+    if (m.role === "user") userIdx.push(i);
+  });
+  // keepUserTurns 0 = keep NOTHING verbatim (the compaction transcript path);
+  // otherwise anchor at the Nth-from-last user message. Short histories (fewer
+  // user turns than the keep-window) anchor at the first user message →
+  // nothing older → nothing stubbed.
+  const anchorIdx =
+    keepTurns <= 0
+      ? messages.length
+      : (userIdx[Math.max(0, userIdx.length - keepTurns)] ?? 0);
+
+  // The LAST skill read stays verbatim (operational text, newest = live).
+  let lastSkillCallId: string | null = null;
+  for (const m of messages) {
+    if (m.role === "tool") {
+      for (const part of m.content) {
+        if (part.toolName === "read_skill_file") lastSkillCallId = part.toolCallId;
+      }
+    }
+  }
+
+  return messages.map((m, i): ExperienceCopilotFlowMessage => {
+    if (i < anchorIdx && m.role === "assistant" && m.toolCalls?.length) {
+      return {
+        ...m,
+        toolCalls: m.toolCalls.map((call) =>
+          BUFFER_TOOLS.has(call.toolName) ? { ...call, input: stubBufferToolCallInput(call.input) } : call,
+        ),
+      };
+    }
+    if (i < anchorIdx && m.role === "tool") {
+      return {
+        ...m,
+        content: m.content.map((part) => {
+          // Flow tool results always carry a text output (storeMessagesToHistory
+          // wraps everything as {type:"text", value}), but the TYPE is the SDK's
+          // discriminated union — narrow before touching `.value`.
+          if (part.output.type !== "text") return part;
+          if (BUFFER_TOOLS.has(part.toolName)) {
+            try {
+              const parsed = JSON.parse(part.output.value) as unknown;
+              return {
+                ...part,
+                output: { type: "text" as const, value: JSON.stringify(stubBufferToolResultOutput(parsed)) },
+              };
+            } catch {
+              return part; // non-JSON output — leave as-is (never throws here)
+            }
+          }
+          if (part.toolName === "read_skill_file" && part.toolCallId !== lastSkillCallId) {
+            return { ...part, output: { type: "text" as const, value: SKILL_READ_STUB } };
+          }
+          return part;
+        }),
+      };
+    }
+    return m;
+  });
+}
+
 // ─── System-message section renderers ────────────────────────────────────────
 
 // The role framing + tool mechanics + key constraints live in the profile's
@@ -530,30 +665,25 @@ export async function assembleExperienceCopilotPrompt(
   );
   const digestSectionText = digestText !== null ? renderDigestSection(digestText) : "";
 
-  // ── Assemble the system message ────────────────────────────────────────────
-  // The base/head sections (role framing + skill catalog + context package) are
-  // joined FIRST, then the digest section (if any), then the API references —
-  // so a zero-digest thread produces a byte-identical system message to the
-  // pre-CM-3 assembly (pinned by test).
-  const headSections: string[] = [basePrompt];
+  // ── Assemble the system message (cache-friendly order, #16) ──────────────
+  // STABLE prefix first (base prompt + skill catalog + RU label map + user-flow
+  // + both API references — all change rarely or never): providers with prefix
+  // caching (Anthropic/OpenAI/Gemini/DeepSeek) hit cache on the whole stable
+  // block every turn and each tool-loop step. VOLATILE sections go last,
+  // rarest-changing first (digest → todo → context package), so the most-
+  // mutable content sits at the system message's tail — also maximum recency
+  // for the working buffers, which used to sit mid-message and broke the cache
+  // on every buffer edit.
+  const stableSections: string[] = [basePrompt];
   if (skillCatalogBlock) {
-    headSections.push("", skillCatalogBlock);
+    stableSections.push("", skillCatalogBlock);
   }
-  headSections.push("", contextPackage);
-  // TAG-6: the model's step-plan rides as a head section (after the context
-  // package, before the RU-label map) — omitted entirely when empty so the
-  // zero-todo system message stays byte-identical to the pre-TAG-6 shape.
-  if (todoSection) {
-    headSections.push("", todoSection);
-  }
-  // RU-voice label map (see the Russian-voice section above): appended ONLY
-  // when the user's own history carries Cyrillic, so an English thread stays
-  // byte-identical to the pre-feature assembly (the CM-3 pin covers exactly
-  // that case). Counts toward systemTokens like any other head section.
+  // RU-voice label map (see the Russian-voice section above): part of the
+  // STABLE block — it flips at most once per thread (first Cyrillic message).
   if (userSpeaksRussian(input.history)) {
-    headSections.push("", RU_UI_LABELS_BLOCK);
+    stableSections.push("", RU_UI_LABELS_BLOCK);
   }
-  const tailSections: string[] = [
+  stableSections.push(
     "",
     userFlow,
     "",
@@ -564,18 +694,24 @@ export async function assembleExperienceCopilotPrompt(
     "# Experience visual API reference (the host↔visual `VibeExperience` bridge — reference material for the `visual` buffer; use `write_buffer`/`edit_buffer` to propose, do NOT output raw code in chat)",
     "",
     visualReference,
-  ];
-  const systemMessage = [
-    ...headSections,
-    ...(digestSectionText ? ["", digestSectionText] : []),
-    ...tailSections,
-  ].join("\n");
+  );
+  // Volatile tail: digest (changes only at compaction) → todo (changes when the
+  // model rewrites its plan) → context package (changes every turn).
+  const volatileNoDigest: string[] = [];
+  if (todoSection) {
+    volatileNoDigest.push("", todoSection);
+  }
+  volatileNoDigest.push("", contextPackage);
+  const systemWithoutDigest = [...stableSections, ...volatileNoDigest].join("\n");
+  const systemMessage = digestSectionText
+    ? [...stableSections, "", digestSectionText, ...volatileNoDigest].join("\n")
+    : systemWithoutDigest;
 
   // Segmented token accounting: `system` = the system message WITHOUT the digest
   // section; `digest` = the digest section alone (0 when none). Digest tokens
   // count toward `nonHistoryTokens` for the budget trim (the digest is part of
   // the system message, so the model pays for it against the history budget).
-  const systemTokens = estimateTokens([...headSections, ...tailSections].join("\n"));
+  const systemTokens = estimateTokens(systemWithoutDigest);
   const digestTokens = digestSectionText ? estimateTokens(digestSectionText) : 0;
 
   // CX-3: the attached block (if any) is also non-history overhead — it is paid
@@ -587,7 +723,9 @@ export async function assembleExperienceCopilotPrompt(
     : 0;
 
   // ── Budget-based compaction (the only windowing - tool-pair-safe) ────────────────
-  const fullHistory = [...historyFlow];
+  // #16: stub superseded tool echoes FIRST — the budget trim and the accounting
+  // then see the same history the model window will actually contain.
+  const fullHistory = stubHistoricalToolEchoes(historyFlow);
   const nonHistoryTokens = systemTokens + digestTokens + attachedTokens;
   const plan = planHistoryCompaction({
     messages: fullHistory,

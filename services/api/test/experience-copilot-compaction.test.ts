@@ -515,3 +515,60 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
     expect(executor.calls).toHaveLength(2);
   });
 });
+
+// ─── Echo stubbing in the summarizer transcript + post-compaction metrics (#16) ──
+
+describe("ExperienceCopilotCompactionService — echo stubs (#16)", () => {
+  it("the summarizer transcript carries stubs, not superseded buffer copies; keep-window metrics are stub-honest", async () => {
+    // A 16-message session with two BIG write_buffer exchanges: an early one
+    // (summarized away) and a late one (inside the 8-message keep window but
+    // older than the last two user turns).
+    const BIG = "XXBIGXX ".repeat(600);
+    const call = (id: string) =>
+      JSON.stringify([
+        { type: "tool-call", toolCallId: id, toolName: "write_buffer", input: { target: "rules", content: BIG, summary: `edit ${id}` } },
+      ]);
+    const result = (id: string) =>
+      JSON.stringify({ toolName: "write_buffer", output: { target: "rules", proposed: BIG, summary: `edit ${id}` } });
+    const messages: ExperienceCopilotMessage[] = [
+      makeMessage("m1", "user"),
+      makeMessage("m2", "assistant", { toolCallsJson: call("tc1") }),
+      makeMessage("m3", "tool", { content: result("tc1"), toolCallId: "tc1" }),
+      makeMessage("m4", "user"),
+      makeMessage("m5", "assistant"),
+      makeMessage("m6", "user"),
+      makeMessage("m7", "assistant"),
+      makeMessage("m8", "user"),
+      makeMessage("m9", "assistant", { toolCallsJson: call("tc2") }),
+      makeMessage("m10", "tool", { content: result("tc2"), toolCallId: "tc2" }),
+      makeMessage("m11", "user"),
+      makeMessage("m12", "assistant"),
+      makeMessage("m13", "user"),
+      makeMessage("m14", "assistant"),
+      makeMessage("m15", "user"),
+      makeMessage("m16", "assistant"),
+    ];
+    const { store, metricsCalls } = makeStore(messages);
+    const executor = makeExecutor({ text: "summary-echo" });
+    const service = new ExperienceCopilotCompactionService(
+      store,
+      makeProviderProfiles() as never,
+      executor.execute as never,
+    );
+
+    await service.compact({ threadId: "thread_1" });
+
+    // Transcript: the summarized prefix's buffer echo is stubbed on both
+    // sides, the one-line summary survives, the raw copy is gone.
+    const transcript = transcriptOf(executor.calls[0]);
+    expect(transcript).toContain("superseded buffer content");
+    expect(transcript).toContain("edit tc1");
+    expect(transcript).not.toContain("XXBIGXX");
+
+    // Metrics honesty: the keep window (m9..m16) contains the tc2 tool row
+    // (a full BIG copy, ~4.8k chars un-stubbed), but it is older than the
+    // last two user turns → the estimate stubs it → historyTokens stay far
+    // below BIG's own size.
+    expect(metricsCalls[0].metrics.historyTokens).toBeLessThan(BIG.length);
+  });
+});

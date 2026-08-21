@@ -68,7 +68,7 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     });
 
     // Role framing
-    expect(result.systemMessage).toContain("EXPERIENCE ASSISTANT");
+    expect(result.systemMessage).toContain("MINI-APP ASSISTANT");
     expect(result.systemMessage).toContain("write_buffer");
     expect(result.systemMessage).toContain("edit_buffer");
 
@@ -104,7 +104,7 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
 
     // The module's base prompt is loaded from the base.md asset (ER-16) — the
     // role framing now lives there, not inline, but the content is unchanged.
-    expect(result.systemMessage).toContain("EXPERIENCE ASSISTANT");
+    expect(result.systemMessage).toContain("MINI-APP ASSISTANT");
     expect(result.systemMessage).toContain("read_skill_file");
 
     // The resolved skill catalog is injected as an on-demand "Available skills"
@@ -187,7 +187,7 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
       profile: custom,
     });
     expect(result.systemMessage).toContain("CUSTOM SYSTEM PROMPT MARKER");
-    expect(result.systemMessage).not.toContain("EXPERIENCE ASSISTANT");
+    expect(result.systemMessage).not.toContain("MINI-APP ASSISTANT");
     // No enabled skills → no "Available skills" section and no skill roots.
     expect(result.systemMessage).not.toContain("Available skills");
     expect(result.skillRoots).toEqual([]);
@@ -483,7 +483,7 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // base.md by user decision (keep it out of the prompt) — mode-choice,
     // round-commit determinism, and comment-the-code remain.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("74ef88f1d3054e2a9c74ccd9a675c7bfbd91214d525778973882271da21c0e51");
+      .toBe("7350e55bc21074ef2f6c98e68ed92e256fa93ef054c96b1b9cd1a403dadea2fd");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -602,10 +602,10 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // The zero-todo SHA is still the pinned pre-feature digest — the omission
     // is total, not a substituted empty header. (Re-captured TAG-11: the
     // `grill-me` skill catalog entry is present in the baseline system message.
-    // Re-captured for RM-13: user-flow.md gained the realtime-digest reading guide (status first, no revision/stopReason) — see the
+    // Re-captured for #16 (context economy): base.md shrunk to role + skill pointer + hard constraints, and the system message was reordered cache-first (stable role/catalog/refs prefix, volatile context package at the tail) — see the
     // zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("74ef88f1d3054e2a9c74ccd9a675c7bfbd91214d525778973882271da21c0e51");
+      .toBe("7350e55bc21074ef2f6c98e68ed92e256fa93ef054c96b1b9cd1a403dadea2fd");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -670,7 +670,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // zero-attached baseline system message. Re-captured again for the
     // playground-timers asset update — see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("74ef88f1d3054e2a9c74ccd9a675c7bfbd91214d525778973882271da21c0e51");
+      .toBe("7350e55bc21074ef2f6c98e68ed92e256fa93ef054c96b1b9cd1a403dadea2fd");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

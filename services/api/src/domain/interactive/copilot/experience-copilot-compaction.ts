@@ -47,6 +47,7 @@ import {
   resolveDigestBoundary,
   renderDigestSection,
   estimateHistoryTokens,
+  stubHistoricalToolEchoes,
   COPILOT_DIGEST_ANCHOR_FIELD,
   type ExperienceCopilotFlowMessage,
 } from "./experience-copilot-prompt.js";
@@ -222,7 +223,19 @@ export class ExperienceCopilotCompactionService {
     const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, this.providerProfiles);
 
     // ── Summarize (injectable executor; provider errors → 502 via wrapper) ──
-    const prompt = buildCompactionPrompt(priorDigestText, toSummarize);
+    // #16: the transcript is built from the FLOW conversion of the replaced
+    // messages with ALL tool echoes stubbed (keepUserTurns: 0 — everything
+    // being summarized is superseded; the summaries survive in the stubs, and
+    // the CURRENT buffers ride in the assembler's context package anyway).
+    // This keeps the summarizer call cheap for echo-heavy sessions and agrees
+    // with what the model window showed for those same messages.
+    const toSummarizeFlow = stubHistoricalToolEchoes(
+      storeMessagesToHistory(toSummarize).filter(
+        (m): m is ExperienceCopilotFlowMessage => m.role !== "digest",
+      ),
+      { keepUserTurns: 0 },
+    );
+    const prompt = buildCompactionPrompt(priorDigestText, toSummarizeFlow);
     const generation = await this.execute({
       profile: effectiveProfile,
       model,
@@ -261,7 +274,10 @@ export class ExperienceCopilotCompactionService {
     const keepFlow: ExperienceCopilotFlowMessage[] = storeMessagesToHistory(keep).filter(
       (m): m is ExperienceCopilotFlowMessage => m.role !== "digest",
     );
-    const historyTokens = estimateHistoryTokens(keepFlow);
+    // #16: estimate the keep window the way the NEXT turn's assembly will see
+    // it — with superseded echoes stubbed (messages older than the last two
+    // user turns) — so post-compaction historyTokens stays honest.
+    const historyTokens = estimateHistoryTokens(stubHistoricalToolEchoes(keepFlow));
     const systemTokens = priorMetrics?.systemTokens ?? 0;
     const metrics: CopilotContextMetrics = {
       systemTokens,
@@ -304,17 +320,19 @@ function isLoopbackEndpoint(endpoint: string | null | undefined): boolean {
 /** Build the minimal `AssemblePromptResponse` the non-streaming executor
  *  consumes (it only reads `finalPayload.messages` via `toSdkMessages`): a
  *  system instruction + a single user message carrying the prior digest (if
- *  any) and the messages being replaced, rendered as a readable transcript. */
+ *  any) and the messages being replaced, rendered as a readable transcript.
+ *  Takes the FLOW history (store messages converted via
+ *  `storeMessagesToHistory` and echo-stubbed — see compactInternal). */
 function buildCompactionPrompt(
   priorDigestText: string | null,
-  toSummarize: readonly ExperienceCopilotMessage[],
+  toSummarize: readonly ExperienceCopilotFlowMessage[],
 ): AssemblePromptResponse {
   const transcript = toSummarize
     .map((m) => {
       if (m.role === "tool") {
-        return `[tool-result] ${m.content}`;
+        return `[tool-result] ${JSON.stringify(m.content)}`;
       }
-      const toolPart = m.toolCallsJson ? `\n[tool-calls] ${m.toolCallsJson}` : "";
+      const toolPart = m.toolCalls ? `\n[tool-calls] ${JSON.stringify(m.toolCalls)}` : "";
       return `${m.role.toUpperCase()}: ${m.content}${toolPart}`;
     })
     .join("\n\n");
