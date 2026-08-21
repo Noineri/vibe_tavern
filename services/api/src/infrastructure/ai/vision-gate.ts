@@ -185,10 +185,10 @@ export async function resolveMultimodalContent(
       }
       let mimeType = att.mimeType;
 
-      // Compress large PNGs to JPEG for provider size limits. Centralized in
-      // prepareImageForVision so describeAttachments (gallery / non-vision
-      // fallback) stays in sync — a prior drift left it sending raw images.
-      const prepared = prepareImageForVision(buffer, mimeType);
+      // Compress large images (JPEG/PNG/WEBP) to JPEG for provider size limits.
+      // Centralized in prepareImageForVision so describeAttachments (gallery /
+      // non-vision fallback) stays in sync — a prior drift left it sending raw images.
+      const prepared = await prepareImageForVision(buffer, mimeType);
       buffer = prepared.buffer;
       mimeType = prepared.mimeType;
 
@@ -262,7 +262,7 @@ export async function describeAttachments(
     // path serves the chat non-vision fallback, so the shared
     // prepareImageForVision seam (same one resolveMultimodalContent uses) is
     // mandatory here. Never throws — falls back to original bytes on failure.
-    const { buffer, mimeType } = prepareImageForVision(loaded, att.mimeType);
+    const { buffer, mimeType } = await prepareImageForVision(loaded, att.mimeType);
 
     // Abort early if a cancellation arrived between images. generateText
     // itself takes abortSignal, but checking here avoids the per-image load
