@@ -63,7 +63,9 @@ export interface ExperienceFrameRuntimeApi {
   readonly createDeterministicRandom: typeof createDeterministicRandom;
   readonly createEphemeralRandom: typeof createEphemeralRandom;
   readonly startExperienceLoopHost: typeof startExperienceLoopHost;
-  /** Read `#__vt_round_config` and run the loop (idempotent). */
+  /** Read `#__vt_round_config` and run the loop. Idempotent on success; a
+   *  failed boot dispatches `vt-loop:error {kind:"boot_failed"}` and leaves
+   *  itself re-bootable. */
   readonly bootFromDocument: (opts?: BootOptions) => void;
 }
 
@@ -92,7 +94,6 @@ function bootFromDocument(opts: BootOptions = {}): void {
     document?: { getElementById(id: string): { textContent: string | null } | null };
   };
   if (win.__vtLoopBooted) return;
-  win.__vtLoopBooted = true;
 
   const dispatch = (type: string, detail: unknown): void => {
     // CustomEvent is constructed defensively: the eval-harness test may boot
@@ -105,38 +106,60 @@ function bootFromDocument(opts: BootOptions = {}): void {
     }
   };
 
-  const config: ExperienceLoopConfig =
-    opts.config ??
-    (() => {
-      const tag = win.document?.getElementById("__vt_round_config");
-      if (!tag || tag.textContent === null) {
-        throw new Error("realtime frame runtime: #__vt_round_config not found");
-      }
-      return JSON.parse(tag.textContent) as ExperienceLoopConfig;
-    })();
+  // Boot is all-or-nothing: a failure (missing config tag, unavailable rAF,
+  // malformed config JSON) dispatches vt-loop:error {kind:"boot_failed"} so
+  // the SDK can surface it in the visual instead of a silently dead frame,
+  // and leaves the boot flag DOWN so a fixed host document can retry booting.
+  let handle: ReturnType<typeof startExperienceLoopHost>;
+  try {
+    const config: ExperienceLoopConfig =
+      opts.config ??
+      (() => {
+        const tag = win.document?.getElementById("__vt_round_config");
+        if (!tag || tag.textContent === null) {
+          throw new Error("realtime frame runtime: #__vt_round_config not found");
+        }
+        return JSON.parse(tag.textContent) as ExperienceLoopConfig;
+      })();
 
-  const drivers: ExperienceLoopDrivers =
-    opts.drivers ??
-    (() => {
-      const raf = win.requestAnimationFrame;
-      const perf = win.performance;
-      if (typeof raf !== "function" || !perf || typeof perf.now !== "function") {
-        throw new Error("realtime frame runtime: rAF/performance unavailable");
-      }
-      return { requestFrame: raf, now: () => perf.now() };
-    })();
+    const drivers: ExperienceLoopDrivers =
+      opts.drivers ??
+      (() => {
+        const raf = win.requestAnimationFrame;
+        const perf = win.performance;
+        if (typeof raf !== "function" || !perf || typeof perf.now !== "function") {
+          throw new Error("realtime frame runtime: rAF/performance unavailable");
+        }
+        // The bare native rAF is receiver-sensitive: destructured off the
+        // window and invoked as a plain driver value, Chromium throws
+        // "Illegal invocation" on the very first frame request (happy-dom's
+        // rAF tolerates it, which is why fake-driver tests never saw this).
+        // Wrap it so the window receiver is restored on every call.
+        return {
+          requestFrame: (cb: (now: number) => void) => raf.call(win, cb),
+          now: () => perf.now(),
+        };
+      })();
 
-  const handle = startExperienceLoopHost(
-    config,
-    {
-      onEvent: (event: ExperienceLoopEvent) => dispatch("vt-loop:event", event),
-      onView: (view: unknown) => dispatch("vt-loop:view", view),
-      onDrop: (reason: string) => dispatch("vt-loop:drop", reason),
-      onError: (error: { kind: string; message: string }) => dispatch("vt-loop:error", error),
-      onFinish: (result: unknown) => dispatch("vt-loop:finish", result),
-    },
-    drivers,
-  );
+    handle = startExperienceLoopHost(
+      config,
+      {
+        onEvent: (event: ExperienceLoopEvent) => dispatch("vt-loop:event", event),
+        onView: (view: unknown) => dispatch("vt-loop:view", view),
+        onDrop: (reason: string) => dispatch("vt-loop:drop", reason),
+        onError: (error: { kind: string; message: string }) => dispatch("vt-loop:error", error),
+        onFinish: (result: unknown) => dispatch("vt-loop:finish", result),
+      },
+      drivers,
+    );
+  } catch (err) {
+    dispatch("vt-loop:error", {
+      kind: "boot_failed",
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+  win.__vtLoopBooted = true;
   win.__vtLoopHandle = handle;
 
   if (typeof win.addEventListener === "function") {

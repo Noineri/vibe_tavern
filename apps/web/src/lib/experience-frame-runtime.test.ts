@@ -211,3 +211,141 @@ describe("frame runtime artifact — eval smoke", () => {
     expect(seen.length).toBe(eventCount); // no second loop emitted anything
   });
 });
+
+// ─── default-drivers boot (RM-12c regression) ──────────────────────────────
+// The eval-smoke tests above always inject fake drivers, so the DEFAULT
+// driver branch of bootFromDocument (the only branch the real frame document
+// executes) had zero coverage — and it shipped a detached native rAF that
+// Chromium rejects with "Illegal invocation" on the very first frame request
+// (happy-dom tolerates the lost receiver, which is exactly why the gap was
+// invisible). These tests boot the committed artifact with NO driver
+// overrides, against a Chrome-like rAF stub that validates its receiver.
+describe("frame runtime artifact — default-drivers boot", () => {
+  type FrameGlobal = {
+    __vtFrameRuntime?: ExperienceFrameRuntimeApi;
+    __vtLoopBooted?: boolean;
+    __vtLoopHandle?: { stop(): void };
+    requestAnimationFrame?: (cb: (now: number) => void) => void;
+  };
+  const fg = globalThis as unknown as FrameGlobal;
+
+  /** Eval the artifact if a filtered run skipped the smoke block above. */
+  function ensureRuntime(): ExperienceFrameRuntimeApi {
+    if (fg.__vtFrameRuntime === undefined) new Function(EXPERIENCE_FRAME_RUNTIME_SOURCE)();
+    const api = fg.__vtFrameRuntime;
+    if (api === undefined) throw new Error("artifact eval did not publish __vtFrameRuntime");
+    return api;
+  }
+
+  /** Drop any loop + config tag left by earlier tests in this process. */
+  function resetBootState(): void {
+    fg.__vtLoopHandle?.stop();
+    fg.__vtLoopBooted = false;
+    fg.__vtLoopHandle = undefined;
+    document.getElementById("__vt_round_config")?.remove();
+  }
+
+  function installConfigTag(): void {
+    const tag = document.createElement("script");
+    tag.type = "application/json";
+    tag.id = "__vt_round_config";
+    tag.textContent = JSON.stringify({
+      rulesSource: TICKER_SCRIPT,
+      tickMs: 50,
+      initialState: { remaining: 1000, total: 1000 },
+      seed: 7,
+      viewer: { kind: "human", participantId: "p1" },
+      scriptSeats: [],
+    });
+    document.head.append(tag);
+  }
+
+  test("missing config tag dispatches vt-loop:error and leaves boot retryable", () => {
+    resetBootState();
+    const api = ensureRuntime();
+    const errors: Array<{ kind: string; message: string }> = [];
+    const started: unknown[] = [];
+    const onError = (e: Event): void => {
+      errors.push((e as CustomEvent).detail as { kind: string; message: string });
+    };
+    const onEvent = (e: Event): void => {
+      const d = (e as CustomEvent).detail as { kind?: string } | null;
+      if (d !== null && typeof d === "object" && d.kind === "round_started") started.push(d);
+    };
+    window.addEventListener("vt-loop:error", onError);
+    window.addEventListener("vt-loop:event", onEvent);
+
+    api.bootFromDocument(); // no opts, no #__vt_round_config in the document
+    expect(errors).toEqual([
+      { kind: "boot_failed", message: expect.stringContaining("__vt_round_config") },
+    ]);
+    expect(fg.__vtLoopBooted).toBeFalsy(); // a fixed host can retry the boot
+
+    // The retry: install the config tag the real frame document ships and
+    // boot again — this time round_started must arrive.
+    installConfigTag();
+    api.bootFromDocument();
+    expect(errors).toHaveLength(1); // no new error
+    expect(started).toHaveLength(1);
+    expect(fg.__vtLoopBooted).toBe(true);
+
+    window.removeEventListener("vt-loop:error", onError);
+    window.removeEventListener("vt-loop:event", onEvent);
+    resetBootState();
+  });
+
+  test("default drivers bind native rAF to the window — no Illegal invocation", () => {
+    resetBootState();
+    const api = ensureRuntime();
+    installConfigTag();
+
+    // Chrome-like rAF: the native is receiver-sensitive — a detached call
+    // (this === undefined in strict mode) is what Chromium rejects. Record
+    // every receiver so the regression pins WHAT the loop actually calls.
+    const receivers: unknown[] = [];
+    const driven: Array<(now: number) => void> = [];
+    const chromeLike = function (this: unknown, cb: (now: number) => void): void {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      receivers.push(this);
+      driven.push(cb);
+    };
+    const original = fg.requestAnimationFrame;
+    fg.requestAnimationFrame = chromeLike;
+
+    const views: Array<{ remaining: number }> = [];
+    const errors: Array<{ kind: string; message: string }> = [];
+    const onView = (e: Event): void => {
+      views.push((e as CustomEvent).detail as { remaining: number });
+    };
+    const onError = (e: Event): void => {
+      errors.push((e as CustomEvent).detail as { kind: string; message: string });
+    };
+    window.addEventListener("vt-loop:view", onView);
+    window.addEventListener("vt-loop:error", onError);
+
+    try {
+      api.bootFromDocument(); // NO opts: default drivers + tag-parsed config
+      expect(receivers).toHaveLength(1); // the loop's synchronous first request
+      expect(receivers[0]).toBe(globalThis); // receiver preserved, not detached
+      expect(driven.length).toBe(1);
+
+      // Frame 1 at a far-future rAF timestamp: delta clamps to 250ms
+      // (EXPERIENCE_LOOP_MAX_FRAME_DELTA_MS) → 5 catchup ticks of 50ms.
+      driven[0]?.(1_000_000_000);
+      expect(views.at(-1)).toEqual({ remaining: 750 });
+      expect(receivers).toHaveLength(2); // frame re-requested, still bound
+
+      // Frame 2 exactly 50ms later: one tick.
+      driven[1]?.(1_000_000_050);
+      expect(views.at(-1)).toEqual({ remaining: 700 });
+
+      expect(errors).toEqual([]); // pre-fix symptom: boot_failed "Illegal invocation"
+      expect(fg.__vtLoopBooted).toBe(true);
+    } finally {
+      fg.requestAnimationFrame = original;
+      window.removeEventListener("vt-loop:view", onView);
+      window.removeEventListener("vt-loop:error", onError);
+      resetBootState();
+    }
+  });
+});
