@@ -106,6 +106,52 @@ describe("buildExperienceFrameDocument", () => {
   });
 });
 
+// ─── inline script embedding (the RM-12 live-render regression) ─────────────
+// A literal `</script` inside an embedded JS source closes the host tag early
+// and dumps the rest of the bundle into the frame as visible text — exactly
+// what the first live Try-it render showed (builtin visual sources had leaked
+// into the runtime bundle via the domain barrel). These pins hold the boundary
+// at the ASSEMBLED document, which no mock-level test ever covered.
+describe("inline script embedding", () => {
+  it("the REAL generated runtime bundle contains no script-tag-breaking sequence", async () => {
+    const { EXPERIENCE_FRAME_RUNTIME_SOURCE } = await import(
+      "../../generated/experience-frame-runtime.source.js",
+    );
+    // Purity: builtin sources (fat HTML blobs) must stay out of the frame graph
+    // — the domain barrel no longer re-exports them (see domain/src/index.ts).
+    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("model_conversation");
+    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("xp-conv");
+    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("catch_arcade");
+    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("xp-catch");
+    // Safety: even a hostile literal `</script` carried inside the runtime
+    // source must not break the assembled document's script block.
+    const hostile = 'var x = "</script>"; console.log(x);';
+    const doc = buildRealtimeExperienceFrameDocument(
+      "<div>visual</div>",
+      hostile + "\n" + EXPERIENCE_FRAME_RUNTIME_SOURCE,
+      {
+        rulesSource: "context.experience.register({});",
+        seed: 42,
+        tickMs: 33,
+        initialState: {},
+        initialSettings: {},
+        participants: [{ id: "p1", label: "P", controller: "human" }],
+        scriptSeats: [],
+        viewer: { kind: "human", participantId: "p1" },
+      },
+    );
+    // Extract the runtime script block: from the marker comment's following
+    // <script> to the config tag, strip the block's own closing tag, and the
+    // remainder must carry no raw `</script` (only the escaped `<\/script`).
+    const marker = doc.indexOf("realtime frame runtime");
+    const open = doc.indexOf("<script>", marker);
+    const close = doc.indexOf("</script>", open);
+    const embedded = doc.slice(open + 8, close);
+    expect(embedded).not.toContain("</script");
+    expect(embedded).toContain("<\\/script>");
+  });
+});
+
 // ─── ExperienceFrame component (DOM + URL lifecycle) ────────────────────────
 
 describe("ExperienceFrame", () => {

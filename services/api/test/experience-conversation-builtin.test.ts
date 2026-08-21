@@ -10,7 +10,7 @@
  * lifecycle: this is the pure-kernel boundary only.
  */
 import { describe, expect, test } from "bun:test";
-import { CONVERSATION_RULES_SOURCE } from "@vibe-tavern/domain";
+import { CONVERSATION_RULES_SOURCE } from "@vibe-tavern/domain/builtins";
 import {
 	runCreate,
 	runReduce,

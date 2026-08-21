@@ -12,6 +12,9 @@
       "@vibe-tavern/domain": [
         "../../packages/domain/src/index.ts"
       ],
+      "@vibe-tavern/domain/builtins": [
+        "../../packages/domain/src/builtin-experiences.ts"
+      ],
       "@vibe-tavern/import-export": [
         "../../packages/import-export/src/index.ts"
       ],

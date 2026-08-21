@@ -123,6 +123,19 @@ function loadFrameRuntimeSource(): Promise<string> {
 }
 
 /**
+ * Embed a JS source safely inside an inline `<script>` block. A literal
+ * `</script` ANYWHERE in the source (e.g. an HTML string constant carried by
+ * the runtime bundle — the builtin visual sources leak into it through the
+ * domain barrel) closes the tag early and dumps the rest of the bundle into
+ * the frame as visible text. Rewriting to `<\/script` is behavior-identical
+ * for the embedded code: `\/` is a valid escape for `/` inside JS string and
+ * regex literals, the only places a legal `</script` sequence can occur.
+ */
+function embedSafeScriptSource(source: string): string {
+  return source.replace(/<\/script/gi, "<\\/script");
+}
+
+/**
  * Assemble the frame document: CSP meta → SDK → visual source. Pure (no React,
  * no DOM) so it is unit-testable for CSP/SDK/source presence without rendering.
  * The visual source is wrapped so an author who forgets a wrapping `<script>`
@@ -158,7 +171,7 @@ export function buildExperienceFrameDocument(
     "</head>",
     "<body>",
     "<script>",
-    VIBE_EXPERIENCE_SDK_SOURCE,
+    embedSafeScriptSource(VIBE_EXPERIENCE_SDK_SOURCE),
     "</script>",
     "<!-- === user/model visual source (editable, user-owned) === -->",
     visualSource,
@@ -201,11 +214,11 @@ export function buildRealtimeExperienceFrameDocument(
     "</head>",
     "<body>",
     "<script>",
-    VIBE_EXPERIENCE_SDK_SOURCE,
+    embedSafeScriptSource(VIBE_EXPERIENCE_SDK_SOURCE),
     "</script>",
     "<!-- === realtime frame runtime (kernel port + loop host, generated) === -->",
     "<script>",
-    runtimeSource,
+    embedSafeScriptSource(runtimeSource),
     "</script>",
     '<script type="application/json" id="__vt_round_config">',
     configJson,

@@ -1,6 +1,11 @@
 export * from "./api-types.js";
 export * from "./attachment.js";
-export * from "./builtin-experiences.js";
+// builtin-experiences.js is deliberately NOT re-exported from this barrel: its
+// source strings are fat HTML/JS blobs (Conversation/Catch visuals) that would
+// land in every consumer of the barrel — most critically the generated
+// realtime frame-runtime bundle (RM-4+), where the visual sources' literal
+// `</script>` broke the frame document (first live render, 2026-08-21). Import
+// the builtins via the explicit subpath `@vibe-tavern/domain/builtins`.
 export * from "./character-asset.js";
 export * from "./chat-notification.js";
 export * from "./coauthor-transport-capabilities.js";

@@ -18,7 +18,7 @@
  * Self-contained HTML/CSS/JS using only the host-provided VibeExperience SDK.
  */
 import type { VisualStarter } from "./types.js";
-import { CONVERSATION_VISUAL_SOURCE } from "@vibe-tavern/domain";
+import { CONVERSATION_VISUAL_SOURCE } from "@vibe-tavern/domain/builtins";
 
 export { CONVERSATION_VISUAL_SOURCE };
 
