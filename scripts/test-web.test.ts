@@ -98,6 +98,19 @@ test("reads covered files out of a JUnit report", () => {
 	expect(filesWithTests("<testsuites></testsuites>").size).toBe(0);
 });
 
+test("re-slashes the platform separators the JUnit reporter writes", () => {
+	// Pins the Windows shape from every platform. The reporter emits the native
+	// separator, while every file key in this script is forward-slashed; without
+	// the conversion the guard matches nothing on Windows and reports all 226
+	// files as declaring zero tests.
+	const windowsReport = String.raw`<testsuites>
+  <testsuite name="a" file="apps\web\test\a.test.ts" tests="1">
+    <testcase name="one" classname="" time="0.1" file="apps\web\test\a.test.ts" assertions="1" />
+  </testsuite>
+</testsuites>`;
+	expect([...filesWithTests(windowsReport)]).toEqual(["apps/web/test/a.test.ts"]);
+});
+
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {
 	// Given
 	const root = await makeRoot();
@@ -152,9 +165,10 @@ test("propagates a failing fixture as a nonzero result", async () => {
 	expect(result.output).toContain("Web tests: FAIL");
 	// bun's own reporter names the failing file and assertion; the orchestrator
 	// forwards that verbatim rather than re-deriving a second summary from the
-	// JUnit report.
+	// JUnit report. Match the basename only — that forwarded text carries the
+	// platform separator, so a slashed path would not match on Windows.
 	expect(result.output).toContain("(fail)");
-	expect(result.output).toContain("apps/web/test/failing.test.ts");
+	expect(result.output).toContain("failing.test.ts");
 });
 
 test("rejects a default suite with zero discovered source tests", async () => {

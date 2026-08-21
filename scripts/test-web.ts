@@ -157,11 +157,16 @@ async function runBunTest(
 }
 
 /**
- * Files the JUnit report saw at least one test case for, keyed exactly as the
- * CLI addressed them (the reporter writes repository-relative paths because the
- * child runs with `cwd: root`). `bun test` exits 0 for a file that registers no
- * tests at all, so this set is the only thing standing between a silently
- * emptied test file and a green suite.
+ * Files the JUnit report saw at least one test case for, keyed the way the rest
+ * of this script keys files: repository-relative with forward slashes. The paths
+ * are repository-relative already because the child runs with `cwd: root`, but
+ * the reporter writes them with the PLATFORM separator — `apps\web\test\a.test.ts`
+ * on Windows — so they are re-slashed before the caller can compare them against
+ * a normalized file list. Skipping that turns every file on Windows into an
+ * apparent zero-test file.
+ *
+ * `bun test` exits 0 for a file that registers no tests at all, so this set is
+ * the only thing standing between a silently emptied test file and a green suite.
  *
  * `>` is XML-escaped inside attribute values, so `[^>]*` cannot run past the
  * element it started in.
@@ -169,7 +174,7 @@ async function runBunTest(
 export function filesWithTests(report: string): ReadonlySet<string> {
 	return new Set(
 		[...report.matchAll(/<testcase\b[^>]*\bfile="([^"]+)"/g)].flatMap((match) =>
-			match[1] === undefined ? [] : [match[1]],
+			match[1] === undefined ? [] : [match[1].replaceAll("\\", "/")],
 		),
 	);
 }
