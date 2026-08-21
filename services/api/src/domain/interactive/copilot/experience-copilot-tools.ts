@@ -105,6 +105,35 @@ export interface ExperienceCopilotRunSimulateDigest {
   readonly errorMessage?: string;
 }
 
+/** A REALTIME playground digest (RM-13): pushed by the frontend from the
+ *  in-frame loop's observability sample. The realtime round's authority
+ *  lives INSIDE the sandbox frame (the server only ever sees create() and
+ *  the final claim), so this — not the turn-session shape — is the truthful
+ *  signal for a realtime experience: the loop's liveness (boot status via
+ *  event tails), the latest sampled projection, and the frame console. */
+export interface ExperienceCopilotRealtimeDigest {
+  readonly ok: boolean;
+  /** Discriminator: always `realtime` (distinguishes from the turn shapes). */
+  readonly mode: "realtime";
+  /** Manifest tick the loop runs at (ms). */
+  readonly tickMs?: number;
+  /** The round's deterministic seed (replay lifeline). */
+  readonly seed?: number;
+  /** `running` while the loop is alive; the claim status once finished. */
+  readonly status?: string;
+  /** Latest sampled flat projection, capped JSON (may lag ~1s by design). */
+  readonly stateSummary?: string;
+  /** Tail of round-log events (`kind`-tagged loop events), bounded. */
+  readonly eventTail?: string[];
+  /** Tail of loop errors (`kind: message`), bounded — EMPTY means healthy. */
+  readonly errorTail?: string[];
+  /** Tail of the frame console (`level: text`), bounded. */
+  readonly consoleTail?: string[];
+  readonly errorCode?: string;
+  readonly errorKind?: string;
+  readonly errorMessage?: string;
+}
+
 /** A non-binding suggestion that a visual resource be bound to the experience.
  *  Binding itself is a USER action (BE-6 endpoints); the tool only surfaces the
  *  recommendation for review. */

@@ -15,6 +15,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildPlaygroundDigest,
+  buildRealtimeLoopDigest,
   buildRunTestDigest,
   buildRunTestErrorDigest,
   buildSimulateDigest,
@@ -278,5 +279,74 @@ describe("buildPlaygroundDigest", () => {
     expect(text).toContain("Events: 1");
     expect(text).toContain("Effects: 1");
     expect(text).toContain("Stop reason: awaiting_human");
+  });
+});
+
+// ─── realtime loop digest (RM-13) ──────────────────────────────────────────
+
+describe("buildRealtimeLoopDigest", () => {
+  it("reports the loop's own state, not the turn-session vocabulary", () => {
+    const { feedback, text } = buildRealtimeLoopDigest({
+      realtime: { tickMs: 33, seed: 42 },
+      diag: {
+        view: { score: 3 },
+        events: [{ kind: "round_started", seed: 42 }, { kind: "input", action: { type: "left" } }],
+        errors: [],
+        console: [{ level: "log", text: "hello" }],
+        final: false,
+      },
+      claim: null,
+      definition: null,
+      error: null,
+    });
+
+    expect(feedback).toMatchObject({
+      ok: true,
+      mode: "realtime",
+      tickMs: 33,
+      seed: 42,
+      status: "running",
+    });
+    const fb = feedback as { stateSummary?: string; eventTail?: string[]; consoleTail?: string[] };
+    expect(fb.stateSummary).toBe('{"score":3}');
+    expect(fb.eventTail?.some((l) => l.startsWith("round_started"))).toBe(true);
+    expect(fb.consoleTail).toEqual(["log: hello"]);
+    // No turn-session lies anywhere.
+    expect(feedback.stopReason).toBeUndefined();
+    expect(feedback.revision).toBeUndefined();
+    expect(text).toContain("Mode: realtime · tick 33ms · seed 42");
+    expect(text).toContain("Loop status: running");
+  });
+
+  it("a never-booted loop is itself the diagnostic (no sample, not_booted)", () => {
+    const { feedback, text } = buildRealtimeLoopDigest({
+      realtime: { tickMs: 16, seed: 1 },
+      diag: null,
+      claim: null,
+      definition: null,
+      error: null,
+    });
+    expect(feedback.status).toBe("not_booted");
+    expect(feedback.stateSummary).toBeUndefined();
+    expect(text).toContain("Loop status: not_booted");
+    expect(text).toContain("none (loop never posted a view)");
+  });
+
+  it("a finished round reports the claim status and marks errors in the tail", () => {
+    const { feedback } = buildRealtimeLoopDigest({
+      realtime: { tickMs: 33, seed: 9 },
+      diag: {
+        events: [{ kind: "round_started", seed: 9 }],
+        errors: [{ kind: "watchdog", message: "over budget" }],
+        console: [],
+        final: true,
+      },
+      claim: { status: "completed" },
+      definition: null,
+      error: null,
+    });
+    expect(feedback.status).toBe("completed");
+    const fb = feedback as { errorTail?: string[] };
+    expect(fb.errorTail).toEqual(["watchdog: over budget"]);
   });
 });

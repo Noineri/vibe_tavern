@@ -45,6 +45,7 @@ import type { CopilotProfile, CopilotTodoItem } from "@vibe-tavern/api-contracts
 import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import { runExperienceTest } from "../experience-tester.js";
 import type {
+  ExperienceCopilotRealtimeDigest,
   ExperienceCopilotRunSimulateDigest,
   ExperienceCopilotRunTestDigest,
 } from "./experience-copilot-tools.js";
@@ -232,7 +233,8 @@ export type ExperienceCopilotStep = "rules" | "visual" | "test";
 /** The latest test/simulate digest the user sent back from the test panel. */
 export type ExperienceCopilotTestFeedback =
   | ExperienceCopilotRunTestDigest
-  | ExperienceCopilotRunSimulateDigest;
+  | ExperienceCopilotRunSimulateDigest
+  | ExperienceCopilotRealtimeDigest;
 
 // ─── Input / result ──────────────────────────────────────────────────────────
 

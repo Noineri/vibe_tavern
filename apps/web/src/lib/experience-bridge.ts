@@ -39,9 +39,19 @@ import {
   buildState,
   generateSessionNonce,
   parseVisualToHost,
+  type BridgeConsoleEntry,
   type BridgeErrorCode,
   type HostToVisual,
 } from "./experience-bridge-schema.js";
+
+/** A validated loop_diag sample, host-facing shape (RM-13). */
+export interface LoopDiagSample {
+  readonly view?: unknown;
+  readonly events: readonly unknown[];
+  readonly errors: readonly unknown[];
+  readonly console: readonly BridgeConsoleEntry[];
+  readonly final: boolean;
+}
 
 /** A minimal MessagePort surface (the Web `MessagePort` satisfies this). */
 export interface BridgePort {
@@ -89,6 +99,11 @@ export interface ExperienceHostBridgeOptions {
     readonly score?: number;
     readonly summary?: string;
   }) => void;
+  /** Realtime (RM-13): a bounded diagnostics sample from the in-frame loop —
+   *  latest sampled projection + tails of loop events, loop errors, and the
+   *  frame console. Replaces the previous sample (the SDK owns the bounds
+   *  and the ~1/s cadence); `final` marks the round's last sample. */
+  readonly onLoopDiag?: (diag: LoopDiagSample) => void;
   /** Fired for dropped/malformed messages (observability; never throws). */
   readonly onProtocolError?: (reason: string, raw?: unknown) => void;
 }
@@ -229,6 +244,18 @@ export class ExperienceHostBridge {
           log: msg.log,
           ...(msg.score !== undefined ? { score: msg.score } : {}),
           ...(msg.summary !== undefined ? { summary: msg.summary } : {}),
+        });
+        return;
+      }
+      case "loop_diag": {
+        // RM-13: replace-semantics observability sample (validated by the
+        // schema union; the global nonce check above already applied).
+        this.opts.onLoopDiag?.({
+          ...(msg.view !== undefined ? { view: msg.view } : {}),
+          events: msg.events,
+          errors: msg.errors,
+          console: msg.console,
+          final: msg.final,
         });
         return;
       }

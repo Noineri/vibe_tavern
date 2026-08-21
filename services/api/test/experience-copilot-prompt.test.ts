@@ -483,7 +483,7 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // base.md by user decision (keep it out of the prompt) — mode-choice,
     // round-commit determinism, and comment-the-code remain.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("4e5f5983d1b45adca6da62584b554cf54dd55034cd5cbc6d4c095520b8f04279");
+      .toBe("74ef88f1d3054e2a9c74ccd9a675c7bfbd91214d525778973882271da21c0e51");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -602,10 +602,10 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // The zero-todo SHA is still the pinned pre-feature digest — the omission
     // is total, not a substituted empty header. (Re-captured TAG-11: the
     // `grill-me` skill catalog entry is present in the baseline system message.
-    // Re-captured again for the playground-timers asset update — see the
+    // Re-captured for RM-13: user-flow.md gained the realtime-digest reading guide (status first, no revision/stopReason) — see the
     // zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("4e5f5983d1b45adca6da62584b554cf54dd55034cd5cbc6d4c095520b8f04279");
+      .toBe("74ef88f1d3054e2a9c74ccd9a675c7bfbd91214d525778973882271da21c0e51");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -670,7 +670,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // zero-attached baseline system message. Re-captured again for the
     // playground-timers asset update — see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("4e5f5983d1b45adca6da62584b554cf54dd55034cd5cbc6d4c095520b8f04279");
+      .toBe("74ef88f1d3054e2a9c74ccd9a675c7bfbd91214d525778973882271da21c0e51");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

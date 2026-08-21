@@ -39,6 +39,13 @@
  *     before the loop boots) are buffered: a late connect still sees the
  *     latest view and the bounded round-log tail.
  *
+ * Loop diagnostics channel (RM-13; inert in turn-based frames): the SDK
+ * samples the latest projection (~1/s) plus bounded tails of loop events,
+ * loop errors, and the frame console, and posts them to the host as
+ * 'loop_diag' bridge messages. It arms on the FIRST vt-loop:* event (so a
+ * dead loop still reports its boot error) and posts a final sample at
+ * round finish.
+ *
  *   view.flavor may carry a host-normalized chatter view — { status:
  *   "pending"|"resolved"|"failed", seatId, text?, fallback? } — when the
  *   author's flavor method returns an experienceChatter marker. "pending"
@@ -241,6 +248,9 @@ export const VIBE_EXPERIENCE_SDK_SOURCE = String.raw`
 
   window.addEventListener("vt-loop:view", function (ev) {
     latestLoopView = ev.detail;
+    diagView = ev.detail;   // RM-13: sample (replaced — the flush sends the latest)
+    diagArm();
+    diagMarkDirty();
     deliverLoop("tick", ev.detail);
   });
   window.addEventListener("vt-loop:event", function (ev) {
@@ -248,6 +258,11 @@ export const VIBE_EXPERIENCE_SDK_SOURCE = String.raw`
     if (!isPlainObject(e)) return;
     loopEventBuf.push(e);
     if (loopEventBuf.length > LOOP_EVENT_BUF_MAX) loopEventBuf.shift();
+    // RM-13: 'round_started' arrives BEFORE the first view — arming here
+    // means the host sees "the loop booted" even if views never flow (the
+    // exact RM-12c boot-crash signature).
+    diagArm();
+    diagMarkDirty();
     if (e.kind === "model_request" && nonce) {
       // Auto-forward to the host seam: the round log is the single source of
       // truth — the wire mirrors what the loop recorded, never the reverse.
@@ -267,10 +282,121 @@ export const VIBE_EXPERIENCE_SDK_SOURCE = String.raw`
       send(commit);
     }
     deliverLoop("finish", f);
+    // RM-13: the round's last sample goes out immediately (final: true).
+    diagFlush(true);
   });
   window.addEventListener("vt-loop:error", function (ev) {
+    var d = ev.detail;
+    if (isPlainObject(d)) {
+      diagErrors.push(d);
+      if (diagErrors.length > DIAG_ERROR_TAIL_MAX) diagErrors.shift();
+      diagArm();
+      diagMarkDirty();
+    }
     deliverLoop("error", ev.detail);
   });
+
+  // ── loop diagnostics channel (RM-13) ────────────────────────────────
+  // The loop's life (views, round-log events, errors, the frame console)
+  // happens INSIDE this frame; without a forward channel the host panel is
+  // structurally blind to it (the RM-12c loop-boot crash was invisible for
+  // exactly this reason). The SDK samples the latest projection at most
+  // ~1/s, keeps bounded tails of loop events / errors / console entries,
+  // and posts ONE 'loop_diag' message per flush window. The channel ARMS
+  // only when a vt-loop:* event fires — a turn-based frame never sends it.
+  var DIAG_FLUSH_MS = 750;
+  var DIAG_EVENT_TAIL_MAX = 48;
+  var DIAG_ERROR_TAIL_MAX = 12;
+  var DIAG_CONSOLE_TAIL_MAX = 48;
+  var DIAG_TEXT_MAX = 2000;
+  var diagArmed = false;      // a vt-loop:* event fired (realtime frame)
+  var diagDone = false;       // final sample posted (round finished)
+  var diagDirty = false;
+  var diagTimer = null;
+  var diagView = null;        // latest sampled projection (replaced, not appended)
+  var diagErrors = [];        // ring of loop errors ({kind,message})
+  var diagConsole = [];       // ring of frame console entries
+
+  function diagArm() {
+    if (diagArmed || diagDone) return;
+    diagArmed = true;
+    diagDirty = true;         // the arming event itself is worth one sample
+    diagTimer = setTimeout(diagFlush, DIAG_FLUSH_MS);
+  }
+
+  function diagMarkDirty() {
+    if (!diagArmed || diagDone) return;
+    diagDirty = true;
+    if (diagTimer === null) diagTimer = setTimeout(diagFlush, DIAG_FLUSH_MS);
+  }
+
+  function diagFlush(final) {
+    diagTimer = null;
+    if (!nonce || !hostPort) {
+      // Handshake not wired yet — keep the sample pending, retry shortly.
+      if (!diagDone) diagTimer = setTimeout(function () { diagFlush(final); }, DIAG_FLUSH_MS);
+      return;
+    }
+    if (!diagDirty && !final) return;
+    diagDirty = false;
+    var msg = {
+      v: PROTOCOL_V,
+      kind: "loop_diag",
+      nonce: nonce,
+      events: loopEventBuf.slice(-DIAG_EVENT_TAIL_MAX),
+      errors: diagErrors.slice(),
+      console: diagConsole.slice(),
+      final: final === true,
+    };
+    if (diagView !== null) msg.view = diagView;
+    send(msg);
+    if (final === true) {
+      diagDone = true;
+    } else if (diagTimer === null) {
+      diagTimer = setTimeout(function () { diagFlush(false); }, DIAG_FLUSH_MS);
+    }
+  }
+
+  // Frame console pipe (RM-13): mirror console.log/warn/error into the
+  // diagnostics ring (bounded; the original methods keep working). Collected
+  // in every frame kind, but only FORWARDED once the loop channel arms — a
+  // turn-based frame collects into the ring and never sends it.
+  (function pipeConsole() {
+    var con = window.console;
+    if (!con) return; // no console surface (exotic embedder) — best-effort off
+    function fmt(args) {
+      var parts = [];
+      for (var i = 0; i < args.length; i++) {
+        var a = args[i];
+        var s;
+        if (typeof a === "string") { s = a; }
+        else { try { s = JSON.stringify(a); } catch (_) { s = String(a); } }
+        parts.push(s);
+      }
+      var text = parts.join(" ");
+      return text.length > DIAG_TEXT_MAX ? text.slice(0, DIAG_TEXT_MAX) : text;
+    }
+    function wrap(level, original) {
+      if (typeof original !== "function") return original;
+      return function () {
+        var args = Array.prototype.slice.call(arguments);
+        try {
+          diagConsole.push({ level: level, text: fmt(args) });
+          if (diagConsole.length > DIAG_CONSOLE_TAIL_MAX) diagConsole.shift();
+          diagMarkDirty();
+        } catch (_) { /* never break the caller */ }
+        return original.apply(console, args);
+      };
+    }
+    try {
+      con.log = wrap("log", con.log);
+      con.warn = wrap("warn", con.warn);
+      con.error = wrap("error", con.error);
+    } catch (_) { /* console read-only — the pipe is best-effort */ }
+  })();
+
+  // Sample hooks: the view listener above and the event listener feed these.
+  // (Wired below as wrappers to keep the listeners above untouched.)
 
   // Frame-local intention for the realtime loop: no host round-trip, no
   // one-action lock, legal before the handshake (the loop owns the bounds).

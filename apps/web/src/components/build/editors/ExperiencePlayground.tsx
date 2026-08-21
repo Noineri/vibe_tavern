@@ -39,7 +39,7 @@
  * any chat/session. Reset tears the session + frame down client-side (the
  * server-side session is ephemeral process memory owned by the IR-84A driver).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   EXPERIENCE_CAPABILITY,
   EXPERIENCE_CONTROLLER,
@@ -87,6 +87,7 @@ import {
 } from "../../experience/ExperienceFrame.js";
 import { ExperienceRoundFinishedPanel } from "../../experience/ExperienceModal.js";
 import type { ExperienceLoopConfig } from "../../../lib/experience-loop-host.js";
+import type { LoopDiagSample } from "../../../lib/experience-bridge.js";
 import {
   buildRealtimeLoopConfig,
   createPlaygroundModelSeam,
@@ -100,6 +101,7 @@ import {
 } from "../../experience/setup-fields.js";
 import {
   buildPlaygroundDigest,
+  buildRealtimeLoopDigest,
   buildRunTestDigest,
   buildRunTestErrorDigest,
   buildSimulateDigest,
@@ -307,6 +309,111 @@ function ConsoleBlock({ entries, label }: { entries: readonly ExperienceTestCons
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** RM-13: the realtime loop diagnostics section — the LOOP's own
+ *  observability sample replaces the turn-session vocabulary (revision /
+ *  stopReason / create() snapshot) which is a frozen lie for realtime rounds.
+ *  Everything here comes from the in-frame channel: the latest sampled
+ *  projection, the round-log event tail (round_started = the boot signal),
+ *  loop errors, and the piped frame console. */
+function RealtimeLoopDiagSection(props: {
+  readonly tickMs: number;
+  readonly seed: number;
+  readonly diag: LoopDiagSample | null;
+  readonly finished: boolean;
+}): ReactNode {
+  const { tickMs, seed, diag, finished } = props;
+  const { t } = useT();
+  const booted = diag !== null;
+  const statusLabel = !booted
+    ? t("experience_playground_rt_not_booted")
+    : finished || diag.final
+      ? t("experience_playground_rt_finished")
+      : t("experience_playground_rt_running");
+  return (
+    <div className={blockCls} style={{ padding: 10 }} data-testid="playground-realtime-diag">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className={blockLabelCls}>{t("experience_playground_rt_diag_title")}</span>
+        <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[10px] text-accent-t">realtime · tick {tickMs}ms · seed {seed}</span>
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 font-ui text-[10px]",
+            !booted ? "bg-danger-dim text-danger-text" : finished || diag.final ? "bg-s3 text-t3" : "bg-success-dim text-success-text",
+          )}
+          data-testid="playground-realtime-diag-status"
+        >
+          {statusLabel}
+        </span>
+      </div>
+      {!booted ? (
+        <p className="mt-1.5 font-ui text-[11px] italic text-t3">{t("experience_playground_rt_not_booted_hint")}</p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          <div>
+            <div className={blockLabelCls}>{t("experience_playground_rt_live_view")}</div>
+            {diag.view !== undefined ? (
+              <JsonBlock value={diag.view} />
+            ) : (
+              <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_rt_no_view")}</p>
+            )}
+          </div>
+          <div>
+            <div className={blockLabelCls}>{t("experience_playground_rt_events")}</div>
+            {diag.events.length === 0 ? (
+              <p className="mt-1 font-ui text-[11px] italic text-t3">—</p>
+            ) : (
+              <div className="mt-1 space-y-0.5">
+                {diag.events.map((event, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">
+                      {typeof event === "object" && event !== null && "kind" in event ? String((event as { kind: unknown }).kind) : "event"}
+                    </span>
+                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event)}</pre>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {diag.errors.length > 0 && (
+            <div>
+              <div className={blockLabelCls}>{t("experience_playground_rt_errors")}</div>
+              <div className="mt-1 space-y-0.5">
+                {diag.errors.map((err, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="shrink-0 rounded bg-danger-dim px-1.5 py-0.5 font-mono text-[10px] text-danger-text">
+                      {typeof err === "object" && err !== null && "kind" in err ? String((err as { kind: unknown }).kind) : "error"}
+                    </span>
+                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-danger-text">{JSON.stringify(err)}</pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {diag.console.length > 0 && (
+            <div>
+              <div className={blockLabelCls}>{t("experience_playground_rt_console")}</div>
+              <div className="mt-1 space-y-0.5">
+                {diag.console.map((entry, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span
+                      className={cn(
+                        "shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase",
+                        entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3",
+                      )}
+                    >
+                      {entry.level}
+                    </span>
+                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{entry.text}</pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -635,6 +742,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   // document when the serialized config changes, so an unstable config would
   // restart the loop on every render.
   const [realtimeRound, setRealtimeRound] = useState<ExperienceLoopConfig | null>(null);
+  /** RM-13: the latest loop diagnostics sample from the frame (replace
+   *  semantics — the SDK owns the ~1/s cadence and the bounds). Null until
+   *  the loop arms; STAYS null when the round never boots (itself a signal
+   *  the diagnostics section renders explicitly). */
+  const [loopDiag, setLoopDiag] = useState<LoopDiagSample | null>(null);
   /** The finalized round claim (latched once — a duplicate commit is noise). */
   const [roundClaim, setRoundClaim] = useState<ExperienceRoundCommitClaim | null>(null);
   /** Overlay-dismissed flag for the round-finished panel (Reset/Restart stay
@@ -1057,6 +1169,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           return;
         }
         setRealtimeRound(built.config);
+        setLoopDiag(null);
         setRoundClaim(null);
         setRoundPanelDismissed(false);
       }
@@ -1086,6 +1199,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     // finished-round claim go with the session (the frame unmounts, so the
     // loop dies with it; a stopped round is lost by design).
     setRealtimeRound(null);
+    setLoopDiag(null);
     setRoundClaim(null);
     setRoundPanelDismissed(false);
   };
@@ -1387,12 +1501,23 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   /** XU-3: feed a typed error to the copilot. A live session uses the
    *  playground digest (mirrors the diagnostics send path); a failed START has
    *  no session, so it falls back to the run-test error digest (the fail-path
-   *  shape). Only wired when the shell provides the callback. */
+   *  shape). Only wired when the shell provides the callback. RM-13: a live
+   *  REALTIME round sends the loop digest (the truthful error context — the
+   *  loop errors + console ride the sample). */
   const handleAskCopilotAboutError = () => {
     if (onSendToCopilot === undefined || error === null) return;
-    const digest = session !== null
-      ? buildPlaygroundDigest({ session, definition, error })
-      : buildRunTestErrorDigest(error);
+    const digest =
+      session !== null && realtimeRound !== null
+        ? buildRealtimeLoopDigest({
+            realtime: { tickMs: realtimeRound.tickMs, seed: realtimeRound.seed },
+            diag: loopDiag,
+            claim: roundClaim,
+            definition,
+            error,
+          })
+        : session !== null
+          ? buildPlaygroundDigest({ session, definition, error })
+          : buildRunTestErrorDigest(error);
     onSendToCopilot(digest);
   };
 
@@ -1843,6 +1968,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                         // latches the terminal panel. First commit wins.
                         setRoundClaim((prev) => prev ?? claim);
                       }}
+                      onLoopDiag={setLoopDiag}
                     />
                     {realtimeRound !== null && roundClaim !== null && !roundPanelDismissed && (
                       <ExperienceRoundFinishedPanel
@@ -1963,14 +2089,28 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                     {/* ER-14: send the live session diagnostics to the copilot
                         thread. Shown only when the shell wires the callback AND
                         a session is live. Lives INSIDE the Developer-diagnostics
-                        disclosure per the user's intent. */}
+                        disclosure per the user's intent. RM-13: a realtime round
+                        sends the LOOP digest (the turn-session shape would lie
+                        — revision/stopReason belong to the server sim). */}
                     {onSendToCopilot !== undefined && (
                       <button
                         type="button"
                         data-testid="playground-send-to-copilot"
                         className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                         disabled={busy !== null}
-                        onClick={() => onSendToCopilot(buildPlaygroundDigest({ session, definition, error }))}
+                        onClick={() =>
+                          onSendToCopilot(
+                            realtimeRound !== null
+                              ? buildRealtimeLoopDigest({
+                                  realtime: { tickMs: realtimeRound.tickMs, seed: realtimeRound.seed },
+                                  diag: loopDiag,
+                                  claim: roundClaim,
+                                  definition,
+                                  error,
+                                })
+                              : buildPlaygroundDigest({ session, definition, error }),
+                          )
+                        }
                       >
                         {t("experience_playground_send_diagnostics")}
                       </button>
@@ -1994,6 +2134,21 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                       </div>
                     )}
 
+                    {/* RM-13: realtime rounds show the LOOP's own diagnostics
+                        (the authority lives in the frame); the turn-session
+                        vocabulary below would be a frozen lie (revision 0 /
+                        awaiting_human / create() snapshot forever). */}
+                    {realtimeRound !== null && (
+                      <RealtimeLoopDiagSection
+                        tickMs={realtimeRound.tickMs}
+                        seed={realtimeRound.seed}
+                        diag={loopDiag}
+                        finished={roundClaim !== null}
+                      />
+                    )}
+
+                    {realtimeRound === null && (
+                    <>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
                       <span>{t("experience_playground_session_label")}: <span className="font-mono text-t2">{session.playgroundSessionId.slice(0, 8)}</span></span>
                       <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{session.revision}</span></span>
@@ -2061,6 +2216,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                       <div className={blockLabelCls}>{t("experience_tester_final_state")}</div>
                       <JsonBlock value={session.state} />
                     </div>
+                    </>
+                    )}
 
                     {session.events.length > 0 && (
                       <div>

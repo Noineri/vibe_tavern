@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from "bun:test";
 import {
+  BRIDGE_DIAG_MAX_EVENTS,
   BRIDGE_MAX_ROUND_LOG_EVENTS,
   BRIDGE_PROTOCOL_VERSION,
   bridgeErrorCodes,
@@ -225,5 +226,54 @@ describe("experience-bridge-schema — realtime round vocabulary", () => {
       seatId: "m1",
       result: "ramble",
     });
+  });
+});
+
+// ─── loop_diag (RM-13) ──────────────────────────────────────────────────────
+
+describe("bridge schema — loop_diag", () => {
+  it("accepts a well-formed sample (view optional, tails bounded by the SDK)", () => {
+    expect(
+      parseVisualToHost({
+        v: 1,
+        kind: "loop_diag",
+        nonce: "n",
+        view: { score: 2 },
+        events: [{ kind: "round_started", seed: 1 }],
+        errors: [{ kind: "boot_failed", message: "x" }],
+        console: [{ level: "error", text: "boom" }],
+        final: false,
+      }),
+    ).not.toBeNull();
+    // view absent (pre-boot sample) is valid
+    expect(
+      parseVisualToHost({
+        v: 1,
+        kind: "loop_diag",
+        nonce: "n",
+        events: [],
+        errors: [],
+        console: [],
+        final: true,
+      }),
+    ).not.toBeNull();
+  });
+
+  it("rejects a bad console level and oversized tails", () => {
+    expect(
+      parseVisualToHost({
+        v: 1,
+        kind: "loop_diag",
+        nonce: "n",
+        events: [],
+        errors: [],
+        console: [{ level: "trace", text: "no" }],
+        final: false,
+      }),
+    ).toBeNull();
+    const huge = Array.from({ length: BRIDGE_DIAG_MAX_EVENTS + 1 }, () => ({ kind: "ticks" }));
+    expect(
+      parseVisualToHost({ v: 1, kind: "loop_diag", nonce: "n", events: huge, errors: [], console: [], final: false }),
+    ).toBeNull();
   });
 });

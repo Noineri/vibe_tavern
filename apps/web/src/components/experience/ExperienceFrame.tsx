@@ -48,6 +48,7 @@ import {
   ExperienceHostBridge,
   type BridgeContentWindow,
   type BridgeResize,
+  type LoopDiagSample,
 } from "../../lib/experience-bridge.js";
 import { VIBE_EXPERIENCE_SDK_SOURCE } from "../../lib/experience-sdk.js";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
@@ -270,6 +271,10 @@ export interface ExperienceFrameProps {
    * replay-verified server-side — the host surface owns the commit flow.
    */
   readonly onRoundCommit?: (claim: ExperienceRoundCommitClaim) => void;
+  /** Realtime (RM-13): a bounded diagnostics sample from the in-frame loop
+   *  (latest projection sample + event/error/console tails). Replace
+   *  semantics — the SDK owns the cadence (~1/s) and the bounds. */
+  readonly onLoopDiag?: (diag: LoopDiagSample) => void;
   readonly className?: string;
 }
 
@@ -301,6 +306,7 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
       onFinish,
       onModelRequest,
       onRoundCommit,
+      onLoopDiag,
       onError,
       className,
     } = props;
@@ -383,6 +389,7 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
         onFinish,
         onModelRequest,
         onRoundCommit,
+        onLoopDiag,
         onProtocolError: (reason) => onError?.(reason),
       });
       bridgeRef.current = bridge;

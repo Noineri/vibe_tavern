@@ -36,6 +36,7 @@ import type {
   ExperienceTestRunData,
   ExperienceTestSimulateData,
 } from "../api/types.js";
+import type { LoopDiagSample } from "./experience-bridge.js";
 
 /** The structured digest the model reads as context + its human-readable
  *  summary posted as the user message. */
@@ -242,6 +243,104 @@ export function buildPlaygroundDigest(args: CopilotPlaygroundDigestInput): Copil
     ...(error
       ? [`Error: ${error.message}`, `Code: ${error.code ?? "(none)"}`]
       : []),
+    ATTACHED_NOTE,
+  ];
+  return { text: lines.join("\n"), feedback };
+}
+
+// ─── Realtime digest (RM-13) ───────────────────────────────────────────────
+
+/** Bounds for the realtime digest tails (the SDK sample is already bounded;
+ *  these caps keep the MODEL context lean — tails, not transcripts). */
+const RT_EVENT_TAIL_MAX = 12;
+const RT_ERROR_TAIL_MAX = 6;
+const RT_CONSOLE_TAIL_MAX = 12;
+
+/** Compact `kind: …` rendering of a round-log event for the model. */
+function rtEventLine(event: unknown): string {
+  if (typeof event === "object" && event !== null && "kind" in event) {
+    const e = event as { kind: unknown };
+    let s = String(e.kind);
+    try {
+      const rest = JSON.stringify(event);
+      if (rest !== undefined && rest.length <= 400) s += `: ${rest}`;
+    } catch { /* unserializable — kind only */ }
+    return s;
+  }
+  return String(event);
+}
+
+/** Compact `kind: message` rendering of a loop error for the model. */
+function rtErrorLine(err: unknown): string {
+  if (typeof err === "object" && err !== null) {
+    const e = err as { kind?: unknown; message?: unknown };
+    const kind = typeof e.kind === "string" ? e.kind : "error";
+    const msg = typeof e.message === "string" ? e.message : JSON.stringify(err) ?? "";
+    return `${kind}: ${msg}`;
+  }
+  return String(err);
+}
+
+export interface CopilotRealtimeDigestInput {
+  /** The realtime loop config (tickMs + seed for the header). */
+  readonly realtime: { readonly tickMs: number; readonly seed: number };
+  /** The latest loop diagnostics sample (replace semantics; may be null when
+   *  the loop never armed — itself a diagnostic: "nothing ever fired"). */
+  readonly diag: LoopDiagSample | null;
+  /** The finalized round claim, once the loop finished (optional). */
+  readonly claim?: { readonly status: string } | null;
+  readonly definition?: ExperienceTestRunData["definition"] | null;
+  readonly error?: CopilotErrorInput | null;
+}
+
+/** A REALTIME playground digest (RM-13). The realtime round's authority lives
+ *  inside the sandbox frame — the turn-session shape (stopReason/revision of
+ *  the server sim) is a LIE for realtime rounds, so this builder reports the
+ *  loop's own observability sample instead: liveness (event tail incl.
+ *  round_started), the latest projection sample, loop errors, and the frame
+ *  console. Matches `ExperienceCopilotRealtimeDigest` in the backend tools. */
+export function buildRealtimeLoopDigest(args: CopilotRealtimeDigestInput): CopilotDigest {
+  const { realtime, diag, claim, error } = args;
+  const booted = diag !== null;
+  const status = claim !== null && claim !== undefined ? claim.status : booted ? "running" : "not_booted";
+
+  const eventTail = diag ? diag.events.slice(-RT_EVENT_TAIL_MAX).map(rtEventLine) : [];
+  const errorTail = diag ? diag.errors.slice(-RT_ERROR_TAIL_MAX).map(rtErrorLine) : [];
+  const consoleTail = diag
+    ? diag.console.slice(-RT_CONSOLE_TAIL_MAX).map((c) => `${c.level}: ${c.text}`)
+    : [];
+
+  const feedback: Record<string, unknown> = {
+    ok: !error,
+    mode: "realtime",
+    tickMs: realtime.tickMs,
+    seed: realtime.seed,
+    status,
+    ...(diag?.view !== undefined ? { stateSummary: summarizeState(diag.view) } : {}),
+    ...(eventTail.length > 0 ? { eventTail } : {}),
+    ...(errorTail.length > 0 ? { errorTail } : {}),
+    ...(consoleTail.length > 0 ? { consoleTail } : {}),
+    ...(error
+      ? {
+          errorCode: error.code ?? "error",
+          ...(error.kind !== undefined ? { errorKind: error.kind } : {}),
+          errorMessage: error.message,
+        }
+      : {}),
+  };
+
+  const defName = args.definition?.manifest.name ?? "(unknown)";
+  const defId = args.definition?.manifest.id ?? "(unknown)";
+  const lines = [
+    "## Playground diagnostics (realtime loop)",
+    `Definition: ${defName} (${defId})`,
+    `Mode: realtime · tick ${realtime.tickMs}ms · seed ${realtime.seed}`,
+    `Loop status: ${status}`,
+    diag?.view !== undefined ? "State sample: (attached in stateSummary)" : "State sample: none (loop never posted a view)",
+    `Loop events (tail ${eventTail.length}): ${eventTail.length > 0 ? eventTail.join(" | ") : "none"}`,
+    `Loop errors (tail ${errorTail.length}): ${errorTail.length > 0 ? errorTail.join(" | ") : "none"}`,
+    `Frame console (tail ${consoleTail.length}): ${consoleTail.length > 0 ? consoleTail.join(" ⏎ ") : "silent"}`,
+    ...(error ? [`Error: ${error.message}`, `Code: ${error.code ?? "(none)"}`] : []),
     ATTACHED_NOTE,
   ];
   return { text: lines.join("\n"), feedback };

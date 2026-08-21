@@ -241,6 +241,49 @@ export const visualRoundCommitSchema = z.object({
   summary: z.string().max(4000).optional(),
 });
 
+// ─── Realtime loop diagnostics (RM-13) ──────────────────────────────────────
+
+/** One frame-console entry in a diagnostics sample (SDK-side pipe of the
+ *  visual/rules console output; text-joined, capped). */
+export const bridgeConsoleEntrySchema = z.object({
+  level: z.enum(["log", "warn", "error"]),
+  text: z.string().max(2000),
+});
+
+export type BridgeConsoleEntry = z.infer<typeof bridgeConsoleEntrySchema>;
+
+/** Diagnostics tail bounds — the SDK enforces the same caps at the source
+ *  (the message never carries more than these); the schema bound is the
+ *  second line of defense against an absurd payload. */
+export const BRIDGE_DIAG_MAX_EVENTS = 48;
+export const BRIDGE_DIAG_MAX_ERRORS = 12;
+export const BRIDGE_DIAG_MAX_CONSOLE = 48;
+
+/** A bounded observability snapshot of the in-frame realtime round (RM-13).
+ *  The loop's life — views, round-log events, errors, console — happens
+ *  INSIDE the frame; without this channel the host panel is structurally
+ *  blind (the RM-12c loop-boot crash was invisible for exactly this reason).
+ *  The SDK samples the latest projection at most ~1/s and posts one message
+ *  per flush window; `final: true` marks the round's last sample. Inert in
+ *  turn-based frames (the SDK never arms the channel without vt-loop:*). */
+export const visualLoopDiagSchema = z.object({
+  v: z.literal(BRIDGE_PROTOCOL_VERSION),
+  kind: z.literal("loop_diag"),
+  nonce: z.string().min(1),
+  /** Latest sampled flat projection (replaced each flush; absent pre-boot). */
+  view: z.unknown().optional(),
+  /** Tail of round-log events (bounded, oldest dropped SDK-side). */
+  events: z.array(z.unknown()).max(BRIDGE_DIAG_MAX_EVENTS),
+  /** Tail of loop errors ({ kind, message } from the loop host). */
+  errors: z.array(z.unknown()).max(BRIDGE_DIAG_MAX_ERRORS),
+  /** Tail of the frame console pipe. */
+  console: z.array(bridgeConsoleEntrySchema).max(BRIDGE_DIAG_MAX_CONSOLE),
+  /** True on the final sample (posted at round finish). */
+  final: z.boolean(),
+});
+
+export type VisualLoopDiag = z.infer<typeof visualLoopDiagSchema>;
+
 export const visualToHostSchema = z.discriminatedUnion("kind", [
   visualReadySchema,
   visualActionSchema,
@@ -248,6 +291,7 @@ export const visualToHostSchema = z.discriminatedUnion("kind", [
   visualFinishSchema,
   visualModelRequestSchema,
   visualRoundCommitSchema,
+  visualLoopDiagSchema,
 ]);
 
 export type VisualToHost = z.infer<typeof visualToHostSchema>;
