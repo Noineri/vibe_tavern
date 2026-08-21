@@ -65,7 +65,8 @@ function bunTestCommand(...positionals: readonly string[]): readonly string[] {
 export function createTestSuites(): readonly TestSuite[] {
 	return [
 		{
-			// Runs each file in its own subprocess — the timeout lives in scripts/test-web.ts.
+			// One `bun test --parallel=8` run under --isolate — the timeout and the
+			// zero-test guard live in scripts/test-web.ts.
 			// 160+ of its 162 files are React components and stores; exactly two touch
 			// `node:fs`/`node:path`/`process.platform`, so it buys no Windows coverage
 			// for the ~83s it costs there.
