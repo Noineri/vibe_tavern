@@ -493,6 +493,17 @@ Registering `vision_describe` as a real mode (rather than a separate code path) 
 
 ---
 
+## Interactive Experiences
+
+The mini-app engine (`domain/interactive/`, contracts in `packages/api-contracts/src/schemas/interactive-schema.ts`). A package is two sources authored in Build mode: **rules** (the `context.experience.register({...})` DSL — `create`/`project`/`actions`/`reduce`, executed in a `node:vm` sandbox with no DOM/network) and a **visual** (a self-contained HTML document rendered in a CSP-sandboxed iframe, driven through the `VibeExperience` bridge). Live sessions pin the rules source, visual source, and random seed at start; every turn advances through the kernel and journals transitions.
+
+Two execution modes (REALTIME_EXPERIENCE_MODE_PLAN):
+
+- **Turn (default)** — the classic host-driven reducer flow: revisions + CAS, durable `model`/`timer` effects, per-viewer projections pushed to the visual.
+- **Realtime** (`mode: "realtime"` + `tickMs` 16..1000 in the manifest) — the round runs INSIDE the sandboxed frame as a fixed-timestep loop (the loop host is bundled into the generated frame runtime): `update(context, dt)` ticks, legality-checked human inputs, `choose`-driven script seats, and a model-seat channel all apply frame-side with ZERO server round-trips during play; everything is recorded in an ordered round log. The host launches the round via `GET /api/experience/sessions/:sessionId/round/config` (pinned rules + numeric seed + frozen state/settings + roster) and the visual finishes it via `finishRound`. `POST /api/experience/sessions/:sessionId/round/commit` then REPLAYS the log through the real kernel against the pinned seed and compares the state hash — mismatch ⇒ typed `422 round_verification_failed`, nothing applied; match ⇒ ONE terminal transition + one chat card. `POST /api/experience/round-model` (session-less, stateless) serves realtime model seats for both the Try-it panel and the live modal host.
+
+The authoring DSL reference lives in `services/api/assets/interactive-rules.md` (loaded live into the copilot prompt); the visual bridge contract in `services/api/assets/interactive-visual.md`.
+
 ## Experience Copilot (authoring assistant)
 
 Mounted as the `experience-copilot` FeatureModule; domain code in `domain/interactive/copilot/`. Full architecture: [Experience Copilot](./experience-copilot.md). Key mechanics:
@@ -503,7 +514,7 @@ Mounted as the `experience-copilot` FeatureModule; domain code in `domain/intera
 - **Skills** — filesystem-scanned `SKILL.md` dirs under `assets/experience-copilot/skills/` (`experience-authoring`, `grill-me`); scanner/catalog reused from Co-Author with an isolated root.
 - **Compaction + context meter** — digest-based history folding (never splitting tool-call/result pairs) and persisted context metrics driving the meter UI.
 
-The engine the copilot authors against — kernel, sandbox, durable effects (`model`, `timer`), the visual bridge — is Interactive Experiences, documented in the copilot architecture doc's references and the shared asset references (`interactive-rules.md`, `interactive-visual.md`).
+The engine the copilot authors against — kernel, sandbox, durable effects (`model`, `timer`), the visual bridge — is Interactive Experiences, documented in the copilot architecture doc's references and the shared asset references (`interactive-rules.md`, `interactive-visual.md`). The engine now has two authoring modes — the classic turn-based flow and realtime loop rounds (`mode: "realtime"`) — and mode-choice guidance lives in `base.md` plus the realtime sections of the shared assets.
 
 ---
 

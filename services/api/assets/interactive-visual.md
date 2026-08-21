@@ -88,6 +88,31 @@ A robust visual renders all of these gracefully (the package's preview fixtures 
 - **error** — `onError` fires: surface the message, keep the last good state visible, let the user retry.
 - **completed** — `view.status === "completed"`: show a terminal state and stop offering actions.
 
+# Realtime rounds (loop mode)
+
+When the package's manifest is `mode: "realtime"`, the game loop runs INSIDE your frame: the host injects the round config (rules, seed, participants) alongside your source, and the engine ticks `update`/applies inputs locally. There are NO server round-trips during the round — no `view` pushes arrive after the bootstrap; your rendering is driven by tick callbacks.
+
+New handle methods (inert in turn-based frames — the same visual source may host both modes by guarding on them):
+
+```js
+xp.actLocal(type, payload?, opts?)        // frame-local input: queued and applied at the next tick boundary (legality-checked). No round-trip, no one-action lock — safe in a keydown handler at input rate.
+xp.modelRequest(seatId, prompt)           // returns a requestId. Asks the host's model seam for a model seat; the reply arrives as a model_result loop event.
+xp.finishRound({ status, score?, summary? })  // ends the round NOW (a tick boundary). status "completed" (default) or "interrupted" (player abandon). score/summary ride the single commit → the chat card.
+```
+
+New subscriptions (early events are buffered — connect late and you still see the latest view):
+
+```js
+xp.onTick(cb)        // the fresh projected view (same `view` shape) every tick — re-render here.
+xp.onLoopEvent(cb)   // raw round-log events (inputs, script moves, model results) — for effects/transient UI.
+xp.onRoundFinish(cb) // the finished claim { status, finalState, score?, summary? } — render a terminal card.
+xp.onRoundError(cb)  // a fatal loop error (e.g. the watchdog) — surface it, stop rendering ticks.
+```
+
+In a realtime frame `xp.act()` (the turn-path submit) is a MODE ERROR — use `actLocal`. `xp.resize`/`xp.finish` keep their meaning.
+
+Canonical realtime visual shape: subscribe `onTick` → render the projected state (canvas or DOM) → feed player input via `actLocal` from real event handlers (keydown/pointer, not buttons) → `finishRound` on win/lose/quit. Note the round is client-authoritative until commit: closing the host surface mid-round loses that round.
+
 # The validated contract you receive
 The user message carries a "Validated game contract" block discovered by running the author's rules through the real sandbox. It contains ONLY validated shapes — the manifest `{ id, name }`, the declared capabilities (which context APIs the rules use: `participants`, `deterministic_random`, `model`, etc.), whether the optional `choose`/`flavor` methods are present, and the declared setup fields. The RAW RULES SOURCE is deliberately absent — you generate the visual from these shapes and this bridge reference only. Do not ask for the rules source; do not attempt to reproduce rules logic in the visual.
 

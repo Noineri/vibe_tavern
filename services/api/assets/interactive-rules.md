@@ -22,6 +22,7 @@ After discovery, the host re-runs the body and invokes one registered method. In
 ```js
 create(context, settings) { /* context has NO state, only settings + helpers */ }
 project(context, viewer)   { /* context.state, context.participants?, context.helpers */ }
+update(context, dt)        { /* realtime-only tick method — same context as reduce + dt; see "Realtime mode" */ }
 actions(context, viewer)   { /* same */ }
 reduce(context, action)    { /* same; context.random? only if the capability is granted */ }
 ```
@@ -58,7 +59,7 @@ context.experience.register({
 
 ### Fields
 - `apiVersion` (number, required): host protocol version. Use `1`.
-- `manifest` (object, required): `{ id: string, name: string }`. The `id` is a stable identifier (lowercase, no spaces); `name` is the human-readable title.
+- `manifest` (object, required): `{ id: string, name: string }`. The `id` is a stable identifier (lowercase, no spaces); `name` is the human-readable title. Two optional fields switch the execution mode — `mode` (`"turn"` default | `"realtime"`) and `tickMs` (16..1000, required for realtime, forbidden for turn); see "Realtime mode" below.
 - `capabilities` (array, required): each entry is `{ capability: "...", reason?: "..." }`. Valid capability values:
   - `"participants"` — grants `context.participants` inside methods (per-player turn order, scores, seats).
   - `"deterministic_random"` — grants `context.random` inside `create`/`reduce` (shuffles, dice, draws — reproducible across replays).
@@ -93,6 +94,40 @@ Effects are durable async host operations; requesting one does NOT block `reduce
 - `{ kind: "model", request: { viewer, mode, instruction } }` — out-of-band AI generation for a model seat (requires the `model` capability).
 - `{ kind: "timer", request: { viewer, actionType, afterMs, args? } }` — the host fires `actionType` (with optional `args`) as that viewer's synthetic action back into `reduce` after `afterMs` milliseconds. This is the runtime's real-time axis — it is NOT purely turn-based: deadlines, cooldowns, and periodic ticks (a piece falling, a clock running out) are modeled as timers, not as extra human turns. `viewer` is REQUIRED and must be a real seat id from `context.participants` (pattern: `viewer: context.participants[0].id` captured in `create`) — the tick is checked against that seat's legal actions; a missing/unknown viewer fails the effect at claim. `afterMs` is a positive integer (max ~24.8 days); no capability grant is required. The host owns the clock: the delay counts from when the host picks the effect up (≈1s poll granularity), and a host restart restarts the countdown — game time does not advance while the host is down. At fire time the tick must still be legal for that viewer (`actions` is re-checked) and `args` must satisfy the action's `payloadSchema`; an illegal tick fails the effect typed, it never mutates state. Timers fire both in the Try-it sandbox ("Play") and in live chat sessions. A transition may request up to 16 effects.
 
+# Realtime mode
+
+`mode: "realtime"` in the manifest switches the package to a client-side fixed-timestep round loop that runs INSIDE the visual frame: game time advances in discrete `tickMs` ticks, human and script inputs apply at tick boundaries, and the loop's roleplay surface (rules + visual + bridge) stays the same. The round is a solo session and commits once at the end — the host chat receives exactly one card. Everything in the sections above remains true unless this section says otherwise.
+
+## Declaration
+
+```js
+manifest: { id: "my_game", name: "My Game", mode: "realtime", tickMs: 100 }
+```
+
+- `mode` — `"turn"` (default) or `"realtime"`. Turn keeps the classic host-driven flow (reducer, revisions, timer/model effects). Realtime runs the client-side loop inside the visual frame; the round is one solo session and commits once at the end.
+- `tickMs` — REQUIRED when `mode: "realtime"` and FORBIDDEN otherwise. Integer 16..1000 — the fixed timestep of the loop (each tick advances exactly `tickMs` of game time).
+
+## The `update` method (realtime only, optional)
+
+```js
+update(context, dt) { return transition; }
+```
+
+The realtime tick. Same method-call `context` as `reduce` (`state`, `participants?`, `random?`, `helpers` — NO `chance`), plus `dt` = the elapsed game milliseconds for this tick (always exactly the manifest `tickMs`). Returns the SAME transition shape as `reduce`; `"completed"` ends the round. Called once per tick, BEFORE queued inputs and script moves. Keep it cheap — it runs at tick rate (60fps = 60 calls/sec).
+
+## Realtime restrictions (HARD)
+
+- **Solo round:** exactly ONE human seat drives the surface. No multiplayer.
+- **The `timer` effect kind does not exist in realtime** — time IS `update(context, dt)`. A `timer` effect in a realtime transition is silently dropped.
+- **Model seats answer through the loop's model channel** (the visual's `modelRequest`), never through `reduce` effects — realtime transitions' `effects` are dropped alongside `events`.
+- **Transition `events` are dropped in realtime** (tick-rate logging would explode the round log) — surface per-tick feedback through `project()` instead. Score/summary belong on the visual's `finishRound` call, not in events.
+- **Determinism or no commit:** the server replays the round log through this same kernel and compares the state hash. `update`/`reduce` may draw ONLY from `context.random` (the deterministic round cursor) — `Math.random`, `Date.now`, or `context.chance` inside them makes the commit unverifiable (typed 422, nothing applied).
+- **Keep state transitions small** — the loop runs `update` at tick rate; heavy per-tick work starves the frame.
+
+## Which mode to pick
+
+Turn mode for alternating-move games (card/board/quiz, multi-seat dialogue with AI replies); realtime for anything with continuous time (arcade, falling pieces, countdown dashboards, physics-ish loops). If the design has no per-tick motion, turn mode with `timer` effects remains the right tool.
+
 # Helpers (`context.helpers`)
 A frozen namespace of pure, deterministic recipes available in every method. All randomized helpers take an explicit `rng` source; pass `context.random` methods as that source where appropriate. You may ignore them entirely.
 
@@ -119,7 +154,7 @@ Your code runs in an isolated `node:vm` sandbox. This is the RULES sandbox — i
 
 # Strict constraints
 1. **One definition:** Call `context.experience.register(...)` exactly ONCE.
-2. **All four mandatory methods present and functions:** `create`, `project`, `actions`, `reduce`. `choose`/`flavor`/`setup` only when the design needs them.
+2. **All four mandatory methods present and functions:** `create`, `project`, `actions`, `reduce`. `choose`/`flavor`/`setup` only when the design needs them; `update` is the realtime-only optional tick method (see "Realtime mode").
 3. **No host leakage:** Never reference `context.character`, `context.chat`, `context.lore`, `context.persona`, or any prompt/RP data — these do not exist in the rules VM. The only context APIs are `context.state`, `context.participants?`, `context.random?`, `context.chance?`, and `context.helpers`.
 4. **JSON-safe state:** State, events, and effect requests must be plain JSON (no functions, no class instances, no Dates).
 5. **Declared capabilities only:** Only read `context.participants`/`context.random` when you declared the matching capability.

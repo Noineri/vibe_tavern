@@ -8,7 +8,7 @@
 
 The copilot is a coding-assistant surface specialized for authoring experience packages. It is **single-mode**: one fixed authoring mode (`experience-authoring`), defined declaratively — there is no module switcher (unlike Co-Author's user-pickable modules). The model never touches the database directly: every `rules`/`visual` change is a tool proposal the user reviews as a diff and commits via the binding UI (`write_buffer`/`edit_buffer` are the only channel; raw code in chat is a hard no).
 
-The engine side it authors against — kernel, sandbox, durable effects (including `timer`), the `VibeExperience` visual bridge — is documented in `backend.md` (Interactive Experiences). This doc covers the assistant subsystem around it.
+The engine side it authors against — kernel, sandbox, durable effects (including `timer`), the `VibeExperience` visual bridge — is documented in `backend.md` (Interactive Experiences). The engine now offers two authoring modes (turn-based and realtime loop rounds); the mode-choice and round-commit-determinism guidance the copilot follows lives in `base.md` and the realtime sections of the shared assets. This doc covers the assistant subsystem around it.
 
 ## Where things live
 

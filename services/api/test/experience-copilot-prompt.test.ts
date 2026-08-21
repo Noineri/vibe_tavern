@@ -474,9 +474,13 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // assets interactive-rules.md (timer viewer is required + sandbox fires
     // timers), user-flow.md (sandbox Play bullet: timers tick), and
     // interactive-visual.md (pending contract: a live timer never gates
-    // controls) all gained one intentional clarification each.
+    // controls) all gained one intentional clarification each. Re-captured
+    // again (RM-11 realtime assets): interactive-rules.md +
+    // interactive-visual.md gained the realtime authoring/loop sections,
+    // base.md gained mode-choice/round-commit/comments/context-economy
+    // constraints, user-flow.md gained the realtime Play/live-run lines.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
+      .toBe("a1622260089e69e25c0ea4996e83cadd6ec47648aa608d1b27b56e7281e37f2b");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -598,7 +602,7 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // Re-captured again for the playground-timers asset update — see the
     // zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
+      .toBe("a1622260089e69e25c0ea4996e83cadd6ec47648aa608d1b27b56e7281e37f2b");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -663,7 +667,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // zero-attached baseline system message. Re-captured again for the
     // playground-timers asset update — see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("328bfb18a363421fef7fd8c89e982a407db7b7a90e0efab8c75180c206839b92");
+      .toBe("a1622260089e69e25c0ea4996e83cadd6ec47648aa608d1b27b56e7281e37f2b");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {
