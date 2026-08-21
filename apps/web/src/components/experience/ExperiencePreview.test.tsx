@@ -51,9 +51,9 @@ const FORBIDDEN_GLOBAL_PATTERNS = [
 // ─── Starter hygiene ────────────────────────────────────────────────────────
 
 describe("visual starters — registry shape", () => {
-  it("ships exactly five starters with unique ids", () => {
+  it("ships exactly six starters with unique ids", () => {
     const ids = VISUAL_STARTERS.map((s) => s.id);
-    expect(ids).toEqual(["choice", "grid-board", "card-table", "conversation", "blank"]);
+    expect(ids).toEqual(["choice", "grid-board", "card-table", "conversation", "catch", "blank"]);
     expect(new Set(ids).size).toBe(ids.length);
   });
 

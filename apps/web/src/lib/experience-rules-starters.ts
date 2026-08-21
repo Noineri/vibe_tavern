@@ -1,21 +1,27 @@
 /**
  * Rules starter catalog (IR-81A). The five editable source skeletons a new
- * interactive rules script is copied from. Each starter is a self-contained
- * JS body that calls `context.experience.register({…})` with the four mandatory
- * methods (create / project / actions / reduce) and uses ONLY the public
- * Interactive Runtime contract — no application-internal imports and no host
- * globals (the VM allowlist excludes window, document, fetch, require, etc.).
+ * interactive rules script is copied from, plus the wave-6 realtime starter
+ * (REALTIME_EXPERIENCE_MODE_PLAN, RM-12). Each starter is a self-contained
+ * JS body that calls `context.experience.register({…})` with the mandatory
+ * methods (create / project / actions / reduce; `update` for the realtime
+ * starter) and uses ONLY the public Interactive Runtime contract — no
+ * application-internal imports and no host globals (the VM allowlist excludes
+ * window, document, fetch, require, etc.).
  *
  * Order is the canonical display order in the editor picker and mirrors the
- * five visual starters (IR-63): Round ↔ Choice, Board ↔ Grid/Board, Card ↔
- * Card Table, Model Conversation ↔ Conversation, Blank State Machine ↔ Blank.
+ * visual starters (IR-63): Round ↔ Choice, Board ↔ Grid/Board, Card ↔ Card
+ * Table, Model Conversation ↔ Conversation, Catch (Realtime) ↔ Catch, Blank
+ * State Machine ↔ Blank (Blank stays last — the escape hatch for customs).
  *
  * Starter constants are immutable (`Object.freeze`). The authoring surface
  * (IR-81C) copies a starter's `source` into a fresh user-owned draft; the
  * frozen original is never mutated.
  */
 
-import { CONVERSATION_RULES_SOURCE as MODEL_CONVERSATION_SOURCE } from "@vibe-tavern/domain";
+import {
+  CATCH_RULES_SOURCE,
+  CONVERSATION_RULES_SOURCE as MODEL_CONVERSATION_SOURCE,
+} from "@vibe-tavern/domain/builtins";
 
 /** One shipped rules starter. */
 export interface RulesStarter {
@@ -200,6 +206,12 @@ export const RULES_STARTERS: readonly RulesStarter[] = Object.freeze([
     label: "Model Conversation",
     description: "A human and model conversation: the human replies, the AI replies in turn. Uses the participants and model capabilities.",
     source: MODEL_CONVERSATION_SOURCE,
+  }),
+  Object.freeze({
+    id: "catch_arcade",
+    label: "Catch (Realtime)",
+    description: "A realtime arcade loop: steer the paddle, catch falling balls. Demonstrates update(context, dt), frame-local actLocal inputs, and a replay-verified realtime commit.",
+    source: CATCH_RULES_SOURCE,
   }),
   Object.freeze({
     id: "blank_state_machine",

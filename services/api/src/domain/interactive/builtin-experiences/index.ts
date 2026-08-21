@@ -17,9 +17,11 @@
  * barrel.
  */
 import {
+  CATCH_RULES_SOURCE,
+  CATCH_VISUAL_SOURCE,
   CONVERSATION_RULES_SOURCE,
   CONVERSATION_VISUAL_SOURCE,
-} from "@vibe-tavern/domain";
+} from "@vibe-tavern/domain/builtins";
 
 /** One app-owned built-in experience. */
 export interface BuiltinExperienceEntry {
@@ -53,6 +55,16 @@ export const BUILTIN_EXPERIENCE_CATALOG: readonly BuiltinExperienceEntry[] = Obj
     visualStableKey: "builtin:conversation",
     rulesSource: CONVERSATION_RULES_SOURCE,
     visualSource: CONVERSATION_VISUAL_SOURCE,
+  }),
+  Object.freeze({
+    id: "catch",
+    displayName: "Catch (Realtime)",
+    description:
+      "A realtime arcade loop: steer the paddle, catch falling balls — the wave-6 realtime starter.",
+    manifestId: "catch_arcade",
+    visualStableKey: "builtin:catch",
+    rulesSource: CATCH_RULES_SOURCE,
+    visualSource: CATCH_VISUAL_SOURCE,
   }),
 ]);
 

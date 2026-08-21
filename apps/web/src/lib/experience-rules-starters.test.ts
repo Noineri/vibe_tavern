@@ -1,7 +1,7 @@
 /**
  * Rules starter catalog characterization tests (IR-81A).
  *
- * Pins the five shipped starters' structural validity, immutability,
+ * Pins the six shipped starters' structural validity, immutability,
  * self-containment (no host globals / internal imports), duplication
  * independence, and — critically — that each source registers successfully
  * through the real IR-12 sandbox and passes the authoritative definition
@@ -25,13 +25,13 @@ import {
   duplicateRulesValues,
 } from "./experience-rules-starters.js";
 
-const EXPECTED_IDS = ["round", "board", "card", "model_conversation", "blank_state_machine"];
+const EXPECTED_IDS = ["round", "board", "card", "model_conversation", "catch_arcade", "blank_state_machine"];
 
 // ─── Structural validity ─────────────────────────────────────────────────────
 
 describe("rules starter catalog — structure", () => {
-  it("ships exactly five starters with the expected ids in canonical order", () => {
-    expect(RULES_STARTERS).toHaveLength(5);
+  it("ships exactly six starters with the expected ids in canonical order", () => {
+    expect(RULES_STARTERS).toHaveLength(6);
     expect(RULES_STARTERS.map((s) => s.id)).toEqual(EXPECTED_IDS);
   });
 
@@ -54,7 +54,7 @@ describe("rules starter catalog — structure", () => {
   });
 
   it("RULES_STARTER_SOURCES has one entry per starter", () => {
-    expect(RULES_STARTER_SOURCES).toHaveLength(5);
+    expect(RULES_STARTER_SOURCES).toHaveLength(6);
     expect(RULES_STARTER_SOURCES.every((src) => src.length > 0)).toBe(true);
   });
 });
