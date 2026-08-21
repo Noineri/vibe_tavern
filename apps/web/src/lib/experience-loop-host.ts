@@ -67,7 +67,12 @@ import {
   type ExperienceDefinition,
   type ExperienceViewer,
 } from "./experience-kernel-frame.js";
-import { createDeterministicRandom, createEphemeralRandom } from "@vibe-tavern/domain";
+import {
+	createDeterministicRandom,
+	createEphemeralRandom,
+	EXPERIENCE_LOOP_MAX_BATCHED_TICKS,
+	EXPERIENCE_LOOP_MAX_ROUND_TICKS,
+} from "@vibe-tavern/domain";
 
 /** Bounded input queue — an enqueued action beyond this is dropped (newest loses). */
 export const EXPERIENCE_LOOP_MAX_INPUT_QUEUE = 8;
@@ -82,11 +87,14 @@ export const EXPERIENCE_LOOP_MAX_CATCHUP_TICKS_PER_FRAME = 5;
 /**
  * Frame-side round watchdog: a round exceeding this many total ticks dies
  * (fatal error, NO finish, nothing committed). At 60fps this is ~28 minutes;
- * hosts may lower it via config.
+ * hosts may lower it via config. Lives in @vibe-tavern/domain — the RM-8
+ * commit replay enforces the SAME ceiling server-side (one source of truth;
+ * a divergent copy would 422 honest rounds).
  */
-export const EXPERIENCE_LOOP_MAX_ROUND_TICKS = 100_000;
-/** Batched-ticks flush threshold — keeps a quiet round's batches bounded too. */
-export const EXPERIENCE_LOOP_MAX_BATCHED_TICKS = 1_000;
+export { EXPERIENCE_LOOP_MAX_ROUND_TICKS };
+/** Batched-ticks flush threshold — keeps a quiet round's batches bounded too.
+ *  Shared with the server-side commit replay (same provenance as above). */
+export { EXPERIENCE_LOOP_MAX_BATCHED_TICKS };
 /** Frame-delta clamp (ms) feeding the accumulator — bounds the catch-up spiral. */
 export const EXPERIENCE_LOOP_MAX_FRAME_DELTA_MS = 250;
 

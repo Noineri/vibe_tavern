@@ -11,6 +11,7 @@ export * from "./extract-thinking-tags.js";
 export * from "./experience-helpers.js";
 export * from "./experience-payload-schema.js";
 export * from "./experience-random.js";
+export * from "./experience-round-limits.js";
 export * from "./ids.js";
 export * from "./logger.js";
 export * from "./platform-constants.js";

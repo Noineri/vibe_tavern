@@ -518,19 +518,16 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 	// ── Realtime round commit + model seam (RM-7 / RM-8) ────────────────────
 
 	/** RM-7 contract, RM-8 service: replay-verify the round log, then ONE
-	 *  terminal transition + the finish-writeback chat card. Until RM-8 the
-	 *  route validates the body shape (zValidator) and fails typed here. */
+	 *  terminal transition + the finish-writeback chat card. A tampered or
+	 *  non-reproducible claim fails typed 422 `round_verification_failed`
+	 *  with nothing applied (see ExperienceRoundService). */
 	commitExperienceRound = async (
-		_sessionId: string,
-		_body: ExperienceRoundCommitRequestDto,
+		sessionId: string,
+		body: ExperienceRoundCommitRequestDto,
 	): Promise<ExperienceQueuedAttachmentResponse> => {
-		// RM-8 wires the replay-verify round service behind this; until then the
-		// route validates the body shape and fails typed here.
-		throw new DomainError({
-			kind: "Unprocessable",
-			message: "Round commit is not implemented yet",
-			details: { code: "not_implemented" },
-		});
+		const committed = await this.lifecycle.commitRound(sessionId, body);
+		if (!committed.ok) throw mapError(committed.error);
+		return committed.data;
 	};
 
 	/** RM-7: one-shot non-streaming generation for a model seat. Session-less

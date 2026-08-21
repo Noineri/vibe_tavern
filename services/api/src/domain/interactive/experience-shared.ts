@@ -43,6 +43,8 @@ export type ExperienceApiError =
   | { status: 422; code: "vm_error"; message: string; kind: string }
   | { status: 422; code: "session_not_active"; message: string; currentStatus: string }
   | { status: 422; code: "replay_failed"; message: string; failedActionIndex: number }
+  // RM-8: the realtime round claim did not reproduce through the replay
+  | { status: 422; code: "round_verification_failed"; message: string }
   | { status: 422; code: "no_choose_method"; message: string; participantId: string }
   | { status: 422; code: "no_character"; message: string }
   | { status: 422; code: "no_public_events"; message: string }

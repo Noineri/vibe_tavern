@@ -77,6 +77,8 @@ import {
   ExperienceResourceService,
 } from "./experience-resource-service.js";
 import { ExperienceReportService, toQueuedAttachmentView, type ExperienceReportStatus } from "./experience-report-service.js";
+import { ExperienceRoundService } from "./experience-round-service.js";
+import type { ExperienceRoundCommitRequestDto } from "@vibe-tavern/api-contracts";
 import { ExperienceChatterService } from "./experience-chatter-service.js";
 
 // ─── Counting RNG (cursor tracking) ─────────────────────────────────────────
@@ -342,6 +344,7 @@ export class ExperienceService {
   private readonly resources: ExperienceResourceService;
   private readonly generateSeed: () => string;
   private readonly reports: ExperienceReportService;
+  private readonly round: ExperienceRoundService;
   /** Async flavor chatter (item 4): null = flavor passes through unchanged
    *  (the pre-AC-2 behavior — playgrounds/tests without provider access). */
   private readonly chatter: ExperienceChatterService | null;
@@ -349,12 +352,13 @@ export class ExperienceService {
   constructor(
     stores: StoreContainer,
     resources: ExperienceResourceService,
-    deps: { generateSeed?: () => string; reportService?: ExperienceReportService; chatter?: ExperienceChatterService } = {},
+    deps: { generateSeed?: () => string; reportService?: ExperienceReportService; roundService?: ExperienceRoundService; chatter?: ExperienceChatterService } = {},
   ) {
     this.stores = stores;
     this.resources = resources;
     this.generateSeed = deps.generateSeed ?? defaultGenerateSeed;
     this.reports = deps.reportService ?? new ExperienceReportService(stores);
+    this.round = deps.roundService ?? new ExperienceRoundService(stores, this.reports);
     this.chatter = deps.chatter ?? null;
   }
 
@@ -948,6 +952,14 @@ export class ExperienceService {
    *  returned (see ExperienceReportService.finish). */
   finishWithReport(sessionId: string, expectedRevision: number, quiet = false) {
     return this.reports.finish(sessionId, expectedRevision, { quiet });
+  }
+
+  /** RM-8: replay-verify a finished realtime round claim and, on success,
+   *  apply the ONE terminal `round_commit` transition + the finish-writeback
+   *  chat card. Tampered or non-reproducible claims fail typed 422 with
+   *  nothing applied — see {@link ExperienceRoundService.commitRound}. */
+  commitRound(sessionId: string, claim: ExperienceRoundCommitRequestDto) {
+    return this.round.commitRound(sessionId, claim);
   }
 
   // ─── Model-effect VM ops (Wave 4 / IR-43) ─────────────────────────────────
