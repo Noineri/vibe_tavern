@@ -485,7 +485,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7)", () => {
 
     // Args arrive BEFORE the result — the panel updates immediately.
     await act(async () => {
-      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: TODO_ITEMS });
+      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
     });
     expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
 
@@ -499,7 +499,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7)", () => {
     expect(activity).toEqual({
       toolCallId: "tc_todo",
       toolName: "todo",
-      args: TODO_ITEMS,
+      args: { items: TODO_ITEMS },
       status: "done",
       todo: { items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" },
     });
@@ -526,7 +526,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7)", () => {
     });
 
     await act(async () => {
-      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: TODO_ITEMS });
+      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
       captured.onToolResult!({
         toolCallId: "tc_todo",
         toolName: "todo",
@@ -635,7 +635,7 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
     // (a) the live SSE callbacks and (b) the persisted wire rows through
     // wireToToolSource → extractPersistedExperienceCopilotActivities.
     const carrierCalls = [
-      { type: "tool-call", toolCallId: "tc_todo", toolName: "todo", input: TODO_ITEMS },
+      { type: "tool-call", toolCallId: "tc_todo", toolName: "todo", input: { items: TODO_ITEMS } },
       { type: "tool-call", toolCallId: "tc_a1", toolName: "ask_user", input: ASK_ARGS },
       { type: "tool-call", toolCallId: "tc_a2", toolName: "ask_user", input: ASK_ARGS },
       { type: "tool-call", toolCallId: "tc_a3", toolName: "ask_user", input: ASK_ARGS },
@@ -684,7 +684,7 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
       await Promise.resolve();
     });
     await act(async () => {
-      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: TODO_ITEMS });
+      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
       captured.onToolResult!({ toolCallId: "tc_todo", toolName: "todo", output: TODO_ENVELOPE, isError: false });
       captured.onToolCall!({ toolCallId: "tc_a1", toolName: "ask_user", args: ASK_ARGS });
       captured.onToolResult!({ toolCallId: "tc_a1", toolName: "ask_user", output: { status: "awaiting_answer", ...ASK_ARGS }, isError: false });

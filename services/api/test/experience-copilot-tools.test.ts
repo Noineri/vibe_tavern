@@ -308,8 +308,8 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => 
     ];
     const second = [{ title: "bind the visual", status: "active" }];
 
-    const r1 = (await tools.todo.execute(first, ctx)) as never;
-    const r2 = (await tools.todo.execute(second, ctx)) as never;
+    const r1 = (await tools.todo.execute({ items: first }, ctx)) as never;
+    const r2 = (await tools.todo.execute({ items: second }, ctx)) as never;
 
     expect(r1.ok).toBe(true);
     expect(r1.activeTitle).toBe("wire the reducer");
@@ -328,7 +328,7 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => 
         throw new Error("db down");
       },
     });
-    const r = (await tools.todo.execute([{ title: "a", status: "pending" }], ctx)) as never;
+    const r = (await tools.todo.execute({ items: [{ title: "a", status: "pending" }] }, ctx)) as never;
     expect(r.ok).toBe(false);
     expect(typeof r.error).toBe("string");
     expect(r.error).toContain("db down");
@@ -336,7 +336,7 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => 
 
   test("throws when no saveTodo writer is wired (precondition miss)", async () => {
     const tools = buildExperienceCopilotTools();
-    await expect(tools.todo.execute([{ title: "a", status: "pending" }], ctx)).rejects.toThrow(
+    await expect(tools.todo.execute({ items: [{ title: "a", status: "pending" }] }, ctx)).rejects.toThrow(
       /no todo writer wired/,
     );
   });
@@ -346,14 +346,30 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo)", () => 
       todo: ToolSchemaProbe;
     };
     const items = Array.from({ length: 31 }, (_, i) => ({ title: `step ${i}`, status: "pending" }));
-    expect(tools.todo.inputSchema.safeParse(items).success).toBe(false);
+    expect(tools.todo.inputSchema.safeParse({ items }).success).toBe(false);
+  });
+
+  test("input schema is an OBJECT root `{items}` — bare arrays and `{}` are rejected (2026-08-21 incident pin)", () => {
+    // Incident: a bare-array root made the model emit `{}` three times in a
+    // row — tool-calling arguments are JSON objects, so every call failed
+    // "expected array, received object" and the turn died. The object root is
+    // the model-friendly contract; the pin guards against re-flattening it.
+    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
+      todo: ToolSchemaProbe;
+    };
+    expect(tools.todo.inputSchema.safeParse([{ title: "a", status: "pending" }]).success).toBe(false);
+    expect(tools.todo.inputSchema.safeParse({}).success).toBe(false);
+    expect(tools.todo.inputSchema.safeParse({ items: [] }).success).toBe(true);
+    expect(
+      tools.todo.inputSchema.safeParse({ items: [{ title: "a", status: "active" }] }).success,
+    ).toBe(true);
   });
 
   test("input schema rejects an invalid status", () => {
     const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
       todo: ToolSchemaProbe;
     };
-    expect(tools.todo.inputSchema.safeParse([{ title: "a", status: "in-progress" }]).success).toBe(false);
+    expect(tools.todo.inputSchema.safeParse({ items: [{ title: "a", status: "in-progress" }] }).success).toBe(false);
   });
 });
 

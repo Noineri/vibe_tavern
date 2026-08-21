@@ -1212,7 +1212,7 @@ describe("experience-copilot stream — todo wiring (TAG-6)", () => {
       { title: "Write rules", status: "active" },
       { title: "Bind visual", status: "pending" },
     ];
-    const result = await todoTool.execute!(items);
+    const result = await todoTool.execute!({ items });
     expect(result).toMatchObject({ ok: true, remaining: 2, activeTitle: "Write rules" });
 
     expect(store.todoCalls).toHaveLength(1);

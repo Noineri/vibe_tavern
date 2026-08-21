@@ -336,6 +336,20 @@ function readStringArray(source: Record<string, unknown>, key: string): string[]
   return value;
 }
 
+/** Parse a `todo` tool-call's STREAMED ARGS into the live todo list (TAG-7
+ *  live-preview path). The tool input is an OBJECT `{items: [...]}` (the
+ *  2026-08-21 incident fix — a bare-array root made models emit `{}` and fail
+ *  validation wholesale; object roots are what tool-calling arguments are).
+ *  Partial streaming args (items not yet complete) fail parse → null, which
+ *  the caller silently skips: the tool-result envelope is the fallback path.
+ *  Pure. */
+export function parseTodoToolArgs(args: unknown): CopilotTodoItem[] | null {
+  if (typeof args !== "object" || args === null) return null;
+  const items = (args as Record<string, unknown>).items;
+  const parsed = copilotTodoListSchema.safeParse(items);
+  return parsed.success ? parsed.data : null;
+}
+
 /** Parse a `todo` tool-result envelope (TAG-7) into the activity card payload.
  *  Accepts ONLY the success shape (`ok: true` + a contract-valid item list);
  *  a failed save (`ok: false, error`) or anything malformed returns null —

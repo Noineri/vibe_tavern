@@ -489,10 +489,16 @@ export function buildExperienceCopilotTools(opts: {
 
     todo: tool({
       description:
-        "Maintain the step-by-step action plan for this authoring session. Send the FULL list every call (rewrite semantics, not incremental). " +
+        "Maintain the step-by-step action plan for this authoring session. Send the FULL list every call (rewrite semantics, not incremental) as {items: [...]}. " +
         "One item should be `active` — the step you are on now. Use for any work that needs more than ~3 steps; this is a real development project, plan it.",
-      inputSchema: copilotTodoListSchema,
-      execute: async (items): Promise<ExperienceCopilotTodoResult> =>
+      // Object root (2026-08-21 incident): a bare-array inputSchema made models
+      // emit `{}` — tool-calling arguments are JSON objects, and providers
+      // reject/never produce a non-object root — so every call failed
+      // validation ("expected array, received object") and the turn died.
+      inputSchema: z.object({
+        items: copilotTodoListSchema.describe("The FULL rewritten todo list — every item, every time."),
+      }),
+      execute: async ({ items }): Promise<ExperienceCopilotTodoResult> =>
         runQueued(async () => {
           const toolName = "todo";
           logger.info("%s IN items=%d", toolName, items.length);

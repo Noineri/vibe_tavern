@@ -3,6 +3,7 @@ import {
   extractHistoricalTurnActivities,
   extractPersistedExperienceCopilotActivities,
   parseCopilotAskState,
+  parseTodoToolArgs,
   parseTodoToolResult,
   useExperienceCopilotTurnStore,
   wireToToolSource,
@@ -591,6 +592,24 @@ const ASK_ARGS = {
   options: ["tarot", "playing cards"],
   recommended: "tarot",
 };
+
+describe("parseTodoToolArgs (2026-08-21 incident fix: object root `{items}`)", () => {
+  it("accepts the object wrapper and returns the list", () => {
+    expect(parseTodoToolArgs({ items: TODO_ITEMS })).toEqual(TODO_ITEMS);
+    expect(parseTodoToolArgs({ items: [] })).toEqual([]);
+  });
+
+  it("returns null for a bare array, `{}`, partial args, and non-objects — silently skipped by the caller", () => {
+    // The tool input is an OBJECT root; these shapes fail the model-facing
+    // contract and the live preview must not fire on them (the tool-result
+    // envelope is the fallback path).
+    expect(parseTodoToolArgs(TODO_ITEMS)).toBeNull();
+    expect(parseTodoToolArgs({})).toBeNull();
+    expect(parseTodoToolArgs({ items: [{ title: "half-streamed" }] })).toBeNull();
+    expect(parseTodoToolArgs(null)).toBeNull();
+    expect(parseTodoToolArgs("items")).toBeNull();
+  });
+});
 
 describe("parseTodoToolResult (TAG-7)", () => {
   it("accepts the success envelope and echoes items/remaining/activeTitle", () => {

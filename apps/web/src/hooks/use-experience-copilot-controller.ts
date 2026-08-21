@@ -10,13 +10,13 @@ import {
 import {
   useExperienceCopilotTurnStore,
   parseTodoToolResult,
+  parseTodoToolArgs,
   parseCopilotAskState,
 } from "../stores/experience-copilot-turn-store.js";
 import {
   coauthorSkillReadOutputSchema,
   experienceCopilotToolOutputSchema,
   experienceCopilotContextMetricsSchema,
-  copilotTodoListSchema,
   type ExperienceCopilotStep,
   type ExperienceCopilotContextMetrics,
   type CopilotTodoItem,
@@ -224,12 +224,13 @@ export function useExperienceCopilotController(
       // TAG-7: full-rewrite semantics — the todo tool-call's args ARE
       // the new session plan (Cline-style), so the panel updates
       // immediately while the call streams; the tool-result envelope
-      // below re-confirms the same list. An ill-formed args value is
-      // silently skipped (the result envelope is the fallback path).
+      // below re-confirms the same list. Object shape `{items}` (incident
+      // fix 2026-08-21); ill-formed/partial args → null, silently skipped
+      // (the result envelope is the fallback path).
       if (info.toolName === "todo") {
-        const todo = copilotTodoListSchema.safeParse(info.args);
-        if (todo.success) {
-          useExperienceCopilotTurnStore.getState().setTodo(activeThreadId, todo.data);
+        const todo = parseTodoToolArgs(info.args);
+        if (todo !== null) {
+          useExperienceCopilotTurnStore.getState().setTodo(activeThreadId, todo);
         }
       }
     },
