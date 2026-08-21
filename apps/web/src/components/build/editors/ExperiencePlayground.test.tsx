@@ -118,6 +118,7 @@ function makeStartData(overrides: Partial<ExperiencePlaygroundData> = {}): Exper
     events: [],
     effects: [],
     pendingTimers: 0,
+    seed: 42,
     console: [],
     revision: 0,
     status: "active",
@@ -146,6 +147,7 @@ function makeAdvanceData(overrides: Partial<ExperiencePlaygroundData> = {}): Exp
     ],
     effects: [{ kind: "model", request: { prompt: "narrate" } }],
     pendingTimers: 0,
+    seed: 42,
     console: [{ level: "log", args: ["scored one"] }],
     revision: 41,
     status: "active",
@@ -795,6 +797,7 @@ describe("ExperiencePlayground", () => {
       events: [],
       effects: [],
       pendingTimers: 0,
+      seed: 42,
       console: [],
       revision: 0,
       status: "active",
@@ -815,6 +818,7 @@ describe("ExperiencePlayground", () => {
           events: [{ visibility: "public", type: "finished" }],
           effects: [],
           pendingTimers: 0,
+          seed: 42,
           console: [],
           revision: 3,
           status: "completed",
@@ -832,6 +836,7 @@ describe("ExperiencePlayground", () => {
         events: [{ visibility: "public", type: "user_replied" }, { visibility: "public", type: "model_replied" }],
         effects: [],
         pendingTimers: 0,
+        seed: 42,
         console: [],
         revision: 2,
         status: "active",
@@ -1732,5 +1737,135 @@ describe("ExperiencePlayground — timer beat loop (playground timers)", () => {
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(runExperiencePlaygroundTimer).not.toHaveBeenCalled();
+  });
+});
+
+// ─── RM-9: realtime Try-it path ──────────────────────────────────────────────
+
+describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
+  const REALTIME_CODE = "context.experience.register({ apiVersion: 1, manifest: { id: 'rt', name: 'RT', mode: 'realtime', tickMs: 100 }, capabilities: [{ capability: 'participants' }, { capability: 'model' }], create() { return { t: 0 }; }, project(context) { return { t: context.state.t }; }, update(context) { return { state: { t: context.state.t + 100 }, status: 'active', events: [] }; }, actions() { return [{ type: 'move' }]; }, reduce(context) { return { state: context.state, status: 'active', events: [] }; } });";
+
+  const REALTIME_DEFINITION = {
+    apiVersion: 1,
+    manifest: { id: "rt", name: "RT", mode: "realtime" as const, tickMs: 100 },
+    declaredCapabilities: [
+      { capability: "participants" as const, reason: "seats" },
+      { capability: "model" as const, reason: "replies" },
+    ],
+    hasChoose: false,
+    hasFlavor: false,
+    hasUpdate: true,
+  };
+
+  /** Discovery payload whose manifest declares realtime mode — the panel's
+   *  realtime branch is keyed off THIS, not the start response. Declaring
+   *  participants+model also derives a 2-seat roster, which doubles as the
+   *  observable "discovery has landed" signal (the debounce is real time). */
+  function makeRealtimeDiscovery(): ExperienceTestRunData {
+    return {
+      definition: REALTIME_DEFINITION,
+      sourceHash: "rt-hash",
+      initialState: { t: 0 },
+      finalState: { t: 0 },
+      revision: 0,
+      status: "active",
+      projection: { state: { t: 0 }, actions: [] },
+      events: [],
+      effects: [],
+      console: [],
+      steps: [],
+    };
+  }
+
+  function makeRealtimeStartData(overrides: Partial<ExperiencePlaygroundData> = {}): ExperiencePlaygroundData {
+    return makeStartData({ definition: REALTIME_DEFINITION, seed: 12345, ...overrides });
+  }
+
+  /** Render + wait for the debounced discovery to land (derived 2-seat roster). */
+  async function renderRealtime() {
+    const utils = renderPlayground(REALTIME_CODE, VISUAL_SOURCE);
+    await waitFor(() => {
+      expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
+    return utils;
+  }
+
+  it("realtime start: badge + running status, no turn chrome, and the loop config rides the frame document", async () => {
+    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
+    installUrlSpies();
+    const utils = await renderRealtime();
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    // The realtime badge + loop-driven status render; the turn chrome
+    // (legal-actions block) is absent.
+    expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+    expect(await utils.findByText("experience_playground_realtime_running")).toBeTruthy();
+    expect(utils.queryByText("experience_playground_turn_title")).toBeNull();
+
+    // The frame document is the REALTIME one: the embedded round config
+    // carries the echoed numeric seed, the manifest tickMs, and the CURRENT
+    // rules buffer — the loop boots from it inside the sandbox.
+    await waitFor(() => expect(createdBlobs.length).toBe(1));
+    const doc = await createdBlobs[0]!.text();
+    expect(doc).toContain("__vt_round_config");
+    expect(doc).toContain("\"seed\":12345");
+    expect(doc).toContain("\"tickMs\":100");
+    expect(doc).toContain("context.experience.register");
+    // Turn chrome absent ⇒ no legal-action buttons either.
+    expect(utils.queryByText("Score")).toBeNull();
+  });
+
+  it("realtime start NEVER issues timer beats — the frame loop is the only clock", async () => {
+    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData({ pendingTimers: 2 }));
+    const utils = await renderRealtime();
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+
+    // Settle window for a would-be beat that must never fire (the turn beat
+    // tests use the same pattern).
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(runExperiencePlaygroundTimer).not.toHaveBeenCalled();
+  });
+
+  it("realtime reset tears the round down (badge gone, blob revoked) and a re-start boots a fresh round", async () => {
+    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
+    installUrlSpies();
+    const utils = await renderRealtime();
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+    await waitFor(() => expect(createdBlobs.length).toBe(1));
+
+    fireEvent.click(utils.getByText("experience_playground_reset"));
+    await waitFor(() => expect(utils.container.querySelector("iframe")).toBeNull());
+    expect(utils.queryByText("experience_playground_realtime_badge")).toBeNull();
+    expect(revokedUrls.length).toBe(1);
+
+    // Re-start boots a fresh round with the same (still realtime) discovery.
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(2));
+    expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+  });
+
+  it("realtime without a visual: start stays enabled and the hint explains the round cannot be played", async () => {
+    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
+    const utils = renderPlayground(REALTIME_CODE, null);
+    await waitFor(() => {
+      expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(await utils.findByText("experience_playground_no_visual")).toBeTruthy();
+    expect(await utils.findByText("experience_playground_realtime_no_visual")).toBeTruthy();
+    expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
   });
 });

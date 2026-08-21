@@ -37,6 +37,7 @@ import {
   startExperiencePlayground,
   advanceExperiencePlayground,
   executeModelTurnExperiencePlayground,
+  executeTimerTurnExperiencePlayground,
   type PlaygroundModelDeps,
   type PlaygroundModelResolveInput,
   type PlaygroundModelResolveResult,
@@ -1357,5 +1358,109 @@ describe("playground async flavor chatter (AC-2b)", () => {
     expect(started.data.projection.flavor).toEqual({ hint: "look at the board" });
     await settleChatter();
     expect(executeCalls()).toBe(0);
+  });
+});
+
+// ─── RM-9: resolved numeric seed echo (realtime Try-it) ──────────────────────
+
+describe("playground seed echo (RM-9)", () => {
+  // The realtime Try-it path hands the frame loop the EXACT numeric seed the
+  // session's deterministic-random stream was created from — the client
+  // cannot reconstruct it (an omitted seed falls back to the server default),
+  // so every playground envelope echoes it verbatim.
+
+  /** Minimal timer source: the beat arm lives on the first reduce. */
+  const SEED_TICKER_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "seed_ticker", name: "Seed Ticker" },
+  capabilities: [{ capability: "participants", reason: "timer viewer" }],
+  create() { return { left: 2 }; },
+  project(c) { return { left: c.state.left }; },
+  actions() { return [{ type: "tick" }]; },
+  reduce(c) {
+    const left = c.state.left - 1;
+    return {
+      state: { left },
+      status: left <= 0 ? "completed" : "active",
+      events: [],
+      effects: left > 0 ? [{ kind: "timer", request: { viewer: "p1", actionType: "tick", afterMs: 100 } }] : [],
+    };
+  },
+});
+`;
+
+  test("start echoes a non-negative integer seed, stable per seed string and distinct across seeds", () => {
+    const first = startExperiencePlayground({
+      rulesCode: COUNTER_SOURCE,
+      participants: [youHuman],
+      capabilityGrants: [],
+      seed: "vt-seed",
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(Number.isInteger(first.data.seed)).toBe(true);
+    expect(first.data.seed).toBeGreaterThanOrEqual(0);
+
+    const second = startExperiencePlayground({
+      rulesCode: COUNTER_SOURCE,
+      participants: [youHuman],
+      capabilityGrants: [],
+      seed: "vt-seed",
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.data.seed).toBe(first.data.seed);
+
+    const other = startExperiencePlayground({
+      rulesCode: COUNTER_SOURCE,
+      participants: [youHuman],
+      capabilityGrants: [],
+      seed: "vt-seed-other",
+    });
+    expect(other.ok).toBe(true);
+    if (!other.ok) return;
+    expect(other.data.seed).not.toBe(first.data.seed);
+
+    // The server-defaulted seed path echoes the DEFAULT's hash — equally
+    // stable, and equally opaque to the client without the echo.
+    const defaulted = startExperiencePlayground({
+      rulesCode: COUNTER_SOURCE,
+      participants: [youHuman],
+      capabilityGrants: [],
+    });
+    expect(defaulted.ok).toBe(true);
+    if (!defaulted.ok) return;
+    expect(Number.isInteger(defaulted.data.seed)).toBe(true);
+  });
+
+  test("advance and timer responses echo the SAME seed as their start", async () => {
+    const started = startExperiencePlayground({
+      rulesCode: SEED_TICKER_SOURCE,
+      participants: [youHuman],
+      capabilityGrants: ["participants"],
+      seed: "vt-seed-echo",
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const id = started.data.playgroundSessionId;
+    const seed = started.data.seed;
+
+    // Advance arms the timer (the first tick re-arms while left > 0).
+    const advanced = advanceExperiencePlayground({
+      playgroundSessionId: id,
+      humanAction: { type: "tick", requestId: "s1", expectedRevision: 0, participantId: "p1" },
+    });
+    expect(advanced.ok).toBe(true);
+    if (!advanced.ok) return;
+    expect(advanced.data.pendingTimers).toBe(1);
+    expect(advanced.data.seed).toBe(seed);
+
+    const beat = await executeTimerTurnExperiencePlayground(
+      { playgroundSessionId: id },
+      { sleep: async () => undefined },
+    );
+    expect(beat.ok).toBe(true);
+    if (!beat.ok) return;
+    expect(beat.data.seed).toBe(seed);
   });
 });

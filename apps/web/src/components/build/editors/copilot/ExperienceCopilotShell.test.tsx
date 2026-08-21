@@ -271,6 +271,7 @@ const PLAYGROUND_DATA: Awaited<ReturnType<typeof import("../../../../api/experie
   events: [],
   effects: [],
   pendingTimers: 0,
+  seed: 42,
   console: [],
   revision: 0,
   status: "active",

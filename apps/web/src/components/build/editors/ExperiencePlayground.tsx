@@ -62,6 +62,7 @@ import {
   ExperienceApiError,
   advanceExperiencePlayground,
   runExperiencePlaygroundTimer,
+  runExperienceRoundModel,
   runExperienceTest,
   simulateExperienceTest,
   startExperiencePlayground,
@@ -81,7 +82,15 @@ import type {
 import {
   ExperienceFrame,
   type ExperienceFrameHandle,
+  type ExperienceModelSeatRequest,
+  type ExperienceRoundCommitClaim,
 } from "../../experience/ExperienceFrame.js";
+import { ExperienceRoundFinishedPanel } from "../../experience/ExperienceModal.js";
+import type { ExperienceLoopConfig } from "../../../lib/experience-loop-host.js";
+import {
+  buildRealtimeLoopConfig,
+  createPlaygroundModelSeam,
+} from "./experience-playground-realtime.js";
 import {
   deriveSetupValuesFromSettings,
   mergeAbsentSetupDefaults,
@@ -618,6 +627,19 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [error, setError] = useState<PlaygroundErrorView | null>(null);
   const [busy, setBusy] = useState<"start" | "advance" | null>(null);
   const [appliedCount, setAppliedCount] = useState(0);
+  // RM-9: the discovered manifest's realtime signal (tickMs). Null = turn
+  // mode — the classic server-driven flow, byte-identical to pre-RM-9.
+  const [discoveredRealtime, setDiscoveredRealtime] = useState<{ tickMs: number | undefined } | null>(null);
+  // RM-9: the LATCHED realtime round config — set exactly once at start and
+  // cleared on reset. NEVER derived inline in JSX: the frame rebuilds its
+  // document when the serialized config changes, so an unstable config would
+  // restart the loop on every render.
+  const [realtimeRound, setRealtimeRound] = useState<ExperienceLoopConfig | null>(null);
+  /** The finalized round claim (latched once — a duplicate commit is noise). */
+  const [roundClaim, setRoundClaim] = useState<ExperienceRoundCommitClaim | null>(null);
+  /** Overlay-dismissed flag for the round-finished panel (Reset/Restart stay
+   *  the real exit — dismissing only uncovers the frozen visual). */
+  const [roundPanelDismissed, setRoundPanelDismissed] = useState(false);
   const [actionType, setActionType] = useState("");
   const [payloadJson, setPayloadJson] = useState("");
   const [requestId, setRequestId] = useState("pg-req-1");
@@ -661,6 +683,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [frameReady, setFrameReady] = useState(false);
   const sessionRef = useRef<ExperiencePlaygroundData | null>(null);
   sessionRef.current = session;
+  // RM-9: the bridge captures its callbacks ONCE per session (IR-73B), so
+  // realtime-aware handlers read live state through refs, never closures.
+  const realtimeRoundRef = useRef<ExperienceLoopConfig | null>(null);
+  realtimeRoundRef.current = realtimeRound;
+  const seatsRef = useRef(seats);
+  seatsRef.current = seats;
   // LOBBY-A: the latest settings JSON for the discovery callback — the
   // write-through default seeding runs inside the discovery then-block, which
   // closes over the render-time string.
@@ -846,6 +874,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           const fields = data.definition.setup?.fields ?? [];
           setSetupFields(fields);
           seedDefaultsIntoSettings(fields);
+          // RM-9: mode tracking is independent of roster ownership — it must
+          // update even for a user-owned roster (before the early return).
+          const manifest = data.definition.manifest;
+          setDiscoveredRealtime(manifest.mode === "realtime" ? { tickMs: manifest.tickMs } : null);
           if (seatsTouched) return; // roster/grants are the user's explicit choice
           const declared = data.definition.declaredCapabilities.map((c) => c.capability);
           const hasParticipants = declared.includes(EXPERIENCE_CAPABILITY.participants);
@@ -869,6 +901,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           // fallback applies) and the safe default single human seat plus empty
           // grants — but never clobber a user-owned roster.
           setSetupFields([]);
+          setDiscoveredRealtime(null);
           if (seatsTouched) return;
           setSeats([{ id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human }]);
           setGrants([]);
@@ -1003,6 +1036,30 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       setAppliedCount(0);
       setRequestId("pg-req-1");
       setExpectedRevision(String(data.revision));
+      // RM-9: realtime mode latches the frame loop config — from here the
+      // round runs entirely INSIDE the sandboxed frame (no advance/timer
+      // round-trips; the server start above only ran `create` in the real
+      // sandbox and echoed the resolved numeric seed).
+      if (discoveredRealtime !== null) {
+        const built = buildRealtimeLoopConfig({
+          rulesSource: code,
+          tickMs: discoveredRealtime.tickMs,
+          initialState: data.state,
+          initialSettings: settings.value,
+          seed: data.seed,
+          seats,
+          humanSeatId,
+        });
+        if (!built.ok) {
+          setSession(null);
+          setDefinition(null);
+          setError({ message: built.message, console: [] });
+          return;
+        }
+        setRealtimeRound(built.config);
+        setRoundClaim(null);
+        setRoundPanelDismissed(false);
+      }
     } catch (startError) {
       setSession(null);
       setDefinition(null);
@@ -1025,6 +1082,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     setRequestId("pg-req-1");
     setExpectedRevision("0");
     setFrameReady(false);
+    // RM-9: a reset also buries the round — the latched loop config and any
+    // finished-round claim go with the session (the frame unmounts, so the
+    // loop dies with it; a stopped round is lost by design).
+    setRealtimeRound(null);
+    setRoundClaim(null);
+    setRoundPanelDismissed(false);
   };
 
   /** Fix item 9b: one-click restart with the SAME settings — re-runs Start
@@ -1133,6 +1196,28 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     }
   };
 
+  /** RM-9: the Try-it model seam — stable identity (refs + setState only) so
+   *  the bridge closure never strands; the roster is read live through
+   *  seatsRef. Mirrors the RM-6 modal contract: resolve to the reply (posted
+   *  into the round) or null (fail-closed, nothing enters the frame). */
+  const modelSeam = useMemo(
+    () =>
+      createPlaygroundModelSeam({
+        roundModel: runExperienceRoundModel,
+        seatProfile: (seatId) => {
+          const seat = seatsRef.current.find(
+            (s) => s.id === seatId && s.controller === EXPERIENCE_CONTROLLER.model,
+          );
+          if (seat === undefined || seat.providerProfileId === undefined || seat.modelId === undefined) {
+            return null;
+          }
+          return { providerProfileId: seat.providerProfileId, modelId: seat.modelId };
+        },
+        onError: (message) => setError({ message, console: [] }),
+      }),
+    [],
+  );
+
   /** Stable frame-action handler (IR-73B seam): the visual's intention carries
    *  the SDK-filled requestId/expectedRevision and advances the SAME
    *  playground session. Success acks the bridge (sendResult clears the
@@ -1141,6 +1226,16 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
    *  visual requestId so the lock always clears. */
   const handleFrameAction = useCallback(
     async (action: ExperienceActionDto) => {
+      // RM-9: a realtime round is driven by the frame loop — a TURN action
+      // from the visual (experience.act()) is a mode error, never an advance
+      // (the frame loop and the server session must never become two
+      // authorities). Fail-closed: the bridge lock clears, nothing applies.
+      if (realtimeRoundRef.current !== null) {
+        frameRef.current?.sendError("invalid_action", t("experience_playground_realtime_turn_disabled"), {
+          requestId: action.requestId,
+        });
+        return;
+      }
       const outcome = await advanceWith(action);
       if (outcome.ok) {
         // IR-90E: synchronize the host's form state so the prominent host
@@ -1168,15 +1263,17 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   // Push the latest turn's projection into the isolated frame whenever the
   // session advances or the frame completes its handshake. State goes TO the
   // frame through the bridge only — never to the host DOM.
+  // RM-9: a realtime round projects INSIDE the frame (the loop runs
+  // runProject per animation frame); the host never pushes turn views.
   useEffect(() => {
-    if (!frameReady || session === null) return;
+    if (!frameReady || session === null || realtimeRound !== null) return;
     frameRef.current?.sendState({
       state: session.projection.state,
       actions: session.projection.actions,
       revision: session.revision,
       status: session.status,
     });
-  }, [frameReady, session]);
+  }, [frameReady, session, realtimeRound]);
 
   // ── Timer beat loop (playground timers) ────────────────────────────────────
   // The sandbox's real-time axis: while the live session reports unconsumed
@@ -1189,6 +1286,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   // surfaces the typed stale_revision the panel already renders).
   const timerBeats = useRef(new Set<string>());
   useEffect(() => {
+    // RM-9: realtime rounds have NO server round-trips — the fixed-timestep
+    // loop inside the frame is the only clock. (The turn path below is
+    // byte-identical to pre-RM-9; this guard is its only new line.)
+    if (realtimeRound !== null) return;
     if (session === null || session.status !== "active" || session.pendingTimers <= 0) return;
     const sessionId = session.playgroundSessionId;
     if (timerBeats.current.has(sessionId)) return;
@@ -1220,7 +1321,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       .finally(() => {
         timerBeats.current.delete(sessionId);
       });
-  }, [session]);
+  }, [session, realtimeRound]);
 
   // XU-3: auto-collapse the launch-setup accordion when a session becomes live
   // (derived from session state only; never persisted). The user may re-open it
@@ -1259,6 +1360,13 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const statusText = (() => {
     if (session === null) return "";
     if (busy !== null) return t("experience_playground_status_busy");
+    // RM-9: a realtime round's lifecycle is the frame loop's, not the turn
+    // envelope's — the claim (or its absence) is the honest status.
+    if (realtimeRound !== null) {
+      return roundClaim !== null
+        ? t("experience_round_finished")
+        : t("experience_playground_realtime_running");
+    }
     if (session.status === "completed") return t("experience_playground_status_completed");
     if (session.stopReason === "awaiting_human") return t("experience_playground_status_your_turn");
     if (session.stopReason === "awaiting_model") return t("experience_playground_status_model");
@@ -1637,6 +1745,14 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   reset live next to the active-session status strip. */}
               <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-s3" style={{ padding: 8 }}>
                 <span className="font-ui text-[12px] text-t2">{statusText}</span>
+                {realtimeRound !== null && (
+                  <span
+                    data-testid="playground-realtime-badge"
+                    className="rounded bg-accent-dim px-1.5 py-0.5 font-ui text-[10px] text-accent-t"
+                  >
+                    {t("experience_playground_realtime_badge")}
+                  </span>
+                )}
                 {busy !== null && <span className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
                 <div className="ml-auto flex items-center gap-2">
                   <button
@@ -1663,8 +1779,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   line. «Играть снова» restarts with the SAME settings/seats/roster
                   and a fresh seed (handleRestart); «Изменить настройки» tears
                   the run down to the expanded setup state (handleReset). The
-                  header restart/reset buttons stay (pre/post-game utility). */}
-              {session.status === "completed" && (
+                  header restart/reset buttons stay (pre/post-game utility).
+                  RM-9: turn-only — a realtime round's end surface is the
+                  round-finished panel over the visual. */}
+              {realtimeRound === null && session.status === "completed" && (
                 <div
                   data-testid="playground-postgame-strip"
                   className="flex flex-wrap items-center gap-2 rounded-md border border-accent bg-accent-dim"
@@ -1698,7 +1816,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
               <div className={blockCls} style={{ padding: 10 }}>
                 <div className={blockLabelCls}>{t("experience_playground_visual_label")}</div>
                 {hasVisual ? (
-                  <div className="mt-2 rounded-md border border-border bg-bg" style={{ padding: 8 }}>
+                  <div className="relative mt-2 rounded-md border border-border bg-bg" style={{ padding: 8 }}>
                     <ExperienceFrame
                       key={session.playgroundSessionId}
                       ref={frameRef}
@@ -1708,14 +1826,46 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                       onReady={() => setFrameReady(true)}
                       onAction={(action) => void handleFrameAction(action)}
                       onError={() => {}}
+                      realtime={realtimeRound !== null ? { config: realtimeRound } : undefined}
+                      onModelRequest={(req: ExperienceModelSeatRequest) => {
+                        // RM-9: the seam resolves to the reply (posted into the
+                        // round) or null (fail-closed — nothing enters the
+                        // frame and the round simply lives without it).
+                        void modelSeam(req).then((result) => {
+                          if (result !== null && result !== undefined) {
+                            frameRef.current?.sendModelResult(req.seatId, result, req.requestId);
+                          }
+                        });
+                      }}
+                      onRoundCommit={(claim: ExperienceRoundCommitClaim) => {
+                        // RM-9: Try-it NEVER commits anywhere (the playground
+                        // session is ephemeral process memory) — the claim only
+                        // latches the terminal panel. First commit wins.
+                        setRoundClaim((prev) => prev ?? claim);
+                      }}
                     />
+                    {realtimeRound !== null && roundClaim !== null && !roundPanelDismissed && (
+                      <ExperienceRoundFinishedPanel
+                        claim={roundClaim}
+                        onClose={() => setRoundPanelDismissed(true)}
+                        testId="playground-round-finished"
+                      />
+                    )}
                   </div>
                 ) : (
-                  <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_no_visual")}</p>
+                  <>
+                    <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_no_visual")}</p>
+                    {realtimeRound !== null && (
+                      <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_realtime_no_visual")}</p>
+                    )}
+                  </>
                 )}
               </div>
 
-              {/* Legal actions — prominent one-click buttons (the novice interaction). */}
+              {/* Legal actions — prominent one-click buttons (the novice interaction).
+                  RM-9: turn-only chrome — a realtime round is played inside the
+                  visual (experience.actLocal), never through host turn buttons. */}
+              {realtimeRound === null && (
               <div className={blockCls} style={{ padding: 10 }}>
                 <div className={blockLabelCls}>{t("experience_playground_turn_title")}</div>
                 {session.projection.actions.length === 0 ? (
@@ -1741,6 +1891,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   </>
                 )}
               </div>
+              )}
             </div>
           )}
 

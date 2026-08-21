@@ -232,6 +232,14 @@ export interface ExperiencePlaygroundData {
   readonly status: ExperienceSessionStatus;
   /** Whose turn it is after this turn's advancement (the boundary stop-reason). */
   readonly stopReason: ExperienceTestStopReason;
+  /**
+   * The resolved numeric seed the session's deterministic-random stream was
+   * created from (`hashSeedString` of the caller's seed string, or of the
+   * default when omitted). Echoed so the realtime Try-it path can hand the
+   * frame loop the exact seed — the client cannot reconstruct the numeric
+   * seed for a server-defaulted round.
+   */
+  readonly seed: number;
 }
 
 export type ExperiencePlaygroundStartResult =
@@ -271,6 +279,8 @@ interface EphemeralPlaygroundSession {
   status: ExperienceSessionStatus;
   /** The single deterministic stream (create + every human/script reduce). */
   rng: DeterministicRandom;
+  /** The numeric seed `rng` was created from (echoed verbatim on every response). */
+  readonly numericSeed: number;
   /** Accumulated across discovery + create + every reduce + choose. */
   consoleBuf: ExperienceConsoleEntry[];
   events: ExperienceEvent[];
@@ -621,7 +631,8 @@ export function startExperiencePlayground(
   const projectionViewer = resolveProjectionViewer(participants, input.humanSeatId);
 
   // 2. Create (one deterministic stream from seed, advanced across create + reduces).
-  const rng = createDeterministicRandom(hashSeedString(input.seed ?? DEFAULT_SEED));
+  const numericSeed = hashSeedString(input.seed ?? DEFAULT_SEED);
+  const rng = createDeterministicRandom(numericSeed);
   const createCaps = buildCapabilityContext(grants, participants, rng);
   const created = runCreate(code, scriptName, settings, createCaps);
   if (!created.ok) return { ok: false, error: fromKernel(created, consoleBuf) };
@@ -643,6 +654,7 @@ export function startExperiencePlayground(
     revision: 0,
     status: EXPERIENCE_SESSION_STATUS.active,
     rng,
+    numericSeed,
     consoleBuf,
     events: [],
     effects: [],
@@ -671,6 +683,7 @@ export function startExperiencePlayground(
       events: [...session.events],
       effects: [...session.effects],
       pendingTimers: countPendingTimers(session),
+      seed: session.numericSeed,
       console: [...session.consoleBuf],
       revision: session.revision,
       status: session.status,
@@ -725,6 +738,7 @@ export function advanceExperiencePlayground(input: ExperiencePlaygroundAdvanceIn
         events: [...prior.events],
         effects: [...prior.effects],
         pendingTimers: countPendingTimers(session),
+        seed: session.numericSeed,
         console: session.consoleBuf.slice(consoleStart),
         revision: session.revision,
         status: session.status,
@@ -798,6 +812,7 @@ export function advanceExperiencePlayground(input: ExperiencePlaygroundAdvanceIn
       events: turnEvents,
       effects: turnEffects,
       pendingTimers: countPendingTimers(session),
+      seed: session.numericSeed,
       console: session.consoleBuf.slice(consoleStart),
       revision: session.revision,
       status: session.status,
@@ -900,6 +915,7 @@ export async function executeModelTurnExperiencePlayground(
           events: turnEvents,
           effects: turnEffects,
           pendingTimers: countPendingTimers(session),
+          seed: session.numericSeed,
           console: session.consoleBuf.slice(consoleStart),
           revision: session.revision,
           status: session.status,
@@ -1038,6 +1054,7 @@ export async function executeModelTurnExperiencePlayground(
       events: turnEvents,
       effects: turnEffects,
       pendingTimers: countPendingTimers(session),
+      seed: session.numericSeed,
       console: session.consoleBuf.slice(consoleStart),
       revision: session.revision,
       status: session.status,
@@ -1177,6 +1194,7 @@ export async function executeTimerTurnExperiencePlayground(
         events: turnEvents,
         effects: turnEffects,
         pendingTimers: countPendingTimers(session),
+        seed: session.numericSeed,
         console: session.consoleBuf.slice(consoleStart),
         revision: session.revision,
         status: session.status,

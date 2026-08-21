@@ -41,6 +41,8 @@ import type {
   ExperienceRecalculationPreview,
   ExperienceReportQueueRequest,
   ExperienceReportStatus,
+  ExperienceRoundModelRequest,
+  ExperienceRoundModelResponseDto,
   ExperienceSessionResponse,
   ExperienceStartRequest,
   ExperienceTestRunData,
@@ -455,4 +457,18 @@ export async function runExperiencePlaygroundTimer(
 ): Promise<ExperiencePlaygroundData> {
   const response = await client.api.experience.playground.timer.$post({ json: body });
   return unwrapExperience<ExperiencePlaygroundData>(response);
+}
+
+/** POST /api/experience/round-model — the SESSION-LESS realtime model-seat
+ *  seam (RM-7 contract, RM-9 client). One-shot non-streaming generation for a
+ *  declared model seat: the trusted host supplies the seat's pinned provider
+ *  profile + model and forwards the visual's prompt verbatim; the reply
+ *  `result` is DATA the host posts back into the frame's round log via
+ *  `sendModelResult`. Shared by the Try-it realtime panel and the live modal
+ *  host. Typed failures: 422 no_provider / invalid_request, 500 provider_error. */
+export async function runExperienceRoundModel(
+  body: ExperienceRoundModelRequest,
+): Promise<ExperienceRoundModelResponseDto> {
+  const response = await client.api.experience["round-model"].$post({ json: body });
+  return unwrapExperience<ExperienceRoundModelResponseDto>(response);
 }

@@ -46,6 +46,8 @@ import type {
 	ExperienceSeatLegality,
 	ExperienceSeatLegalityMatrix,
 	ExperienceSessionResponseDto,
+	ExperienceRoundModelRequestDto,
+	ExperienceRoundModelResponseDto,
 } from "@vibe-tavern/api-contracts";
 // Type-only schema imports: the interactive-runtime request DTOs that the
 // contracts index does NOT re-export are derived here via `z.input` of the
@@ -77,6 +79,8 @@ export type {
 	ChatListItem,
 	ExperienceSeatLegality,
 	ExperienceSeatLegalityMatrix,
+	ExperienceRoundModelRequestDto,
+	ExperienceRoundModelResponseDto,
 };
 
 // ─── Chat ─────────────────────────────────────────────────────────────
@@ -853,6 +857,10 @@ export type ExperiencePlaygroundStartRequest = z.input<typeof experiencePlaygrou
 /** POST /experience/playground/advance body (`playgroundSessionId` + the ONE
  *  human action carrying the requestId/expectedRevision CAS pair). */
 export type ExperiencePlaygroundAdvanceRequest = z.input<typeof experiencePlaygroundAdvanceRequestSchema>;
+/** POST /experience/round-model body — the realtime model-seat seam (RM-7
+ *  contract, RM-9 client). The schema has no input-only derivations, so the
+ *  request type is the contracts DTO verbatim. */
+export type ExperienceRoundModelRequest = ExperienceRoundModelRequestDto;
 
 /** One captured VM console line. Mirrors `ExperienceConsoleEntry` in
  *  services/api `domain/interactive/experience-sandbox.ts` (backend-only
@@ -965,6 +973,11 @@ export interface ExperiencePlaygroundData {
   revision: number;
   status: ExperienceSessionStatus;
   stopReason: ExperienceTestStopReason;
+  /** The resolved numeric seed of the session's deterministic-random stream
+   *  (echoed by the server; the client cannot reconstruct it for a
+   *  server-defaulted seed). The realtime Try-it path hands it to the frame
+   *  loop config — the round's replay lifeline. */
+  seed: number;
 }
 
 // ─── Import ────────────────────────────────────────────────────────────
