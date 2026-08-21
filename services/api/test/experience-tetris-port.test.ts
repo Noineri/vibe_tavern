@@ -90,6 +90,12 @@ function okCreate(seed: number): TetrisState {
 	return res.value as TetrisState;
 }
 
+/** create + the first update tick (the opening draw) — the state a running
+ * round is in from tick 1 on. */
+function startGame(seed: number): TetrisState {
+	return tick(okCreate(seed), seed).state;
+}
+
 function tick(state: TetrisState, seed = 1): { state: TetrisState; status: "active" | "completed" } {
 	const res = runUpdate(TETRIS_RULES_SOURCE, "tetris.js", state, TICK_MS, cursorCaps(seed));
 	expect(res.ok).toBe(true);
@@ -126,18 +132,28 @@ function cell(grid: (string | 0)[][], x: number, y: number): string | 0 {
 // ─── TR-1: ported rules ─────────────────────────────────────────────────────
 
 describe("TR-1: tetris realtime port", () => {
-	test("create starts the round immediately with two cursor draws", () => {
-		const s = okCreate(42);
-		expect(s.current).not.toBe(null);
-		expect(s.current!.y).toBe(0);
-		expect(s.current!.rotation).toBe(0);
-		expect(["I", "O", "T", "S", "Z", "J", "L"]).toContain(s.current!.type);
-		expect(["I", "O", "T", "S", "Z", "J", "L"]).toContain(s.next);
-		expect(s.score).toBe(0);
-		expect(s.cascade).toBe(false);
-		expect(s.lockPending).toBe(false);
-		expect(s.over).toBe(false);
-		const view = project(s);
+	test("create is grant-free (empty caps) and the first tick draws the opening", () => {
+		// Incident pin (2026-08-21): the editor's rules validation runs create
+		// with EMPTY capability grants — a cursor draw in create made the whole
+		// imported app unstartable. Create must succeed with no caps at all.
+		const bare = runCreate(TETRIS_RULES_SOURCE, "tetris.js", {}, {});
+		expect(bare.ok).toBe(true);
+		if (!bare.ok) throw new Error(bare.message);
+		const empty = bare.value as TetrisState;
+		expect(empty.current).toBe(null);
+		expect(empty.next).toBe(null);
+		expect(empty.over).toBe(false);
+		expect(empty.grid.flat().filter((c) => c !== 0).length).toBe(0);
+		// The FIRST update tick (cursor injected by the loop) draws both
+		// opening pieces from the deterministic stream.
+		const s = tick(empty, 42);
+		expect(s.status).toBe("active");
+		expect(s.state.current).not.toBe(null);
+		expect(s.state.current!.y).toBe(0);
+		expect(s.state.current!.rotation).toBe(0);
+		expect(["I", "O", "T", "S", "Z", "J", "L"]).toContain(s.state.current!.type);
+		expect(["I", "O", "T", "S", "Z", "J", "L"]).toContain(s.state.next);
+		const view = project(s.state);
 		// The current piece is inscribed into the projected grid (4 cells).
 		const filled = view.grid.flat().filter((c) => c !== 0);
 		expect(filled.length).toBe(4);
@@ -177,7 +193,7 @@ describe("TR-1: tetris realtime port", () => {
 	});
 
 	test("move legality at the walls; blocked input still resets the fall accumulator", () => {
-		let s = okCreate(3);
+		let s = startGame(3);
 		// Grind the piece to the left wall (spawn x=3 for T/S/Z/J/L, 4 for O, I=3).
 		for (let i = 0; i < 12; i += 1) s = act(s, "moveLeft", 3);
 		expect(s.current!.x).toBe(0);
@@ -196,7 +212,7 @@ describe("TR-1: tetris realtime port", () => {
 	});
 
 	test("gravity integrates against dropSpeed(level): first row at 800ms, not before", () => {
-		const s0 = okCreate(5);
+		const s0 = startGame(5);
 		// Pick a piece type with a known spawn; just measure y movement timing.
 		let s = s0;
 		for (let i = 0; i < 15; i += 1) {
@@ -210,7 +226,7 @@ describe("TR-1: tetris realtime port", () => {
 	});
 
 	test("soft drop scores +1 per cell and moves immediately", () => {
-		const s0 = okCreate(9);
+		const s0 = startGame(9);
 		const s = act(s0, "softDrop", 9);
 		expect(s.current!.y).toBe(s0.current!.y + 1);
 		expect(s.score).toBe(1);
@@ -218,7 +234,7 @@ describe("TR-1: tetris realtime port", () => {
 	});
 
 	test("hard drop scores +2 per cell and defers the lock to the tick", () => {
-		const s0 = okCreate(11);
+		const s0 = startGame(11);
 		const s = act(s0, "hardDrop", 11);
 		const dropY = s.current!.y - s0.current!.y;
 		expect(dropY).toBeGreaterThan(0);
