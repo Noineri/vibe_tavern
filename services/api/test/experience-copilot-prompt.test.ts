@@ -479,8 +479,11 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // interactive-visual.md gained the realtime authoring/loop sections,
     // base.md gained mode-choice/round-commit/comments/context-economy
     // constraints, user-flow.md gained the realtime Play/live-run lines.
+    // Re-captured once more: the context-economy constraint was REMOVED from
+    // base.md by user decision (keep it out of the prompt) — mode-choice,
+    // round-commit determinism, and comment-the-code remain.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("a1622260089e69e25c0ea4996e83cadd6ec47648aa608d1b27b56e7281e37f2b");
+      .toBe("4e5f5983d1b45adca6da62584b554cf54dd55034cd5cbc6d4c095520b8f04279");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -602,7 +605,7 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // Re-captured again for the playground-timers asset update — see the
     // zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("a1622260089e69e25c0ea4996e83cadd6ec47648aa608d1b27b56e7281e37f2b");
+      .toBe("4e5f5983d1b45adca6da62584b554cf54dd55034cd5cbc6d4c095520b8f04279");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -667,7 +670,7 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // zero-attached baseline system message. Re-captured again for the
     // playground-timers asset update — see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("a1622260089e69e25c0ea4996e83cadd6ec47648aa608d1b27b56e7281e37f2b");
+      .toBe("4e5f5983d1b45adca6da62584b554cf54dd55034cd5cbc6d4c095520b8f04279");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {
