@@ -506,8 +506,8 @@ describe("executeScripts — Bun node:vm compatibility probes", () => {
     const r = run(`while (true) {}`);
     const elapsedMs = performance.now() - startedAt;
 
-    // Bun 1.3.14-canary.1 observed 5.02s and the same thrown-error contract
-    // Node documents for runInNewContext({ timeout }).
+    // Bun 1.4.0 observed the same thrown-error contract Node documents, in
+    // ~5.0s, for runInNewContext({ timeout }).
     expect(r.scriptRuns[0].status).toBe("errored");
     expect(r.scriptRuns[0].error).toBe("Script execution timed out after 5000ms");
     expect(elapsedMs).toBeGreaterThanOrEqual(4_500);

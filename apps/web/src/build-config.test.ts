@@ -15,7 +15,11 @@ const originalEnv = new Map(WEB_ENV_KEYS.map((key) => [key, process.env[key]]));
 let importVersion = 0;
 
 function setEnv(key: typeof WEB_ENV_KEYS[number], value: string): void {
-	Object.defineProperty(process.env, key, { configurable: true, value, writable: true });
+	// process.env is a special object: Node — and Bun since 1.4 — reject any
+	// descriptor that is not a configurable, writable AND enumerable data
+	// descriptor with ERR_INVALID_OBJECT_DEFINE_PROPERTY. Bun 1.3 silently
+	// tolerated the missing `enumerable`.
+	Object.defineProperty(process.env, key, { configurable: true, enumerable: true, value, writable: true });
 }
 
 function importBuildConfig() {

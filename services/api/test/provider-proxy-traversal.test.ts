@@ -30,6 +30,23 @@ interface ProxyHit {
 	readonly proxyAuthorization: string | null;
 }
 
+/**
+ * `Bun.serve` rebuilds `request.url` from the *listener's* scheme, so the TLS
+ * mock proxy reports an absolute-form `http://target/...` request-target as
+ * `https://target/...`. The wire request line is unchanged on Bun 1.4 —
+ * captured directly off a raw TLS socket as
+ * `GET http://203.0.113.10:8080/models HTTP/1.1` — so the rewrite is the mock
+ * server's reconstruction, not the client. Assert on the authority and path
+ * the proxy was told to reach: that is what proves the request traversed the
+ * proxy toward the target instead of being rewritten to the proxy's own
+ * origin, and it is the part no scheme reconstruction can fake.
+ */
+function reachesProxiedTarget(hit: ProxyHit): boolean {
+	const target = new URL(PROXIED_TARGET);
+	const seen = new URL(hit.url);
+	return seen.host === target.host && seen.pathname.startsWith(target.pathname);
+}
+
 interface Fixture {
 	readonly directTargetUrl: string;
 	readonly proxyUrl: string;
@@ -317,7 +334,7 @@ describe("provider proxy traversal", () => {
 		const generated = await generateText({ model, prompt: "Hi", maxOutputTokens: 16, maxRetries: 0 });
 		expect(generated.text).toBe("chat reply");
 		expect(fixture.httpsProxyHits).toHaveLength(2);
-		expect(fixture.httpsProxyHits.every((hit) => hit.url.startsWith(PROXIED_TARGET))).toBe(true);
+		expect(fixture.httpsProxyHits.every(reachesProxiedTarget)).toBe(true);
 	});
 
 	for (const providerType of ["anthropic", "google", "ollama", "koboldcpp", "llamacpp", "unsloth"] as const) {

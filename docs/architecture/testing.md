@@ -17,7 +17,9 @@ bun test -t "name"     # filter by test name
 bun run check          # typecheck + test + i18n:check (the full local gate)
 ```
 
-The web suite is orchestrated by [`scripts/test-web.ts`](../../scripts/test-web.ts): it discovers `apps/web/src/**/*.test.{ts,tsx}` plus the `apps/web/test/harness.smoke.test.tsx` canary and runs **each file in its own `bun test` subprocess** (per-file isolation, 8 concurrent workers). `--reverse` runs the same files in reverse order — the cheap way to surface hidden file-order dependencies.
+The web suite is orchestrated by [`scripts/test-web.ts`](../../scripts/test-web.ts): it discovers `apps/web/src/**/*.test.{ts,tsx}` plus the `apps/web/test/harness.smoke.test.tsx` canary and hands them to a single `bun test --parallel=8` run. `--parallel` implies `--isolate`, so every file still gets a fresh global **and** a fresh module registry — the property the suite depends on — without paying for one process per file (18.4s -> 13.8s for 217 files). The orchestrator adds the one guard `bun test` does not: a file that registers zero tests exits 0 on its own, so the run is cross-checked against the JUnit report and any file with no test case fails the suite.
+
+`--randomize` (optionally `--seed <n>`) shuffles test order for the run, replacing the old `--reverse` flag: per-file isolation makes in-process file-order dependence structurally impossible, and a seed makes a shuffled failure replayable.
 
 CI runs `typecheck` as the sole blocking gate plus an advisory `test` job (`continue-on-error`) — green CI ≠ tested; the local `bun run check` is the gate that matters. See [CONTRIBUTING.md → Running the gates](../../CONTRIBUTING.md#running-the-gates) for the typecheck caveat (always `bun run typecheck` from the repo root; bare `tsc` from `apps/web/` emits ~80 false errors).
 
@@ -61,7 +63,7 @@ For tests that exercise code calling `fetch`. Assign in `beforeEach`, restore in
 
 **This is the dangerous one.** A mock registered with `mock.module(specifier, factory)` persists for the **entire process** across every test file that shares it, not just the file that registered it. If the factory returns only a few exports, every *other* export of that module becomes `undefined` for all subsequent files — a silent cross-file leak.
 
-Blast radius differs by suite: the web orchestrator ([`scripts/test-web.ts`](../../scripts/test-web.ts)) gives every file its own subprocess, so a web leak is contained to that one file (and `--reverse` exists precisely to smoke out order dependence). The packages/services/scripts suites share one process per `bun test` invocation, so there the leak crosses files and the safe pattern below is mandatory.
+Blast radius differs by suite: the web orchestrator ([`scripts/test-web.ts`](../../scripts/test-web.ts)) runs under `--isolate`, which gives every file its own global and module registry, so a web leak is contained to the file that registered it. The packages/services/scripts suites share one process per `bun test` invocation, so there the leak crosses files and the safe pattern below is mandatory.
 
 The safe pattern: import the real module **before** registering the mock to capture genuine references, then in the factory spread `...real` first and override only the specific function(s):
 

@@ -4,17 +4,16 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { testTimeoutArgs } from "./test.js";
 
-interface TestFileResult {
-	readonly file: string;
-	readonly exitCode: number | null;
-	readonly testCount: number;
-	readonly stdout: string;
-	readonly stderr: string;
-}
-
 interface ParsedCli {
 	readonly files: readonly string[];
-	readonly reverse: boolean;
+	readonly randomize: boolean;
+	readonly seed: string | undefined;
+}
+
+interface RunOutcome {
+	readonly exitCode: number | null;
+	readonly report: string;
+	readonly spawnError: string | null;
 }
 
 type OutputWriter = (message: string) => void;
@@ -23,8 +22,13 @@ const ROOT = resolve(import.meta.dir, "..");
 const SOURCE_PATTERN = "apps/web/src/**/*.test.{ts,tsx}";
 const TOOLING_PATTERN = "apps/web/test/*.test.{ts,tsx}";
 const HARNESS_FILE = "apps/web/test/harness.smoke.test.tsx";
+/**
+ * Deliberately below `nproc`. `scripts/test.ts` runs this suite alongside the
+ * other seven, so an unbounded default would oversubscribe the box. Measured on
+ * a 16-core machine: 14.0s at 8 workers against 13.7s at 16 — the cap costs
+ * essentially nothing and keeps the envelope the per-file runner had.
+ */
 const CONCURRENCY = 8;
-const MAX_FAILURE_STDERR_LINES = 40;
 
 function normalizePath(root: string, input: string): string | null {
 	const path = relative(root, resolve(root, input));
@@ -45,11 +49,11 @@ function parseCli(args: readonly string[]): ParsedCli | string {
 	try {
 		const { values, positionals } = parseArgs({
 			args,
-			options: { reverse: { type: "boolean" } },
+			options: { randomize: { type: "boolean" }, seed: { type: "string" } },
 			strict: true,
 			allowPositionals: true,
 		});
-		return { files: positionals, reverse: values.reverse ?? false };
+		return { files: positionals, randomize: values.randomize ?? false, seed: values.seed };
 	} catch (error) {
 		return error instanceof Error ? error.message : String(error);
 	}
@@ -85,88 +89,94 @@ async function validateFiles(root: string, files: readonly string[], write: Outp
 	return true;
 }
 
-/** Per-file `bun test` invocation. Timeout headroom: see scripts/test.ts. */
-export function createWebTestFileCommand(file: string, reportPath: string): readonly string[] {
+/**
+ * One `bun test` invocation for the whole suite.
+ *
+ * `--parallel` implies `--isolate`: every file gets a fresh global object AND a
+ * fresh module registry, which is the property this suite actually depends on.
+ * `apps/web/test/dom-env.ts` registers a happy-dom window and never unregisters
+ * it (unregistering closes the window React was evaluated against), while
+ * DOM-averse files such as `avatar.test.ts` need `typeof window === "undefined"`
+ * — so a window created by one file must not survive into the next. Verified by
+ * forcing all 217 files through a single worker (`--parallel=1`): 2304 pass,
+ * 0 fail.
+ *
+ * Timeout headroom: see scripts/test.ts.
+ */
+export function createWebTestCommand(
+	files: readonly string[],
+	reportPath: string,
+	options: { readonly randomize: boolean; readonly seed: string | undefined },
+): readonly string[] {
 	return [
 		process.execPath,
 		"test",
+		`--parallel=${CONCURRENCY}`,
 		...testTimeoutArgs(),
-		file,
+		...(options.randomize ? ["--randomize"] : []),
+		...(options.seed === undefined ? [] : ["--seed", options.seed]),
 		"--reporter=junit",
 		"--reporter-outfile",
 		reportPath,
+		...files,
 	];
 }
 
-async function runTestFile(root: string, file: string, reportPath: string): Promise<TestFileResult> {
+async function forward(stream: ReadableStream<Uint8Array>, write: OutputWriter): Promise<void> {
+	const text = (await new Response(stream).text()).trimEnd();
+	if (text.length > 0) write(text);
+}
+
+async function runBunTest(
+	root: string,
+	command: readonly string[],
+	reportPath: string,
+	write: OutputWriter,
+): Promise<RunOutcome> {
 	try {
-		const child = Bun.spawn(
-			[...createWebTestFileCommand(file, reportPath)],
-			{
-				cwd: root,
-				stdout: "pipe",
-				stderr: "pipe",
-				env: { ...Bun.env, FORCE_COLOR: "0", NO_COLOR: "1" },
-			},
-		);
-		const [exitCode, stdout, stderr] = await Promise.all([
+		const child = Bun.spawn([...command], {
+			cwd: root,
+			stdout: "pipe",
+			stderr: "pipe",
+			env: { ...Bun.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+		});
+		const [exitCode] = await Promise.all([
 			child.exited,
-			new Response(child.stdout).text(),
-			new Response(child.stderr).text(),
+			forward(child.stdout, write),
+			forward(child.stderr, write),
 		]);
 		const report = await Bun.file(reportPath).exists() ? await Bun.file(reportPath).text() : "";
-		return {
-			file,
-			exitCode,
-			testCount: report.match(/<testcase(?:\s|>)/g)?.length ?? 0,
-			stdout,
-			stderr,
-		};
+		return { exitCode, report, spawnError: null };
 	} catch (error) {
 		return {
-			file,
 			exitCode: null,
-			testCount: 0,
-			stdout: "",
-			stderr: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+			report: "",
+			spawnError: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
 		};
 	}
 }
 
-async function runTestFiles(root: string, files: readonly string[]): Promise<readonly TestFileResult[]> {
-	const reportDirectory = await mkdtemp(join(tmpdir(), "vibe-tavern-test-web-reports-"));
-	const results: Array<TestFileResult | undefined> = Array.from({ length: files.length });
-	try {
-		const workers = Array.from({ length: Math.min(CONCURRENCY, files.length) }, async (_, workerIndex) => {
-			for (let index = workerIndex; index < files.length; index += CONCURRENCY) {
-				const file = files[index];
-				if (file !== undefined) {
-					results[index] = await runTestFile(root, file, join(reportDirectory, `${index}.xml`));
-				}
-			}
-		});
-		await Promise.all(workers);
-		return results.flatMap((result) => (result === undefined ? [] : [result]));
-	} finally {
-		await rm(reportDirectory, { recursive: true, force: true });
-	}
-}
-
-function writeResults(results: readonly TestFileResult[], write: OutputWriter): boolean {
-	let passed = true;
-	for (const [index, result] of results.entries()) {
-		write(`\n[${index + 1}/${results.length}] ${result.file}`);
-		if (result.stdout.trim().length > 0) write(result.stdout.trimEnd());
-		if (result.stderr.trim().length > 0) write(result.stderr.trimEnd());
-		if (result.exitCode === 0 && result.testCount > 0) {
-			write(`PASS ${result.file} (${result.testCount} tests)`);
-		} else {
-			passed = false;
-			const reason = result.testCount === 0 ? "zero tests" : `exit ${result.exitCode ?? "spawn error"}`;
-			write(`FAIL ${result.file} (${reason})`);
-		}
-	}
-	return passed;
+/**
+ * Files the JUnit report saw at least one test case for, keyed the way the rest
+ * of this script keys files: repository-relative with forward slashes. The paths
+ * are repository-relative already because the child runs with `cwd: root`, but
+ * the reporter writes them with the PLATFORM separator — `apps\web\test\a.test.ts`
+ * on Windows — so they are re-slashed before the caller can compare them against
+ * a normalized file list. Skipping that turns every file on Windows into an
+ * apparent zero-test file.
+ *
+ * `bun test` exits 0 for a file that registers no tests at all, so this set is
+ * the only thing standing between a silently emptied test file and a green suite.
+ *
+ * `>` is XML-escaped inside attribute values, so `[^>]*` cannot run past the
+ * element it started in.
+ */
+export function filesWithTests(report: string): ReadonlySet<string> {
+	return new Set(
+		[...report.matchAll(/<testcase\b[^>]*\bfile="([^"]+)"/g)].flatMap((match) =>
+			match[1] === undefined ? [] : [match[1].replaceAll("\\", "/")],
+		),
+	);
 }
 
 export async function runWebTestCli(
@@ -207,27 +217,41 @@ export async function runWebTestCli(
 		}
 	}
 
-	if (parsed.reverse) files = [...files].reverse();
 	if (!(await validateFiles(root, files, write))) return 1;
 
-	write(`Running ${files.length} isolated web test files (${parsed.reverse ? "reverse" : "sorted"}, max ${CONCURRENCY})...`);
-	const results = await runTestFiles(root, files);
-	if (results.length !== files.length) {
-		write(`Web test orchestration failed: expected ${files.length} results, received ${results.length}`);
+	const order = parsed.randomize ? `randomized${parsed.seed === undefined ? "" : ` seed ${parsed.seed}`}` : "sorted";
+	write(`Running ${files.length} isolated web test files (${order}, max ${CONCURRENCY} workers)...`);
+
+	const reportDirectory = await mkdtemp(join(tmpdir(), "vibe-tavern-test-web-reports-"));
+	const reportPath = join(reportDirectory, "web.xml");
+	let outcome: RunOutcome;
+	try {
+		const command = createWebTestCommand(files, reportPath, parsed);
+		outcome = await runBunTest(root, command, reportPath, write);
+	} finally {
+		await rm(reportDirectory, { recursive: true, force: true });
+	}
+
+	if (outcome.spawnError !== null) {
+		errorWrite(`Web test run failed to start: ${outcome.spawnError}`);
+		write(`\nWeb tests: FAIL (${files.length} files)`);
 		return 1;
 	}
-	const passed = writeResults(results, write);
-	if (!passed) {
-		const failures = results.filter((result) => result.exitCode !== 0 || result.testCount === 0);
-		const lines = failures.map((result) => {
-			const reason = result.testCount === 0 ? "zero tests" : `exit ${result.exitCode ?? "spawn error"}`;
-			const stderrTail = result.stderr.trim().split("\n").slice(-MAX_FAILURE_STDERR_LINES).join("\n");
-			return stderrTail === "" ? `${result.file} (${reason})` : `${result.file} (${reason})\n${stderrTail}`;
-		});
-		errorWrite(`Failing web test files (${failures.length}):\n${lines.join("\n")}`);
+
+	// Which tests failed and where is already on screen above, printed by bun's
+	// own reporter — re-deriving it from the report would only duplicate it. The
+	// exit code is the verdict; the empty-file list is the part bun cannot tell us.
+	const covered = filesWithTests(outcome.report);
+	const empty = files.filter((file) => !covered.has(file));
+	if (empty.length > 0) {
+		errorWrite(`Web test files declaring zero tests (${empty.length}):\n${empty.join("\n")}`);
 	}
-	write(`\nWeb tests: ${passed ? "PASS" : "FAIL"} (${results.length} files)`);
-	return passed ? 0 : 1;
+	if (empty.length > 0 || outcome.exitCode !== 0) {
+		write(`\nWeb tests: FAIL (${files.length} files)`);
+		return 1;
+	}
+	write(`\nWeb tests: PASS (${files.length} files)`);
+	return 0;
 }
 
 if (import.meta.main) {
