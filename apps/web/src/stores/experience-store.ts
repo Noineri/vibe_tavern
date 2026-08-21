@@ -14,12 +14,14 @@ import type {
   ExperienceQueuedAttachmentResponse,
   ExperienceQueuedAttachmentView,
   ExperienceReportStatus,
+  ExperienceRoundCommitRequestDto,
   ExperienceSessionResponse,
   ExperienceStartRequest,
 } from "../api/types.js";
 import {
   ExperienceApiError,
   captureExperienceContext,
+  commitExperienceRound,
   endExperienceSession,
   getActiveExperienceSession,
   getExperienceConfig,
@@ -144,6 +146,20 @@ export interface ExperienceActions {
    *  message). Returns the (possibly null) attachment view, or null on a
    *  server-side failure (see `lastError`/`lastApiError` after the resync). */
   endSession: (quiet?: boolean) => Promise<ExperienceQueuedAttachmentResponse>;
+  /** RM-10: commit a finished realtime round through the RM-8 replay-verified
+   *  endpoint — ONE terminal transition + the finish-writeback chat card.
+   *  Fire-and-forget from the modal's round-commit hook: the modal's own
+   *  panel owns the immediate UX; this store action owns the server truth.
+   *  Failure (round_verification_failed / stale_revision) surfaces through
+   *  `lastError`/`lastApiError` after the resync and resolves null; a second
+   *  call while one is in flight also resolves null (never double-posts). */
+  commitRound: (claim: {
+    status: "completed" | "interrupted";
+    finalState: unknown;
+    log: readonly unknown[];
+    score?: number;
+    summary?: string;
+  }) => Promise<ExperienceQueuedAttachmentResponse | null>;
   /** Restart as a NEW match on the same branch (lobby Б3/Б4). The server
    *  finishes the old match and the successor becomes the branch's active
    *  session, so a plain rehydrate after success discovers it — there is NO
@@ -286,6 +302,11 @@ function isCurrentGeneration(key: string, resource: string, guard: GenerationGua
  *  concurrent same-intent call joins instead of issuing a duplicate HTTP
  *  call; the entry is deleted only when the joined request settles. */
 const inFlightActionPromises = new Map<string, Promise<ExperienceActionResponse | null>>();
+
+/** RM-10: one in-flight round commit per scope+session — a duplicate frame
+ *  claim (or a double fire-and-forget) must never double-post the terminal
+ *  transition. Keyed `${scopeKey}\n${sessionId}`; removed in `finally`. */
+const inFlightRoundCommits = new Set<string>();
 
 // Lazily registered (once) document listener: rehydrate the active scope when
 // the tab regains visibility. Guarded so SSR/tests without a document skip it.
@@ -658,6 +679,39 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
           return response;
         } catch (err) {
           return failMutation(chatId, branchId, key, activeEpoch, err);
+        }
+      },
+
+      commitRound: async (claim) => {
+        const { chatId, branchId, key, activeEpoch } = requireActiveScope();
+        const session = requireSession(key);
+        const commitKey = `${key}\n${session.sessionId}`;
+        if (inFlightRoundCommits.has(commitKey)) return null;
+        inFlightRoundCommits.add(commitKey);
+        set((s) => {
+          clearError(scopeDraft(s, key));
+        });
+        try {
+          // The frame loop produces exactly the RM-7 log union; the server
+          // re-validates every entry through zod and RM-8 replay-verifies the
+          // whole log, so this widening cast cannot smuggle anything past
+          // verification (a malformed entry fails typed 422, nothing applied).
+          const response = await commitExperienceRound(session.sessionId, {
+            status: claim.status,
+            finalState: claim.finalState as ExperienceRoundCommitRequestDto["finalState"],
+            log: claim.log as ExperienceRoundCommitRequestDto["log"],
+            ...(claim.score !== undefined ? { score: claim.score } : {}),
+            ...(claim.summary !== undefined ? { summary: claim.summary } : {}),
+          });
+          // Resync: round_commit is terminal — the rehydrate discovers
+          // no_active_session and clears the session-owned resources (the
+          // chat card arrives through the existing snapshot/report path).
+          if (isActiveOperation(key, activeEpoch)) await get().rehydrate(chatId, branchId);
+          return response;
+        } catch (err) {
+          return failMutation(chatId, branchId, key, activeEpoch, err);
+        } finally {
+          inFlightRoundCommits.delete(commitKey);
         }
       },
 

@@ -1,28 +1,33 @@
 /**
- * RM-9 realtime helpers for the Try-it playground (REALTIME_EXPERIENCE_MODE_PLAN).
+ * RM-9/RM-10 realtime helpers (REALTIME_EXPERIENCE_MODE_PLAN), shared by the
+ * Try-it playground panel AND the live launcher. Lives in `lib/` (moved from
+ * `components/build/editors/` in RM-10) because the launcher importing a
+ * build-editor module would invert the layer direction — build editors import
+ * experience components, never the reverse.
  *
  * Pure/injectable logic lifted out of `ExperiencePlayground.tsx` so the
  * realtime branch is unit-testable without rendering the frame:
  *
  *   - {@link buildRealtimeLoopConfig} assembles the frame loop's
- *     `ExperienceLoopConfig` from the panel's launch inputs (rules buffer,
- *     discovered manifest tickMs, the server-started session's state + seed
- *     echo, and the roster). The config is LATCHED once at start — an unstable
- *     config would rebuild the frame document and restart the loop.
+ *     `ExperienceLoopConfig` from launch inputs (rules source, manifest
+ *     tickMs, the session's state + numeric seed, and the roster). The config
+ *     is LATCHED once per round — an unstable config would rebuild the frame
+ *     document and restart the loop.
  *   - {@link createPlaygroundModelSeam} mirrors the RM-6 modal model-seam
  *     contract exactly: resolve to the model's reply data (the component posts
  *     it back via `sendModelResult`), or `null` to send NOTHING into the
  *     frame. Fail-closed in both directions: an unpinned/unknown seat or a
  *     failed endpoint never lets raw error text reach the visual.
  *
- * The server remains the authority for `create` (the panel still calls
- * `startExperiencePlayground` — author code never executes host-side); these
- * helpers only shape data the frame consumes.
+ * The server remains the authority for `create` (Try-it still calls
+ * `startExperiencePlayground`, the live flow starts the durable session —
+ * author code never executes host-side); these helpers only shape data the
+ * frame consumes.
  */
 import type { ExperienceController, ExperienceViewer } from "@vibe-tavern/domain";
-import type { runExperienceRoundModel } from "../../../api/experience-api.js";
-import type { ExperienceModelSeatRequest } from "../../experience/ExperienceFrame.js";
-import type { ExperienceLoopConfig } from "../../../lib/experience-loop-host.js";
+import type { runExperienceRoundModel } from "../api/experience-api.js";
+import type { ExperienceModelSeatRequest } from "../components/experience/ExperienceFrame.js";
+import type { ExperienceLoopConfig } from "./experience-loop-host.js";
 
 /** The roster slice the realtime config needs (mirrors the panel's seat row). */
 export interface PlaygroundRealtimeSeat {

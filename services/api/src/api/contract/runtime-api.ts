@@ -683,6 +683,11 @@ export interface ExperienceRuntimeApi {
 	 *  round claim — replay-verified server-side before ONE terminal transition
 	 *  and the existing finish-writeback chat card. */
 	commitExperienceRound: (sessionId: string, body: import("@vibe-tavern/api-contracts").ExperienceRoundCommitRequestDto) => Promise<ExperienceQueuedAttachmentResponse>;
+	/** Realtime round launch envelope (RM-10): the pinned rules source, numeric
+	 *  seed, tickMs, frozen state/settings, and the compact seat roster the
+	 *  frame loop config is built from. Turn sessions fail typed 422
+	 *  `not_realtime` — a 200 IS the client's realtime signal. */
+	getExperienceRoundConfig: (sessionId: string) => Promise<import("@vibe-tavern/api-contracts").ExperienceRoundConfigResponseDto>;
 	/** One-shot non-streaming generation for a model seat (realtime rounds).
 	 *  Stateless: read-only provider resolution, NO effect row — the reply is
 	 *  DATA for the round log. */

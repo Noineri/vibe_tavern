@@ -21,6 +21,7 @@ import type {
 } from "../contract/runtime-api.js";
 import type {
 	ExperienceRoundCommitRequestDto,
+	ExperienceRoundConfigResponseDto,
 	ExperienceRoundModelRequestDto,
 	ExperienceRoundModelResponseDto,
 } from "@vibe-tavern/api-contracts";
@@ -528,6 +529,18 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		const committed = await this.lifecycle.commitRound(sessionId, body);
 		if (!committed.ok) throw mapError(committed.error);
 		return committed.data;
+	};
+
+	/** RM-10: the realtime round's launch envelope, rebuilt from the session's
+	 *  pinned snapshots; the manifest mode is re-derived by discovering the
+	 *  pinned rules source. Turn sessions fail typed 422 `not_realtime` — the
+	 *  client treats that code as the turn signal, not an error. */
+	getExperienceRoundConfig = async (
+		sessionId: string,
+	): Promise<ExperienceRoundConfigResponseDto> => {
+		const config = await this.lifecycle.getRoundConfig(sessionId);
+		if (!config.ok) throw mapError(config.error);
+		return config.data;
 	};
 
 	/** RM-7: one-shot non-streaming generation for a model seat. Session-less

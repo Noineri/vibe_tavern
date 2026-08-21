@@ -35,6 +35,7 @@ import type {
 } from "../api/types.js";
 import type { ExperienceApiError as ExperienceApiErrorType } from "../api/experience-api.js";
 import type { ExperienceActionIntent } from "./experience-store.js";
+import type { ExperienceRoundCommitRequestDto } from "../api/types.js";
 
 // ── Mock the experience-api network layer (spread real, override the calls) ──
 
@@ -56,6 +57,10 @@ interface Impl {
   queueExperienceReport: (sessionId: string, body: ExperienceReportQueueRequest) => Promise<ExperienceQueuedAttachmentView>;
   runExperienceEffect: (effectId: string, options?: { signal?: AbortSignal }) => Promise<ExperienceEffectRunResponse>;
   retryExperienceEffect: (effectId: string) => Promise<ExperienceEffectRow>;
+  commitExperienceRound: (
+    sessionId: string,
+    body: ExperienceRoundCommitRequestDto,
+  ) => Promise<ExperienceQueuedAttachmentResponse>;
   captureExperienceContext: (
     sessionId: string,
     body: ExperienceContextCaptureRequest,
@@ -69,6 +74,7 @@ const startCalls: Array<{ chatId: string; body: ExperienceStartRequest }> = [];
 const endCalls: Array<{ sessionId: string; body: ExperienceFinishRequest }> = [];
 const restartCalls: Array<{ sessionId: string; body: ExperienceRestartRequest }> = [];
 const queueCalls: Array<{ sessionId: string; body: ExperienceReportQueueRequest }> = [];
+const roundCommitCalls: Array<{ sessionId: string; body: ExperienceRoundCommitRequestDto }> = [];
 
 const realExperienceApi = await import("../api/experience-api.js");
 mock.module("../api/experience-api.js", () => {
@@ -102,6 +108,10 @@ mock.module("../api/experience-api.js", () => {
     },
     runExperienceEffect: (effectId: string, options?: { signal?: AbortSignal }) => impl.runExperienceEffect(effectId, options),
     retryExperienceEffect: (effectId: string) => impl.retryExperienceEffect(effectId),
+    commitExperienceRound: (sessionId: string, body: ExperienceRoundCommitRequestDto) => {
+      roundCommitCalls.push({ sessionId, body });
+      return impl.commitExperienceRound(sessionId, body);
+    },
     captureExperienceContext: (sessionId: string, body: ExperienceContextCaptureRequest, options?: { signal?: AbortSignal }) =>
       impl.captureExperienceContext(sessionId, body, options),
   };
@@ -272,6 +282,7 @@ beforeEach(() => {
   endCalls.length = 0;
   restartCalls.length = 0;
   queueCalls.length = 0;
+  roundCommitCalls.length = 0;
   impl = {
     getExperienceConfig: async (chatId) => makeConfig(chatId),
     getActiveExperienceSession: async (_chatId, branchId) => {
@@ -288,6 +299,7 @@ beforeEach(() => {
     queueExperienceReport: async () => makeAttachment(),
     runExperienceEffect: async (effectId) => ({ effect: makeEffect({ id: effectId, status: "completed" }), delivered: true }),
     retryExperienceEffect: async (effectId) => makeEffect({ id: effectId, status: "pending", attemptCount: 1, error: null }),
+    commitExperienceRound: async () => makeAttachment({ id: "att-round" }),
     captureExperienceContext: async () => makeContextStatus(),
   };
 });
@@ -1200,5 +1212,109 @@ describe("experience-store — terminal Finish writeback (IR-73C/D)", () => {
     // ...but NOT written into the new active scope C1/B2.
     expect(scopeState(KEY_C1B2)?.queuedAttachment).toBeNull();
     expect(scopeState(KEY_C1B2)?.session?.sessionId).toBe("sess-b");
+  });
+});
+
+// ── RM-10: realtime round commit ─────────────────────────────────────────────
+
+describe("experience-store — commitRound (RM-10)", () => {
+  // `satisfies` narrows the log literals to the RM-7 DTO union (the typed
+  // toEqual below deep-matches against it — a widened `kind: string` fails).
+  const claim = {
+    status: "completed" as const,
+    finalState: { t: 900 },
+    log: [
+      { kind: "round_started", seed: 42, settings: {} },
+      { kind: "ticks", count: 9 },
+      { kind: "round_finished", status: "completed" },
+    ],
+    score: 7,
+    summary: "Won by 7",
+  } satisfies ExperienceRoundCommitRequestDto;
+
+  test("success: posts the claim once, rehydrates (session clears terminal), resolves the attachment", async () => {
+    await seedActiveScope(makeSession({ revision: 3 }));
+    const terminal = makeAttachment({ id: "att-round-win", sessionRevision: 3 });
+    impl.commitExperienceRound = async () => terminal;
+    impl.getActiveExperienceSession = async (_c, branchId) => { throw noActiveSession(branchId); };
+
+    const result = await useExperienceStore.getState().commitRound(claim);
+
+    expect(result?.id).toBe("att-round-win");
+    expect(roundCommitCalls.length).toBe(1);
+    expect(roundCommitCalls[0]!.sessionId).toBe(S1);
+    expect(roundCommitCalls[0]!.body).toEqual({
+      status: "completed",
+      finalState: { t: 900 },
+      log: claim.log,
+      score: 7,
+      summary: "Won by 7",
+    });
+    // The post-commit rehydrate discovered no_active_session (round_commit is
+    // terminal) and cleared the session-owned resources.
+    expect(scopeState(KEY_C1B1)?.session).toBeNull();
+  });
+
+  test("optional score/summary are omitted from the body when absent", async () => {
+    await seedActiveScope(makeSession());
+    impl.getActiveExperienceSession = async (_c, branchId) => { throw noActiveSession(branchId); };
+
+    await useExperienceStore.getState().commitRound({
+      status: "interrupted",
+      finalState: null,
+      log: [
+        { kind: "round_started", seed: 1, settings: {} },
+        { kind: "round_finished", status: "interrupted" },
+      ],
+    });
+
+    expect(roundCommitCalls.length).toBe(1);
+    expect(roundCommitCalls[0]!.body).toEqual({
+      status: "interrupted",
+      finalState: null,
+      log: [
+        { kind: "round_started", seed: 1, settings: {} },
+        { kind: "round_finished", status: "interrupted" },
+      ],
+    });
+  });
+
+  test("API failure (round_verification_failed): resolves null and records the structured error", async () => {
+    await seedActiveScope(makeSession({ revision: 2 }));
+    impl.commitExperienceRound = async () => {
+      throw new ExperienceApiError(422, "state hash mismatch", "round_verification_failed");
+    };
+
+    const result = await useExperienceStore.getState().commitRound(claim);
+
+    expect(result).toBeNull();
+    expect(roundCommitCalls.length).toBe(1);
+    expect(scopeState(KEY_C1B1)?.lastApiError?.code).toBe("round_verification_failed");
+    expect(scopeState(KEY_C1B1)?.lastError).toBe("state hash mismatch");
+  });
+
+  test("a second call while one is in flight resolves null — single POST", async () => {
+    await seedActiveScope(makeSession());
+    impl.getActiveExperienceSession = async (_c, branchId) => { throw noActiveSession(branchId); };
+    let release!: (value: ExperienceQueuedAttachmentResponse) => void;
+    impl.commitExperienceRound = async () =>
+      new Promise<ExperienceQueuedAttachmentResponse>((resolve) => {
+        release = resolve;
+      });
+
+    const first = useExperienceStore.getState().commitRound(claim);
+    const second = await useExperienceStore.getState().commitRound(claim);
+    expect(second).toBeNull();
+    release(makeAttachment({ id: "att-round-once" }));
+    const firstResult = await first;
+    expect(firstResult?.id).toBe("att-round-once");
+    expect(roundCommitCalls.length).toBe(1);
+  });
+
+  test("without an active session it rejects locally without calling the API", async () => {
+    useExperienceStore.getState().setScope(C1, B1);
+    await flushScope(KEY_C1B1);
+    await expect(useExperienceStore.getState().commitRound(claim)).rejects.toThrow("requires an active session");
+    expect(roundCommitCalls.length).toBe(0);
   });
 });

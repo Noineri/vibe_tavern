@@ -45,6 +45,9 @@ export type ExperienceApiError =
   | { status: 422; code: "replay_failed"; message: string; failedActionIndex: number }
   // RM-8: the realtime round claim did not reproduce through the replay
   | { status: 422; code: "round_verification_failed"; message: string }
+  // RM-10: round-config was requested for a session whose pinned manifest is
+  // not realtime (the endpoint IS the realtime detector — turn ⇒ this code)
+  | { status: 422; code: "not_realtime"; message: string }
   | { status: 422; code: "no_choose_method"; message: string; participantId: string }
   | { status: 422; code: "no_character"; message: string }
   | { status: 422; code: "no_public_events"; message: string }

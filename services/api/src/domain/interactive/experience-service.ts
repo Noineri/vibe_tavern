@@ -50,6 +50,7 @@ import {
 import {
   createEphemeralRandom,
   createMulberry32,
+  discoverExperienceDefinition,
   runActions,
   runChoose,
   runCreate,
@@ -78,7 +79,7 @@ import {
 } from "./experience-resource-service.js";
 import { ExperienceReportService, toQueuedAttachmentView, type ExperienceReportStatus } from "./experience-report-service.js";
 import { ExperienceRoundService } from "./experience-round-service.js";
-import type { ExperienceRoundCommitRequestDto } from "@vibe-tavern/api-contracts";
+import type { ExperienceRoundCommitRequestDto, ExperienceRoundConfigResponseDto } from "@vibe-tavern/api-contracts";
 import { ExperienceChatterService } from "./experience-chatter-service.js";
 
 // ─── Counting RNG (cursor tracking) ─────────────────────────────────────────
@@ -960,6 +961,55 @@ export class ExperienceService {
    *  nothing applied — see {@link ExperienceRoundService.commitRound}. */
   commitRound(sessionId: string, claim: ExperienceRoundCommitRequestDto) {
     return this.round.commitRound(sessionId, claim);
+  }
+
+  /**
+   * RM-10: the realtime round's launch envelope — everything the frame loop
+   * config needs, rebuilt from the session's PINNED snapshots (rules source,
+   * random seed, frozen state/settings/participants). The manifest mode is
+   * re-derived by discovering the pinned rules source (the session row stores
+   * only the manifest id/name) — the same trust path the RM-8 commit verifier
+   * uses. A 200 from this endpoint IS the realtime signal: turn sessions fail
+   * typed 422 `not_realtime`, so the client needs no persisted mode flag.
+   */
+  async getRoundConfig(sessionId: string): Promise<ExperienceResult<ExperienceRoundConfigResponseDto>> {
+    const session = await this.stores.experiences.getSessionById(sessionId);
+    if (session === null) {
+      return err({ status: 404, code: "session_not_found", message: `Session '${sessionId}' not found` });
+    }
+    if (session.status !== "active") {
+      return err({
+        status: 422,
+        code: "session_not_active",
+        message: `Session '${sessionId}' is '${session.status}'; only an active session can launch a realtime round`,
+        currentStatus: session.status,
+      });
+    }
+    const discovery = discoverExperienceDefinition(session.rulesSource, session.rulesLabel);
+    if (!discovery.ok) return err(fromKernelError(discovery));
+    const manifest = discovery.definition.manifest;
+    if (manifest.mode !== "realtime" || manifest.tickMs === undefined) {
+      return err({
+        status: 422,
+        code: "not_realtime",
+        message: `Session '${sessionId}' is not a realtime session (manifest mode '${manifest.mode}')`,
+      });
+    }
+    const participants = parseJson<ExperienceParticipant[]>(session.participantsJson, []);
+    return ok({
+      rulesSource: session.rulesSource,
+      seed: seedToNumeric(session.randomSeed),
+      tickMs: manifest.tickMs,
+      initialState: parseJson<unknown>(session.currentStateJson, null),
+      initialSettings: parseJson<unknown>(session.initialSettingsJson, {}),
+      participants: participants.map((p) => ({
+        id: p.id,
+        label: p.label,
+        controller: p.controller,
+        ...(p.providerProfileId !== undefined ? { providerProfileId: p.providerProfileId } : {}),
+        ...(p.modelId !== undefined ? { modelId: p.modelId } : {}),
+      })),
+    });
   }
 
   // ─── Model-effect VM ops (Wave 4 / IR-43) ─────────────────────────────────

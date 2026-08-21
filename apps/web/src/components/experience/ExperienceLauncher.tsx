@@ -26,8 +26,8 @@
  * null — it NEVER calls `getExperienceVisual(visualId)` to fetch live source.
  */
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { EXPERIENCE_EFFECT_KIND, EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { EXPERIENCE_CONTROLLER, EXPERIENCE_EFFECT_KIND, EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
 import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -59,6 +59,13 @@ import {
 import { ExperienceReportControls } from "./ExperienceReportControls.js";
 import { ExperienceEffectDiagnostics, RETRYABLE_EFFECT_STATUSES } from "./ExperienceEffectDiagnostics.js";
 import { ExperienceSetupModal } from "./ExperienceSetupModal.js";
+import {
+  ExperienceApiError,
+  getExperienceRoundConfig,
+  runExperienceRoundModel,
+} from "../../api/experience-api.js";
+import { buildRealtimeLoopConfig, createPlaygroundModelSeam } from "../../lib/experience-realtime.js";
+import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 import {
   openExperienceDetachedWindow,
   type DetachedExperienceDescriptor,
@@ -129,6 +136,106 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
       setPopupError(false);
     }
   }, [surfaceKey]);
+
+  // ── Realtime round state (RM-10) ─────────────────────────────────────────
+  // The round-config probe IS the realtime detector: the session response
+  // carries no mode flag (the session row persists only the manifest id/name),
+  // so a 200 from GET round/config means realtime and a typed `not_realtime`
+  // 422 means turn. The config is LATCHED once per sessionId — NEVER derived
+  // per render: the serialized config is the frame document key, so an
+  // unstable config would restart the loop on every render.
+  const [realtimeRound, setRealtimeRound] = useState<{ sessionId: string; config: ExperienceLoopConfig } | null>(null);
+  const [realtimeError, setRealtimeError] = useState<string | null>(null);
+  /** Per-session probe cache: a turn session's Resume never re-probes, and a
+   *  latched realtime session reuses its config across modal close/reopen. */
+  const roundProbeRef = useRef<{ sessionId: string } | null>(null);
+  /** Latest-session ref so the stable model seam reads the live roster. */
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  /** Probe + latch the realtime round config for a session about to open.
+   *  Awaits BEFORE openModal so the frame mounts with the loop in ONE
+   *  document build. Failures degrade gracefully: the modal still opens
+   *  (loop-less frame) and the status line carries the failure. */
+  async function ensureRealtimeRound(s: ExperienceSessionResponse): Promise<void> {
+    if (roundProbeRef.current?.sessionId === s.sessionId) return;
+    try {
+      const cfg = await getExperienceRoundConfig(s.sessionId);
+      roundProbeRef.current = { sessionId: s.sessionId };
+      const built = buildRealtimeLoopConfig({
+        rulesSource: cfg.rulesSource,
+        tickMs: cfg.tickMs,
+        initialState: cfg.initialState,
+        initialSettings: cfg.initialSettings,
+        seed: cfg.seed,
+        seats: cfg.participants.map((p) => ({
+          id: p.id,
+          label: p.label,
+          controller: p.controller,
+          ...(p.providerProfileId !== undefined ? { providerProfileId: p.providerProfileId } : {}),
+          ...(p.modelId !== undefined ? { modelId: p.modelId } : {}),
+        })),
+        humanSeatId: "", // first human seat; observer when the roster has none
+      });
+      if (built.ok) {
+        setRealtimeRound({ sessionId: s.sessionId, config: built.config });
+        setRealtimeError(null);
+      } else {
+        if (typeof console !== "undefined") console.warn("[experience] realtime config invalid:", built.message);
+        setRealtimeRound(null);
+        setRealtimeError(t("experience_realtime_config_failed"));
+      }
+    } catch (err) {
+      if (err instanceof ExperienceApiError && err.code === "not_realtime") {
+        // Turn session — the negative probe is cached; never an error.
+        roundProbeRef.current = { sessionId: s.sessionId };
+        setRealtimeRound(null);
+        setRealtimeError(null);
+        return;
+      }
+      // A realtime session whose config failed to load: NOT cached, so the
+      // next open retries; the modal opens without the loop and says why.
+      setRealtimeRound(null);
+      setRealtimeError(t("experience_realtime_config_failed"));
+    }
+  }
+
+  // A new session identity = a new round: drop the latch, the error, and the
+  // probe cache so the next open re-probes. A modal close/reopen keeps the
+  // SAME sessionId — the latch survives and Resume remounts a FRESH round
+  // from the same pinned snapshot (round-lost-on-close is by design: the loop
+  // dies with the frame, progress is gone, no ghost resume — but the round
+  // restarts deterministically on the session's pinned seed, so an eventual
+  // commit still passes RM-8 replay verification).
+  const sessionIdentity = session?.sessionId ?? null;
+  useEffect(() => {
+    setRealtimeRound(null);
+    setRealtimeError(null);
+    roundProbeRef.current = null;
+  }, [sessionIdentity]);
+
+  /** The live model seam (RM-10): stable identity (refs + console only) so
+   *  the bridge closure never strands; the roster is read live through
+   *  sessionRef. Mirrors the RM-6 fail-closed contract via the shared helper. */
+  const modelSeam = useMemo(
+    () =>
+      createPlaygroundModelSeam({
+        roundModel: runExperienceRoundModel,
+        seatProfile: (seatId) => {
+          const seat = sessionRef.current?.participants.find(
+            (p) => p.id === seatId && p.controller === EXPERIENCE_CONTROLLER.model,
+          );
+          if (seat === undefined || seat.providerProfileId === undefined || seat.modelId === undefined) {
+            return null;
+          }
+          return { providerProfileId: seat.providerProfileId, modelId: seat.modelId };
+        },
+        onError: (message) => {
+          if (typeof console !== "undefined") console.warn("[experience]", message);
+        },
+      }),
+    [],
+  );
 
   // ── Visibility computed before the effect-runner hooks (Rules of Hooks) ───
   // `visible` is part of effect ownership: a launcher whose config became
@@ -227,6 +334,14 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   // ── Action handler: strip CAS/idempotency, submit via store, return outcome ─
   async function handleAction(action: ExperienceActionDto): Promise<ExperienceActionOutcome> {
+    // RM-10: a realtime round is driven by the frame loop — a TURN action
+    // from the visual (experience.act()) is a mode error, never a server
+    // advance (the frame loop and the server session must never become two
+    // authorities). Fail-closed: the modal turns this outcome into sendError,
+    // the bridge lock clears, and NOTHING is submitted.
+    if (session !== null && realtimeRound?.sessionId === session.sessionId) {
+      return { ok: false, code: "invalid_action", message: t("experience_realtime_turn_disabled") };
+    }
     const intent: ExperienceActionIntent = {
       type: action.type,
       ...(action.participantId !== undefined ? { participantId: action.participantId } : {}),
@@ -259,19 +374,24 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     setSetupOpen(true);
   }
 
-  // ── Setup onReady: close setup, open the persisted modal ─────────────────
-  function handleSetupReady(_session: ExperienceSessionResponse): void {
+  // ── Setup onReady: close setup, probe the round config (RM-10), open the ─
+  // persisted modal — the probe awaits BEFORE openModal so a realtime frame
+  // mounts with its loop in one document build (on failure the modal still
+  // opens; the status line carries the error).
+  async function handleSetupReady(_session: ExperienceSessionResponse): Promise<void> {
     setSetupOpen(false);
     setSetupRestartSource(null);
+    await ensureRealtimeRound(_session);
     useExperienceStore.getState().openModal();
   }
 
   // ── Resume: reopen the SAME session through the store ────────────────────
-  function handleResume(): void {
+  async function handleResume(): Promise<void> {
     setPopoverOpen(false);
     setPopupError(false);
     // Clear a stale detached flag so the main surface owns effects again.
     useExperienceStore.getState().setDetached(false);
+    if (session) await ensureRealtimeRound(session);
     useExperienceStore.getState().openModal();
   }
 
@@ -289,7 +409,10 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     setPopoverOpen(false);
     try {
       const result = await useExperienceStore.getState().restartSession();
-      if (result !== null) useExperienceStore.getState().openModal();
+      if (result !== null) {
+        await ensureRealtimeRound(result);
+        useExperienceStore.getState().openModal();
+      }
     } catch (err) {
       // The session (or scope) may disappear between render and click — the
       // store then rejects locally. Keep this surface quiet rather than leaking
@@ -416,17 +539,27 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     : hasSession
       ? t("experience_launcher_resume")
       : t("experience_launcher_start");
+  // RM-10: a realtime round's lifecycle is the frame loop's — the status
+  // line says the round is running instead of the generic active line; a
+  // failed config probe degrades to the config-failed message (lastError and
+  // loading still win over both).
+  const isRealtimeLive =
+    session !== null && session.status === "active" && realtimeRound?.sessionId === session.sessionId;
   const statusLine = incompatible
     ? t("experience_incompatible")
     : lastError
       ? lastError
       : loading
         ? t("experience_launcher_loading")
-        : terminal
-          ? t("experience_launcher_finished")
-          : hasSession
-            ? t("experience_launcher_active")
-            : "";
+        : realtimeError !== null
+          ? realtimeError
+          : terminal
+            ? t("experience_launcher_finished")
+            : isRealtimeLive
+              ? t("experience_realtime_running")
+              : hasSession
+                ? t("experience_launcher_active")
+                : "";
 
   const body = (
     <div className="flex flex-col gap-2 p-2">
@@ -557,7 +690,26 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           initialRevision={session!.revision}
           view={session!.view as ProjectedView}
           onAction={handleAction}
-          onDetach={handleDetach}
+          // RM-10: realtime props only for a probed realtime session — the
+          // latched loop config, the fail-closed model seam, and the commit
+          // hook. Detach is OMITTED for realtime: a round may live in exactly
+          // ONE surface (the detached window is not a realtime host — two
+          // surfaces would run two diverging logs of the same round).
+          realtime={isRealtimeLive && realtimeRound !== null ? { config: realtimeRound.config } : undefined}
+          onModelRequest={isRealtimeLive ? modelSeam : undefined}
+          onRoundCommit={
+            isRealtimeLive
+              ? (claim) => {
+                  // Fire-and-forget: the modal's own finished panel owns the
+                  // immediate UX; the store owns the server truth (RM-8
+                  // replay-verify → one terminal transition + the chat card).
+                  // A verification failure surfaces through the store's
+                  // lastError after its resync.
+                  void useExperienceStore.getState().commitRound(claim);
+                }
+              : undefined
+          }
+          onDetach={isRealtimeLive ? undefined : handleDetach}
           onFinishExperience={() => void handleFinishExperience()}
           onEndSessionQuiet={handleEndSessionQuiet}
           // Б4 is the RUNNING-game entry: terminal games use the popover

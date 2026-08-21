@@ -41,6 +41,8 @@ import type {
   ExperienceRecalculationPreview,
   ExperienceReportQueueRequest,
   ExperienceReportStatus,
+  ExperienceRoundCommitRequestDto,
+  ExperienceRoundConfigResponseDto,
   ExperienceRoundModelRequest,
   ExperienceRoundModelResponseDto,
   ExperienceSessionResponse,
@@ -471,4 +473,30 @@ export async function runExperienceRoundModel(
 ): Promise<ExperienceRoundModelResponseDto> {
   const response = await client.api.experience["round-model"].$post({ json: body });
   return unwrapExperience<ExperienceRoundModelResponseDto>(response);
+}
+
+/** GET /api/experience/sessions/:sessionId/round/config — the realtime round's
+ *  launch envelope (RM-10): pinned rules source, numeric seed, tickMs, frozen
+ *  state/settings, and the compact seat roster, all rebuilt server-side from
+ *  the session's snapshots. A 200 IS the realtime signal: turn sessions fail
+ *  typed 422 `not_realtime` (the session response carries no mode flag). */
+export async function getExperienceRoundConfig(
+  sessionId: string,
+): Promise<ExperienceRoundConfigResponseDto> {
+  const response = await client.api.experience.sessions[":sessionId"].round.config.$get({ param: { sessionId } });
+  return unwrapExperience<ExperienceRoundConfigResponseDto>(response);
+}
+
+/** POST /api/experience/sessions/:sessionId/round/commit — the live realtime
+ *  round's terminal claim (RM-7 contract, RM-8 replay-verified service, RM-10
+ *  client). On success the server applies ONE terminal `round_commit`
+ *  transition + the finish-writeback chat card and returns the queued
+ *  attachment; a tampered/non-reproducible log fails typed 422
+ *  `round_verification_failed` with nothing applied. */
+export async function commitExperienceRound(
+  sessionId: string,
+  body: ExperienceRoundCommitRequestDto,
+): Promise<ExperienceQueuedAttachmentResponse> {
+  const response = await client.api.experience.sessions[":sessionId"].round.commit.$post({ param: { sessionId }, json: body });
+  return unwrapExperience<ExperienceQueuedAttachmentResponse>(response);
 }

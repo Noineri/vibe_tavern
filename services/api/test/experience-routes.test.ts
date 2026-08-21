@@ -92,6 +92,7 @@ function stubRuntime(throws?: { kind: any; message: string }): { runtime: Experi
 		updateExperienceGlobalOverride: async (sessionId: string, body: any) => { rec("updateExperienceGlobalOverride").push({ sessionId, body }); maybeThrow(); return { global: { scope: "global", content: body.content, characterId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }, character: null }; },
 		updateExperienceCharacterOverride: async (sessionId: string, body: any) => { rec("updateExperienceCharacterOverride").push({ sessionId, body }); maybeThrow(); return { global: null, character: { scope: "character", content: body.content, characterId: "c_1", createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" } }; },
 		commitExperienceRound: async (sessionId: string, body: any) => { rec("commitExperienceRound").push({ sessionId, body }); maybeThrow(); return null; },
+		getExperienceRoundConfig: async (sessionId: string) => { rec("getExperienceRoundConfig").push({ sessionId }); maybeThrow(); return { rulesSource: "src", seed: 42, tickMs: 100, initialState: { t: 0 }, initialSettings: {}, participants: [] }; },
 		runExperienceRoundModel: async (body: any, signal?: AbortSignal) => { rec("runExperienceRoundModel").push({ body, signal }); maybeThrow(); return { seatId: body.seatId, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}), result: { actionId: "move" } }; },
 	};
 	return { runtime: base as unknown as ExperienceRuntimeApi, calls };
@@ -342,6 +343,22 @@ describe("Experience routes — HTTP layer (stub)", () => {
 			sessionId: "s_1",
 			body: { status: "completed", finalState: { count: 1 }, log: [{ kind: "ticks", count: 1 }] },
 		});
+	});
+
+	test("round/config: forwards the session id and maps a typed 422 (not_realtime)", async () => {
+		const { runtime, calls } = stubRuntime();
+		const app = mount(runtime);
+
+		const okRes = await app.request("/api/experience/sessions/s_1/round/config");
+		expect(okRes.status).toBe(200);
+		expect(calls.getExperienceRoundConfig[0]).toEqual({ sessionId: "s_1" });
+		const body = await jsonBody(okRes);
+		expect(body.tickMs).toBe(100);
+		expect(body.seed).toBe(42);
+
+		const failing = mount(stubRuntime({ kind: "Unprocessable", message: "not a realtime session" }).runtime);
+		const rejected = await failing.request("/api/experience/sessions/s_1/round/config");
+		expect(rejected.status).toBe(422);
 	});
 
 	test("round-model: schema-rejects a missing routing field (400) and forwards a valid request", async () => {

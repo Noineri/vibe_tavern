@@ -46,6 +46,8 @@ import type {
 	ExperienceSeatLegality,
 	ExperienceSeatLegalityMatrix,
 	ExperienceSessionResponseDto,
+	ExperienceRoundCommitRequestDto,
+	ExperienceRoundConfigResponseDto,
 	ExperienceRoundModelRequestDto,
 	ExperienceRoundModelResponseDto,
 } from "@vibe-tavern/api-contracts";
@@ -79,6 +81,8 @@ export type {
 	ChatListItem,
 	ExperienceSeatLegality,
 	ExperienceSeatLegalityMatrix,
+	ExperienceRoundCommitRequestDto,
+	ExperienceRoundConfigResponseDto,
 	ExperienceRoundModelRequestDto,
 	ExperienceRoundModelResponseDto,
 };

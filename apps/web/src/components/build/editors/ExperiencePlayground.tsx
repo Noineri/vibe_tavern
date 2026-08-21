@@ -90,7 +90,7 @@ import type { ExperienceLoopConfig } from "../../../lib/experience-loop-host.js"
 import {
   buildRealtimeLoopConfig,
   createPlaygroundModelSeam,
-} from "./experience-playground-realtime.js";
+} from "../../../lib/experience-realtime.js";
 import {
   deriveSetupValuesFromSettings,
   mergeAbsentSetupDefaults,

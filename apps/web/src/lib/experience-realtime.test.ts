@@ -1,9 +1,10 @@
 /**
- * experience-playground-realtime — RM-9 helper boundary tests.
+ * experience-realtime — RM-9/RM-10 helper boundary tests.
  *
  * Boundary under test: the PURE realtime helpers in
- * `build/editors/experience-playground-realtime.ts` — no React, no DOM, no
- * wire. Pins the two contracts the panel relies on:
+ * `lib/experience-realtime.ts` — no React, no DOM, no wire. (Moved from
+ * `components/build/editors/` in RM-10: the live launcher shares the module.)
+ * Pins the two contracts the panel relies on:
  *
  *   - `buildRealtimeLoopConfig`: the frame loop config assembled from launch
  *     inputs (viewers from the roster, ungated participants surface, seed /
@@ -22,7 +23,7 @@ import {
   buildRealtimeLoopConfig,
   createPlaygroundModelSeam,
   type PlaygroundRealtimeSeat,
-} from "./experience-playground-realtime.js";
+} from "./experience-realtime.js";
 
 const RULES = "context.experience.register({ apiVersion: 1 });";
 

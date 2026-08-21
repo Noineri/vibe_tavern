@@ -55,6 +55,7 @@ interface FakeScopeState {
     status: string;
     view: { revision: number; status: string; state: unknown; actions: unknown[] };
     manifest: { name: string };
+    participants: Array<{ id: string; label: string; controller: string; providerProfileId?: string; modelId?: string }>;
   } | null;
   effects: Array<{ id: string; kind?: string; status: string }>;
   queuedAttachment: {
@@ -127,6 +128,7 @@ const storeMocks = {
   runEffect: mock(async (_effectId: string, _signal?: AbortSignal) => null as unknown),
   retryEffect: mock(async (_effectId: string) => null as unknown),
   queueReport: mock(async () => null as unknown),
+  commitRound: mock(async (_claim: unknown) => null as unknown),
 };
 
 // ─── module mocks ───────────────────────────────────────────────────────────
@@ -202,6 +204,7 @@ mock.module("../../stores/experience-store.js", () => ({
         if (key) setScopeState(key, { detached: d });
       },
       submitAction: storeMocks.submitAction,
+      commitRound: storeMocks.commitRound,
       rehydrate: storeMocks.rehydrate,
       endSession: storeMocks.endSession,
       restartSession: storeMocks.restartSession,
@@ -289,6 +292,34 @@ mock.module("./ExperienceDetachedWindow.js", () => ({
   openExperienceDetachedWindow: mock(() => detachResult),
 }));
 
+// ─── experience-api client mock (RM-10 realtime probe) ─────────────────────
+// The launcher's realtime detector IS the round-config probe. Only the two
+// realtime client fns are overridden (safe mock: real import + spread, so
+// ExperienceApiError and every other export stay genuine).
+const realExperienceApi = await import("../../api/experience-api.js");
+/** The probe's configurable result (defaults to a full valid realtime config). */
+let roundConfigImpl: (sessionId: string) => Promise<{
+  rulesSource: string;
+  seed: number;
+  tickMs: number;
+  initialState: unknown;
+  initialSettings: unknown;
+  participants: Array<{ id: string; label: string; controller: string; providerProfileId?: string; modelId?: string }>;
+}>;
+const roundConfigCalls: string[] = [];
+const roundModelCalls: Array<Record<string, unknown>> = [];
+mock.module("../../api/experience-api.js", () => ({
+  ...realExperienceApi,
+  getExperienceRoundConfig: async (sessionId: string) => {
+    roundConfigCalls.push(sessionId);
+    return roundConfigImpl(sessionId);
+  },
+  runExperienceRoundModel: async (body: Record<string, unknown>) => {
+    roundModelCalls.push(body);
+    return { seatId: body.seatId, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}), result: { reply: true } };
+  },
+}));
+
 const { ExperienceLauncher } = await import("./ExperienceLauncher.js");
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
@@ -304,6 +335,26 @@ function makeSession(over: Partial<NonNullable<FakeScopeState["session"]>> = {})
     status: "active",
     view: { revision: 5, status: "active", state: {}, actions: [] },
     manifest: { name: "Hearts" },
+    participants: [
+      { id: "p1", label: "Hero", controller: "human" },
+      { id: "m1", label: "Bot", controller: "model", providerProfileId: "prof_1", modelId: "model_a" },
+    ],
+    ...over,
+  };
+}
+
+/** A full valid realtime round-config payload (the probe's 200 body). */
+function makeRoundConfig(over: Partial<Awaited<ReturnType<typeof roundConfigImpl>>> = {}) {
+  return {
+    rulesSource: "context.experience.register({ apiVersion: 1, manifest: { id: 'rt', name: 'RT', mode: 'realtime', tickMs: 100 }, create() { return { t: 0 }; }, project(context) { return context.state; }, update(context) { return { state: context.state, status: 'active', events: [] }; }, actions() { return []; }, reduce(context) { return { state: context.state, status: 'active', events: [] }; } });",
+    seed: 12345,
+    tickMs: 100,
+    initialState: { t: 0 },
+    initialSettings: { level: 2 },
+    participants: [
+      { id: "p1", label: "Hero", controller: "human" },
+      { id: "m1", label: "Bot", controller: "model", providerProfileId: "prof_1", modelId: "model_a" },
+    ],
     ...over,
   };
 }
@@ -316,6 +367,13 @@ beforeEach(() => {
   detachResult = null;
   modalProps = {};
   setupOnReady = null;
+  roundConfigCalls.length = 0;
+  roundModelCalls.length = 0;
+  // Default: a TURN session (typed not_realtime) — existing tests keep their
+  // turn semantics; RM-10 tests opt into the realtime probe explicitly.
+  roundConfigImpl = async () => {
+    throw new realExperienceApi.ExperienceApiError(422, "not a realtime session", "not_realtime");
+  };
   for (const m of Object.values(storeMocks)) m.mockClear();
 });
 
@@ -395,22 +453,27 @@ describe("ExperienceLauncher — start, resume, close", () => {
     void queryByTestId;
   });
 
-  it("SetupModal onReady opens the visual modal (store.openModal)", () => {
+  it("SetupModal onReady opens the visual modal (store.openModal)", async () => {
     setScopeState(SCOPE_KEY, { config: makeConfig() });
     const { getByTestId } = render(<ExperienceLauncher />);
     fireEvent.click(getByTestId("experience-launcher-pill"));
     fireEvent.click(getByTestId("experience-launcher-primary"));
-    fireEvent.click(getByTestId("setup-ready"));
+    // onReady probes the round config (async since RM-10) before opening.
+    await act(async () => {
+      fireEvent.click(getByTestId("setup-ready"));
+    });
     expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
     // Setup closed after ready.
     expect(() => getByTestId("setup-modal")).toThrow();
   });
 
-  it("active session: Resume opens the same session", () => {
+  it("active session: Resume opens the same session", async () => {
     setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
     const { getByTestId } = render(<ExperienceLauncher />);
     fireEvent.click(getByTestId("experience-launcher-pill"));
-    fireEvent.click(getByTestId("experience-launcher-primary"));
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-launcher-primary"));
+    });
     expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
     expect(storeMocks.setDetached).toHaveBeenCalledWith(false);
   });
@@ -842,14 +905,16 @@ describe("ExperienceLauncher — detach", () => {
 
 // ─── 10. Branch switch ──────────────────────────────────────────────────────
 describe("ExperienceLauncher — branch switch", () => {
-  it("renders the branch's own config/session after switching", () => {
+  it("renders the branch's own config/session after switching", async () => {
     setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ sessionId: "sess_A" }) });
     const BRANCH2 = JSON.stringify([CHAT_ID, "branch_2"]);
     setScopeState(BRANCH2, { config: makeConfig(), session: makeSession({ sessionId: "sess_B" }) });
     const { getByTestId, rerender } = render(<ExperienceLauncher />);
     // Open the modal on branch 1.
     fireEvent.click(getByTestId("experience-launcher-pill"));
-    fireEvent.click(getByTestId("experience-launcher-primary"));
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-launcher-primary"));
+    });
     expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
     // Switch to branch 2 — local surfaces reset.
     snapshotBranch = { id: "branch_2" };
@@ -1308,5 +1373,175 @@ describe("ExperienceLauncher — in-session settings entry (Б4)", () => {
     const { queryByTestId } = render(<ExperienceLauncher />);
     expect(queryByTestId("modal-session-settings")).toBeNull();
     expect(modalProps.onOpenSessionSettings).toBeUndefined();
+  });
+});
+
+// ─── 13. Realtime rounds (RM-10) ────────────────────────────────────────────
+describe("ExperienceLauncher — realtime rounds (RM-10)", () => {
+  /** Render + click through to an OPEN modal on the seeded session (Resume). */
+  async function openViaResume(utils: ReturnType<typeof render>): Promise<void> {
+    await act(async () => {
+      fireEvent.click(utils.getByTestId("experience-launcher-pill"));
+    });
+    await act(async () => {
+      fireEvent.click(utils.getByTestId("experience-launcher-primary"));
+    });
+  }
+
+  it("realtime session: probe 200 → modal gets the latched loop config, commit+seam wired, Detach omitted, running status", async () => {
+    roundConfigImpl = async () => makeRoundConfig();
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
+    const utils = render(<ExperienceLauncher />);
+    await openViaResume(utils);
+
+    expect(roundConfigCalls).toEqual(["sess_1"]);
+    // The loop config is latched once and handed to the modal verbatim.
+    const realtime = modalProps.realtime as { config: { tickMs: number; seed: number; viewer: { kind: string; participantId?: string }; modelSeats: Array<{ kind: string; participantId: string }>; participants: Array<{ id: string }> } } | undefined;
+    expect(realtime).toBeTruthy();
+    expect(realtime!.config.tickMs).toBe(100);
+    expect(realtime!.config.seed).toBe(12345);
+    expect(realtime!.config.viewer).toEqual({ kind: "human", participantId: "p1" });
+    expect(realtime!.config.modelSeats).toEqual([{ kind: "model", participantId: "m1" }]);
+    expect(realtime!.config.participants.map((p) => p.id)).toEqual(["p1", "m1"]);
+    // The commit hook + model seam are wired; Detach is omitted (a round
+    // lives in exactly ONE surface).
+    expect(typeof modalProps.onRoundCommit).toBe("function");
+    expect(typeof modalProps.onModelRequest).toBe("function");
+    expect(modalProps.onDetach).toBeUndefined();
+    expect(modalProps.statusLabel).toBe("experience_realtime_running");
+  });
+
+  it("turn session (typed not_realtime): NO realtime props, Detach present, and the negative probe is cached", async () => {
+    roundConfigImpl = async () => {
+      throw new realExperienceApi.ExperienceApiError(422, "not a realtime session", "not_realtime");
+    };
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
+    const utils = render(<ExperienceLauncher />);
+    await openViaResume(utils);
+
+    expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
+    expect(modalProps.realtime).toBeUndefined();
+    expect(modalProps.onRoundCommit).toBeUndefined();
+    expect(modalProps.onModelRequest).toBeUndefined();
+    expect(typeof modalProps.onDetach).toBe("function");
+    expect(modalProps.statusLabel).toBe("experience_launcher_active");
+
+    // Close + Resume again: the negative probe result is cached per session —
+    // no second round-config request for a turn session.
+    await act(async () => {
+      fireEvent.click(utils.getByTestId("modal-close"));
+    });
+    await openViaResume(utils);
+    expect(roundConfigCalls).toEqual(["sess_1"]);
+  });
+
+  it("probe failure (server error): modal still opens WITHOUT the loop and the status explains it; the probe retries", async () => {
+    roundConfigImpl = async () => {
+      throw new realExperienceApi.ExperienceApiError(500, "boom", "provider_error");
+    };
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
+    const utils = render(<ExperienceLauncher />);
+    await openViaResume(utils);
+
+    expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
+    expect(modalProps.realtime).toBeUndefined();
+    expect(modalProps.statusLabel).toBe("experience_realtime_config_failed");
+
+    // A failed probe is NOT cached — the next open retries.
+    await act(async () => {
+      fireEvent.click(utils.getByTestId("modal-close"));
+    });
+    await openViaResume(utils);
+    expect(roundConfigCalls).toEqual(["sess_1", "sess_1"]);
+  });
+
+  it("handleAction under a latched realtime round is fail-closed and NEVER submits to the server", async () => {
+    roundConfigImpl = async () => makeRoundConfig();
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
+    const utils = render(<ExperienceLauncher />);
+    await openViaResume(utils);
+
+    const onAction = modalProps.onAction as (a: { requestId: string; expectedRevision: number; type: string }) => Promise<unknown>;
+    const outcome = await onAction({ requestId: "rid-1", expectedRevision: 5, type: "move" });
+    expect(outcome).toEqual({ ok: false, code: "invalid_action", message: "experience_realtime_turn_disabled" });
+    expect(storeMocks.submitAction).not.toHaveBeenCalled();
+  });
+
+  it("onRoundCommit fires the store's commitRound exactly once with the claim", async () => {
+    roundConfigImpl = async () => makeRoundConfig();
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
+    const utils = render(<ExperienceLauncher />);
+    await openViaResume(utils);
+
+    const claim = { status: "completed" as const, finalState: { t: 9 }, log: [{ kind: "round_started", seed: 12345, settings: {} }], score: 9 };
+    await act(async () => {
+      (modalProps.onRoundCommit as (c: unknown) => void)(claim);
+    });
+    expect(storeMocks.commitRound).toHaveBeenCalledTimes(1);
+    expect(storeMocks.commitRound.mock.calls[0]![0]).toEqual(claim);
+  });
+
+  it("model seam: a pinned model seat forwards the prompt verbatim; an unpinned seat resolves null without a request", async () => {
+    roundConfigImpl = async () => makeRoundConfig();
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
+    const utils = render(<ExperienceLauncher />);
+    await openViaResume(utils);
+
+    const seam = modalProps.onModelRequest as (req: { seatId: string; requestId?: string; prompt: unknown }) => Promise<unknown>;
+    const prompt = { viewer: "p1", mode: "action", actionType: "move" };
+    const result = await seam({ seatId: "m1", requestId: "req-1", prompt });
+    // The endpoint got the seat's IR-90E pin + the prompt verbatim; the seam
+    // resolves the reply's result field (the modal posts it into the frame).
+    expect(result).toEqual({ reply: true });
+    expect(roundModelCalls).toEqual([
+      { seatId: "m1", requestId: "req-1", providerProfileId: "prof_1", modelId: "model_a", prompt },
+    ]);
+
+    // A non-model / unpinned seat is fail-closed: no request, null reply.
+    const unpinned = await seam({ seatId: "p1", requestId: "req-2", prompt });
+    expect(unpinned).toBeNull();
+    expect(roundModelCalls.length).toBe(1);
+  });
+
+  it("close mid-round KEEPS the latch: Resume re-opens a fresh round from the same pinned config without re-probing", async () => {
+    roundConfigImpl = async () => makeRoundConfig();
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
+    const utils = render(<ExperienceLauncher />);
+    await openViaResume(utils);
+
+    // Round lost on close is BY DESIGN: the unmounted frame killed the loop;
+    // the latch (config) survives so Resume remounts a FRESH round on the
+    // same pinned seed — an eventual commit still passes RM-8 replay.
+    await act(async () => {
+      fireEvent.click(utils.getByTestId("modal-close"));
+    });
+    expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
+
+    await openViaResume(utils);
+    // Exactly ONE probe for the whole lifecycle; the config is reused.
+    expect(roundConfigCalls).toEqual(["sess_1"]);
+    expect((modalProps.realtime as { config: { seed: number } }).config.seed).toBe(12345);
+  });
+
+  it("SetupModal onReady on a realtime match probes the NEW session before the modal opens", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    const utils = render(<ExperienceLauncher />);
+    await act(async () => {
+      fireEvent.click(utils.getByTestId("experience-launcher-pill"));
+    });
+    await act(async () => {
+      fireEvent.click(utils.getByTestId("experience-launcher-primary"));
+    });
+    expect(utils.getByTestId("setup-modal")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(utils.getByTestId("setup-ready"));
+    });
+    // The setup shell's ready payload carries sessionId "sess_new" — the
+    // probe targeted IT (not any stale session) before the modal opened.
+    // (The fake store does not rehydrate a session on ready, so the modal
+    // surface itself is not rendered here — the Resume path pins the latch.)
+    expect(roundConfigCalls).toEqual(["sess_new"]);
+    expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
   });
 });

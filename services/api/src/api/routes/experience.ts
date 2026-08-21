@@ -257,6 +257,13 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
         );
       },
     )
+    // Round-config (RM-10): the realtime round's launch envelope — pinned
+    // rules source, numeric seed, tickMs, frozen state/settings, compact
+    // roster. Turn sessions fail typed 422 `not_realtime`: a 200 IS the
+    // client's realtime signal (the session response carries no mode flag).
+    .get("/api/experience/sessions/:sessionId/round/config", async (c) => {
+      return c.json(await runtime.getExperienceRoundConfig(c.req.param("sessionId")));
+    })
     // Round-model: one-shot non-streaming generation for a model seat. This is
     // SESSION-LESS and STATELESS (read-only provider resolution, NO effect row)
     // precisely so the playground realtime panel and the live modal host share

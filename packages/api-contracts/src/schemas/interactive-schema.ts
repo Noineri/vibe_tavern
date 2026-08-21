@@ -1079,6 +1079,44 @@ export const experienceRoundModelResponseSchema = z.object({
   result: boundedPayload,
 });
 
+/**
+ * The COMPACT loop-seat slice of a session participant (RM-10) — exactly the
+ * fields the frame loop config consumes. Deliberately NOT the full response
+ * participant: the frozen character-card snapshot is report/projection data
+ * the round never reads, and echoing it into every round-config payload would
+ * be pure weight.
+ */
+export const experienceRoundParticipantSchema = z.object({
+  id: boundedId,
+  label: boundedLabel,
+  controller: experienceControllerSchema,
+  providerProfileId: boundedId.optional(),
+  modelId: boundedId.optional(),
+});
+
+/**
+ * GET /api/experience/sessions/:sessionId/round/config — the realtime round's
+ * launch envelope (RM-10). Rebuilt server-side from the session's PINNED
+ * snapshots (rules source, random seed, frozen state/settings/participants);
+ * the manifest's mode/tickMs are re-derived by discovering the pinned rules
+ * source — the same trust path the RM-8 commit verifier uses, because the
+ * session row persists only the manifest id/name. A 200 from this endpoint IS
+ * the realtime signal (turn sessions are rejected typed 422 `not_realtime`).
+ */
+export const experienceRoundConfigResponseSchema = z.object({
+  rulesSource: z.string().min(1),
+  seed: z.number().int().min(0),
+  /** Fixed timestep re-derived from the pinned manifest (16..1000). */
+  tickMs: z
+    .number()
+    .int()
+    .min(INTERACTIVE_SCHEMA_TICK_MS_MIN)
+    .max(INTERACTIVE_SCHEMA_TICK_MS_MAX),
+  initialState: boundedState,
+  initialSettings: boundedState,
+  participants: z.array(experienceRoundParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS),
+});
+
 // ─── DTO types (wire-only shapes; canonical envelopes come from Domain) ──────
 
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
@@ -1105,6 +1143,8 @@ export type ExperiencePlaygroundTimerRequestDto = z.infer<typeof experiencePlayg
 export type ExperienceRoundCommitRequestDto = z.infer<typeof experienceRoundCommitRequestSchema>;
 export type ExperienceRoundModelRequestDto = z.infer<typeof experienceRoundModelRequestSchema>;
 export type ExperienceRoundModelResponseDto = z.infer<typeof experienceRoundModelResponseSchema>;
+export type ExperienceRoundParticipantDto = z.infer<typeof experienceRoundParticipantSchema>;
+export type ExperienceRoundConfigResponseDto = z.infer<typeof experienceRoundConfigResponseSchema>;
 export type ExperienceSetupFieldOptionDto = z.infer<typeof experienceSetupFieldOptionSchema>;
 export type ExperienceSetupFieldDto = z.infer<typeof experienceSetupFieldSchema>;
 export type ExperienceSetupDefinitionDto = z.infer<typeof experienceSetupDefinitionSchema>;

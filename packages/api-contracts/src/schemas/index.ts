@@ -296,10 +296,12 @@ export {
   experiencePlaygroundStartRequestSchema,
   experiencePlaygroundAdvanceRequestSchema,
   experiencePlaygroundTimerRequestSchema,
-  // Realtime round commit + model seam (RM-7)
+  // Realtime round commit + model seam (RM-7) + round launch envelope (RM-10)
   experienceRoundCommitRequestSchema,
   experienceRoundModelRequestSchema,
   experienceRoundModelResponseSchema,
+  experienceRoundParticipantSchema,
+  experienceRoundConfigResponseSchema,
   // Bounded-JSON guard + bounds
   jsonBoundsError,
   boundedJsonValue,
@@ -343,6 +345,8 @@ export {
   type ExperienceRoundCommitRequestDto,
   type ExperienceRoundModelRequestDto,
   type ExperienceRoundModelResponseDto,
+  type ExperienceRoundParticipantDto,
+  type ExperienceRoundConfigResponseDto,
   type ExperienceSetupFieldOptionDto,
   type ExperienceSetupFieldDto,
   type ExperienceSetupDefinitionDto,

@@ -17,7 +17,7 @@ import { createStoreContainer, type StoreContainer, type ExperienceVisualRow } f
 import { EXPERIENCE_CAPABILITY, EXPERIENCE_VIEWER_KIND, type ExperienceCapability } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
-import { ExperienceService } from "../src/domain/interactive/experience-service.js";
+import { ExperienceService, seedToNumeric } from "../src/domain/interactive/experience-service.js";
 
 // ─── Test experiences ────────────────────────────────────────────────────────
 
@@ -1349,5 +1349,109 @@ describe("ExperienceService — quiet finish (pos 2: close without a public card
     // With-report keeps the card for the next message.
     expect(report.data).not.toBeNull();
     expect(report.data?.publicReport?.events.some((e) => e.type === "experience_finished")).toBe(true);
+  });
+});
+
+// ─── RM-10: realtime round launch envelope (getRoundConfig) ─────────────────
+
+/** A realtime duel: fixed-timestep loop, roster + model seat. */
+const REALTIME_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "rt-duel", name: "RT Duel", mode: "realtime", tickMs: 100 },
+  capabilities: [
+    { capability: "participants", reason: "seat roster" },
+    { capability: "model", reason: "model seat" },
+  ],
+  create() { return { t: 0 }; },
+  project(c) { return { t: c.state.t }; },
+  update(c) { return { state: { t: c.state.t + 100 }, status: "active", events: [] }; },
+  actions() { return [{ type: "move" }]; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+describe("getRoundConfig (RM-10)", () => {
+  const REALTIME_GRANTS: ExperienceCapability[] = [
+    EXPERIENCE_CAPABILITY.participants,
+    EXPERIENCE_CAPABILITY.model,
+  ];
+  const REALTIME_SEATS = [
+    { id: "you", label: "You", controller: "human" as const },
+    { id: "bot", label: "Bot", controller: "script" as const },
+    { id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp-1", modelId: "m-1" },
+  ];
+
+  async function startRealtime(seed = "rt-seed") {
+    const service = await setup(seed);
+    const { chatId, branchId } = await seedChatAndScript(REALTIME_SOURCE, REALTIME_GRANTS);
+    const started = await service.startSession({
+      chatId, branchId, settings: { difficulty: "hard" }, participants: REALTIME_SEATS,
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) throw new Error("start failed");
+    return { service, sessionId: started.data.sessionId };
+  }
+
+  test("realtime active session returns the full launch envelope from the pinned snapshots", async () => {
+    const { service, sessionId } = await startRealtime();
+    const cfg = await service.getRoundConfig(sessionId);
+    expect(cfg.ok).toBe(true);
+    if (!cfg.ok) return;
+    expect(cfg.data.rulesSource).toBe(REALTIME_SOURCE);
+    expect(Number.isInteger(cfg.data.seed)).toBe(true);
+    expect(cfg.data.seed).toBeGreaterThanOrEqual(0);
+    expect(cfg.data.tickMs).toBe(100);
+    expect(cfg.data.initialState).toEqual({ t: 0 });
+    expect(cfg.data.initialSettings).toEqual({ difficulty: "hard" });
+    // Compact seat slice — EXACTLY these keys (no character snapshot, no
+    // characterId), pinned provider/model preserved for the model seat.
+    expect(cfg.data.participants).toEqual([
+      { id: "you", label: "You", controller: "human" },
+      { id: "bot", label: "Bot", controller: "script" },
+      { id: "ai", label: "AI", controller: "model", providerProfileId: "pp-1", modelId: "m-1" },
+    ]);
+  });
+
+  test("seed is deterministic: same session, two calls, identical seed (and it matches seedToNumeric)", async () => {
+    const { service, sessionId } = await startRealtime("fixed-seed-42");
+    const first = await service.getRoundConfig(sessionId);
+    const second = await service.getRoundConfig(sessionId);
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(second.data.seed).toBe(first.data.seed);
+    expect(first.data.seed).toBe(seedToNumeric("fixed-seed-42"));
+  });
+
+  test("a turn session fails typed 422 not_realtime", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    if (!started.ok) throw new Error("start failed");
+    const cfg = await service.getRoundConfig(started.data.sessionId);
+    expect(cfg.ok).toBe(false);
+    if (cfg.ok) return;
+    expect(cfg.error.status).toBe(422);
+    expect(cfg.error.code).toBe("not_realtime");
+  });
+
+  test("a terminal session fails session_not_active (even when realtime)", async () => {
+    const { service, sessionId } = await startRealtime();
+    const finished = await service.finishWithReport(sessionId, 0);
+    expect(finished.ok).toBe(true);
+    const cfg = await service.getRoundConfig(sessionId);
+    expect(cfg.ok).toBe(false);
+    if (cfg.ok) return;
+    expect(cfg.error.status).toBe(422);
+    expect(cfg.error.code).toBe("session_not_active");
+  });
+
+  test("an unknown session id fails 404 session_not_found", async () => {
+    const service = await setup();
+    const cfg = await service.getRoundConfig("sess-ghost");
+    expect(cfg.ok).toBe(false);
+    if (cfg.ok) return;
+    expect(cfg.error.status).toBe(404);
+    expect(cfg.error.code).toBe("session_not_found");
   });
 });
