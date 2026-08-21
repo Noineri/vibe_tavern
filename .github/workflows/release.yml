@@ -98,7 +98,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.14"
+          bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run test
@@ -112,7 +112,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.14"
+          bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
       - run: bun run test
 
@@ -131,7 +131,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.14"
+          bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
       - run: bun scripts/build-linux-dist.ts
       - name: Rename to release name
@@ -204,7 +204,7 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.14"
+          bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
       - run: bun scripts/build-android-arm64.ts
       - name: Stage tarball in Android assets
@@ -269,7 +269,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.14"
+          bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
       - name: Install Inno Setup
         run: choco install innosetup --no-progress --yes

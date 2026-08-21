@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Stage 1: Build ----
-FROM oven/bun:1.3.14 AS builder
+FROM oven/bun:1.4.0 AS builder
 WORKDIR /app
 
 # Layer-cached dependency install — copy all workspace manifests first
@@ -21,7 +21,7 @@ COPY . .
 RUN bun scripts/build.ts prod
 
 # ---- Stage 2: Production runtime ----
-FROM oven/bun:1.3.14-alpine AS release
+FROM oven/bun:1.4.0-alpine AS release
 WORKDIR /app
 
 # Copy only runtime artifacts from builder
