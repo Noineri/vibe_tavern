@@ -12,6 +12,9 @@
       "@vibe-tavern/domain": [
         "../../packages/domain/src/index.ts"
       ],
+      "@vibe-tavern/domain/tetris-port": [
+        "../../packages/domain/src/experience-tetris-port.ts"
+      ],
       "@vibe-tavern/domain/builtins": [
         "../../packages/domain/src/builtin-experiences.ts"
       ],
