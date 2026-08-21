@@ -2321,5 +2321,19 @@
   "experience_playground_role_short_human": "human",
   "experience_playground_role_short_script": "auto",
   "experience_playground_role_short_model": "AI",
-  "experience_playground_no_fields": "This game has no configurable parameters"
+  "experience_playground_no_fields": "This game has no configurable parameters",
+  "experience_editor_bind_disabled_hint": "Save the rules and the visual first — binding needs saved records",
+  "experience_editor_bind_visual": "Bind this visual to these rules",
+  "experience_editor_bind_visual_short": "Bind",
+  "experience_editor_export": "Export mini-app (.vtapp.json file)",
+  "experience_editor_import": "Import mini-app from a .vtapp.json file",
+  "experience_editor_import_error": "Import failed",
+  "experience_editor_importing": "Importing…",
+  "experience_editor_unbind_visual": "Unbind this visual from these rules",
+  "experience_editor_visual_bound_short": "Bound",
+  "experience_import_fail_bad_format": "this is not a Vibe Tavern mini-app file",
+  "experience_import_fail_bad_json": "the file is not valid JSON",
+  "experience_import_fail_bad_shape": "the file structure is damaged",
+  "experience_import_fail_bad_version": "unsupported mini-app file version",
+  "experience_import_name_suffix": " (import)"
 }

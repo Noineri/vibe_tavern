@@ -2341,5 +2341,19 @@
   "experience_playground_role_short_human": "человек",
   "experience_playground_role_short_script": "автомат",
   "experience_playground_role_short_model": "ИИ",
-  "experience_playground_no_fields": "У этой игры нет настраиваемых параметров"
+  "experience_playground_no_fields": "У этой игры нет настраиваемых параметров",
+  "experience_editor_bind_disabled_hint": "Сначала сохраните правила и визуал — привязке нужны сохранённые записи",
+  "experience_editor_bind_visual": "Привязать визуал к этим правилам",
+  "experience_editor_bind_visual_short": "Привязать",
+  "experience_editor_export": "Экспорт мини-приложения (файл .vtapp.json)",
+  "experience_editor_import": "Импорт мини-приложения из файла .vtapp.json",
+  "experience_editor_import_error": "Не удалось импортировать",
+  "experience_editor_importing": "Импорт…",
+  "experience_editor_unbind_visual": "Отвязать визуал от этих правил",
+  "experience_editor_visual_bound_short": "Привязан",
+  "experience_import_fail_bad_format": "это не файл мини-приложения Vibe Tavern",
+  "experience_import_fail_bad_json": "файл не является корректным JSON",
+  "experience_import_fail_bad_shape": "структура файла повреждена",
+  "experience_import_fail_bad_version": "неподдерживаемая версия файла мини-приложения",
+  "experience_import_name_suffix": " (импорт)"
 }

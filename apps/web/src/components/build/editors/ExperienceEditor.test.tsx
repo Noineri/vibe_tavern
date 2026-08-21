@@ -1710,3 +1710,199 @@ describe("ExperienceEditor", () => {
     expect(deleteBtn.classList.contains("max-md:h-9")).toBe(true);
   });
 });
+
+// ─── Mini-app transfer + explicit in-editor visual binding (2026-08-21) ──────
+
+describe("ExperienceEditor — in-editor visual binding", () => {
+  it("binds/unbinds the ACTIVE visual to these rules from the Visual toolbar", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [
+      { ...baseVisual },
+      { ...baseVisual, id: "vis_2", name: "Second Visual" },
+    ];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]); // vis_1 bound
+
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    await codeViews(container);
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+
+    // Auto-selected visual is the bound vis_1 → the pill shows the BOUND state.
+    const pill = await waitFor(() => {
+      const el = container.querySelector("[data-testid='experience_bind_visual_button']");
+      if (!el) throw new Error("bind pill missing");
+      return el as HTMLButtonElement;
+    });
+    expect(pill.textContent).toContain("experience_editor_visual_bound_short");
+
+    // Click = unbind (script_1 ↔ vis_1).
+    fireEvent.click(pill);
+    await waitFor(() => expect(unbindScriptVisual).toHaveBeenCalledWith("srv_1", "vis_1"));
+    expect(bindScriptVisual).not.toHaveBeenCalled();
+  });
+
+  it("shows the BIND action for an unbound saved visual and calls the junction", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual, id: "vis_9", name: "Loose Visual" }];
+    getScriptVisuals.mockResolvedValue([]); // nothing bound
+
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    await codeViews(container);
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+
+    // Nothing is bound → no auto-select: pick the loose visual in the dropdown.
+    const trigger = await waitFor(() => {
+      const el = [...container.querySelectorAll("button")].find((b) =>
+        (b.textContent ?? "").includes("experience_assign_visual_placeholder"),
+      );
+      if (!el) throw new Error("dropdown trigger missing");
+      return el;
+    });
+    fireEvent.click(trigger);
+    await waitFor(() => expect(document.body.querySelector("[cmdk-list]")).toBeTruthy());
+    const option = [...document.body.querySelectorAll("[cmdk-item]")].find((el) =>
+      (el.textContent ?? "").includes("Loose Visual"),
+    ) ?? document.body.querySelector("[cmdk-item]");
+    if (!option) throw new Error("dropdown option missing");
+    fireEvent.click(option as HTMLElement);
+
+    const pill = await waitFor(() => {
+      const el = container.querySelector("[data-testid='experience_bind_visual_button']");
+      if (!el) throw new Error("bind pill missing");
+      return el as HTMLButtonElement;
+    });
+    expect(pill.textContent).toContain("experience_editor_bind_visual_short");
+    fireEvent.click(pill);
+    await waitFor(() => expect(bindScriptVisual).toHaveBeenCalledWith("srv_1", "vis_9"));
+  });
+
+  it("a pending (unsaved) visual shows the disabled hint instead of the action", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [];
+    getScriptVisuals.mockResolvedValue([]);
+
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    await codeViews(container);
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+
+    // Open a starter chip → pending visual selected.
+    const chip = [...container.querySelectorAll("button")].find(
+      (b) => b.classList.contains("h-7") && (b.textContent ?? "").trim() === "Choice",
+    );
+    if (!chip) throw new Error("starter chip missing");
+    fireEvent.click(chip);
+
+    await waitFor(() => {
+      // No action button — the disabled hint span carries the tooltip instead.
+      expect(container.querySelector("[data-testid='experience_bind_visual_button']")).toBeNull();
+      const hint = [...container.querySelectorAll("span")].find((s) =>
+        (s.textContent ?? "").includes("experience_editor_bind_visual_short"),
+      );
+      expect(hint).toBeTruthy();
+    });
+  });
+});
+
+describe("ExperienceEditor — mini-app import/export", () => {
+  it("imports a .vtapp.json via the file input: visuals created, script created, default bound first", async () => {
+    const bundle = {
+      format: "vt-miniapp",
+      version: 1,
+      exportedAt: "t",
+      script: { name: "Imported App", description: "d", code: "code", enabled: true },
+      visuals: [
+        { name: "skin-a", source: "<a/>", apiVersion: 2, compatibleManifestIds: [] },
+        { name: "skin-b", source: "<b/>", apiVersion: 2, compatibleManifestIds: [] },
+      ],
+      defaultVisualIndex: 1,
+    };
+    createExperienceVisual.mockImplementation(async (body: Record<string, unknown>) => ({
+      ...baseVisual,
+      id: `vis_imp_${String(body.name)}`,
+      name: String(body.name),
+    }));
+    createScript.mockImplementation(async (body: Record<string, unknown>) => {
+      const created: ScriptRecord = {
+        ...baseScript,
+        id: "srv_imported",
+        name: String(body.name),
+      };
+      serverScripts = [...serverScripts, created]; // visible on the reload
+      return created;
+    });
+
+    const { findByTestId, findByText } = render(<ExperienceEditor />);
+    await findByTestId("experience_import_button");
+    const input = document.querySelector("input[type='file']");
+    if (!(input instanceof HTMLInputElement)) throw new Error("file input missing");
+    const file = new File([JSON.stringify(bundle)], "imported.vtapp.json", { type: "application/json" });
+    await act(async () => {
+      // happy-dom exposes `files` as a read-only getter — assign it as an
+      // own property, then dispatch the change event (fireEvent's target
+      // assignment cannot write a FileList).
+      Object.defineProperty(input, "files", { value: [file], configurable: true });
+      fireEvent.change(input);
+    });
+
+    await waitFor(() => expect(createScript).toHaveBeenCalled());
+    expect(createScript.mock.calls[0][0]).toMatchObject({ name: "Imported App", scriptKind: "interactive", enabled: true });
+    expect(createExperienceVisual).toHaveBeenCalledTimes(2);
+    // Default (skin-b) bound FIRST — the store promotes the first bind to primary.
+    expect(bindScriptVisual.mock.calls.map((c) => c[1])).toEqual(["vis_imp_skin-b", "vis_imp_skin-a"]);
+    // The lists reloaded after the import: the imported card appears.
+    await findByText("Imported App");
+  });
+
+  it("a malformed file surfaces the banner, not a silent no-op", async () => {
+    const { container, findByTestId } = render(<ExperienceEditor />);
+    await findByTestId("experience_import_button");
+    const input = document.querySelector("input[type='file']");
+    if (!(input instanceof HTMLInputElement)) throw new Error("file input missing");
+    const file = new File(["{ nope"], "bad.json", { type: "application/json" });
+    await act(async () => {
+      Object.defineProperty(input, "files", { value: [file], configurable: true });
+      fireEvent.change(input);
+    });
+    await waitFor(() => {
+      const banner = container.querySelector("[data-testid='experience_import_error']");
+      expect(banner).toBeTruthy();
+      expect(banner?.textContent).toContain("experience_import_fail_bad_json");
+    });
+    expect(createScript).not.toHaveBeenCalled();
+  });
+
+  it("exports the card as a bundle download (script + bound visuals)", async () => {
+    serverScripts = [{ ...baseScript, defaultVisualId: "vis_1" }];
+    getScriptVisuals.mockResolvedValue([{ ...baseVisual }]);
+    const createObjectURL = mock((_blob: Blob) => "blob:mock");
+    const revokeObjectURL = mock(() => {});
+    const hadCreate = "createObjectURL" in URL;
+    const hadRevoke = "revokeObjectURL" in URL;
+    (URL as unknown as { createObjectURL: typeof createObjectURL }).createObjectURL = createObjectURL;
+    (URL as unknown as { revokeObjectURL: typeof revokeObjectURL }).revokeObjectURL = revokeObjectURL;
+
+    try {
+      const { findByTestId, findByText } = render(<ExperienceEditor />);
+      await findByText("Existing Rules");
+      fireEvent.click(await findByTestId("experience_export_button"));
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+      expect(getScriptVisuals).toHaveBeenCalledWith("srv_1");
+      const blob = createObjectURL.mock.calls[0][0] as Blob;
+      const text = await blob.text();
+      const parsed = JSON.parse(text);
+      expect(parsed.format).toBe("vt-miniapp");
+      expect(parsed.script.name).toBe("Existing Rules");
+      expect(parsed.visuals).toHaveLength(1);
+      expect(parsed.defaultVisualIndex).toBe(0);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock");
+    } finally {
+      if (hadCreate) delete (URL as unknown as Record<string, unknown>).createObjectURL;
+      if (hadRevoke) delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
+    }
+  });
+});

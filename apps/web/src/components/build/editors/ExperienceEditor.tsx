@@ -90,6 +90,12 @@ import {
 import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
 import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
+import {
+  buildMiniAppBundle,
+  importMiniAppBundle,
+  miniAppBundleFileName,
+  parseMiniAppBundle,
+} from "../../../lib/mini-app-transfer.js";
 
 function draftValuesEqual(a: ScriptDraftValues, b: ScriptDraftValues): boolean {
   return a.name === b.name
@@ -173,6 +179,15 @@ export function ExperienceEditor() {
   // XU-6: the visual toolbar's collapsed "Technical details" accordion.
   const [visualTechOpen, setVisualTechOpen] = useState(false);
 
+  // Mini-app transfer (import/export): the list-load effect is keyed on this
+  // token so a successful import can refresh scripts/visuals/bound sets by
+  // bumping it (same body, same cancellation semantics).
+  const [listsReloadToken, setListsReloadToken] = useState(0);
+  // Import in-flight / failure banner state (never silently dropped).
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     Promise.all([
@@ -193,7 +208,7 @@ export function ExperienceEditor() {
       })
       .catch(() => { if (!cancelled) setListsFailed(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [listsReloadToken]);
 
   // ── Draft stores (rules: script-draft-store; visual: experience-authoring) ──
   const scriptDrafts = useScriptDraftStore((s) => s.drafts);
@@ -364,6 +379,58 @@ export function ExperienceEditor() {
       setChosenRulesStarterId(null);
     } catch (error) {
       setCreateError(errorMessage(error));
+    }
+  };
+
+  /** Export a mini-app card as a .vtapp.json bundle download: the rules
+   *  script + its bound visuals + which one was the primary. Purely
+   *  client-side (Blob download, the existing trace-json pattern). */
+  const handleExportMiniApp = async (script: ScriptRecord) => {
+    try {
+      const bound = await getScriptVisuals(script.id);
+      const bundle = buildMiniAppBundle(script, bound, () => new Date().toISOString());
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = miniAppBundleFileName(script.name);
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.warn("mini-app export failed", error);
+    }
+  };
+
+  /** Import a .vtapp.json picked via the hidden file input: parse → create
+   *  visuals → create script → bind (default first). On success refresh the
+   *  lists; on failure a banner (mapped by parse reason), never silent. */
+  const handleImportMiniApp = async (file: File) => {
+    setImportError(null);
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = parseMiniAppBundle(text);
+      if (!parsed.ok) {
+        const failKey = ({
+          "bad-json": "experience_import_fail_bad_json",
+          "bad-format": "experience_import_fail_bad_format",
+          "bad-version": "experience_import_fail_bad_version",
+          "bad-shape": "experience_import_fail_bad_shape",
+        } as const)[parsed.reason];
+        setImportError(t(failKey));
+        return;
+      }
+      await importMiniAppBundle(parsed.bundle, { scopeType: "global" }, t("experience_import_name_suffix"), {
+        listAllScripts,
+        createScript,
+        createExperienceVisual,
+        bindScriptVisual,
+      });
+      setListsReloadToken((v) => v + 1);
+    } catch (error) {
+      setImportError(errorMessage(error));
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -650,6 +717,17 @@ export function ExperienceEditor() {
             {t("experience_editor_create_error")}: {createError}
           </div>
         )}
+        {importError && (
+          <div
+            data-testid="experience_import_error"
+            className="mb-3 flex items-start justify-between gap-2 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text"
+          >
+            <span>{t("experience_editor_import_error")}: {importError}</span>
+            <button type="button" aria-label={t("close")} className="shrink-0 cursor-pointer text-t3 hover:text-t1" onClick={() => setImportError(null)}>
+              <Ic.close />
+            </button>
+          </div>
+        )}
         <button
           type="button"
           className="mb-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border border-accent bg-accent/10 px-4 py-3 text-left transition-all hover:bg-accent/20"
@@ -657,6 +735,32 @@ export function ExperienceEditor() {
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent"><Ic.plus /></div>
           <span className="flex-1 text-[14px] font-semibold text-t1">{t("experience_editor_create_new")}</span>
+        </button>
+        {/* Mini-app import (.vtapp.json): hidden file input + slim ghost
+            button under the prominent create. The bundle format is validated
+            client-side; failures land in the banner above. */}
+        <input
+          ref={importFileRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ""; // allow re-picking the same file
+            if (file) void handleImportMiniApp(file);
+          }}
+        />
+        <button
+          type="button"
+          data-testid="experience_import_button"
+          disabled={importing}
+          className="mb-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-s3 px-4 py-2.5 text-left transition-all hover:bg-s2 disabled:cursor-default disabled:opacity-50"
+          onClick={() => importFileRef.current?.click()}
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-s2 text-t2"><Ic.import /></div>
+          <span className="flex-1 text-[13px] font-medium text-t2">
+            {importing ? t("experience_editor_importing") : t("experience_editor_import")}
+          </span>
         </button>
 
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
@@ -716,12 +820,29 @@ export function ExperienceEditor() {
                     </div>
                   </button>
                   {!isLocalId(script.id) && (
-                    <div className="border-t border-border px-3 py-2">
-                      <ExperienceVisualBinding
-                        bound={boundVisuals[script.id] ?? []}
-                        available={visuals}
-                        onToggle={(visualId, bind) => void handleToggleVisual(script.id, visualId, bind)}
-                      />
+                    <div className="flex items-stretch border-t border-border">
+                      <div className="min-w-0 flex-1 px-3 py-2">
+                        <ExperienceVisualBinding
+                          bound={boundVisuals[script.id] ?? []}
+                          available={visuals}
+                          onToggle={(visualId, bind) => void handleToggleVisual(script.id, visualId, bind)}
+                        />
+                      </div>
+                      {/* Mini-app export: the same card payload the binding
+                          strip shows — script + bound visuals + primary. */}
+                      <div className="flex shrink-0 items-center border-l border-border px-2">
+                        <CustomTooltip content={t("experience_editor_export")}>
+                          <button
+                            type="button"
+                            aria-label={t("experience_editor_export")}
+                            data-testid="experience_export_button"
+                            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
+                            onClick={() => void handleExportMiniApp(script)}
+                          >
+                            <Ic.download />
+                          </button>
+                        </CustomTooltip>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1001,6 +1122,41 @@ export function ExperienceEditor() {
                     onChange={(id) => setActiveVisualId(id === "" ? null : id)}
                   />
                 </div>
+                {/* Explicit bind/unbind for the ACTIVE visual ↔ ACTIVE rules
+                    (2026-08-21): previously binding lived ONLY on the outer
+                    card — inside the editor you could edit a visual all day
+                    without it being attached to this mini-app. Disabled (with
+                    hint) while either side is an unsaved draft — the junction
+                    needs real ids. */}
+                {activeVisual && !isLocalId(activeVisualId ?? "") && !isLocalId(activeScriptId ?? "") ? (
+                  (() => {
+                    const boundNow = (boundVisuals[activeScriptId ?? ""] ?? []).some((v) => v.id === activeVisualId);
+                    return (
+                      <CustomTooltip content={boundNow ? t("experience_editor_unbind_visual") : t("experience_editor_bind_visual")}>
+                        <button
+                          type="button"
+                          data-testid="experience_bind_visual_button"
+                          aria-label={boundNow ? t("experience_editor_unbind_visual") : t("experience_editor_bind_visual")}
+                          className={cn(
+                            "flex h-9 max-md:min-h-[44px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-3 font-ui text-[11px] transition-all",
+                            boundNow
+                              ? "border-accent bg-accent-dim text-accent-t hover:bg-accent/20"
+                              : "border-border bg-s3 text-t2 hover:bg-s2 hover:text-t1",
+                          )}
+                          onClick={() => activeScriptId && activeVisualId && void handleToggleVisual(activeScriptId, activeVisualId, !boundNow)}
+                        >
+                          <Ic.plug /> {boundNow ? t("experience_editor_visual_bound_short") : t("experience_editor_bind_visual_short")}
+                        </button>
+                      </CustomTooltip>
+                    );
+                  })()
+                ) : activeVisual ? (
+                  <CustomTooltip content={t("experience_editor_bind_disabled_hint")}>
+                    <span className="flex h-9 max-md:min-h-[44px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-3 font-ui text-[11px] text-t4">
+                      <Ic.plug /> {t("experience_editor_bind_visual_short")}
+                    </span>
+                  </CustomTooltip>
+                ) : null}
                 {activeVisual ? (
                   <>
                     <CustomTooltip content={t("experience_editor_duplicate")}>
