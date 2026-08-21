@@ -25,7 +25,7 @@ import {
   duplicateRulesValues,
 } from "./experience-rules-starters.js";
 
-const EXPECTED_IDS = ["round", "board", "card", "model_conversation", "catch_arcade", "blank_state_machine"];
+const EXPECTED_IDS = ["round", "board", "card", "model_conversation", "breakout_arcade", "blank_state_machine"];
 
 // ─── Structural validity ─────────────────────────────────────────────────────
 

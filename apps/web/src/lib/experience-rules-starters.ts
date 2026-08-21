@@ -19,7 +19,7 @@
  */
 
 import {
-  CATCH_RULES_SOURCE,
+  BREAKOUT_RULES_SOURCE,
   CONVERSATION_RULES_SOURCE as MODEL_CONVERSATION_SOURCE,
 } from "@vibe-tavern/domain/builtins";
 
@@ -208,10 +208,10 @@ export const RULES_STARTERS: readonly RulesStarter[] = Object.freeze([
     source: MODEL_CONVERSATION_SOURCE,
   }),
   Object.freeze({
-    id: "catch_arcade",
-    label: "Catch (Realtime)",
-    description: "A realtime arcade loop: steer the paddle, catch falling balls. Demonstrates update(context, dt), frame-local actLocal inputs, and a replay-verified realtime commit.",
-    source: CATCH_RULES_SOURCE,
+    id: "breakout_arcade",
+    label: "Breakout (Realtime)",
+    description: "A realtime arcade loop: bounce the ball off the paddle, clear the brick wall. Demonstrates update(context, dt), frame-local actLocal inputs, and a replay-verified realtime commit.",
+    source: BREAKOUT_RULES_SOURCE,
   }),
   Object.freeze({
     id: "blank_state_machine",

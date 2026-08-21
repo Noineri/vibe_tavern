@@ -121,8 +121,8 @@ describe("inline script embedding", () => {
     // — the domain barrel no longer re-exports them (see domain/src/index.ts).
     expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("model_conversation");
     expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("xp-conv");
-    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("catch_arcade");
-    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("xp-catch");
+    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("breakout_arcade");
+    expect(EXPERIENCE_FRAME_RUNTIME_SOURCE).not.toContain("xp-brk");
     // Safety: even a hostile literal `</script` carried inside the runtime
     // source must not break the assembled document's script block.
     const hostile = 'var x = "</script>"; console.log(x);';

@@ -38,19 +38,19 @@ async function seedAndResolve(stores: StoreContainer) {
 }
 
 describe("seedBuiltinExperiences (BE-3)", () => {
-  test("catalog carries the realtime Catch entry alongside Conversation", () => {
-    const catchEntry = BUILTIN_EXPERIENCE_CATALOG.find((e) => e.id === "catch");
-    expect(catchEntry).toBeDefined();
-    expect(catchEntry!.manifestId).toBe("catch_arcade");
-    expect(catchEntry!.visualStableKey).toBe("builtin:catch");
-    expect(catchEntry!.displayName.length).toBeGreaterThan(0);
-    expect(catchEntry!.description.length).toBeGreaterThan(0);
+  test("catalog carries the realtime Breakout entry alongside Conversation", () => {
+    const breakoutEntry = BUILTIN_EXPERIENCE_CATALOG.find((e) => e.id === "breakout");
+    expect(breakoutEntry).toBeDefined();
+    expect(breakoutEntry!.manifestId).toBe("breakout_arcade");
+    expect(breakoutEntry!.visualStableKey).toBe("builtin:breakout");
+    expect(breakoutEntry!.displayName.length).toBeGreaterThan(0);
+    expect(breakoutEntry!.description.length).toBeGreaterThan(0);
     // The wave-6 realtime starter declares the realtime mode + tick in the
     // manifest; the seed persists the source verbatim.
-    expect(catchEntry!.rulesSource).toContain('mode: "realtime"');
-    expect(catchEntry!.rulesSource).toContain("tickMs: 33");
-    expect(catchEntry!.rulesSource).toContain("update(context, dt)");
-    expect(catchEntry!.visualSource).toContain("VibeExperience.connect");
+    expect(breakoutEntry!.rulesSource).toContain('mode: "realtime"');
+    expect(breakoutEntry!.rulesSource).toContain("tickMs: 33");
+    expect(breakoutEntry!.rulesSource).toContain("update(context, dt)");
+    expect(breakoutEntry!.visualSource).toContain("VibeExperience.connect");
   });
 
   test("seeds the Conversation built-in: enabled + global + builtinId + defaultVisualId wired", async () => {
@@ -85,26 +85,26 @@ describe("seedBuiltinExperiences (BE-3)", () => {
     expect(bound).toContain(visual!.id);
   });
 
-  test("the Catch built-in seeds as an enabled global script wired to its visual", async () => {
+  test("the Breakout built-in seeds as an enabled global script wired to its visual", async () => {
     const stores = await setup();
     const result = await seedBuiltinExperiences(stores);
     expect(result.skipped).toEqual([]);
 
     const scripts = await stores.scripts.listAll();
-    const catchScript = scripts.find((s) => s.creationIntentId === "builtin:catch");
-    expect(catchScript).toBeDefined();
-    expect(catchScript!.scriptKind).toBe("interactive");
-    expect(catchScript!.enabled).toBe(true);
-    expect(catchScript!.scopeType).toBe("global");
-    expect(catchScript!.extensions.builtinId).toBe("catch");
-    expect(catchScript!.defaultVisualId).not.toBeNull();
+    const breakoutScript = scripts.find((s) => s.creationIntentId === "builtin:breakout");
+    expect(breakoutScript).toBeDefined();
+    expect(breakoutScript!.scriptKind).toBe("interactive");
+    expect(breakoutScript!.enabled).toBe(true);
+    expect(breakoutScript!.scopeType).toBe("global");
+    expect(breakoutScript!.extensions.builtinId).toBe("breakout");
+    expect(breakoutScript!.defaultVisualId).not.toBeNull();
 
-    const visual = catchScript!.defaultVisualId
-      ? await stores.experienceResources.getVisualById(catchScript!.defaultVisualId)
+    const visual = breakoutScript!.defaultVisualId
+      ? await stores.experienceResources.getVisualById(breakoutScript!.defaultVisualId)
       : null;
     expect(visual).not.toBeNull();
     expect(visual!.source).toContain("VibeExperience.connect");
-    const bound = await stores.scripts.getBoundVisualIds(catchScript!.id);
+    const bound = await stores.scripts.getBoundVisualIds(breakoutScript!.id);
     expect(bound).toContain(visual!.id);
   });
 
@@ -113,10 +113,12 @@ describe("seedBuiltinExperiences (BE-3)", () => {
 
     const first = await seedBuiltinExperiences(stores);
     expect(first.skipped).toEqual([]);
+    expect(first.updated).toEqual([]);
 
     const second = await seedBuiltinExperiences(stores);
     expect(second.skipped).toEqual([]);
     expect(second.seeded).toEqual(CATALOG_IDS);
+    expect(second.updated).toEqual([]);
 
     // Exactly one script for the built-in intent.
     const scripts = await stores.scripts.listAll();
@@ -127,6 +129,37 @@ describe("seedBuiltinExperiences (BE-3)", () => {
     const visuals = await stores.experienceResources.listVisualsForScope("global", null);
     const convoVisuals = visuals.filter((v) => v.name === "Conversation");
     expect(convoVisuals).toHaveLength(1);
+  });
+
+  test("re-syncs drifted rows to the catalog (RM-12e): a stale source is overwritten, the result reports it", async () => {
+    const stores = await setup();
+    await seedBuiltinExperiences(stores);
+
+    // Drift the Breakout rows the way an app update would leave them stale:
+    // an old source string + an old display name.
+    const entry = BUILTIN_EXPERIENCE_CATALOG.find((e) => e.id === "breakout")!;
+    const scripts = await stores.scripts.listAll();
+    const stale = scripts.find((s) => s.creationIntentId === "builtin:breakout")!;
+    await stores.scripts.update(stale.id, { name: "Catch (Realtime)", code: "// stale rules" });
+    const visualId = stale.defaultVisualId!;
+    await stores.experienceResources.updateVisual(visualId, { name: "Catch (Realtime)", source: "<b>stale</b>" });
+
+    const resync = await seedBuiltinExperiences(stores);
+    expect(resync.skipped).toEqual([]);
+    expect(resync.updated).toContain("breakout");
+
+    // Both rows mirror the catalog again.
+    const after = (await stores.scripts.listAll()).find((s) => s.creationIntentId === "builtin:breakout")!;
+    expect(after.code).toBe(entry.rulesSource);
+    expect(after.name).toBe(entry.displayName);
+    const visual = await stores.experienceResources.getVisualById(visualId);
+    expect(visual!.source).toBe(entry.visualSource);
+    expect(visual!.name).toBe(entry.displayName);
+    expect(visual!.sourceHash.length).toBeGreaterThan(0);
+
+    // And a third seed with no drift is quiet again (updated empty).
+    const third = await seedBuiltinExperiences(stores);
+    expect(third.updated).toEqual([]);
   });
 });
 
@@ -145,7 +178,7 @@ describe("built-in experience dismissal tombstones (fix item 12)", () => {
     expect(reseed.dismissed).toEqual(["conversation"]);
     // The non-dismissed Catch built-in still seeds alongside the tombstoned
     // Conversation (catalog-agnostic — the tombstone only suppresses its own id).
-    expect(reseed.seeded).toEqual(["catch"]);
+    expect(reseed.seeded).toEqual(["breakout"]);
 
     // The visual was NOT recreated.
     const visuals = await stores.experienceResources.listVisualsForScope("global", null);
@@ -164,7 +197,7 @@ describe("built-in experience dismissal tombstones (fix item 12)", () => {
     const reseed = await seedBuiltinExperiences(stores);
     expect(reseed.dismissed).toEqual(["conversation"]);
     // Same as the visual-dismissal case: only Conversation is tombstoned.
-    expect(reseed.seeded).toEqual(["catch"]);
+    expect(reseed.seeded).toEqual(["breakout"]);
 
     // The script was NOT recreated (the surviving visual is the only artifact).
     const scripts = await stores.scripts.listAll();
@@ -195,7 +228,7 @@ describe("built-in experience dismissal tombstones (fix item 12)", () => {
     await stores.experienceResources.clearBuiltinExperienceDismissal("conversation");
     const reseed = await seedBuiltinExperiences(stores);
     expect(reseed.dismissed).toEqual([]);
-    expect(reseed.seeded).toEqual(["conversation", "catch"]);
+    expect(reseed.seeded).toEqual(["conversation", "breakout"]);
 
     // The visual is recreated and re-bound to the surviving script.
     const visuals = await stores.experienceResources.listVisualsForScope("global", null);

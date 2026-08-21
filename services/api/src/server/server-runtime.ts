@@ -141,6 +141,11 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 			`${tag} Built-in experiences dismissed by user (seed skipped): [${builtinSeed.dismissed.join(", ")}].`,
 		);
 	}
+	if (builtinSeed.updated.length > 0) {
+		console.log(
+			`${tag} Built-in experience sources re-synced to catalog: [${builtinSeed.updated.join(", ")}].`,
+		);
+	}
 	console.log(`${tag} Built-in experiences ensured: [${builtinSeed.seeded.join(", ")}].`);
 
 	// Tokenizers

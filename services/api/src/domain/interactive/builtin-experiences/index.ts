@@ -17,8 +17,8 @@
  * barrel.
  */
 import {
-  CATCH_RULES_SOURCE,
-  CATCH_VISUAL_SOURCE,
+  BREAKOUT_RULES_SOURCE,
+  BREAKOUT_VISUAL_SOURCE,
   CONVERSATION_RULES_SOURCE,
   CONVERSATION_VISUAL_SOURCE,
 } from "@vibe-tavern/domain/builtins";
@@ -57,14 +57,14 @@ export const BUILTIN_EXPERIENCE_CATALOG: readonly BuiltinExperienceEntry[] = Obj
     visualSource: CONVERSATION_VISUAL_SOURCE,
   }),
   Object.freeze({
-    id: "catch",
-    displayName: "Catch (Realtime)",
+    id: "breakout",
+    displayName: "Breakout (Realtime)",
     description:
-      "A realtime arcade loop: steer the paddle, catch falling balls — the wave-6 realtime starter.",
-    manifestId: "catch_arcade",
-    visualStableKey: "builtin:catch",
-    rulesSource: CATCH_RULES_SOURCE,
-    visualSource: CATCH_VISUAL_SOURCE,
+      "A realtime arcade loop: bounce the ball off the paddle, clear the brick wall — 3 balls, edge hits fly wide. The wave-6 realtime starter.",
+    manifestId: "breakout_arcade",
+    visualStableKey: "builtin:breakout",
+    rulesSource: BREAKOUT_RULES_SOURCE,
+    visualSource: BREAKOUT_VISUAL_SOURCE,
   }),
 ]);
 

@@ -5,8 +5,8 @@
  * user-owned visual; the versioned VibeExperience SDK remains host-provided.
  *
  * Order is the canonical display order in the picker (Choice, Grid/Board, Card
- * Table, Conversation, Catch, Blank) — Blank is last because it is the escape
- * hatch for experiences that do not fit the other five. Catch is the wave-6
+ * Table, Conversation, Breakout, Blank) — Blank is last because it is the escape
+ * hatch for experiences that do not fit the other five. Breakout is the wave-6
  * realtime loop starter (REALTIME_EXPERIENCE_MODE_PLAN): it renders on the
  * loop tick and feeds frame-local inputs, so it also serves as the reference
  * realtime visual.
@@ -16,7 +16,7 @@ import { choiceStarter } from "./choice.js";
 import { gridBoardStarter } from "./grid-board.js";
 import { cardTableStarter } from "./card-table.js";
 import { conversationStarter } from "./conversation.js";
-import { catchStarter } from "./catch.js";
+import { breakoutStarter } from "./breakout.js";
 import { blankStarter } from "./blank.js";
 
 export type { VisualStarter } from "./types.js";
@@ -27,7 +27,7 @@ export const VISUAL_STARTERS: readonly VisualStarter[] = [
   gridBoardStarter,
   cardTableStarter,
   conversationStarter,
-  catchStarter,
+  breakoutStarter,
   blankStarter,
 ];
 
