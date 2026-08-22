@@ -280,14 +280,15 @@ export function buildExperienceCopilotTools(opts: {
   const allTools = {
     write_buffer: tool({
       description:
-        "Replace the ENTIRE rules OR visual buffer with `content`. Use it for a ground-up rewrite of a buffer. " +
+        "Replace the ENTIRE rules OR visual buffer with `content`. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale. " +
+        "Use it for a ground-up rewrite of a buffer. " +
         "It must be the FIRST change to that buffer in a turn — once a buffer has been mutated, refine it with edit_buffer instead. " +
         "For target 'rules', the proposed source is validated by running it through the experience sandbox (a create-only test); an invalid proposal returns a tool-error so you can self-correct in the same turn. " +
         "For target 'visual', no validation runs (no validator exists). The proposed buffer is shown to the user as a diff before they bind it.",
       inputSchema: z.object({
         target: z
           .enum(["rules", "visual"])
-          .describe("Which buffer to rewrite: 'rules' (the experience rules source) or 'visual' (the visual source)."),
+          .describe("REQUIRED on every call. Which buffer to rewrite: 'rules' (the experience rules source) or 'visual' (the visual source). Never omit."),
         content: z
           .string()
           .describe("The FULL proposed buffer content, replacing the current buffer entirely."),
@@ -339,13 +340,14 @@ export function buildExperienceCopilotTools(opts: {
 
     edit_buffer: tool({
       description:
-        "Apply exact SEARCH/REPLACE edits to the current rules OR visual buffer. Each `search` must match exactly once in the current buffer text; use this for targeted incremental changes after the buffer exists. " +
+        "Apply exact SEARCH/REPLACE edits to the current rules OR visual buffer. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale before any edit runs. " +
+        "Each `search` must match exactly once in the current buffer text; use this for targeted incremental changes after the buffer exists. " +
         "For target 'rules', the RESULTING proposed source is validated by running it through the experience sandbox (a create-only test); an invalid result returns a tool-error. " +
         "Edits compose across calls within one turn. The proposed buffer is shown to the user as a diff before they bind it.",
       inputSchema: z.object({
         target: z
           .enum(["rules", "visual"])
-          .describe("Which buffer to edit: 'rules' or 'visual'."),
+          .describe("REQUIRED on every call. Which buffer to edit: 'rules' or 'visual'. Never omit."),
         edits: z
           .array(
             z.object({

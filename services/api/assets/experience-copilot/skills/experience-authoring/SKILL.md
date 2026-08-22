@@ -42,6 +42,8 @@ Multi-seat games fail here more than anywhere else: the app "gets confused about
 
 ## When something fails
 
+- **`Invalid input for tool …` (the whole call was dropped)** — a required argument was missing or invalid; nothing executed. The most common miss is `target` on `write_buffer`/`edit_buffer`: EVERY buffer call carries `target: "rules" | "visual"` plus its payload. Re-send the complete corrected call — a rejected call mutates nothing, so the buffer is still in its pre-call state.
+
 - **`run_test` returns an error digest** — read `errorCode`/`errorKind`/`errorMessage`. `syntax`/`vm_error` means the source does not run; `validation_error`/`missing_method` means it runs but breaks the contract. Fix the source, re-propose, re-test — all within the same turn.
 - **`run_simulate` runs to the iteration bound** — a loop of legal actions never reaches a human boundary or a terminal status. Look for a state where `actions` keeps returning non-terminal moves and `reduce` keeps accepting them. Either add a termination condition in `reduce` or a different action selection in `choose`.
 - **Capability mismatch** — the rules read `context.participants`/`context.random` without declaring the capability, or declared it and never seeded `context.random`. Check the declared capabilities in the discovered definition against what the methods touch.
