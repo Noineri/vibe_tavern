@@ -433,6 +433,7 @@ export const REMOTE_PROVIDER_PRESET_IDS = [
   "pollinations",
   "anthropic",
   "google",
+  "google_interactions",
 ] as const satisfies readonly ProviderPresetId[];
 
 export type RemoteProviderPresetId = typeof REMOTE_PROVIDER_PRESET_IDS[number];

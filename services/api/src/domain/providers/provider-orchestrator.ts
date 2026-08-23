@@ -6,7 +6,7 @@ import { normalizeProviderType } from "@vibe-tavern/domain";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 /** Provider types whose model-list API requires authentication. */
-const AUTH_REQUIRED_FOR_MODEL_LIST = new Set(["anthropic", "google"]);
+const AUTH_REQUIRED_FOR_MODEL_LIST = new Set(["anthropic", "google", "google_interactions"]);
 
 export class ProviderOrchestrator {
   constructor(

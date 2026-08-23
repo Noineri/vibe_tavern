@@ -64,6 +64,7 @@ const PRESET_CAPABILITIES = {
 	openai: notExposed("/v1/organization/usage requires an Admin key — a different credential class."),
 	anthropic: notExposed("Usage and cost APIs are Admin-API only; a regular key sees rate-limit headers at most."),
 	google: notExposed("Quota and billing are visible only in the AI Studio UI."),
+	google_interactions: notExposed("Shares the AI Studio key and quota surface; visible only in the AI Studio UI."),
 	xai: notExposed("Billing requires a Management API key plus a team id; CodexBar ships no xAI usage fetcher either."),
 	// CodexBar's GroqUsageFetcher does hit a plain-key endpoint
 	// (`/metrics/prometheus/api/v1/query`), but every series it reads is a RATE

@@ -174,9 +174,11 @@ export function buildSamplerConfig(
       break;
     }
 
-    // -- Google ---------------------------------------------------------------
-    case PROVIDER_TYPE.google: {
-      // Only temperature, topP, maxOutputTokens, stopSequences (already set above)
+    // -- Google (classic + Interactions) -------------------------------------
+    case PROVIDER_TYPE.google:
+    case PROVIDER_TYPE.googleInteractions: {
+      // Only temperature, topP, maxOutputTokens, stopSequences (already set above).
+      // reasoningEffort -> thinking_level is mapped natively by the SDK.
       break;
     }
 

@@ -376,6 +376,8 @@ export function resolveSamplerSet(
       return "anthropic";
     case PROVIDER_TYPE.google:
       return "minimal_reasoning";
+    case PROVIDER_TYPE.googleInteractions:
+      return "minimal_reasoning";
     case PROVIDER_TYPE.ollama:
       return "openai_local";
     case PROVIDER_TYPE.llamaCpp:

@@ -48,6 +48,8 @@ export type SystemResourceId = typeof SYSTEM_RESOURCE_ID[keyof typeof SYSTEM_RES
  * - `openaiCompat` — OpenAI API and all compatible endpoints
  * - `anthropic` — Anthropic Claude API
  * - `google` — Google Gemini API
+ * - `googleInteractions` — Google Gemini Interactions API (`POST /v1beta/interactions`,
+ *   via `@ai-sdk/google`'s `google.interactions()`)
  * - `ollama` — Ollama (via OpenAI-compatible adapter)
  * - `llamaCpp` — llama.cpp server (via OpenAI-compatible adapter)
  * - `koboldCpp` — KoboldCpp (native adapter, non-OpenAI API)
@@ -57,6 +59,7 @@ export const PROVIDER_TYPE = {
   openaiCompat: "openai_compat",
   anthropic: "anthropic",
   google: "google",
+  googleInteractions: "google_interactions",
   ollama: "ollama",
   llamaCpp: "llamacpp",
   koboldCpp: "koboldcpp",

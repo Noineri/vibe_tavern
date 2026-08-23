@@ -8,6 +8,7 @@ const PRESET_TO_PROVIDER_TYPE: Record<string, ProviderType> = {
   [PROVIDER_TYPE.openaiCompat]: PROVIDER_TYPE.openaiCompat,
   [PROVIDER_TYPE.anthropic]: PROVIDER_TYPE.anthropic,
   [PROVIDER_TYPE.google]: PROVIDER_TYPE.google,
+  [PROVIDER_TYPE.googleInteractions]: PROVIDER_TYPE.googleInteractions,
   [PROVIDER_TYPE.ollama]: PROVIDER_TYPE.ollama,
   [PROVIDER_TYPE.llamaCpp]: PROVIDER_TYPE.llamaCpp,
   [PROVIDER_TYPE.koboldCpp]: PROVIDER_TYPE.koboldCpp,
@@ -78,6 +79,7 @@ const ROUTER_OR_MIXED_PRESETS = new Set([
 const DIRECT_DISABLED_PRESETS = new Set([
   "anthropic",
   "google",
+  "google_interactions",
   "groq",
   "xai",
   "moonshot",
