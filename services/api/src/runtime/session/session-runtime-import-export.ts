@@ -6,7 +6,7 @@ import type {
 	PersonaId,
 	PromptPresetId,
 } from "@vibe-tavern/domain";
-import { brandId, type CharacterId } from "@vibe-tavern/domain";
+import { brandId, type CharacterId, REGEX_TARGET_TYPE } from "@vibe-tavern/domain";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import {
 	flattenV2CompatFields,
@@ -60,6 +60,10 @@ export interface ImportResult {
 		warnings: string[];
 		attachedToCharacterName?: string;
 	};
+	/** RX-15 UI surface: how many regex presets were created from the card's
+	 *  embedded `regex_scripts` (always 0 on paths that skip regex import).
+	 *  Present on character imports; omitted otherwise. */
+	createdRegexPresets?: number;
 }
 
 export async function exportCharacter(
@@ -402,6 +406,17 @@ export async function importJson(
 			promptPresetId: await deps.resolveDefaultPromptPresetId(),
 		});
 
+		// RX-15 UI surface: embedded `regex_scripts` become regex presets
+		// auto-linked to the imported character. Runs for both fresh-create and
+		// update paths (but NOT the skipExisting early return above). Security
+		// gate: drafts land `disabled: true` regardless of what the card claims.
+		// Never-throw: a regex failure must not fail the card import.
+		const createdRegexPresets = await importCardRegexScripts(
+			deps.stores,
+			imported.regexScripts,
+			characterId as CharacterId,
+		);
+
 		const createdId = chat.id as ChatId;
 		deps.chatOrder.add(createdId);
 		await deps.seedImportedOpening(
@@ -423,6 +438,7 @@ export async function importJson(
 			activeChatId: createdId,
 			snapshot: input.lean ? undefined : await deps.getSnapshot(createdId),
 			characterId: characterId as CharacterId,
+			createdRegexPresets,
 			imported: {
 				kind: "character",
 				name: imported.character.name,
@@ -431,6 +447,75 @@ export async function importJson(
 				warnings: imported.warnings,
 			},
 		};
+	}
+}
+
+/**
+ * RX-15 UI surface: create regex presets from a card's embedded
+ * `regex_scripts` drafts and link each to the imported character.
+ *
+ * Security gate: every draft lands `disabled: true` (review-before-trust).
+ * Idempotent: re-importing the same card does NOT duplicate presets — a draft
+ * whose (name + findRegex) matches an existing preset ALREADY LINKED to this
+ * character is skipped. Never throws — a regex failure logs and returns the
+ * count created so far; the card import itself must not fail.
+ */
+async function importCardRegexScripts(
+	stores: StoreContainer,
+	drafts: ImportedCharacterCardBundle["regexScripts"],
+	characterId: CharacterId,
+): Promise<number> {
+	if (drafts.length === 0) return 0;
+
+	try {
+		// Existing presets linked to this character — dedupe key (name + findRegex).
+		// listAll() + per-preset getLinks() is fine at import time (N presets, tiny).
+		const existingKeys = new Set<string>();
+		const all = await stores.regex.listAll();
+		for (const preset of all) {
+			const links = await stores.regex.getLinks(preset.id);
+			for (const link of links) {
+				if (link.targetType === REGEX_TARGET_TYPE.Character && link.targetId === characterId) {
+					existingKeys.add(`${preset.name}${preset.findRegex}`);
+					break;
+				}
+			}
+		}
+
+		let created = 0;
+		for (const draft of drafts) {
+			const key = `${draft.name}${draft.findRegex}`;
+			if (existingKeys.has(key)) continue;
+			const preset = await stores.regex.create({
+				name: draft.name,
+				findRegex: draft.findRegex,
+				replaceString: draft.replaceString,
+				trimStrings: draft.trimStrings,
+				substituteRegex: draft.substituteRegex,
+				disabled: true, // security gate — never trust a shared card
+				markdownOnly: draft.markdownOnly,
+				promptOnly: draft.promptOnly,
+				runOnEdit: draft.runOnEdit,
+				minDepth: draft.minDepth,
+				maxDepth: draft.maxDepth,
+				placement: draft.placement,
+				isGlobal: draft.isGlobal,
+				sortOrder: draft.sortOrder,
+			});
+			await stores.regex.setLinks(preset.id, [
+				{ targetType: REGEX_TARGET_TYPE.Character, targetId: characterId },
+			]);
+			existingKeys.add(key);
+			created += 1;
+		}
+		return created;
+	} catch (err) {
+		// Never break the card import over a regex hiccup.
+		console.warn(
+			"[import] regex script import failed for character", characterId,
+			err instanceof Error ? err.message : err,
+		);
+		return 0;
 	}
 }
 

@@ -23,6 +23,8 @@ interface RegexPresetListProps {
   /** Persist a manual reorder: each entry sets the listed id to the listed
    *  sort order. Driven by `useReorderableList` (optimistic + rollback). */
   onReorder: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
+  /** RX-16 UI surface: import standalone ST regex JSON. */
+  onImportRegex?: () => void;
 }
 
 // A single regex-preset row, sortable via `useSortable`. Mirrors
@@ -102,7 +104,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
  * label, search, dnd-kit sortable rows, inline rename, EmptyState, bottom-
  * docked dashed "+ New") with the regex-specific disabled dimming.
  */
-export function RegexPresetList({ presets, activePresetId, onSelect, onAdd, onRename, onReorder }: RegexPresetListProps) {
+export function RegexPresetList({ presets, activePresetId, onSelect, onAdd, onRename, onReorder, onImportRegex }: RegexPresetListProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
@@ -302,6 +304,15 @@ export function RegexPresetList({ presets, activePresetId, onSelect, onAdd, onRe
           <Icons.Plus />
           {t("promptManager.regex.newPreset")}
         </button>
+        {onImportRegex && (
+          <button type="button"
+            onClick={onImportRegex}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+          >
+            <Icons.Import />
+            {t("promptManager.regex.importButton")}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -2417,5 +2417,9 @@
   "promptManager.regex.bindingsEmpty": "Нет доступных персонажей или пресетов промпта.",
   "promptManager.regex.sectionCharacters": "Персонажи",
   "promptManager.regex.sectionPresets": "Пресеты промпта",
-  "topbar_regex_active_many": "Активные regex-пресеты: {n}"
+  "topbar_regex_active_many": "Активные regex-пресеты: {n}",
+  "promptManager.regex.importButton": "Импорт JSON",
+  "promptManager.regex.imported": "Импортировано регекс-пресетов: {n} — все отключены до проверки",
+  "promptManager.regex.importFailed": "Не удалось импортировать регулярки",
+  "promptManager.regex.importNone": "В файле не найдено регулярок"
 }

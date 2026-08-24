@@ -2397,5 +2397,9 @@
   "promptManager.regex.bindingsEmpty": "No characters or prompt presets available.",
   "promptManager.regex.sectionCharacters": "Characters",
   "promptManager.regex.sectionPresets": "Prompt presets",
-  "topbar_regex_active_many": "Regex active: {n}"
+  "topbar_regex_active_many": "Regex active: {n}",
+  "promptManager.regex.importButton": "Import JSON",
+  "promptManager.regex.imported": "Imported {n} regex preset(s) — all disabled for review",
+  "promptManager.regex.importFailed": "Regex import failed",
+  "promptManager.regex.importNone": "No regex scripts found in that file"
 }

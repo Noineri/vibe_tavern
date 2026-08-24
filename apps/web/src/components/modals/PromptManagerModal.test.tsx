@@ -50,9 +50,10 @@ const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-l
 
 let PromptManagerModal: typeof import("./PromptManagerModal.js").PromptManagerModal;
 let buildDuplicatePayload: typeof import("./PromptManagerModal.js").buildDuplicatePayload;
+let importStandaloneRegexText: typeof import("./PromptManagerModal.js").importStandaloneRegexText;
 
 beforeAll(async () => {
-  ({ PromptManagerModal, buildDuplicatePayload } = await import("./PromptManagerModal.js"));
+  ({ PromptManagerModal, buildDuplicatePayload, importStandaloneRegexText } = await import("./PromptManagerModal.js"));
 });
 
 afterEach(() => {
@@ -484,5 +485,60 @@ describe("PromptManagerModal — chatDynamicPrompt save (Wave 6)", () => {
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * importStandaloneRegexText — RX-16 UI surface (standalone ST regex JSON).
+ *
+ * Pure-seam pins (no file input, no DOM): a valid array JSON creates one
+ * preset per script with the security gate enforced (disabled: true
+ * regardless of the file's claim); garbage yields zero calls and zero
+ * created. The injected `create` double is the only boundary under test —
+ * the parser itself is pinned in packages/import-export tests.
+ */
+describe("importStandaloneRegexText (RX-16)", () => {
+  test("valid array JSON → create called once per script, all disabled", async () => {
+    const calls: Array<unknown> = [];
+    const created = await importStandaloneRegexText(
+      JSON.stringify([
+        { scriptName: "A", findRegex: "/a/g", replaceString: "", disabled: false },
+        { scriptName: "B", findRegex: "/b/g", replaceString: "x", disabled: false },
+      ]),
+      async (body) => {
+        calls.push(body);
+        return { id: `rx_${calls.length}` } as never;
+      },
+    );
+
+    expect(created).toBe(2);
+    expect(calls).toHaveLength(2);
+    expect((calls[0] as { name?: string })?.name).toBe("A");
+    expect((calls[1] as { name?: string })?.name).toBe("B");
+    // Security gate: never trust the file's `disabled: false`.
+    expect(calls.every((c) => (c as { disabled?: boolean }).disabled === true)).toBe(true);
+  });
+
+  test("garbage JSON → zero creates, no throw", async () => {
+    const calls: unknown[] = [];
+    const created = await importStandaloneRegexText("{ not json", async (body) => {
+      calls.push(body);
+      return { id: "rx_1" } as never;
+    });
+    expect(created).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("single-object shape (the common ST export) is accepted", async () => {
+    const calls: Array<unknown> = [];
+    const created = await importStandaloneRegexText(
+      JSON.stringify({ scriptName: "Solo", findRegex: "/s/g", replaceString: "" }),
+      async (body) => {
+        calls.push(body);
+        return { id: "rx_1" } as never;
+      },
+    );
+    expect(created).toBe(1);
+    expect((calls[0] as { name?: string })?.name).toBe("Solo");
   });
 });
