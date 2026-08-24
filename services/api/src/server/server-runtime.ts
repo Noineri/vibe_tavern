@@ -12,6 +12,7 @@ import { ObjectiveService } from "../domain/insights/objective-service.js";
 import { SceneTrackerService } from "../domain/insights/tracker-service.js";
 import { createInsightsFeature, composeForwardStateWait } from "../domain/insights/insights-feature.js";
 import { LiveChatOrchestrator } from "../domain/chat/live-chat-orchestrator.js";
+import { RegexHookService } from "../domain/regex/regex-hook-service.js";
 import { FeatureRegistry } from "../shared/feature-registry.js";
 import { MobileAccessService } from "../domain/mobile-access/mobile-access-service.js";
 import { resolveTlsConfig } from "../domain/mobile-access/mobile-auth.js";
@@ -197,6 +198,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		events,
 		(chatId: string) => sessionRuntime.resolveChatModeStrategy(chatId as never),
 		composeForwardStateWait(objectiveService, trackerService),
+		new RegexHookService(stores).createHooks(),
 	);
 
 	// Feature registry — features subscribe to events and mount routes
