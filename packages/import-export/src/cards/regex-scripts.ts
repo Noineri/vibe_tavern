@@ -72,12 +72,52 @@ function parseScriptName(value: unknown): string {
 }
 
 /**
- * Extract importable regex-script drafts from a card's `extensions` record.
+ * Normalize ONE raw ST `RegexScriptData` object into an importable draft.
+ *
+ * Shared per-script parser for all import entry points (card extensions,
+ * preset files, standalone JSON) — one validation logic, three callers.
  *
  * Per-element validation drops only meaningless entries (missing/blank
- * findRegex); malformed individual fields fall back to their defaults instead
- * of rejecting the whole script. Unknown extra fields are preserved via
- * {@link RegexScriptImportDraft.sourceScript}.
+ * findRegex → null); malformed individual fields fall back to their defaults
+ * instead of rejecting the whole script. Unknown extra fields are preserved
+ * via {@link RegexScriptImportDraft.sourceScript}.
+ *
+ * SECURITY GATE (plan non-negotiable): every draft lands `disabled: true`
+ * regardless of what the embedded script claims; `isGlobal` is always false.
+ *
+ * @param index assigned to the returned draft's `sortOrder` (callers decide
+ *              the semantics: raw array position or accepted-so-far count).
+ */
+export function normalizeStRegexScript(raw: unknown, index: number): RegexScriptImportDraft | null {
+  if (!isRecord(raw)) return null;
+
+  // A regex script without a find pattern is meaningless — drop it rather
+  // than import something that can never match.
+  const findRegex = typeof raw.findRegex === "string" ? raw.findRegex.trim() : "";
+  if (!findRegex) return null;
+
+  return {
+    name: parseScriptName(raw.scriptName),
+    findRegex,
+    replaceString: typeof raw.replaceString === "string" ? raw.replaceString : "",
+    trimStrings: parseTrimStrings(raw.trimStrings),
+    substituteRegex: parseSubstituteRegex(raw.substituteRegex),
+    // Security gate: embedded scripts are untrusted until reviewed.
+    disabled: true,
+    markdownOnly: asBool(raw.markdownOnly),
+    promptOnly: asBool(raw.promptOnly),
+    runOnEdit: raw.runOnEdit === undefined ? true : asBool(raw.runOnEdit),
+    minDepth: asDepth(raw.minDepth),
+    maxDepth: asDepth(raw.maxDepth),
+    placement: parsePlacement(raw.placement),
+    isGlobal: false,
+    sortOrder: index,
+    sourceScript: raw,
+  };
+}
+
+/**
+ * Extract importable regex-script drafts from a card's `extensions` record.
  */
 export function extractCardRegexScripts(
   rawExtensions: Record<string, unknown> | undefined,
@@ -87,32 +127,8 @@ export function extractCardRegexScripts(
 
   const drafts: RegexScriptImportDraft[] = [];
   for (const entry of rawScripts) {
-    if (!isRecord(entry)) continue;
-
-    // A regex script without a find pattern is meaningless — drop it rather
-    // than import something that can never match.
-    const findRegex = typeof entry.findRegex === "string" ? entry.findRegex.trim() : "";
-    if (!findRegex) continue;
-
-    drafts.push({
-      name: parseScriptName(entry.scriptName),
-      findRegex,
-      replaceString: typeof entry.replaceString === "string" ? entry.replaceString : "",
-      trimStrings: parseTrimStrings(entry.trimStrings),
-      substituteRegex: parseSubstituteRegex(entry.substituteRegex),
-      // Security gate: embedded scripts are untrusted until reviewed.
-      disabled: true,
-      markdownOnly: asBool(entry.markdownOnly),
-      promptOnly: asBool(entry.promptOnly),
-      runOnEdit: entry.runOnEdit === undefined ? true : asBool(entry.runOnEdit),
-      minDepth: asDepth(entry.minDepth),
-      maxDepth: asDepth(entry.maxDepth),
-      placement: parsePlacement(entry.placement),
-      // Card scripts bind to their character — never global.
-      isGlobal: false,
-      sortOrder: drafts.length,
-      sourceScript: entry,
-    });
+    const draft = normalizeStRegexScript(entry, drafts.length);
+    if (draft) drafts.push(draft);
   }
   return drafts;
 }

@@ -7,6 +7,8 @@ import type {
 } from "@vibe-tavern/domain";
 import { DEFAULT_PROMPT_ORDER, inferSlot, slotToStFields } from "@vibe-tavern/domain";
 
+import { normalizeStRegexScript, type RegexScriptImportDraft } from "../cards/regex-scripts.js";
+
 export interface StPresetBlock {
   identifier: string;
   name: string;
@@ -91,6 +93,10 @@ export interface ParsedStPreset {
   /** Present when the file was exported by Vibe Tavern (the `_vibe_tavern`
    *  extension key). Carries the full VT DTO for lossless VT→VT import. */
   vibeTavern?: VibeTavernPresetExtension;
+  /** Regex scripts embedded in the preset (`extensions.regex_scripts`, or
+   *  top-level `regex_scripts` fallback). Always security-gated
+   *  (`disabled: true`) by the shared normalizer. Empty when absent. */
+  regexScripts: RegexScriptImportDraft[];
 }
 
 interface StPromptEntry {
@@ -127,6 +133,10 @@ interface StPresetJson {
   prompts?: StPromptEntry[];
   prompt_order?: StPromptOrderSet[];
   _vibe_tavern?: unknown;
+  /** Shared ST presets may embed regex scripts top-level OR under
+   *  `extensions` — both key styles exist in the wild. */
+  regex_scripts?: unknown;
+  extensions?: Record<string, unknown>;
 }
 
 export function parseStPreset(jsonText: string): ParsedStPreset {
@@ -170,7 +180,30 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
     blocks: merged,
     promptOrder: promptOrderResult?.entries ?? [],
     vibeTavern: readVibeTavernExtension(data._vibe_tavern),
+    regexScripts: extractPresetRegexScripts(data),
   };
+}
+
+/**
+ * Extract embedded regex-script drafts from a raw preset object.
+ *
+ * `extensions.regex_scripts` is preferred (where ST itself nests extension
+ * data); top-level `regex_scripts` is the fallback — shared preset files use
+ * both key styles. Never throws; malformed arrays yield []. Every draft is
+ * security-gated by {@link normalizeStRegexScript}.
+ */
+function extractPresetRegexScripts(data: StPresetJson): RegexScriptImportDraft[] {
+  const raw = Array.isArray(data.extensions?.regex_scripts)
+    ? data.extensions?.regex_scripts
+    : data.regex_scripts;
+  if (!Array.isArray(raw)) return [];
+
+  const drafts: RegexScriptImportDraft[] = [];
+  for (const entry of raw) {
+    const draft = normalizeStRegexScript(entry, drafts.length);
+    if (draft) drafts.push(draft);
+  }
+  return drafts;
 }
 
 /**
@@ -418,6 +451,9 @@ export interface StPresetJsonOut {
   name: string;
   prompts: StPromptEntryOut[];
   prompt_order: Array<{ character_id: number | string; order: StPromptOrderEntryOut[] }>;
+  /** Present only when regex scripts are supplied to `serializeStPreset`.
+   *  ST-readable key so exported presets carry their embedded regex. */
+  extensions?: { regex_scripts: unknown };
   _vibe_tavern: VibeTavernPresetExtension;
 }
 
@@ -498,7 +534,7 @@ function buildContentBlock(
  * source preset's `advancedMode` is false (empty canvas) by falling back to
  * `DEFAULT_PROMPT_ORDER`.
  */
-export function serializeStPreset(dto: PromptPresetDto): string {
+export function serializeStPreset(dto: PromptPresetDto, regexScripts?: RegexScriptImportDraft[]): string {
   const canvasMap = new Map<string, PromptOrderEntry>();
   for (const entry of dto.promptOrder) canvasMap.set(entry.identifier, entry);
 
@@ -557,11 +593,37 @@ export function serializeStPreset(dto: PromptPresetDto): string {
   const { id: _id, createdAt: _ca, updatedAt: _ua, ...extension } = dto;
   void _id; void _ca; void _ua;
 
+  // ── extensions.regex_scripts: embedded regex (ST-readable key) ──────────
+  // Written ONLY when scripts are supplied so legacy exports stay byte-
+  // identical (backward compat).
+  const extensionsOut =
+    regexScripts && regexScripts.length > 0 ? { regex_scripts: regexScripts.map(toStRegexScriptOut) } : undefined;
+
   const out: StPresetJsonOut = {
     name: dto.name,
     prompts,
     prompt_order: [{ character_id: EXPORT_CHARACTER_ID, order: orderEntries }],
+    ...(extensionsOut ? { extensions: extensionsOut } : {}),
     _vibe_tavern: extension,
   };
   return JSON.stringify(out, null, 2);
+}
+
+/** Map an import draft back onto the plain ST `RegexScriptData` shape that
+ *  both ST and VT re-import. Strips the draft-only `sourceScript` channel. */
+function toStRegexScriptOut(draft: RegexScriptImportDraft): Record<string, unknown> {
+  return {
+    scriptName: draft.name,
+    findRegex: draft.findRegex,
+    replaceString: draft.replaceString,
+    trimStrings: draft.trimStrings,
+    placement: [...draft.placement],
+    disabled: draft.disabled,
+    markdownOnly: draft.markdownOnly,
+    promptOnly: draft.promptOnly,
+    runOnEdit: draft.runOnEdit,
+    substituteRegex: draft.substituteRegex,
+    minDepth: draft.minDepth,
+    maxDepth: draft.maxDepth,
+  };
 }
