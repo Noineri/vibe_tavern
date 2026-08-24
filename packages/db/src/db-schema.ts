@@ -447,6 +447,54 @@ export const scriptVisuals = sqliteTable('script_visuals', {
   visualIdx: index('idx_script_visuals_visual').on(table.visualId),
 }));
 
+// ─── regexPresets / regexLinks ────────────────────────────────────────────────
+//
+// Named SillyTavern-parity find/replace scripts (ST `RegexScriptData`;
+// REGEX_EXTENSION_PLAN, RX-2). Columns map 1:1 onto the `RegexPreset` domain
+// interface in packages/domain/src/entities.ts: array fields persist as JSON
+// (`trimStringsJson`, `placementJson` — placement codes stay numerically
+// ST-parity), ST's ephemerality flags (`markdownOnly`/`promptOnly`) persist as
+// their own columns, depth bounds are nullable (null = unlimited).
+//
+// `regexLinks` is the third instance of the `lorebookLinks`/`scriptLinks`
+// junction pattern ({presetId, targetType, targetId}, composite PK, cascade
+// FK). Binding targets are characters and prompt presets only — persona is
+// excluded by design (a regex preset is content-transforming machinery, not
+// persona-scoped knowledge).
+export const regexPresets = sqliteTable('regex_presets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  findRegex: text('find_regex').notNull(),
+  replaceString: text('replace_string').notNull().default(''),
+  trimStringsJson: text('trim_strings_json').notNull().default('[]'),
+  substituteRegex: integer('substitute_regex').notNull().default(0),
+  disabled: integer('disabled').notNull().default(0),
+  markdownOnly: integer('markdown_only').notNull().default(0),
+  promptOnly: integer('prompt_only').notNull().default(0),
+  runOnEdit: integer('run_on_edit').notNull().default(1),
+  minDepth: integer('min_depth'),
+  maxDepth: integer('max_depth'),
+  // RegexPlacement[] as JSON; default = [AI_OUTPUT] only.
+  placementJson: text('placement_json').notNull().default('[2]'),
+  isGlobal: integer('is_global').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  globalIdx: index('idx_regex_presets_global').on(table.isGlobal),
+}));
+
+export const regexLinks = sqliteTable('regex_links', {
+  regexPresetId: text('regex_preset_id').notNull().references(() => regexPresets.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // 'character' | 'preset'
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  // Composite PK: one link per (preset, target) pair
+  pk: primaryKey({ columns: [table.regexPresetId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_regex_links_target').on(table.targetType, table.targetId),
+  presetIdx: index('idx_regex_links_preset').on(table.regexPresetId),
+}));
+
 // ─── chatBranches ──────────────────────────────────────────────────────────────
 
 export const chatBranches = sqliteTable('chat_branches', {
