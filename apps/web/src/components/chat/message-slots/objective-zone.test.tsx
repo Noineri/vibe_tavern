@@ -209,7 +209,13 @@ describe("ObjectiveZone (INS-6)", () => {
     const regenerate = getByLabelText("obj_zone_regenerate");
     fireEvent.click(regenerate);
     expect(mocks.generateObjectiveTasksAction).toHaveBeenCalledWith("c1", expect.any(AbortSignal));
-    await waitFor(() => expect((regenerate as HTMLButtonElement).disabled).toBe(false));
+    // While busy==="generate" the regenerate button morphs into Stop and is NEVER
+    // disabled — waiting on `disabled === false` passes instantly with generate
+    // still in flight, and the check click then races a still-committed
+    // busy==="generate" (check disabled → React swallows the click, see
+    // shouldPreventMouseEvent). Wait for the label flip back instead: it pins
+    // busy===null as COMMITTED state, exactly like the Stop test below.
+    await waitFor(() => expect(getByLabelText("obj_zone_regenerate")).toBeTruthy());
 
     fireEvent.click(getByLabelText("obj_zone_check"));
     expect(mocks.checkObjectiveCompletionAction).toHaveBeenCalledWith("c1", expect.any(AbortSignal));
