@@ -203,6 +203,18 @@ export {
   setScriptLinks,
 } from "./api/script-api.js";
 
+// ─── Regex presets ──────────────────────────────────────────────────────────
+export {
+  listAllRegexPresets,
+  getRegexPreset,
+  createRegexPreset,
+  updateRegexPreset,
+  deleteRegexPreset,
+  getRegexLinks,
+  setRegexLinks,
+  resolveActiveRegexPresets,
+} from "./api/regex-api.js";
+
 // ─── Provider ───────────────────────────────────────────────────────────
 export {
   listProviderProfiles,

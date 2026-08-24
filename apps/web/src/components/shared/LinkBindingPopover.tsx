@@ -14,7 +14,7 @@ import { CustomTooltip } from "./Tooltip.js";
 import { getModalPortal } from "./modal-helpers.js";
 import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
 
-export type LinkBindingTargetType = "character" | "persona" | "lorebook" | "script";
+export type LinkBindingTargetType = "character" | "persona" | "lorebook" | "script" | "preset" | "regex";
 
 export interface LinkTarget {
   id: string;
@@ -43,6 +43,8 @@ interface LinkBindingPopoverProps {
   personas: LinkTarget[];
   lorebooks?: LinkTarget[];
   scripts?: LinkTarget[];
+  presets?: LinkTarget[];
+  regexes?: LinkTarget[];
   onSetLinks: (links: LinkBindingRecord[]) => void;
   t: TFunc;
   isMobile: boolean;
@@ -52,6 +54,8 @@ interface LinkBindingPopoverProps {
   personaSectionLabel?: string;
   lorebookSectionLabel?: string;
   scriptSectionLabel?: string;
+  presetSectionLabel?: string;
+  regexSectionLabel?: string;
   /** Disable the trigger button (e.g. while a generation is in flight). */
   disabled?: boolean;
   /** Render the bound pills inline (default true). Pass false when the caller
@@ -110,6 +114,8 @@ export function LinkBindingPopover({
   personas,
   lorebooks = [],
   scripts = [],
+  presets = [],
+  regexes = [],
   onSetLinks,
   t,
   isMobile,
@@ -119,6 +125,8 @@ export function LinkBindingPopover({
   personaSectionLabel,
   lorebookSectionLabel,
   scriptSectionLabel,
+  presetSectionLabel,
+  regexSectionLabel,
   disabled,
   showPills = true,
   triggerLabel,
@@ -129,11 +137,15 @@ export function LinkBindingPopover({
   const personaMap = new Map(personas.map((p) => [p.id, p]));
   const lorebookMap = new Map(lorebooks.map((l) => [l.id, l]));
   const scriptMap = new Map(scripts.map((s) => [s.id, s]));
+  const presetMap = new Map(presets.map((p) => [p.id, p]));
+  const regexMap = new Map(regexes.map((r) => [r.id, r]));
 
   const charLinks = links.filter((l) => l.targetType === "character");
   const personaLinks = links.filter((l) => l.targetType === "persona");
   const lorebookLinks = links.filter((l) => l.targetType === "lorebook");
   const scriptLinks = links.filter((l) => l.targetType === "script");
+  const presetLinks = links.filter((l) => l.targetType === "preset");
+  const regexLinks = links.filter((l) => l.targetType === "regex");
 
   const toggle = useCallback(
     (targetType: LinkBindingTargetType, targetId: string) => {
@@ -218,6 +230,14 @@ export function LinkBindingPopover({
           {scriptLinks.map((l) => {
             const sc = scriptMap.get(l.targetId);
             return sc ? pill(sc, "script") : null;
+          })}
+          {presetLinks.map((l) => {
+            const p = presetMap.get(l.targetId);
+            return p ? pill(p, "preset") : null;
+          })}
+          {regexLinks.map((l) => {
+            const r = regexMap.get(l.targetId);
+            return r ? pill(r, "regex") : null;
           })}
         </>
       )}
@@ -313,7 +333,29 @@ export function LinkBindingPopover({
             </div>
           )}
 
-          {characters.length === 0 && personas.length === 0 && lorebooks.length === 0 && scripts.length === 0 && (
+          {presets.length > 0 && (
+            <div className="px-3 py-2.5">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
+                {presetSectionLabel || t("scope_preset")}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {presets.map((p) => chip(p, "preset", presetLinks.some((l) => l.targetId === p.id)))}
+              </div>
+            </div>
+          )}
+
+          {regexes.length > 0 && (
+            <div className="px-3 py-2.5">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
+                {regexSectionLabel || t("scope_regex")}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {regexes.map((r) => chip(r, "regex", regexLinks.some((l) => l.targetId === r.id)))}
+              </div>
+            </div>
+          )}
+
+          {characters.length === 0 && personas.length === 0 && lorebooks.length === 0 && scripts.length === 0 && presets.length === 0 && regexes.length === 0 && (
             <div className="px-3 py-4 text-center text-[12px] text-t3">
               {emptyLabel || t("lore_link_empty")}
             </div>

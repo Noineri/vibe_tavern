@@ -6,6 +6,23 @@ const { render, screen } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
 const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
+const realRegexApi = await import("../../../api/regex-api.js");
+const realPresetApi = await import("../../../api/preset-api.js");
+
+const getRegexLinksMock = mock(() => Promise.resolve([] as Array<{ regexPresetId: string; targetType: "character" | "preset"; targetId: string }>));
+const setRegexLinksMock = mock(() => Promise.resolve([] as Array<{ regexPresetId: string; targetType: "character" | "preset"; targetId: string }>));
+const listPromptPresetsMock = mock(() => Promise.resolve([] as Array<{ id: string; name: string }>));
+
+mock.module("../../../api/regex-api.js", () => ({
+  ...realRegexApi,
+  getRegexLinks: getRegexLinksMock,
+  setRegexLinks: setRegexLinksMock,
+}));
+
+mock.module("../../../api/preset-api.js", () => ({
+  ...realPresetApi,
+  listPromptPresets: listPromptPresetsMock,
+}));
 
 mock.module("../../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -103,5 +120,37 @@ describe("RegexPresetEditor", () => {
     const draft = regexDraftFromRecord(baseRecord({ findRegex: "/[unclosed/g" }));
     render(<RegexPresetEditor preset={baseRecord()} draft={draft} onDraftChange={mock()} />);
     expect(screen.getByText(/Invalid regular expression|Unterminated/)).toBeTruthy();
+  });
+
+  // RX-12: forward-direction binding row (characters + prompt presets).
+  it("renders the bindings row for a saved preset and lists linked targets as pills", async () => {
+    getRegexLinksMock.mockResolvedValue([{ regexPresetId: "r1", targetType: "preset", targetId: "pp1" }]);
+    listPromptPresetsMock.mockResolvedValue([{ id: "pp1", name: "Deep RP" }]);
+    render(<RegexPresetEditor preset={baseRecord()} draft={regexDraftFromRecord(baseRecord())} onDraftChange={mock()} />);
+    expect(screen.getByText("promptManager.regex.bindingsLabel")).toBeTruthy();
+    // The linked prompt preset renders as a pill once links + presets load.
+    expect(await screen.findByText("Deep RP")).toBeTruthy();
+  });
+
+  it("clicking a bound pill unlinks it via setRegexLinks (full-set PUT)", async () => {
+    getRegexLinksMock.mockResolvedValue([
+      { regexPresetId: "r1", targetType: "preset", targetId: "pp1" },
+      { regexPresetId: "r1", targetType: "character", targetId: "c1" },
+    ]);
+    listPromptPresetsMock.mockResolvedValue([{ id: "pp1", name: "Deep RP" }]);
+    const user = userEvent.setup();
+    render(<RegexPresetEditor preset={baseRecord()} draft={regexDraftFromRecord(baseRecord())} onDraftChange={mock()} />);
+    const pill = await screen.findByText("Deep RP");
+    setRegexLinksMock.mockClear();
+    await user.click(pill);
+    expect(setRegexLinksMock).toHaveBeenCalledTimes(1);
+    // Only the preset link is removed; the character link survives in the
+    // full replacement set.
+    expect(setRegexLinksMock).toHaveBeenLastCalledWith("r1", [{ targetType: "character", targetId: "c1" }]);
+  });
+
+  it("hides the bindings row for a new unsaved preset (nothing to bind yet)", () => {
+    render(<RegexPresetEditor preset={null} draft={emptyRegexDraft()} onDraftChange={mock()} />);
+    expect(screen.queryByText("promptManager.regex.bindingsLabel")).toBeNull();
   });
 });

@@ -2403,5 +2403,17 @@
   "promptManager.regex.testInvalidPattern": "Некорректный паттерн — проверьте синтаксис /pattern/flags.",
   "promptManager.regex.deleteTitle": "Удалить regex-пресет",
   "promptManager.regex.deleteBody": "Удалить «{name}»? Это действие нельзя отменить.",
-  "promptManager.regex.deleteConfirm": "Удалить"
+  "promptManager.regex.deleteConfirm": "Удалить",
+  "scope_preset": "Пресет промпта",
+  "scope_regex": "Regex-пресет",
+  "bound_regex_label": "Привязанные regex-пресеты",
+  "bound_regex_hint": "Regex-пресеты, которые преобразуют текст в любом чате с этим персонажем. Переключите, чтобы привязать или отвязать — то же самое, что привязка со стороны regex-пресета.",
+  "bound_regex_add": "Привязать regex-пресет",
+  "bound_regex_empty": "Нет доступных regex-пресетов.",
+  "bound_regex_section": "Regex-пресеты",
+  "promptManager.regex.bindingsLabel": "Привязки",
+  "promptManager.regex.bindingsAdd": "Привязать цель",
+  "promptManager.regex.bindingsEmpty": "Нет доступных персонажей или пресетов промпта.",
+  "promptManager.regex.sectionCharacters": "Персонажи",
+  "promptManager.regex.sectionPresets": "Пресеты промпта"
 }

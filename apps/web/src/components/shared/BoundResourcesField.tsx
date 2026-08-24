@@ -31,8 +31,11 @@ import {
   listAllScripts,
   listCharacterScripts,
   listPersonaScripts,
+  getRegexLinks,
+  setRegexLinks,
+  listAllRegexPresets,
 } from "../../app-client.js";
-import type { LorebookRecord, ScriptRecord } from "../../api/types.js";
+import type { LorebookRecord, RegexPresetRecord, ScriptRecord } from "../../api/types.js";
 import { CustomTooltip } from "./Tooltip.js";
 
 interface BoundResourcesFieldProps {
@@ -68,12 +71,24 @@ function scriptToTarget(sc: ScriptRecord): LinkTarget {
   return { id: sc.id, name: sc.name, avatarAssetId: null };
 }
 
+/**
+ * Map a regex preset record to the LinkTarget shape. Regex presets have no
+ * avatar, so they fall back to the name-initial dot (same as lorebooks).
+ */
+function regexToTarget(rx: RegexPresetRecord): LinkTarget {
+  return { id: rx.id, name: rx.name, avatarAssetId: null };
+}
+
 export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCaption, scriptCaption }: BoundResourcesFieldProps) {
   const { t } = useT();
   const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
   const [boundIds, setBoundIds] = useState<Set<string>>(new Set());
   const [allScripts, setAllScripts] = useState<ScriptRecord[]>([]);
   const [boundScriptIds, setBoundScriptIds] = useState<Set<string>>(new Set());
+  // Regex presets bind to characters only (persona is excluded by design), so
+  // this state is loaded and rendered solely for entityKind "character".
+  const [allRegexPresets, setAllRegexPresets] = useState<RegexPresetRecord[]>([]);
+  const [boundRegexIds, setBoundRegexIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -97,6 +112,26 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
       setBoundIds(new Set(boundLb.map((lb) => lb.id)));
       setAllScripts(allSc);
       setBoundScriptIds(new Set(boundSc.map((sc) => sc.id)));
+      if (entityKind === "character") {
+        // No list-by-character endpoint exists for regex presets (unlike
+        // lorebooks/scripts) — reverse the per-preset link sets instead. N+1
+        // is acceptable here: regex preset counts are small and local-first.
+        // Isolated from the lorebook/script load above: a regex API failure
+        // degrades this group to empty without breaking the others.
+        try {
+          const allRx = await listAllRegexPresets();
+          const linkSets = await Promise.all(allRx.map((rx) => getRegexLinks(rx.id)));
+          const boundRx = new Set<string>();
+          allRx.forEach((rx, i) => {
+            if (linkSets[i].some((l) => l.targetType === "character" && l.targetId === entityId)) boundRx.add(rx.id);
+          });
+          setAllRegexPresets(allRx);
+          setBoundRegexIds(boundRx);
+        } catch {
+          setAllRegexPresets([]);
+          setBoundRegexIds(new Set());
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -113,6 +148,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
   // derive from this list and the `lorebooks` prop.
   const links = [...boundIds].map((id) => ({ targetType: "lorebook" as const, targetId: id }));
   const scriptLinks = [...boundScriptIds].map((id) => ({ targetType: "script" as const, targetId: id }));
+  const regexLinks = [...boundRegexIds].map((id) => ({ targetType: "regex" as const, targetId: id }));
 
   const handleSetLinks = useCallback(
     async (next: { targetType: "lorebook"; targetId: string }[]) => {
@@ -147,8 +183,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
     [boundIds, entityKind, entityId, refresh],
   );
 
-  const handleSetScriptLinks = useCallback(
-    async (next: { targetType: "script"; targetId: string }[]) => {
+  const handleSetScriptLinks = useCallback(    async (next: { targetType: "script"; targetId: string }[]) => {
       const nextIds = new Set(next.map((l) => l.targetId));
       const added = [...nextIds].filter((id) => !boundScriptIds.has(id));
       const removed = [...boundScriptIds].filter((id) => !nextIds.has(id));
@@ -177,6 +212,40 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
       }
     },
     [boundScriptIds, entityKind, entityId, refresh],
+  );
+
+  const handleSetRegexLinks = useCallback(
+    async (next: { targetType: "regex"; targetId: string }[]) => {
+      const nextIds = new Set(next.map((l) => l.targetId));
+      const added = [...nextIds].filter((id) => !boundRegexIds.has(id));
+      const removed = [...boundRegexIds].filter((id) => !nextIds.has(id));
+      const changed = [...added, ...removed];
+      if (changed.length === 0) return;
+
+      // Same read-modify-write pattern as lorebooks/scripts: setRegexLinks
+      // replaces the preset's whole link set, so toggling this character's
+      // binding is a per-preset round-trip. Regex links are character-only
+      // here (persona never gets this group), so the entity link is always
+      // targetType "character".
+      setBoundRegexIds(nextIds);
+      try {
+        for (const rxId of changed) {
+          setBusyId(rxId);
+          const current = await getRegexLinks(rxId);
+          const isAdding = nextIds.has(rxId);
+          const entityLink = { targetType: "character" as const, targetId: entityId };
+          const updated = isAdding
+            ? [...current, entityLink]
+            : current.filter((l) => !(l.targetType === "character" && l.targetId === entityId));
+          await setRegexLinks(rxId, updated);
+        }
+      } catch {
+        void refresh();
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [boundRegexIds, entityId, refresh],
   );
 
   if (loading) {
@@ -243,6 +312,33 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
       />
       {scriptCaption && (
         <p className="mb-2 mt-1 font-ui text-[11px] leading-snug text-t4">{scriptCaption}</p>
+      )}
+
+      {entityKind === "character" && (
+        <>
+          <div className="mt-3 mb-1.5 flex items-center gap-1.5">
+            <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
+              {t("bound_regex_label")}
+            </span>
+            <CustomTooltip content={t("bound_regex_hint")}>
+              <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
+            </CustomTooltip>
+          </div>
+          <LinkBindingPopover
+            links={regexLinks}
+            characters={[]}
+            personas={[]}
+            regexes={allRegexPresets.map(regexToTarget)}
+            onSetLinks={(newLinks) => {
+              void handleSetRegexLinks(newLinks as { targetType: "regex"; targetId: string }[]);
+            }}
+            t={t}
+            isMobile={isMobile}
+            tooltipLabel={t("bound_regex_add")}
+            emptyLabel={t("bound_regex_empty")}
+            regexSectionLabel={t("bound_regex_section")}
+          />
+        </>
       )}
     </div>
   );

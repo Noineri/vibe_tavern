@@ -94,6 +94,11 @@ mock.module("../../app-client.js", () => ({
 		listPersonaScripts: () => Promise.resolve([]),
 		getScriptLinks: () => Promise.resolve([]),
 		setScriptLinks: () => Promise.resolve([]),
+		// RX-12: regex binding functions — same empty/no-op treatment so the
+		// field's regex group renders without the network.
+		listAllRegexPresets: () => Promise.resolve([]),
+		getRegexLinks: () => Promise.resolve([]),
+		setRegexLinks: () => Promise.resolve([]),
 }));
 
 // chat-store: spread the REAL module first (preserves every other export for

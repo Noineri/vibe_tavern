@@ -6,6 +6,11 @@ import { Checkbox } from "../../shared/Checkbox.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { Icons } from "../../shared/icons.js";
 import { inputCls, monoCls, lblCls } from "../../build/fields/field-styles.js";
+import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { useIsMobile } from "../../../hooks/use-mobile.js";
+import { useAllCharacters } from "../../../stores/snapshot-store.js";
+import { getRegexLinks, setRegexLinks } from "../../../api/regex-api.js";
+import { listPromptPresets } from "../../../api/preset-api.js";
 import { compileRegexScript, parseFindRegex } from "@vibe-tavern/prompt-pipeline";
 import { applyTargetFlags, regexApplyTargetOf, brandId, REGEX_PLACEMENT, type RegexApplyTarget, type RegexPlacement, type RegexPreset, type RegexSubstituteMode } from "@vibe-tavern/domain";
 import type { RegexPresetRecord } from "../../../api/types.js";
@@ -95,7 +100,67 @@ const SUBSTITUTE_OPTIONS: Array<{ value: RegexSubstituteMode; labelKey: I18nKey 
  */
 export function RegexPresetEditor({ preset, draft, onDraftChange }: RegexPresetEditorProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [testInput, setTestInput] = useState("");
+
+  // ── Bindings (RX-12) ──
+  // Forward-direction binding: this preset → characters + prompt presets.
+  // Characters come from the same snapshot-store hook LorebookEditor uses;
+  // prompt presets load lazily via the API (the editor is only mounted inside
+  // the Prompt Manager, so a per-open fetch is cheap). Links are loaded for
+  // the SELECTED (already saved) preset; a new unsaved preset shows no
+  // bindings section — there is nothing to bind until it exists.
+  const allCharacters = useAllCharacters();
+  const [bindLinks, setBindLinks] = useState<Array<{ targetType: "character" | "preset"; targetId: string }>>([]);
+  const [promptPresets, setPromptPresets] = useState<Array<{ id: string; name: string }>>([]);
+  const presetId = preset?.id ?? null;
+
+  useEffect(() => {
+    setBindLinks([]);
+    if (!presetId) return;
+    let cancelled = false;
+    // Load failures degrade to an empty binding row (non-blocking) — the user
+    // can retry by reselecting the preset.
+    getRegexLinks(presetId)
+      .then((rows) => { if (!cancelled) setBindLinks(rows.map((r) => ({ targetType: r.targetType, targetId: r.targetId }))); })
+      .catch(() => { if (!cancelled) setBindLinks([]); });
+    listPromptPresets()
+      .then((list) => { if (!cancelled) setPromptPresets(list.map((p) => ({ id: p.id, name: p.name }))); })
+      .catch(() => { if (!cancelled) setPromptPresets([]); });
+    return () => { cancelled = true; };
+  }, [presetId]);
+
+  const characterTargets: LinkTarget[] = useMemo(
+    () =>
+      allCharacters.map((c) => ({
+        id: c.id,
+        name: c.name,
+        avatarAssetId: c.avatarAssetId,
+        kind: "characters" as const,
+        avatarExt: c.avatarExt,
+        avatarFullExt: c.avatarFullExt,
+        avatarFullAssetId: c.avatarFullAssetId,
+        updatedAt: c.updatedAt,
+      })),
+    [allCharacters],
+  );
+  const presetTargets: LinkTarget[] = useMemo(
+    () => promptPresets.map((p) => ({ id: p.id, name: p.name, avatarAssetId: null })),
+    [promptPresets],
+  );
+
+  const handleSetBindLinks = (next: LinkBindingRecord[]) => {
+    if (!presetId) return;
+    // The popover's union is wider than this endpoint accepts; this editor
+    // only offers character/preset sections, so the guard narrows, never drops.
+    const narrowed = next.filter(
+      (l): l is { targetType: "character" | "preset"; targetId: string } =>
+        l.targetType === "character" || l.targetType === "preset",
+    );
+    const prev = bindLinks;
+    setBindLinks(narrowed); // optimistic
+    setRegexLinks(presetId, narrowed).catch(() => setBindLinks(prev)); // revert on failure
+  };
 
   const update = <K extends keyof RegexPresetDraft>(key: K, value: RegexPresetDraft[K]) => {
     onDraftChange({ ...draft, [key]: value });
@@ -304,6 +369,26 @@ export function RegexPresetEditor({ preset, draft, onDraftChange }: RegexPresetE
           ))}
         </div>
       </div>
+
+      {/* Bindings (RX-12) — bind this preset to characters + prompt presets */}
+      {presetId && (
+        <div>
+          <div className={lblCls}>{t("promptManager.regex.bindingsLabel")}</div>
+          <LinkBindingPopover
+            links={bindLinks}
+            characters={characterTargets}
+            personas={[]}
+            presets={presetTargets}
+            onSetLinks={handleSetBindLinks}
+            t={t}
+            isMobile={isMobile}
+            tooltipLabel={t("promptManager.regex.bindingsAdd")}
+            emptyLabel={t("promptManager.regex.bindingsEmpty")}
+            characterSectionLabel={t("promptManager.regex.sectionCharacters")}
+            presetSectionLabel={t("promptManager.regex.sectionPresets")}
+          />
+        </div>
+      )}
 
       {/* Live test pane */}
       <div className="rounded-md border border-border2 p-3">

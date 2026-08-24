@@ -2383,5 +2383,17 @@
   "promptManager.regex.testInvalidPattern": "Invalid pattern — check the /pattern/flags syntax.",
   "promptManager.regex.deleteTitle": "Delete Regex Preset",
   "promptManager.regex.deleteBody": "Delete \"{name}\"? This cannot be undone.",
-  "promptManager.regex.deleteConfirm": "Delete"
+  "promptManager.regex.deleteConfirm": "Delete",
+  "scope_preset": "Prompt preset",
+  "scope_regex": "Regex preset",
+  "bound_regex_label": "Bound regex presets",
+  "bound_regex_hint": "Regex presets that transform text in any chat with this character. Toggle to link or unlink — the same as binding from the regex preset side.",
+  "bound_regex_add": "Link a regex preset",
+  "bound_regex_empty": "No regex presets available.",
+  "bound_regex_section": "Regex presets",
+  "promptManager.regex.bindingsLabel": "Bindings",
+  "promptManager.regex.bindingsAdd": "Link target",
+  "promptManager.regex.bindingsEmpty": "No characters or prompt presets available.",
+  "promptManager.regex.sectionCharacters": "Characters",
+  "promptManager.regex.sectionPresets": "Prompt presets"
 }
