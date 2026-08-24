@@ -26,7 +26,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
@@ -44,7 +44,7 @@ import type {
 } from "@vibe-tavern/db";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
-import type { RegenerateOverride, CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
@@ -342,6 +342,19 @@ export interface ScriptRuntimeApi {
 	bindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
 	/** Unbind a visual (reassigns the silent default if it was the one removed). */
 	unbindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
+}
+
+// ─── Regex presets ───────────────────────────────────────────────────
+
+export interface RegexRuntimeApi {
+	listAllRegexPresets: () => Promise<RegexPreset[]>;
+	getRegexPreset: (id: string) => Promise<RegexPreset | null>;
+	createRegexPreset: (body: CreateRegexPresetInput) => Promise<RegexPreset>;
+	updateRegexPreset: (id: string, body: UpdateRegexPresetInput) => Promise<RegexPreset | null>;
+	deleteRegexPreset: (id: string) => Promise<void>;
+	getRegexLinks: (id: string) => Promise<RegexLink[]>;
+	setRegexLinks: (id: string, links: Array<{ targetType: "character" | "preset"; targetId: string }>) => Promise<RegexLink[]>;
+	resolveActiveRegex: (query: { characterId?: string; presetId?: string }) => Promise<RegexPreset[]>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────
@@ -881,6 +894,7 @@ export interface RuntimeApi {
 	persona: PersonaRuntimeApi;
 	lorebook: LorebookRuntimeApi;
 	script: ScriptRuntimeApi;
+	regex: RegexRuntimeApi;
 	provider: ProviderRuntimeApi;
 	proxy: ProxyRuntimeApi;
 	preset: PresetRuntimeApi;

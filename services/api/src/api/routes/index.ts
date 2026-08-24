@@ -6,6 +6,7 @@ import { createCharacterRoutes } from "./character.js";
 import { createPersonaRoutes } from "./persona.js";
 import { createLorebookRoutes } from "./lorebook.js";
 import { createScriptRoutes } from "./script.js";
+import { createRegexRoutes } from "./regex.js";
 import { createProviderRoutes } from "./provider.js";
 import { createProxyRoutes } from "./proxy.js";
 import { createPresetRoutes } from "./preset.js";
@@ -33,6 +34,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createPersonaRoutes(runtime.persona))
     .route("/", createLorebookRoutes(runtime.lorebook))
     .route("/", createScriptRoutes(runtime.script))
+    .route("/", createRegexRoutes(runtime.regex))
     .route("/", createProviderRoutes(runtime.provider))
     .route("/", createProxyRoutes(runtime.proxy))
     .route("/", createPresetRoutes(runtime.preset))
