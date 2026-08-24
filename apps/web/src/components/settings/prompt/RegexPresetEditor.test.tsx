@@ -89,8 +89,10 @@ describe("RegexPresetEditor", () => {
     const draft = regexDraftFromRecord(baseRecord({ markdownOnly: true, promptOnly: false }));
     expect(draft.applyTarget).toBe("display");
     render(<RegexPresetEditor preset={baseRecord()} draft={draft} onDraftChange={onDraftChange} />);
-    const displayRadio = screen.getByDisplayValue("display") as HTMLInputElement;
-    expect(displayRadio.checked).toBe(true);
+    // SegmentedControl — the checked segment carries aria-checked=true.
+    const segments = screen.getAllByRole("radio");
+    const displaySeg = segments.find((s) => s.getAttribute("value") === "display") as HTMLElement;
+    expect(displaySeg.getAttribute("aria-checked")).toBe("true");
   });
 
   it("switching apply-target to prompt calls onDraftChange with updated draft", async () => {
@@ -99,7 +101,8 @@ describe("RegexPresetEditor", () => {
     expect(draft.applyTarget).toBe("persist");
     const user = userEvent.setup();
     render(<RegexPresetEditor preset={baseRecord()} draft={draft} onDraftChange={onDraftChange} />);
-    await user.click(screen.getByDisplayValue("prompt"));
+    const promptSeg = screen.getAllByRole("radio").find((s) => s.getAttribute("value") === "prompt") as HTMLElement;
+    await user.click(promptSeg);
     expect(onDraftChange).toHaveBeenCalled();
     const calledDraft = onDraftChange.mock.calls[0][0] as ReturnType<typeof emptyRegexDraft>;
     expect(calledDraft.applyTarget).toBe("prompt");

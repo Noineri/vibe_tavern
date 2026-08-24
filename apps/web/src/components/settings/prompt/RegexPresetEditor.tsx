@@ -3,7 +3,7 @@ import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { Checkbox } from "../../shared/Checkbox.js";
-import { CustomTooltip } from "../../shared/Tooltip.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Icons } from "../../shared/icons.js";
 import { inputCls, monoCls, lblCls } from "../../build/fields/field-styles.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
@@ -279,16 +279,16 @@ export function RegexPresetEditor({ preset, draft, onDraftChange }: RegexPresetE
       {/* Substitute macros */}
       <div>
         <label className={lblCls} htmlFor="regex-substitute">{t("promptManager.regex.fieldSubstitute")}</label>
-        <select
-          id="regex-substitute"
-          className={inputCls}
-          value={draft.substituteRegex}
-          onChange={(e) => update("substituteRegex", Number(e.target.value) as RegexSubstituteMode)}
-        >
-          {SUBSTITUTE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
-          ))}
-        </select>
+        <SegmentedControl
+          value={String(draft.substituteRegex)}
+          onChange={(v) => update("substituteRegex", Number(v) as RegexSubstituteMode)}
+          wrap
+          mobileFill
+          options={SUBSTITUTE_OPTIONS.map((o) => ({
+            value: String(o.value),
+            label: t(o.labelKey),
+          }))}
+        />
       </div>
 
       {/* Placement */}
@@ -354,23 +354,17 @@ export function RegexPresetEditor({ preset, draft, onDraftChange }: RegexPresetE
       {/* Apply-target (write-mode) */}
       <div>
         <div className={lblCls}>{t("promptManager.regex.fieldApplyTarget")}</div>
-        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={t("promptManager.regex.fieldApplyTarget")}>
-          {APPLY_TARGETS.map((a) => (
-            <CustomTooltip key={a.value} content={t(a.hintKey)}>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="regex-apply-target"
-                  value={a.value}
-                  checked={draft.applyTarget === a.value}
-                  onChange={() => update("applyTarget", a.value)}
-                  className="accent-accent"
-                />
-                <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t1">{t(a.labelKey)}</span>
-              </label>
-            </CustomTooltip>
-          ))}
-        </div>
+        <SegmentedControl
+          value={draft.applyTarget}
+          onChange={(v) => update("applyTarget", v as RegexApplyTarget)}
+          wrap
+          mobileFill
+          options={APPLY_TARGETS.map((a) => ({
+            value: a.value,
+            label: t(a.labelKey),
+            tooltip: t(a.hintKey),
+          }))}
+        />
       </div>
 
       {/* Bindings (RX-12) — bind this preset to characters + prompt presets */}
