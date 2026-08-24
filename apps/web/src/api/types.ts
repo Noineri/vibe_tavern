@@ -567,6 +567,39 @@ export interface ScriptLinkRecord {
   targetId: string;
 }
 
+// ─── Regex presets (REGEX_EXTENSION_PLAN, RX-11) ─────────────────────────────
+
+export interface RegexPresetRecord {
+  id: string;
+  name: string;
+  /** Find pattern in ST's `/pattern/flags` notation. */
+  findRegex: string;
+  /** Replacement; supports `{{match}}`, `$1`.. capture groups and `$<name>`. */
+  replaceString: string;
+  /** ST "Trim Out" — substrings stripped from each match before replacement. */
+  trimStrings: string[];
+  /** Macro substitution mode into the find pattern: 0=NONE, 1=RAW, 2=ESCAPED. */
+  substituteRegex: number;
+  disabled: boolean;
+  markdownOnly: boolean;
+  promptOnly: boolean;
+  runOnEdit: boolean;
+  minDepth: number | null;
+  maxDepth: number | null;
+  /** Hooks this preset runs at (ST numeric codes: 1/2/5/6). */
+  placement: number[];
+  isGlobal: boolean;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RegexLinkRecord {
+  regexPresetId: string;
+  targetType: "character" | "preset";
+  targetId: string;
+}
+
 // ─── Dice ──────────────────────────────────────────────────────────────
 //
 // Wire types for the chat-scoped Dice API (DICE_SYSTEM_FRONTEND_PLAN, Wave F1).

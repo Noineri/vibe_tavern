@@ -13,6 +13,7 @@ import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.
 import { serializeStPreset, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import {
   loadPromptCanvasLoreEntries,
@@ -23,8 +24,20 @@ import {
   loadPromptCanvasSummaries,
   type CanvasSummaryEntry,
 } from "../../lib/prompt-canvas-summary.js";
+import { RegexPresetList } from "../settings/prompt/RegexPresetList.js";
+import { RegexPresetEditor, regexDraftFromRecord, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/RegexPresetEditor.js";
+import {
+  listAllRegexPresets,
+  createRegexPreset,
+  updateRegexPreset,
+  deleteRegexPreset,
+} from "../../api/regex-api.js";
+import type { RegexPresetRecord } from "../../api/types.js";
+import { applyTargetFlags, type RegexPlacement, type RegexSubstituteMode } from "@vibe-tavern/domain";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+type PromptManagerTab = "presets" | "regex";
 
 export type DraftData = {
   name: string;
@@ -288,6 +301,142 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const isMobile = useIsMobile();
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
+  // ─── Regex Presets tab (RX-11) ────────────────────────────────────────────
+  // Local state only — no Zustand store in this unit. Presets load lazily on
+  // first Regex-tab activation.
+  const [activeTab, setActiveTab] = useState<PromptManagerTab>("presets");
+  const [regexPresets, setRegexPresets] = useState<RegexPresetRecord[]>([]);
+  const [regexLoadState, setRegexLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [activeRegexPresetId, setActiveRegexPresetId] = useState<string | null>(null);
+  const [regexDraft, setRegexDraft] = useState<RegexPresetDraft>(emptyRegexDraft);
+  const [regexDirty, setRegexDirty] = useState(false);
+  const [regexSaveState, setRegexSaveState] = useState<SaveState>("idle");
+  const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
+
+  const activeRegexPreset = regexPresets.find((p) => p.id === activeRegexPresetId) ?? null;
+
+  // Lazy-load regex presets on first tab activation.
+  useEffect(() => {
+    if (activeTab !== "regex" || regexLoadState !== "idle") return;
+    let cancelled = false;
+    setRegexLoadState("loading");
+    void listAllRegexPresets()
+      .then((list) => {
+        if (cancelled) return;
+        setRegexPresets(list);
+        setRegexLoadState("ready");
+        if (list.length > 0 && activeRegexPresetId === null) {
+          setActiveRegexPresetId(list[0].id);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRegexLoadState("error");
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, regexLoadState]);
+
+  // Sync the editor draft when the selected regex preset changes.
+  useEffect(() => {
+    if (activeRegexPreset) {
+      setRegexDraft(regexDraftFromRecord(activeRegexPreset));
+    } else {
+      setRegexDraft(emptyRegexDraft());
+    }
+    setRegexDirty(false);
+    setRegexSaveState("idle");
+  }, [activeRegexPresetId]);
+
+  function handleRegexDraftChange(next: RegexPresetDraft) {
+    setRegexDraft(next);
+    setRegexDirty(true);
+    setRegexSaveState("idle");
+  }
+
+  function handleRegexSelect(id: string) {
+    setActiveRegexPresetId(id);
+  }
+
+  function handleRegexAdd(name: string) {
+    const flags = applyTargetFlags("persist");
+    void createRegexPreset({
+      name,
+      findRegex: "/.*/g",
+      replaceString: "",
+      markdownOnly: flags.markdownOnly,
+      promptOnly: flags.promptOnly,
+    }).then((created) => {
+      setRegexPresets((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
+      setActiveRegexPresetId(created.id);
+    });
+  }
+
+  function handleRegexRename(id: string, newName: string) {
+    void updateRegexPreset(id, { name: newName }).then((updated) => {
+      if (updated) {
+        setRegexPresets((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      }
+    });
+  }
+
+  function handleRegexReorder(updates: Array<{ id: string; sortOrder: number }>) {
+    for (const u of updates) {
+      void updateRegexPreset(u.id, { sortOrder: u.sortOrder }).then((updated) => {
+        if (updated) {
+          setRegexPresets((prev) =>
+            prev.map((p) => (p.id === updated.id ? updated : p)).sort((a, b) => a.sortOrder - b.sortOrder),
+          );
+        }
+      });
+    }
+  }
+
+  function handleRegexDelete() {
+    if (!activeRegexPresetId) return;
+    const deleteId = activeRegexPresetId;
+    const remaining = regexPresets.filter((p) => p.id !== deleteId);
+    const fallbackId = remaining.length > 0 ? remaining[0].id : null;
+    setActiveRegexPresetId(fallbackId);
+    setRegexConfirmDeleteOpen(false);
+    setRegexDirty(false);
+    setRegexSaveState("idle");
+    void deleteRegexPreset(deleteId).then(() => {
+      setRegexPresets((prev) => prev.filter((p) => p.id !== deleteId));
+    });
+  }
+
+  function handleRegexSave() {
+    if (!activeRegexPresetId || !regexDirty) return;
+    setRegexSaveState("saving");
+    const flags = applyTargetFlags(regexDraft.applyTarget);
+    const trimStrings = regexDraft.trimStrings.split("\n").filter((s) => s.length > 0);
+    const minDepth = regexDraft.minDepth === "" ? null : Number(regexDraft.minDepth);
+    const maxDepth = regexDraft.maxDepth === "" ? null : Number(regexDraft.maxDepth);
+    void updateRegexPreset(activeRegexPresetId, {
+      name: regexDraft.name,
+      findRegex: regexDraft.findRegex,
+      replaceString: regexDraft.replaceString,
+      trimStrings,
+      substituteRegex: regexDraft.substituteRegex,
+      disabled: regexDraft.disabled,
+      isGlobal: regexDraft.isGlobal,
+      placement: regexDraft.placement,
+      minDepth: Number.isNaN(minDepth) ? null : minDepth,
+      maxDepth: Number.isNaN(maxDepth) ? null : maxDepth,
+      markdownOnly: flags.markdownOnly,
+      promptOnly: flags.promptOnly,
+      applyTarget: regexDraft.applyTarget,
+    }).then((updated) => {
+      if (!updated) {
+        setRegexSaveState("error");
+        return;
+      }
+      setRegexPresets((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setRegexDirty(false);
+      setRegexSaveState("saved");
+      setTimeout(() => setRegexSaveState("idle"), 2200);
+    });
+  }
+
   useEffect(() => {
     if (activePreset) {
       setDraft({
@@ -326,7 +475,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   if (!isOpen) return null;
 
   const handleClose = () => {
-    if (dirty) {
+    if (dirty || regexDirty) {
       setConfirmCloseOpen(true);
     } else {
       onClose();
@@ -554,7 +703,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           onCancel={() => setConfirmCloseOpen(false)}
           onConfirm={() => {
             setDirty(false);
+            setRegexDirty(false);
             setSaveState("idle");
+            setRegexSaveState("idle");
             setConfirmCloseOpen(false);
             onClose();
           }}
@@ -573,31 +724,78 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           onCancel={() => setConfirmDeleteOpen(false)}
         />
       )}
+      {regexConfirmDeleteOpen && (
+        <DestructiveConfirmModal
+          title={t("promptManager.regex.deleteTitle")}
+          body={<>{t("promptManager.regex.deleteBody", { name: activeRegexPreset?.name || t("unnamed") })}</>}
+          confirmLabel={t("promptManager.regex.deleteConfirm")}
+          onConfirm={handleRegexDelete}
+          onCancel={() => setRegexConfirmDeleteOpen(false)}
+        />
+      )}
 
       <MasterDetailModal
         isOpen={true}
         onClose={handleClose}
         title={t("prompt_manager_title")}
         subtitle={t("prompt_manager_sub")}
-        detailTitle={t("prompt_manager_title")}
-        dirty={dirty}
+        detailTitle={activeTab === "regex" ? t("promptManager.regex.tabLabel") : t("prompt_manager_title")}
+        dirty={activeTab === "regex" ? regexDirty : dirty}
         containerClassName="max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[920px] h-[880px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
         detailClassName="p-0"
         mobileDetailClassName="p-2 scrollbar-hide"
         headerClassName={isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-[14px]"}
-        masterContent={() => (
-          <PresetList
-            presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
-            activePresetId={input.activePresetId}
-            onSelect={(id) => { input.setActivePresetId(id); }}
-            onAdd={handleAdd}
-            onRename={handleRename}
-            onImportPreset={() => setImportModalOpen(true)}
-            onReorder={input.onReorder}
-          />
-        )}
+        headerBottom={
+          <div className="mt-3">
+            <SegmentedControl
+              value={activeTab}
+              onChange={(v) => setActiveTab(v as PromptManagerTab)}
+              options={[
+                { value: "presets", label: t("promptManager.tabPresets") },
+                { value: "regex", label: t("promptManager.regex.tabLabel") },
+              ]}
+            />
+          </div>
+        }
+        masterContent={
+          activeTab === "regex"
+            ? () => (
+                <RegexPresetList
+                  presets={regexPresets.map((p) => ({ id: p.id, name: p.name, disabled: p.disabled }))}
+                  activePresetId={activeRegexPresetId}
+                  onSelect={handleRegexSelect}
+                  onAdd={handleRegexAdd}
+                  onRename={handleRegexRename}
+                  onReorder={handleRegexReorder}
+                />
+              )
+            : () => (
+                <PresetList
+                  presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
+                  activePresetId={input.activePresetId}
+                  onSelect={(id) => { input.setActivePresetId(id); }}
+                  onAdd={handleAdd}
+                  onRename={handleRename}
+                  onImportPreset={() => setImportModalOpen(true)}
+                  onReorder={input.onReorder}
+                />
+              )
+        }
         detailContent={
+          activeTab === "regex" ? (
+            activeRegexPreset ? (
+              <RegexPresetEditor
+                preset={activeRegexPreset}
+                draft={regexDraft}
+                onDraftChange={handleRegexDraftChange}
+              />
+            ) : regexLoadState === "loading" ? (
+              <div className="flex h-full items-center justify-center p-5">
+                <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("loading")}</span>
+              </div>
+            ) : null
+          ) : (
           <>
             <div className={cn("mt-4 flex shrink-0 gap-3", isMobile ? "flex-col px-2" : "mx-5 flex-row items-center justify-between")}>
               <div>
@@ -667,8 +865,38 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               hideChatPrompts={advancedMode}
             />
           </>
+          )
         }
         footer={
+          activeTab === "regex" ? (
+            <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
+              {activeRegexPreset && (
+                <span
+                  className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+                  onClick={() => setRegexConfirmDeleteOpen(true)}
+                >
+                  <Icons.Trash /> {t("promptManager.regex.deleteConfirm")}
+                </span>
+              )}
+              <div className="ml-auto flex min-w-0 items-center gap-2.5">
+                {!isMobile && (
+                <button type="button"
+                  className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
+                  onClick={handleClose}
+                >
+                  {t("close")}
+                </button>
+                )}
+                <SaveButton
+                  dirty={regexDirty}
+                  saveState={regexSaveState}
+                  resetKey={activeRegexPresetId}
+                  onClick={handleRegexSave}
+                  label={t("save")}
+                />
+              </div>
+            </div>
+          ) : (
           <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
             {activePreset && isMobile && (
             <button type="button"
@@ -739,6 +967,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               />
             </div>
           </div>
+          )
         }
       />
     </>
