@@ -21,6 +21,7 @@ import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
+import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
 import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
@@ -143,7 +144,7 @@ export function pickBootstrapChatId<T extends string>(
 		},
 	) {
 		this.stores = stores;
-		this.resolver = new StaticPromptResolver(stores);
+		this.resolver = new StaticPromptResolver(stores, new RegexHookService(stores));
 		this.chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences);
 		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =

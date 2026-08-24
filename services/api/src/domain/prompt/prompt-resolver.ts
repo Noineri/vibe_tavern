@@ -26,9 +26,14 @@ import {
 	type LoreActivationState,
 } from "./lore-activation-engine.js";
 import { executeScripts } from "../scripts-engine/script-sandbox.js";
+import { RegexHookService } from "../regex/regex-hook-service.js";
 
 export class StaticPromptResolver implements PromptAssemblyResolver {
-	constructor(private readonly stores: StoreContainer) {}
+	constructor(
+		private readonly stores: StoreContainer,
+		/** WORLD_INFO regex hook (RX-9) — transforms activated lore-entry content. */
+		private readonly regexHooks: RegexHookService,
+	) {}
 
 	async getCharacter(characterId: string): Promise<CharacterRecord> {
 		const character = await this.stores.characters.getById(characterId);
@@ -168,7 +173,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		//    structured activation reason through for the prompt trace.
 		const reasonById = new Map(result.activatedEntries.map(e => [e.id, e]));
 		const activatedIds = new Set(result.activatedEntries.map(e => e.id));
-		return lorebookSets
+		const activeEntries: ActiveLoreEntry[] = lorebookSets
 			.flatMap(lb => lb.entries)
 			.filter(e => activatedIds.has(e.id))
 			.map(e => {
@@ -213,6 +218,16 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				matchedKeys: detail.matchedKeys,
 				matchCount: detail.matchCount,
 			};
+		});
+
+		// 10. WORLD_INFO regex hook (RX-9): transform activated entry CONTENT in
+		//     the prompt view only — the lorebook row is shared content and is
+		//     never rewritten. The macroMap built above is reused as the engine's
+		//     macro source (no second context is built).
+		return this.regexHooks.transformWorldInfo(input.chatId, activeEntries, {
+			characterId: chat.characterId,
+			presetId: chat.promptPresetId ?? null,
+			macroMap,
 		});
 	}
 
