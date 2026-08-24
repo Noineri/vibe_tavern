@@ -14,6 +14,16 @@ import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 
+/** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
+export interface RegexHookContext {
+  chatId: string;
+  /** Which hook is firing. */
+  hook: "USER_INPUT" | "AI_OUTPUT";
+}
+
+/** Synchronous text transformer invoked at one hook point. */
+export type RegexTextHook = (text: string, ctx: RegexHookContext) => string;
+
 /**
  * Coordinates the prepare → execute → append cycle for all AI generation paths:
  * send, generate (continue), regenerate — each with streaming and non-streaming variants.
@@ -33,7 +43,17 @@ export class LiveChatOrchestrator {
     private readonly resolveStrategy: (chatId: string) => Promise<ChatModeStrategy>,
     /** Join the preceding forward-state job before any new prompt is built. */
     private readonly waitForForwardState?: (chatId: string, signal?: AbortSignal) => Promise<void>,
+    /** RX-5: regex transformation seam. Absent ⇒ every hook is the identity — byte-for-byte current behavior. Wired to the store+engine in RX-8. */
+    private readonly regexHooks?: { onUserInput: RegexTextHook; onAiOutput: RegexTextHook },
   ) {}
+
+  /** RX-5 regex seam (no-op until RX-8 wires the store+engine): runs `text` through the injected hook, or returns it unchanged when none is present. */
+  private applyRegexLayer(hook: "USER_INPUT" | "AI_OUTPUT", chatId: string, text: string): string {
+    if (!this.regexHooks) return text;
+    return hook === "USER_INPUT"
+      ? this.regexHooks.onUserInput(text, { chatId, hook })
+      : this.regexHooks.onAiOutput(text, { chatId, hook });
+  }
 
   // ─── Non-streaming methods ────────────────────────────────────────────
 
@@ -65,7 +85,9 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
+    // RX-5 regex seam (no-op until RX-8 wires the store+engine): USER_INPUT transform.
+    const transformedContent = this.applyRegexLayer("USER_INPUT", input.chatId, input.content);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
@@ -118,6 +140,8 @@ export class LiveChatOrchestrator {
     const { mainContent: sendText, reasoning: sendReasoning } = extractThinkingTags(reply, reasoning);
     reply = sendText;
     reasoning = sendReasoning;
+    // RX-5 regex seam (no-op until RX-8 wires the store+engine): AI_OUTPUT transform (main content only).
+    reply = this.applyRegexLayer("AI_OUTPUT", input.chatId, reply);
 
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
@@ -319,7 +343,9 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
+    // RX-5 regex seam (no-op until RX-8 wires the store+engine): USER_INPUT transform.
+    const transformedContent = this.applyRegexLayer("USER_INPUT", input.chatId, input.content);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
@@ -738,12 +764,14 @@ export class LiveChatOrchestrator {
     // Some providers return <thinking> tags in content instead of reasoning_content
     const textWithPrefill = ensurePrefillInResponse(rawText, prefill);
     const { mainContent: finalText, reasoning: finalReasoning } = extractThinkingTags(textWithPrefill, rawReasoning);
+    // RX-5 regex seam (no-op until RX-8 wires the store+engine): AI_OUTPUT transform (main content only) — covers ALL stream paths funneling through drainStream.
+    const transformedFinalText = this.applyRegexLayer("AI_OUTPUT", input.chatId, finalText);
 
     if (reasoningStartMs && reasoningDurationMs === null) {
       reasoningDurationMs = Date.now() - reasoningStartMs;
     }
 
-    const snapshot = await onFinal(finalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs, extractedToolCalls.length > 0 ? extractedToolCalls : undefined, extractedToolResults.length > 0 ? extractedToolResults : undefined);
+    const snapshot = await onFinal(transformedFinalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs, extractedToolCalls.length > 0 ? extractedToolCalls : undefined, extractedToolResults.length > 0 ? extractedToolResults : undefined);
 
     // ── Yield reasoning-done + finish ──
     if (reasoningAccumulator || streamResult.hasRedactedReasoning) {
