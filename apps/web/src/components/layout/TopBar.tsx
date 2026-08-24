@@ -14,6 +14,7 @@ import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MediaMenu } from "../chat/MediaMenu.js";
 import { UpdateBadge } from "./UpdateBadge.js";
+import { useActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 
 interface TopBarProps {
   railHidden?: boolean;
@@ -55,6 +56,16 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
   const activatedLoreCount = activePromptTrace?.activatedLoreEntries.length ?? 0;
   const retrievedMemoryCount = activePromptTrace?.retrievedMemories.length ?? 0;
   const activePresetName = promptPresets.find((p) => p.id === activePromptPresetId)?.name ?? t("topbar_default");
+
+  // ── Global-regex indicator (RX-14) ────────────────────────────────────────
+  // Right of the preset selector: shows how many ENABLED regex presets are
+  // active in this chat's context (global + character-bound + preset-bound —
+  // the same 3-source union /api/regex/resolve-active returns). Hidden when
+  // none apply. Reuses the RX-13 display hook's module cache, so TopBar and
+  // every MessageBlock share ONE resolution per chat context.
+  const activeRegexPresets = useActiveRegexPresets(characterId, activePromptPresetId);
+  const activeRegexCount = activeRegexPresets.filter((p) => !p.disabled).length;
+  const activeRegexNames = activeRegexPresets.filter((p) => !p.disabled).map((p) => p.name);
 
   const canSwitchPresets = promptPresets.length > 0;
 
@@ -164,6 +175,25 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
               </Select.Content>
             </Select.Portal>
           </Select.Root>
+
+          {activeRegexCount > 0 && (
+            <CustomTooltip
+              content={
+                activeRegexCount === 1
+                  ? t("topbar_regex_active_one", { name: activeRegexNames[0] })
+                  : t("topbar_regex_active_many", { n: String(activeRegexCount) })
+              }
+            >
+              <div
+                data-testid="topbar-regex-indicator"
+                className="flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-[3px] font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase leading-tight text-accent-t transition-colors hover:bg-accent-dim"
+                onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}
+              >
+                <Icons.tool />
+                <span>{activeRegexCount}</span>
+              </div>
+            </CustomTooltip>
+          )}
 
           <div className="flex-1 min-w-2"/>
 

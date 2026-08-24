@@ -2275,6 +2275,8 @@ export default interface Resources {
     "topbar_memory": "Memory",
     "topbar_play_mode": "Return to Game",
     "topbar_prompt_preset": "Prompt preset",
+    "topbar_regex_active_many": "Regex active: {n}",
+    "topbar_regex_active_one": "Regex active: {name}",
     "trace_chat_history": "Chat History",
     "trace_compaction_label": "Context Compaction:",
     "trace_error": "Failed to load traces",
