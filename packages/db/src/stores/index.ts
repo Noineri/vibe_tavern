@@ -68,6 +68,12 @@ export type {
   ScriptLink,
 } from './script-store.js';
 
+export { RegexStore } from './regex-store.js';
+export type {
+  CreateRegexPresetData,
+  UpdateRegexPresetData,
+} from './regex-store.js';
+
 export { CoauthorModuleStore } from './coauthor-module-store.js';
 export type {
   CoauthorModuleRow,
