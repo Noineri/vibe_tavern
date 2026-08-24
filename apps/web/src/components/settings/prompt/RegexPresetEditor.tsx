@@ -403,17 +403,18 @@ export function RegexPresetEditor({ preset, draft, onDraftChange }: RegexPresetE
           value={testInput}
           onChange={(e) => setTestInput(e.target.value)}
           placeholder={t("promptManager.regex.testInputPlaceholder")}
+          aria-label={t("promptManager.regex.testInputLabel")}
           minRows={2}
           maxRows={6}
         />
         <div className="mt-2">
           <div className="font-ui text-[11px] text-t4">{t("promptManager.regex.testOutputLabel")}</div>
           {testResult.kind === "error" ? (
-            <div className="mt-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1.5 font-mono text-xs text-danger">
+            <div role="alert" aria-label={t("promptManager.regex.testOutputLabel")} className="mt-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1.5 font-mono text-xs text-danger">
               {testResult.output}
             </div>
           ) : (
-            <div className="mt-1 rounded-md border border-border bg-s3 px-2 py-1.5 font-mono text-xs text-t1 whitespace-pre-wrap min-h-[2em]">
+            <div aria-label={t("promptManager.regex.testOutputLabel")} className="mt-1 rounded-md border border-border bg-s3 px-2 py-1.5 font-mono text-xs text-t1 whitespace-pre-wrap min-h-[2em]">
               {testResult.output || <span className="text-t4">{t("promptManager.regex.testOutputEmpty")}</span>}
             </div>
           )}

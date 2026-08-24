@@ -1637,6 +1637,7 @@ export default interface Resources {
     "promptManager.regex.substituteNone": "None",
     "promptManager.regex.substituteRaw": "Raw",
     "promptManager.regex.tabLabel": "Regex Presets",
+    "promptManager.regex.testInputLabel": "Test input",
     "promptManager.regex.testInputPlaceholder": "Type sample text to test the regex…",
     "promptManager.regex.testInvalidPattern": "Invalid pattern — check the /pattern/flags syntax.",
     "promptManager.regex.testOutputEmpty": "(no input)",

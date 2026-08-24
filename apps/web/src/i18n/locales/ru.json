@@ -2399,6 +2399,7 @@
   "promptManager.regex.applyDisplayPromptHint": "Трансформирует и отображение, и промпт; сохранённое сообщение остаётся оригинальным.",
   "promptManager.regex.testTitle": "Живой тест",
   "promptManager.regex.testInputPlaceholder": "Введите пример текста для проверки regex…",
+  "promptManager.regex.testInputLabel": "Тестовый ввод",
   "promptManager.regex.testOutputLabel": "Результат",
   "promptManager.regex.testOutputEmpty": "(нет ввода)",
   "promptManager.regex.testInvalidPattern": "Некорректный паттерн — проверьте синтаксис /pattern/flags.",

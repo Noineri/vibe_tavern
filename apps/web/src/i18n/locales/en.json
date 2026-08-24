@@ -2379,6 +2379,7 @@
   "promptManager.regex.applyDisplayPromptHint": "Transforms both the rendered display and the prompt; the stored message keeps the original.",
   "promptManager.regex.testTitle": "Live Test",
   "promptManager.regex.testInputPlaceholder": "Type sample text to test the regex…",
+  "promptManager.regex.testInputLabel": "Test input",
   "promptManager.regex.testOutputLabel": "Output",
   "promptManager.regex.testOutputEmpty": "(no input)",
   "promptManager.regex.testInvalidPattern": "Invalid pattern — check the /pattern/flags syntax.",
