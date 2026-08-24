@@ -409,6 +409,26 @@ export class PromptAssemblyService {
       ?? (await this.stores.presets.listAll()).find(p => p.isDefault)?.id;
     const promptPreset = promptPresetId ? await this.resolver.getPromptPreset(promptPresetId) : null;
 
+    // RX-13: hand the chat's ACTIVE regex presets to the pipeline so
+    // prompt-affecting apply-targets (prompt / display+prompt) can transform
+    // assembled history. The FULL active set goes in — mode filtering is the
+    // pipeline's authoritative gate (see PromptAssemblyContext.regexPresets).
+    // Never-throw: a regex resolution failure degrades to "no presets" rather
+    // than breaking the send path.
+    let regexPresets: BuiltPipelineContext["context"]["regexPresets"];
+    try {
+      regexPresets = await this.stores.regex.resolveActiveRegexPresets({
+        characterId: chat.characterId,
+        presetId: promptPresetId ?? null,
+      });
+    } catch (err) {
+      logSendDebug("prompt.assemble.regex-error", {
+        chatId: chat.id as ChatId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      regexPresets = [];
+    }
+
     logSendDebug("prompt.assemble.context", {
       chatId: chat.id as ChatId,
       personaId: chat.personaId ?? "(default)",
@@ -627,6 +647,7 @@ export class PromptAssemblyService {
         scriptInjections: scriptResult.injectedMessages,
         dynamicPrompt: chat.dynamicPrompt?.trim() || null,
       },
+      regexPresets,
       instructions: {
         toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions()].filter(Boolean).join("\n") || null,
       },

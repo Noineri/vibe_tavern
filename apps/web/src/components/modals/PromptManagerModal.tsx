@@ -32,6 +32,7 @@ import {
   updateRegexPreset,
   deleteRegexPreset,
 } from "../../api/regex-api.js";
+import { invalidateActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import type { RegexPresetRecord } from "../../api/types.js";
 import { applyTargetFlags, type RegexPlacement, type RegexSubstituteMode } from "@vibe-tavern/domain";
 
@@ -367,6 +368,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     }).then((created) => {
       setRegexPresets((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
       setActiveRegexPresetId(created.id);
+      invalidateActiveRegexPresets();
     });
   }
 
@@ -374,6 +376,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     void updateRegexPreset(id, { name: newName }).then((updated) => {
       if (updated) {
         setRegexPresets((prev) => prev.map((p) => (p.id === id ? updated : p)));
+        invalidateActiveRegexPresets();
       }
     });
   }
@@ -401,6 +404,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     setRegexSaveState("idle");
     void deleteRegexPreset(deleteId).then(() => {
       setRegexPresets((prev) => prev.filter((p) => p.id !== deleteId));
+      invalidateActiveRegexPresets();
     });
   }
 
@@ -433,6 +437,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       setRegexPresets((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
       setRegexDirty(false);
       setRegexSaveState("saved");
+      invalidateActiveRegexPresets();
       setTimeout(() => setRegexSaveState("idle"), 2200);
     });
   }

@@ -1,4 +1,4 @@
-import type { DiceRollSnapshot, ExperienceReportSnapshot, PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, ExperienceReportSnapshot, PromptLayerPosition, PronounForms, RegexPreset } from "@vibe-tavern/domain";
 
 export type { PromptLayerPosition };
 
@@ -223,6 +223,14 @@ export interface PromptAssemblyContext {
    *  prior implications into a coherent continuation, NOT repeat or re-summarize
    *  the block (compounding drift guard lives in the default summary prompt). */
   priorSummaries?: Array<{ id: string; label?: string; content: string }>;
+  /** Active regex presets for this chat (RX-13): the server resolves the full
+   *  3-source union (global + character-bound + preset-bound, RX-4) and hands
+   *  it here unfiltered by mode — the MODE filter is the pipeline's job and is
+   *  authoritative: only prompt-affecting apply-targets (ST `promptOnly`, i.e.
+   *  "prompt" and "display+prompt") transform history content during assembly;
+   *  persist presets already applied at generation time (RX-5/8), display-only
+   *  presets belong to the client render seam. Absent/empty = no transform. */
+  regexPresets?: RegexPreset[];
   config?: {
     contextBudget?: number | null;
     /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */

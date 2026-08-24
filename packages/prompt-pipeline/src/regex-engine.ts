@@ -17,7 +17,21 @@
  * by {@link applyRegexLayer}.
  */
 
-import { REGEX_SUBSTITUTE, type RegexPlacement, type RegexPreset } from "@vibe-tavern/domain";
+import { REGEX_PLACEMENT, REGEX_SUBSTITUTE, type RegexPlacement, type RegexPreset } from "@vibe-tavern/domain";
+
+// ─── Literal escaping (shared) ────────────────────────────────────────────────
+
+/** Regex metacharacters — everything that changes meaning inside a pattern. */
+const REGEX_METACHARS = /[.*+?^${}()|[\]\\]/g;
+
+/**
+ * Escape a literal string so it matches verbatim inside a regex pattern.
+ * Canonical home is this pure engine (RX-13): the orchestrator hook service
+ * (RX-8) re-exports it, and the client display seam imports it from here.
+ */
+export function escapeRegexLiteral(value: string): string {
+  return value.replace(REGEX_METACHARS, "\\$&");
+}
 
 // ─── Find-pattern parsing ──────────────────────────────────────────────────────
 
@@ -69,6 +83,26 @@ export function parseFindRegex(findRegex: string): ParsedFindRegex {
 export interface RegexMacroSource {
   resolve(text: string): string;
   resolveEscaped(text: string): string;
+}
+
+/** Macro token shape (`{{name}}`, `{{name::arg}}`) — matches the MacroEngine's
+ *  own token scan; single-brace text is left alone. */
+const MACRO_TOKEN = /\{\{[^{}]+\}\}/g;
+
+/**
+ * Build a {@link RegexMacroSource} from any plain text→text macro resolver
+ * (server: `MacroEngine.resolve` bound to a variable context; client:
+ * `replaceUiMacros` bound to the snapshot macro context). `resolveEscaped`
+ * resolves each macro TOKEN separately and escapes the VALUE via
+ * {@link escapeRegexLiteral} — the same per-value escaping semantics as the
+ * RX-8 hook service, so a name like "A(B)" matches literally inside a find
+ * pattern while the pattern's own regex syntax stays live.
+ */
+export function createValueEscapingMacroSource(resolve: (text: string) => string): RegexMacroSource {
+  return {
+    resolve,
+    resolveEscaped: (text) => text.replace(MACRO_TOKEN, (token) => escapeRegexLiteral(resolve(token))),
+  };
 }
 
 // ─── Compilation ────────────────────────────────────────────────────────────────
@@ -199,4 +233,63 @@ export function applyRegexLayer(text: string, presets: RegexPreset[], macroSourc
     result = compiled.run(result);
   }
   return result;
+}
+
+// ─── Chat-history transform (RX-13 assembled-prompt seam) ─────────────────────
+
+/** Minimal message shape the history transform reads. */
+export interface RegexHistoryMessage {
+  role: string;
+  content: string;
+}
+
+/**
+ * Apply the ASSEMBLED-PROMPT regex seam (RX-13) to a chat-history window.
+ *
+ * This is the prompt-side half of the non-persist apply-targets. The MODE
+ * filter is authoritative here (the caller hands the full active set):
+ * only prompt-affecting presets (ST `promptOnly` — the "prompt" and
+ * "display+prompt" apply-targets) transform history. Persist-mode presets
+ * already applied at generation time (RX-5/8) and are excluded so they never
+ * double-apply; display-only presets belong to the client render seam.
+ *
+ * Placement maps to the message role: USER_INPUT (1) transforms user
+ * messages, AI_OUTPUT (2) transforms assistant messages; system/tool
+ * messages carry no placement and are never transformed. Depth counts from
+ * the END of the window (ST: depth 0 = last message). Presets run in array
+ * order — the caller resolves and sorts by `sortOrder`.
+ *
+ * Pure and non-destructive: returns the INPUT array (same reference) when
+ * nothing applies; otherwise a new array where only transformed messages are
+ * new objects. Never throws — broken patterns are skipped by
+ * {@link compileRegexScript}.
+ */
+export function applyRegexToChatHistory<T extends RegexHistoryMessage>(
+  messages: T[],
+  presets: RegexPreset[],
+  macroSource?: RegexMacroSource,
+): T[] {
+  if (messages.length === 0) return messages;
+  const promptPresets = presets.filter((preset) => preset.promptOnly && !preset.disabled);
+  if (promptPresets.length === 0) return messages;
+
+  let result: T[] | null = null;
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    const placement =
+      message.role === "user"
+        ? REGEX_PLACEMENT.UserInput
+        : message.role === "assistant"
+          ? REGEX_PLACEMENT.AiOutput
+          : null;
+    if (placement === null) continue;
+    const depth = messages.length - 1 - index;
+    const applicable = filterRegexPresets(promptPresets, { placement, depth });
+    if (applicable.length === 0) continue;
+    const transformed = applyRegexLayer(message.content, applicable, macroSource);
+    if (transformed === message.content) continue;
+    if (result === null) result = messages.slice();
+    result[index] = { ...message, content: transformed };
+  }
+  return result ?? messages;
 }

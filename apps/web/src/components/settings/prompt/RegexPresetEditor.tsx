@@ -10,6 +10,7 @@ import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { getRegexLinks, setRegexLinks } from "../../../api/regex-api.js";
+import { invalidateActiveRegexPresets } from "../../../hooks/use-active-regex-presets.js";
 import { listPromptPresets } from "../../../api/preset-api.js";
 import { compileRegexScript, parseFindRegex } from "@vibe-tavern/prompt-pipeline";
 import { applyTargetFlags, regexApplyTargetOf, brandId, REGEX_PLACEMENT, type RegexApplyTarget, type RegexPlacement, type RegexPreset, type RegexSubstituteMode } from "@vibe-tavern/domain";
@@ -159,7 +160,9 @@ export function RegexPresetEditor({ preset, draft, onDraftChange }: RegexPresetE
     );
     const prev = bindLinks;
     setBindLinks(narrowed); // optimistic
-    setRegexLinks(presetId, narrowed).catch(() => setBindLinks(prev)); // revert on failure
+    setRegexLinks(presetId, narrowed)
+      .then(() => invalidateActiveRegexPresets())
+      .catch(() => setBindLinks(prev)); // revert on failure
   };
 
   const update = <K extends keyof RegexPresetDraft>(key: K, value: RegexPresetDraft[K]) => {

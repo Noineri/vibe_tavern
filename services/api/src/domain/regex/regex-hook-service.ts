@@ -5,23 +5,16 @@ import {
   applyRegexLayer,
   buildPromptVariableContext,
   createFullMacroEngine,
+  escapeRegexLiteral,
   filterRegexPresets,
 } from "@vibe-tavern/prompt-pipeline";
 import type { RegexMacroSource } from "@vibe-tavern/prompt-pipeline";
 import type { RegexTextHook } from "../chat/live-chat-orchestrator.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
-/** Regex metacharacters — everything that changes meaning inside a pattern. */
-const REGEX_METACHARS = /[.*+?^${}()|[\]\\]/g;
-
-/**
- * Escape a literal string so it matches verbatim inside a regex pattern.
- * Shared helper (lore-activation-engine has the same idiom inline —
- * consolidate there when that file is next touched).
- */
-export function escapeRegexLiteral(value: string): string {
-  return value.replace(REGEX_METACHARS, "\\$&");
-}
+// Canonical home is the pure engine (RX-13); re-exported here so existing
+// importers of this module keep working.
+export { escapeRegexLiteral } from "@vibe-tavern/prompt-pipeline";
 
 /**
  * Live wiring for the orchestrator's regex seam (REGEX_EXTENSION_PLAN, RX-8).

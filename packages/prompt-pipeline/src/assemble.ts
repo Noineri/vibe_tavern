@@ -7,6 +7,11 @@ import type {
 } from "./types.js";
 import { estimateTokens, planHistoryCompaction } from "./compaction.js";
 import { createFullMacroEngine } from "./macro-registry.js";
+import {
+  applyRegexToChatHistory,
+  createValueEscapingMacroSource,
+  type RegexMacroSource,
+} from "./regex-engine.js";
 import { formatSceneHistory } from "./scene-injection.js";
 import { formatDiceMessageBlock } from "./dice-message-format.js";
 import { formatExperienceMessageBlock } from "./experience-report.js";
@@ -314,6 +319,24 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     persona: resolvedPersona,
   });
 
+  // RX-13 assembled-prompt regex seam: prompt-affecting presets (ST
+  // `promptOnly` — "prompt" / "display+prompt" apply-targets) transform the
+  // RAW stored message text before macro resolution below (ST parity: the
+  // regex sees the unexpanded text; find-pattern macros resolve only via the
+  // preset's own substituteRegex mode). The macro source rides a FRESH engine
+  // per assembly (RX-8 rule) so find-pattern variable state never leaks into
+  // content macro state. persist presets are excluded inside
+  // applyRegexToChatHistory (they already applied at generation time, RX-5/8);
+  // display-only presets belong to the client render seam.
+  const regexPresets = context.regexPresets ?? [];
+  let regexMacroSource: RegexMacroSource | undefined;
+  if (regexPresets.length > 0) {
+    const regexMacroEngine = createFullMacroEngine();
+    regexMacroSource = createValueEscapingMacroSource((text) =>
+      regexMacroEngine.resolve(text, baseVariableContext),
+    );
+  }
+
   return {
     ...context,
     character: resolvedCharacter,
@@ -350,7 +373,9 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     chat: {
       ...context.chat,
       // SINGLE DERIVATION SEAM (Wave B5 / DICE-B13, extended IR-52): effective
-      // message content is derived ONCE here — macro-resolved prose plus the
+      // message content is derived ONCE here — prompt-regex-transformed prose
+      // (RX-13: same array when no prompt-mode preset applies), macro-resolved,
+      // plus the
       // compact Dice block (when the message carries bound rolls) PLUS the
       // delimited experience-report block (when it carries a frozen public
       // report). Every downstream consumer (compaction token-counting via
@@ -358,7 +383,14 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
       // mapping in finalizeAssembly) reads this same effective content, so
       // neither Dice nor experience text is undercounted or appended twice.
       // Absent diceRolls / experienceReports → no-op (content unchanged).
-      recentMessages: context.chat.recentMessages.map((msg) => {
+      // The regex transform runs on the RAW stored content (before macros),
+      // and only on the prose — structured dice/experience blocks are appended
+      // after, outside regex reach.
+      recentMessages: applyRegexToChatHistory(
+        context.chat.recentMessages,
+        regexPresets,
+        regexMacroSource,
+      ).map((msg) => {
         const baseContent = applyMacros(msg.content, variableContext);
         const diceBlock = msg.diceRolls?.length
           ? formatDiceMessageBlock(msg.diceRolls)

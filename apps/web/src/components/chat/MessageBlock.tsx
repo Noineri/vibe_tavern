@@ -18,7 +18,14 @@ import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, REGEX_PLACEMENT, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
+import {
+  applyRegexLayer,
+  createValueEscapingMacroSource,
+  filterRegexPresets,
+  type RegexMacroSource,
+} from "@vibe-tavern/prompt-pipeline";
+import { useActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import "./MessageReasoning.js";
 import "./CoauthorToolActivitySlot.js";
 import "./message-slots/objective-zone.js";
@@ -41,6 +48,9 @@ import { PendingAssistantMessage } from "./pending/pending-assistant-message.js"
 
 /** Stable empty array for the pickerItems fallback (variantCount <= 6). */
 const EMPTY_PICKER_ITEMS: VariantPickerItem[] = [];
+
+/** Stable empty array for the display-regex fallback (no applicable presets). */
+const EMPTY_REGEX_PRESETS: RegexPreset[] = [];
 
 type VariantControlsOverlayState = {
   rect: DOMRectReadOnly;
@@ -161,6 +171,54 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     }));
   }, [variants, variantCount]);
 
+  // ── Display-mode regex seam (RX-13) ──────────────────────────────────────
+  // Display-affecting presets (ST `markdownOnly` — apply-target "display" and
+  // "display+prompt") transform the RENDERED text only; the store is never
+  // written. Placement maps to this message's role (USER_INPUT = user pane,
+  // AI_OUTPUT = assistant pane); depth counts from the end of history (ST:
+  // depth 0 = last message). Selectors stay primitive / reference-stable
+  // (messageOrder.LENGTH, not the array) so the render-isolation invariant
+  // (message-block-isolation.test.tsx) keeps holding.
+  const regexCharacterId = useSnapshotStore((s) => s.activeChat?.characterId ?? null);
+  const regexPresetId = useSnapshotStore((s) => s.activeChat?.promptPresetId ?? null);
+  const regexHistoryLength = useSnapshotStore((s) => s.messageOrder.length);
+  const displayRegexPresets = useActiveRegexPresets(regexCharacterId, regexPresetId);
+  const displayRegexMacroSource = useMemo<RegexMacroSource>(
+    () =>
+      createValueEscapingMacroSource((text) =>
+        macroContext ? replaceUiMacros(text, macroContext) : text,
+      ),
+    [macroContext],
+  );
+  const applicableDisplayRegex = useMemo(() => {
+    if (!msg) return EMPTY_REGEX_PRESETS;
+    const placement =
+      msg.role === "user"
+        ? REGEX_PLACEMENT.UserInput
+        : msg.role === "assistant"
+          ? REGEX_PLACEMENT.AiOutput
+          : null;
+    if (placement === null) return EMPTY_REGEX_PRESETS;
+    // Depth of THIS message from the end of history (ST: 0 = last message).
+    const depth = regexHistoryLength - 1 - input.index;
+    const applicable = filterRegexPresets(displayRegexPresets, { placement, depth })
+      // Display seam: only display-affecting modes (ST markdownOnly).
+      // promptOnly-only presets belong to the assembled-prompt seam and must
+      // NOT change the render; persist presets already wrote the stored text.
+      .filter((preset) => preset.markdownOnly);
+    return applicable.length > 0 ? applicable : EMPTY_REGEX_PRESETS;
+  }, [msg, displayRegexPresets, regexHistoryLength, input.index]);
+  // Fully memoized so regex compilation reruns only when the variant content,
+  // the applicable preset set, or the macro context actually changes. The
+  // display text here is already macro-resolved (useDisplayMessage / variant
+  // memo); find-pattern macros still resolve via the preset's substituteRegex
+  // mode through the macro source above.
+  const regexDisplayContent = useMemo(() => {
+    if (!msg) return null;
+    const base = selectedVariant ? selectedVariant.content : msg.displayContent;
+    if (!base || applicableDisplayRegex.length === 0) return base;
+    return applyRegexLayer(base, applicableDisplayRegex, displayRegexMacroSource);
+  }, [msg, selectedVariant, applicableDisplayRegex, displayRegexMacroSource]);
 
   if (input.messageId === "__pending-user") {
     return <PendingUserMessage />;
@@ -205,7 +263,12 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const activeContent = selectedVariant ? selectedVariant.content : msg.displayContent;
 
-  const renderContent = activeContent;
+  // Display regex (RX-13): transformed render text when display-affecting
+  // presets apply; identical to activeContent otherwise. The STREAMING path
+  // (activeStreamingRevealedText → StreamingMarkdown) is deliberately NOT
+  // transformed — a partial stream would double-apply partial matches; the
+  // settled render picks the transform up the moment streaming ends.
+  const renderContent = regexDisplayContent ?? activeContent;
   const greetingActive = isGreeting && !isUser && variantCount > 1;
 
   const isStreamingHere = !isUser && isStreamingTarget && !!(globalStreamingRevealedText || globalStreamingReasoning);
