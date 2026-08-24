@@ -18,6 +18,7 @@ import type {
   PersonaId,
   PromptPresetId,
   PromptTraceId,
+  RegexPresetId,
   RetrievedMemoryHitId,
   ScriptId,
   SummaryMemorySnapshotId,
@@ -356,6 +357,116 @@ export interface Script {
   extensions: Record<string, unknown>;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+// ─── Regex presets (REGEX_EXTENSION_PLAN, RX-1) ────────────────────────
+//
+// Named SillyTavern-parity find/replace scripts (ST `RegexScriptData`). The
+// engine that runs them lives in `packages/prompt-pipeline` (pure); the store
+// and the chat-context resolver live in `packages/db`. Binding targets are
+// characters and prompt presets only (persona excluded by design) via the
+// `regexLinks` junction — the third instance of the lorebook/script link
+// pattern.
+
+/** ST regex placement codes, preserved numerically for card/preset import
+ *  parity. `SlashCommand` is reserved: VT has no slash-command surface today
+ *  (REGEX_EXTENSION_PLAN constraint). */
+export const REGEX_PLACEMENT = {
+  UserInput: 1,
+  AiOutput: 2,
+  SlashCommand: 3,
+  WorldInfo: 5,
+  Reasoning: 6,
+} as const;
+export type RegexPlacement = (typeof REGEX_PLACEMENT)[keyof typeof REGEX_PLACEMENT];
+
+/** How macros are substituted into the find pattern (ST `substituteRegex`). */
+export const REGEX_SUBSTITUTE = {
+  None: 0,
+  Raw: 1,
+  Escaped: 2,
+} as const;
+export type RegexSubstituteMode = (typeof REGEX_SUBSTITUTE)[keyof typeof REGEX_SUBSTITUTE];
+
+/** Binding targets for a regex preset — character and prompt preset only
+ *  (same vocabulary the `lorebookLinks`/`scriptLinks` junctions use). */
+export const REGEX_TARGET_TYPE = {
+  Character: "character",
+  Preset: "preset",
+} as const;
+export type RegexTargetType = (typeof REGEX_TARGET_TYPE)[keyof typeof REGEX_TARGET_TYPE];
+
+/**
+ * One named SillyTavern-parity regex script (ST `RegexScriptData`).
+ *
+ * `markdownOnly` / `promptOnly` are ST's ephemerality flags; their four
+ * combinations are the apply-target modes (see {@link RegexApplyTarget}):
+ * default = persist into the message, `markdownOnly` = display-only,
+ * `promptOnly` = prompt-only, both = display+prompt without ever writing the
+ * stored message.
+ *
+ * `placement` lists the hooks the preset runs at (see {@link REGEX_PLACEMENT}).
+ * Depth targeting follows ST: depth 0 is the last message, counting backward;
+ * `null` min/max means unlimited.
+ */
+export interface RegexPreset {
+  id: RegexPresetId;
+  name: string;
+  /** Find pattern in ST's `/pattern/flags` notation. */
+  findRegex: string;
+  /** Replacement; supports `{{match}}`, `$1`.. capture groups and `$<name>`. */
+  replaceString: string;
+  /** Substrings stripped from each match before replacement (ST "Trim Out"). */
+  trimStrings: string[];
+  substituteRegex: RegexSubstituteMode;
+  disabled: boolean;
+  markdownOnly: boolean;
+  promptOnly: boolean;
+  runOnEdit: boolean;
+  minDepth: number | null;
+  maxDepth: number | null;
+  placement: RegexPlacement[];
+  /** Applies to every chat regardless of bindings (like global lorebooks). */
+  isGlobal: boolean;
+  sortOrder: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Many-to-many binding mirroring `lorebookLinks`/`scriptLinks` — the third
+ *  instance of that junction pattern ({entityId, targetType, targetId}). */
+export interface RegexLink {
+  regexPresetId: RegexPresetId;
+  targetType: RegexTargetType;
+  targetId: string;
+}
+
+/** UI-facing union of the four markdownOnly/promptOnly combinations. */
+export type RegexApplyTarget = "persist" | "display" | "prompt" | "display_prompt";
+
+/** Maps the ST ephemerality flags to the apply-target mode. */
+export function regexApplyTargetOf(
+  preset: Pick<RegexPreset, "markdownOnly" | "promptOnly">,
+): RegexApplyTarget {
+  if (preset.markdownOnly && preset.promptOnly) return "display_prompt";
+  if (preset.markdownOnly) return "display";
+  if (preset.promptOnly) return "prompt";
+  return "persist";
+}
+
+/** Inverse of {@link regexApplyTargetOf}: maps an apply-target mode back to
+ *  the ST ephemerality flags. */
+export function applyTargetFlags(target: RegexApplyTarget): { markdownOnly: boolean; promptOnly: boolean } {
+  switch (target) {
+    case "persist":
+      return { markdownOnly: false, promptOnly: false };
+    case "display":
+      return { markdownOnly: true, promptOnly: false };
+    case "prompt":
+      return { markdownOnly: false, promptOnly: true };
+    case "display_prompt":
+      return { markdownOnly: true, promptOnly: true };
+  }
 }
 
 // ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────────
