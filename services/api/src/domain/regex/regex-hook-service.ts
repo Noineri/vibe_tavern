@@ -53,16 +53,40 @@ export function escapeRegexLiteral(value: string): string {
  * degradation rules, but every PROMPT-affecting apply-target (persist /
  * prompt / display_prompt) transforms — only display-only is excluded, and
  * lorebook rows are never written (see that method's doc).
+ *
+ * RX-10 adds the REASONING hook (`transformReasoning`): identical rule to
+ * USER_INPUT/AI_OUTPUT — persist-mode only, depth 0, transform-before-insert
+ * so the stored reasoning is already the transformed text (no rewrite, no
+ * race). Prompt-only / display-only reasoning presets are no-ops here (the
+ * assembled-prompt and render seams are Wave 3). Main content is never
+ * touched by this placement.
  */
 export class RegexHookService {
   constructor(private readonly stores: StoreContainer) {}
 
-  /** Build the orchestrator's `regexHooks` dependency pair. */
-  createHooks(): { onUserInput: RegexTextHook; onAiOutput: RegexTextHook } {
+  /** Build the orchestrator's `regexHooks` dependency triple. */
+  createHooks(): { onUserInput: RegexTextHook; onAiOutput: RegexTextHook; onReasoning: RegexTextHook } {
     return {
       onUserInput: (text, ctx) => this.transform(REGEX_PLACEMENT.UserInput, ctx, text),
       onAiOutput: (text, ctx) => this.transform(REGEX_PLACEMENT.AiOutput, ctx, text),
+      onReasoning: async (text, ctx) => (await this.transformReasoning(ctx.chatId, text)) ?? text,
     };
+  }
+
+  /**
+   * REASONING hook (RX-10): transform the model's chain-of-thought BEFORE it
+   * is stored on the message variant. Same rule as USER_INPUT/AI_OUTPUT:
+   * persist-mode presets only (a `promptOnly` reasoning transform belongs to
+   * the assembled-prompt seam and a display-only one to the client render —
+   * both Wave 3); depth 0 (the reply being appended is the chat's last
+   * message at transform time). Transform-before-insert ⇒ the variant is
+   * created with the already-transformed reasoning: no rewrite, no variant
+   * race (same structural guarantee as RX-8). Undefined/empty/`null` passes
+   * through unchanged without touching the store. Never throws.
+   */
+  async transformReasoning(chatId: string, reasoning: string | null | undefined): Promise<string | null | undefined> {
+    if (!reasoning) return reasoning;
+    return this.transform(REGEX_PLACEMENT.Reasoning, { chatId, hook: "REASONING" }, reasoning);
   }
 
   /**
@@ -171,8 +195,11 @@ export class RegexHookService {
 
   /** Shared hook body: resolve → filter (placement + depth 0 + persist) → apply. */
   private async transform(
-    placement: typeof REGEX_PLACEMENT.UserInput | typeof REGEX_PLACEMENT.AiOutput,
-    ctx: { chatId: string; hook: "USER_INPUT" | "AI_OUTPUT" },
+    placement:
+      | typeof REGEX_PLACEMENT.UserInput
+      | typeof REGEX_PLACEMENT.AiOutput
+      | typeof REGEX_PLACEMENT.Reasoning,
+    ctx: { chatId: string; hook: "USER_INPUT" | "AI_OUTPUT" | "REASONING" },
     text: string,
   ): Promise<string> {
     if (!text) return text;
