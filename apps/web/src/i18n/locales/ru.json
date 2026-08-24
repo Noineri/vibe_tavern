@@ -264,7 +264,7 @@
   "topbar_play_mode": "Вернуться к игре",
   "topbar_back_to_editor": "Выйти в редактор",
   "topbar_default": "По умолчанию",
-  "topbar_regex_active_one": "Регулярка активна: {name}",
+  "topbar_regex_active_one": "Активный regex-пресет: {name}",
   "topbar_interface_settings": "Настройки интерфейса",
   "unnamed": "Безымянный",
   "char_import_to_draft": "Импортировать карточку персонажа в черновик",
@@ -2364,7 +2364,7 @@
   "promptManager.regex.newPreset": "+ Новый regex-пресет",
   "promptManager.regex.newNamePlaceholder": "Название regex-пресета…",
   "promptManager.regex.fieldName": "Название",
-  "promptManager.regex.namePlaceholder": "напр. Убрать теги мышления",
+  "promptManager.regex.namePlaceholder": "напр. Убрать теги рассуждений",
   "promptManager.regex.fieldFind": "Regex поиска",
   "promptManager.regex.findPlaceholder": "/pattern/flags",
   "promptManager.regex.findHint": "Нотация ST: /pattern/flags. В замене поддерживаются {match} и группы захвата.",
@@ -2417,5 +2417,5 @@
   "promptManager.regex.bindingsEmpty": "Нет доступных персонажей или пресетов промпта.",
   "promptManager.regex.sectionCharacters": "Персонажи",
   "promptManager.regex.sectionPresets": "Пресеты промпта",
-  "topbar_regex_active_many": "Регулярки активны: {n}"
+  "topbar_regex_active_many": "Активные regex-пресеты: {n}"
 }
