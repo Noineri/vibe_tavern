@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -10,7 +10,7 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
-import { serializeStPreset, type VibeTavernPresetExtension, parseStandaloneRegexJson } from "@vibe-tavern/import-export";
+import { serializeStPreset, type VibeTavernPresetExtension, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
@@ -35,6 +35,7 @@ import {
 } from "../../api/regex-api.js";
 import { invalidateActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import type { RegexPresetRecord } from "../../api/types.js";
+import { downloadTextFile } from "../../lib/download.js";
 import { applyTargetFlags, type RegexPlacement, type RegexSubstituteMode } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 
@@ -499,6 +500,70 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     });
   }
 
+  // R-12: duplicate + export. Both read the latest preset list through a ref
+  // (the row is memoized and ignores callback identity), so the clone/export
+  // always sees current fields even if the row never re-rendered.
+  const regexPresetsRef = useRef(regexPresets);
+  regexPresetsRef.current = regexPresets;
+
+  const handleRegexCopy = useCallback((id: string) => {
+    const source = regexPresetsRef.current.find((p) => p.id === id);
+    if (!source) return;
+    void createRegexPreset({
+      name: `${source.name}${t("promptManager.regex.copySuffix")}`,
+      findRegex: source.findRegex,
+      replaceString: source.replaceString,
+      trimStrings: [...source.trimStrings],
+      substituteRegex: source.substituteRegex as RegexSubstituteMode,
+      // Import-parity security gate: a duplicate starts disabled for review.
+      disabled: true,
+      markdownOnly: source.markdownOnly,
+      promptOnly: source.promptOnly,
+      runOnEdit: source.runOnEdit,
+      minDepth: source.minDepth,
+      maxDepth: source.maxDepth,
+      placement: [...source.placement] as RegexPlacement[],
+      isGlobal: source.isGlobal,
+    })
+      .then((created) => {
+        setRegexPresets((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
+        setActiveRegexPresetId(created.id);
+        invalidateActiveRegexPresets();
+        toast.success(t("promptManager.regex.copied"));
+      })
+      .catch(() => toast.error(t("promptManager.regex.copyFailed")));
+  }, [t]);
+
+  const handleRegexExport = useCallback((id: string) => {
+    const source = regexPresetsRef.current.find((p) => p.id === id);
+    if (!source) return;
+    try {
+      // ST-compatible standalone export: an array-of-one RegexScriptData
+      // (the ST bulk shape; the RX-16 import accepts arrays too).
+      const json = serializeStandaloneRegexJson([{
+        name: source.name,
+        findRegex: source.findRegex,
+        replaceString: source.replaceString,
+        trimStrings: [...source.trimStrings],
+        substituteRegex: source.substituteRegex as RegexSubstituteMode,
+        disabled: source.disabled,
+        markdownOnly: source.markdownOnly,
+        promptOnly: source.promptOnly,
+        runOnEdit: source.runOnEdit,
+        minDepth: source.minDepth,
+        maxDepth: source.maxDepth,
+        placement: [...source.placement] as RegexPlacement[],
+        isGlobal: source.isGlobal,
+        sortOrder: source.sortOrder,
+      }]);
+      const safeName = source.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      downloadTextFile(`regex-${safeName}.json`, json, "application/json");
+      toast.success(t("promptManager.regex.exported"));
+    } catch {
+      toast.error(t("promptManager.regex.exportFailed"));
+    }
+  }, [t]);
+
   function handleRegexReorder(updates: Array<{ id: string; sortOrder: number }>) {
     for (const u of updates) {
       void updateRegexPreset(u.id, { sortOrder: u.sortOrder }).then((updated) => {
@@ -916,6 +981,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onAdd={handleRegexAdd}
                   onRename={handleRegexRename}
                   onReorder={handleRegexReorder}
+                  onCopy={handleRegexCopy}
+                  onExport={handleRegexExport}
                   onImportRegex={() => regexImportInputRef.current?.click()}
                 />
               )

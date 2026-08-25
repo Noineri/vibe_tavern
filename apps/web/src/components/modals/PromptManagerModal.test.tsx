@@ -26,6 +26,9 @@ const realPromptCanvasLore = await import("../../lib/prompt-canvas-lore.js");
 const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLoreEntries);
 const realRegexApi = await import("../../api/regex-api.js");
 const listAllRegexPresetsMock = mock(realRegexApi.listAllRegexPresets);
+const createRegexPresetMock = mock(realRegexApi.createRegexPreset);
+const realDownload = await import("../../lib/download.js");
+const downloadTextFileMock = mock(realDownload.downloadTextFile);
 
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -51,6 +54,11 @@ mock.module("../../lib/prompt-canvas-lore.js", () => ({
 mock.module("../../api/regex-api.js", () => ({
   ...realRegexApi,
   listAllRegexPresets: listAllRegexPresetsMock,
+  createRegexPreset: createRegexPresetMock,
+}));
+mock.module("../../lib/download.js", () => ({
+  ...realDownload,
+  downloadTextFile: downloadTextFileMock,
 }));
 
 const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
@@ -67,6 +75,8 @@ afterEach(() => {
   cleanup();
   loadPromptCanvasLoreEntries.mockReset();
   listAllRegexPresetsMock.mockReset();
+  createRegexPresetMock.mockReset();
+  downloadTextFileMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
 
@@ -612,3 +622,109 @@ describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
     });
   });
 });
+
+// ── R-12: copy (duplicate in place) & export (standalone ST JSON) ───────
+describe("PromptManagerModal — regex copy & export (R-12)", () => {
+  function fullRecord(id: string, name: string): RegexPresetRecord {
+    return {
+      id,
+      name,
+      findRegex: "/alpha+/gi",
+      replaceString: "$1 [{{match}}]",
+      trimStrings: ["x", "y"],
+      substituteRegex: 2,
+      disabled: false,
+      markdownOnly: true,
+      promptOnly: false,
+      runOnEdit: true,
+      minDepth: 3,
+      maxDepth: null,
+      placement: [2, 5],
+      isGlobal: false,
+      sortOrder: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+
+  async function openRegexTabWith(records: RegexPresetRecord[]) {
+    listAllRegexPresetsMock.mockResolvedValue(records);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => {
+      expect(listAllRegexPresetsMock).toHaveBeenCalled();
+    });
+    return view;
+  }
+
+  test("copy clones the source fields, seeds disabled, and selects the duplicate", async () => {
+    const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
+    createRegexPresetMock.mockResolvedValue({ ...fullRecord("rx_2", "copy"), id: "rx_2" });
+
+    const copyBtn = within(view.baseElement).getAllByLabelText("promptManager.regex.copy")[0];
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(createRegexPresetMock).toHaveBeenCalled();
+    });
+    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    // useT is mocked to return keys verbatim, so copySuffix resolves to its key.
+    expect(body.name).toBe("Alpha Strip" + "promptManager.regex.copySuffix");
+    expect(body).toMatchObject({
+      findRegex: "/alpha+/gi",
+      replaceString: "$1 [{{match}}]",
+      trimStrings: ["x", "y"],
+      substituteRegex: 2,
+      // Import-parity security gate: duplicate starts disabled.
+      disabled: true,
+      markdownOnly: true,
+      promptOnly: false,
+      runOnEdit: true,
+      minDepth: 3,
+      maxDepth: null,
+      placement: [2, 5],
+      isGlobal: false,
+    });
+  });
+
+  test("export downloads an ST-compatible array-of-one JSON with the safe filename", async () => {
+    const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
+
+    const exportBtn = within(view.baseElement).getAllByLabelText("promptManager.regex.export")[0];
+    fireEvent.click(exportBtn);
+
+    await waitFor(() => {
+      expect(downloadTextFileMock).toHaveBeenCalled();
+    });
+    const [fileName, json, mime] = downloadTextFileMock.mock.calls[0] as [string, string, string];
+    expect(fileName).toBe("regex-Alpha_Strip.json");
+    expect(mime).toBe("application/json");
+    const parsed = JSON.parse(json) as Array<Record<string, unknown>>;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0]).toMatchObject({
+      scriptName: "Alpha Strip",
+      findRegex: "/alpha+/gi",
+      replaceString: "$1 [{{match}}]",
+      trimStrings: ["x", "y"],
+      substituteRegex: 2,
+      markdownOnly: true,
+      promptOnly: false,
+      runOnEdit: true,
+      minDepth: 3,
+      maxDepth: null,
+      placement: [2, 5],
+    });
+  });
+});
+

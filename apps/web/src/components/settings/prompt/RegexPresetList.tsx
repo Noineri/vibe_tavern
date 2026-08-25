@@ -28,6 +28,11 @@ interface RegexPresetListProps {
   onSelect: (id: string) => void;
   onAdd: (name: string) => void;
   onRename: (id: string, newName: string) => void;
+  /** Duplicate a preset in place (R-12): parent clones + seeds the copy
+   *  disabled (import-parity security gate). */
+  onCopy: (id: string) => void;
+  /** Export a preset to a standalone ST JSON download (R-12). */
+  onExport: (id: string) => void;
   /** Persist a manual reorder: each entry sets the listed id to the listed
    *  sort order. Driven by `useReorderableList` (optimistic + rollback). */
   onReorder: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
@@ -39,12 +44,14 @@ interface RegexPresetListProps {
 // PresetList's SortablePresetRow (≡ grip, active dot, hover edit, mobile
 // drill-down) and adds disabled-dim styling so a disabled preset reads at a
 // glance.
-const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEditing, dndDisabled }: {
+const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEditing, onCopy, onExport, dndDisabled }: {
   p: RegexPresetRef;
   isActive: boolean;
   onSelect: (id: string) => void;
   isMobile: boolean;
   startEditing: (preset: RegexPresetRef, e: React.MouseEvent) => void;
+  onCopy: (id: string) => void;
+  onExport: (id: string) => void;
   dndDisabled: boolean;
 }) => {
   const { t } = useT();
@@ -102,6 +109,20 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
         onClick={(e) => startEditing(p, e)}
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
       ><Icons.Edit /></button>
+      <CustomTooltip content={t("promptManager.regex.copy")}>
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); onCopy(p.id); }}
+          aria-label={t("promptManager.regex.copy")}
+          className={cn("shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+        ><Icons.Copy /></button>
+      </CustomTooltip>
+      <CustomTooltip content={t("promptManager.regex.export")}>
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); onExport(p.id); }}
+          aria-label={t("promptManager.regex.export")}
+          className={cn("shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+        ><Icons.Download /></button>
+      </CustomTooltip>
       <div className="ml-auto flex items-center gap-1">
         <CustomTooltip content={t(statusKey)}>
           <span role="img" aria-label={t(statusKey)} className="flex shrink-0 p-1">
@@ -112,6 +133,20 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
           onClick={(e) => startEditing(p, e)}
           className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
         ><Icons.Edit /></button>
+        <CustomTooltip content={t("promptManager.regex.copy")}>
+          <button type="button"
+            onClick={(e) => { e.stopPropagation(); onCopy(p.id); }}
+            aria-label={t("promptManager.regex.copy")}
+            className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+          ><Icons.Copy /></button>
+        </CustomTooltip>
+        <CustomTooltip content={t("promptManager.regex.export")}>
+          <button type="button"
+            onClick={(e) => { e.stopPropagation(); onExport(p.id); }}
+            aria-label={t("promptManager.regex.export")}
+            className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+          ><Icons.Download /></button>
+        </CustomTooltip>
         <MasterDetailMobileDrillDown onSelect={() => onSelect(p.id)} className="py-1" />
       </div>
     </div>
@@ -129,7 +164,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
  * label, search, dnd-kit sortable rows, inline rename, EmptyState, bottom-
  * docked dashed "+ New") with the regex-specific disabled dimming.
  */
-export function RegexPresetList({ presets, activePresetId, onSelect, onAdd, onRename, onReorder, onImportRegex }: RegexPresetListProps) {
+export function RegexPresetList({ presets, activePresetId, onSelect, onAdd, onRename, onReorder, onCopy, onExport, onImportRegex }: RegexPresetListProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
@@ -276,6 +311,8 @@ export function RegexPresetList({ presets, activePresetId, onSelect, onAdd, onRe
                   onSelect={onSelect}
                   isMobile={isMobile}
                   startEditing={startEditing}
+                  onCopy={onCopy}
+                  onExport={onExport}
                   dndDisabled={dndDisabled}
                 />
               );

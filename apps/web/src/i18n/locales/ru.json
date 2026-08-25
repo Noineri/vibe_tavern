@@ -2442,5 +2442,12 @@
   "promptManager.regex.testMacroPattern": "Паттерн с макросами",
   "promptManager.regex.testDisclaimer": "Тест не учитывает привязки, область применения и глубину",
   "link_target_deleted": "Цель удалена",
-  "promptManager.regex.badgeWorking": "Работает"
+  "promptManager.regex.badgeWorking": "Работает",
+  "promptManager.regex.copy": "Копировать",
+  "promptManager.regex.copySuffix": " (копия)",
+  "promptManager.regex.copied": "Пресет скопирован",
+  "promptManager.regex.copyFailed": "Не удалось скопировать",
+  "promptManager.regex.export": "Экспортировать",
+  "promptManager.regex.exported": "Пресет экспортирован",
+  "promptManager.regex.exportFailed": "Не удалось экспортировать"
 }

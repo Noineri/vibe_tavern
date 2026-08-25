@@ -4,6 +4,7 @@ import { packMonolith } from "@vibe-tavern/db/codecs";
 import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
 import { appCharacterToVtfContent } from "../lib/vtf-content.js";
+import { downloadTextFile } from "../lib/download.js";
 import {
   uploadCharacterAvatar,
   type AppSnapshot,
@@ -88,18 +89,6 @@ export interface CharacterControllerActions {
 
 function formatImportWarnings(count: number): string {
   return count > 0 ? ` (${count} warning${count === 1 ? "" : "s"})` : "";
-}
-
-function downloadTextFile(fileName: string, text: string, mimeType: string): void {
-  const blob = new Blob([text], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
 }
 
 export function useCharacterController(): CharacterControllerActions {

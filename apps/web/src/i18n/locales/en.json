@@ -2422,5 +2422,12 @@
   "promptManager.regex.testMacroPattern": "Pattern with macros expanded",
   "promptManager.regex.testDisclaimer": "The test does not simulate bindings, scope, or depth",
   "link_target_deleted": "Target deleted",
-  "promptManager.regex.badgeWorking": "Working"
+  "promptManager.regex.badgeWorking": "Working",
+  "promptManager.regex.copy": "Copy",
+  "promptManager.regex.copySuffix": " (copy)",
+  "promptManager.regex.copied": "Preset copied",
+  "promptManager.regex.copyFailed": "Failed to copy",
+  "promptManager.regex.export": "Export",
+  "promptManager.regex.exported": "Preset exported",
+  "promptManager.regex.exportFailed": "Failed to export"
 }
