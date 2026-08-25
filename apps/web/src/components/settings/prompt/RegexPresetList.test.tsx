@@ -132,18 +132,24 @@ describe("RegexPresetList", () => {
   });
 });
 
-// ── R-7 single-badge model: «Не применяется» with the reason in the tooltip ──
-describe("RegexPresetList — not-applied badge (R-7)", () => {
+// ── R-7 owner follow-up: status dot (green/red/gray) instead of the text
+// badge that overlapped names; reason rides in the tooltip / aria-label. ──
+describe("RegexPresetList — status dot (R-7)", () => {
   beforeEach(() => {
     mock.clearAllMocks();
   });
 
-  it("renders no badge when every preset is in effect", () => {
+  it("renders a green dot for in-effect presets and no text badge", () => {
     render(<RegexPresetList {...baseProps()} />);
+    // useT is mocked to keys — labels come back as the key strings.
+    const dot = screen.getAllByLabelText("promptManager.regex.badgeWorking")[0];
+    expect(dot.querySelector("span")!.className).toContain("bg-success");
+    // The text badge is gone from the list (it overlapped names) — the
+    // «Не применяется» label now lives in the EDITOR only.
     expect(screen.queryByText("promptManager.regex.badgeNotApplied")).toBeNull();
   });
 
-  it("renders one badge for disabled and one for unbound presets", () => {
+  it("renders a gray dot for disabled and a red dot for unbound presets", () => {
     render(
       <RegexPresetList
         {...baseProps({
@@ -155,9 +161,11 @@ describe("RegexPresetList — not-applied badge (R-7)", () => {
         })}
       />,
     );
-    const badges = screen.getAllByText("promptManager.regex.badgeNotApplied");
-    expect(badges).toHaveLength(2);
-    // Reason goes to the tooltip content, not a second visible label.
+    const gray = screen.getByLabelText("promptManager.regex.badgeDisabledReason");
+    expect(gray.querySelector("span")!.className).toContain("bg-t4");
+    const red = screen.getByLabelText("promptManager.regex.badgeUnboundReason");
+    expect(red.querySelector("span")!.className).toContain("bg-danger");
+    // Reasons stay in tooltips, not visible text.
     expect(screen.queryByText("promptManager.regex.badgeDisabledReason")).toBeNull();
     expect(screen.queryByText("promptManager.regex.badgeUnboundReason")).toBeNull();
   });

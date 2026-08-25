@@ -1600,6 +1600,7 @@ export default interface Resources {
     "promptManager.regex.badgeDisabledReason": "The preset is disabled",
     "promptManager.regex.badgeNotApplied": "Not applied",
     "promptManager.regex.badgeUnboundReason": "Not bound to any chat — bind it to a character or prompt preset",
+    "promptManager.regex.badgeWorking": "Working",
     "promptManager.regex.behaviorLabel": "How it runs",
     "promptManager.regex.bindingsAdd": "Link target",
     "promptManager.regex.bindingsDeadZone": "Not bound — applies in no chat. Bind it to a character or prompt preset.",

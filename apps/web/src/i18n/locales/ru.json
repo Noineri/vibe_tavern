@@ -2441,5 +2441,6 @@
   "promptManager.regex.testUnchanged": "Совпадения есть — текст не изменился",
   "promptManager.regex.testMacroPattern": "Паттерн с макросами",
   "promptManager.regex.testDisclaimer": "Тест не учитывает привязки, область применения и глубину",
-  "link_target_deleted": "Цель удалена"
+  "link_target_deleted": "Цель удалена",
+  "promptManager.regex.badgeWorking": "Работает"
 }

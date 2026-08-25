@@ -57,6 +57,16 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
     transition,
     ...(isDragging ? { opacity: 0 } : {}),
   };
+  // R-7 owner follow-up: status dot instead of a text badge (the badge
+  // overlapped names). green = applies, red = enabled but unbound, gray =
+  // disabled; the reason rides in the tooltip.
+  const statusKey = p.notApplied === "disabled"
+    ? "promptManager.regex.badgeDisabledReason"
+    : p.notApplied === "unbound" ? "promptManager.regex.badgeUnboundReason"
+    : "promptManager.regex.badgeWorking";
+  const statusDotCls = p.notApplied === "disabled" ? "bg-t4"
+    : p.notApplied === "unbound" ? "bg-danger"
+    : "bg-success";
   return (
     <div
       ref={setNodeRef}
@@ -88,18 +98,16 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
           p.disabled && "opacity-50",
         )}>{p.name}</span>
       </CustomTooltip>
-      {p.notApplied && (
-        <CustomTooltip content={t(p.notApplied === "disabled" ? "promptManager.regex.badgeDisabledReason" : "promptManager.regex.badgeUnboundReason")}>
-          <span className="shrink-0 rounded-full border border-warning/40 bg-warning/10 px-2 py-px font-ui text-[10px] leading-tight text-warning select-none">
-            {t("promptManager.regex.badgeNotApplied")}
-          </span>
-        </CustomTooltip>
-      )}
       <button type="button"
         onClick={(e) => startEditing(p, e)}
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
       ><Icons.Edit /></button>
       <div className="ml-auto flex items-center gap-1">
+        <CustomTooltip content={t(statusKey)}>
+          <span role="img" aria-label={t(statusKey)} className="flex shrink-0 p-1">
+            <span className={cn("h-[6px] w-[6px] rounded-full", statusDotCls)} />
+          </span>
+        </CustomTooltip>
         <button type="button"
           onClick={(e) => startEditing(p, e)}
           className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}

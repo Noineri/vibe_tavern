@@ -2421,5 +2421,6 @@
   "promptManager.regex.testUnchanged": "Matches found — the text is unchanged",
   "promptManager.regex.testMacroPattern": "Pattern with macros expanded",
   "promptManager.regex.testDisclaimer": "The test does not simulate bindings, scope, or depth",
-  "link_target_deleted": "Target deleted"
+  "link_target_deleted": "Target deleted",
+  "promptManager.regex.badgeWorking": "Working"
 }

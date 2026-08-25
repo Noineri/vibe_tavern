@@ -308,3 +308,45 @@ describe("RegexPresetEditor — R-7 redesign", () => {
     expect(second.queryByText("promptManager.regex.bindingsDeadZone")).toBeNull();
   });
 });
+
+// ── R-7 owner follow-up: «Не применяется» badge under the name (editor) ────
+describe("RegexPresetEditor — not-applied badge under the name", () => {
+  beforeEach(() => {
+    getRegexLinksMock.mockReset();
+    getRegexLinksMock.mockResolvedValue([]);
+    listPromptPresetsMock.mockReset();
+    listPromptPresetsMock.mockResolvedValue([]);
+    setRegexLinksMock.mockReset();
+  });
+
+  it("shows the badge for enabled + bind mode + zero resolvable links", async () => {
+    const record = baseRecord({ isGlobal: false }); // bind mode, enabled
+    render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
+    expect(await screen.findByText("promptManager.regex.badgeNotApplied")).toBeTruthy();
+  });
+
+  it("hides the badge when disabled, when global, or when a link resolves", async () => {
+    // Disabled (instant toggle state) → the Toggle itself carries the state.
+    let record = baseRecord({ isGlobal: false, disabled: true });
+    const first = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
+    await first.findByText("promptManager.regex.fieldActive");
+    expect(first.queryByText("promptManager.regex.badgeNotApplied")).toBeNull();
+    first.unmount();
+
+    // Global («Все чаты») → applies everywhere, never "not applied".
+    record = baseRecord({ isGlobal: true });
+    const second = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
+    await second.findByText("promptManager.regex.scopeAll");
+    expect(second.queryByText("promptManager.regex.badgeNotApplied")).toBeNull();
+    second.unmount();
+
+    // Bind mode with one resolvable link → applies.
+    getRegexLinksMock.mockResolvedValue([{ regexPresetId: "r1", targetType: "preset", targetId: "pp1" }]);
+    listPromptPresetsMock.mockResolvedValue([{ id: "pp1", name: "Deep RP" }]);
+    record = baseRecord({ id: "r1", isGlobal: false });
+    const third = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
+    expect(await third.findByText("Deep RP")).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(third.queryByText("promptManager.regex.badgeNotApplied")).toBeNull();
+  });
+});
