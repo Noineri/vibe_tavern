@@ -687,7 +687,8 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
     const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
     createRegexPresetMock.mockResolvedValue({ ...fullRecord("rx_2", "copy"), id: "rx_2" });
 
-    const copyBtn = within(view.baseElement).getAllByLabelText("promptManager.regex.copy")[0];
+    // Footer action on the SELECTED rule (auto-selected first) — desktop span.
+    const copyBtn = within(view.baseElement).getByText("promptManager.regex.copy");
     fireEvent.click(copyBtn);
 
     await waitFor(() => {
@@ -716,7 +717,8 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
   test("export downloads an ST-compatible array-of-one JSON with the safe filename", async () => {
     const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
 
-    const exportBtn = within(view.baseElement).getAllByLabelText("promptManager.regex.export")[0];
+    // Footer action on the SELECTED rule — desktop span.
+    const exportBtn = within(view.baseElement).getByText("promptManager.regex.export");
     fireEvent.click(exportBtn);
 
     await waitFor(() => {

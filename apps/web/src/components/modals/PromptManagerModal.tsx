@@ -529,8 +529,11 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const regexPresetsRef = useRef(regexPresets);
   regexPresetsRef.current = regexPresets;
 
-  const handleRegexCopy = useCallback((id: string) => {
-    const source = regexPresetsRef.current.find((p) => p.id === id);
+  // R-12→footer: copy/export act on the SELECTED rule, exactly like the
+  // presets tab's duplicate/export footer actions (owner correction — the
+  // per-row buttons were a pattern deviation).
+  const handleRegexCopy = useCallback(() => {
+    const source = regexPresetsRef.current.find((p) => p.id === activeRegexPresetId);
     if (!source) return;
     void createRegexPreset({
       name: `${source.name}${t("promptManager.regex.copySuffix")}`,
@@ -555,10 +558,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         toast.success(t("promptManager.regex.copied"));
       })
       .catch(() => toast.error(t("promptManager.regex.copyFailed")));
-  }, [t]);
+  }, [t, activeRegexPresetId]);
 
-  const handleRegexExport = useCallback((id: string) => {
-    const source = regexPresetsRef.current.find((p) => p.id === id);
+  const handleRegexExport = useCallback(() => {
+    const source = regexPresetsRef.current.find((p) => p.id === activeRegexPresetId);
     if (!source) return;
     try {
       // ST-compatible standalone export: an array-of-one RegexScriptData
@@ -587,7 +590,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     } catch {
       toast.error(t("promptManager.regex.exportFailed"));
     }
-  }, [t]);
+  }, [t, activeRegexPresetId]);
 
   // R-13 profile handlers
   function handleRegexProfileAdd(name: string) {
@@ -1095,8 +1098,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onReorderProfiles={handleRegexProfileReorder}
                   onAttach={handleRegexAttach}
                   onDetach={handleRegexDetach}
-                  onCopy={handleRegexCopy}
-                  onExport={handleRegexExport}
                   onImportRegex={() => regexImportInputRef.current?.click()}
                 />
               )
@@ -1204,6 +1205,40 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         footer={
           activeTab === "regex" ? (
             <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
+              {activeRegexPreset && isMobile && (
+                <button type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+                  onClick={handleRegexCopy}
+                  aria-label={t("promptManager.regex.copy")}
+                >
+                  <Icons.Copy />
+                </button>
+              )}
+              {activeRegexPreset && !isMobile && (
+                <span
+                  className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+                  onClick={handleRegexCopy}
+                >
+                  <Icons.Copy /> {t("promptManager.regex.copy")}
+                </span>
+              )}
+              {activeRegexPreset && isMobile && (
+                <button type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+                  onClick={handleRegexExport}
+                  aria-label={t("promptManager.regex.export")}
+                >
+                  <Icons.Download />
+                </button>
+              )}
+              {activeRegexPreset && !isMobile && (
+                <span
+                  className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+                  onClick={handleRegexExport}
+                >
+                  <Icons.Download /> {t("promptManager.regex.export")}
+                </span>
+              )}
               {activeRegexPreset && (
                 <span
                   className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"

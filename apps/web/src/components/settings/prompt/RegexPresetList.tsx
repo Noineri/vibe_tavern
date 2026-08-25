@@ -44,8 +44,6 @@ interface RegexPresetListProps {
   onAddRuleToProfile?: (profileId: string, name: string) => void;
   onRename: (id: string, newName: string) => void;
   onRenameProfile?: (id: string, newName: string) => void;
-  onCopy: (id: string) => void;
-  onExport: (id: string) => void;
   onReorder: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
   onReorderProfiles?: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
   onAttach?: (profileId: string, ruleId: string) => void | Promise<unknown>;
@@ -54,14 +52,12 @@ interface RegexPresetListProps {
   onImportRegex?: () => void;
 }
 
-const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEditing, onCopy, onExport, dndDisabled }: {
+const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEditing, dndDisabled }: {
   p: RegexPresetRef;
   isActive: boolean;
   onSelect: (id: string) => void;
   isMobile: boolean;
   startEditing: (preset: RegexPresetRef, e: React.MouseEvent) => void;
-  onCopy: (id: string) => void;
-  onExport: (id: string) => void;
   dndDisabled: boolean;
 }) => {
   const { t } = useT();
@@ -126,20 +122,6 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
         onClick={(e) => startEditing(p, e)}
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
       ><Icons.Edit /></button>
-      <CustomTooltip content={t("promptManager.regex.copy")}>
-        <button type="button"
-          onClick={(e) => { e.stopPropagation(); onCopy(p.id); }}
-          aria-label={t("promptManager.regex.copy")}
-          className={cn("shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-        ><Icons.Copy /></button>
-      </CustomTooltip>
-      <CustomTooltip content={t("promptManager.regex.export")}>
-        <button type="button"
-          onClick={(e) => { e.stopPropagation(); onExport(p.id); }}
-          aria-label={t("promptManager.regex.export")}
-          className={cn("shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-        ><Icons.Download /></button>
-      </CustomTooltip>
       <div className="ml-auto flex items-center gap-1">
         <CustomTooltip content={t(statusKey)}>
           <span role="img" aria-label={t(statusKey)} className="flex shrink-0 p-1">
@@ -150,20 +132,6 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
           onClick={(e) => startEditing(p, e)}
           className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
         ><Icons.Edit /></button>
-        <CustomTooltip content={t("promptManager.regex.copy")}>
-          <button type="button"
-            onClick={(e) => { e.stopPropagation(); onCopy(p.id); }}
-            aria-label={t("promptManager.regex.copy")}
-            className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-          ><Icons.Copy /></button>
-        </CustomTooltip>
-        <CustomTooltip content={t("promptManager.regex.export")}>
-          <button type="button"
-            onClick={(e) => { e.stopPropagation(); onExport(p.id); }}
-            aria-label={t("promptManager.regex.export")}
-            className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-          ><Icons.Download /></button>
-        </CustomTooltip>
         <MasterDetailMobileDrillDown onSelect={() => onSelect(p.id)} className="py-1" />
       </div>
     </div>
@@ -272,7 +240,7 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
   prev.p.memberCount === next.p.memberCount &&
   prev.dndDisabled === next.dndDisabled);
 
-export function RegexPresetList({ presets, profiles = [], activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onAddRuleToProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onCopy, onExport, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
+export function RegexPresetList({ presets, profiles = [], activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onAddRuleToProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
@@ -676,8 +644,6 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                   onSelect={onSelect}
                   isMobile={isMobile}
                   startEditing={startEditing}
-                  onCopy={onCopy}
-                  onExport={onExport}
                   dndDisabled={dndDisabled}
                 />
               );

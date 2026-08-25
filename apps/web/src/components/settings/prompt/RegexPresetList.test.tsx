@@ -69,8 +69,6 @@ function baseProps(overrides: Partial<Parameters<typeof RegexPresetList>[0]> = {
     onAdd: mock(),
     onRename: mock(),
     onReorder: mock(),
-    onCopy: mock(),
-    onExport: mock(),
     ...overrides,
   };
 }
@@ -173,40 +171,20 @@ describe("RegexPresetList — status dot (R-7)", () => {
   });
 });
 
-// ── R-12: per-row Copy & Export actions ──────────────────────────────────
-// Each row renders Copy (duplicate) and Download (export) buttons in BOTH the
-// mobile and desktop clusters, labelled by their i18n keys (t is mocked to
-// return keys verbatim). Clicking fires the row's onCopy / onExport with the
-// preset id — the parent resolves the full record (it owns the list).
-describe("RegexPresetList — copy & export (R-12)", () => {
+// ── R-12 → footer: per-row Copy & Export REMOVED (owner correction) ────────
+// Copy/export now live in the regex-tab footer acting on the SELECTED rule —
+// exactly like the presets tab's duplicate/export (the new boundary is pinned
+// in PromptManagerModal.test.tsx). This block pins the removal: no per-row
+// affordances may creep back into the list rows.
+describe("RegexPresetList — no per-row copy/export (R-12 → footer)", () => {
   beforeEach(() => {
     mock.clearAllMocks();
   });
 
-  it("renders copy and export buttons on each row", () => {
+  it("renders no copy/export buttons in rows", () => {
     render(<RegexPresetList {...baseProps()} />);
-    expect(screen.getAllByLabelText("promptManager.regex.copy").length).toBeGreaterThan(0);
-    expect(screen.getAllByLabelText("promptManager.regex.export").length).toBeGreaterThan(0);
-  });
-
-  it("calls onCopy with the preset id when the copy button is clicked", async () => {
-    const onCopy = mock();
-    const user = userEvent.setup();
-    render(<RegexPresetList {...baseProps({ onCopy })} />);
-    // Both clusters render a copy button per row; click the first Alpha one.
-    const alphaCopy = screen.getAllByLabelText("promptManager.regex.copy")[0];
-    await user.click(alphaCopy);
-    expect(onCopy).toHaveBeenCalledWith(basePresets[0].id);
-  });
-
-  it("calls onExport with the preset id when the export button is clicked", async () => {
-    const onExport = mock();
-    const user = userEvent.setup();
-    render(<RegexPresetList {...baseProps({ onExport })} />);
-    // Rows render in order (Alpha, Beta, Gamma) — grab a Beta export button.
-    const betaExport = screen.getAllByLabelText("promptManager.regex.export")[2];
-    await user.click(betaExport);
-    expect(onExport).toHaveBeenCalledWith(basePresets[1].id);
+    expect(screen.queryByLabelText("promptManager.regex.copy")).toBeNull();
+    expect(screen.queryByLabelText("promptManager.regex.export")).toBeNull();
   });
 });
 
