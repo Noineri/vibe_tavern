@@ -104,3 +104,50 @@ export const resolveActiveRegexQuerySchema = z.object({
   presetId: z.string().optional(),
 });
 export type ResolveActiveRegexQuery = z.infer<typeof resolveActiveRegexQuerySchema>;
+
+// ─── Profiles (R-13) ──────────────────────────────────────────────────────
+
+/** Create a regex profile bundle (R-13). Rules join via attach — never here. */
+export const createRegexProfileSchema = z.object({
+  /** Human-readable profile name. */
+  name: z.string().min(1),
+  /** Master switch — when disabled, NO member rule fires. */
+  disabled: z.boolean().optional().default(false),
+  /** Applies to every chat regardless of bindings (like global lorebooks). */
+  isGlobal: z.boolean().optional().default(false),
+  /** Application order within the flat list (shared sort space with presets). */
+  sortOrder: z.number().optional().default(0),
+});
+export type CreateRegexProfileInput = z.infer<typeof createRegexProfileSchema>;
+
+export const updateRegexProfileSchema = z.object({
+  name: z.string().min(1).optional(),
+  disabled: z.boolean().optional(),
+  isGlobal: z.boolean().optional(),
+  sortOrder: z.number().optional(),
+});
+export type UpdateRegexProfileInput = z.infer<typeof updateRegexProfileSchema>;
+
+/** Profile deletion mode — `keep` (rules survive as standalone) | `cascade`.
+ *  Wired as a query param on DELETE (mirrors resource style). */
+export const deleteRegexProfileQuerySchema = z.object({
+  mode: z.enum(['keep', 'cascade']).default('keep'),
+});
+export type DeleteRegexProfileQuery = z.infer<typeof deleteRegexProfileQuerySchema>;
+
+/** Attach a rule to a profile (R-13 exclusive membership). */
+export const attachRegexRuleSchema = z.object({
+  ruleId: z.string().min(1),
+});
+export type AttachRegexRuleInput = z.infer<typeof attachRegexRuleSchema>;
+
+/** Replace-all binding payload for a regex profile (mirrors setRegexLinksSchema). */
+export const setRegexProfileLinksSchema = z.object({
+  links: z.array(
+    z.object({
+      targetType: regexTargetTypeSchema,
+      targetId: z.string().min(1),
+    }),
+  ),
+});
+export type SetRegexProfileLinksInput = z.infer<typeof setRegexProfileLinksSchema>;

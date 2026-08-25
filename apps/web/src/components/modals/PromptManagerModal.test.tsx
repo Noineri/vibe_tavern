@@ -588,6 +588,7 @@ describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
       placement: [2],
       isGlobal: false,
       sortOrder: 0,
+      profileId: null,
       createdAt: 0,
       updatedAt: 0,
     };
@@ -642,6 +643,7 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
       placement: [2, 5],
       isGlobal: false,
       sortOrder: 0,
+      profileId: null,
       createdAt: 0,
       updatedAt: 0,
     };

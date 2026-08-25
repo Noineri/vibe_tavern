@@ -112,6 +112,10 @@ export function normalizeStRegexScript(raw: unknown, index: number): RegexScript
     placement: parsePlacement(raw.placement),
     isGlobal: false,
     sortOrder: index,
+    // Cards stay flat: an imported script always lands standalone (R-13
+    // profiles are a VT-native concept; profile bundling is a manager-side
+    // action, never encoded in card data).
+    profileId: null,
     sourceScript: raw,
   };
 }

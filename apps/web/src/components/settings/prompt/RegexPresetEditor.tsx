@@ -331,6 +331,9 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       placement: draft.placement,
       isGlobal: draft.isGlobal,
       sortOrder: 0,
+      // Test pane always runs standalone (R-13: gating is a chat-context
+      // concern, not a client-side test concern).
+      profileId: null,
       createdAt: "",
       updatedAt: "",
     };

@@ -555,6 +555,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         placement: [...source.placement] as RegexPlacement[],
         isGlobal: source.isGlobal,
         sortOrder: source.sortOrder,
+        // Standalone export: ST has no profiles; the rule leaves the bundle.
+        profileId: null,
       }]);
       const safeName = source.name.replace(/[^a-zA-Z0-9_-]/g, "_");
       downloadTextFile(`regex-${safeName}.json`, json, "application/json");

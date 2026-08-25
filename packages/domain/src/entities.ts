@@ -19,6 +19,7 @@ import type {
   PromptPresetId,
   PromptTraceId,
   RegexPresetId,
+  RegexProfileId,
   RetrievedMemoryHitId,
   ScriptId,
   SummaryMemorySnapshotId,
@@ -429,8 +430,39 @@ export interface RegexPreset {
   /** Applies to every chat regardless of bindings (like global lorebooks). */
   isGlobal: boolean;
   sortOrder: number;
+  /** The profile this rule belongs to (R-13), or null for a standalone rule. */
+  profileId: RegexProfileId | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+/**
+ * A regex profile (R-13) — an ordered bundle of regex rules with a single
+ * binding + master enable switch (the lorebook analogy). A member rule fires
+ * only if the profile is enabled AND bound (or global); the rule's own
+ * `isGlobal`/`regexLinks` are inert while it is a member (preserved in the DB
+ * and reactivated on detach). Persona is excluded as a binding target by
+ * design — same vocabulary as `RegexPreset`.
+ */
+export interface RegexProfile {
+  id: RegexProfileId;
+  name: string;
+  /** Master switch — when disabled, NO member rule fires. */
+  disabled: boolean;
+  /** Applies to every chat regardless of bindings (like global lorebooks). */
+  isGlobal: boolean;
+  /** Application order within the flat list (shared sort space with presets). */
+  sortOrder: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Many-to-many binding for a regex profile — the fourth instance of the
+ *  lorebook/script junction pattern ({entityId, targetType, targetId}). */
+export interface RegexProfileLink {
+  regexProfileId: RegexProfileId;
+  targetType: RegexTargetType;
+  targetId: string;
 }
 
 /** Many-to-many binding mirroring `lorebookLinks`/`scriptLinks` — the third

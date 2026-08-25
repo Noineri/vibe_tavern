@@ -219,6 +219,9 @@ export class CharacterRuntime {
     // manual rebinding — only the polymorphic link rows (no FK possible) are
     // cleaned here, app-level.
     await this.deps.stores.regex.deleteLinksForTarget(REGEX_TARGET_TYPE.Character, characterId);
+    // R-13: profile links targeting this character die with it too (same policy
+    // B — the PROFILE survives, its link to the deleted character must not).
+    await this.deps.stores.regex.deleteProfileLinksForTarget(REGEX_TARGET_TYPE.Character, characterId);
     await this.deps.stores.characters.delete(typedCharacterId);
   }
 

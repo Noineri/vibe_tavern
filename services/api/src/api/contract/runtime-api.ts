@@ -26,7 +26,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexProfile, RegexProfileLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
@@ -44,7 +44,7 @@ import type {
 } from "@vibe-tavern/db";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
-import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
@@ -355,6 +355,17 @@ export interface RegexRuntimeApi {
 	getRegexLinks: (id: string) => Promise<RegexLink[]>;
 	setRegexLinks: (id: string, links: Array<{ targetType: "character" | "preset"; targetId: string }>) => Promise<RegexLink[]>;
 	resolveActiveRegex: (query: { characterId?: string; presetId?: string }) => Promise<RegexPreset[]>;
+	// R-13 regex profiles.
+	listAllRegexProfiles: () => Promise<RegexProfile[]>;
+	getRegexProfile: (id: string) => Promise<RegexProfile | null>;
+	createRegexProfile: (body: CreateRegexProfileInput) => Promise<RegexProfile>;
+	updateRegexProfile: (id: string, body: UpdateRegexProfileInput) => Promise<RegexProfile | null>;
+	deleteRegexProfile: (id: string, mode: "keep" | "cascade") => Promise<void>;
+	attachRegexRule: (profileId: string, ruleId: string) => Promise<RegexPreset | null>;
+	detachRegexRule: (ruleId: string) => Promise<RegexPreset | null>;
+	getRegexProfileLinks: (id: string) => Promise<RegexProfileLink[]>;
+	setRegexProfileLinks: (id: string, links: Array<{ targetType: "character" | "preset"; targetId: string }>) => Promise<RegexProfileLink[]>;
+	listRegexProfileMemberIds: (profileId: string) => Promise<string[]>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────

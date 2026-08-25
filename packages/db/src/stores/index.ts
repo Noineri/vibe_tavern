@@ -72,6 +72,9 @@ export { RegexStore } from './regex-store.js';
 export type {
   CreateRegexPresetData,
   UpdateRegexPresetData,
+  CreateRegexProfileData,
+  UpdateRegexProfileData,
+  DeleteRegexProfileMode,
 } from './regex-store.js';
 
 export { CoauthorModuleStore } from './coauthor-module-store.js';

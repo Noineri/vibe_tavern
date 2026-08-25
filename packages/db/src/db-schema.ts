@@ -478,10 +478,37 @@ export const regexPresets = sqliteTable('regex_presets', {
   placementJson: text('placement_json').notNull().default('[2]'),
   isGlobal: integer('is_global').notNull().default(0),
   sortOrder: integer('sort_order').notNull().default(0),
+  // R-13 profile membership: null = standalone rule. FK is ON DELETE SET NULL
+  // (profile deletion keeps rules as standalone by default — folder metaphor;
+  // the cascade variant is an explicit store-level operation, not the FK).
+  profileId: text('profile_id').references(() => regexProfiles.id, { onDelete: 'set null' }),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   globalIdx: index('idx_regex_presets_global').on(table.isGlobal),
+  profileIdx: index('idx_regex_presets_profile').on(table.profileId),
+}));
+
+/**
+ * Regex profiles (R-13): an ordered bundle of regex rules with a single
+ * binding + master enable switch (the lorebook analogy). Rows in this table
+ * and `regex_presets` participate in ONE flat sort sequence — both tables
+ * carry their own `sort_order` and the client (R-13b list) interleaves them
+ * by sending explicit sortOrder values; there is deliberately NO combined
+ * reorder endpoint (cross-table ordering is orchestrated by the client).
+ * `regexProfileLinks` is the fourth instance of the lorebook/script junction
+ * pattern; binding targets are characters and prompt presets only.
+ */
+export const regexProfiles = sqliteTable('regex_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  disabled: integer('disabled').notNull().default(0),
+  isGlobal: integer('is_global').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  globalIdx: index('idx_regex_profiles_global').on(table.isGlobal),
 }));
 
 export const regexLinks = sqliteTable('regex_links', {
@@ -493,6 +520,16 @@ export const regexLinks = sqliteTable('regex_links', {
   pk: primaryKey({ columns: [table.regexPresetId, table.targetType, table.targetId] }),
   targetIdx: index('idx_regex_links_target').on(table.targetType, table.targetId),
   presetIdx: index('idx_regex_links_preset').on(table.regexPresetId),
+}));
+
+export const regexProfileLinks = sqliteTable('regex_profile_links', {
+  regexProfileId: text('regex_profile_id').notNull().references(() => regexProfiles.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // 'character' | 'preset'
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.regexProfileId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_regex_profile_links_target').on(table.targetType, table.targetId),
+  profileIdx: index('idx_regex_profile_links_profile').on(table.regexProfileId),
 }));
 
 // ─── chatBranches ──────────────────────────────────────────────────────────────

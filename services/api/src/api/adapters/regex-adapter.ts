@@ -1,6 +1,6 @@
 import type { RegexRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { CreateRegexPresetInput, UpdateRegexPresetInput } from "@vibe-tavern/api-contracts";
+import type { CreateRegexPresetInput, CreateRegexProfileInput, UpdateRegexPresetInput, UpdateRegexProfileInput } from "@vibe-tavern/api-contracts";
 import { applyTargetFlags } from "@vibe-tavern/domain";
 
 export class RegexAdapter implements RegexRuntimeApi {
@@ -53,4 +53,32 @@ export class RegexAdapter implements RegexRuntimeApi {
 			characterId: query.characterId ?? null,
 			presetId: query.presetId ?? null,
 		});
+
+	// ─── R-13 profiles ────────────────────────────────────────────────────
+
+	listAllRegexProfiles = () => this.stores.regex.listProfiles();
+
+	getRegexProfile = (id: string) => this.stores.regex.getProfileById(id);
+
+	createRegexProfile = (body: CreateRegexProfileInput) =>
+		this.stores.regex.createProfile(body);
+
+	updateRegexProfile = (id: string, body: UpdateRegexProfileInput) =>
+		this.stores.regex.updateProfile(id, body);
+
+	deleteRegexProfile = (id: string, mode: "keep" | "cascade") =>
+		this.stores.regex.deleteProfile(id, mode);
+
+	attachRegexRule = (profileId: string, ruleId: string) =>
+		this.stores.regex.attachRule(profileId, ruleId);
+
+	detachRegexRule = (ruleId: string) => this.stores.regex.detachRule(ruleId);
+
+	getRegexProfileLinks = (id: string) => this.stores.regex.getProfileLinks(id);
+
+	setRegexProfileLinks = (id: string, links: Array<{ targetType: "character" | "preset"; targetId: string }>) =>
+		this.stores.regex.setProfileLinks(id, links);
+
+	listRegexProfileMemberIds = (profileId: string) =>
+		this.stores.regex.listProfileMemberIds(profileId);
 }

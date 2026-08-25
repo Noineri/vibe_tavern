@@ -590,6 +590,8 @@ export interface RegexPresetRecord {
   placement: number[];
   isGlobal: boolean;
   sortOrder: number;
+  /** R-13: the profile this rule belongs to, or null for a standalone rule. */
+  profileId: string | null;
   createdAt: number;
   updatedAt: number;
 }

@@ -3,6 +3,7 @@ import {
   brandId,
   type RegexPreset,
   type RegexPresetId,
+  type RegexProfileId,
   type RegexPlacement,
   type RegexSubstituteMode,
 } from "@vibe-tavern/domain";
@@ -51,6 +52,7 @@ function recordToDomainPreset(record: RegexPresetRecord): RegexPreset {
     id: brandId<RegexPresetId>(record.id),
     substituteRegex: record.substituteRegex as RegexSubstituteMode,
     placement: record.placement as RegexPlacement[],
+    profileId: record.profileId ? brandId<RegexProfileId>(record.profileId) : null,
     createdAt: String(record.createdAt),
     updatedAt: String(record.updatedAt),
   };

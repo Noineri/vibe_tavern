@@ -71,6 +71,7 @@ function baseRecord(overrides: Partial<RegexPresetRecord> = {}): RegexPresetReco
     placement: [2],
     isGlobal: false,
     sortOrder: 0,
+    profileId: null,
     createdAt: 0,
     updatedAt: 0,
     ...overrides,

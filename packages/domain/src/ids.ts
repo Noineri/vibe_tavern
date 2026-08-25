@@ -27,6 +27,7 @@ export type ToolProfileId = Brand<"ToolProfileId">;
 export type PromptPresetId = Brand<"PromptPresetId">;
 export type ScriptId = Brand<"ScriptId">;
 export type RegexPresetId = Brand<"RegexPresetId">;
+export type RegexProfileId = Brand<"RegexProfileId">;
 export type DiceRollId = Brand<"DiceRollId">;
 export type DicePendingLaneId = Brand<"DicePendingLaneId">;
 
