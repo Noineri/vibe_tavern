@@ -351,6 +351,13 @@
       "when": 1787642850905,
       "tag": "0049_brainy_ezekiel",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1787698903206,
+      "tag": "0050_strange_colonel_america",
+      "breakpoints": true
     }
   ]
 }

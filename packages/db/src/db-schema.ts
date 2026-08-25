@@ -532,6 +532,22 @@ export const regexProfileLinks = sqliteTable('regex_profile_links', {
   profileIdx: index('idx_regex_profile_links_profile').on(table.regexProfileId),
 }));
 
+// ─── servicePromptProfiles ────────────────────────────────────────────────────
+//
+// Independent profiles overriding the app's 21 base system prompts
+// (SERVICE_PROMPTS_PROFILES_PLAN, SP-2). Overrides persist as JSON
+// (partial map field→text, strict-object schema). The seeded row
+// id "default" is the live Default profile — self-healed by
+// ServicePromptProfileStore.ensureDefault(). No folder/file coupling.
+export const servicePromptProfiles = sqliteTable('service_prompt_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  isDefault: integer('is_default').notNull().default(0),
+  overrides: text('overrides').notNull().default('{}'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── chatBranches ──────────────────────────────────────────────────────────────
 
 export const chatBranches = sqliteTable('chat_branches', {
@@ -914,6 +930,10 @@ export const uiSettings = sqliteTable('ui_settings', {
   // available profile; no DB-level FK).
   copilotProviderId: text('copilot_provider_id'),
   copilotModelName: text('copilot_model_name'),
+  // Service prompt profiles — globally active profile id (SP-2). Null/dangling
+  // → Default profile (id "default") is used. No DB-level FK — mirrors
+  // coauthor/copilot bindings.
+  activeServicePromptProfileId: text('active_service_prompt_profile_id'),
 
   updatedAt: text('updated_at').notNull(),
 });

@@ -36,6 +36,7 @@ export interface UiSettings {
    *  falls back to the first available provider profile (the pre-fix default). */
   copilotProviderId: string | null;
   copilotModelName: string | null;
+  activeServicePromptProfileId: string | null;
   updatedAt: string;
 }
 
@@ -60,6 +61,7 @@ export interface UiSettingsUpdate {
   starPromptDeferrals?: number;
   copilotProviderId?: string | null;
   copilotModelName?: string | null;
+  activeServicePromptProfileId?: string | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -84,6 +86,7 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   starPromptDeferrals: 0,
   copilotProviderId: null,
   copilotModelName: null,
+  activeServicePromptProfileId: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -139,6 +142,7 @@ export class UiSettingsStore {
       starPromptDeferrals: partial.starPromptDeferrals ?? UI_SETTINGS_DEFAULTS.starPromptDeferrals,
       copilotProviderId: partial.copilotProviderId ?? UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
+      activeServicePromptProfileId: partial.activeServicePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -170,6 +174,7 @@ export class UiSettingsStore {
       starPromptDeferrals: UI_SETTINGS_DEFAULTS.starPromptDeferrals,
       copilotProviderId: UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
+      activeServicePromptProfileId: UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
       updatedAt: this.clock.now(),
     }).returning();
 
@@ -199,6 +204,7 @@ export class UiSettingsStore {
       starPromptDeferrals: row.starPromptDeferrals,
       copilotProviderId: row.copilotProviderId ?? null,
       copilotModelName: row.copilotModelName ?? null,
+      activeServicePromptProfileId: row.activeServicePromptProfileId ?? null,
       updatedAt: row.updatedAt,
     };
   }

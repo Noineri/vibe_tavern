@@ -132,6 +132,9 @@ export type {
   CopilotContextMetrics,
 } from './experience-copilot-store.js';
 
+export { ServicePromptProfileStore } from './service-prompt-store.js';
+export type { ServicePromptProfile, CreateServicePromptProfileData, UpdateServicePromptProfileData } from './service-prompt-store.js';
+
 export { QuotaStore, defaultQuotaConfigForKind } from './quota-store.js';
 export type {
   QuotaSettingsRecord,
