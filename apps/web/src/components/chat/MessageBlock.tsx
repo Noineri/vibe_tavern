@@ -217,8 +217,21 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     if (!msg) return null;
     const base = selectedVariant ? selectedVariant.content : msg.displayContent;
     if (!base || applicableDisplayRegex.length === 0) return base;
-    return applyRegexLayer(base, applicableDisplayRegex, displayRegexMacroSource);
-  }, [msg, selectedVariant, applicableDisplayRegex, displayRegexMacroSource]);
+    const layerOutput = applyRegexLayer(base, applicableDisplayRegex, displayRegexMacroSource);
+    // ST parity (R-14 bug 3): ST resolves macros on the replacement RESULT at
+    // regex time (engine.js:444 substituteParams(replaceWithGroups)), while
+    // this seam macro-resolves the base BEFORE the regex — so a macro born in
+    // the replacement would otherwise stay literal on screen. Resolve the
+    // layer OUTPUT with the same UI resolver, once after all scripts.
+    // Accepted micro-divergence vs ST's per-script timing: a later script's
+    // find pattern sees the pre-resolution text (ST would see per-script
+    // resolved text); in practice find-pattern macros are governed per-preset
+    // by its substituteRegex mode anyway. replaceUiMacros is idempotent —
+    // pure static value substitutions (names, descriptions, pronoun forms),
+    // no random/time/stateful macros — so re-resolving the already-resolved
+    // base text is a no-op except for the regex-introduced tokens.
+    return macroContext ? replaceUiMacros(layerOutput, macroContext) : layerOutput;
+  }, [msg, selectedVariant, applicableDisplayRegex, displayRegexMacroSource, macroContext]);
 
   if (input.messageId === "__pending-user") {
     return <PendingUserMessage />;

@@ -234,6 +234,19 @@ describe("MessageBlock — RX-13 display regex seam", () => {
     expect(storeContent()).toBe("a secret appears");
   });
 
+  test("replaceString macros resolve on the render output (R-14 parity with ST engine.js:444 substituteParams(replaceWithGroups))", async () => {
+    // ST resolves macros on the replacement result AT REGEX TIME; VT's seam
+    // macro-resolves the base BEFORE the regex, so a macro born in the
+    // replacement (here {{char}}) must be resolved on the LAYER OUTPUT.
+    mockResolvedPresets = [wirePreset({ markdownOnly: true, replaceString: "{{char}} here" })];
+    const { text, storeContent } = await mountAndRead("a secret appears");
+
+    expect(text()).toContain("Char c1 here");
+    expect(text()).not.toContain("{{char}}");
+    // Store stays raw — display-only never writes back.
+    expect(storeContent()).toBe("a secret appears");
+  });
+
   test("prompt-only preset does NOT change the render (mode isolation)", async () => {
     mockResolvedPresets = [wirePreset({ promptOnly: true })];
     const { text } = await mountAndRead("a secret appears");
