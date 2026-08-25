@@ -211,3 +211,33 @@ describe("MasterDetailModal — mobile", () => {
     expect(outer.className).not.toContain("some-desktop-class");
   });
 });
+
+// ── Frost layer (R-8) ─────────────────────────────────────────────────────
+// Any non-none backdrop-filter on the panel — even blur(0) in opaque themes —
+// makes the panel a containing block for position:fixed descendants, so
+// dnd-kit's DragOverlay (fixed, rendered inline in the panel tree) resolved
+// against the panel box and dragged rows appeared offset right/down of the
+// cursor in every master-detail list (PromptManager presets/regex/canvas,
+// provider profiles). The frost therefore lives on a z:-1 ::before underlayer
+// (.glass-blur-under); this pins that the panel itself never re-gains the
+// on-element .glass-blur class.
+describe("MasterDetailModal — frost layer (R-8)", () => {
+  it("panel carries glass-blur-under, never on-element glass-blur", () => {
+    isMobile = false;
+    render(
+      <MasterDetailModal
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+      />,
+    );
+
+    const panel = document.querySelector(".glass-blur-under");
+    expect(panel).toBeTruthy();
+    expect([...panel!.classList]).not.toContain("glass-blur");
+    // The translucent fill moved to the underlayer too — no double fill.
+    expect([...panel!.classList]).not.toContain("bg-glass-bg");
+  });
+});

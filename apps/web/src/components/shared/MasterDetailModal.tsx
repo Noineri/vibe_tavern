@@ -187,10 +187,16 @@ export function MasterDetailModal({
       >
         <div
           className={cn(
-            // Frosted on glass themes (lava): --glass-bg is a translucent fill
-            // tuned to survive .glass-blur; in opaque themes both resolve to
-            // --surface / blur 0 — byte-identical to the old plain bg-surface.
-            "glass-blur flex flex-col overflow-hidden bg-glass-bg",
+            // Frost UNDER the content (R-8): any non-none backdrop-filter on
+            // the panel — even blur(0) in opaque themes — makes the panel a
+            // containing block for position:fixed descendants, so dnd-kit's
+            // DragOverlay (fixed, rendered inline in the panel tree) resolved
+            // against the panel box and appeared offset right/down of the
+            // cursor in every master-detail list. .glass-blur-under moves the
+            // fill + frost to a z:-1 ::before underlayer — same frost rect and
+            // look, panel itself keeps backdrop-filter: none. Opaque themes
+            // remain byte-identical (--glass-bg == --surface, blur 0).
+            "glass-blur-under flex flex-col overflow-hidden",
             isMobile ? "h-[100dvh] w-[100dvw]" : containerClassName,
           )}
           onClick={(e) => e.stopPropagation()}

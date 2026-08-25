@@ -471,6 +471,37 @@ select option{padding:2px 6px}
   backdrop-filter: blur(var(--glass-blur, 0px)) saturate(180%) brightness(110%);
 }
 
+/* ── Frost-under variant for panels hosting position:fixed descendants ──
+   Use INSTEAD of .glass-blur when the panel's subtree renders fixed-position
+   overlays inline (dnd-kit DragOverlay does). Any non-none backdrop-filter on
+   the panel element — even blur(0px) in opaque themes — makes it a containing
+   block for fixed descendants, so the overlay resolves against the panel box
+   instead of the viewport and renders offset (R-8: dragged rows appeared
+   right/below the cursor in every master-detail list).
+   Same frost as .glass-blur, but the fill + filter live on a z:-1 ::before
+   underlayer (the .glass-bar technique, minus the feather mask): the panel
+   element itself has backdrop-filter: none, fixed descendants resolve against
+   the viewport again, and the frost rect/look is identical (the pseudo covers
+   the panel box; overflow:hidden on the panel clips it to the rounded rect).
+   isolation: isolate keeps the negative-z pseudo inside the panel (above the
+   page behind, below all in-flow content). Opaque themes: --glass-bg is opaque
+   and --glass-blur is 0 — visually identical to plain bg-surface. */
+.glass-blur-under {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+.glass-blur-under::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 0px)) saturate(180%) brightness(110%);
+  backdrop-filter: blur(var(--glass-blur, 0px)) saturate(180%) brightness(110%);
+}
+
 /* ── Feathered sticky action bar (CharacterForm) ──
    Unlike floating .glass-blur panels (whose hard rect is expected), the sticky
    action bar should read as part of the header, not a floating frosted
