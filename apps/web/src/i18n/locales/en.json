@@ -2341,7 +2341,7 @@
   "promptManager.regex.tabLabel": "Regex Presets",
   "promptManager.regex.emptyTitle": "No regex presets yet",
   "promptManager.regex.emptySub": "Create a named find/replace script to transform text at hooks",
-  "promptManager.regex.newPreset": "+ New Regex Preset",
+  "promptManager.regex.newPreset": "New Regex Preset",
   "promptManager.regex.newNamePlaceholder": "Regex preset name…",
   "promptManager.regex.fieldName": "Name",
   "promptManager.regex.namePlaceholder": "e.g. Strip thinking tags",

@@ -2361,7 +2361,7 @@
   "promptManager.regex.tabLabel": "Regex-пресеты",
   "promptManager.regex.emptyTitle": "Regex-пресетов пока нет",
   "promptManager.regex.emptySub": "Создайте именованный скрипт замены для трансформации текста в точках срабатывания",
-  "promptManager.regex.newPreset": "+ Новый regex-пресет",
+  "promptManager.regex.newPreset": "Новый regex-пресет",
   "promptManager.regex.newNamePlaceholder": "Название regex-пресета…",
   "promptManager.regex.fieldName": "Название",
   "promptManager.regex.namePlaceholder": "напр. Убрать теги рассуждений",

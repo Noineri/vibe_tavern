@@ -371,12 +371,6 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
             onChange={(e) => update("name", e.target.value)}
             placeholder={t("promptManager.regex.namePlaceholder")}
           />
-          {notApplied && (
-            <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2 py-px font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-danger-text select-none">
-              <span className="h-[6px] w-[6px] rounded-full bg-danger" />
-              {t("promptManager.regex.badgeNotApplied")}
-            </span>
-          )}
         </div>
         <div className="flex shrink-0 items-center gap-2 pb-[7px]">
           <Toggle
@@ -389,6 +383,17 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           </label>
         </div>
       </div>
+      {/* Badge lives OUTSIDE the name/toggle row: inside it, its height
+          pushes the items-end-aligned Toggle down (owner report). Full-width
+          row below keeps the Toggle level with the name input. */}
+      {notApplied && (
+        <div className="-mt-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2 py-px font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-danger-text select-none">
+            <span className="h-[6px] w-[6px] rounded-full bg-danger" />
+            {t("promptManager.regex.badgeNotApplied")}
+          </span>
+        </div>
+      )}
 
       {/* Применение (R-7): «Все чаты» (isGlobal) / «Привязать к» + bindings.
           Scope BEFORE rule fields — owner's section order. */}
