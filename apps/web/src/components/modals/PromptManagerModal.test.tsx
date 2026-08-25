@@ -27,6 +27,10 @@ const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLo
 const realRegexApi = await import("../../api/regex-api.js");
 const listAllRegexPresetsMock = mock(realRegexApi.listAllRegexPresets);
 const createRegexPresetMock = mock(realRegexApi.createRegexPreset);
+const listAllRegexProfilesMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.listAllRegexProfiles>>);
+const createRegexProfileMock = mock(async (body: unknown) => ({ id: "p_new", name: (body as { name?: string })?.name ?? "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>));
+const attachRegexRuleMock = mock(async (_a: unknown, _b: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.attachRegexRule>>);
+const getRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.getRegexProfileLinks>>);
 const realDownload = await import("../../lib/download.js");
 const downloadTextFileMock = mock(realDownload.downloadTextFile);
 
@@ -55,6 +59,10 @@ mock.module("../../api/regex-api.js", () => ({
   ...realRegexApi,
   listAllRegexPresets: listAllRegexPresetsMock,
   createRegexPreset: createRegexPresetMock,
+  listAllRegexProfiles: listAllRegexProfilesMock,
+  createRegexProfile: createRegexProfileMock,
+  attachRegexRule: attachRegexRuleMock,
+  getRegexProfileLinks: getRegexProfileLinksMock,
 }));
 mock.module("../../lib/download.js", () => ({
   ...realDownload,
@@ -76,6 +84,11 @@ afterEach(() => {
   loadPromptCanvasLoreEntries.mockReset();
   listAllRegexPresetsMock.mockReset();
   createRegexPresetMock.mockReset();
+  listAllRegexProfilesMock.mockReset();
+  listAllRegexProfilesMock.mockResolvedValue([]);
+  createRegexProfileMock.mockReset();
+  createRegexProfileMock.mockResolvedValue({ id: "p_new", name: "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>);
+  attachRegexRuleMock.mockReset();
   downloadTextFileMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
@@ -726,6 +739,70 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
       minDepth: 3,
       maxDepth: null,
       placement: [2, 5],
+    });
+  });
+});
+
+// ── R-13b: profiles in master list ─────────────────────────────────────
+describe("PromptManagerModal — regex profiles (R-13b)", () => {
+  function profileRecord(id: string, name: string, sortOrder = 0) {
+    return { id, name, disabled: false, isGlobal: true, sortOrder, createdAt: 0, updatedAt: 0 };
+  }
+  function regexRecord(id: string, name: string, profileId: string | null = null): RegexPresetRecord {
+    return {
+      id, name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId, createdAt: 0, updatedAt: 0,
+    };
+  }
+  test("switching to regex tab fetches profiles", async () => {
+    listAllRegexPresetsMock.mockResolvedValue([regexRecord("rx1", "R1")]);
+    listAllRegexProfilesMock.mockResolvedValue([profileRecord("p1", "Bundle")]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => { expect(listAllRegexProfilesMock).toHaveBeenCalled(); });
+    await waitFor(() => { expect(within(view.baseElement).getByText("Bundle")).toBeTruthy(); });
+  });
+  test("creating a new profile calls the API", async () => {
+    listAllRegexPresetsMock.mockResolvedValue([]);
+    listAllRegexProfilesMock.mockResolvedValue([]);
+    createRegexProfileMock.mockResolvedValue(profileRecord("p2", "MyProf"));
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(listAllRegexProfilesMock).toHaveBeenCalled());
+    const newProfileBtn = within(view.baseElement).getByText("promptManager.regex.newProfile");
+    fireEvent.click(newProfileBtn);
+    const input = within(view.baseElement).getByPlaceholderText("promptManager.regex.newProfilePlaceholder") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "MyProf" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => { expect(createRegexProfileMock).toHaveBeenCalled(); });
+    expect((createRegexProfileMock.mock.calls[0][0] as unknown as { name: string }).name).toBe("MyProf");
+  });
+
+  test("member rule's status dot reflects the PROFILE gate: enabled-but-unbound profile → red dot on both the profile row and its member (R-13b owner spec)", async () => {
+    // Enabled, non-global, zero profile links → applies in NO chat: the
+    // profile row dot is red AND the member's dot must be red too (a green
+    // member dot would claim the rule fires while the gate keeps it dead).
+    const unboundProfile = { id: "pu", name: "UnboundProf", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 };
+    listAllRegexPresetsMock.mockResolvedValue([regexRecord("m1", "MemRule", "pu")]);
+    listAllRegexProfilesMock.mockResolvedValue([unboundProfile]);
+    getRegexProfileLinksMock.mockResolvedValue([]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(within(view.baseElement).getByText("UnboundProf")).toBeTruthy());
+    // Expand the profile so the member row renders.
+    fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
+    await waitFor(() => expect(within(view.baseElement).getByText("MemRule")).toBeTruthy());
+    // Both the profile row and the member row carry the red "unbound" dot.
+    await waitFor(() => {
+      expect(view.getAllByLabelText("promptManager.regex.badgeUnboundReason").length).toBe(2);
     });
   });
 });

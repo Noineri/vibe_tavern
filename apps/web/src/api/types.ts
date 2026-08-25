@@ -602,6 +602,22 @@ export interface RegexLinkRecord {
   targetId: string;
 }
 
+export interface RegexProfileRecord {
+  id: string;
+  name: string;
+  disabled: boolean;
+  isGlobal: boolean;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RegexProfileLinkRecord {
+  regexProfileId: string;
+  targetType: "character" | "preset";
+  targetId: string;
+}
+
 // ─── Dice ──────────────────────────────────────────────────────────────
 //
 // Wire types for the chat-scoped Dice API (DICE_SYSTEM_FRONTEND_PLAN, Wave F1).

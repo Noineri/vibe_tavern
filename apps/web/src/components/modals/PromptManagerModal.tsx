@@ -32,9 +32,15 @@ import {
   updateRegexPreset,
   deleteRegexPreset,
   getRegexLinks,
+  listAllRegexProfiles,
+  createRegexProfile,
+  updateRegexProfile,
+  attachRegexRule,
+  detachRegexRule,
+  getRegexProfileLinks,
 } from "../../api/regex-api.js";
 import { invalidateActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
-import type { RegexPresetRecord } from "../../api/types.js";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
 import { downloadTextFile } from "../../lib/download.js";
 import { applyTargetFlags, type RegexPlacement, type RegexSubstituteMode } from "@vibe-tavern/domain";
 import { toast } from "sonner";
@@ -358,6 +364,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   // unknown id; undefined = not loaded yet (badge withheld until known), so
   // rows never flash a false «unbound» while links load.
   const [regexLinkCounts, setRegexLinkCounts] = useState<Record<string, number | undefined>>({});
+  const [regexProfiles, setRegexProfiles] = useState<RegexProfileRecord[]>([]);
+  const [expandedProfileIds, setExpandedProfileIds] = useState<Set<string>>(new Set());
+  const [regexProfileLinkCounts, setRegexProfileLinkCounts] = useState<Record<string, number | undefined>>({});
 
   const activeRegexPreset = regexPresets.find((p) => p.id === activeRegexPresetId) ?? null;
 
@@ -383,6 +392,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       .catch(() => {
         setRegexLoadState("error");
       });
+    void listAllRegexProfiles()
+      .then((list) => setRegexProfiles(list.sort((a, b) => a.sortOrder - b.sortOrder)))
+      .catch(() => {});
   }, [activeTab, activeRegexPresetId, listAllRegexPresets]);
 
   // Sync the editor draft when the selected regex preset changes.
@@ -410,6 +422,17 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         .catch(() => {});
     }
   }, [regexPresets, regexLinkCounts]);
+
+  // R-13: profile link counts for triad dots
+  useEffect(() => {
+    for (const pr of regexProfiles) {
+      if (pr.isGlobal || pr.disabled) continue;
+      if (regexProfileLinkCounts[pr.id] !== undefined) continue;
+      getRegexProfileLinks(pr.id)
+        .then((rows) => setRegexProfileLinkCounts((prev) => ({ ...prev, [pr.id]: rows.length })))
+        .catch(() => {});
+    }
+  }, [regexProfiles, regexProfileLinkCounts]);
 
   /** R-7 «Активен» instant toggle: patch ONLY `disabled` server-side right
    *  away — never blocked by a dirty draft (the unsaved-changes indicator
@@ -565,6 +588,65 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       toast.error(t("promptManager.regex.exportFailed"));
     }
   }, [t]);
+
+  // R-13 profile handlers
+  function handleRegexProfileAdd(name: string) {
+    void createRegexProfile({ name }).then((created) => {
+      setRegexProfiles((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
+      setExpandedProfileIds((prev) => new Set([...prev, created.id]));
+    });
+  }
+  function handleRegexProfileRename(id: string, newName: string) {
+    void updateRegexProfile(id, { name: newName }).then((updated) => {
+      if (updated) setRegexProfiles((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    });
+  }
+  function handleRegexAddRuleToProfile(profileId: string, name: string) {
+    const flags = applyTargetFlags("persist");
+    void createRegexPreset({
+      name,
+      findRegex: "/.*/g",
+      replaceString: "",
+      markdownOnly: flags.markdownOnly,
+      promptOnly: flags.promptOnly,
+    }).then((created) => {
+      void attachRegexRule(profileId, created.id).then((attached) => {
+        if (attached) setRegexPresets((prev) => prev.map((p) => p.id === created.id ? attached : p).sort((a, b) => a.sortOrder - b.sortOrder));
+        else setRegexPresets((prev) => [...prev, created]);
+        setActiveRegexPresetId(attached?.id ?? created.id);
+        setExpandedProfileIds((prev) => new Set([...prev, profileId]));
+        invalidateActiveRegexPresets();
+      });
+    });
+  }
+  const handleRegexToggleProfile = useCallback((id: string) => {
+    setExpandedProfileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  function handleRegexAttach(profileId: string, ruleId: string) {
+    void attachRegexRule(profileId, ruleId).then((updated) => {
+      if (updated) setRegexPresets((prev) => prev.map((p) => p.id === ruleId ? updated : p));
+      setExpandedProfileIds((prev) => new Set([...prev, profileId]));
+      invalidateActiveRegexPresets();
+    });
+  }
+  function handleRegexDetach(ruleId: string) {
+    void detachRegexRule(ruleId).then((updated) => {
+      if (updated) setRegexPresets((prev) => prev.map((p) => p.id === ruleId ? updated : p));
+      invalidateActiveRegexPresets();
+    });
+  }
+  function handleRegexProfileReorder(updates: Array<{ id: string; sortOrder: number }>) {
+    for (const u of updates) {
+      void updateRegexProfile(u.id, { sortOrder: u.sortOrder }).then((updated) => {
+        if (updated) setRegexProfiles((prev) => prev.map((p) => p.id === updated.id ? updated : p).sort((a, b) => a.sortOrder - b.sortOrder));
+      });
+    }
+  }
 
   function handleRegexReorder(updates: Array<{ id: string; sortOrder: number }>) {
     for (const u of updates) {
@@ -969,20 +1051,50 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                     id: p.id,
                     name: p.name,
                     disabled: p.disabled,
-                    // R-7 single-badge model: reason in the tooltip. Disabled
-                    // wins over unbound (a disabled preset with links still
-                    // applies nowhere while off).
-                    notApplied: p.disabled
-                      ? ("disabled" as const)
-                      : !p.isGlobal && regexLinkCounts[p.id] === 0
-                        ? ("unbound" as const)
-                        : null,
+                    sortOrder: p.sortOrder,
+                    notApplied: (() => {
+                      // R-13b: a member's dot reflects the PROFILE gate — green
+                      // only when the profile actually fires in some chat. Gray
+                      // when the rule OR its profile is disabled; red when the
+                      // profile is enabled but applies nowhere (not global,
+                      // no bindings). Standalone rules keep the R-7 logic.
+                      if (p.profileId !== null) {
+                        const profile = regexProfiles.find((pr) => pr.id === p.profileId);
+                        if (p.disabled || profile?.disabled) return "disabled" as const;
+                        if (profile && !profile.isGlobal && regexProfileLinkCounts[profile.id] === 0) return "unbound" as const;
+                        return null;
+                      }
+                      return p.disabled
+                        ? ("disabled" as const)
+                        : !p.isGlobal && regexLinkCounts[p.id] === 0
+                          ? ("unbound" as const)
+                          : null;
+                    })(),
+                    profileId: p.profileId,
+                    shadowed: p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0),
+                  }))}
+                  profiles={regexProfiles.map((pr) => ({
+                    id: pr.id,
+                    name: pr.name,
+                    disabled: pr.disabled,
+                    isGlobal: pr.isGlobal,
+                    sortOrder: pr.sortOrder,
+                    notApplied: pr.disabled ? ("disabled" as const) : !pr.isGlobal && regexProfileLinkCounts[pr.id] === 0 ? ("unbound" as const) : null,
+                    memberCount: regexPresets.filter((r) => r.profileId === pr.id).length,
                   }))}
                   activePresetId={activeRegexPresetId}
+                  expandedProfileIds={[...expandedProfileIds]}
+                  onToggleProfile={handleRegexToggleProfile}
                   onSelect={handleRegexSelect}
                   onAdd={handleRegexAdd}
+                  onAddProfile={handleRegexProfileAdd}
+                  onAddRuleToProfile={handleRegexAddRuleToProfile}
                   onRename={handleRegexRename}
+                  onRenameProfile={handleRegexProfileRename}
                   onReorder={handleRegexReorder}
+                  onReorderProfiles={handleRegexProfileReorder}
+                  onAttach={handleRegexAttach}
+                  onDetach={handleRegexDetach}
                   onCopy={handleRegexCopy}
                   onExport={handleRegexExport}
                   onImportRegex={() => regexImportInputRef.current?.click()}

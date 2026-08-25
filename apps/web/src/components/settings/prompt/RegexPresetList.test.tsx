@@ -210,3 +210,77 @@ describe("RegexPresetList — copy & export (R-12)", () => {
   });
 });
 
+// ── R-13b: profiles, expand/collapse, shadowed dot, triad, create blocks ──
+describe("RegexPresetList — profiles (R-13b)", () => {
+  beforeEach(() => {
+    mock.clearAllMocks();
+  });
+
+  const profileA: any = { id: "p1", name: "Profa", disabled: false, isGlobal: true, sortOrder: 0, notApplied: null, memberCount: 1 };
+  const profileB: any = { id: "p2", name: "Profb", disabled: true, notApplied: "disabled", isGlobal: false, sortOrder: 1, memberCount: 0 };
+  const memberPresets: any = [
+    { id: "r1", name: "Stand", disabled: false, notApplied: null, profileId: null, sortOrder: 1 },
+    { id: "r2", name: "Mem", disabled: false, notApplied: null, profileId: "p1", sortOrder: 0, shadowed: true },
+  ];
+
+  it("renders profiles interleaved with standalone rules", () => {
+    render(<RegexPresetList {...baseProps({ presets: memberPresets, profiles: [profileA, profileB] })} />);
+    expect(screen.getByText("Profa")).toBeTruthy();
+    expect(screen.getByText("Profb")).toBeTruthy();
+    expect(screen.getByText("Stand")).toBeTruthy();
+    // member hidden when collapsed
+    expect(screen.queryByText("Mem")).toBeNull();
+  });
+
+  it("expand shows members and + rule", async () => {
+    const user = userEvent.setup();
+    render(<RegexPresetList {...baseProps({ presets: memberPresets, profiles: [profileA] })} />);
+    expect(screen.queryByText("Mem")).toBeNull();
+    const expandBtn = screen.getByLabelText("promptManager.regex.expandProfile");
+    await user.click(expandBtn);
+    expect(screen.getByText("Mem")).toBeTruthy();
+    expect(screen.getByText("promptManager.regex.memberNewRule")).toBeTruthy();
+    const collapseBtn = screen.getByLabelText("promptManager.regex.collapseProfile");
+    await user.click(collapseBtn);
+    expect(screen.queryByText("Mem")).toBeNull();
+  });
+
+  it("renders shadowed red dot for member with own binding", async () => {
+    const user = userEvent.setup();
+    render(<RegexPresetList {...baseProps({ presets: memberPresets, profiles: [profileA] })} />);
+    await user.click(screen.getByLabelText("promptManager.regex.expandProfile"));
+    const dot = screen.getByLabelText("promptManager.regex.memberShadowed");
+    expect(dot.querySelector("span")!.className).toContain("bg-danger");
+  });
+
+  it("renders triad dots for profiles (green/gray)", () => {
+    render(<RegexPresetList {...baseProps({ presets: [], profiles: [profileA, profileB] })} />);
+    const green = screen.getAllByLabelText("promptManager.regex.badgeWorking")[0];
+    expect(green.querySelector("span")!.className).toContain("bg-success");
+    const gray = screen.getByLabelText("promptManager.regex.badgeDisabledReason");
+    expect(gray.querySelector("span")!.className).toContain("bg-t4");
+  });
+
+  it("renders two create blocks", () => {
+    render(<RegexPresetList {...baseProps({ presets: memberPresets, profiles: [profileA] })} />);
+    expect(screen.getByText("promptManager.regex.newPreset")).toBeTruthy();
+    expect(screen.getByText("promptManager.regex.newProfile")).toBeTruthy();
+  });
+
+  it("renames a profile", async () => {
+    const onRenameProfile = mock();
+    const user = userEvent.setup();
+    render(<RegexPresetList {...baseProps({ presets: memberPresets, profiles: [profileA], onRenameProfile })} />);
+    const row = screen.getByText("Profa").closest("div.group") as HTMLElement;
+    const editBtn = within(row).getAllByRole("button").find((b) => b.textContent === "" || b.querySelector("svg"))!;
+    // Find edit button (second button after drag+caret) - use getAll and pick edit
+    const buttons = within(row).getAllByRole("button");
+    // profile row: drag, caret, edit, drill -> edit is index 2
+    await user.click(buttons[2]);
+    const input = screen.getByDisplayValue("Profa") as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, "Renamed{enter}");
+    expect(onRenameProfile).toHaveBeenCalledWith("p1", "Renamed");
+  });
+});
+

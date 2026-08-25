@@ -2429,5 +2429,11 @@
   "promptManager.regex.copyFailed": "Failed to copy",
   "promptManager.regex.export": "Export",
   "promptManager.regex.exported": "Preset exported",
-  "promptManager.regex.exportFailed": "Failed to export"
+  "promptManager.regex.exportFailed": "Failed to export",
+  "promptManager.regex.newProfile": "New Profile",
+  "promptManager.regex.newProfilePlaceholder": "Profile name…",
+  "promptManager.regex.expandProfile": "Expand profile",
+  "promptManager.regex.collapseProfile": "Collapse profile",
+  "promptManager.regex.memberShadowed": "Own apply-scope ignored — the profile governs",
+  "promptManager.regex.memberNewRule": "New rule"
 }

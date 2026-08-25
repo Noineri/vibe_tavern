@@ -2449,5 +2449,11 @@
   "promptManager.regex.copyFailed": "Не удалось скопировать",
   "promptManager.regex.export": "Экспортировать",
   "promptManager.regex.exported": "Пресет экспортирован",
-  "promptManager.regex.exportFailed": "Не удалось экспортировать"
+  "promptManager.regex.exportFailed": "Не удалось экспортировать",
+  "promptManager.regex.newProfile": "Новый профиль",
+  "promptManager.regex.newProfilePlaceholder": "Имя профиля…",
+  "promptManager.regex.expandProfile": "Развернуть профиль",
+  "promptManager.regex.collapseProfile": "Свернуть профиль",
+  "promptManager.regex.memberShadowed": "Собственное \"Применение\" игнорируется — действует профиль",
+  "promptManager.regex.memberNewRule": "Новое правило"
 }
