@@ -140,7 +140,14 @@ export function compileRegexScript(preset: RegexPreset, macroSource?: RegexMacro
     return null;
   }
 
-  return { preset, run: (text: string) => runCompiled(regex, preset, text) };
+  // ST parity (R-14): `filterString` runs `substituteParams` on each trim
+  // string before stripping (plain, unescaped — the RAW/plain resolution),
+  // regardless of the find-pattern substituteRegex mode. Without a
+  // macroSource the engine stays standalone and trims are used literally.
+  const trims =
+    macroSource != null ? preset.trimStrings.map((trim) => macroSource.resolve(trim)) : preset.trimStrings;
+
+  return { preset, run: (text: string) => runCompiled(regex, preset, trims, text) };
 }
 
 /**
@@ -149,39 +156,56 @@ export function compileRegexScript(preset: RegexPreset, macroSource?: RegexMacro
  * literal), `$<name>` → named capture (same rules). Returned strings are used
  * literally by the replace-callback, so `$` characters inside matched content
  * can never be re-interpreted as capture references.
+ *
+ * ST parity (R-14): the `g` flag makes EVERY reference expand, not just the
+ * first; every referenced value (full match, numbered, named) passes through
+ * the Trim-Out filter — ST `runRegexScript` calls `filterString` on each
+ * referenced match (`replaceAll(/\$(\d+)|\$<([^>]+)>/g, ...)`).
  */
-const REPLACE_TEMPLATE_TOKEN = /\{\{match\}\}|\$(\d{1,2})|\$<([^<>]+)>/i;
+const REPLACE_TEMPLATE_TOKEN = /\{\{match\}\}|\$(\d{1,2})|\$<([^<>]+)>/gi;
+
+/** Strip every non-empty trim string from `text` (ST `filterString`). */
+function trimText(text: string, trims: readonly string[]): string {
+  let out = text;
+  // Guard "" — replaceAll("") would splice separators everywhere. Also guards
+  // trims that macro-resolved to "".
+  for (const trim of trims) {
+    if (trim !== "") out = out.replaceAll(trim, "");
+  }
+  return out;
+}
 
 function expandReplaceTemplate(
   template: string,
   fullMatch: string,
   captures: ReadonlyArray<string | undefined>,
   named: Readonly<Record<string, string | undefined>>,
+  trims: readonly string[],
 ): string {
   return template.replace(REPLACE_TEMPLATE_TOKEN, (token, numStr: string | undefined, name: string | undefined) => {
     if (numStr !== undefined) {
       const index = Number(numStr);
       // Beyond the actual capture count stays literal (native `$99` parity);
-      // within it, an unmatched optional capture expands to "".
-      if (index >= 1 && index <= captures.length) return captures[index - 1] ?? "";
+      // within it, an unmatched optional capture expands to "" (then the trim
+      // filter is a no-op).
+      if (index >= 1 && index <= captures.length) return trimText(captures[index - 1] ?? "", trims);
       return token;
     }
     if (name !== undefined) {
-      if (Object.hasOwn(named, name)) return named[name] ?? "";
+      if (Object.hasOwn(named, name)) return trimText(named[name] ?? "", trims);
       return token;
     }
+    // {{match}} — the full match is already trimmed before expansion (ST trims
+    // `$0` via filterString too).
     return fullMatch;
   });
 }
 
-function runCompiled(regex: RegExp, preset: RegexPreset, text: string): string {
+function runCompiled(regex: RegExp, preset: RegexPreset, trims: readonly string[], text: string): string {
   return text.replace(regex, (full: string, ...rest: unknown[]) => {
     // ST "Trim Out": strip substrings from the full match BEFORE `{{match}}`
-    // expansion. Guard "" — replaceAll("") would splice separators everywhere.
-    let trimmed = full;
-    for (const trim of preset.trimStrings) {
-      if (trim !== "") trimmed = trimmed.replaceAll(trim, "");
-    }
+    // expansion — and from every capture-group reference at expansion time.
+    const trimmed = trimText(full, trims);
 
     // Callback args: (match, p1..pk, offset, string[, groups]). Captures end
     // where the numeric `offset` begins; the named-groups object, when the
@@ -192,7 +216,7 @@ function runCompiled(regex: RegExp, preset: RegexPreset, text: string): string {
     const named =
       typeof last === "object" && last !== null ? (last as Record<string, string | undefined>) : {};
 
-    return expandReplaceTemplate(preset.replaceString, trimmed, captures, named);
+    return expandReplaceTemplate(preset.replaceString, trimmed, captures, named, trims);
   });
 }
 

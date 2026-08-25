@@ -112,6 +112,29 @@ describe("compile + run", () => {
   it("returns null for an un-compilable pattern instead of throwing", () => {
     expect(compileRegexScript(makePreset({ findRegex: "/([/g" }))).toBeNull();
   });
+
+  // ── ST parity fixes (R-14, audited 2026-08-26 vs ST release 51ad27fb8) ──
+  it("expands EVERY reference in the replacement, not just the first", () => {
+    const numbered = compileRegexScript(makePreset({ findRegex: "/(a)(b)/g", replaceString: "$1+$1" }));
+    expect(numbered!.run("ab")).toBe("a+a");
+    const matched = compileRegexScript(makePreset({ findRegex: "/ab/g", replaceString: "X{{match}}Y{{match}}Z" }));
+    expect(matched!.run("ab")).toBe("XabYabZ");
+  });
+
+  it("applies trimStrings to numbered capture-group references (ST parity)", () => {
+    const compiled = compileRegexScript(
+      makePreset({ findRegex: "/(hello) (world)/g", replaceString: "$1|$2", trimStrings: ["o"] }),
+    );
+    // ST: $1 = filterString("hello", ["o"]) = "hell"; $2 = filterString("world") = "wrld".
+    expect(compiled!.run("hello world")).toBe("hell|wrld");
+  });
+
+  it("applies trimStrings to named capture-group references (ST parity)", () => {
+    const compiled = compileRegexScript(
+      makePreset({ findRegex: "/(?<w>hello)/g", replaceString: "<$<w>>", trimStrings: ["l"] }),
+    );
+    expect(compiled!.run("hello")).toBe("<heo>");
+  });
 });
 
 describe("substituteRegex macro modes", () => {
@@ -144,6 +167,23 @@ describe("substituteRegex macro modes", () => {
       macros,
     );
     expect(compiled!.run("xA(B)y")).toBe("x[A(B)]y");
+  });
+
+  it("substitutes macros in trimStrings before applying (ST parity, independent of substituteRegex mode)", () => {
+    // ST filterString: substituteParams(trimString) then replaceAll. Plain
+    // unescaped resolution, applied even when substituteRegex is NONE.
+    const compiled = compileRegexScript(
+      makePreset({
+        findRegex: "/A\\(B\\)/g",
+        replaceString: "{{match}}",
+        trimStrings: ["{{char}}"],
+        substituteRegex: REGEX_SUBSTITUTE.None,
+      }),
+      macros,
+    );
+    // {{char}} resolves to "A(B)"; the matched "A(B)" is fully trimmed away.
+    // With literal (unsubstituted) trims the "A(B)" would survive.
+    expect(compiled!.run("abA(B)cd")).toBe("abcd");
   });
 });
 
