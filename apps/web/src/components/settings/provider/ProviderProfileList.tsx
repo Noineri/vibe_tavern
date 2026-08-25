@@ -74,7 +74,7 @@ const SortableProfileRow = React.memo(({
           {...listeners}
           aria-label="drag"
           onClick={(e) => e.stopPropagation()}
-          className="mr-1 shrink-0 cursor-grab touch-none text-t4 transition-colors hover:text-t1 active:cursor-grabbing"
+          className="mr-1 flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
         >
           <span className="text-base leading-none">≡</span>
         </button>

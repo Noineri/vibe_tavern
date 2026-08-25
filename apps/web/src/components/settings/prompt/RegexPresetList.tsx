@@ -98,7 +98,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
           {...listeners}
           aria-label="drag"
           onClick={(e) => e.stopPropagation()}
-          className="shrink-0 cursor-grab touch-none text-t4 transition-colors hover:text-t1 active:cursor-grabbing"
+          className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
         >
           <span className="text-base leading-none">≡</span>
         </button>
@@ -191,7 +191,7 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
           {...listeners}
           aria-label="drag"
           onClick={(e) => e.stopPropagation()}
-          className="shrink-0 cursor-grab touch-none text-t4 transition-colors hover:text-t1 active:cursor-grabbing"
+          className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
         >
           <span className="text-base leading-none">≡</span>
         </button>
@@ -200,18 +200,19 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
         type="button"
         onClick={(e) => { e.stopPropagation(); onToggle(p.id); }}
         aria-label={isExpanded ? t("promptManager.regex.collapseProfile") : t("promptManager.regex.expandProfile")}
-        className="shrink-0 text-t3 hover:text-t1"
+        aria-expanded={isExpanded}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
-        <Icons.Caret direction={isExpanded ? "d" : "r"} />
+        <span className="shrink-0 text-t3"><Icons.Caret direction={isExpanded ? "d" : "r"} /></span>
+        <CustomTooltip content={p.name}>
+          <span className={cn(
+            "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
+            isActive ? "text-accent-t" : "text-t1",
+            p.disabled && "opacity-50",
+          )}>{p.name}</span>
+        </CustomTooltip>
+        <span className="shrink-0 font-ui text-[11px] text-t4">({p.memberCount})</span>
       </button>
-      <CustomTooltip content={p.name}>
-        <span className={cn(
-          "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
-          isActive ? "text-accent-t" : "text-t1",
-          p.disabled && "opacity-50",
-        )}>{p.name}</span>
-      </CustomTooltip>
-      <span className="shrink-0 font-ui text-[11px] text-t4">({p.memberCount})</span>
       <button type="button"
         onClick={(e) => startEditing(p, e)}
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
