@@ -329,6 +329,23 @@ export class RegexStore {
       .run();
   }
 
+  /**
+   * Remove every link targeting one entity (owner's policy B for regex on
+   * entity deletion, R-10 in REGEX_V13_FOLLOWUP): the PRESETS survive —
+   * "came with the card, stay in the manager for manual rebinding" — but
+   * their links to the deleted character must not, because nothing can ever
+   * resolve them again (chats cascade away with the character FK) and the
+   * R-7 bindings UI would otherwise render a nameless ghost row. `targetId`
+   * is a polymorphic text column without an FK, so this cleanup can only be
+   * app-level.
+   */
+  async deleteLinksForTarget(targetType: RegexTargetType, targetId: string): Promise<void> {
+    await this.db
+      .delete(regexLinks)
+      .where(and(eq(regexLinks.targetType, targetType), eq(regexLinks.targetId, targetId)))
+      .run();
+  }
+
   // ─── Row mapper ────────────────────────────────────────────────────────────
 
   private mapRow(row: typeof regexPresets.$inferSelect): RegexPreset {

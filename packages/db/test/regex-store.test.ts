@@ -238,3 +238,33 @@ describe("RegexStore delete cascades links", () => {
 		expect(await store.getLinks(preset.id)).toEqual([]);
 	});
 });
+
+// ── R-10 (REGEX_V13_FOLLOWUP): owner's policy B for character deletion ──
+// CharacterRuntime.delete calls deleteLinksForTarget("character", id): links
+// die with the character (nothing can resolve them again — chats cascade away
+// via the characters FK; the R-7 bindings UI would render a ghost row), but
+// the PRESETS themselves survive in the manager for manual rebinding.
+describe("RegexStore deleteLinksForTarget (R-10 policy B)", () => {
+	test("removes every link targeting the entity, keeps presets and other targets", async () => {
+		const { store } = await setup();
+		const a = await store.create(baseInput({ name: "a" }));
+		const b = await store.create(baseInput({ name: "b" }));
+		await store.addLink(a.id, "character", "char_doomed");
+		await store.addLink(a.id, "character", "char_alive");
+		await store.addLink(b.id, "character", "char_doomed");
+		await store.addLink(b.id, "preset", "preset_9");
+
+		await store.deleteLinksForTarget("character", "char_doomed");
+
+		// Presets survive (policy B — manual rebinding stays possible).
+		expect(await store.getById(a.id)).toBeTruthy();
+		expect(await store.getById(b.id)).toBeTruthy();
+		// Only the doomed character's links are gone; every other target intact.
+		expect(await store.getLinks(a.id)).toHaveLength(1);
+		expect((await store.getLinks(a.id))[0]!.targetId).toBe("char_alive");
+		expect((await store.getLinks(b.id))[0]!.targetId).toBe("preset_9");
+		// Idempotent — deleting an already-clean target is a no-op.
+		await store.deleteLinksForTarget("character", "char_doomed");
+		expect(await store.getLinks(a.id)).toHaveLength(1);
+	});
+});

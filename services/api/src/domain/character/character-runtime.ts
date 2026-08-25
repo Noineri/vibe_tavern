@@ -1,6 +1,7 @@
 import type { Character, CharacterId, ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatStore, CharacterStore, StoreContainer } from "@vibe-tavern/db";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
+import { REGEX_TARGET_TYPE } from "@vibe-tavern/domain";
 import type { ChatApplicationService } from "../chat/chat-application-service.js";
 import type { IChatOrder } from "../../runtime/session/session-runtime-chat-order.js";
 import type { SessionSnapshot, ImportResult, ConfigPatchResponse } from "../../api/contract/session-types.js";
@@ -211,6 +212,13 @@ export class CharacterRuntime {
       this.deps.chatOrder.remove(chatId);
       this.deps.discardPendingPromptTrace(chatId);
     }
+    // Regex links targeting this character must die with it (owner's policy B,
+    // R-10 in REGEX_V13_FOLLOWUP): chats cascade away via the FK, so nothing
+    // can ever resolve these links again, and the bindings UI would render a
+    // nameless ghost row. The PRESETS themselves survive in the manager for
+    // manual rebinding — only the polymorphic link rows (no FK possible) are
+    // cleaned here, app-level.
+    await this.deps.stores.regex.deleteLinksForTarget(REGEX_TARGET_TYPE.Character, characterId);
     await this.deps.stores.characters.delete(typedCharacterId);
   }
 
