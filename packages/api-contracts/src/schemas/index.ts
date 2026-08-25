@@ -357,6 +357,27 @@ export {
 } from "./interactive-schema.js";
 
 export {
+  servicePromptFieldKeySchema,
+  servicePromptOverridesSchema,
+  servicePromptProfileSchema,
+  createServicePromptProfileRequestSchema,
+  updateServicePromptProfileRequestSchema,
+  servicePromptProfileListResponseSchema,
+  servicePromptProfileDetailResponseSchema,
+  setActiveServicePromptProfileRequestSchema,
+} from "./service-prompt-schema.js";
+export type {
+  ServicePromptFieldKeyValue,
+  ServicePromptOverrides,
+  ServicePromptProfile,
+  CreateServicePromptProfileRequest,
+  UpdateServicePromptProfileRequest,
+  ServicePromptProfileListResponse,
+  ServicePromptProfileDetailResponse,
+  SetActiveServicePromptProfileRequest,
+} from "./service-prompt-schema.js";
+
+export {
   canonicalUtcInstantSchema,
   canonicalDecimalSchema,
   providerQuotaWindowKindSchema,
