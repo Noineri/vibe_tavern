@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { ToggleChips } from "../../shared/ToggleChips.js";
@@ -83,6 +84,8 @@ interface RegexPresetEditorProps {
    *  badge: «Не применяется» needs to know non-global presets with zero
    *  links). Called after the links PUT resolves. */
   onLinksChanged?: (presetId: string, linkCount: number) => void;
+  /** R-13c: when the rule belongs to a profile, show the profile chip instead of the own scope block. */
+  profileName?: string | null;
 }
 
 const PLACEMENT_OPTIONS: Array<{ code: RegexPlacement; labelKey: I18nKey }> = [
@@ -144,7 +147,7 @@ const MESSAGE_PLACEMENTS: RegexPlacement[] = [REGEX_PLACEMENT.UserInput, REGEX_P
  * fields (mono at input size) → live test pane with macro substitution,
  * no-match/empty distinction and an honesty disclaimer.
  */
-export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange, onLinksChanged }: RegexPresetEditorProps) {
+export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange, onLinksChanged, profileName }: RegexPresetEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [testInput, setTestInput] = useState("");
@@ -398,45 +401,62 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
         </div>
       )}
 
-      {/* Применение (R-7): «Все чаты» (isGlobal) / «Привязать к» + bindings.
-          Scope BEFORE rule fields — owner's section order. */}
-      <div>
-        <div className={lblCls}>{t("promptManager.regex.scopeLabel")}</div>
-        <SegmentedControl
-          value={draft.isGlobal ? "all" : "bind"}
-          onChange={(v) => update("isGlobal", v === "all")}
-          wrap
-          mobileFill
-          options={SCOPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
-        />
-      </div>
-
-      {/* Bindings (RX-12) — bind this preset to characters + prompt presets.
-          Shown only in «Привязать к» mode; the dead-zone warning IS the
-          bindings empty-state (R-7): a bind-mode preset with zero resolvable
-          targets applies in no chat. */}
-      {presetId && !draft.isGlobal && (
+      {/* R-13c: member rule — chip replaces the own scope block. The rule's
+          own isGlobal/bindings are shadowed by the profile gate. */}
+      {preset?.profileId ? (
         <div>
-          <div className={lblCls}>{t("promptManager.regex.bindingsLabel")}</div>
-          <LinkBindingPopover
-            links={bindLinks}
-            characters={characterTargets}
-            personas={[]}
-            presets={presetTargets}
-            onSetLinks={handleSetBindLinks}
-            t={t}
-            isMobile={isMobile}
-            tooltipLabel={t("promptManager.regex.bindingsAdd")}
-            emptyLabel={t("promptManager.regex.bindingsEmpty")}
-            characterSectionLabel={t("promptManager.regex.sectionCharacters")}
-            presetSectionLabel={t("promptManager.regex.sectionPresets")}
-          />
-          {effectiveBindCount === 0 && (
-            <div className="mt-1.5 font-ui text-[11px] text-warning">
-              {t("promptManager.regex.bindingsDeadZone")}
+          <div className={lblCls}>{t("promptManager.regex.scopeLabel")}</div>
+          <div className="flex items-center gap-2 rounded-md border border-border bg-s2 px-3 py-2">
+            <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-success" />
+            <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">
+              {t("promptManager.regex.memberViaProfile", { name: profileName ?? "" })}
+            </span>
+            {(draft.isGlobal || effectiveBindCount > 0) && (
+              <CustomTooltip content={t("promptManager.regex.memberShadowed")}>
+                <span role="img" aria-label={t("promptManager.regex.memberShadowed")} className="ml-auto flex shrink-0 p-1">
+                  <span className="h-[6px] w-[6px] rounded-full bg-danger" />
+                </span>
+              </CustomTooltip>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div>
+            <div className={lblCls}>{t("promptManager.regex.scopeLabel")}</div>
+            <SegmentedControl
+              value={draft.isGlobal ? "all" : "bind"}
+              onChange={(v) => update("isGlobal", v === "all")}
+              wrap
+              mobileFill
+              options={SCOPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
+            />
+          </div>
+
+          {presetId && !draft.isGlobal && (
+            <div>
+              <div className={lblCls}>{t("promptManager.regex.bindingsLabel")}</div>
+              <LinkBindingPopover
+                links={bindLinks}
+                characters={characterTargets}
+                personas={[]}
+                presets={presetTargets}
+                onSetLinks={handleSetBindLinks}
+                t={t}
+                isMobile={isMobile}
+                tooltipLabel={t("promptManager.regex.bindingsAdd")}
+                emptyLabel={t("promptManager.regex.bindingsEmpty")}
+                characterSectionLabel={t("promptManager.regex.sectionCharacters")}
+                presetSectionLabel={t("promptManager.regex.sectionPresets")}
+              />
+              {effectiveBindCount === 0 && (
+                <div className="mt-1.5 font-ui text-[11px] text-warning">
+                  {t("promptManager.regex.bindingsDeadZone")}
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
 
       {/* Как срабатывает (R-7): placement chips → depth modes → apply-target. */}

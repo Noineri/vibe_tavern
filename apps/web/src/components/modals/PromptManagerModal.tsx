@@ -26,6 +26,7 @@ import {
 } from "../../lib/prompt-canvas-summary.js";
 import { RegexPresetList } from "../settings/prompt/RegexPresetList.js";
 import { RegexPresetEditor, regexDraftFromRecord, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/RegexPresetEditor.js";
+import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
 import {
   listAllRegexPresets,
   createRegexPreset,
@@ -35,9 +36,11 @@ import {
   listAllRegexProfiles,
   createRegexProfile,
   updateRegexProfile,
+  deleteRegexProfile,
   attachRegexRule,
   detachRegexRule,
   getRegexProfileLinks,
+  setRegexProfileLinks,
 } from "../../api/regex-api.js";
 import { invalidateActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
@@ -354,10 +357,12 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexPresets, setRegexPresets] = useState<RegexPresetRecord[]>([]);
   const [regexLoadState, setRegexLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [activeRegexPresetId, setActiveRegexPresetId] = useState<string | null>(null);
+  const [activeRegexProfileId, setActiveRegexProfileId] = useState<string | null>(null);
   const [regexDraft, setRegexDraft] = useState<RegexPresetDraft>(emptyRegexDraft);
   const [regexDirty, setRegexDirty] = useState(false);
   const [regexSaveState, setRegexSaveState] = useState<SaveState>("idle");
   const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
+  const [profileConfirmDeleteId, setProfileConfirmDeleteId] = useState<string | null>(null);
   const regexImportInputRef = useRef<HTMLInputElement>(null);
   // R-7 list badge («Не применяется»): link counts for non-global presets —
   // a bind-mode preset with zero links applies in no chat. Fetched lazily per
@@ -369,6 +374,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexProfileLinkCounts, setRegexProfileLinkCounts] = useState<Record<string, number | undefined>>({});
 
   const activeRegexPreset = regexPresets.find((p) => p.id === activeRegexPresetId) ?? null;
+  const activeRegexProfile = regexProfiles.find((p) => p.id === activeRegexProfileId) ?? null;
 
   // Lazy-load regex presets on first tab activation (R-1 fix).
   // NOTE: `regexLoadState` must NOT be in the deps — the effect itself writes
@@ -466,6 +472,111 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
 
   function handleRegexSelect(id: string) {
     setActiveRegexPresetId(id);
+    setActiveRegexProfileId(null);
+  }
+
+  function handleRegexProfileSelect(id: string) {
+    setActiveRegexProfileId(id);
+    setActiveRegexPresetId(null);
+    setRegexDirty(false);
+    setRegexSaveState("idle");
+  }
+
+  function handleRegexProfileActiveToggle(nextActive: boolean) {
+    if (!activeRegexProfileId) return;
+    const id = activeRegexProfileId;
+    const prev = regexProfiles.find((p) => p.id === id);
+    if (!prev) return;
+    const nextDisabled = !nextActive;
+    setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, disabled: nextDisabled } : p)));
+    void updateRegexProfile(id, { disabled: nextDisabled })
+      .then((updated) => {
+        if (updated) setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? updated : p)));
+        invalidateActiveRegexPresets();
+      })
+      .catch(() => {
+        setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, disabled: prev.disabled } : p)));
+        toast.error(t("promptManager.regex.profileActiveFailed"));
+      });
+  }
+
+  function handleRegexProfileScopeToggle(nextIsGlobal: boolean) {
+    if (!activeRegexProfileId) return;
+    const id = activeRegexProfileId;
+    const prev = regexProfiles.find((p) => p.id === id);
+    if (!prev) return;
+    setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, isGlobal: nextIsGlobal } : p)));
+    void updateRegexProfile(id, { isGlobal: nextIsGlobal })
+      .then((updated) => {
+        if (updated) setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? updated : p)));
+        invalidateActiveRegexPresets();
+      })
+      .catch(() => {
+        setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, isGlobal: prev.isGlobal } : p)));
+        toast.error(t("promptManager.regex.profileActiveFailed"));
+      });
+  }
+
+  const handleProfileExport = useCallback(() => {
+    if (!activeRegexProfileId) return;
+    const profile = regexProfiles.find((p) => p.id === activeRegexProfileId);
+    if (!profile) return;
+    const members = regexPresets.filter((r) => r.profileId === activeRegexProfileId);
+    if (members.length === 0) {
+      toast.error(t("promptManager.regex.profileExportFailed"));
+      return;
+    }
+    try {
+      const json = serializeStandaloneRegexJson(
+        members.map((m) => ({
+          name: m.name,
+          findRegex: m.findRegex,
+          replaceString: m.replaceString,
+          trimStrings: [...m.trimStrings],
+          substituteRegex: m.substituteRegex as RegexSubstituteMode,
+          disabled: m.disabled,
+          markdownOnly: m.markdownOnly,
+          promptOnly: m.promptOnly,
+          runOnEdit: m.runOnEdit,
+          minDepth: m.minDepth,
+          maxDepth: m.maxDepth,
+          placement: [...m.placement] as RegexPlacement[],
+          isGlobal: m.isGlobal,
+          sortOrder: m.sortOrder,
+          profileId: null,
+        })),
+      );
+      const safeName = profile.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      downloadTextFile(`regex-profile-${safeName}.json`, json, "application/json");
+      toast.success(t("promptManager.regex.profileExported"));
+    } catch {
+      toast.error(t("promptManager.regex.profileExportFailed"));
+    }
+  }, [activeRegexProfileId, regexPresets, regexProfiles, t]);
+
+  function handleProfileDelete(mode: "keep" | "cascade") {
+    if (!profileConfirmDeleteId) return;
+    const id = profileConfirmDeleteId;
+    const wasActive = activeRegexProfileId === id;
+    setProfileConfirmDeleteId(null);
+    if (wasActive) {
+      setActiveRegexProfileId(null);
+    }
+    void deleteRegexProfile(id, mode)
+      .then(async () => {
+        const [presets, profiles] = await Promise.all([listAllRegexPresets(), listAllRegexProfiles()]);
+        setRegexPresets(presets);
+        setRegexProfiles(profiles.sort((a, b) => a.sortOrder - b.sortOrder));
+        // Clear active preset if it was deleted via cascade
+        if (activeRegexPresetId && presets.every((p) => p.id !== activeRegexPresetId)) {
+          setActiveRegexPresetId(presets.length > 0 ? presets[0].id : null);
+        }
+        invalidateActiveRegexPresets();
+        toast.success(t("promptManager.regex.profileDelete"));
+      })
+      .catch(() => {
+        toast.error(t("promptManager.regex.profileDeleteFailed"));
+      });
   }
 
   // RX-16 UI surface: standalone ST regex JSON import. Hidden file input
@@ -510,6 +621,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     }).then((created) => {
       setRegexPresets((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
       setActiveRegexPresetId(created.id);
+      setActiveRegexProfileId(null);
       invalidateActiveRegexPresets();
     });
   }
@@ -597,6 +709,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     void createRegexProfile({ name }).then((created) => {
       setRegexProfiles((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
       setExpandedProfileIds((prev) => new Set([...prev, created.id]));
+      setActiveRegexProfileId(created.id);
+      setActiveRegexPresetId(null);
     });
   }
   function handleRegexProfileRename(id: string, newName: string) {
@@ -617,6 +731,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         if (attached) setRegexPresets((prev) => prev.map((p) => p.id === created.id ? attached : p).sort((a, b) => a.sortOrder - b.sortOrder));
         else setRegexPresets((prev) => [...prev, created]);
         setActiveRegexPresetId(attached?.id ?? created.id);
+        setActiveRegexProfileId(null);
         setExpandedProfileIds((prev) => new Set([...prev, profileId]));
         invalidateActiveRegexPresets();
       });
@@ -1008,6 +1123,21 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           onCancel={() => setRegexConfirmDeleteOpen(false)}
         />
       )}
+      {profileConfirmDeleteId && (() => {
+        const target = regexProfiles.find((p) => p.id === profileConfirmDeleteId);
+        const count = regexPresets.filter((r) => r.profileId === profileConfirmDeleteId).length;
+        return (
+          <DestructiveConfirmModal
+            title={t("promptManager.regex.profileDeleteTitle")}
+            body={<>{t("promptManager.regex.profileDeleteBody", { name: target?.name || t("unnamed"), count })}</>}
+            confirmLabel={t("promptManager.regex.profileDeleteCascade", { count })}
+            secondaryLabel={t("promptManager.regex.profileDeleteKeep", { count })}
+            onConfirm={() => handleProfileDelete("cascade")}
+            onSecondary={() => handleProfileDelete("keep")}
+            onCancel={() => setProfileConfirmDeleteId(null)}
+          />
+        );
+      })()}
 
       {/* RX-16 UI surface: hidden file input for standalone regex JSON import. */}
       <input
@@ -1086,9 +1216,11 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                     memberCount: regexPresets.filter((r) => r.profileId === pr.id).length,
                   }))}
                   activePresetId={activeRegexPresetId}
+                  activeProfileId={activeRegexProfileId}
                   expandedProfileIds={[...expandedProfileIds]}
                   onToggleProfile={handleRegexToggleProfile}
                   onSelect={handleRegexSelect}
+                  onSelectProfile={handleRegexProfileSelect}
                   onAdd={handleRegexAdd}
                   onAddProfile={handleRegexProfileAdd}
                   onAddRuleToProfile={handleRegexAddRuleToProfile}
@@ -1115,7 +1247,18 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         }
         detailContent={
           activeTab === "regex" ? (
-            activeRegexPreset ? (
+            activeRegexProfile ? (
+              <RegexProfileEditor
+                profile={activeRegexProfile}
+                memberCount={regexPresets.filter((r) => r.profileId === activeRegexProfile.id).length}
+                onNameCommit={(newName) => handleRegexProfileRename(activeRegexProfile.id, newName)}
+                onActiveToggle={handleRegexProfileActiveToggle}
+                onScopeChange={handleRegexProfileScopeToggle}
+                onLinksChanged={(pid, count) => setRegexProfileLinkCounts((prev) => ({ ...prev, [pid]: count }))}
+                onExport={handleProfileExport}
+                onDeleteClick={() => setProfileConfirmDeleteId(activeRegexProfile.id)}
+              />
+            ) : activeRegexPreset ? (
               <RegexPresetEditor
                 preset={activeRegexPreset}
                 draft={regexDraft}
@@ -1124,6 +1267,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 onLinksChanged={(presetId, count) =>
                   setRegexLinkCounts((prev) => ({ ...prev, [presetId]: count }))
                 }
+                profileName={activeRegexPreset.profileId ? (regexProfiles.find((p) => p.id === activeRegexPreset.profileId)?.name ?? null) : null}
               />
             ) : regexLoadState === "loading" ? (
               <div className="flex h-full items-center justify-center p-5">
