@@ -18,6 +18,13 @@ export const inputCls =
 /** Monospace variant for prompt-instruction fields (system / post-history / depth). */
 export const monoCls = inputCls + " font-mono text-xs";
 
+/** Monospace at the SAME font size as regular inputs — typeface-only
+ *  distinction (R-7 in REGEX_V13_FOLLOWUP: regex rule fields must not read as
+ *  a lesser 12px class of input). Padding, line height and size stay identical
+ *  to `inputCls`; only the family changes. `font-mono` reliably overrides
+ *  `font-ui` in the generated stylesheet — same mechanism `monoCls` relies on. */
+export const monoUICls = inputCls + " font-mono";
+
 /** Uppercase tracked label used above every field. */
 export const lblCls =
   "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";

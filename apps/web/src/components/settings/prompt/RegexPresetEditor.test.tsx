@@ -1,4 +1,6 @@
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useState } from "react";
+import type { RegexPresetDraft } from "./RegexPresetEditor.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -155,5 +157,154 @@ describe("RegexPresetEditor", () => {
   it("hides the bindings row for a new unsaved preset (nothing to bind yet)", () => {
     render(<RegexPresetEditor preset={null} draft={emptyRegexDraft()} onDraftChange={mock()} />);
     expect(screen.queryByText("promptManager.regex.bindingsLabel")).toBeNull();
+  });
+});
+
+// ── R-7 redesign contracts ─────────────────────────────────────────────────
+describe("RegexPresetEditor — R-7 redesign", () => {
+  beforeEach(() => {
+    getRegexLinksMock.mockReset();
+    getRegexLinksMock.mockResolvedValue([]);
+    listPromptPresetsMock.mockReset();
+    listPromptPresetsMock.mockResolvedValue([]);
+    setRegexLinksMock.mockReset();
+  });
+
+  it("Активен toggle: saved preset → onActiveChange only (instant patch, draft untouched)", async () => {
+    const onDraftChange = mock();
+    const onActiveChange = mock();
+    const user = userEvent.setup();
+    render(
+      <RegexPresetEditor
+        preset={baseRecord()}
+        draft={regexDraftFromRecord(baseRecord())}
+        onDraftChange={onDraftChange}
+        onActiveChange={onActiveChange}
+      />,
+    );
+    const toggle = screen.getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true"); // active by default
+    await user.click(toggle);
+    expect(onActiveChange).toHaveBeenCalledTimes(1);
+    expect(onActiveChange.mock.calls[0][0]).toBe(false);
+    // The instant path never routes through the draft — a dirty draft is not
+    // involved in activation at all.
+    expect(onDraftChange).not.toHaveBeenCalled();
+  });
+
+  it("Активен toggle: no preset record → edits the draft (activates on first Save)", async () => {
+    const onDraftChange = mock();
+    const user = userEvent.setup();
+    render(<RegexPresetEditor preset={null} draft={emptyRegexDraft()} onDraftChange={onDraftChange} />);
+    await user.click(screen.getByRole("switch"));
+    expect(onDraftChange).toHaveBeenCalledTimes(1);
+    const called = onDraftChange.mock.calls[0][0] as ReturnType<typeof emptyRegexDraft>;
+    expect(called.disabled).toBe(true);
+  });
+
+  it("scope segmented: «Все чаты» sets isGlobal and hides the bindings block", async () => {
+    const onDraftChange = mock();
+    const user = userEvent.setup();
+    const record = baseRecord({ isGlobal: false });
+    render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={onDraftChange} />);
+    // Bind-mode default: bindings visible.
+    expect(screen.getByText("promptManager.regex.bindingsLabel")).toBeTruthy();
+    const allChats = screen.getAllByRole("radio").find((s) => s.getAttribute("value") === "all" && s.textContent === "promptManager.regex.scopeAll") as HTMLElement;
+    await user.click(allChats);
+    const called = onDraftChange.mock.calls[0][0] as ReturnType<typeof emptyRegexDraft>;
+    expect(called.isGlobal).toBe(true);
+  });
+
+  it("scope segmented: «Привязать к» from a global preset shows the dead-zone warning", async () => {
+    const onDraftChange = mock();
+    const user = userEvent.setup();
+    const record = baseRecord({ isGlobal: true });
+    render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={onDraftChange} />);
+    expect(screen.queryByText("promptManager.regex.bindingsDeadZone")).toBeNull();
+    const bind = screen.getAllByRole("radio").find((s) => s.getAttribute("value") === "bind") as HTMLElement;
+    await user.click(bind);
+    // Draft flips to bind-mode → bindings block + dead-zone warning appear
+    // (the warning IS the empty state, R-7).
+    const called = onDraftChange.mock.calls[0][0] as ReturnType<typeof emptyRegexDraft>;
+    expect(called.isGlobal).toBe(false);
+  });
+
+  it("placement chips toggle codes in the draft", async () => {
+    const onDraftChange = mock();
+    const user = userEvent.setup();
+    render(<RegexPresetEditor preset={baseRecord()} draft={regexDraftFromRecord(baseRecord({ placement: [2] }))} onDraftChange={onDraftChange} />);
+    const chip = screen.getByText("promptManager.regex.placementWorldInfo");
+    await user.click(chip);
+    const called = onDraftChange.mock.calls[0][0] as ReturnType<typeof emptyRegexDraft>;
+    expect(called.placement).toEqual([2, 5]);
+  });
+
+  it("depth modes rewrite minDepth/maxDepth; «Вся история» clears both", async () => {
+    // Controlled-draft harness: the real parent feeds onDraftChange back into
+    // `draft`, so mode inference (from the pair) advances between clicks —
+    // without feedback every click would see the stale "all" mode and the
+    // no-op guard would swallow it.
+    const calls: RegexPresetDraft[] = [];
+    function Harness() {
+      const [draft, setDraft] = useState(regexDraftFromRecord(baseRecord()));
+      const handle = (next: RegexPresetDraft) => { calls.push(next); setDraft(next); };
+      return <RegexPresetEditor preset={baseRecord()} draft={draft} onDraftChange={handle} />;
+    }
+    const user = userEvent.setup();
+    render(<Harness />);
+    // Find depth segments by their LABEL, not value — the scope control also
+    // has a value="all" radio ("Все чаты").
+    const seg = (labelKey: string) => screen.getAllByRole("radio").find((s) => s.textContent === labelKey) as HTMLElement;
+    expect(seg("promptManager.regex.depthModeAll").getAttribute("aria-checked")).toBe("true");
+
+    // «Последние N» → max=4 (owner default), min unbounded.
+    await user.click(seg("promptManager.regex.depthModeRecent"));
+    expect(calls.at(-1)!.minDepth).toBe("");
+    expect(calls.at(-1)!.maxDepth).toBe("4");
+
+    // «Старше N» → min=4, max unbounded (one-sided must not normalize).
+    await user.click(seg("promptManager.regex.depthModeOlder"));
+    expect(calls.at(-1)!.minDepth).toBe("4");
+    expect(calls.at(-1)!.maxDepth).toBe("");
+
+    // «Вся история» → both cleared.
+    await user.click(seg("promptManager.regex.depthModeAll"));
+    expect(calls.at(-1)!.minDepth).toBe("");
+    expect(calls.at(-1)!.maxDepth).toBe("");
+  });
+
+  it("depth hidden with a note when only lorebook/reasoning placements are selected", () => {
+    const record = baseRecord({ placement: [5, 6] });
+    render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
+    expect(screen.getByText("promptManager.regex.depthNoteHidden")).toBeTruthy();
+    // The mode control is gone (no depth radios).
+    expect(screen.queryAllByRole("radio").some((r) => r.getAttribute("value") === "recent")).toBe(false);
+  });
+
+  it("test pane distinguishes no-match from a real match", async () => {
+    const user = userEvent.setup();
+    const record = baseRecord({ findRegex: "/zzz/g", replaceString: "x" });
+    render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
+    await user.type(screen.getByPlaceholderText("promptManager.regex.testInputPlaceholder"), "hello there");
+    expect(screen.getByText("promptManager.regex.testNoMatch")).toBeTruthy();
+  });
+
+  it("bind-mode with zero resolvable links shows the dead-zone warning; a resolvable link hides it", async () => {
+    // Zero links → warning.
+    const first = render(
+      <RegexPresetEditor preset={baseRecord()} draft={regexDraftFromRecord(baseRecord())} onDraftChange={mock()} />,
+    );
+    expect(await first.findByText("promptManager.regex.bindingsDeadZone")).toBeTruthy();
+    first.unmount();
+
+    // One resolvable prompt-preset link → pills render, no warning.
+    getRegexLinksMock.mockResolvedValue([{ regexPresetId: "r1", targetType: "preset", targetId: "pp1" }]);
+    listPromptPresetsMock.mockResolvedValue([{ id: "pp1", name: "Deep RP" }]);
+    const second = render(
+      <RegexPresetEditor preset={baseRecord({ id: "r1" })} draft={regexDraftFromRecord(baseRecord())} onDraftChange={mock()} />,
+    );
+    expect(await second.findByText("Deep RP")).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 50)); // let the links state settle
+    expect(second.queryByText("promptManager.regex.bindingsDeadZone")).toBeNull();
   });
 });

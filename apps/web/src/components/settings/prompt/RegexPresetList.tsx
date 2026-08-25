@@ -12,7 +12,15 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 import type { RegexPresetRecord } from "../../../api/types.js";
 
-type RegexPresetRef = { id: string; name: string; disabled: boolean };
+type RegexPresetRef = {
+  id: string;
+  name: string;
+  disabled: boolean;
+  /** R-7 single-badge model: why this preset currently applies in NO chat
+   *  (tooltip carries the reason). null = in effect somewhere. Computed by
+   *  the parent (needs link counts for the unbound case). */
+  notApplied: "disabled" | "unbound" | null;
+};
 
 interface RegexPresetListProps {
   presets: RegexPresetRef[];
@@ -39,6 +47,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
   startEditing: (preset: RegexPresetRef, e: React.MouseEvent) => void;
   dndDisabled: boolean;
 }) => {
+  const { t } = useT();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: p.id,
     disabled: dndDisabled,
@@ -72,13 +81,20 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
         </button>
       )}
       <div className={cn("h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors", isActive ? "bg-accent" : "bg-transparent")} />
-      <CustomTooltip content={p.disabled ? `${p.name} (disabled)` : p.name}>
+      <CustomTooltip content={p.name}>
         <span className={cn(
           "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
           isActive ? "text-accent-t" : "text-t2",
           p.disabled && "opacity-50",
         )}>{p.name}</span>
       </CustomTooltip>
+      {p.notApplied && (
+        <CustomTooltip content={t(p.notApplied === "disabled" ? "promptManager.regex.badgeDisabledReason" : "promptManager.regex.badgeUnboundReason")}>
+          <span className="shrink-0 rounded-full border border-warning/40 bg-warning/10 px-2 py-px font-ui text-[10px] leading-tight text-warning select-none">
+            {t("promptManager.regex.badgeNotApplied")}
+          </span>
+        </CustomTooltip>
+      )}
       <button type="button"
         onClick={(e) => startEditing(p, e)}
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
@@ -97,6 +113,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
   prev.p.id === next.p.id &&
   prev.p.name === next.p.name &&
   prev.p.disabled === next.p.disabled &&
+  prev.p.notApplied === next.p.notApplied &&
   prev.dndDisabled === next.dndDisabled);
 
 /**

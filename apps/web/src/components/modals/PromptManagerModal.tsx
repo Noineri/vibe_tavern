@@ -31,6 +31,7 @@ import {
   createRegexPreset,
   updateRegexPreset,
   deleteRegexPreset,
+  getRegexLinks,
 } from "../../api/regex-api.js";
 import { invalidateActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import type { RegexPresetRecord } from "../../api/types.js";
@@ -351,6 +352,11 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexSaveState, setRegexSaveState] = useState<SaveState>("idle");
   const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
   const regexImportInputRef = useRef<HTMLInputElement>(null);
+  // R-7 list badge («Не применяется»): link counts for non-global presets —
+  // a bind-mode preset with zero links applies in no chat. Fetched lazily per
+  // unknown id; undefined = not loaded yet (badge withheld until known), so
+  // rows never flash a false «unbound» while links load.
+  const [regexLinkCounts, setRegexLinkCounts] = useState<Record<string, number | undefined>>({});
 
   const activeRegexPreset = regexPresets.find((p) => p.id === activeRegexPresetId) ?? null;
 
@@ -388,6 +394,45 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     setRegexDirty(false);
     setRegexSaveState("idle");
   }, [activeRegexPresetId]);
+
+  // R-7: fetch link counts for non-global, enabled presets whose count is not
+  // known yet (disabled/global rows get their badge reason for free). Runs on
+  // list changes (load / create / active-toggle patch); the editor reports
+  // binding edits directly via onLinksChanged. Failures leave the id unknown —
+  // no badge (and a retry on the next list change) rather than a false «unbound».
+  useEffect(() => {
+    for (const p of regexPresets) {
+      if (p.isGlobal || p.disabled) continue;
+      if (regexLinkCounts[p.id] !== undefined) continue;
+      getRegexLinks(p.id)
+        .then((rows) => setRegexLinkCounts((prev) => ({ ...prev, [p.id]: rows.length })))
+        .catch(() => {});
+    }
+  }, [regexPresets, regexLinkCounts]);
+
+  /** R-7 «Активен» instant toggle: patch ONLY `disabled` server-side right
+   *  away — never blocked by a dirty draft (the unsaved-changes indicator
+   *  keeps carrying the draft≠saved story). List row and draft follow the
+   *  patch optimistically; a failure reverts both and toasts. */
+  function handleRegexActiveToggle(nextActive: boolean) {
+    if (!activeRegexPreset) return;
+    const id = activeRegexPreset.id;
+    const prevDisabled = activeRegexPreset.disabled;
+    setRegexPresets((prev) => prev.map((p) => (p.id === id ? { ...p, disabled: !nextActive } : p)));
+    // Direct set, NOT handleRegexDraftChange: the toggle is already persisted,
+    // so it must not mark the draft dirty.
+    setRegexDraft((cur) => ({ ...cur, disabled: !nextActive }));
+    void updateRegexPreset(id, { disabled: !nextActive })
+      .then((updated) => {
+        if (updated) setRegexPresets((prev) => prev.map((p) => (p.id === id ? updated : p)));
+        invalidateActiveRegexPresets();
+      })
+      .catch(() => {
+        setRegexPresets((prev) => prev.map((p) => (p.id === id ? { ...p, disabled: prevDisabled } : p)));
+        setRegexDraft((cur) => ({ ...cur, disabled: prevDisabled }));
+        toast.error(t("promptManager.regex.toggleFailed"));
+      });
+  }
 
   function handleRegexDraftChange(next: RegexPresetDraft) {
     setRegexDraft(next);
@@ -853,7 +898,19 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           activeTab === "regex"
             ? () => (
                 <RegexPresetList
-                  presets={regexPresets.map((p) => ({ id: p.id, name: p.name, disabled: p.disabled }))}
+                  presets={regexPresets.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    disabled: p.disabled,
+                    // R-7 single-badge model: reason in the tooltip. Disabled
+                    // wins over unbound (a disabled preset with links still
+                    // applies nowhere while off).
+                    notApplied: p.disabled
+                      ? ("disabled" as const)
+                      : !p.isGlobal && regexLinkCounts[p.id] === 0
+                        ? ("unbound" as const)
+                        : null,
+                  }))}
                   activePresetId={activeRegexPresetId}
                   onSelect={handleRegexSelect}
                   onAdd={handleRegexAdd}
@@ -881,6 +938,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 preset={activeRegexPreset}
                 draft={regexDraft}
                 onDraftChange={handleRegexDraftChange}
+                onActiveChange={handleRegexActiveToggle}
+                onLinksChanged={(presetId, count) =>
+                  setRegexLinkCounts((prev) => ({ ...prev, [presetId]: count }))
+                }
               />
             ) : regexLoadState === "loading" ? (
               <div className="flex h-full items-center justify-center p-5">

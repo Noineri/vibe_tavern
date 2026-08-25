@@ -239,6 +239,29 @@ export function LinkBindingPopover({
             const r = regexMap.get(l.targetId);
             return r ? pill(r, "regex") : null;
           })}
+          {/* Dangling links (target row gone — e.g. character deleted before
+              R-10's cleanup landed): render as unlinkable ghost pills instead
+              of silently vanishing, so dead bindings stay visible and
+              removable. Click removes the link (full-set PUT). */}
+          {links
+            .filter(
+              (l) =>
+                !charMap.has(l.targetId) && !personaMap.has(l.targetId) &&
+                !lorebookMap.has(l.targetId) && !scriptMap.has(l.targetId) &&
+                !presetMap.has(l.targetId) && !regexMap.has(l.targetId),
+            )
+            .map((l) => (
+              <div
+                key={`ghost:${l.targetType}:${l.targetId}`}
+                className={cn(
+                  "flex min-w-0 cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-s2 px-2 text-t4 transition-colors hover:border-danger hover:text-danger select-none",
+                  pillCls,
+                )}
+                onClick={() => onSetLinks(links.filter((x) => x.targetType !== l.targetType || x.targetId !== l.targetId))}
+              >
+                <span className="truncate italic">{t("link_target_deleted")}</span>
+              </div>
+            ))}
         </>
       )}
       <Popover.Root open={open} onOpenChange={setOpen}>

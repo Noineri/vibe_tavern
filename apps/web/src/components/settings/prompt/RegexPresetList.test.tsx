@@ -56,9 +56,9 @@ beforeAll(async () => {
 });
 
 const basePresets = [
-  { id: "r1", name: "Alpha", disabled: false },
-  { id: "r2", name: "Beta", disabled: false },
-  { id: "r3", name: "Gamma", disabled: true },
+  { id: "r1", name: "Alpha", disabled: false, notApplied: null },
+  { id: "r2", name: "Beta", disabled: false, notApplied: null },
+  { id: "r3", name: "Gamma", disabled: true, notApplied: null },
 ];
 
 function baseProps(overrides: Partial<Parameters<typeof RegexPresetList>[0]> = {}) {
@@ -129,5 +129,36 @@ describe("RegexPresetList", () => {
     await user.clear(input);
     await user.type(input, "Renamed{enter}");
     expect(onRename).toHaveBeenCalledWith("r1", "Renamed");
+  });
+});
+
+// ── R-7 single-badge model: «Не применяется» with the reason in the tooltip ──
+describe("RegexPresetList — not-applied badge (R-7)", () => {
+  beforeEach(() => {
+    mock.clearAllMocks();
+  });
+
+  it("renders no badge when every preset is in effect", () => {
+    render(<RegexPresetList {...baseProps()} />);
+    expect(screen.queryByText("promptManager.regex.badgeNotApplied")).toBeNull();
+  });
+
+  it("renders one badge for disabled and one for unbound presets", () => {
+    render(
+      <RegexPresetList
+        {...baseProps({
+          presets: [
+            { id: "r1", name: "Alpha", disabled: false, notApplied: null },
+            { id: "r2", name: "Beta", disabled: true, notApplied: "disabled" },
+            { id: "r3", name: "Gamma", disabled: false, notApplied: "unbound" },
+          ],
+        })}
+      />,
+    );
+    const badges = screen.getAllByText("promptManager.regex.badgeNotApplied");
+    expect(badges).toHaveLength(2);
+    // Reason goes to the tooltip content, not a second visible label.
+    expect(screen.queryByText("promptManager.regex.badgeDisabledReason")).toBeNull();
+    expect(screen.queryByText("promptManager.regex.badgeUnboundReason")).toBeNull();
   });
 });
