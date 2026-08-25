@@ -476,22 +476,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 	}
 
 	private async resolveVisionDescribePromptFromPreset(): Promise<string> {
-		const settings = await this.stores.uiSettings.get();
-		let aiAssistantPrompts: Record<string, string> | null = null;
-		if (settings?.activePromptPresetId) {
-			const preset = await this.stores.presets.getById(settings.activePromptPresetId);
-			if (preset?.aiAssistantPrompts) {
-				try {
-					const parsed = JSON.parse(preset.aiAssistantPrompts);
-					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-						aiAssistantPrompts = Object.fromEntries(
-							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
-						) as Record<string, string>;
-					}
-				} catch { /* preset.aiAssistantPrompts may hold malformed JSON; skip and fall back to the default vision-describe prompt */ }
-			}
-		}
-		return resolveVisionDescribePrompt(aiAssistantPrompts);
+		return resolveVisionDescribePrompt(this.stores.db);
 	}
 
 	// ─── Bound resources (character-editor binding field) ────────────────

@@ -76,7 +76,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			name: preset.name,
 			text: preset.systemPrompt,
 			jailbreak: preset.postHistoryInstructions,
-			summary: await resolveSummaryPrompt(preset.summaryPrompt),
+			summary: await resolveSummaryPrompt(this.stores.db),
 			tools: preset.toolsPrompt,
 			prefill: preset.assistantPrefix,
 			authorsNote: preset.authorsNote,

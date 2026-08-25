@@ -7,6 +7,7 @@ import {
 	type MessageId,
 } from "@vibe-tavern/domain";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
+import type { StreamDeps } from "./ai-assistant-stream.js";
 import { notFound } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
@@ -16,7 +17,9 @@ import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
  * Builds the dependency object expected by streamAiAssistant / countAiAssistantTokens.
  * Keeps AI-assistant concerns out of the adapter layer.
  */
-export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: SessionRuntime) {
+export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: SessionRuntime): StreamDeps {
+	// SP-10: getPresetPromptData is legacy preset plumbing — prompt resolution now
+	// uses the service-prompt profile resolver (stores.db). Kept for compat until SP-10 cleanup.
 	const getPresetPromptData = async (chatId?: string) => {
 		const [settings, chat] = await Promise.all([
 			stores.uiSettings.get(),
@@ -48,6 +51,7 @@ export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: Se
 	};
 
 	return {
+		db: stores.db,
 		resolveModel: (
 			profile: { providerPreset: string; endpoint: string; apiKey: string | null },
 			model: string,

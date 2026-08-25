@@ -33,6 +33,7 @@ import {
   type ReasoningSplitState,
   type AiAssistantStreamChunk,
 } from "./reasoning-split.js";
+import type { AppDb } from "@vibe-tavern/db";
 import type { BuiltPipelineContext } from "../prompt/prompt-assembly-service.js";
 import { notFound, validation } from "../../shared/errors.js";
 import {
@@ -128,10 +129,12 @@ interface MessageEditorPipelineContextInput {
 }
 
 export interface StreamDeps extends ContextResolverDeps {
+  readonly db: AppDb;
   readonly resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string, fetch?: ProviderFetch) => LanguageModel;
   readonly getProviderProfile: (id: string) => Promise<AiAssistantProviderProfile | null>;
   readonly getEffectiveProviderProfile: (id: string, model: string) => Promise<AiAssistantProviderProfile>;
-  /** Resolve the active preset's aiAssistantPrompts + legacy column. */
+  // SP-10: legacy preset plumbing — prompt resolution now uses service-prompt
+  // profiles (db). Kept for compat until SP-10 cleanup.
   readonly getPresetPromptData: (chatId?: string) => Promise<{
     aiAssistantPrompts: Record<string, string> | null;
     scriptAiSystemPrompt: string | null;
@@ -212,10 +215,7 @@ async function prepareMessageEditorRequest(input: MessageEditorPreparationInput)
     sources.push(source);
   }
 
-  const presetData = await deps.getPresetPromptData(chat.id);
-  const { prompt: systemPrompt, source } = await resolveSystemPrompt(request.mode, {
-    aiAssistantPrompts: presetData.aiAssistantPrompts,
-    scriptAiSystemPrompt: presetData.scriptAiSystemPrompt,
+  const { prompt: systemPrompt, source } = await resolveSystemPrompt(deps.db, request.mode, {
     promptFormat: request.promptFormat,
   });
   const effectiveProfile = await deps.getEffectiveProviderProfile(profile.id, modelName);
@@ -301,11 +301,8 @@ async function prepareAiAssistantRequest(
     return prepareMessageEditorRequest({ request, deps, config, profile, modelName });
   }
 
-  // 2. Resolve system prompt via fallback chain
-  const presetData = await deps.getPresetPromptData();
-  const { prompt: systemPrompt, source } = await resolveSystemPrompt(request.mode, {
-    aiAssistantPrompts: presetData.aiAssistantPrompts,
-    scriptAiSystemPrompt: presetData.scriptAiSystemPrompt,
+  // 2. Resolve system prompt via service-prompt profiles
+  const { prompt: systemPrompt, source } = await resolveSystemPrompt(deps.db, request.mode, {
     promptFormat: request.promptFormat,
   });
 

@@ -9,8 +9,8 @@ import { createAiAssistantDeps } from "../src/domain/ai-assistant/ai-assistant-d
 import { countAiAssistantTokens, streamAiAssistant, type StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
 import { createOllamaModel } from "../src/domain/providers/ollama-adapter.js";
 
-function deps(overrides: Partial<StreamDeps> = {}): StreamDeps {
-  return {
+async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
+  const base: Omit<StreamDeps, "db"> = {
     getCharacterById: async () => null,
     getPersonaById: async () => null,
     getLoreEntryById: async () => null,
@@ -23,8 +23,27 @@ function deps(overrides: Partial<StreamDeps> = {}): StreamDeps {
     getMessageEditorMessages: async () => [],
     getMessageEditorVariantsByBranch: async () => new Map(),
     buildMessageEditorPipelineContext: async () => { throw new Error("message editor context is not configured"); },
-    ...overrides,
   };
+  // SP-4: prompt resolution now uses service-prompt profiles (db). Seed an
+  // in-memory db with the same short prompts the old preset mock provided so
+  // token-count expectations stay stable.
+  let db: import("@vibe-tavern/db").AppDb;
+  if ((overrides as { db?: import("@vibe-tavern/db").AppDb }).db) {
+    db = (overrides as { db: import("@vibe-tavern/db").AppDb }).db;
+  } else {
+    const { createDb } = await import("@vibe-tavern/db");
+    const { ServicePromptProfileStore, UiSettingsStore } = await import("@vibe-tavern/db");
+    db = await createDb(":memory:");
+    const ps = new ServicePromptProfileStore(db);
+    const ui = new UiSettingsStore(db);
+    await ps.ensureDefaultServicePromptProfile();
+    const p = await ps.createServicePromptProfile({
+      name: "TestAssistant",
+      overrides: { chat_impersonate: "Impersonate the character.", md_import: "Import this markdown." },
+    });
+    await ui.update({ activeServicePromptProfileId: p.id });
+  }
+  return { db, ...base, ...overrides, db } as StreamDeps;
 }
 
 async function createMessageEditorRuntime() {
@@ -38,6 +57,14 @@ async function createMessageEditorRuntime() {
   const chatPreset = await stores.presets.create({ name: "Chat assistant prompts", aiAssistantPrompts: JSON.stringify({ message_edit: "<chat-message-editor-policy/>" }) });
   await stores.uiSettings.update({ activePromptPresetId: globalPreset.id });
   await stores.chats.setPromptPreset(created.activeChatId, chatPreset.id);
+  // SP-4: assistant prompts now come from service-prompt profiles, not preset JSON.
+  // Seed a service profile so the message-editor prompt is deterministic for the trace test.
+  const { ServicePromptProfileStore, UiSettingsStore } = await import("@vibe-tavern/db");
+  const spStore = new ServicePromptProfileStore(stores.db);
+  const uiStore2 = new UiSettingsStore(stores.db);
+  await spStore.ensureDefaultServicePromptProfile();
+  const svcProfile = await spStore.createServicePromptProfile({ name: "Editor Service", overrides: { message_edit: "<chat-message-editor-policy/>" } });
+  await uiStore2.update({ activeServicePromptProfileId: svcProfile.id });
   const profile = await stores.providers.create({ name: "Message editor profile", providerPreset: "ollama", endpoint: "http://ai-assistant.test", defaultModel: "base-model", contextBudget: 9000, maxTokens: 1000, bindPerModel: true });
   await stores.providers.upsertModelSettings(profile.id, "editor-model", { contextBudget: 600, maxTokens: 17 });
   const chat = await stores.chats.getById(created.activeChatId);
@@ -65,7 +92,7 @@ describe("AI assistant stream prompt preparation", () => {
     const calls: Array<[string, number]> = [];
     const result = await countAiAssistantTokens({
       mode: "chat_impersonate", instruction: "Continue.", providerProfileId: "profile_1", enabledLayers: [], chatId: "chat_1", recentMessageCount: 7,
-    }, deps({ getChatMessages: async (chatId, count) => {
+    }, await deps({ getChatMessages: async (chatId, count) => {
       calls.push([chatId, count]);
       return [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }];
     } }));
@@ -77,7 +104,7 @@ describe("AI assistant stream prompt preparation", () => {
     let resolvedContext = false;
     const result = await countAiAssistantTokens({
       mode: "md_import", instruction: "Ignored when content exists.", existingContent: "# Imported card", providerProfileId: "profile_1", enabledLayers: ["character_base", "lore"],
-    }, deps({ getCharacterById: async () => { resolvedContext = true; return null; } }));
+    }, await deps({ getCharacterById: async () => { resolvedContext = true; return null; } }));
     expect(resolvedContext).toBeFalse();
     expect(result).toEqual({ tokens: 36, model: "model_1", layerCount: 2, messageCount: 2, activatedLoreCount: 0 });
   });

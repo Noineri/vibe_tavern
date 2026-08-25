@@ -13,8 +13,11 @@
  */
 
 import type { AiAssistantMode } from "@vibe-tavern/prompt-pipeline";
+import type { AppDb } from "@vibe-tavern/db";
+import type { ServicePromptFieldKey } from "@vibe-tavern/domain";
 import { loadPromptAsset, resolvePromptAssetPath } from "../../shared/prompt-asset-loader.js";
 import { getModeConfig, getDefaultPromptFile } from "./ai-assistant-modes.js";
+import { getActiveServicePromptProfile } from "../service-prompts/service-prompt-resolver.js";
 
 // ─── Path resolution ─────────────────────────────────────────────────────────
 
@@ -33,40 +36,48 @@ export async function getDefaultPromptForMode(mode: AiAssistantMode, promptForma
 }
 
 /**
- * Resolve the final system prompt for a mode using the fallback chain:
+ * Resolve the final system prompt for a mode using the service-prompt
+ * profile chain (SP-4):
  *
- * 1. `aiAssistantPrompts[mode]` — user override from active preset
- * 2. `scriptAiSystemPrompt` — backward compat for script mode only
- * 3. Default `.md` file
+ * 1. Active service-prompt profile override for the mode's field key
+ *    (format-agnostic — wins over both json/xml defaults for scene_schema)
+ * 2. Default `.md` file (format-aware via getDefaultPromptFile — xml selects
+ *    the xml variant when promptFormat === "xml")
  */
+const MODE_TO_FIELD: Record<AiAssistantMode, ServicePromptFieldKey> = {
+  script: "script",
+  dice_script: "dice_script",
+  lore_entry: "lore_entry",
+  message_edit: "message_edit",
+  message_merge: "message_merge",
+  lore_keys: "lore_keys",
+  chat_impersonate: "chat_impersonate",
+  md_import: "md_import",
+  vision_describe: "vision_describe",
+  scene_schema: "scene_schema",
+  scene_rules: "scene_rules",
+};
+
 export async function resolveSystemPrompt(
+  db: AppDb,
   mode: AiAssistantMode,
-  options: {
-    /** Parsed `aiAssistantPrompts` JSON from the active preset. */
-    aiAssistantPrompts: Record<string, string> | null;
-    /** Legacy `scriptAiSystemPrompt` value (used only for script mode). */
-    scriptAiSystemPrompt?: string | null;
+  options?: {
     /** For format-aware modes (scene_schema): select the default file. Ignored
-     *  when a preset override is present (overrides are format-agnostic). */
+     *  when a profile override is present (overrides are format-agnostic). */
     promptFormat?: "json" | "xml";
   },
-): Promise<{ prompt: string; source: "preset_override" | "preset_legacy" | "default_md" }> {
-  const config = getModeConfig(mode);
-
-  // 1. Check aiAssistantPrompts override for this mode
-  if (options.aiAssistantPrompts) {
-    const override = options.aiAssistantPrompts[config.presetKey]?.trim();
-    if (override) {
-      return { prompt: override, source: "preset_override" };
+): Promise<{ prompt: string; source: "override" | "default" }> {
+  const { profile } = await getActiveServicePromptProfile(db);
+  const field = MODE_TO_FIELD[mode];
+  if (field) {
+    const raw = profile.overrides[field];
+    const trimmed = typeof raw === "string" ? raw.trim() : "";
+    if (trimmed.length > 0) {
+      return { prompt: trimmed, source: "override" };
     }
   }
 
-  // 2. Backward compat: scriptAiSystemPrompt for script mode
-  if (config.legacyColumn && options.scriptAiSystemPrompt?.trim()) {
-    return { prompt: options.scriptAiSystemPrompt.trim(), source: "preset_legacy" };
-  }
-
-  // 3. Default .md file (format-aware for scene_schema)
-  const defaultPrompt = await getDefaultPromptForMode(mode, options.promptFormat);
-  return { prompt: defaultPrompt, source: "default_md" };
+  // Default .md file (format-aware for scene_schema)
+  const defaultPrompt = await getDefaultPromptForMode(mode, options?.promptFormat);
+  return { prompt: defaultPrompt, source: "default" };
 }

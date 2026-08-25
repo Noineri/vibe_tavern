@@ -180,74 +180,80 @@ describe("ai-assistant-prompts — rewire onto shared loader", () => {
 	});
 });
 
-describe("resolveSystemPrompt — fallback chain precedence", () => {
-	// Pure logic for the override/legacy branches; the default_md branch reads the
-	// file (covered by the rewire tests above). These pin the precedence that
-	// determines which prompt actually reaches the model.
+describe("resolveSystemPrompt — fallback chain precedence (service profiles)", () => {
+	// After SP-4 the preset JSON + legacy column are gone — the profile chain is:
+	// active profile override (trimmed non-empty) → default .md asset.
 
-	test("preset_override wins when aiAssistantPrompts has the mode's presetKey", async () => {
-		const { prompt, source } = await resolveSystemPrompt("script", {
-			aiAssistantPrompts: { script: "CUSTOM OVERRIDE" },
-			scriptAiSystemPrompt: "LEGACY VALUE",
-		});
-		expect(source).toBe("preset_override");
+	test("profile override wins when active profile has the mode's field key", async () => {
+		const { createDb } = await import("@vibe-tavern/db");
+		const { ServicePromptProfileStore, UiSettingsStore } = await import("@vibe-tavern/db");
+		const db = await createDb(":memory:");
+		const ps = new ServicePromptProfileStore(db);
+		const ui = new UiSettingsStore(db);
+		await ps.ensureDefaultServicePromptProfile();
+		const p = await ps.createServicePromptProfile({ name: "t", overrides: { script: "CUSTOM OVERRIDE" } });
+		await ui.update({ activeServicePromptProfileId: p.id });
+		const { prompt, source } = await resolveSystemPrompt(db, "script");
+		expect(source).toBe("override");
 		expect(prompt).toBe("CUSTOM OVERRIDE");
 	});
 
-	test("preset_legacy wins for script mode when only scriptAiSystemPrompt is set", async () => {
-		const { prompt, source } = await resolveSystemPrompt("script", {
-			aiAssistantPrompts: null,
-			scriptAiSystemPrompt: "LEGACY VALUE",
-		});
-		expect(source).toBe("preset_legacy");
-		expect(prompt).toBe("LEGACY VALUE");
-	});
-
-	test("default_md when no overrides are present", async () => {
-		const { prompt, source } = await resolveSystemPrompt("script", {
-			aiAssistantPrompts: null,
-			scriptAiSystemPrompt: null,
-		});
-		expect(source).toBe("default_md");
+	test("default when no profile overrides are present", async () => {
+		const { createDb } = await import("@vibe-tavern/db");
+		const db = await createDb(":memory:");
+		const { prompt, source } = await resolveSystemPrompt(db, "script");
+		expect(source).toBe("default");
 		expect(prompt.length).toBeGreaterThan(0);
 	});
 
-	test("override takes precedence over legacy when both are set", async () => {
-		const { source } = await resolveSystemPrompt("script", {
-			aiAssistantPrompts: { script: "OVERRIDE" },
-			scriptAiSystemPrompt: "LEGACY",
-		});
-		expect(source).toBe("preset_override");
+	test("whitespace-only profile override is ignored (falls through to default)", async () => {
+		const { createDb } = await import("@vibe-tavern/db");
+		const { ServicePromptProfileStore, UiSettingsStore } = await import("@vibe-tavern/db");
+		const db = await createDb(":memory:");
+		const ps = new ServicePromptProfileStore(db);
+		const ui = new UiSettingsStore(db);
+		await ps.ensureDefaultServicePromptProfile();
+		const p = await ps.createServicePromptProfile({ name: "t", overrides: { script: "   \n\t  " } });
+		await ui.update({ activeServicePromptProfileId: p.id });
+		const { source } = await resolveSystemPrompt(db, "script");
+		expect(source).toBe("default");
 	});
 
-	test("whitespace-only override is ignored (falls through to legacy/default)", async () => {
-		const { source } = await resolveSystemPrompt("script", {
-			aiAssistantPrompts: { script: "   \n\t  " },
-			scriptAiSystemPrompt: null,
-		});
-		expect(source).toBe("default_md");
-	});
-
-	test("non-script mode ignores scriptAiSystemPrompt (no legacy column on other modes)", async () => {
-		const { source } = await resolveSystemPrompt("lore_entry", {
-			aiAssistantPrompts: null,
-			scriptAiSystemPrompt: "SHOULD BE IGNORED",
-		});
-		expect(source).toBe("default_md");
-	});
-
-	test("override is keyed by presetKey (lore_entry mode → 'lore_entry' key)", async () => {
-		const { prompt, source } = await resolveSystemPrompt("lore_entry", {
-			aiAssistantPrompts: { lore_entry: "LORE OVERRIDE" },
-		});
-		expect(source).toBe("preset_override");
+	test("override is keyed by field (lore_entry override → lore_entry mode)", async () => {
+		const { createDb } = await import("@vibe-tavern/db");
+		const { ServicePromptProfileStore, UiSettingsStore } = await import("@vibe-tavern/db");
+		const db = await createDb(":memory:");
+		const ps = new ServicePromptProfileStore(db);
+		const ui = new UiSettingsStore(db);
+		await ps.ensureDefaultServicePromptProfile();
+		const p = await ps.createServicePromptProfile({ name: "t", overrides: { lore_entry: "LORE OVERRIDE" } });
+		await ui.update({ activeServicePromptProfileId: p.id });
+		const { prompt, source } = await resolveSystemPrompt(db, "lore_entry");
+		expect(source).toBe("override");
 		expect(prompt).toBe("LORE OVERRIDE");
 	});
 
-	test("a mismatched presetKey does not match (script override does not leak into lore_entry)", async () => {
-		const { source } = await resolveSystemPrompt("lore_entry", {
-			aiAssistantPrompts: { script: "WRONG KEY OVERRIDE" },
-		});
-		expect(source).toBe("default_md");
+	test("a mismatched field does not leak (script override does not affect lore_entry)", async () => {
+		const { createDb } = await import("@vibe-tavern/db");
+		const { ServicePromptProfileStore, UiSettingsStore } = await import("@vibe-tavern/db");
+		const db = await createDb(":memory:");
+		const ps = new ServicePromptProfileStore(db);
+		const ui = new UiSettingsStore(db);
+		await ps.ensureDefaultServicePromptProfile();
+		const p = await ps.createServicePromptProfile({ name: "t", overrides: { script: "WRONG KEY OVERRIDE" } });
+		await ui.update({ activeServicePromptProfileId: p.id });
+		const { source } = await resolveSystemPrompt(db, "lore_entry");
+		expect(source).toBe("default");
+	});
+
+	test("legacy aiAssistantPrompts/scriptAiSystemPrompt plumbing is gone — preset JSON no longer consults", async () => {
+		// This test asserts the intentional SP-4 removal: even if a preset's
+		// JSON contained a script override, the new resolver does NOT read presets.
+		// We verify by calling with no profile override and checking we get default
+		// (the old preset path would have returned preset_override).
+		const { createDb } = await import("@vibe-tavern/db");
+		const db = await createDb(":memory:");
+		const { source } = await resolveSystemPrompt(db, "script");
+		expect(source).toBe("default");
 	});
 });

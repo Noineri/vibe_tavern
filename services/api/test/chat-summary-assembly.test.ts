@@ -465,32 +465,54 @@ describe("ChatSummaryService summary prompt reshape", () => {
 
 // ─── SUMMARY_PRIOR_CONTEXT_PLAN W4 (SPC-4): default summary prompt ────
 //
-// resolveSummaryPrompt returns the trimmed preset text byte-for-byte when the
-// preset carries one, and falls back to the bundled summary-ai-prompt.md asset
-// otherwise — so an empty `preset.summary` no longer produces an instruction-less
-// summary call.
-describe("Summary prompt fallback (SPC-4)", () => {
-  it("returns the trimmed preset text byte-for-byte when present", async () => {
-    const out = await resolveSummaryPrompt("  my dream summary prompt  ");
+// After SP-4 the preset column is gone — resolveSummaryPrompt reads the
+// active service-prompt profile (field `summary`) and falls back to the
+// bundled summary-ai-prompt.md asset. An empty/whitespace override falls
+// through to the asset so an instruction-less summary call is impossible.
+describe("Summary prompt fallback (SPC-4) — service profiles", () => {
+  it("returns the trimmed profile override byte-for-byte when present", async () => {
+    const { createDb } = await import("@vibe-tavern/db");
+    const { ServicePromptProfileStore, UiSettingsStore } = await import("@vibe-tavern/db");
+    const db = await createDb(":memory:");
+    const ps = new ServicePromptProfileStore(db);
+    const ui = new UiSettingsStore(db);
+    await ps.ensureDefaultServicePromptProfile();
+    const p = await ps.createServicePromptProfile({ name: "t", overrides: { summary: "  my dream summary prompt  " } });
+    await ui.update({ activeServicePromptProfileId: p.id });
+    const out = await resolveSummaryPrompt(db);
     expect(out).toBe("my dream summary prompt");
   });
 
-  it("falls back to the bundled default asset when preset is empty/whitespace", async () => {
-    const out = await resolveSummaryPrompt("   ");
+  it("falls back to the bundled default asset when profile override is empty/whitespace", async () => {
+    const { createDb } = await import("@vibe-tavern/db");
+    const { ServicePromptProfileStore, UiSettingsStore } = await import("@vibe-tavern/db");
+    const db = await createDb(":memory:");
+    const ps = new ServicePromptProfileStore(db);
+    const ui = new UiSettingsStore(db);
+    await ps.ensureDefaultServicePromptProfile();
+    const p = await ps.createServicePromptProfile({ name: "t", overrides: { summary: "   " } });
+    await ui.update({ activeServicePromptProfileId: p.id });
+    const out = await resolveSummaryPrompt(db);
     expect(out.trim().length).toBeGreaterThan(0);
     expect(out).toContain("continuity engine");
   });
 
-  it("falls back to the bundled default asset when preset is null/undefined", async () => {
-    const fromNull = await resolveSummaryPrompt(null);
-    const fromUndefined = await resolveSummaryPrompt(undefined);
-    expect(fromNull.trim().length).toBeGreaterThan(0);
-    expect(fromNull).toBe(fromUndefined);
+  it("falls back to the bundled default asset when no profile override is set", async () => {
+    const { createDb } = await import("@vibe-tavern/db");
+    const db = await createDb(":memory:");
+    const out = await resolveSummaryPrompt(db);
+    expect(out.trim().length).toBeGreaterThan(0);
+    // Second call with a fresh DB and no profile override must give the same default.
+    const { createDb: createDb2 } = await import("@vibe-tavern/db");
+    const db2 = await createDb2(":memory:");
+    const out2 = await resolveSummaryPrompt(db2);
+    expect(out).toBe(out2);
   });
 
   it("the default asset is authored for the prior-context strategy", async () => {
-    const out = await resolveSummaryPrompt(null);
-    // read-only continuity framing, no re-summarize, language-neutral.
+    const { createDb } = await import("@vibe-tavern/db");
+    const db = await createDb(":memory:");
+    const out = await resolveSummaryPrompt(db);
     expect(out).toContain("Prior summaries");
     expect(out.toLowerCase()).toContain("do not repeat");
   });
