@@ -354,14 +354,19 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
 
   const activeRegexPreset = regexPresets.find((p) => p.id === activeRegexPresetId) ?? null;
 
-  // Lazy-load regex presets on first tab activation.
+  // Lazy-load regex presets on first tab activation (R-1 fix).
+  // NOTE: `regexLoadState` must NOT be in the deps — the effect itself writes
+  // it ("loading"), so a state dep re-triggers the effect's cleanup and kills
+  // the only in-flight fetch (the original bug: the list stayed empty forever).
+  // Once-guard is a ref; re-running the fetch (StrictMode double-invoke, tab
+  // re-entry) is harmless — the apply is idempotent.
+  const regexLoadStartedRef = useRef(false);
   useEffect(() => {
-    if (activeTab !== "regex" || regexLoadState !== "idle") return;
-    let cancelled = false;
+    if (activeTab !== "regex" || regexLoadStartedRef.current) return;
+    regexLoadStartedRef.current = true;
     setRegexLoadState("loading");
     void listAllRegexPresets()
       .then((list) => {
-        if (cancelled) return;
         setRegexPresets(list);
         setRegexLoadState("ready");
         if (list.length > 0 && activeRegexPresetId === null) {
@@ -369,10 +374,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         }
       })
       .catch(() => {
-        if (!cancelled) setRegexLoadState("error");
+        setRegexLoadState("error");
       });
-    return () => { cancelled = true; };
-  }, [activeTab, regexLoadState]);
+  }, [activeTab, activeRegexPresetId, listAllRegexPresets]);
 
   // Sync the editor draft when the selected regex preset changes.
   useEffect(() => {

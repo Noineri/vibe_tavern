@@ -14,6 +14,7 @@ useDomEnv();
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import type { ReactNode } from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import type { RegexPresetRecord } from "../../api/types.js";
 import type { DraftData } from "./PromptManagerModal.js";
 import { useModalStore } from "../../stores/modal-store.js";
 
@@ -23,6 +24,8 @@ const realTooltip = await import("../shared/Tooltip.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
 const realPromptCanvasLore = await import("../../lib/prompt-canvas-lore.js");
 const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLoreEntries);
+const realRegexApi = await import("../../api/regex-api.js");
+const listAllRegexPresetsMock = mock(realRegexApi.listAllRegexPresets);
 
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -45,6 +48,10 @@ mock.module("../../lib/prompt-canvas-lore.js", () => ({
   ...realPromptCanvasLore,
   loadPromptCanvasLoreEntries,
 }));
+mock.module("../../api/regex-api.js", () => ({
+  ...realRegexApi,
+  listAllRegexPresets: listAllRegexPresetsMock,
+}));
 
 const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 
@@ -59,6 +66,7 @@ beforeAll(async () => {
 afterEach(() => {
   cleanup();
   loadPromptCanvasLoreEntries.mockReset();
+  listAllRegexPresetsMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
 
@@ -540,5 +548,67 @@ describe("importStandaloneRegexText (RX-16)", () => {
     );
     expect(created).toBe(1);
     expect((calls[0] as { name?: string })?.name).toBe("Solo");
+  });
+});
+
+/**
+ * R-1 regression (REGEX_V13_FOLLOWUP): the regex tab's lazy-load effect must
+ * actually populate the list when the regex tab becomes active. The original
+ * bug: the effect had `regexLoadState` in its deps AND called
+ * `setRegexLoadState("loading")` itself, so its own setState re-triggered the
+ * cleanup (`cancelled = true`), killing the only in-flight fetch; the re-run
+ * then early-returned on the `!== "idle"` guard. State pinned at "loading",
+ * list empty forever — unconditionally, production included.
+ */
+describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
+  function regexRecord(id: string, name: string): RegexPresetRecord {
+    return {
+      id,
+      name,
+      findRegex: "/x+/g",
+      replaceString: "",
+      trimStrings: [],
+      substituteRegex: 0,
+      disabled: false,
+      markdownOnly: false,
+      promptOnly: true,
+      runOnEdit: false,
+      minDepth: null,
+      maxDepth: null,
+      placement: [2],
+      isGlobal: false,
+      sortOrder: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+
+  test("switching to the regex tab populates the preset list", async () => {
+    listAllRegexPresetsMock.mockResolvedValue([
+      regexRecord("rx_a", "Alpha Strip"),
+      regexRecord("rx_b", "Beta Wrap"),
+    ]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+
+    // Switch to the regex tab (SegmentedControl segment labelled by its i18n key).
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+
+    await waitFor(() => {
+      expect(listAllRegexPresetsMock).toHaveBeenCalled();
+      expect(within(view.baseElement).getByText("Alpha Strip")).toBeTruthy();
+      expect(within(view.baseElement).getByText("Beta Wrap")).toBeTruthy();
+    });
   });
 });
