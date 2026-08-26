@@ -141,6 +141,18 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "text",
     jsonSchemaHint: null,
   },
+  // Regex-rule authoring assistant (REGEX_AI_ASSISTANT_PLAN). Neutral
+  // transformation-only wording by owner decision; JSON contract carries the
+  // full rule draft incl. applyTarget + depth.
+  regex: {
+    mode: "regex",
+    presetKey: "regex",
+    defaultPromptFile: "regex-ai-prompt.md",
+    stripReasoning: true,
+    outputFormat: "json",
+    jsonSchemaHint:
+      '{ "name": "...", "findRegex": "/pattern/flags", "replaceString": "...", "trimStrings": ["..."], "applyTarget": "persist|display|prompt|display_prompt", "depthMode": "all|recent|older|range", "depthValue": 4, "explanation": "..." }',
+  },
 };
 
 /** Resolve the default prompt FILE NAME for a mode, honoring a format-aware

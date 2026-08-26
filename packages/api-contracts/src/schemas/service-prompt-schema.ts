@@ -17,6 +17,7 @@ export const servicePromptOverridesSchema = z
     scene_rules: z.string().optional(),
     message_edit: z.string().optional(),
     message_merge: z.string().optional(),
+    regex: z.string().optional(),
     summary: z.string().optional(),
     objective_generate: z.string().optional(),
     objective_generate_goals: z.string().optional(),

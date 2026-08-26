@@ -2486,6 +2486,7 @@
   "promptManager.servicePrompts.field.md_import": "Импорт Markdown",
   "promptManager.servicePrompts.field.scene_rules": "Правила сцены",
   "promptManager.servicePrompts.field.summary": "Сводка",
+  "promptManager.servicePrompts.field.regex": "Помощник по регексам",
   "promptManager.servicePrompts.field.objective_generate": "Генерация цели",
   "promptManager.servicePrompts.field.objective_generate_goals": "Генерация задач цели",
   "promptManager.servicePrompts.field.objective_check": "Проверка цели",

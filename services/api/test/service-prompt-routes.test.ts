@@ -78,7 +78,7 @@ describe("SP-6 service prompt routes (real adapter + in-memory DB)", () => {
     expect(body2.profiles.filter((p) => p.id === "default")).toHaveLength(1);
   });
 
-  test("POST create then GET detail: resolved map covers all 21 fields", async () => {
+  test("POST create then GET detail: resolved map covers all 22 fields", async () => {
     const { app } = await setupAdapter();
 
     const created = await app.request("/api/service-prompts/profiles", {
@@ -97,7 +97,7 @@ describe("SP-6 service prompt routes (real adapter + in-memory DB)", () => {
       profile: { id: string; overrides: Record<string, string> };
       resolved: Record<string, { override: string | null; default: string }>;
     };
-    // All 21 keys present
+    // All 22 keys present
     expect(Object.keys(detailBody.resolved)).toHaveLength(SERVICE_PROMPT_FIELD_KEYS.length);
     for (const key of SERVICE_PROMPT_FIELD_KEYS) {
       expect(detailBody.resolved[key]).toBeDefined();

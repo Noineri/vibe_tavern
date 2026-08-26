@@ -1723,6 +1723,7 @@ export default interface Resources {
     "promptManager.servicePrompts.field.objective_check": "Objective Check",
     "promptManager.servicePrompts.field.objective_generate": "Objective Generate",
     "promptManager.servicePrompts.field.objective_generate_goals": "Objective Goals",
+    "promptManager.servicePrompts.field.regex": "Regex Assistant",
     "promptManager.servicePrompts.field.scene_generate": "Scene Generate",
     "promptManager.servicePrompts.field.scene_rules": "Scene Rules AI",
     "promptManager.servicePrompts.field.summary": "Summary",

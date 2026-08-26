@@ -14,6 +14,7 @@ describe("prompt assembly registries", () => {
       "md_import",
       "message_edit",
       "message_merge",
+      "regex",
       "scene_rules",
       "scene_schema",
       "script",

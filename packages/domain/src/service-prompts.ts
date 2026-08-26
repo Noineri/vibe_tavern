@@ -17,7 +17,7 @@ export type ServicePromptFieldFamily =
   (typeof SERVICE_PROMPT_FIELD_FAMILIES)[keyof typeof SERVICE_PROMPT_FIELD_FAMILIES];
 
 export const SERVICE_PROMPT_FIELDS = {
-  // assistant (11)
+  // assistant (12)
   script: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   dice_script: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   lore_entry: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
@@ -29,6 +29,8 @@ export const SERVICE_PROMPT_FIELDS = {
   scene_rules: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   message_edit: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   message_merge: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
+  // assistant (12) — regex-rule authoring (REGEX_AI_ASSISTANT_PLAN)
+  regex: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   // summary (1)
   summary: { family: SERVICE_PROMPT_FIELD_FAMILIES.summary },
   // insights (4)
@@ -58,6 +60,7 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "scene_rules",
   "message_edit",
   "message_merge",
+  "regex",
   "summary",
   "objective_generate",
   "objective_generate_goals",

@@ -63,6 +63,7 @@ const FIELD_LABEL_KEYS: Partial<Record<ServicePromptFieldKey, string>> = {
 	scene_rules: "promptManager.servicePrompts.field.scene_rules",
 	message_edit: "ai_assistant_mode_message_edit",
 	message_merge: "ai_assistant_mode_message_merge",
+	regex: "promptManager.servicePrompts.field.regex",
 	summary: "promptManager.servicePrompts.field.summary",
 	objective_generate: "promptManager.servicePrompts.field.objective_generate",
 	objective_generate_goals: "promptManager.servicePrompts.field.objective_generate_goals",

@@ -1,7 +1,7 @@
 import type { ServicePromptFieldKey } from "@vibe-tavern/domain";
 
 /**
- * Server-side key → asset-file map for the 21 base service prompts.
+ * Server-side key → asset-file map for the base service prompts.
  *
  * `scene_schema` is intentionally pinned to the JSON default. The existing
  * mode machinery (`ai-assistant-modes.ts: scene_schema` with
@@ -11,7 +11,7 @@ import type { ServicePromptFieldKey } from "@vibe-tavern/domain";
  * this map.
  */
 export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> = {
-  // assistant (11)
+  // assistant (12)
   script: "script-ai-prompt.md",
   dice_script: "dice-script-ai-prompt.md",
   lore_entry: "lore-entry-ai-prompt.md",
@@ -23,6 +23,7 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   scene_rules: "scene-rules.md",
   message_edit: "message-edit-ai-prompt.md",
   message_merge: "message-merge-ai-prompt.md",
+  regex: "regex-ai-prompt.md",
   // summary (1)
   summary: "summary-ai-prompt.md",
   // insights (4)

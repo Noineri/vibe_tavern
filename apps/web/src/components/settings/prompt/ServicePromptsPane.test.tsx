@@ -147,7 +147,7 @@ describe("ServicePromptsPane", () => {
 		expect(getByText("promptManager.servicePrompts.liveBadge")).toBeTruthy();
 	});
 
-	test("detail of non-Default renders all 21 fields grouped (accordions)", async () => {
+	test("detail of non-Default renders all 22 fields grouped (accordions)", async () => {
 		const def = makeDefaultProfile();
 		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1, overrides: { summary: "hello" } });
 		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });

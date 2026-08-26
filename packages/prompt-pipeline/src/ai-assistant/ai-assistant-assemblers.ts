@@ -15,6 +15,9 @@ export const AI_ASSISTANT_ASSEMBLERS = {
   vision_describe: DefaultAiAssistantAssembler,
   scene_schema: DefaultAiAssistantAssembler,
   scene_rules: DefaultAiAssistantAssembler,
+  // Regex-rule authoring (REGEX_AI_ASSISTANT_PLAN): background-LLM route,
+  // no chat context — the default assembler fits.
+  regex: DefaultAiAssistantAssembler,
   message_edit: MessageAiAssistantAssembler,
   message_merge: MessageAiAssistantAssembler,
 } as const satisfies Record<AiAssistantMode, AiAssistantAssembler>;

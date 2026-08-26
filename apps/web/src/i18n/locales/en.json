@@ -2458,6 +2458,7 @@
   "promptManager.servicePrompts.field.md_import": "Markdown Import AI",
   "promptManager.servicePrompts.field.scene_rules": "Scene Rules AI",
   "promptManager.servicePrompts.field.summary": "Summary",
+  "promptManager.servicePrompts.field.regex": "Regex Assistant",
   "promptManager.servicePrompts.field.objective_generate": "Objective Generate",
   "promptManager.servicePrompts.field.objective_generate_goals": "Objective Goals",
   "promptManager.servicePrompts.field.objective_check": "Objective Check",

@@ -56,6 +56,7 @@ const MODE_TO_FIELD: Record<AiAssistantMode, ServicePromptFieldKey> = {
   vision_describe: "vision_describe",
   scene_schema: "scene_schema",
   scene_rules: "scene_rules",
+  regex: "regex",
 };
 
 export async function resolveSystemPrompt(
