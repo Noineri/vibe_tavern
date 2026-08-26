@@ -11,6 +11,8 @@
  * SP-4 removed every read path; this migration snapshots those values into
  * standalone profiles NAMED AFTER their source preset, so nothing a user had
  * configured is lost when upgrading. Preset rows themselves are NEVER touched.
+ * Name collisions (e.g. a preset named "Default" vs the built-in profile, or
+ * two presets sharing a name) resolve with a "(копия)" suffix — owner rule.
  *
  * Idempotency: guarded by the `uiSettings.servicePromptPresetMigrated` marker.
  * The marker flips in the FINAL settings write, so a clean completion never
@@ -46,8 +48,9 @@ export interface PresetMigrationStores {
 export interface PresetMigrationResult {
 	/** False when the marker was already set (nothing done). */
 	ran: boolean;
-	/** One entry per created profile, in preset order. */
-	created: Array<{ presetId: string; presetName: string; profileId: string; fieldCount: number }>;
+	/** One entry per created profile, in preset order. `profileName` may carry
+	 *  a "(копия)" suffix when the preset name collided with an existing profile. */
+	created: Array<{ presetId: string; presetName: string; profileName: string; profileId: string; fieldCount: number }>;
 	/** Presets whose `aiAssistantPrompts` JSON failed to parse (skipped, logged). */
 	skippedInvalidJson: string[];
 	/** Final active service-prompt profile id (null = Default). */
@@ -105,6 +108,23 @@ function extractOverrides(preset: PromptPreset, onInvalidJson: () => void): Part
 	return overrides;
 }
 
+/** Suffix appended when a preset's name collides with an existing profile
+ *  name (owner rule — applies to the built-in "Default" and same-named presets). */
+const COPY_SUFFIX = " (копия)";
+
+/** Unique profile name for a preset: base name, or "<base> (копия)" when taken,
+ *  then "<base> (копия) 2", "<base> (копия) 3", … for further collisions. */
+function uniqueProfileName(base: string, taken: Set<string>): string {
+	if (!taken.has(base)) return base;
+	let name = `${base}${COPY_SUFFIX}`;
+	let counter = 2;
+	while (taken.has(name)) {
+		name = `${base}${COPY_SUFFIX} ${counter}`;
+		counter += 1;
+	}
+	return name;
+}
+
 /** Run the one-time migration. Safe to call on every startup — the marker
  *  short-circuits after the first successful pass. */
 export async function migratePresetServicePrompts(stores: PresetMigrationStores): Promise<PresetMigrationResult> {
@@ -115,6 +135,8 @@ export async function migratePresetServicePrompts(stores: PresetMigrationStores)
 
 	const profileStore = new ServicePromptProfileStore(stores.db);
 	const allPresets = await stores.presets.listAll();
+	const existingProfiles = await profileStore.listServicePromptProfiles();
+	const takenNames = new Set(existingProfiles.map((profile) => profile.name));
 	const created: PresetMigrationResult["created"] = [];
 	const skippedInvalidJson: string[] = [];
 
@@ -122,11 +144,13 @@ export async function migratePresetServicePrompts(stores: PresetMigrationStores)
 		const overrides = extractOverrides(preset, () => skippedInvalidJson.push(preset.name));
 		const fieldCount = Object.keys(overrides).length;
 		if (fieldCount === 0) continue;
+		const profileName = uniqueProfileName(preset.name, takenNames);
 		const profile: ServicePromptProfile = await profileStore.createServicePromptProfile({
-			name: preset.name,
+			name: profileName,
 			overrides,
 		});
-		created.push({ presetId: preset.id, presetName: preset.name, profileId: profile.id, fieldCount });
+		takenNames.add(profileName);
+		created.push({ presetId: preset.id, presetName: preset.name, profileName, profileId: profile.id, fieldCount });
 	}
 
 	const activePresetId = settings.activePromptPresetId;

@@ -136,6 +136,42 @@ describe("SP-7 preset → service-prompt profile migration", () => {
 		expect((await uiSettings.get()).activeServicePromptProfileId).toBe(null);
 	});
 
+	test("name collision with the built-in Default → profile named \"Default (копия)\"", async () => {
+		const { presets, profileStore, stores } = await setup();
+		// The real-world case from the owner's DB: a user preset literally named
+		// "Default" with overrides, plus the builtin profile of the same name.
+		await presets.create({ name: "Default", summaryPrompt: "SUMMARY-OVR" });
+
+		const result = await migratePresetServicePrompts(stores);
+		expect(result.created).toHaveLength(1);
+		expect(result.created[0].presetName).toBe("Default");
+		expect(result.created[0].profileName).toBe("Default (копия)");
+
+		const profiles = await profileStore.listServicePromptProfiles();
+		const names = profiles.map((p) => p.name).sort();
+		expect(names).toEqual(["Default", "Default (копия)"]);
+		// The builtin keeps its identity; the copy carries the overrides.
+		const builtin = profiles.find((p) => p.name === "Default")!;
+		const copy = profiles.find((p) => p.name === "Default (копия)")!;
+		expect(builtin.isDefault).toBe(true);
+		expect(copy.isDefault).toBe(false);
+		expect(copy.overrides.summary).toBe("SUMMARY-OVR");
+	});
+
+	test("two presets sharing a name → second gets \"(копия)\", third gets \"(копия) 2\"", async () => {
+		const { presets, profileStore, stores } = await setup();
+		await presets.create({ name: "Twin", summaryPrompt: "FIRST" });
+		await presets.create({ name: "Twin", summaryPrompt: "SECOND" });
+		await presets.create({ name: "Twin", summaryPrompt: "THIRD" });
+
+		const result = await migratePresetServicePrompts(stores);
+		expect(result.created.map((e) => e.profileName)).toEqual(["Twin", "Twin (копия)", "Twin (копия) 2"]);
+		const profiles = await profileStore.listServicePromptProfiles();
+		expect(profiles.find((p) => p.name === "Twin")!.overrides.summary).toBe("FIRST");
+		expect(profiles.find((p) => p.name === "Twin (копия)")!.overrides.summary).toBe("SECOND");
+		expect(profiles.find((p) => p.name === "Twin (копия) 2")!.overrides.summary).toBe("THIRD");
+	});
+
 	test("empty database → flag flips, nothing created", async () => {
 		const { profileStore, uiSettings, stores } = await setup();
 		const result = await migratePresetServicePrompts(stores);
