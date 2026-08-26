@@ -934,6 +934,11 @@ export const uiSettings = sqliteTable('ui_settings', {
   // → Default profile (id "default") is used. No DB-level FK — mirrors
   // coauthor/copilot bindings.
   activeServicePromptProfileId: text('active_service_prompt_profile_id'),
+  // One-time marker (SP-7): the preset→profile service-prompt migration has
+  // completed. False on fresh installs (migration runs, finds nothing, flips
+  // to true) and on pre-SP-7 upgrades (migration snapshots preset overrides
+  // into named profiles). Written once by the startup hook, never reset.
+  servicePromptPresetMigrated: integer('service_prompt_preset_migrated', { mode: 'boolean' }).notNull().default(false),
 
   updatedAt: text('updated_at').notNull(),
 });

@@ -37,6 +37,8 @@ export interface UiSettings {
   copilotProviderId: string | null;
   copilotModelName: string | null;
   activeServicePromptProfileId: string | null;
+  /** One-time preset→profile migration marker (SP-7) — see db-schema comment. */
+  servicePromptPresetMigrated: boolean;
   updatedAt: string;
 }
 
@@ -62,6 +64,7 @@ export interface UiSettingsUpdate {
   copilotProviderId?: string | null;
   copilotModelName?: string | null;
   activeServicePromptProfileId?: string | null;
+  servicePromptPresetMigrated?: boolean;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -87,6 +90,7 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   copilotProviderId: null,
   copilotModelName: null,
   activeServicePromptProfileId: null,
+  servicePromptPresetMigrated: false,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -143,6 +147,7 @@ export class UiSettingsStore {
       copilotProviderId: partial.copilotProviderId ?? UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
       activeServicePromptProfileId: partial.activeServicePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
+      servicePromptPresetMigrated: partial.servicePromptPresetMigrated ?? UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -175,6 +180,7 @@ export class UiSettingsStore {
       copilotProviderId: UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
       activeServicePromptProfileId: UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
+      servicePromptPresetMigrated: UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
       updatedAt: this.clock.now(),
     }).returning();
 
@@ -205,6 +211,7 @@ export class UiSettingsStore {
       copilotProviderId: row.copilotProviderId ?? null,
       copilotModelName: row.copilotModelName ?? null,
       activeServicePromptProfileId: row.activeServicePromptProfileId ?? null,
+      servicePromptPresetMigrated: row.servicePromptPresetMigrated,
       updatedAt: row.updatedAt,
     };
   }

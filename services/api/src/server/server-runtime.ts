@@ -44,6 +44,7 @@ import { ExperienceTimerEffectService } from "../domain/interactive/experience-t
 import { ExperienceTimerScheduler } from "../domain/interactive/experience-timer-scheduler.js";
 import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
+import { migratePresetServicePrompts } from "../domain/service-prompts/preset-to-profile-migration.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
@@ -126,6 +127,17 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		stores.uiSettings.ensureDefaults(),
 	]);
 	console.log(`${tag} Seed data ensured.`);
+
+	// SP-7: one-time snapshot of preset-stored service-prompt overrides into
+	// standalone profiles (non-destructive; preset rows untouched). Marker-guarded,
+	// so on every later startup this is a single settings read.
+	const spMigration = await migratePresetServicePrompts(stores);
+	if (spMigration.ran) {
+		console.log(`${tag} Service-prompt migration: ${spMigration.created.length} profile(s) created from presets.`);
+		if (spMigration.skippedInvalidJson.length > 0) {
+			console.warn(`${tag} Service-prompt migration: skipped invalid aiAssistantPrompts JSON in: [${spMigration.skippedInvalidJson.join(", ")}].`);
+		}
+	}
 
 	// Built-in experiences (BE-4): ensure app-owned interactive experiences
 	// (Conversation messenger first) exist exactly once. Idempotent — a single
