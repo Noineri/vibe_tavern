@@ -2,6 +2,8 @@ import { Fragment, type ReactNode } from 'react';
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
+import { DropdownSelect } from "./DropdownSelect.js";
+import { useIsMobile } from "../../hooks/use-mobile.js";
 
 interface SegmentedOption<T extends string = string> {
   value: T;
@@ -42,6 +44,14 @@ interface SegmentedControlProps<T extends string = string> {
    *  11 current call sites; opt in for option sets that grow (e.g. version
    *  switcher). Wrapped segments still share one bordered container. */
   wrap?: boolean;
+  /** On MOBILE ONLY, replace the segments with the shared DropdownSelect
+   *  (searchable={false}) so long option labels are shown in full in the
+   *  trigger instead of truncating inside equal-width segments (settings
+   *  wording must be readable). Desktop rendering is unchanged. Segment-only
+   *  features are dropped in mobile mode: per-option `tooltip` (touch has no
+   *  hover), `trailing` actions and per-option `disabled` — no mobileSelect
+   *  call site uses them. The group-level `disabled` is honored. */
+  mobileSelect?: boolean;
 }
 
 /**
@@ -73,7 +83,25 @@ export function SegmentedControl<T extends string = string>({
   fill,
   mobileFill,
   wrap,
+  mobileSelect,
 }: SegmentedControlProps<T>) {
+  const isMobile = useIsMobile();
+  if (mobileSelect && isMobile) {
+    return (
+      <DropdownSelect
+        value={value}
+        // DropdownSelect emits the clicked item's id as a plain string; the
+        // ids here ARE this control's typed option values, so the emit is
+        // always a valid T — the same provably-safe string-land re-entry as
+        // the Radix onValueChange cast below.
+        onChange={(next) => onChange(next as T)}
+        searchable={false}
+        disabled={disabled}
+        className={className}
+        options={options.map((opt) => ({ id: opt.value, label: opt.label }))}
+      />
+    );
+  }
   return (
     <RadioGroup.Root
       value={value}

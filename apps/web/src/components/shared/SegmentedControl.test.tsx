@@ -38,6 +38,16 @@ mock.module("./Tooltip.js", () => ({
 }));
 
 let SegmentedControl: typeof import("./SegmentedControl.js").SegmentedControl;
+
+// ── Mobile mock (SP-12 mobileSelect) ───────────────────────────
+const realUseMobile = await import("../../hooks/use-mobile.js");
+
+let isMobile = false;
+mock.module("../../hooks/use-mobile.js", () => ({
+  ...realUseMobile,
+  useIsMobile: () => isMobile,
+}));
+
 beforeAll(async () => {
 	({ SegmentedControl } = await import("./SegmentedControl.js"));
 });
@@ -293,5 +303,67 @@ describe("SegmentedControl — layout props", () => {
 		const group = container.querySelector('[role="radiogroup"]')!;
 		expect(group.className).toMatch(/\bw-full\b/);
 		expect(group.className).toMatch(/\bsm:w-auto\b/);
+	});
+});
+
+// ── mobileSelect (SP-12) ─────────────────────────────────────────────────
+
+describe("SegmentedControl — mobileSelect (regex tab mobile adaptation)", () => {
+	it("mobile: renders the shared dropdown trigger with the FULL selected label, not segments", () => {
+		isMobile = true;
+		const long = [
+			{ value: "persist", label: "Сохранять в сообщение" },
+			{ value: "display", label: "Только отображение" },
+		];
+		const { container, getByText } = render(
+			<SegmentedControl value="display" options={long} onChange={() => {}} mobileSelect wrap mobileFill />,
+		);
+		// No segmented radios — the control switched shape entirely.
+		expect(container.querySelector('[role="radiogroup"]')).toBeNull();
+		expect(container.querySelectorAll('[role="radio"]')).toHaveLength(0);
+		// The trigger shows the selected option's label IN FULL.
+		expect(getByText("Только отображение")).toBeTruthy();
+	});
+
+	it("mobile: dropdown opens without a search input; picking an option fires onChange with its value", () => {
+		isMobile = true;
+		const onChange = mock();
+		const { container, getByText, queryByPlaceholderText } = render(
+			<SegmentedControl value="a" options={opts} onChange={onChange} mobileSelect />,
+		);
+		const trigger = container.querySelector("button")!;
+		fireEvent.click(trigger);
+		// Searchable is OFF: no cmdk input appears.
+		expect(queryByPlaceholderText(/search/i)).toBeNull();
+		// All options are listed; selecting one propagates the typed value.
+		const item = getByText("Banana");
+		fireEvent.click(item);
+		expect(onChange).toHaveBeenCalledWith("b");
+	});
+
+	it("mobile: group disabled disables the dropdown trigger", () => {
+		isMobile = true;
+		const { container } = render(
+			<SegmentedControl value="a" options={opts} onChange={() => {}} mobileSelect disabled />,
+		);
+		const trigger = container.querySelector("button")!;
+		expect(trigger.className).toMatch(/pointer-events-none/);
+	});
+
+	it("mobile WITHOUT mobileSelect keeps segments (opt-in only)", () => {
+		isMobile = true;
+		const { getByRole } = render(
+			<SegmentedControl value="a" options={opts} onChange={() => {}} />,
+		);
+		expect(getByRole("radiogroup")).toBeTruthy();
+	});
+
+	it("desktop: mobileSelect renders segments exactly as before (shape unchanged)", () => {
+		isMobile = false;
+		const { getByRole, getAllByRole } = render(
+			<SegmentedControl value="a" options={opts} onChange={() => {}} mobileSelect />,
+		);
+		expect(getByRole("radiogroup")).toBeTruthy();
+		expect(getAllByRole("radio")).toHaveLength(3);
 	});
 });

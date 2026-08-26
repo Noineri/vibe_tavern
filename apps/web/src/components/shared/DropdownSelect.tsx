@@ -12,7 +12,11 @@ const EMPTY_VALUE = "__dropdown_select_empty__";
 
 interface DropdownOption {
   id: string;
-  label: string;
+  /** Plain string for searchable use; may be any ReactNode when the label
+   *  carries an icon (ReactNode labels simply never match a search query —
+   *  they stay visible instead of silently disappearing). Passed through
+   *  unchanged by SegmentedControl's mobileSelect mode. */
+  label: ReactNode;
   detail?: string;
   /** Optional trailing action node rendered at the item's right edge inside
    *  the dropdown (e.g. per-version rename/delete icons). Pointer events on it
@@ -87,7 +91,9 @@ export function DropdownSelect({
   const display = selected?.label || value || placeholder;
 
   const matches = (o: DropdownOption) =>
-    !searchable || o.label.toLowerCase().includes(search.toLowerCase());
+    // ReactNode labels have no searchable text — keep them visible rather
+    // than filtering them out of existence on every query.
+    !searchable || (typeof o.label === "string" ? o.label.toLowerCase().includes(search.toLowerCase()) : true);
 
   const filtered = options
     .filter((o) => o.id !== "") // empty-id options rendered as defaultOption below

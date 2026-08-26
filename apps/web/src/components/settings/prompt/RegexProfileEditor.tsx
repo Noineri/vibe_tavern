@@ -178,6 +178,7 @@ export function RegexProfileEditor({
           onChange={(v) => onScopeChange(v === "all")}
           wrap
           mobileFill
+          mobileSelect
           options={SCOPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
         />
       </div>

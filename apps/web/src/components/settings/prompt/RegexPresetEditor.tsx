@@ -429,6 +429,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
               onChange={(v) => update("isGlobal", v === "all")}
               wrap
               mobileFill
+              mobileSelect
               options={SCOPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
             />
           </div>
@@ -483,6 +484,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
                 onChange={(v) => applyDepthMode(v as DepthMode)}
                 wrap
                 mobileFill
+                mobileSelect
                 options={DEPTH_MODES.map((m) => ({ value: m.value, label: t(m.labelKey) }))}
               />
               {depthMode === "recent" && (
@@ -537,6 +539,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
               onChange={(v) => update("applyTarget", v as RegexApplyTarget)}
               wrap
               mobileFill
+              mobileSelect
               options={APPLY_TARGETS.map((a) => ({
                 value: a.value,
                 label: t(a.labelKey),
@@ -599,6 +602,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           onChange={(v) => update("substituteRegex", Number(v) as RegexSubstituteMode)}
           wrap
           mobileFill
+          mobileSelect
           options={SUBSTITUTE_OPTIONS.map((o) => ({
             value: String(o.value),
             label: t(o.labelKey),
