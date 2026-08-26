@@ -566,8 +566,11 @@ export function ServicePromptsPane({
 		</div>
 	);
 
+	// The modal hands the detail pane p-0 (presets/regex editors carry their
+	// own padding — PromptFields uses p-3 sm:p-5, RegexPresetEditor p-5); this
+	// container must do the same or the fields sit flush against the pane edge.
 	const detailNode = (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-6 p-3 sm:p-5">
 			{detailState === "loading" && <div className="font-ui text-[13px] text-t3">{t("loading")}</div>}
 			{detailState === "error" && (
 				<div>
@@ -661,8 +664,10 @@ export function ServicePromptsPane({
 		</div>
 	);
 
+	// px mirrors the detail container (p-3 sm:p-5) so the buttons line up with
+	// the fields above; matches the regex-tab footer rhythm.
 	const footer = (
-		<div className="shrink-0 border-t border-border bg-surface px-4 py-3">
+		<div className="shrink-0 border-t border-border bg-surface px-3 py-3 sm:px-5">
 			{detailState === "ready" && detail && (
 				isDefaultSelected ? (
 					<button
