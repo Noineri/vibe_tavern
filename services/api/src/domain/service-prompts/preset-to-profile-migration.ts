@@ -12,7 +12,9 @@
  * standalone profiles NAMED AFTER their source preset, so nothing a user had
  * configured is lost when upgrading. Preset rows themselves are NEVER touched.
  * Name collisions (e.g. a preset named "Default" vs the built-in profile, or
- * two presets sharing a name) resolve with a "(копия)" suffix — owner rule.
+ * two presets sharing a name) resolve with a "(copy)" suffix — owner rule.
+ * The suffix is English (the app's primary language; the migration runs at
+ * startup before any locale is known, and profile names are stored data).
  *
  * Idempotency: guarded by the `uiSettings.servicePromptPresetMigrated` marker.
  * The marker flips in the FINAL settings write, so a clean completion never
@@ -49,7 +51,7 @@ export interface PresetMigrationResult {
 	/** False when the marker was already set (nothing done). */
 	ran: boolean;
 	/** One entry per created profile, in preset order. `profileName` may carry
-	 *  a "(копия)" suffix when the preset name collided with an existing profile. */
+	 *  a "(copy)" suffix when the preset name collided with an existing profile. */
 	created: Array<{ presetId: string; presetName: string; profileName: string; profileId: string; fieldCount: number }>;
 	/** Presets whose `aiAssistantPrompts` JSON failed to parse (skipped, logged). */
 	skippedInvalidJson: string[];
@@ -109,11 +111,12 @@ function extractOverrides(preset: PromptPreset, onInvalidJson: () => void): Part
 }
 
 /** Suffix appended when a preset's name collides with an existing profile
- *  name (owner rule — applies to the built-in "Default" and same-named presets). */
-const COPY_SUFFIX = " (копия)";
+ *  name (owner rule — applies to the built-in "Default" and same-named presets).
+ *  English on purpose: stored data, generated before any locale is known. */
+const COPY_SUFFIX = " (copy)";
 
-/** Unique profile name for a preset: base name, or "<base> (копия)" when taken,
- *  then "<base> (копия) 2", "<base> (копия) 3", … for further collisions. */
+/** Unique profile name for a preset: base name, or "<base> (copy)" when taken,
+ *  then "<base> (copy) 2", "<base> (copy) 3", … for further collisions. */
 function uniqueProfileName(base: string, taken: Set<string>): string {
 	if (!taken.has(base)) return base;
 	let name = `${base}${COPY_SUFFIX}`;
