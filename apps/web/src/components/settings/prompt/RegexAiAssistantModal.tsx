@@ -4,6 +4,7 @@ import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { Modal } from "../../shared/Modal.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
+import { AiAssistantPanel } from "../../shared/ai-assistant/AiAssistantPanel.js";
 import { AiAssistantShell } from "../../shared/ai-assistant/AiAssistantShell.js";
 import { AiAssistantConnectionFields } from "../../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { useAiAssistantRunner } from "../../shared/ai-assistant/use-ai-assistant-runner.js";
@@ -455,9 +456,9 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 	}
 	return (
 		<Modal open={isOpen} onClose={onClose} title={t("regexAssistant.title")}>
-			<div className="flex max-h-[85vh] w-[600px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface">
+			<AiAssistantPanel className="max-h-[85vh] w-[600px] max-w-[90vw] rounded-xl">
 				{body}
-			</div>
+			</AiAssistantPanel>
 		</Modal>
 	);
 }

@@ -47,6 +47,7 @@ import { MessageReasoning } from "./MessageReasoning.js";
 import { TextDiffPreview, buildWordDiff, buildLineDiff, type TextDiffWordSummary, type TextDiffSummary } from "../shared/TextDiffPreview.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { AiAssistantShell } from "../shared/ai-assistant/AiAssistantShell.js";
+import { AiAssistantPanel } from "../shared/ai-assistant/AiAssistantPanel.js";
 import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { type AiAssistantRequestBody } from "../../app-client.js";
@@ -484,12 +485,7 @@ export function MessageAiEditorModal() {
       title={tDynamic("message_ai_editor_title")}
       description={tDynamic("message_ai_editor_description")}
     >
-      <div
-        className={cn(
-          "flex flex-col overflow-hidden border border-border bg-surface",
-          containerCls,
-        )}
-      >
+      <AiAssistantPanel className={containerCls}>
         <AiAssistantShell
           title={(
             <div className="flex min-w-0 items-center gap-2">
@@ -724,7 +720,7 @@ export function MessageAiEditorModal() {
             </>
           )}
         </AiAssistantShell>
-      </div>
+      </AiAssistantPanel>
     </Modal>
   );
 }

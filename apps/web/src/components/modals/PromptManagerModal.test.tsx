@@ -854,6 +854,31 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
     expect((createRegexProfileMock.mock.calls[0][0] as unknown as { name: string }).name).toBe("MyProf");
   });
 
+  test("creating a new rule under an expanded profile makes it appear in the member list (regression: map-over-never-added state dropped the rule)", async () => {
+    listAllRegexPresetsMock.mockResolvedValue([]);
+    listAllRegexProfilesMock.mockResolvedValue([profileRecord("p1", "Bundle")]);
+    getRegexProfileLinksMock.mockResolvedValue([]);
+    createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "NewInProf"));
+    attachRegexRuleMock.mockResolvedValue(regexRecord("rx_new", "NewInProf", "p1"));
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    // Expand the profile → the “+ new rule” member button appears.
+    fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
+    await waitFor(() => expect(within(view.baseElement).getByText("promptManager.regex.memberNewRule")).toBeTruthy());
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.memberNewRule"));
+    const input = within(view.baseElement).getByPlaceholderText("promptManager.regex.newNamePlaceholder") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "NewInProf" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => { expect(attachRegexRuleMock).toHaveBeenCalledWith("p1", "rx_new"); });
+    // THE regression pin: the created rule must land in the list state and
+    // render as a member row (the old map() over never-added state dropped it).
+    await waitFor(() => { expect(within(view.baseElement).getByText("NewInProf")).toBeTruthy(); });
+  });
+
   test("member rule's status dot reflects the PROFILE gate: enabled-but-unbound profile → red dot on both the profile row and its member (R-13b owner spec)", async () => {
     // Enabled, non-global, zero profile links → applies in NO chat: the
     // profile row dot is red AND the member's dot must be red too (a green

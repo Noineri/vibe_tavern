@@ -22,6 +22,7 @@ import { BottomSheet } from "./BottomSheet.js";
 import type { AiQuickSettings } from "./AiQuickPill.js";
 import { AiAssistantConnectionFields } from "./ai-assistant/AiAssistantConnectionFields.js";
 import { AiAssistantShell } from "./ai-assistant/AiAssistantShell.js";
+import { AiAssistantPanel } from "./ai-assistant/AiAssistantPanel.js";
 import { AiGenParamsRow } from "./ai-assistant/AiGenParamsRow.js";
 import { useAiAssistantRunner } from "./ai-assistant/use-ai-assistant-runner.js";
 import { useDebouncedTokenCount } from "./ai-assistant/use-debounced-token-count.js";
@@ -753,9 +754,12 @@ export function AiAssistantModal({
 
   return (
     <Modal open={isOpen} onClose={onClose} title={title} compact={!isFull}>
-      <div className={cn("flex flex-col bg-surface overflow-hidden border border-border", isMobile && isFull ? "w-full h-full rounded-none" : cn("rounded-xl max-w-[90vw]", contentWidth, isFull && "max-h-[85vh]"))} onClick={(e) => e.stopPropagation()}>
+      <AiAssistantPanel
+        className={isMobile && isFull ? "w-full h-full rounded-none" : cn("rounded-xl max-w-[90vw]", contentWidth, isFull && "max-h-[85vh]")}
+        onClick={(e) => e.stopPropagation()}
+      >
         {contentBody}
-      </div>
+      </AiAssistantPanel>
     </Modal>
   );
 }

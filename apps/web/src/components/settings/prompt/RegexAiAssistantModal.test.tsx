@@ -132,6 +132,9 @@ describe("RegexAiAssistantModal", () => {
 		const { baseElement } = render(<Harness onApply={() => {}} />);
 		expect(baseElement.textContent).toContain("regexAssistant.noProvider");
 		expect(baseElement.textContent).not.toContain("regexAssistant.taskLabel");
+		// Transparent-theme solution pin: the desktop panel must carry the
+		// glass-blur-under treatment (AiAssistantPanel) — not a bare bg-surface.
+		expect(baseElement.querySelector(".glass-blur-under")).toBeTruthy();
 	});
 
 	it("generation lands the draft fields in the preview", async () => {

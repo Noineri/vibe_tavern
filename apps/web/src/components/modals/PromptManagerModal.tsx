@@ -729,8 +729,13 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       promptOnly: flags.promptOnly,
     }).then((created) => {
       void attachRegexRule(profileId, created.id).then((attached) => {
-        if (attached) setRegexPresets((prev) => prev.map((p) => p.id === created.id ? attached : p).sort((a, b) => a.sortOrder - b.sortOrder));
-        else setRegexPresets((prev) => [...prev, created]);
+        // `created` was never added to state, so a map() "replace" finds
+        // nothing and the new rule silently vanishes from the list (it exists
+        // on the server only — "rule not created" symptom). Append the record
+        // attach returned (it carries profileId); the flat builder groups
+        // members by profileId regardless of array position, so append order
+        // is safe.
+        setRegexPresets((prev) => [...prev, attached ?? created].sort((a, b) => a.sortOrder - b.sortOrder));
         setActiveRegexPresetId(attached?.id ?? created.id);
         setActiveRegexProfileId(null);
         setExpandedProfileIds((prev) => new Set([...prev, profileId]));
