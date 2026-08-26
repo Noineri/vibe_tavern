@@ -30,6 +30,7 @@ import type { ToolCallPart, ToolResultPart } from "ai";
 import { dirname } from "node:path";
 import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
+import { resolveServicePromptText } from "../service-prompts/service-prompt-resolver.js";
 import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
 
 /** The assembled co-author history message shape (matches SDK message parts
@@ -256,7 +257,9 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // basePrompt specializes it with mode-specific behavior. Prepending it here
   // keeps the tool mechanics in one place (DRY) and ensures every module — seed
   // or user, original or duplicated (M3) — carries the editing contract.
-  const coauthorBase = await loadPromptAsset("coauthor/base.md");
+  const coauthorBase = input.db
+    ? await resolveServicePromptText(input.db, "coauthor_base")
+    : await loadPromptAsset("coauthor/base.md");
   const currentCard = renderCurrentCard(profileMd, character);
   const contextBlock = renderContextBlocks(contextItems);
   const boundLorebooksBlock = renderBoundLorebooksAwareness(boundResources.lorebooks);

@@ -877,6 +877,11 @@ export function pickBootstrapChatId<T extends string>(
 		const contextSearchSession = this.stores ? this.buildContextSearchSession(chatId) : undefined;
 		return strategy.assemble({
 			promptService: this.promptService,
+			// SP-5: co-author base resolves through the active service-prompt profile
+			// when a db handle is reachable; `stores` is absent in minimal/test contexts
+			// (same defensiveness as contextSearchSession above) — the base then
+			// falls back to the bundled asset inside coauthor-prompt.
+			db: this.stores?.db,
 			loaders: this.buildChatModeLoaders(),
 			loreDelegate,
 			loreEntityLookup,

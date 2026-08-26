@@ -24,7 +24,7 @@
 import { streamText, isStepCount, hasToolCall } from "ai";
 import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart } from "ai";
 import type { ToolSet } from "ai";
-import type { ProviderProfile, ScriptRow, ExperienceVisualRow } from "@vibe-tavern/db";
+import type { ProviderProfile, ScriptRow, ExperienceVisualRow, AppDb } from "@vibe-tavern/db";
 import type { CopilotProfile, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 import type {
   ExperienceCopilotStore,
@@ -150,6 +150,8 @@ export interface ExperienceCopilotStreamDeps {
   /** Optional copilot user-skill root for the two-root catalog (CP-4). Absent →
    *  built-in root only. */
   readonly skillUserRoot?: string;
+  /** Optional DB handle for service-prompt overrides (copilot base + references). */
+  readonly db?: AppDb;
   /** CX-3: resolve the thread's pinned-context links into rendered-block input.
    *  The adapter supplies this over the real stores + copilot skill library;
    *  absent (tests, legacy harnesses) → no attached context, byte-identical
@@ -489,6 +491,7 @@ export async function* streamExperienceCopilot(
     blockLength: attachedContextBlock.length,
   });
   const assembled = await assembleExperienceCopilotPrompt({
+    ...(deps.db ? { db: deps.db } : {}),
     history,
     rules,
     ...(visual !== undefined ? { visual } : {}),
