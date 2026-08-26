@@ -35,13 +35,33 @@ describe('ServicePromptProfileStore', () => {
     expect(all.filter((p) => p.id === 'default')).toHaveLength(1);
   });
 
-  test('create → list puts Default first then by name', async () => {
+  test('create → list puts Default first then by sortOrder', async () => {
     const { store } = await setup();
     await store.ensureDefaultServicePromptProfile();
-    await store.createServicePromptProfile({ name: 'Zebra', overrides: { script: 's1' } });
     await store.createServicePromptProfile({ name: 'Alpha', overrides: {} });
+    await store.createServicePromptProfile({ name: 'Zebra', overrides: { script: 's1' } });
     const list = await store.listServicePromptProfiles();
     expect(list.map((p) => p.name)).toEqual(['Default', 'Alpha', 'Zebra']);
+  });
+
+  test('reorder persists sortOrder and Default stays pinned first', async () => {
+    const { store } = await setup();
+    await store.ensureDefaultServicePromptProfile();
+    const a = await store.createServicePromptProfile({ name: 'Alpha', overrides: {} });
+    const b = await store.createServicePromptProfile({ name: 'Beta', overrides: {} });
+    const c = await store.createServicePromptProfile({ name: 'Gamma', overrides: {} });
+    // initial: Alpha(0), Beta(1), Gamma(2)
+    await store.reorderServicePromptProfiles([
+      { id: c.id, sortOrder: 0 },
+      { id: a.id, sortOrder: 1 },
+      { id: b.id, sortOrder: 2 },
+    ]);
+    const reordered = await store.listServicePromptProfiles();
+    expect(reordered.map((p) => p.name)).toEqual(['Default', 'Gamma', 'Alpha', 'Beta']);
+    // Default reorder is ignored
+    await store.reorderServicePromptProfiles([{ id: 'default', sortOrder: 99 }]);
+    const still = await store.listServicePromptProfiles();
+    expect(still[0].id).toBe('default');
   });
 
   test('update/delete refuse default profile', async () => {

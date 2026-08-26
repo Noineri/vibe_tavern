@@ -20,6 +20,49 @@ async function setupAdapter() {
 }
 
 describe("SP-6 service prompt routes (real adapter + in-memory DB)", () => {
+  test("PATCH /reorder persists order, skips Default, keeps activeProfileId", async () => {
+    const { app } = await setupAdapter();
+
+    const createA = await app.request("/api/service-prompts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Alpha", overrides: {} }),
+    });
+    const a = ((await createA.json()) as { id: string }).id;
+    const createB = await app.request("/api/service-prompts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Beta", overrides: {} }),
+    });
+    const b = ((await createB.json()) as { id: string }).id;
+
+    // Activate Beta so the reorder response is checked against a live pointer.
+    await app.request("/api/service-prompts/active", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: b }),
+    });
+
+    const res = await app.request("/api/service-prompts/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: b, sortOrder: 0 }, { id: a, sortOrder: 1 }, { id: "default", sortOrder: 99 }] }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { profiles: Array<{ id: string }>; activeProfileId: string | null };
+    // Default pinned first despite the bogus sortOrder 99, then Beta, Alpha.
+    expect(body.profiles.map((p) => p.id)).toEqual(["default", b, a]);
+    expect(body.activeProfileId).toBe(b);
+
+    // Empty payload is a no-op.
+    const noop = await app.request("/api/service-prompts/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [] }),
+    });
+    expect(noop.status).toBe(200);
+  });
+
   test("GET /api/service-prompts/profiles self-heals Default and returns activeProfileId", async () => {
     const { app } = await setupAdapter();
 

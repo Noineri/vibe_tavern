@@ -35,6 +35,7 @@ export const servicePromptProfileSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
   isDefault: z.boolean(),
+  sortOrder: z.number(),
   overrides: servicePromptOverridesSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -72,3 +73,8 @@ export const setActiveServicePromptProfileRequestSchema = z.object({
   profileId: z.string().nullable(),
 });
 export type SetActiveServicePromptProfileRequest = z.infer<typeof setActiveServicePromptProfileRequestSchema>;
+
+export const reorderServicePromptProfilesSchema = z.object({
+  updates: z.array(z.object({ id: z.string(), sortOrder: z.number() })),
+});
+export type ReorderServicePromptProfilesRequest = z.infer<typeof reorderServicePromptProfilesSchema>;

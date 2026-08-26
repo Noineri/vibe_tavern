@@ -132,7 +132,7 @@ export function RegexProfileEditor({
   const isActive = !profile.disabled;
 
   return (
-    <div className="flex flex-col gap-4 p-5">
+    <div className="flex flex-col gap-4">
       {/* Name + Active toggle */}
       <div className="flex items-end gap-4">
         <div className="min-w-0 flex-1">

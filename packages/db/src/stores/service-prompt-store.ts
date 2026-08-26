@@ -30,6 +30,7 @@ export interface ServicePromptProfile {
   id: ServicePromptProfileId;
   name: string;
   isDefault: boolean;
+  sortOrder: number;
   overrides: Record<string, string>;
   createdAt: string;
   updatedAt: string;
@@ -88,7 +89,7 @@ export class ServicePromptProfileStore {
     const rows = await this.db
       .select()
       .from(servicePromptProfiles)
-      .orderBy(desc(servicePromptProfiles.isDefault), asc(servicePromptProfiles.name))
+      .orderBy(desc(servicePromptProfiles.isDefault), asc(servicePromptProfiles.sortOrder), asc(servicePromptProfiles.name))
       .all();
     return rows.map((r) => this.mapRow(r));
   }
@@ -141,12 +142,15 @@ export class ServicePromptProfileStore {
   async createServicePromptProfile(input: CreateServicePromptProfileData): Promise<ServicePromptProfile> {
     const id = this.idGen.next('service_prompt_profile');
     const now = this.clock.now();
+    const rows = await this.db.select().from(servicePromptProfiles).all();
+    const maxOrder = rows.reduce((m, r) => Math.max(m, r.sortOrder ?? 0), -1);
     const [row] = await this.db
       .insert(servicePromptProfiles)
       .values({
         id,
         name: input.name,
         isDefault: 0,
+        sortOrder: maxOrder + 1,
         overrides: serializeOverrides(input.overrides ?? {}),
         createdAt: now,
         updatedAt: now,
@@ -218,6 +222,18 @@ export class ServicePromptProfileStore {
     await this.db.delete(servicePromptProfiles).where(eq(servicePromptProfiles.id, id)).run();
   }
 
+  async reorderServicePromptProfiles(updates: Array<{ id: string; sortOrder: number }>): Promise<ServicePromptProfile[]> {
+    for (const u of updates) {
+      if (u.id === 'default') continue;
+      await this.db
+        .update(servicePromptProfiles)
+        .set({ sortOrder: u.sortOrder, updatedAt: this.clock.now() })
+        .where(eq(servicePromptProfiles.id, u.id))
+        .run();
+    }
+    return this.listServicePromptProfiles();
+  }
+
   // ─── Row mapper ────────────────────────────────────────────────────────────
 
   private mapRow(row: typeof servicePromptProfiles.$inferSelect): ServicePromptProfile {
@@ -225,6 +241,7 @@ export class ServicePromptProfileStore {
       id: brandId<ServicePromptProfileId>(row.id),
       name: row.name,
       isDefault: row.isDefault === 1,
+      sortOrder: row.sortOrder ?? 0,
       overrides: parseOverrides(row.overrides),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

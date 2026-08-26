@@ -363,7 +363,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
   }, [macroSource, draft.substituteRegex, draft.findRegex]);
 
   return (
-    <div className="flex flex-col gap-4 p-5">
+    <div className="flex flex-col gap-4">
       {/* Name + Активен (R-7): the toggle is positive-polarity and, for a
           saved preset, applies instantly — see handleActiveToggle. */}
       <div className="flex items-end gap-4">

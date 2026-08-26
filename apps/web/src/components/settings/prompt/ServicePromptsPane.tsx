@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { toast } from "sonner";
 import {
 	SERVICE_PROMPT_FIELD_FAMILIES,
@@ -14,12 +14,21 @@ import { Icons } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
+import { MasterDetailFooter } from "../../shared/MasterDetailModal.js";
+import { SaveButton } from "../../shared/SaveBar.js";
 import { monoCls, lblCls } from "../../build/fields/field-styles.js";
+import { useIsMobile } from "../../../hooks/use-mobile.js";
+import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
+import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
 	createServicePromptProfile,
 	deleteServicePromptProfile,
 	getServicePromptProfileDetail,
 	listServicePromptProfiles,
+	reorderServicePromptProfiles,
 	setActiveServicePromptProfile,
 	updateServicePromptProfile,
 } from "../../../api/service-prompt-api.js";
@@ -33,7 +42,6 @@ export interface ServicePromptsPaneSlots {
 
 type FieldOverrides = Partial<Record<ServicePromptFieldKey, string>>;
 
-/** Families in desired visual order (insertion order of the domain registry). */
 const FAMILY_ORDER: readonly ServicePromptFieldFamily[] = Object.values(SERVICE_PROMPT_FIELD_FAMILIES);
 
 const FAMILY_LABEL_KEYS: Record<ServicePromptFieldFamily, string> = {
@@ -43,8 +51,6 @@ const FAMILY_LABEL_KEYS: Record<ServicePromptFieldFamily, string> = {
 	[SERVICE_PROMPT_FIELD_FAMILIES.bases]: "promptManager.servicePrompts.family.bases",
 };
 
-/** Existing keys are reused for the 8 assistant modes that already had labels
- *  in the preset editor (PromptFields.tsx); the rest get dedicated keys. */
 const FIELD_LABEL_KEYS: Partial<Record<ServicePromptFieldKey, string>> = {
 	script: "ai_assistant_mode_script",
 	dice_script: "promptManager.servicePrompts.field.dice_script",
@@ -81,24 +87,118 @@ function overridesEqual(a: FieldOverrides, b: FieldOverrides): boolean {
 	return true;
 }
 
+const SortableServiceRow = React.memo(
+	({
+		profile,
+		isActive,
+		isSelected,
+		onSelect,
+		isMobile,
+		onRenameStart,
+		renderDrillDown,
+	}: {
+		profile: ServicePromptProfile;
+		isActive: boolean;
+		isSelected: boolean;
+		onSelect: (id: string) => void;
+		isMobile: boolean;
+		onRenameStart: (id: string, name: string) => void;
+		renderDrillDown?: (id: string, selectRow: () => void) => ReactNode;
+	}) => {
+		const { t } = useT();
+		const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+			id: profile.id,
+		});
+		const style: CSSProperties = {
+			transform: CSS.Translate.toString(transform),
+			transition,
+			...(isDragging ? { opacity: 0 } : {}),
+		};
+		return (
+			<div
+				ref={setNodeRef}
+				style={style}
+				onClick={() => onSelect(profile.id)}
+				data-testid={"service-row-" + profile.id}
+				className={cn(
+					"group flex cursor-pointer items-center gap-2 border-l-2 min-h-[48px] px-3 sm:transition-colors touch-manipulation",
+					isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
+				)}
+			>
+				<button
+					type="button"
+					ref={setActivatorNodeRef}
+					{...attributes}
+					{...listeners}
+					aria-label="drag"
+					onClick={(e) => e.stopPropagation()}
+					className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
+				>
+					<span className="text-base leading-none">≡</span>
+				</button>
+				<span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", isActive ? "bg-accent" : "bg-transparent")} />
+				{profile.isDefault && (
+					<CustomTooltip content="promptManager.servicePrompts.liveTooltip">
+						<span className="flex shrink-0 text-t3">
+							<Icons.Lock />
+						</span>
+					</CustomTooltip>
+				)}
+				<CustomTooltip content={profile.name}>
+					<span
+						className={cn(
+							"min-w-0 flex-1 truncate font-ui text-[13px] font-medium",
+							isSelected ? "text-accent-t" : "text-t2",
+						)}
+					>
+						{profile.name}
+					</span>
+				</CustomTooltip>
+				<button
+					type="button"
+					aria-label={t("edit")}
+					onClick={(e) => {
+						e.stopPropagation();
+						onRenameStart(profile.id, profile.name);
+					}}
+					className={cn(
+						"shrink-0 rounded p-1 transition-colors",
+						isMobile ? "text-t4" : "opacity-0 group-hover:opacity-100 text-t4 hover:bg-s3 hover:text-t1",
+						isMobile && "ml-1",
+					)}
+				>
+					<Icons.Edit />
+				</button>
+				{!isMobile && (
+					<div className="ml-auto hidden md:flex">
+						{renderDrillDown?.(profile.id, () => onSelect(profile.id))}
+					</div>
+				)}
+				{isMobile && renderDrillDown?.(profile.id, () => onSelect(profile.id))}
+			</div>
+		);
+	},
+);
+
 export function ServicePromptsPane({
 	active,
 	children,
 	renderRowDrillDown,
 	onDirtyChange,
+	onClose,
 }: {
 	active: boolean;
 	children: (slots: ServicePromptsPaneSlots) => ReactNode;
 	renderRowDrillDown?: (profileId: string, selectRow: () => void) => ReactNode;
 	onDirtyChange?: (dirty: boolean) => void;
+	onClose?: () => void;
 }): ReactNode {
 	const { t, tDynamic } = useT();
+	const isMobile = useIsMobile();
 	const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 	const [profiles, setProfiles] = useState<ServicePromptProfile[]>([]);
 	const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
-	/** Bumped by the detail-retry button — the only way to re-run the fetch
-	 *  effect for the SAME selectedId (same-value setState is a no-op). */
 	const [detailNonce, setDetailNonce] = useState(0);
 	const [detail, setDetail] = useState<ServicePromptProfileDetailResponse | null>(null);
 	const [detailState, setDetailState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -112,6 +212,11 @@ export function ServicePromptsPane({
 	const [pendingSelectId, setPendingSelectId] = useState<string | null>(null);
 	const [isCreating, setIsCreating] = useState(false);
 	const [newName, setNewName] = useState("");
+	const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>(() => {
+		const init: Record<string, boolean> = {};
+		for (const f of FAMILY_ORDER) init[f] = false;
+		return init;
+	});
 	const renameInputRef = useRef<HTMLInputElement>(null);
 	const newInputRef = useRef<HTMLInputElement>(null);
 
@@ -134,12 +239,39 @@ export function ServicePromptsPane({
 		onDirtyChange?.(dirty);
 	}, [dirty, onDirtyChange]);
 
-	// Default pinned first, the rest in server order.
+	const defaultProfile = useMemo(() => profiles.find((p) => p.isDefault) ?? null, [profiles]);
+	const nonDefaultProfiles = useMemo(() => profiles.filter((p) => !p.isDefault), [profiles]);
+
+	const {
+		displayItems: displayNonDefault,
+		sensors,
+		activeDragItem,
+		handleDragStart,
+		handleDragEnd,
+		handleDragCancel,
+	} = useReorderableList<ServicePromptProfile>({
+		items: nonDefaultProfiles,
+		getId: (p) => p.id,
+		onReorder: (activeId, overId, currentItems) => {
+			const fromIdx = currentItems.findIndex((p) => p.id === activeId);
+			const toIdx = currentItems.findIndex((p) => p.id === overId);
+			if (fromIdx === -1 || toIdx === -1) {
+				return { optimisticItems: currentItems, persist: () => {} };
+			}
+			const reordered = arrayMove(currentItems, fromIdx, toIdx);
+			return {
+				optimisticItems: reordered,
+				persist: () => reorderServicePromptProfiles(reordered.map((p, i) => ({ id: p.id, sortOrder: i }))).then((res) => {
+					setProfiles(res.profiles);
+					setActiveProfileId(res.activeProfileId);
+				}),
+			};
+		},
+	});
+
 	const orderedProfiles = useMemo(() => {
-		const def = profiles.find((p) => p.isDefault);
-		const rest = profiles.filter((p) => !p.isDefault);
-		return def ? [def, ...rest] : rest;
-	}, [profiles]);
+		return defaultProfile ? [defaultProfile, ...displayNonDefault] : [...displayNonDefault];
+	}, [defaultProfile, displayNonDefault]);
 
 	const refreshList = useCallback(async () => {
 		setLoadState("loading");
@@ -149,8 +281,8 @@ export function ServicePromptsPane({
 			setActiveProfileId(res.activeProfileId);
 			setLoadState("ready");
 			if (!selectedId && res.profiles.length > 0) {
-				const def = res.profiles.find((p) => p.isDefault);
-				setSelectedId(def ? def.id : res.profiles[0]!.id);
+				const liveId = res.activeProfileId ?? res.profiles.find((p) => p.isDefault)?.id ?? res.profiles[0]!.id;
+				setSelectedId(liveId);
 			}
 		} catch {
 			setLoadState("error");
@@ -164,12 +296,6 @@ export function ServicePromptsPane({
 		}
 	}, [active, loadState, refreshList]);
 
-	// Error text is stored as an i18n KEY and translated at render — keeping
-	// `t` out of the deps means a locale switch can never re-run this effect
-	// (which would silently discard an in-progress draft). `active` is also
-	// deliberately absent: re-entering the tab must NOT refetch — the loaded
-	// detail and any in-progress draft survive the round-trip (the body guard
-	// covers the inactive window; selection can only change while visible).
 	useEffect(() => {
 		if (!active) return;
 		if (!selectedId) return;
@@ -199,25 +325,6 @@ export function ServicePromptsPane({
 		};
 	}, [selectedId, detailNonce]);
 
-	const handleSelectRow = useCallback(
-		(id: string) => {
-			if (id === selectedId) return;
-			if (dirty) {
-				setPendingSelectId(id);
-				return;
-			}
-			setSelectedId(id);
-		},
-		[dirty, selectedId],
-	);
-
-	const confirmDiscard = useCallback(() => {
-		if (pendingSelectId) {
-			setSelectedId(pendingSelectId);
-			setPendingSelectId(null);
-		}
-	}, [pendingSelectId]);
-
 	const handleSetActive = useCallback(
 		async (id: string, isDefault: boolean) => {
 			const target = isDefault ? null : id;
@@ -230,6 +337,37 @@ export function ServicePromptsPane({
 		},
 		[tDynamic],
 	);
+
+	const handleSelectRow = useCallback(
+		(id: string) => {
+			if (id === selectedId) {
+				const p = profiles.find((pr) => pr.id === id);
+				if (p) {
+					const alreadyLive = (activeProfileId === null && p.isDefault) || activeProfileId === id;
+					if (!alreadyLive) void handleSetActive(id, p.isDefault);
+				}
+				return;
+			}
+			if (dirty) {
+				setPendingSelectId(id);
+				return;
+			}
+			setSelectedId(id);
+			const p = profiles.find((pr) => pr.id === id);
+			if (p) void handleSetActive(id, p.isDefault);
+		},
+		[dirty, selectedId, profiles, activeProfileId, handleSetActive],
+	);
+
+	const confirmDiscard = useCallback(() => {
+		if (pendingSelectId) {
+			const id = pendingSelectId;
+			setSelectedId(id);
+			setPendingSelectId(null);
+			const p = profiles.find((pr) => pr.id === id);
+			if (p) void handleSetActive(id, p.isDefault);
+		}
+	}, [pendingSelectId, profiles, handleSetActive]);
 
 	const handleRenameStart = useCallback((id: string, name: string) => {
 		setRenamingId(id);
@@ -266,8 +404,8 @@ export function ServicePromptsPane({
 				setActiveProfileId(res.activeProfileId);
 				setConfirmDeleteId(null);
 				if (wasSelected) {
-					const def = res.profiles.find((p) => p.isDefault);
-					setSelectedId(def ? def.id : (res.profiles[0]?.id ?? null));
+					const liveId = res.activeProfileId ?? res.profiles.find((p) => p.isDefault)?.id ?? res.profiles[0]?.id ?? null;
+					setSelectedId(liveId);
 				}
 			} catch {
 				setConfirmDeleteId(null);
@@ -280,15 +418,15 @@ export function ServicePromptsPane({
 	const handleDuplicate = useCallback(
 		async (profile: ServicePromptProfile) => {
 			try {
-				// "(copy)" is literal English on purpose — stored data, same rule
-				// as the SP-7 migration suffix; it must never be localized.
 				const dup = await createServicePromptProfile({
 					name: `${profile.name} (copy)`,
 					overrides: { ...profile.overrides },
 				});
 				const res = await listServicePromptProfiles();
 				setProfiles(res.profiles);
-				setActiveProfileId(res.activeProfileId);
+				setActiveProfileId(dup.id);
+				await setActiveServicePromptProfile(dup.id);
+				setActiveProfileId(dup.id);
 				setSelectedId(dup.id);
 				setRenamingId(dup.id);
 				setRenameValue(dup.name);
@@ -305,7 +443,8 @@ export function ServicePromptsPane({
 			const created = await createServicePromptProfile({ name, overrides: {} });
 			const res = await listServicePromptProfiles();
 			setProfiles(res.profiles);
-			setActiveProfileId(res.activeProfileId);
+			await setActiveServicePromptProfile(created.id);
+			setActiveProfileId(created.id);
 			setSelectedId(created.id);
 			setIsCreating(false);
 			setNewName("");
@@ -334,12 +473,6 @@ export function ServicePromptsPane({
 		}
 	}, [detail, draftName, draftOverrides, isDefaultSelected, tDynamic]);
 
-	const handleCancel = useCallback(() => {
-		if (!detail) return;
-		setDraftName(detail.profile.name);
-		setDraftOverrides({ ...detail.profile.overrides });
-	}, [detail]);
-
 	const handleResetField = useCallback((field: ServicePromptFieldKey) => {
 		setDraftOverrides((prev) => {
 			const next = { ...prev };
@@ -351,6 +484,21 @@ export function ServicePromptsPane({
 	const handleFieldChange = useCallback((field: ServicePromptFieldKey, value: string) => {
 		setDraftOverrides((prev) => ({ ...prev, [field]: value }));
 	}, []);
+
+	const toggleFamily = useCallback((family: ServicePromptFieldFamily) => {
+		setExpandedFamilies((prev) => ({ ...prev, [family]: !prev[family] }));
+	}, []);
+
+	const footerActions = useMemo(() => {
+		if (!detail) return [];
+		if (isDefaultSelected) {
+			return [{ icon: <Icons.Copy />, label: t("promptManager.servicePrompts.duplicateButton"), onClick: () => void handleDuplicate(detail.profile) }];
+		}
+		return [
+			{ icon: <Icons.Copy />, label: t("promptManager.servicePrompts.duplicateButton"), onClick: () => void handleDuplicate(detail.profile) },
+			{ icon: <Icons.Trash />, label: t("delete"), onClick: () => setConfirmDeleteId(detail.profile.id) },
+		];
+	}, [detail, isDefaultSelected, t, handleDuplicate]);
 
 	if (!active) {
 		return children({ master: null, detail: null, footer: null, dirty: false });
@@ -380,9 +528,10 @@ export function ServicePromptsPane({
 			)}
 			{loadState === "ready" && (
 				<div className="flex-1 overflow-y-auto">
-					{orderedProfiles.map((p) => {
+					{defaultProfile && (() => {
+						const p = defaultProfile;
 						const isSelected = selectedId === p.id;
-						const isActive = (activeProfileId === null && p.isDefault) || activeProfileId === p.id;
+						const isActive = activeProfileId === null;
 						const isRenaming = renamingId === p.id;
 						return (
 							<div
@@ -394,32 +543,12 @@ export function ServicePromptsPane({
 									isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
 								)}
 							>
-								<button
-									type="button"
-									aria-label={t("promptManager.servicePrompts.makeActive")}
-									aria-checked={isActive}
-									role="radio"
-									onClick={(e) => {
-										e.stopPropagation();
-										void handleSetActive(p.id, p.isDefault);
-									}}
-									className={cn(
-										"flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
-										isActive ? "border-accent bg-accent" : "border-border2 bg-transparent",
-									)}
-								>
-									{isActive && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-								</button>
-								<span
-									className={cn("h-[6px] w-[6px] shrink-0 rounded-full", isSelected ? "bg-accent" : "bg-transparent")}
-								/>
-								{p.isDefault && (
-									<CustomTooltip content={t("promptManager.servicePrompts.liveTooltip")}>
-										<span className="flex shrink-0 text-t3">
-											<Icons.Lock />
-										</span>
-									</CustomTooltip>
-								)}
+								<span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", isActive ? "bg-accent" : "bg-transparent")} />
+								<CustomTooltip content={t("promptManager.servicePrompts.liveTooltip")}>
+									<span className="flex shrink-0 text-t3">
+										<Icons.Lock />
+									</span>
+								</CustomTooltip>
 								{isRenaming ? (
 									<input
 										ref={renameInputRef}
@@ -442,72 +571,80 @@ export function ServicePromptsPane({
 											)}
 										>
 											{p.name}
-											{p.isDefault && (
-												<span className="ml-1.5 rounded bg-success/15 px-1 py-0.5 font-ui text-[10px] text-success">
-													{t("promptManager.servicePrompts.liveBadge")}
-												</span>
-											)}
+											<span className="ml-1.5 rounded bg-success/15 px-1 py-0.5 font-ui text-[10px] text-success">
+												{t("promptManager.servicePrompts.liveBadge")}
+											</span>
 										</span>
 									</CustomTooltip>
 								)}
-								{!p.isDefault && !isRenaming && (
-									<span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-										<button
-											type="button"
-											aria-label={t("duplicate")}
-											data-testid={"duplicate-" + p.id}
-											onClick={(e) => {
-												e.stopPropagation();
-												void handleDuplicate(p);
-											}}
-											className="rounded p-1 text-t4 hover:bg-s3 hover:text-t1"
-										>
-											<Icons.Copy />
-										</button>
-										<button
-											type="button"
-											aria-label={t("edit")}
-											onClick={(e) => {
-												e.stopPropagation();
-												handleRenameStart(p.id, p.name);
-											}}
-											className="rounded p-1 text-t4 hover:bg-s3 hover:text-t1"
-										>
-											<Icons.Edit />
-										</button>
-										<button
-											type="button"
-											aria-label={t("delete")}
-											onClick={(e) => {
-												e.stopPropagation();
-												setConfirmDeleteId(p.id);
-											}}
-											className="rounded p-1 text-t4 hover:bg-s3 hover:text-danger"
-										>
-											<Icons.Trash />
-										</button>
-									</span>
-								)}
-								{p.isDefault && !isRenaming && (
-									<span className="ml-auto flex shrink-0 opacity-0 group-hover:opacity-100">
-										<button
-											type="button"
-											aria-label={t("duplicate")}
-											data-testid={"duplicate-" + p.id}
-											onClick={(e) => {
-												e.stopPropagation();
-												void handleDuplicate(p);
-											}}
-											className="rounded p-1 text-t4 hover:bg-s3 hover:text-t1"
-										>
-											<Icons.Copy />
-										</button>
-									</span>
+								{!isRenaming && (
+									<button
+										type="button"
+										aria-label={t("edit")}
+										onClick={(e) => {
+											e.stopPropagation();
+											handleRenameStart(p.id, p.name);
+										}}
+										className={cn(
+											"shrink-0 rounded p-1 transition-colors",
+											isMobile ? "text-t4" : "opacity-0 group-hover:opacity-100 text-t4 hover:bg-s3 hover:text-t1",
+										)}
+									>
+										<Icons.Edit />
+									</button>
 								)}
 								{renderRowDrillDown?.(p.id, () => handleSelectRow(p.id))}
 							</div>
 						);
-					})}
+					})()}
+					<DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
+						<SortableContext items={displayNonDefault.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+							{displayNonDefault.map((p) => {
+								const isSelected = selectedId === p.id;
+								const isActive = activeProfileId === p.id;
+								const isRenaming = renamingId === p.id;
+								if (isRenaming) {
+									return (
+										<div key={p.id} className="border-l-2 border-transparent px-3 py-2">
+											<input
+												ref={renameInputRef}
+												value={renameValue}
+												onChange={(e) => setRenameValue(e.target.value)}
+												onKeyDown={(e) => {
+													if (e.key === "Enter") void handleRenameSave();
+													if (e.key === "Escape") setRenamingId(null);
+												}}
+												onBlur={() => void handleRenameSave()}
+												onClick={(e) => e.stopPropagation()}
+												className="min-w-0 w-full rounded border border-accent bg-surface px-2 py-1 font-ui text-[13px] text-t1 outline-none"
+											/>
+										</div>
+									);
+								}
+								return (
+									<SortableServiceRow
+										key={p.id}
+										profile={p}
+										isActive={isActive}
+										isSelected={isSelected}
+										onSelect={handleSelectRow}
+										isMobile={isMobile}
+										onRenameStart={handleRenameStart}
+										renderDrillDown={renderRowDrillDown}
+									/>
+								);
+							})}
+						</SortableContext>
+						<DragOverlay dropAnimation={null}>
+							{activeDragItem ? (
+								<div className={cn("flex items-center gap-2 border-l-2 min-h-[48px] px-3", activeDragItem.id === selectedId ? "border-l-accent bg-accent-dim" : "border-l-transparent bg-s2")}>
+									<span className="text-base leading-none text-t4">≡</span>
+									<span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", activeDragItem.id === activeProfileId ? "bg-accent" : "bg-transparent")} />
+									<span className="truncate font-ui text-[13px] font-medium text-t1">{activeDragItem.name}</span>
+								</div>
+							) : null}
+						</DragOverlay>
+					</DndContext>
 					{isCreating && (
 						<div className="border-l-2 border-transparent px-3 py-2">
 							<input
@@ -566,11 +703,8 @@ export function ServicePromptsPane({
 		</div>
 	);
 
-	// The modal hands the detail pane p-0 (presets/regex editors carry their
-	// own padding — PromptFields uses p-3 sm:p-5, RegexPresetEditor p-5); this
-	// container must do the same or the fields sit flush against the pane edge.
 	const detailNode = (
-		<div className="flex flex-col gap-6 p-3 sm:p-5">
+		<div className="flex flex-col gap-6">
 			{detailState === "loading" && <div className="font-ui text-[13px] text-t3">{t("loading")}</div>}
 			{detailState === "error" && (
 				<div>
@@ -607,55 +741,69 @@ export function ServicePromptsPane({
 					{FAMILY_ORDER.map((family) => {
 						const keys = SERVICE_PROMPT_FIELD_KEYS.filter((k) => SERVICE_PROMPT_FIELDS[k].family === family);
 						if (keys.length === 0) return null;
+						const isOpen = expandedFamilies[family] ?? false;
 						return (
-							<section key={family} className="flex flex-col gap-4">
-								<div className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">
-									{tDynamic(FAMILY_LABEL_KEYS[family])}
-								</div>
-								{keys.map((field) => {
-									const labelKey = FIELD_LABEL_KEYS[field] ?? `promptManager.servicePrompts.field.${field}`;
-									const resolved = detail.resolved[field];
-									const overrideValue = draftOverrides[field] ?? "";
-									const hasOverride = overrideValue.trim().length > 0;
-									const defaultText = resolved.default;
-									const placeholder = truncateForPlaceholder(defaultText);
-									if (isDefaultSelected) {
-										return (
-											<div key={field} className="flex flex-col gap-1.5">
-												<label className={lblCls}>{tDynamic(labelKey)}</label>
-												<AutoTextarea className={monoCls} value={defaultText} disabled minRows={2} />
-											</div>
-										);
-									}
-									return (
-										<div key={field} className="flex flex-col gap-1.5">
-											<div className="flex items-center justify-between">
-												<label className={lblCls}>{tDynamic(labelKey)}</label>
-												<div className="flex items-center gap-2">
-													<span className="font-ui text-[11px] text-t4">
-														{tDynamic("promptManager.servicePrompts.charCount", { count: overrideValue.length })}
-													</span>
-													{hasOverride && (
-														<button
-															type="button"
-															onClick={() => handleResetField(field)}
-															className="rounded border border-border bg-transparent px-2 py-0.5 font-ui text-[11px] text-t3 hover:bg-s2 hover:text-t1"
-														>
-															{tDynamic("promptManager.servicePrompts.reset")}
-														</button>
-													)}
+							<section key={family} className="flex flex-col rounded-md border border-border">
+								<button
+									type="button"
+									onClick={() => toggleFamily(family)}
+									className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+								>
+									<span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">
+										{tDynamic(FAMILY_LABEL_KEYS[family])}
+									</span>
+									<span className="ml-2 flex shrink-0 text-t4">
+										<Icons.Caret direction={isOpen ? "u" : "d"} />
+									</span>
+								</button>
+								<AnimatedDisclosure open={isOpen}>
+									<div className="flex flex-col gap-4 px-3 pb-3">
+										{keys.map((field) => {
+											const labelKey = FIELD_LABEL_KEYS[field] ?? `promptManager.servicePrompts.field.${field}`;
+											const resolved = detail.resolved[field];
+											const overrideValue = draftOverrides[field] ?? "";
+											const hasOverride = overrideValue.trim().length > 0;
+											const defaultText = resolved.default;
+											const placeholder = truncateForPlaceholder(defaultText);
+											if (isDefaultSelected) {
+												return (
+													<div key={field} className="flex flex-col gap-1.5">
+														<label className={lblCls}>{tDynamic(labelKey)}</label>
+														<AutoTextarea className={monoCls} value={defaultText} disabled minRows={2} />
+													</div>
+												);
+											}
+											return (
+												<div key={field} className="flex flex-col gap-1.5">
+													<div className="flex items-center justify-between">
+														<label className={lblCls}>{tDynamic(labelKey)}</label>
+														<div className="flex items-center gap-2">
+															<span className="font-ui text-[11px] text-t4">
+																{tDynamic("promptManager.servicePrompts.charCount", { count: overrideValue.length })}
+															</span>
+															{hasOverride && (
+																<button
+																	type="button"
+																	onClick={() => handleResetField(field)}
+																	className="rounded border border-border bg-transparent px-2 py-0.5 font-ui text-[11px] text-t3 hover:bg-s2 hover:text-t1"
+																>
+																	{tDynamic("promptManager.servicePrompts.reset")}
+																</button>
+															)}
+														</div>
+													</div>
+													<AutoTextarea
+														className={monoCls}
+														value={overrideValue}
+														onChange={(e) => handleFieldChange(field, e.target.value)}
+														placeholder={placeholder}
+														minRows={2}
+													/>
 												</div>
-											</div>
-											<AutoTextarea
-												className={monoCls}
-												value={overrideValue}
-												onChange={(e) => handleFieldChange(field, e.target.value)}
-												placeholder={placeholder}
-												minRows={2}
-											/>
-										</div>
-									);
-								})}
+											);
+										})}
+									</div>
+								</AnimatedDisclosure>
 							</section>
 						);
 					})}
@@ -664,47 +812,16 @@ export function ServicePromptsPane({
 		</div>
 	);
 
-	// px mirrors the detail container (p-3 sm:p-5) so the buttons line up with
-	// the fields above; matches the regex-tab footer rhythm.
 	const footer = (
-		<div className="shrink-0 border-t border-border bg-surface px-3 py-3 sm:px-5">
-			{detailState === "ready" && detail && (
-				isDefaultSelected ? (
-					<button
-						type="button"
-						onClick={() => void handleDuplicate(detail.profile)}
-						className="rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[13px] text-t2 hover:bg-s3"
-					>
-						{t("promptManager.servicePrompts.duplicateButton")}
-					</button>
-				) : (
-					<div className="flex items-center gap-2">
-						<button
-							type="button"
-							disabled={!dirty || saving}
-							onClick={() => void handleSave()}
-							className={cn(
-								"rounded-md px-3 py-1.5 font-ui text-[13px] font-medium",
-								dirty && !saving ? "bg-accent text-white hover:brightness-110" : "bg-s2 text-t4",
-							)}
-						>
-							{saving ? t("saving") : t("save_btn")}
-						</button>
-						<button
-							type="button"
-							disabled={!dirty || saving}
-							onClick={handleCancel}
-							className={cn(
-								"rounded-md border px-3 py-1.5 font-ui text-[13px]",
-								dirty ? "border-border text-t2 hover:bg-s2" : "border-transparent text-t4",
-							)}
-						>
-							{t("cancel")}
-						</button>
-					</div>
-				)
-			)}
-		</div>
+		<MasterDetailFooter
+			actions={detailState === "ready" && detail ? footerActions : []}
+			onClose={onClose}
+			right={
+				detailState === "ready" && detail && !isDefaultSelected ? (
+					<SaveButton dirty={dirty} saveState={saving ? "saving" : "idle"} onClick={() => void handleSave()} label={t("save_btn")} resetKey={detail.profile.id} />
+				) : undefined
+			}
+		/>
 	);
 
 	return children({ master, detail: detailNode, footer, dirty });

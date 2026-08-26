@@ -105,13 +105,24 @@ export class ServicePromptAdapter implements ServicePromptRuntimeApi {
     await uiSettingsStore.update({ activeServicePromptProfileId: profileId });
     return { status: "ok" };
   };
+
+  reorderServicePromptProfiles = async (
+    updates: Array<{ id: string; sortOrder: number }>,
+  ): Promise<ServicePromptProfileListResponse> => {
+    const profileStore = new ServicePromptProfileStore(this.stores.db);
+    const uiSettingsStore = new UiSettingsStore(this.stores.db);
+    const profiles = await profileStore.reorderServicePromptProfiles(updates);
+    const settings = await uiSettingsStore.get();
+    return { profiles: profiles.map(toWire), activeProfileId: settings.activeServicePromptProfileId };
+  };
 }
 
-function toWire(row: { id: string; name: string; isDefault: boolean; overrides: Record<string, string>; createdAt: string; updatedAt: string }): ServicePromptProfile {
+function toWire(row: { id: string; name: string; isDefault: boolean; sortOrder: number; overrides: Record<string, string>; createdAt: string; updatedAt: string }): ServicePromptProfile {
   return {
     id: row.id,
     name: row.name,
     isDefault: row.isDefault,
+    sortOrder: row.sortOrder,
     overrides: row.overrides,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

@@ -81,7 +81,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
   ), [draft, disabled, onUpdateField, tDynamic]);
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 scroll-smooth p-3 sm:p-5">
+    <div className="flex min-w-0 flex-col gap-6 scroll-smooth">
       {!hideChatPrompts && (
         <>
           <SectionHeader title={t("prompt_section_chat")} />

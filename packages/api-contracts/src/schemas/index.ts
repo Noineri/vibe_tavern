@@ -365,6 +365,7 @@ export {
   servicePromptProfileListResponseSchema,
   servicePromptProfileDetailResponseSchema,
   setActiveServicePromptProfileRequestSchema,
+  reorderServicePromptProfilesSchema,
 } from "./service-prompt-schema.js";
 export type {
   ServicePromptFieldKeyValue,
@@ -375,6 +376,7 @@ export type {
   ServicePromptProfileListResponse,
   ServicePromptProfileDetailResponse,
   SetActiveServicePromptProfileRequest,
+  ReorderServicePromptProfilesRequest,
 } from "./service-prompt-schema.js";
 
 export {

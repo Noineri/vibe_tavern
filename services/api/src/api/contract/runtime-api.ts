@@ -913,6 +913,7 @@ export interface ServicePromptRuntimeApi {
   updateServicePromptProfile: (id: string, body: UpdateServicePromptProfileRequest) => Promise<ServicePromptUpdateResult>;
   deleteServicePromptProfile: (id: string) => Promise<ServicePromptDeleteResult>;
   setActiveServicePromptProfile: (profileId: string | null) => Promise<ServicePromptSetActiveResult>;
+  reorderServicePromptProfiles: (updates: Array<{ id: string; sortOrder: number }>) => Promise<ServicePromptProfileListResponse>;
 }
 
 /** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The

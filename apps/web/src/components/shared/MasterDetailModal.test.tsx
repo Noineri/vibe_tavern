@@ -40,8 +40,9 @@ mock.module("./Tooltip.js", () => ({
 }));
 
 let MasterDetailModal: typeof import("./MasterDetailModal.js").MasterDetailModal;
+let MasterDetailFooter: typeof import("./MasterDetailModal.js").MasterDetailFooter;
 beforeAll(async () => {
-  ({ MasterDetailModal } = await import("./MasterDetailModal.js"));
+  ({ MasterDetailModal, MasterDetailFooter } = await import("./MasterDetailModal.js"));
 });
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -337,5 +338,61 @@ describe("MasterDetailModal — header tabs", () => {
     // drill-down header, so the tab control is gone.
     fireEvent.click(getByTestId("open-detail"));
     expect(queryByText("Regex")).toBeNull();
+  });
+});
+
+// ── MasterDetailFooter (SP-11) ──────────────────────────────────────────
+
+describe("MasterDetailFooter — footer chrome primitive", () => {
+  it("desktop: icon-text actions left, Close + right slot in ml-auto group", () => {
+    isMobile = false;
+    let closed = false;
+    const { container } = render(
+      <MasterDetailFooter
+        actions={[
+          { icon: <span data-testid="ico-copy" />, label: "Copy me", onClick: () => {} },
+          { icon: <span data-testid="ico-trash" />, label: "Delete me", onClick: () => {} },
+        ]}
+        onClose={() => { closed = true; }}
+        right={<button type="button" data-testid="save">save</button>}
+      />,
+    );
+    const bar = container.firstElementChild as HTMLElement;
+    expect(bar.className).toContain("border-t");
+    // Actions render as icon-text spans, in order, before the ml-auto group.
+    const spans = bar.querySelectorAll("span.cursor-pointer");
+    expect(spans.length).toBe(2);
+    expect(spans[0]?.textContent).toContain("Copy me");
+    expect(spans[1]?.textContent).toContain("Delete me");
+    // Right group: Close button + custom right content, after the actions.
+    const rightGroup = bar.querySelector("div.ml-auto") as HTMLElement;
+    expect(rightGroup).toBeTruthy();
+    expect(rightGroup.querySelector('[data-testid="save"]')).toBeTruthy();
+    const close = Array.from(rightGroup.querySelectorAll("button")).find((b) => b.textContent === "close");
+    expect(close).toBeTruthy();
+    fireEvent.click(close as HTMLElement);
+    expect(closed).toBe(true);
+    // Ordering: the ml-auto group must come AFTER the action spans (Save right).
+    expect(bar.textContent?.indexOf("Copy me")).toBeLessThan(bar.textContent?.indexOf("save") ?? -1);
+  });
+
+  it("mobile: actions collapse to 9x9 icon buttons, no Close", () => {
+    isMobile = true;
+    const { container } = render(
+      <MasterDetailFooter
+        actions={[{ icon: <span data-testid="ico-copy" />, label: "Copy me", onClick: () => {} }]}
+        onClose={() => {}}
+        right={<button type="button" data-testid="save">save</button>}
+      />,
+    );
+    const bar = container.firstElementChild as HTMLElement;
+    expect(bar.className).toContain("px-3");
+    const iconBtn = bar.querySelector("button.h-9.w-9") as HTMLElement;
+    expect(iconBtn).toBeTruthy();
+    expect(iconBtn.getAttribute("aria-label")).toBe("Copy me");
+    expect(bar.textContent?.includes("Copy me")).toBe(false);
+    expect(bar.querySelector('[data-testid="save"]')).toBeTruthy();
+    // Close is desktop-only.
+    expect(bar.textContent?.includes("close")).toBe(false);
   });
 });

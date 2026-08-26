@@ -46,3 +46,11 @@ export async function setActiveServicePromptProfile(profileId: string | null): P
   const response = await client.api["service-prompts"].active.$put({ json: { profileId } });
   if (!response.ok) throw await unwrapError(response);
 }
+
+export async function reorderServicePromptProfiles(
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<ServicePromptProfileListResponse> {
+  const response = await client.api["service-prompts"].reorder.$patch({ json: { updates } });
+  if (!response.ok) throw await unwrapError(response);
+  return unwrapRpc<ServicePromptProfileListResponse>(response);
+}

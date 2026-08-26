@@ -49,6 +49,67 @@ export interface MasterDetailModalTabs<T extends string = string> {
   onChange: (value: T) => void;
 }
 
+export interface MasterDetailFooterAction {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}
+
+export function MasterDetailFooter({
+  actions = [],
+  onClose,
+  right,
+}: {
+  actions?: MasterDetailFooterAction[];
+  onClose?: () => void;
+  right?: ReactNode;
+}) {
+  const isMobile = useIsMobile();
+  const { t } = useT();
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-2.5 border-t border-border",
+        isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5",
+      )}
+    >
+      {actions.map((a) =>
+        isMobile ? (
+          <button
+            key={a.label}
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+            onClick={a.onClick}
+            aria-label={a.label}
+          >
+            {a.icon}
+          </button>
+        ) : (
+          <span
+            key={a.label}
+            className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+            onClick={a.onClick}
+          >
+            {a.icon} {a.label}
+          </span>
+        ),
+      )}
+      <div className="ml-auto flex min-w-0 items-center gap-2.5">
+        {!isMobile && onClose && (
+          <button
+            type="button"
+            className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
+            onClick={onClose}
+          >
+            {t("close")}
+          </button>
+        )}
+        {right}
+      </div>
+    </div>
+  );
+}
+
 export interface MasterDetailModalProps<T extends string = string> {
   isOpen: boolean;
   onClose: () => void;

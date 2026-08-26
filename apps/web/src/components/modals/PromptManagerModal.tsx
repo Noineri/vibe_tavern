@@ -12,7 +12,7 @@ import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { serializeStPreset, type VibeTavernPresetExtension, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { MasterDetailModal, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
 import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import {
@@ -1160,6 +1160,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           <MasterDetailMobileDrillDown onSelect={selectRow} className="py-1" />
         )}
         onDirtyChange={setServiceDirty}
+        onClose={handleClose}
       >
         {(slots) => (
           <MasterDetailModal
@@ -1171,8 +1172,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         dirty={activeTab === "service" ? slots.dirty : activeTab === "regex" ? regexDirty : dirty}
         containerClassName="max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[920px] h-[880px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
-        detailClassName="p-0"
-        mobileDetailClassName="p-2 scrollbar-hide"
+        detailClassName="p-3 sm:p-5"
+        mobileDetailClassName="p-3 scrollbar-hide"
         headerClassName={isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-[14px]"}
         tabs={{
           items: [
@@ -1363,58 +1364,18 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             ? slots.footer
             : activeTab === "regex"
               ? (
-            <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
-              {activeRegexPreset && isMobile && (
-                <button type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
-                  onClick={handleRegexCopy}
-                  aria-label={t("promptManager.regex.copy")}
-                >
-                  <Icons.Copy />
-                </button>
-              )}
-              {activeRegexPreset && !isMobile && (
-                <span
-                  className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-                  onClick={handleRegexCopy}
-                >
-                  <Icons.Copy /> {t("promptManager.regex.copy")}
-                </span>
-              )}
-              {activeRegexPreset && isMobile && (
-                <button type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
-                  onClick={handleRegexExport}
-                  aria-label={t("promptManager.regex.export")}
-                >
-                  <Icons.Download />
-                </button>
-              )}
-              {activeRegexPreset && !isMobile && (
-                <span
-                  className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-                  onClick={handleRegexExport}
-                >
-                  <Icons.Download /> {t("promptManager.regex.export")}
-                </span>
-              )}
-              {activeRegexPreset && (
-                <span
-                  className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-                  onClick={() => setRegexConfirmDeleteOpen(true)}
-                >
-                  <Icons.Trash /> {t("promptManager.regex.deleteConfirm")}
-                </span>
-              )}
-              <div className="ml-auto flex min-w-0 items-center gap-2.5">
-                {!isMobile && (
-                <button type="button"
-                  className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
-                  onClick={handleClose}
-                >
-                  {t("close")}
-                </button>
-                )}
+            <MasterDetailFooter
+              actions={
+                activeRegexPreset
+                  ? [
+                      { icon: <Icons.Copy />, label: t("promptManager.regex.copy"), onClick: handleRegexCopy },
+                      { icon: <Icons.Download />, label: t("promptManager.regex.export"), onClick: handleRegexExport },
+                      { icon: <Icons.Trash />, label: t("promptManager.regex.deleteConfirm"), onClick: () => setRegexConfirmDeleteOpen(true) },
+                    ]
+                  : []
+              }
+              onClose={handleClose}
+              right={
                 <SaveButton
                   dirty={regexDirty}
                   saveState={regexSaveState}
@@ -1422,79 +1383,32 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onClick={handleRegexSave}
                   label={t("save")}
                 />
-              </div>
-            </div>
+              }
+            />
           ) : (
-          <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
-            {activePreset && isMobile && (
-            <button type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
-              onClick={handleDuplicate}
-              aria-label={t("duplicate_preset_btn")}
-            >
-              <Icons.Copy />
-            </button>
-            )}
-            {activePreset && !isMobile && (
-            <span
-              className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-              onClick={handleDuplicate}
-            >
-              <Icons.Copy /> {t("duplicate_preset_btn")}
-            </span>
-            )}
-            {activePreset && isMobile && (
-            <button type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
-              onClick={handleExportPreset}
-              aria-label={t("export_preset_btn")}
-            >
-              <Icons.Download />
-            </button>
-            )}
-            {activePreset && !isMobile && (
-            <span
-              className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-              onClick={handleExportPreset}
-            >
-              <Icons.Download /> {t("export_preset_btn")}
-            </span>
-            )}
-            {activePreset && input.presets.length > 1 && isMobile && (
-            <button type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
-              onClick={() => setConfirmDeleteOpen(true)}
-              aria-label={t("delete_preset")}
-            >
-              <Icons.Trash />
-            </button>
-            )}
-            {activePreset && input.presets.length > 1 && !isMobile && (
-              <span
-                className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-                onClick={() => setConfirmDeleteOpen(true)}
-              >
-                <Icons.Trash /> {t("delete_preset")}
-              </span>
-            )}
-            <div className="ml-auto flex min-w-0 items-center gap-2.5">
-              {!isMobile && (
-              <button type="button"
-                className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
-                onClick={handleClose}
-              >
-                {t("close")}
-              </button>
-              )}
-              <SaveButton
-                dirty={dirty}
-                saveState={saveState}
-                resetKey={input.activePresetId}
-                onClick={handleSave}
-                label={t("save")}
-              />
-            </div>
-          </div>
+          <MasterDetailFooter
+              actions={
+                activePreset
+                  ? [
+                      { icon: <Icons.Copy />, label: t("duplicate_preset_btn"), onClick: handleDuplicate },
+                      { icon: <Icons.Download />, label: t("export_preset_btn"), onClick: handleExportPreset },
+                      ...(input.presets.length > 1
+                        ? [{ icon: <Icons.Trash />, label: t("delete_preset"), onClick: () => setConfirmDeleteOpen(true) } as const]
+                        : []),
+                    ]
+                  : []
+              }
+              onClose={handleClose}
+              right={
+                <SaveButton
+                  dirty={dirty}
+                  saveState={saveState}
+                  resetKey={input.activePresetId}
+                  onClick={handleSave}
+                  label={t("save")}
+                />
+              }
+            />
           )
         }
           />

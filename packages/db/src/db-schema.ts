@@ -543,6 +543,7 @@ export const servicePromptProfiles = sqliteTable('service_prompt_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   isDefault: integer('is_default').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
   overrides: text('overrides').notNull().default('{}'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

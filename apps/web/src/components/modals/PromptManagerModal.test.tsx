@@ -1005,6 +1005,7 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
       id: "default",
       name: "Default",
       isDefault: true,
+      sortOrder: 0,
       overrides: {},
       createdAt: "",
       updatedAt: "",
@@ -1109,7 +1110,18 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     const alphaEl = within(view.baseElement).getByText("Alpha");
     await act(async () => { fireEvent.click(alphaEl); });
     await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
-    // Detail should now show the service editor (check a family heading or textarea)
+    // Detail shows the service editor: family accordion headings render
+    // collapsed by default; opening them reveals the field textareas.
+    await waitFor(() => {
+      expect(view.baseElement.textContent).toContain("promptManager.servicePrompts.family.assistant");
+    });
+    const familyButtons = Array.from(view.baseElement.querySelectorAll("button")).filter((b) =>
+      b.textContent?.includes("promptManager.servicePrompts.family."),
+    );
+    expect(familyButtons.length).toBeGreaterThan(0);
+    for (const btn of familyButtons) {
+      await act(async () => { fireEvent.click(btn); });
+    }
     await waitFor(() => {
       const tas = view.baseElement.querySelectorAll("textarea");
       expect(tas.length).toBeGreaterThan(0);

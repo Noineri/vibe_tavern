@@ -5,6 +5,10 @@ import type { ServicePromptRuntimeApi } from "../contract/runtime-api.js";
 
 export function createServicePromptRoutes(runtime: ServicePromptRuntimeApi) {
   return new Hono()
+    .patch("/api/service-prompts/reorder", zValidator("json", schemas.reorderServicePromptProfilesSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.reorderServicePromptProfiles(body.updates));
+    })
     .get("/api/service-prompts/profiles", async (c) => {
       return c.json(await runtime.listServicePromptProfiles());
     })
