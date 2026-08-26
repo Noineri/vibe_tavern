@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback } from "react";
 import { cn } from "../../../lib/cn.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
@@ -7,7 +7,6 @@ import { PrefillField } from "./PrefillField.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
-import { NumberInput } from "../../shared/NumberInput.js";
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -18,24 +17,13 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
-function ServiceField({ label, description, token, children }: {
-  label: string;
-  description: string;
-  token: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-[7px] flex items-center justify-between">
-        <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{label}</label>
-        <TokenCounter text={token} />
-      </div>
-      <div className="mb-1.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{description}</div>
-      {children}
-    </div>
-  );
-}
-
+/**
+ * Chat-level prompt fields of a preset (system / jailbreak / prefill /
+ * author's note). The former "Service Prompts" section (summary + AI-assistant
+ * mode overrides) moved to the dedicated «Служебные» tab (ServicePromptsPane,
+ * SP-8/SP-9); the service-related draft fields stay in the preset DTO only as
+ * migration source data (SP-7).
+ */
 type DraftData = {
   system: string;
   jailbreak: string;
@@ -44,15 +32,11 @@ type DraftData = {
   authorsNoteDepth: number;
   authorsNotePosition: string;
   authorsNoteRole: string;
-  summary: string;
-  tools: string;
-  scriptAiSystemPrompt: string;
-  aiAssistantPrompts: Record<string, string>;
 };
 
 interface PromptFieldsProps {
   draft: DraftData | null;
-  onUpdateField: (key: keyof DraftData, value: string | number | Record<string, string>) => void;
+  onUpdateField: (key: keyof DraftData, value: string | number) => void;
   prefillSupported?: boolean;
   resetKey?: string | null;
   hideChatPrompts?: boolean;
@@ -62,7 +46,7 @@ const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[
 const labelCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
 const labelAccentCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-accent";
 
-type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "authorsNoteRole" | "aiAssistantPrompts">;
+type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "authorsNoteRole">;
 
 function FieldSection({ label, labelClassName, token, children }: {
   label: string;
@@ -82,18 +66,6 @@ function FieldSection({ label, labelClassName, token, children }: {
 export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatPrompts = false }: PromptFieldsProps) {
   const { t, tDynamic } = useT();
   const disabled = !draft;
-  const [serviceOpen, setServiceOpen] = useState(false);
-
-  const aiAssistantModes = [
-    { key: "script", labelKey: "ai_assistant_mode_script" },
-    { key: "lore_entry", labelKey: "ai_assistant_mode_lore_entry" },
-    { key: "lore_keys", labelKey: "ai_assistant_mode_lore_keys" },
-    { key: "chat_impersonate", labelKey: "ai_assistant_mode_chat_impersonate" },
-    { key: "message_edit", labelKey: "ai_assistant_mode_message_edit" },
-    { key: "message_merge", labelKey: "ai_assistant_mode_message_merge" },
-    { key: "vision_describe", labelKey: "ai_assistant_mode_vision_describe" },
-    { key: "scene_schema", labelKey: "ai_assistant_mode_scene_schema" },
-  ] as const;
 
   const ta = useCallback((key: TextDraftKey, placeholder: string, minRows = 5, labelKey?: string) => (
     <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? tDynamic(labelKey) : undefined}>
@@ -106,7 +78,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
       onChange={(e) => onUpdateField(key, e.target.value)}
     />
     </MobileExpandTextarea>
-  ), [draft, disabled, onUpdateField]);
+  ), [draft, disabled, onUpdateField, tDynamic]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6 scroll-smooth p-3 sm:p-5">
@@ -132,7 +104,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
           <div>
             <div className="mb-[7px] flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
-              
+
               <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4">
                 <div className="flex items-center gap-2">
                   <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("role")}</span>
@@ -190,67 +162,6 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
           <div className="h-2" />
         </>
       )}
-
-      <div className="rounded-md border border-border2">
-        <button type="button"
-          className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-s2/70"
-          onClick={() => setServiceOpen((v) => !v)}
-        >
-          <span className={cn("font-ui text-[13px] text-t4 transition-transform", serviceOpen && "rotate-180")}>▾</span>
-          <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t4">{t("prompt_section_service")}</span>
-          <div className="h-px flex-1 bg-border" />
-        </button>
-        {serviceOpen && (
-          <div className="flex flex-col gap-6 border-t border-border2 p-3 pt-4">
-            <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("prompt_section_service_desc")}</div>
-
-            <ServiceField label={t("summary")} description={t("summary_desc")} token={draft?.summary ?? ""}>
-              {ta("summary", t("summary_placeholder"))}
-            </ServiceField>
-
-            <SectionHeader title={t("ai_assistant_section")} />
-            <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("ai_assistant_section_desc")}</div>
-
-            {aiAssistantModes.map(({ key, labelKey }) => {
-              const value = key === "script"
-                ? (draft?.aiAssistantPrompts?.[key] || draft?.scriptAiSystemPrompt || "")
-                : (draft?.aiAssistantPrompts?.[key] ?? "");
-              return (
-                <div key={key}>
-                  <div className="mb-[7px] flex items-center justify-between">
-                    <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{tDynamic(labelKey)}</label>
-                    <TokenCounter text={value} />
-                  </div>
-                  <MobileExpandTextarea
-                    value={value}
-                    onChange={(v) => {
-                      const updated = { ...(draft?.aiAssistantPrompts ?? {}), [key]: v };
-                      if (!v.trim()) delete updated[key];
-                      onUpdateField("aiAssistantPrompts", updated);
-                    }}
-                    label={tDynamic(labelKey)}
-                  >
-                    <AutoTextarea
-                      className={cn(textareaCls, "px-[13px] py-[9px]")}
-                      style={{}}
-                      minRows={4}
-                      value={value}
-                      placeholder={t("ai_assistant_mode_default_placeholder")}
-                      disabled={disabled}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        const updated = { ...(draft?.aiAssistantPrompts ?? {}), [key]: v };
-                        if (!v.trim()) delete updated[key];
-                        onUpdateField("aiAssistantPrompts", updated);
-                      }}
-                    />
-                  </MobileExpandTextarea>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
