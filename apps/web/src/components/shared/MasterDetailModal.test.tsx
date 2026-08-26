@@ -241,3 +241,101 @@ describe("MasterDetailModal — frost layer (R-8)", () => {
     expect([...panel!.classList]).not.toContain("bg-glass-bg");
   });
 });
+
+// ── Header tabs (declarative `tabs` prop) ──────────────────────────────────
+// The optional tabs element renders a SegmentedControl at the bottom of the
+// global header — on desktop AND on the mobile main view (not the drill-down
+// header). Switching must call back with the option's value, fully typed.
+describe("MasterDetailModal — header tabs", () => {
+  type TestTab = "presets" | "regex" | "service";
+
+  it("renders tab labels with the active segment checked", () => {
+    isMobile = false;
+    const { getByText } = render(
+      <MasterDetailModal<TestTab>
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+        tabs={{
+          items: [
+            { value: "presets", label: "Presets" },
+            { value: "regex", label: "Regex" },
+            { value: "service", label: "Service" },
+          ],
+          active: "regex",
+          onChange: () => {},
+        }}
+      />,
+    );
+
+    expect(getByText("Presets")).toBeTruthy();
+    expect(getByText("Regex")).toBeTruthy();
+    expect(getByText("Service")).toBeTruthy();
+    const active = getByText("Regex").closest('[role="radio"]')!;
+    expect(active.getAttribute("aria-checked")).toBe("true");
+    const inactive = getByText("Presets").closest('[role="radio"]')!;
+    expect(inactive.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("clicking another tab calls onChange with its value", () => {
+    isMobile = false;
+    const calls: string[] = [];
+    const { getByText } = render(
+      <MasterDetailModal<TestTab>
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+        tabs={{
+          items: [
+            { value: "presets", label: "Presets" },
+            { value: "regex", label: "Regex" },
+          ],
+          active: "presets",
+          onChange: (v: TestTab) => { calls.push(v); },
+        }}
+      />,
+    );
+
+    fireEvent.click(getByText("Regex"));
+    expect(calls).toEqual(["regex"]);
+  });
+
+  it("tabs stay on the mobile main view and disappear in the drill-down", () => {
+    isMobile = true;
+    const { getByText, getByTestId, queryByText } = render(
+      <MasterDetailModal<TestTab>
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        detailTitle="Detail"
+        masterContent={({ openDetail }: { openDetail: () => void }) => (
+          <div data-testid="master">
+            <button type="button" data-testid="open-detail" onClick={openDetail}>
+              open
+            </button>
+          </div>
+        )}
+        detailContent={detail()}
+        tabs={{
+          items: [
+            { value: "presets", label: "Presets" },
+            { value: "regex", label: "Regex" },
+          ],
+          active: "presets",
+          onChange: () => {},
+        }}
+      />,
+    );
+
+    // Main view: tabs visible.
+    expect(getByText("Regex")).toBeTruthy();
+    // Open the drill-down: master header (with tabs) is replaced by the
+    // drill-down header, so the tab control is gone.
+    fireEvent.click(getByTestId("open-detail"));
+    expect(queryByText("Regex")).toBeNull();
+  });
+});

@@ -3,8 +3,8 @@ import * as RadioGroup from "@radix-ui/react-radio-group";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
 
-interface SegmentedOption {
-  value: string;
+interface SegmentedOption<T extends string = string> {
+  value: T;
   label: ReactNode;
   /** Disable only this option while leaving the rest of the group interactive. */
   disabled?: boolean;
@@ -20,10 +20,10 @@ interface SegmentedOption {
   trailing?: ReactNode;
 }
 
-interface SegmentedControlProps {
-  value: string;
-  options: SegmentedOption[];
-  onChange: (value: string) => void;
+interface SegmentedControlProps<T extends string = string> {
+  value: T;
+  options: SegmentedOption<T>[];
+  onChange: (value: T) => void;
   className?: string;
   disabled?: boolean;
   /** Render as a more compact variant for tight spaces */
@@ -62,7 +62,7 @@ interface SegmentedControlProps {
  * content via `group-hover/seg`. Both survive the `RadioGroup.Item` swap
  * unchanged. See toggle-segmented-radix-migration.md.
  */
-export function SegmentedControl({
+export function SegmentedControl<T extends string = string>({
   value,
   options,
   onChange,
@@ -73,11 +73,14 @@ export function SegmentedControl({
   fill,
   mobileFill,
   wrap,
-}: SegmentedControlProps) {
+}: SegmentedControlProps<T>) {
   return (
     <RadioGroup.Root
       value={value}
-      onValueChange={onChange}
+      // Radix emits the clicked item's value as a plain string; every option
+      // is typed T, so this is the single provably-safe re-entry point from
+      // string-land (keeps callers cast-free — see MasterDetailModal tabs).
+      onValueChange={(next) => onChange(next as T)}
       disabled={disabled}
       asChild
     >

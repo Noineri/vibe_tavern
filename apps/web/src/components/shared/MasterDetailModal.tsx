@@ -5,6 +5,7 @@ import { useT } from "../../i18n/context.js";
 import { Modal } from "./Modal.js";
 import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
+import { SegmentedControl } from "./SegmentedControl.js";
 
 interface MasterDetailContextValue {
   isMobile: boolean;
@@ -38,7 +39,17 @@ export function MasterDetailMobileDrillDown({ onSelect, className }: { onSelect?
   );
 }
 
-export interface MasterDetailModalProps {
+/** Optional segmented tabs docked at the bottom of the modal header.
+ *  Generic over the tab-id union so consumers pass their `Tab` type straight
+ *  through with no casts. Rendered as a `SegmentedControl`; on mobile it stays
+ *  on the main (non-drill-down) header, exactly like hand-placed header tabs. */
+export interface MasterDetailModalTabs<T extends string = string> {
+  items: Array<{ value: T; label: ReactNode; disabled?: boolean; tooltip?: ReactNode }>;
+  active: T;
+  onChange: (value: T) => void;
+}
+
+export interface MasterDetailModalProps<T extends string = string> {
   isOpen: boolean;
   onClose: () => void;
 
@@ -50,8 +61,12 @@ export interface MasterDetailModalProps {
   detailTitle?: ReactNode;
   /** Extra buttons to place next to the close icon on the desktop header and mobile main header. */
   headerActions?: ReactNode;
-  /** Extra content to place at the very bottom of the global header (e.g. tabs). */
+  /** Extra content to place at the very bottom of the global header. For plain
+   *  segmented tabs prefer the declarative `tabs` prop instead. */
   headerBottom?: ReactNode;
+  /** Segmented tabs docked at the bottom of the global header (desktop and
+   *  mobile main view). Optional — omit for tab-less master-detail modals. */
+  tabs?: MasterDetailModalTabs<T>;
   /** Shows an unsaved orange dot next to the title. */
   dirty?: boolean;
 
@@ -78,7 +93,7 @@ export interface MasterDetailModalProps {
   headerClassName?: string;
 }
 
-export function MasterDetailModal({
+export function MasterDetailModal<T extends string = string>({
   isOpen,
   onClose,
   title,
@@ -86,6 +101,7 @@ export function MasterDetailModal({
   detailTitle,
   headerActions,
   headerBottom,
+  tabs,
   dirty,
   masterContent,
   detailContent,
@@ -96,7 +112,7 @@ export function MasterDetailModal({
   detailClassName = "p-6",
   mobileDetailClassName = "p-4",
   headerClassName,
-}: MasterDetailModalProps) {
+}: MasterDetailModalProps<T>) {
   const isMobile = useIsMobile();
   const { t } = useT();
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -117,7 +133,7 @@ export function MasterDetailModal({
 
   const desktopHeader = (
     <div className={cn("shrink-0 border-b border-border", headerClassName || (isMobile ? "px-3 py-2.5" : "px-6 pt-5"))}>
-      <div className={cn("flex items-start justify-between", !isMobile && !headerBottom && !headerClassName && "pb-4")}>
+      <div className={cn("flex items-start justify-between", !isMobile && !headerBottom && !tabs && !headerClassName && "pb-4")}>
         <div>
           <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[18px] mb-1")}>
             {title}
@@ -146,6 +162,11 @@ export function MasterDetailModal({
         </div>
       </div>
       {headerBottom}
+      {tabs && (
+        <div className="mt-3">
+          <SegmentedControl value={tabs.active} options={tabs.items} onChange={tabs.onChange} />
+        </div>
+      )}
     </div>
   );
 
