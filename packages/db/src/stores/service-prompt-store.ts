@@ -1,7 +1,7 @@
 import { asc, desc, eq } from 'drizzle-orm';
 
 import { brandId } from '@vibe-tavern/domain';
-import type { ServicePromptProfileId } from '@vibe-tavern/domain';
+import type { ServicePromptProfileId, ServicePromptFieldKey } from '@vibe-tavern/domain';
 import { SERVICE_PROMPT_FIELD_KEYS } from '@vibe-tavern/domain';
 
 import type { AppDb } from '../db-connection.js';
@@ -12,13 +12,19 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 
 export type CreateServicePromptProfileData = {
   name: string;
-  overrides?: Record<string, string>;
+  overrides?: ServicePromptOverridesInput;
 };
 
 export type UpdateServicePromptProfileData = {
   name?: string;
-  overrides?: Record<string, string>;
+  overrides?: ServicePromptOverridesInput;
 };
+
+/** Overrides input at the store boundary: keyed by the domain field union
+ *  (unknown keys are dropped by serializeOverrides). Optional values mirror
+ *  the contracts' `ServicePromptOverrides` shape so the API adapter can pass
+ *  request bodies through without casts. */
+export type ServicePromptOverridesInput = Partial<Record<ServicePromptFieldKey, string>>;
 
 export interface ServicePromptProfile {
   id: ServicePromptProfileId;
@@ -50,7 +56,7 @@ function parseOverrides(raw: string): Record<string, string> {
   }
 }
 
-function serializeOverrides(overrides: Record<string, string>): string {
+function serializeOverrides(overrides: ServicePromptOverridesInput): string {
   // Validate again before write — drop unknown / non-string keys.
   const filtered: Record<string, string> = {};
   for (const [k, v] of Object.entries(overrides)) {

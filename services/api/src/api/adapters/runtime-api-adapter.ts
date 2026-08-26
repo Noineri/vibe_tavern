@@ -28,6 +28,7 @@ import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
 import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
+import { ServicePromptAdapter } from "./service-prompt-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
@@ -50,6 +51,7 @@ import type { ExperienceContextService } from "../../domain/interactive/experien
  */
 export class RuntimeApiAdapter implements RuntimeApi {
 	readonly bootstrap: RuntimeApi["bootstrap"];
+	readonly servicePrompts: ServicePromptAdapter;
 	readonly chat: ChatAdapter;
 	readonly character: CharacterAdapter;
 	readonly persona: PersonaAdapter;
@@ -103,6 +105,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.persona = new PersonaAdapter(sessionRuntime, stores, assetService, providerProfileService);
 		this.lorebook = new LorebookAdapter(stores);
 		this.script = new ScriptAdapter(stores);
+		this.servicePrompts = new ServicePromptAdapter(stores);
 		this.regex = new RegexAdapter(stores);
 		this.provider = new ProviderAdapter(stores, providerProfileService);
 		this.proxy = new ProxyAdapter(proxyService);

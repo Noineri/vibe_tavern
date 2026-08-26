@@ -35,6 +35,13 @@ import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 // resolving; the canonical wire type lives in api-contracts (single source).
 export type { SkillCatalogEntryDto };
 import type {
+  ServicePromptProfile,
+  ServicePromptProfileListResponse,
+  ServicePromptProfileDetailResponse,
+  CreateServicePromptProfileRequest,
+  UpdateServicePromptProfileRequest,
+} from "@vibe-tavern/api-contracts";
+import type {
 	ChatSummary,
 	FavoriteModel,
 	ProviderModelSettings,
@@ -887,6 +894,27 @@ export interface ExperienceCopilotRuntimeApi {
 	experienceCopilotCompact: (threadId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ExperienceCopilotCompactResult>;
 }
 
+/** Service-prompt profile CRUD (SERVICE_PROMPTS_PROFILES_PLAN, SP-6). The
+ *  built-in Default profile is READ-ONLY — update/delete reject it with a 403
+ *  at the route layer; the store itself silently refuses Default mutations. */
+export type ServicePromptUpdateResult =
+  | { status: "ok"; profile: ServicePromptProfile }
+  | { status: "not-found" }
+  | { status: "forbidden" };
+
+export type ServicePromptDeleteResult = { status: "ok" } | { status: "not-found" } | { status: "forbidden" };
+
+export type ServicePromptSetActiveResult = { status: "ok" } | { status: "not-found" };
+
+export interface ServicePromptRuntimeApi {
+  listServicePromptProfiles: () => Promise<ServicePromptProfileListResponse>;
+  getServicePromptProfile: (id: string) => Promise<ServicePromptProfileDetailResponse | null>;
+  createServicePromptProfile: (body: CreateServicePromptProfileRequest) => Promise<ServicePromptProfile>;
+  updateServicePromptProfile: (id: string, body: UpdateServicePromptProfileRequest) => Promise<ServicePromptUpdateResult>;
+  deleteServicePromptProfile: (id: string) => Promise<ServicePromptDeleteResult>;
+  setActiveServicePromptProfile: (profileId: string | null) => Promise<ServicePromptSetActiveResult>;
+}
+
 /** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The
  *  built-in "Experience Authoring" seed (id "builtin") is READ-ONLY — update /
  *  delete reject it with a 400. */
@@ -900,6 +928,7 @@ export interface CopilotProfileRuntimeApi {
 
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
+	servicePrompts: ServicePromptRuntimeApi;
 	chat: ChatRuntimeApi;
 	character: CharacterRuntimeApi & CharacterAssetRuntimeApi;
 	persona: PersonaRuntimeApi;
