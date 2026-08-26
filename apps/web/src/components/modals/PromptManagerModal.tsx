@@ -12,8 +12,8 @@ import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { serializeStPreset, type VibeTavernPresetExtension, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { MasterDetailModal } from "../shared/MasterDetailModal.js";
-import { SegmentedControl } from "../shared/SegmentedControl.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
+import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import {
   loadPromptCanvasLoreEntries,
@@ -86,7 +86,7 @@ export async function importStandaloneRegexText(
   return created;
 }
 
-type PromptManagerTab = "presets" | "regex";
+type PromptManagerTab = "presets" | "regex" | "service";
 
 export type DraftData = {
   name: string;
@@ -354,6 +354,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   // Local state only — no Zustand store in this unit. Presets load lazily on
   // first Regex-tab activation.
   const [activeTab, setActiveTab] = useState<PromptManagerTab>("presets");
+  const [serviceDirty, setServiceDirty] = useState(false);
   const [regexPresets, setRegexPresets] = useState<RegexPresetRecord[]>([]);
   const [regexLoadState, setRegexLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [activeRegexPresetId, setActiveRegexPresetId] = useState<string | null>(null);
@@ -865,7 +866,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   if (!isOpen) return null;
 
   const handleClose = () => {
-    if (dirty || regexDirty) {
+    if (dirty || regexDirty || serviceDirty) {
       setConfirmCloseOpen(true);
     } else {
       onClose();
@@ -1094,6 +1095,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           onConfirm={() => {
             setDirty(false);
             setRegexDirty(false);
+            setServiceDirty(false);
             setSaveState("idle");
             setRegexSaveState("idle");
             setConfirmCloseOpen(false);
@@ -1152,32 +1154,39 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         }}
       />
 
-      <MasterDetailModal
-        isOpen={true}
+      <ServicePromptsPane
+        active={activeTab === "service"}
+        renderRowDrillDown={(id, selectRow) => (
+          <MasterDetailMobileDrillDown onSelect={selectRow} className="py-1" />
+        )}
+        onDirtyChange={setServiceDirty}
+      >
+        {(slots) => (
+          <MasterDetailModal
+            isOpen={true}
         onClose={handleClose}
         title={t("prompt_manager_title")}
         subtitle={t("prompt_manager_sub")}
-        detailTitle={activeTab === "regex" ? t("promptManager.regex.tabLabel") : t("prompt_manager_title")}
-        dirty={activeTab === "regex" ? regexDirty : dirty}
+        detailTitle={activeTab === "presets" ? t("prompt_manager_title") : activeTab === "regex" ? t("promptManager.regex.tabLabel") : t("promptManager.servicePrompts.tabLabel")}
+        dirty={activeTab === "service" ? slots.dirty : activeTab === "regex" ? regexDirty : dirty}
         containerClassName="max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[920px] h-[880px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
         detailClassName="p-0"
         mobileDetailClassName="p-2 scrollbar-hide"
         headerClassName={isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-[14px]"}
-        headerBottom={
-          <div className="mt-3">
-            <SegmentedControl
-              value={activeTab}
-              onChange={(v) => setActiveTab(v as PromptManagerTab)}
-              options={[
-                { value: "presets", label: t("promptManager.tabPresets") },
-                { value: "regex", label: t("promptManager.regex.tabLabel") },
-              ]}
-            />
-          </div>
-        }
+        tabs={{
+          items: [
+            { value: "presets", label: t("promptManager.tabPresets") },
+            { value: "regex", label: t("promptManager.regex.tabLabel") },
+            { value: "service", label: t("promptManager.servicePrompts.tabLabel") },
+          ],
+          active: activeTab,
+          onChange: (v) => setActiveTab(v),
+        }}
         masterContent={
-          activeTab === "regex"
+          activeTab === "service"
+            ? slots.master
+            : activeTab === "regex"
             ? () => (
                 <RegexPresetList
                   presets={regexPresets.map((p) => ({
@@ -1246,7 +1255,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               )
         }
         detailContent={
-          activeTab === "regex" ? (
+          activeTab === "service"
+            ? slots.detail
+            : activeTab === "regex"
+              ? (
             activeRegexProfile ? (
               <RegexProfileEditor
                 profile={activeRegexProfile}
@@ -1347,7 +1359,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           )
         }
         footer={
-          activeTab === "regex" ? (
+          activeTab === "service"
+            ? slots.footer
+            : activeTab === "regex"
+              ? (
             <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
               {activeRegexPreset && isMobile && (
                 <button type="button"
@@ -1482,7 +1497,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           </div>
           )
         }
-      />
+          />
+        )}
+      </ServicePromptsPane>
     </>
   );
 }

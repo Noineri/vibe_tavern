@@ -299,6 +299,40 @@ describe("ServicePromptsPane", () => {
 		expect(getDetailMock.mock.calls.length).toBe(callsBefore);
 	});
 
+	test("renderRowDrillDown is called per row with (id, selectRow)", async () => {
+		const def = makeDefaultProfile();
+		const p2 = makeProfile({ id: "p2", name: "Alpha" });
+		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+		const calls: Array<[string, () => void]> = [];
+		const { getByTestId } = render(
+			<ServicePromptsPane
+				active={true}
+				renderRowDrillDown={(id, selectRow) => {
+					calls.push([id, selectRow]);
+					return <button key={id} data-testid={"drill-" + id} onClick={selectRow}>drill-{id}</button>;
+				}}
+			>
+				{({ master, detail, footer }) => (
+					<div>
+						<div data-testid="master">{master}</div>
+						<div data-testid="detail">{detail}</div>
+						<div data-testid="footer">{footer}</div>
+					</div>
+				)}
+			</ServicePromptsPane>,
+		);
+		await waitFor(() => expect(getByTestId("master").textContent).toContain("Default"));
+		expect(getByTestId("drill-default")).toBeTruthy();
+		expect(getByTestId("drill-p2")).toBeTruthy();
+		// Called at least once per row (React may render twice in test env).
+		expect(new Set(calls.map(([id]) => id))).toEqual(new Set(["default", "p2"]));
+		// The selectRow callback selects the row — clicking the drill for p2
+		// should make p2 the selected detail.
+		await act(async () => { fireEvent.click(getByTestId("drill-p2")); });
+		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+	});
+
 	// Pins the detail-retry path: the retry button must actually re-run the
 	// fetch effect (a same-value setSelectedId would be a silent no-op).
 	test("detail error → retry refetches and recovers", async () => {

@@ -84,9 +84,13 @@ function overridesEqual(a: FieldOverrides, b: FieldOverrides): boolean {
 export function ServicePromptsPane({
 	active,
 	children,
+	renderRowDrillDown,
+	onDirtyChange,
 }: {
 	active: boolean;
 	children: (slots: ServicePromptsPaneSlots) => ReactNode;
+	renderRowDrillDown?: (profileId: string, selectRow: () => void) => ReactNode;
+	onDirtyChange?: (dirty: boolean) => void;
 }): ReactNode {
 	const { t, tDynamic } = useT();
 	const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -125,6 +129,10 @@ export function ServicePromptsPane({
 		if (draftName !== detail.profile.name) return true;
 		return !overridesEqual(draftOverrides, detail.profile.overrides);
 	}, [detail, draftName, draftOverrides]);
+
+	useEffect(() => {
+		onDirtyChange?.(dirty);
+	}, [dirty, onDirtyChange]);
 
 	// Default pinned first, the rest in server order.
 	const orderedProfiles = useMemo(() => {
@@ -496,6 +504,7 @@ export function ServicePromptsPane({
 										</button>
 									</span>
 								)}
+								{renderRowDrillDown?.(p.id, () => handleSelectRow(p.id))}
 							</div>
 						);
 					})}

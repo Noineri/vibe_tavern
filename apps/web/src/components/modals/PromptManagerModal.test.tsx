@@ -15,6 +15,8 @@ import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import type { ReactNode } from "react";
 import React from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import { SERVICE_PROMPT_FIELD_KEYS, type ServicePromptFieldKey } from "@vibe-tavern/domain";
+import type { ServicePromptProfile } from "@vibe-tavern/api-contracts";
 import type { RegexPresetRecord } from "../../api/types.js";
 import type { DraftData } from "./PromptManagerModal.js";
 import { useModalStore } from "../../stores/modal-store.js";
@@ -56,6 +58,9 @@ const updateRegexProfileMock = mock(async (id: string, body: { name?: string; di
 });
 const deleteRegexProfileMock = mock(async () => undefined as unknown as Awaited<ReturnType<typeof realRegexApi.deleteRegexProfile>>);
 const setRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.setRegexProfileLinks>>);
+const realServiceApi = await import("../../api/service-prompt-api.js");
+const listServiceProfilesMock = mock(realServiceApi.listServicePromptProfiles);
+const getServiceDetailMock = mock(realServiceApi.getServicePromptProfileDetail);
 const realDownload = await import("../../lib/download.js");
 const downloadTextFileMock = mock(realDownload.downloadTextFile);
 
@@ -98,6 +103,13 @@ mock.module("../../api/regex-api.js", () => {
     updateRegexProfile: updateRegexProfileMock,
     deleteRegexProfile: deleteRegexProfileMock,
     setRegexProfileLinks: setRegexProfileLinksMock,
+  };
+});
+mock.module("../../api/service-prompt-api.js", () => {
+  return {
+    ...realServiceApi,
+    listServicePromptProfiles: listServiceProfilesMock,
+    getServicePromptProfileDetail: getServiceDetailMock,
   };
 });
 mock.module("../../lib/download.js", () => ({
@@ -144,6 +156,8 @@ afterEach(async () => {
   deleteRegexProfileMock.mockResolvedValue(undefined);
   setRegexProfileLinksMock.mockReset();
   setRegexProfileLinksMock.mockResolvedValue([]);
+  listServiceProfilesMock.mockReset();
+  getServiceDetailMock.mockReset();
   downloadTextFileMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
@@ -981,6 +995,125 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(2);
     expect(parsed.every((o) => typeof o.scriptName === "string")).toBe(true);
+  });
+});
+
+// ── SP-9: service prompts tab ───────────────────────────────────────────
+describe("PromptManagerModal — service prompts tab (SP-9)", () => {
+  function makeServiceProfile(overrides: Partial<ServicePromptProfile> = {}): ServicePromptProfile {
+    return {
+      id: "default",
+      name: "Default",
+      isDefault: true,
+      overrides: {},
+      createdAt: "",
+      updatedAt: "",
+      ...overrides,
+    };
+  }
+  function makeResolved(overrides: Partial<Record<ServicePromptFieldKey, string>> = {}): Record<ServicePromptFieldKey, { override: string | null; default: string }> {
+    const map: Record<string, { override: string | null; default: string }> = {};
+    for (const k of SERVICE_PROMPT_FIELD_KEYS) {
+      map[k] = { override: overrides[k] ?? null, default: `default-${k}-value` };
+    }
+    return map;
+  }
+
+  test("three tab labels render", async () => {
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    expect(within(view.baseElement).getByText("promptManager.tabPresets")).toBeTruthy();
+    expect(within(view.baseElement).getByText("promptManager.regex.tabLabel")).toBeTruthy();
+    expect(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel")).toBeTruthy();
+  });
+
+  test("service tab stays lazy: no service fetch until switched", async () => {
+    listServiceProfilesMock.mockResolvedValue({ profiles: [makeServiceProfile()], activeProfileId: null });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    // Rendered on presets tab — service API not touched.
+    expect(listServiceProfilesMock).not.toHaveBeenCalled();
+    expect(getServiceDetailMock).not.toHaveBeenCalled();
+  });
+
+  test("switching to service tab fetches list and renders master + footer", async () => {
+    const def = makeServiceProfile();
+    const p2 = { ...makeServiceProfile(), id: "p2", name: "Alpha", isDefault: false };
+    listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+    getServiceDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel"));
+    await waitFor(() => expect(listServiceProfilesMock).toHaveBeenCalled());
+    await waitFor(() => expect(within(view.baseElement).getByText("promptManager.servicePrompts.masterTitle")).toBeTruthy());
+    // Master shows both profiles (Default + Alpha)
+    await waitFor(() => expect(within(view.baseElement).getByText("Alpha")).toBeTruthy());
+    // Detail and footer from pane are rendered
+    await waitFor(() => expect(getServiceDetailMock).toHaveBeenCalled());
+  });
+
+  test("service detail switches dirty tracking via pane", async () => {
+    const def = makeServiceProfile();
+    const p2 = { ...makeServiceProfile(), id: "p2", name: "Alpha", isDefault: false, overrides: { summary: "hi" } };
+    listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+    getServiceDetailMock.mockImplementation(async (id: string) => {
+      if (id === "default") return { profile: def, resolved: makeResolved() };
+      return { profile: p2, resolved: makeResolved({ summary: "hi" }) };
+    });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel"));
+    await waitFor(() => expect(listServiceProfilesMock).toHaveBeenCalled());
+    // Click Alpha row to load its detail
+    await waitFor(() => expect(within(view.baseElement).getByText("Alpha")).toBeTruthy());
+    const alphaEl = within(view.baseElement).getByText("Alpha");
+    await act(async () => { fireEvent.click(alphaEl); });
+    await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+    // Detail should now show the service editor (check a family heading or textarea)
+    await waitFor(() => {
+      const tas = view.baseElement.querySelectorAll("textarea");
+      expect(tas.length).toBeGreaterThan(0);
+    });
   });
 });
 
