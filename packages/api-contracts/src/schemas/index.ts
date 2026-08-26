@@ -380,6 +380,14 @@ export type {
 } from "./service-prompt-schema.js";
 
 export {
+  regexAssistArchetypeSchema,
+  regexAssistRuleDraftSchema,
+  regexAssistRequestSchema,
+  regexAssistResponseSchema,
+} from "./regex-assist-schema.js";
+export type { RegexAssistArchetype, RegexAssistRuleDraft, RegexAssistRequest, RegexAssistResponse } from "./regex-assist-schema.js";
+
+export {
   canonicalUtcInstantSchema,
   canonicalDecimalSchema,
   providerQuotaWindowKindSchema,

@@ -9,6 +9,7 @@ import { ToggleChips } from "../../shared/ToggleChips.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { inputCls, monoUICls, lblCls } from "../../build/fields/field-styles.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { RegexAiAssistantModal } from "./RegexAiAssistantModal.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useMacroContext } from "../../../stores/chat-selectors.js";
@@ -151,6 +152,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
   const { t } = useT();
   const isMobile = useIsMobile();
   const [testInput, setTestInput] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
 
   // ── Bindings (RX-12) ──
   // Forward-direction binding: this preset → characters + prompt presets.
@@ -379,6 +381,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           />
         </div>
         <div className="flex shrink-0 items-center gap-2 pb-[7px]">
+          <button type="button" className="shrink-0 rounded-md border border-border bg-s2 px-3 py-1.5 text-xs text-t2" onClick={() => setAiOpen(true)}>{t("regexAssistant.open")}</button>
           <Toggle
             id="regex-active"
             checked={!draft.disabled}
@@ -659,6 +662,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           )}
         </div>
       </div>
+      <RegexAiAssistantModal isOpen={aiOpen} onClose={() => setAiOpen(false)} currentRule={draft} onApply={(patch) => onDraftChange({ ...draft, ...patch })} />
     </div>
   );
 }

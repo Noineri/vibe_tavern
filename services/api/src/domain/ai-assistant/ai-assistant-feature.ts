@@ -16,6 +16,11 @@ export function createAiAssistantFeature(
         return c.json(await runtime.countAiAssistantTokens(body));
       });
 
+      router.post("/api/ai/regex-assist", async (c) => {
+        const body = await c.req.json();
+        return c.json(await runtime.regexAssist(body));
+      });
+
       router.post("/api/ai-assistant", async (c) => {
         const body = await c.req.json();
         const stream = runtime.streamAiAssistant(body);

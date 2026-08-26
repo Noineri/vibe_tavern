@@ -447,6 +447,7 @@ export interface AssetRuntimeApi {
 export interface AiAssistantRuntimeApi {
 	streamAiAssistant: (body: AiAssistantStreamRequest) => AsyncIterable<AiAssistantStreamChunk>;
 	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }>;
+	regexAssist: (body: import("@vibe-tavern/api-contracts").RegexAssistRequest) => Promise<import("@vibe-tavern/api-contracts").RegexAssistResponse>;
 }
 
 // ─── Settings ────────────────────────────────────────────────────────
