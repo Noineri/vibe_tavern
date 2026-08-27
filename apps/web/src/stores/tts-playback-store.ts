@@ -14,8 +14,10 @@
 import { create } from "zustand";
 import type { TtsProfileRecord } from "../api/tts-api.js";
 import { generateTtsSpeech } from "../api/tts-api.js";
-import { KokoroTtsClient } from "../lib/tts/kokoro/kokoro-client.js";
-import { createKokoroWorker } from "../lib/tts/kokoro/kokoro-worker-factory.js";
+import {
+  __resetSharedKokoroClientForTests,
+  getSharedKokoroClient,
+} from "../lib/tts/kokoro/kokoro-client-instance.js";
 import { createHtmlAudioNarrationPlayer } from "../lib/tts/narration-player.js";
 import type { NarrationPlayer } from "../lib/tts/narration-player.js";
 import { createTtsOrchestrator } from "../lib/tts/tts-orchestrator.js";
@@ -44,17 +46,6 @@ export type TtsPlaybackStore = TtsPlaybackState & TtsPlaybackActions;
 type SynthesizeFn = (text: string, profile: TtsProfileRecord) => Promise<{ blob: Blob; mime: string }>;
 type Orchestrator = ReturnType<typeof createTtsOrchestrator>;
 
-// ── Kokoro client singleton (lazy — no worker until first kokoro narrate) ───
-
-let kokoroClient: KokoroTtsClient | null = null;
-
-function getKokoroClient(): KokoroTtsClient {
-  if (!kokoroClient) {
-    kokoroClient = new KokoroTtsClient(createKokoroWorker);
-  }
-  return kokoroClient;
-}
-
 function readSpeed(profile: TtsProfileRecord): number | undefined {
   const raw = profile.config["speed"];
   if (typeof raw === "number" && Number.isFinite(raw)) return raw;
@@ -63,7 +54,7 @@ function readSpeed(profile: TtsProfileRecord): number | undefined {
 
 async function defaultSynthesize(text: string, profile: TtsProfileRecord): Promise<{ blob: Blob; mime: string }> {
   if (profile.backend === "kokoro") {
-    const client = getKokoroClient();
+    const client = getSharedKokoroClient();
     if (!client.isLoaded()) await client.load();
     const out = await client.generate(text, profile.voiceId, readSpeed(profile));
     return { blob: out.blob, mime: "audio/wav" };
@@ -125,7 +116,7 @@ export function __setTtsPlaybackDepsForTests(deps: {
 }
 
 export function __resetKokoroClientForTests(): void {
-  kokoroClient = null;
+  __resetSharedKokoroClientForTests();
 }
 
 // ── Store ──────────────────────────────────────────────────────────────────

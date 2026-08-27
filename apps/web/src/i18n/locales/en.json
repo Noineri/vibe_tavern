@@ -2558,5 +2558,10 @@
   "regexAssistant.model": "Model",
   "regexAssistant.selectProvider": "Select provider",
   "regexAssistant.searchProvider": "Search provider",
-  "regexAssistant.searchModel": "Search model"
+  "regexAssistant.searchModel": "Search model",
+  "tts_preview": "Preview voice",
+  "tts_preview_generating": "Generating…",
+  "tts_preview_playing": "Playing…",
+  "tts_preview_save_first": "Save the profile to preview server voices",
+  "tts_preview_failed": "Preview failed"
 }

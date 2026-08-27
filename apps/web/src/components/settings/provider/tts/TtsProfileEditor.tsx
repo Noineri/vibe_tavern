@@ -10,6 +10,8 @@ import { NumberInput } from "../../../shared/NumberInput.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
 import { listTtsVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
+import { Ic } from "../../../shared/icons.js";
+import { useTtsPreview } from "./use-tts-preview.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
@@ -119,6 +121,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const formId = tts.form?.id ?? null;
   const formBackend = tts.form?.backend;
   const needsRemoteVoices = formBackend !== undefined && formBackend !== TTS_BACKEND.Kokoro;
+  const preview = useTtsPreview();
 
   // Hooks stay ABOVE the early return — `if (!tts.form) return null` between
   // useState and useEffect would be a hooks-order violation the day any
@@ -164,6 +167,10 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const isOpenAi = form.backend === TTS_BACKEND.OpenAiCompatible;
   const isGemini = form.backend === TTS_BACKEND.Gemini;
   const isElevenLabs = form.backend === TTS_BACKEND.ElevenLabs;
+  // Server backends preview from the SAVED profile (the generate API keys on
+  // profileId) — unsaved or dirty forms cannot preview; kokoro synthesizes
+  // client-side from form values, so it previews without saving.
+  const serverNeedsSave = !isKokoro && (form.id === null || tts.dirty);
 
 
   const kokoroEnglishVoices = KOKORO_VOICES.filter((v) => v.lang === "a" || v.lang === "b");
@@ -425,6 +432,38 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           </div>
         </>
       )}
+
+      <div className="flex flex-col gap-1">
+        <button
+          type="button"
+          data-testid="tts-preview-btn"
+          disabled={preview.state !== "idle" || serverNeedsSave}
+          className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
+          onClick={() =>
+            preview.preview({
+              backend: form.backend,
+              voiceId: form.voiceId,
+              speed: configNumber(form.config, "speed", 1),
+              profileId: form.id,
+            })
+          }
+        >
+          <Ic.speaker className="h-3.5 w-3.5" />
+          {preview.state === "generating"
+            ? t("tts_preview_generating")
+            : preview.state === "playing"
+              ? t("tts_preview_playing")
+              : t("tts_preview")}
+        </button>
+        {serverNeedsSave && (
+          <div className="font-ui text-[11px] text-t3">{t("tts_preview_save_first")}</div>
+        )}
+        {preview.error && (
+          <div data-testid="tts-preview-error" className="font-ui text-[11px] text-danger">
+            {t("tts_preview_failed")}: {preview.error}
+          </div>
+        )}
+      </div>
 
       {tts.error && (
         <div data-testid="tts-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">
