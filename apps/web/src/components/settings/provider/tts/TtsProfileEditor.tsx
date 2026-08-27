@@ -13,31 +13,11 @@ import { listTtsVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { Ic } from "../../../shared/icons.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
+import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
+import { configString, updateConfigField } from "./tts-form-helpers.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
-
-function updateConfigField(
-  tts: TtsHook,
-  form: NonNullable<TtsHook["form"]>,
-  key: string,
-  value: unknown,
-): void {
-  const next = { ...form.config };
-  if (value === undefined || value === null || (typeof value === "string" && value === "")) {
-    delete next[key];
-  } else {
-    next[key] = value;
-  }
-  tts.setForm({ config: next });
-}
-
-/** Reads an optional string/number config key with a display fallback. The
- *  `typeof` guard narrows `unknown` — no casts needed. */
-function configString(config: Record<string, unknown>, key: string, fallback = ""): string {
-  const value = config[key];
-  return typeof value === "string" ? value : fallback;
-}
 
 function configNumber(config: Record<string, unknown>, key: string, fallback: number): number {
   const value = config[key];
@@ -433,6 +413,8 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           </div>
         </>
       )}
+
+      {isOpenAi && <TtsLocalServerPanel tts={tts} form={form} />}
 
       <div className="flex flex-col gap-1">
         <button
