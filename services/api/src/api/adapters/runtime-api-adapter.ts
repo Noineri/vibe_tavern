@@ -14,6 +14,7 @@ import { PersonaAdapter } from "./persona-adapter.js";
 import { LorebookAdapter } from "./lorebook-adapter.js";
 import { ScriptAdapter } from "./script-adapter.js";
 import { RegexAdapter } from "./regex-adapter.js";
+import { TtsAdapter } from "./tts-adapter.js";
 import { ProviderAdapter } from "./provider-adapter.js";
 import { ProxyAdapter } from "./proxy-adapter.js";
 import { PresetAdapter } from "./preset-adapter.js";
@@ -58,6 +59,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly lorebook: LorebookAdapter;
 	readonly script: ScriptAdapter;
 	readonly regex: RegexAdapter;
+	readonly tts: TtsAdapter;
 	readonly provider: ProviderAdapter;
 	readonly proxy: ProxyAdapter;
 	readonly preset: PresetAdapter;
@@ -107,6 +109,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.script = new ScriptAdapter(stores);
 		this.servicePrompts = new ServicePromptAdapter(stores);
 		this.regex = new RegexAdapter(stores);
+		this.tts = new TtsAdapter(stores);
 		this.provider = new ProviderAdapter(stores, providerProfileService);
 		this.proxy = new ProxyAdapter(proxyService);
 		this.preset = new PresetAdapter(promptPresetService);

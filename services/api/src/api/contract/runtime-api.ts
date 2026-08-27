@@ -375,6 +375,22 @@ export interface RegexRuntimeApi {
 	listRegexProfileMemberIds: (profileId: string) => Promise<string[]>;
 }
 
+// ─── TTS profiles (TTS_PLAN TS-6) ──────────────────────────────────────────
+
+export interface TtsRuntimeApi {
+	listTtsProfiles: () => Promise<import("@vibe-tavern/domain").TtsProfile[]>;
+	getTtsProfile: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
+	createTtsProfile: (body: import("@vibe-tavern/api-contracts").CreateTtsProfileInput) => Promise<import("@vibe-tavern/domain").TtsProfile>;
+	updateTtsProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateTtsProfileInput) => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
+	deleteTtsProfile: (id: string) => Promise<void>;
+	setTtsDefault: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
+	getDefaultTtsProfile: () => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
+	getTtsLinks: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
+	setTtsLinks: (id: string, links: Array<{ targetType: import("@vibe-tavern/domain").TtsTargetType; targetId: string }>) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
+	generateTtsSpeech: (body: import("@vibe-tavern/api-contracts").GenerateTtsInput) => Promise<{ audio: Buffer; mime: string } | null>;
+	listTtsVoices: (profileId: string) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null>;
+}
+
 // ─── Provider ────────────────────────────────────────────────────────
 
 export interface ProviderRuntimeApi {
@@ -937,6 +953,7 @@ export interface RuntimeApi {
 	lorebook: LorebookRuntimeApi;
 	script: ScriptRuntimeApi;
 	regex: RegexRuntimeApi;
+	tts: TtsRuntimeApi;
 	provider: ProviderRuntimeApi;
 	proxy: ProxyRuntimeApi;
 	preset: PresetRuntimeApi;

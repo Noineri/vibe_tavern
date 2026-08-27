@@ -89,3 +89,11 @@ export const setTtsLinksSchema = z.object({
   ),
 });
 export type SetTtsLinksInput = z.infer<typeof setTtsLinksSchema>;
+
+export const generateTtsSchema = z.object({
+  profileId: z.string().min(1),
+  text: z.string().min(1),
+  speed: z.number().optional(),
+  instructions: z.string().optional(),
+});
+export type GenerateTtsInput = z.infer<typeof generateTtsSchema>;
