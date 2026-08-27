@@ -165,21 +165,12 @@ async function main() {
 	});
 
 	await step("Copying AI assistant prompt files", async () => {
-		const files = (await readdir(API_ASSETS)).filter((f) => f.endsWith(".md"));
-		if (files.length === 0) {
-			throw new Error(`No .md prompt files found in ${API_ASSETS}`);
-		}
-		for (const file of files) {
-			await cp(join(API_ASSETS, file), join(DIST, file));
-		}
-		console.log(`   → ${files.length} prompt file(s)`);
-		// Co-Author assets nest under coauthor/{modules,skills}/ — the flat
-		// readdir above skips subdirectories, so copy the whole folder.
-		const coauthorSource = join(API_ASSETS, "coauthor");
-		if (await pathExists(coauthorSource)) {
-			await cp(coauthorSource, join(DIST, "coauthor"), { recursive: true });
-			console.log(`   → ${join(DIST, "coauthor")}`);
-		}
+		// Flat *.md + every nested prompt tree (coauthor/, experience-copilot/)
+		// via the shared copier — see _prompt-assets.ts history. Prompts stay
+		// FLAT in the dist root (not under prompts/) — that is what the loader's
+		// `resolve(import.meta.dir, filename)` candidate resolves against.
+		const targets = await copyPromptAssets(API_ASSETS, DIST);
+		console.log(`   → ${targets.length} prompt file(s)/tree(s)`);
 	});
 
 	await step("Bundling server", async () => {

@@ -12,7 +12,7 @@
  *   bun run build:android-arm64
  */
 
-import { chmod, copyFile, cp, mkdir, rm } from "node:fs/promises";
+import { chmod, cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathExists } from "./_fs.js";
@@ -99,25 +99,11 @@ async function main() {
 	});
 
 	await step("Copying AI assistant prompt files", async () => {
-		const { readdir } = await import("node:fs/promises");
 		const promptDir = join(ROOT, "services", "api", "assets");
-		const files = (await readdir(promptDir)).filter((f: string) => f.endsWith(".md"));
-		if (files.length === 0) {
-			throw new Error(`No .md prompt files found in ${promptDir}`);
-		}
-		await mkdir(join(ANDROID_DIST, "prompts"), { recursive: true });
-		for (const file of files) {
-			await copyFile(join(promptDir, file), join(ANDROID_DIST, "prompts", file));
-			console.log(`   → ${join(ANDROID_DIST, "prompts", file)}`);
-		}
-		// Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
-		// flat readdir above skips subdirectories, so copy the whole folder.
-		const coauthorSource = join(promptDir, "coauthor");
-		const coauthorTarget = join(ANDROID_DIST, "prompts", "coauthor");
-		if (await pathExists(coauthorSource)) {
-			await cp(coauthorSource, coauthorTarget, { recursive: true });
-			console.log(`   → ${coauthorTarget}`);
-		}
+		// Flat *.md + every nested prompt tree (coauthor/, experience-copilot/)
+		// via the shared copier — see _prompt-assets.ts history.
+		const targets = await copyPromptAssets(promptDir, join(ANDROID_DIST, "prompts"));
+		console.log(`   → ${targets.length} prompt file(s)/tree(s)`);
 	});
 
 	await step("Copying DB migrations", async () => {

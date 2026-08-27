@@ -17,9 +17,10 @@
  * no source code, no node_modules, no dev tooling.
  */
 
-import { copyFile, cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathExists } from "./_fs.js";
+import { copyPromptAssets } from "./_prompt-assets.js";
 import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -103,24 +104,12 @@ async function main() {
 	// ── Step 5: Copy AI assistant prompt files ─────────────────────────────
 
 	await step("Copying AI assistant prompt files", async () => {
-		const { readdir } = await import("node:fs/promises");
 		const promptDir = join(ROOT, "services", "api", "assets");
-		const files = (await readdir(promptDir)).filter((f: string) => f.endsWith(".md"));
-		if (files.length === 0) {
-			throw new Error(`No .md prompt files found in ${promptDir}`);
-		}
-		await mkdir(join(DIST, "prompts"), { recursive: true });
-		for (const file of files) {
-			await copyFile(join(promptDir, file), join(DIST, "prompts", file));
-			console.log(`   → ${join(DIST, "prompts", file)}`);
-		}
-		// Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
-		// flat readdir above skips subdirectories, so copy the whole folder.
-		const coauthorSource = join(promptDir, "coauthor");
-		const coauthorTarget = join(DIST, "prompts", "coauthor");
-		if (await pathExists(coauthorSource)) {
-			await cp(coauthorSource, coauthorTarget, { recursive: true });
-			console.log(`   → ${coauthorTarget}`);
+		// Flat *.md + every nested prompt tree (coauthor/, experience-copilot/)
+		// via the shared copier — see _prompt-assets.ts history.
+		const targets = await copyPromptAssets(promptDir, join(DIST, "prompts"));
+		for (const target of targets) {
+			console.log(`   → ${target}`);
 		}
 	});
 
