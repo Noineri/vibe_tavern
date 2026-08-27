@@ -14,9 +14,10 @@
  */
 
 import { join, relative, resolve } from "node:path";
-import { copyFile, cp, mkdir } from "node:fs/promises";
+import { cp } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { pathExists } from "./_fs.js";
+import { copyPromptAssets } from "./_prompt-assets.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -40,25 +41,9 @@ async function copyApiRuntimeAssets() {
     throw new Error(`DB migrations source not found: ${migrationsSource}`);
   }
 
-  const promptTargets = [];
-  for (const file of promptFiles) {
-    const target = join(apiOut, file);
-    await mkdir(resolve(target, ".."), { recursive: true });
-    await copyFile(join(promptDir, file), target);
-    promptTargets.push(target);
-  }
-  // Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
-  // flat readdir above skips subdirectories, so copy the whole folder.
-  // Same for the experience-copilot folder (base.md + skills + user-flow.md);
-  // both resolve in prod via the loader's import.meta.dir candidate.
-  for (const assetFolder of ["coauthor", "experience-copilot"]) {
-    const source = join(promptDir, assetFolder);
-    const target = join(apiOut, assetFolder);
-    if (await pathExists(source)) {
-      await cp(source, target, { recursive: true });
-      promptTargets.push(target);
-    }
-  }
+  // Flat *.md + every nested prompt tree (coauthor/, experience-copilot/,
+  // whatever comes next) — one shared copier, see _prompt-assets.ts history.
+  const promptTargets = await copyPromptAssets(promptDir, apiOut);
   for (const tokenizerTarget of tokenizerTargets) {
     await cp(tokenizerSource, tokenizerTarget, { recursive: true });
   }
