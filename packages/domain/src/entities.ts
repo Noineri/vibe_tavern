@@ -24,6 +24,7 @@ import type {
   ScriptId,
   SummaryMemorySnapshotId,
   ToolProfileId,
+  TtsProfileId,
 } from "./ids.js";
 
 import type {
@@ -499,6 +500,76 @@ export function applyTargetFlags(target: RegexApplyTarget): { markdownOnly: bool
     case "display_prompt":
       return { markdownOnly: true, promptOnly: true };
   }
+}
+
+// ─── TTS profiles (TTS_PLAN TS-1) ──────────────────────────────────────────
+//
+// Named text-to-speech voices ("Kokoro — Sarah", "Gemini — Kore"), each pairing
+// a backend with its config + selected voice. TTS config deliberately lives
+// here, NOT on provider profiles — `providerProfiles` is LLM-generation-
+// specific (TTS_DESIGN Resolution, locked). `config` is a loose record on
+// purpose: per-backend shapes are owned by the backend registry's contracts
+// (TS-2+); the domain entity only guarantees JSON round-tripping.
+
+/** Backend discriminators for the v1 roster (TTS_DESIGN tier ladder). */
+export const TTS_BACKEND = {
+  /** Tier 0 — in-browser Kokoro via kokoro-js (Web Worker, no server). */
+  Kokoro: "kokoro",
+  /** Tier 3/1 — any OpenAI-compatible `/v1/audio/speech` endpoint (cloud or local server). */
+  OpenAiCompatible: "openai-compatible",
+  /** Tier 1 — native Gemini TTS (Interactions API). */
+  Gemini: "gemini",
+  /** Tier 2 — native ElevenLabs. */
+  ElevenLabs: "elevenlabs",
+} as const;
+export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
+
+/** Voice-map binding targets for a TTS profile — character and persona. The
+ *  voice map answers "who speaks with which voice", so unlike the regex /
+ *  lorebook junctions (character + prompt preset) it carries persona (the
+ *  user's own voice) and has no preset target. */
+export const TTS_TARGET_TYPE = {
+  Character: "character",
+  Persona: "persona",
+} as const;
+export type TtsTargetType = (typeof TTS_TARGET_TYPE)[keyof typeof TTS_TARGET_TYPE];
+
+/** Backend-specific config bag (API key ref, model, endpoint, sliders, ...).
+ *  `unknown` values are correct at this type-erased boundary: the real shapes
+ *  live in the per-backend zod contracts + backend registry (TS-2+). */
+export type TtsProfileConfig = Record<string, unknown>;
+
+/** One named TTS voice profile. */
+export interface TtsProfile {
+  id: TtsProfileId;
+  /** Human-readable profile name ("Kokoro — Sarah"). */
+  name: string;
+  /** Backend discriminator (see {@link TTS_BACKEND}). */
+  backend: TtsBackendSlug;
+  /** Backend-specific config bag, persisted as JSON. */
+  config: TtsProfileConfig;
+  /** Selected voice id — backend-specific ("af_heart", "Kore", ElevenLabs
+   *  voice_id, ...); empty until the user picks one (the editor gates
+   *  "ready" / preview on it). */
+  voiceId: string;
+  /** Language hint (BCP-47-ish); English-first per owner decision. */
+  lang: string;
+  /** Deterministic order in the profile list. */
+  sortOrder: number;
+  /** The voice map's [Default Voice] — at most one profile at a time
+   *  (store-maintained pointer; the fallback voice when no override binds). */
+  isDefault: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Many-to-many voice-map binding — which characters/personas speak with
+ *  which profile. Junction-pattern instance with a persona-aware target
+ *  vocabulary (see {@link TTS_TARGET_TYPE}). */
+export interface TtsProfileLink {
+  ttsProfileId: TtsProfileId;
+  targetType: TtsTargetType;
+  targetId: string;
 }
 
 // ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────────

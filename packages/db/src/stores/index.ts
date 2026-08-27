@@ -77,6 +77,9 @@ export type {
   DeleteRegexProfileMode,
 } from './regex-store.js';
 
+export { TtsStore } from './tts-store.js';
+export type { CreateTtsProfileData, UpdateTtsProfileData } from './tts-store.js';
+
 export { CoauthorModuleStore } from './coauthor-module-store.js';
 export type {
   CoauthorModuleRow,

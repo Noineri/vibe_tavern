@@ -549,6 +549,46 @@ export const servicePromptProfiles = sqliteTable('service_prompt_profiles', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── ttsProfiles / ttsProfileLinks ──────────────────────────────────────
+//
+// Named TTS voice profiles (TTS_PLAN TS-1; design TTS_DESIGN). Standalone
+// entity — NOT providerProfiles, which is LLM-generation-specific. Columns
+// map 1:1 onto the `TtsProfile` domain interface: the backend-specific config
+// bag persists as JSON (`configJson`) and is validated per-backend by the
+// registry contracts (TS-2+), not by the DB. `isDefault` is the voice map's
+// [Default Voice] pointer — at most one row, store-maintained.
+//
+// `ttsProfileLinks` is the voice-map junction ({profileId, targetType,
+// targetId}, composite PK, cascade FK); targets are characters AND personas
+// (the user's own voice) — a deliberately different vocabulary from the
+// regex/lorebook junctions, which bind characters and prompt presets.
+export const ttsProfiles = sqliteTable('tts_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  backend: text('backend').notNull(),  // TTS_BACKEND slug
+  configJson: text('config_json').notNull().default('{}'),
+  voiceId: text('voice_id').notNull().default(''),
+  lang: text('lang').notNull().default('en'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isDefault: integer('is_default').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  defaultIdx: index('idx_tts_profiles_default').on(table.isDefault),
+  backendIdx: index('idx_tts_profiles_backend').on(table.backend),
+}));
+
+export const ttsProfileLinks = sqliteTable('tts_profile_links', {
+  ttsProfileId: text('tts_profile_id').notNull().references(() => ttsProfiles.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // 'character' | 'persona'
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  // Composite PK: one link per (profile, target) pair.
+  pk: primaryKey({ columns: [table.ttsProfileId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_tts_profile_links_target').on(table.targetType, table.targetId),
+  profileIdx: index('idx_tts_profile_links_profile').on(table.ttsProfileId),
+}));
+
 // ─── chatBranches ──────────────────────────────────────────────────────────────
 
 export const chatBranches = sqliteTable('chat_branches', {
