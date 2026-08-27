@@ -2621,5 +2621,7 @@
   "tts_quickstart_copied": "Скопировано",
   "tts_quickstart_port": "порт",
   "tts_quickstart_copy_unsupported": "Копирование не поддерживается в этом браузере",
-  "tts_quickstart_copy_failed": "Не удалось скопировать"
+  "tts_quickstart_copy_failed": "Не удалось скопировать",
+  "summary_history_auto": "Авто",
+  "summary_history_auto_hint": "Все сообщения, без лимита. Выключите, чтобы задать фиксированный лимит."
 }

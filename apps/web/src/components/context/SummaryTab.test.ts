@@ -22,7 +22,7 @@
  * (components/context/); the test moved with them.
  */
 import { describe, expect, test } from "bun:test";
-import { computeRangeAfterChange, upsertSummary } from "./SummaryTab.js";
+import { computeRangeAfterChange, resolveHistoryLimitState, upsertSummary } from "./SummaryTab.js";
 import type { ChatSummaryRecord } from "../../app-client.js";
 
 describe("upsertSummary — archive list ordering", () => {
@@ -109,5 +109,44 @@ describe("computeRangeAfterChange — scope change resets range", () => {
 		// cross-branch recovery; this pins same-scope clamp behavior.
 		const afterDip = computeRangeAfterChange(5, 10, false, 1);
 		expect(afterDip).toEqual({ from: 1, to: 1 });
+	});
+});
+
+describe("resolveHistoryLimitState — history-limit latch (0 = unlimited)", () => {
+	// The reported bug: touching the slider once persisted a fixed cap that
+	// silently truncated newer messages, and the UI had NO path back to the
+	// unlimited state (dragging to "max" persisted the CURRENT messageCount,
+	// not 0; only dragging to the hidden min=0 restored Infinity). The latch
+	// makes 0 an explicit, one-click-restorable state.
+	test("null (latched) shows the full branch as the effective limit", () => {
+		const r = resolveHistoryLimitState(null, 68);
+		expect(r.latched).toBe(true);
+		expect(r.displayLimit).toBe(68);
+	});
+
+	test("0 (persisted unlimited) maps to the latched state", () => {
+		const r = resolveHistoryLimitState(0, 12);
+		expect(r.latched).toBe(true);
+		expect(r.displayLimit).toBe(12);
+	});
+
+	test("a manual limit smaller than the branch passes through unchanged", () => {
+		const r = resolveHistoryLimitState(30, 68);
+		expect(r.latched).toBe(false);
+		expect(r.displayLimit).toBe(30);
+	});
+
+	test("a manual limit larger than the branch (fork shrink) displays clamped", () => {
+		// Pins the pre-latch clamp behavior: a 68-msg chat forked to a 2-msg
+		// branch keeps its persisted 50; the DISPLAY never exceeds reality.
+		const r = resolveHistoryLimitState(50, 2);
+		expect(r.latched).toBe(false);
+		expect(r.displayLimit).toBe(2);
+	});
+
+	test("clearMessages dip (count 0) never displays below 1", () => {
+		const r = resolveHistoryLimitState(null, 0);
+		expect(r.latched).toBe(true);
+		expect(r.displayLimit).toBe(1);
 	});
 });

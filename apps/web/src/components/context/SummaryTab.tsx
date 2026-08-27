@@ -140,7 +140,10 @@ export function useSummaryTab({
   const [pinnedModel, setPinnedModel] = useState<string | null>(null);
   const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
-  const [historyLimit, setHistoryLimit] = useState(Math.min(messageHistoryLimit || messageCount || 1, Math.max(1, messageCount)));
+  // History-limit latch: null = AUTO (persisted 0 = unlimited server-side,
+  // consumed as `limit || Infinity`), a positive number = manual cap. Touching
+  // the slider/number releases the latch; the Auto toggle re-engages it.
+  const [limitOverride, setLimitOverride] = useState<number | null>(messageHistoryLimit > 0 ? messageHistoryLimit : null);
   const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
   const abortRef = useRef<AbortController | null>(null);
   // Tracks the active chat+branch across renders so the range effect can
@@ -157,6 +160,7 @@ export function useSummaryTab({
   const prevScopeRef = useRef<string | null>(null);
 
   const maxMessage = Math.max(1, messageCount - 1);
+  const { latched, displayLimit } = resolveHistoryLimitState(limitOverride, messageCount);
   const activeSummary = summaries.find((s) => s.id === activeSummaryId) ?? null;
   const effectiveProviderId = useChatModel ? activeProvider?.id ?? selectedProviderId : selectedProviderId;
   const effectiveModel = (useChatModel ? (pinnedModel ?? activeProvider?.defaultModel ?? selectedModel) : (pinnedModel ?? selectedModel))?.trim() ?? "";
@@ -189,8 +193,8 @@ export function useSummaryTab({
   const summaryTokens = useMemo(() => countTokens(draftText), [draftText]);
 
   const tokenEstimate = useMemo(
-    () => computeTokenEstimate(summaryTokens, excludedRanges, historyLimit, countedMessages, selectedRangeMessages),
-    [summaryTokens, excludedRanges, historyLimit, countedMessages, selectedRangeMessages],
+    () => computeTokenEstimate(summaryTokens, excludedRanges, displayLimit, countedMessages, selectedRangeMessages),
+    [summaryTokens, excludedRanges, displayLimit, countedMessages, selectedRangeMessages],
   );
 
   const contextPct = contextWindow.limit > 0 ? Math.min(100, Math.round((contextWindow.used / contextWindow.limit) * 100)) : 0;
@@ -269,8 +273,12 @@ export function useSummaryTab({
     // still carries the old limit). Cap at messageCount so the slider/NumberInput
     // never shows a value larger than reality. The persisted value itself is
     // left untouched — lowering the branch's limit is the user's call, not ours.
-    const cappedLimit = Math.min(messageHistoryLimit || messageCount || 1, Math.max(1, messageCount));
-    setHistoryLimit(cappedLimit);
+    // Sync the editor state from the persisted limit (0 = latched/unlimited):
+    // when latched the thumb rides the branch's full length as messages arrive
+    // (displayLimit is derived), when manual the cap displays clamped to the
+    // real count (fork shrink). The persisted value itself is left untouched —
+    // lowering the branch's limit is the user's call, not ours.
+    setLimitOverride(messageHistoryLimit > 0 ? messageHistoryLimit : null);
     setAutoConfig({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rangeFrom/rangeTo are intentionally read for the diff check above
   }, [activeChatId, activeBranchId, autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
@@ -430,19 +438,30 @@ export function useSummaryTab({
     if (summary.id === activeSummaryId) selectSummary(updated);
   }
 
-  async function commitMemorySettings(next?: { historyLimit?: number; autoConfig?: AutoSummaryConfig }) {
+  /** null historyLimit = the latched auto state (persisted as 0). */
+  async function commitMemorySettings(next?: { historyLimit?: number | null; autoConfig?: AutoSummaryConfig }) {
     if (!activeChatId) return;
-    const nextHL = next?.historyLimit ?? historyLimit;
+    const nextHL = next?.historyLimit !== undefined ? next.historyLimit : limitOverride;
     const nextAC = next?.autoConfig ?? autoConfig;
-    setHistoryLimit(nextHL);
+    setLimitOverride(nextHL);
     setAutoConfig(nextAC);
     try {
       await updateMemorySettingsAction(activeChatId, {
-        messageHistoryLimit: Math.max(0, Math.floor(nextHL)),
+        messageHistoryLimit: nextHL === null ? 0 : Math.max(0, Math.floor(nextHL)),
         autoSummaryConfig: nextAC,
       });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
+    }
+  }
+
+  /** The latch: on = unlimited (persist 0, thumb rides the full branch),
+   *  off = freeze the currently displayed window as a manual cap. */
+  function toggleHistoryLatch(): void {
+    if (latched) {
+      void commitMemorySettings({ historyLimit: displayLimit });
+    } else {
+      void commitMemorySettings({ historyLimit: null });
     }
   }
 
@@ -728,9 +747,9 @@ export function useSummaryTab({
           <div className="flex items-center gap-3">
             <input
               className="accent-accent flex-1"
-              type="range" min={0} max={Math.max(1, messageCount)}
-              value={Math.min(historyLimit, Math.max(1, messageCount))}
-              onChange={(e) => setHistoryLimit(Number(e.target.value))}
+              type="range" min={1} max={Math.max(1, messageCount)}
+              value={displayLimit}
+              onChange={(e) => setLimitOverride(Number(e.target.value))}
               onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
               onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
             />
@@ -738,14 +757,18 @@ export function useSummaryTab({
               className="w-[80px] shrink-0"
               inputClassName="text-center"
               hideControls
-              min={0}
+              min={1}
               max={Math.max(1, messageCount)}
-              value={historyLimit}
+              value={displayLimit}
               onChange={(v) => {
-                setHistoryLimit(v);
+                setLimitOverride(v);
                 void commitMemorySettings({ historyLimit: v });
               }}
             />
+            <div className="flex shrink-0 items-center gap-1.5" title={t("summary_history_auto_hint")}>
+              <Toggle checked={latched} onChange={toggleHistoryLatch} aria-label={t("summary_history_auto")} />
+              <span className="font-ui text-[11px] text-t3">{t("summary_history_auto")}</span>
+            </div>
           </div>
         </section>
       )}
@@ -768,9 +791,9 @@ export function useSummaryTab({
           <span className="shrink-0 font-ui text-[11px] text-t3">{t("summary_messages_in_prompt")}</span>
           <input
             className="accent-accent flex-1"
-            type="range" min={0} max={Math.max(1, messageCount)}
-            value={Math.min(historyLimit, Math.max(1, messageCount))}
-            onChange={(e) => setHistoryLimit(Number(e.target.value))}
+            type="range" min={1} max={Math.max(1, messageCount)}
+            value={displayLimit}
+            onChange={(e) => setLimitOverride(Number(e.target.value))}
             onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
             onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
           />
@@ -778,14 +801,18 @@ export function useSummaryTab({
             className="w-[80px] shrink-0"
             inputClassName="text-center"
             hideControls
-            min={0}
+            min={1}
             max={Math.max(1, messageCount)}
-            value={historyLimit}
+            value={displayLimit}
             onChange={(v) => {
-              setHistoryLimit(v);
+              setLimitOverride(v);
               void commitMemorySettings({ historyLimit: v });
             }}
           />
+          <div className="flex shrink-0 items-center gap-1.5" title={t("summary_history_auto_hint")}>
+            <Toggle checked={latched} onChange={toggleHistoryLatch} aria-label={t("summary_history_auto")} />
+            <span className="font-ui text-[11px] text-t3">{t("summary_history_auto")}</span>
+          </div>
         </div>
       )}
     </div>
@@ -837,6 +864,23 @@ export function computeRangeAfterChange(
     from: clamp(prevFrom, 1, maxMessage),
     to: clamp(Math.max(prevTo, 1), 1, maxMessage),
   };
+}
+
+/** Maps the editor's history-limit state to display state. `null` (or a
+ *  non-positive persisted value — the DB stores 0 = unlimited, consumed
+ *  server-side as `limit || Infinity`) is the LATCHED/auto state: every
+ *  message goes in and the slider thumb rides the branch's full length. A
+ *  positive number is a manual cap, displayed clamped to the branch's real
+ *  message count (a fork can shrink the branch below the persisted cap).
+ *  count<=0 (the switchChat clearMessages dip) floors to 1 so the slider
+ *  never renders a value below its own min. */
+export function resolveHistoryLimitState(
+  limit: number | null,
+  messageCount: number,
+): { latched: boolean; displayLimit: number } {
+  const max = Math.max(1, messageCount);
+  if (limit === null || limit <= 0) return { latched: true, displayLimit: max };
+  return { latched: false, displayLimit: Math.min(limit, max) };
 }
 
 export function upsertSummary(list: ChatSummaryRecord[], summary: ChatSummaryRecord): ChatSummaryRecord[] {

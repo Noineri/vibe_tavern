@@ -2364,6 +2364,8 @@ export default interface Resources {
     "summary_failed_toast": "Failed to generate summary.",
     "summary_generate_range": "Summarize messages {from}–{to}",
     "summary_generated_toast": "Memory updated — {label}",
+    "summary_history_auto": "Auto",
+    "summary_history_auto_hint": "All messages, no limit. Turn off to set a fixed limit.",
     "summary_messages_count": "{count} messages",
     "summary_messages_count_one": "{count} message",
     "summary_messages_count_other": "{count} messages",
