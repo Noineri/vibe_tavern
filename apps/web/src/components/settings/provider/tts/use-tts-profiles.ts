@@ -12,6 +12,8 @@ export interface TtsProfileForm {
   id: string | null;
   name: string;
   backend: TtsBackendSlug;
+  config: Record<string, unknown>;
+  voiceId: string;
 }
 
 /** Wire-boundary normalizer: the server already degrades unknown backend
@@ -75,6 +77,8 @@ export function useTtsProfiles(): {
         id: record.id,
         name: record.name,
         backend: toBackendSlug(record.backend),
+        config: { ...record.config },
+        voiceId: record.voiceId ?? "",
       });
       setDirty(false);
       setError(null);
@@ -84,7 +88,7 @@ export function useTtsProfiles(): {
 
   const startCreate = useCallback(() => {
     setEditingId(null);
-    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro });
+    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "af_heart" });
     setDirty(false);
     setError(null);
   }, []);
@@ -92,6 +96,12 @@ export function useTtsProfiles(): {
   const setForm = useCallback((patch: Partial<TtsProfileForm>) => {
     setFormState((prev) => {
       if (!prev) return prev;
+      // Backend switch resets config and voiceId — stale keys must never leak.
+      if (patch.backend !== undefined && patch.backend !== prev.backend) {
+        const nextBackend = patch.backend;
+        const nextVoiceId = nextBackend === TTS_BACKEND.Kokoro ? "af_heart" : "";
+        return { ...prev, ...patch, config: {}, voiceId: nextVoiceId };
+      }
       return { ...prev, ...patch };
     });
     setDirty(true);
@@ -105,6 +115,8 @@ export function useTtsProfiles(): {
           id: record.id,
           name: record.name,
           backend: toBackendSlug(record.backend),
+          config: { ...record.config },
+          voiceId: record.voiceId ?? "",
         });
       }
       setDirty(false);
@@ -125,14 +137,30 @@ export function useTtsProfiles(): {
     try {
       let saved: TtsProfileRecord;
       if (form.id === null) {
-        saved = await createTtsProfile({ name: trimmedName, backend: form.backend });
+        saved = await createTtsProfile({
+          name: trimmedName,
+          backend: form.backend,
+          config: form.config,
+          voiceId: form.voiceId,
+        });
       } else {
-        saved = await updateTtsProfile(form.id, { name: trimmedName, backend: form.backend });
+        saved = await updateTtsProfile(form.id, {
+          name: trimmedName,
+          backend: form.backend,
+          config: form.config,
+          voiceId: form.voiceId,
+        });
       }
       const list = await listAllTtsProfiles();
       setProfiles(list);
       setEditingId(saved.id);
-      setFormState({ id: saved.id, name: saved.name, backend: toBackendSlug(saved.backend) });
+      setFormState({
+        id: saved.id,
+        name: saved.name,
+        backend: toBackendSlug(saved.backend),
+        config: { ...saved.config },
+        voiceId: saved.voiceId ?? "",
+      });
       setDirty(false);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);

@@ -47,12 +47,18 @@ let failUpdate = false;
 let failMessage = "save boom";
 
 const listAllMock = mock(async () => [...store]);
-const createMock = mock(async (body: { name: string; backend: string }) => {
-  const rec = makeRecord({ id: `p${store.length + 1}`, name: body.name, backend: body.backend });
+const createMock = mock(async (body: { name: string; backend: string; config?: Record<string, unknown>; voiceId?: string }) => {
+  const rec = makeRecord({
+    id: `p${store.length + 1}`,
+    name: body.name,
+    backend: body.backend,
+    config: body.config ?? {},
+    voiceId: body.voiceId ?? "",
+  });
   store.push(rec);
   return rec;
 });
-const updateMock = mock(async (id: string, body: Partial<{ name: string; backend: string }>) => {
+const updateMock = mock(async (id: string, body: Partial<{ name: string; backend: string; config: Record<string, unknown>; voiceId: string }>) => {
   if (failUpdate) throw new Error(failMessage);
   const idx = store.findIndex((p) => p.id === id);
   if (idx === -1) throw new Error("not found");
@@ -186,5 +192,77 @@ describe("useTtsProfiles", () => {
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
     expect(hook?.form).toBeNull();
     expect(hook?.editingId).toBeNull();
+  });
+
+  it("backend switch resets config and voiceId (kokoro defaults af_heart)", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro", config: { speed: 1.5 }, voiceId: "af_heart" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.backend).toBe("kokoro"));
+    expect(hook!.form?.config).toEqual({ speed: 1.5 });
+    expect(hook!.form?.voiceId).toBe("af_heart");
+    hook!.setForm({ backend: "gemini" as never });
+    await waitFor(() => expect(hook?.form?.backend).toBe("gemini"));
+    expect(hook!.form?.config).toEqual({});
+    expect(hook!.form?.voiceId).toBe("");
+    hook!.setForm({ backend: "kokoro" as never });
+    await waitFor(() => expect(hook?.form?.backend).toBe("kokoro"));
+    expect(hook!.form?.config).toEqual({});
+    expect(hook!.form?.voiceId).toBe("af_heart");
+  });
+
+  it("save passes config and voiceId through create and update", async () => {
+    store = [];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    // Set config + voiceId on the new form
+    hook!.setForm({ config: { endpoint: "https://x", speed: 1.2 } as never, voiceId: "test-voice" });
+    await waitFor(() => expect(hook?.form?.voiceId).toBe("test-voice"));
+    hook!.setForm({ name: "NewOne" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    const created = store[0];
+    expect(created.config).toEqual({ endpoint: "https://x", speed: 1.2 });
+    expect(created.voiceId).toBe("test-voice");
+    // Update path
+    hook!.select(created.id);
+    await waitFor(() => expect(hook?.form?.id).toBe(created.id));
+    hook!.setForm({ config: { apiKey: "k123" } as never, voiceId: "new-voice" });
+    await waitFor(() => expect(hook?.form?.voiceId).toBe("new-voice"));
+    hook!.setForm({ name: "Renamed" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(store.find((p) => p.id === created.id)?.voiceId).toBe("new-voice"));
+    expect(store.find((p) => p.id === created.id)?.config).toEqual({ apiKey: "k123" });
+  });
+
+  it("startCreate defaults to kokoro + af_heart", async () => {
+    store = [];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    expect(hook!.form?.backend).toBe("kokoro");
+    expect(hook!.form?.voiceId).toBe("af_heart");
+    expect(hook!.form?.config).toEqual({});
   });
 });
