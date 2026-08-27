@@ -440,6 +440,10 @@
   "import_no_messages": "Сообщения не найдены в JSONL файле.",
   "provider_settings_title": "Настройки провайдера",
   "provider_settings_desc": "Управление подключениями и параметрами генерации для AI провайдеров.",
+  "providers_category_llm": "LLM",
+  "providers_category_audio": "Аудио",
+  "tts_section_title": "Синтез речи",
+  "tts_section_placeholder": "Профили TTS появятся здесь",
   "provider_select_profile": "Выберите профиль или создайте новый.",
   "test_hi_btn": "Тест \"Привет\"",
   "sending": "Отправка...",
@@ -2548,5 +2552,9 @@
   "regexAssistant.model": "Модель",
   "regexAssistant.selectProvider": "Выберите провайдера",
   "regexAssistant.searchProvider": "Поиск провайдера",
-  "regexAssistant.searchModel": "Поиск модели"
+  "regexAssistant.searchModel": "Поиск модели",
+  "promptManager.servicePrompts.charCount_few": "",
+  "promptManager.servicePrompts.charCount_many": "",
+  "regexAssistant.removedCount_few": "",
+  "regexAssistant.removedCount_many": ""
 }

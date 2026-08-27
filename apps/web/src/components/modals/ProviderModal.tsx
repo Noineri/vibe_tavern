@@ -28,6 +28,7 @@ import { getProviderModelSettingsAction, reorderProviderProfilesAction } from ".
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { shouldUsePersistedProviderForTest } from "../../lib/provider-proxy-policy.js";
+import { TtsSection } from "../settings/provider/tts/TtsSection.js";
 
 export interface FormState {
   id: string;
@@ -93,6 +94,8 @@ interface ModelOption {
 }
 
 type HeaderMode = "edit" | "view";
+
+export type ProviderCategoryTab = "llm" | "audio";
 
 interface ProviderModalProps {
   providerProfiles: ProviderProfileRecord[];
@@ -220,6 +223,7 @@ export function ProviderModal({
   const [headerSaving, setHeaderSaving] = useState(false);
   const [coauthorCreatedProfileId, setCoauthorCreatedProfileId] = useState<string | null>(null);
   const isMobile = useIsMobile();
+  const [activeCategory, setActiveCategory] = useState<ProviderCategoryTab>("llm");
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -260,6 +264,7 @@ export function ProviderModal({
       if (p) { setEditingId(p.id); setForm(profileToForm(p)); void loadCached(p.id); }
     }
     setTestOk(null); setHeaderMode("view"); setIsNew(false); setDirty(false); setConfirmClose(false); setConfirmDelete(false);
+    setActiveCategory("llm");
   }, [isOpen]);
 
   useEffect(() => {
@@ -443,7 +448,7 @@ export function ProviderModal({
   };
   const requestClose = (target: "close" | "return") => {
     flushLazyAutoSave();
-    if (dirty) {
+    if (dirty && activeCategory === "llm") {
       setCloseTarget(target);
       setConfirmClose(true);
     } else completeClose(target);
@@ -645,26 +650,48 @@ export function ProviderModal({
         onClose={handleClose}
         title={t("provider_settings_title")}
         subtitle={t("provider_settings_desc")}
-        detailTitle={form?.name ?? t("provider_settings_title")}
-        dirty={dirty}
+        detailTitle={activeCategory === "audio" ? t("tts_section_title") : (form?.name ?? t("provider_settings_title"))}
+        dirty={dirty && activeCategory === "llm"}
+        tabs={{
+          items: [
+            { value: "llm", label: t("providers_category_llm") },
+            { value: "audio", label: t("providers_category_audio") },
+          ],
+          active: activeCategory,
+          onChange: (v) => setActiveCategory(v),
+        }}
         containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
         detailClassName={isMobile ? "p-4" : "p-5"}
         headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
         headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
-        masterContent={() => (
-          <ProviderProfileList
-            filteredProfiles={filteredProfiles} editingId={editingId}
-            activeProviderProfileId={activeProviderProfileId} profileSearch={profileSearch}
-        profiles={providerProfiles}
-        onReorder={reorderProviderProfilesAction}
-            onProfileSearchChange={setProfileSearch}
-            onSelectProfile={(id) => { handleSelect(id); }}
-            onAddProfile={() => { void handleAdd(); }}
-          />
-        )}
+        masterContent={() =>
+          activeCategory === "audio" ? (
+            <TtsSection />
+          ) : (
+            <ProviderProfileList
+              filteredProfiles={filteredProfiles}
+              editingId={editingId}
+              activeProviderProfileId={activeProviderProfileId}
+              profileSearch={profileSearch}
+              profiles={providerProfiles}
+              onReorder={reorderProviderProfilesAction}
+              onProfileSearchChange={setProfileSearch}
+              onSelectProfile={(id) => {
+                handleSelect(id);
+              }}
+              onAddProfile={() => {
+                void handleAdd();
+              }}
+            />
+          )
+        }
         detailContent={
-          !form ? (
+          activeCategory === "audio" ? (
+            <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+              {t("tts_section_placeholder")}
+            </div>
+          ) : !form ? (
             <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
               {t("provider_select_profile")}
             </div>
@@ -773,7 +800,8 @@ export function ProviderModal({
           )
         }
         footer={
-          <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}>
+          activeCategory === "audio" ? undefined : (
+            <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}>
             <div className={cn("flex items-center gap-3", isMobile && "flex-wrap")}>
               <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
                 <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
@@ -804,6 +832,7 @@ export function ProviderModal({
               </div>
             </div>
           </div>
+          )
         }
       />
     </>
