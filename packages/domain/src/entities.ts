@@ -572,6 +572,90 @@ export interface TtsProfileLink {
   targetId: string;
 }
 
+// ─── TTS backend capabilities (TTS_PLAN TS-2) ───────────────────────────────
+//
+// Static capability flags per backend slug. The exhaustive Record means adding
+// a TTS_BACKEND slug without flags fails typecheck — the same lock-step
+// prevention property as the providers protocol registry.
+
+export const TTS_TRANSPORT = {
+  Inbrowser: "inbrowser",
+  Local: "local",
+  Cloud: "cloud",
+} as const;
+export type TtsTransport = (typeof TTS_TRANSPORT)[keyof typeof TTS_TRANSPORT];
+
+export interface TtsBackendCapabilities {
+  transport: TtsTransport;
+  openaiCompatible: boolean;
+  supportsStreaming: boolean;
+  supportsCloning: boolean;
+  supportsVoiceList: boolean;
+  supportsSpeed: boolean;
+  requiresApiKey: boolean;
+}
+
+export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabilities> = {
+  [TTS_BACKEND.Kokoro]: {
+    transport: TTS_TRANSPORT.Inbrowser,
+    openaiCompatible: false,
+    supportsStreaming: true,
+    supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: false,
+  },
+  [TTS_BACKEND.OpenAiCompatible]: {
+    transport: TTS_TRANSPORT.Local,
+    openaiCompatible: true,
+    supportsStreaming: true,
+    supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: false,
+  },
+  [TTS_BACKEND.Gemini]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    supportsStreaming: false,
+    supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: false,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.ElevenLabs]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    supportsStreaming: false,
+    supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+};
+
+/**
+ * Classify the transport of an OpenAI-compatible TTS endpoint by URL host.
+ *
+ * Local loopback hosts (localhost / 127.0.0.1 / [::1], any port) are
+ * classified as "local"; everything else and unparseable input as "cloud".
+ * Failing toward the stricter tier is intentional: an ambiguous endpoint
+ * should surface cloud-key expectations rather than silently assuming a local
+ * server that is not running.
+ */
+export function classifyOpenAiCompatTransport(endpoint: string): TtsTransport {
+  try {
+    const url = new URL(endpoint);
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") {
+      return TTS_TRANSPORT.Local;
+    }
+    return TTS_TRANSPORT.Cloud;
+  } catch {
+    return TTS_TRANSPORT.Cloud;
+  }
+}
+
 // ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────────
 //
 // The pure notation/rolling/arith-validators live in `dice.ts`; these are the
