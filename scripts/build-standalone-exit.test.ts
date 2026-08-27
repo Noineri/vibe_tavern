@@ -38,6 +38,7 @@ async function createFailureHarness(): Promise<{ readonly markerPath: string; re
 	const rewrittenImports = [
 		["from \"./_fs.js\";", `from ${JSON.stringify(pathToFileURL(join(repoRoot, "scripts", "_fs.ts")).href)};`],
 		["from \"./_version.js\";", `from ${JSON.stringify(pathToFileURL(join(repoRoot, "scripts", "_version.ts")).href)};`],
+		["from \"./_prompt-assets.js\";", `from ${JSON.stringify(pathToFileURL(join(repoRoot, "scripts", "_prompt-assets.ts")).href)};`],
 	] as const;
 	const imported = rewrittenImports.reduce(
 		(current, [needle, replacement]) => replaceRequired(current, needle, replacement),

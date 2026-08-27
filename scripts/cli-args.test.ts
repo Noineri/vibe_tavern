@@ -28,7 +28,7 @@ async function tempRoot(prefix: string): Promise<string> {
 	return root;
 }
 
-async function run(command: readonly string[], cwd: string): Promise<CommandResult> {
+async function run(command: string[], cwd: string): Promise<CommandResult> {
 	const child = Bun.spawn(command, { cwd, stdout: "pipe", stderr: "pipe" });
 	const [exitCode, stdout, stderr] = await Promise.all([
 		child.exited,
@@ -47,8 +47,12 @@ async function copyScript(relativePath: string): Promise<ScriptFixture> {
 	const script = join(root, relativePath);
 	await mkdir(dirname(script), { recursive: true });
 	await copyFile(join(repoRoot, relativePath), script);
-	const helper = join(root, "scripts", "_fs.ts");
-	await copyFile(join(repoRoot, "scripts", "_fs.ts"), helper);
+	// Script-local helpers the copied script imports — keep in sync with the
+	// relative "./_*.js" imports in scripts/*.ts (e.g. build.ts pulls
+	// _fs.js + _prompt-assets.js).
+	for (const helper of ["_fs.ts", "_prompt-assets.ts"]) {
+		await copyFile(join(repoRoot, "scripts", helper), join(root, "scripts", helper));
+	}
 	return { root, script };
 }
 
