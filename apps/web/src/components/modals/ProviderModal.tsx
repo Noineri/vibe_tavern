@@ -20,8 +20,7 @@ import {
   ProviderQuotaPanel,
 } from "../settings/provider/index.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
-import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
-import { useIsMobile } from "../../hooks/use-mobile.js";
+import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { getProviderModelSettingsAction, reorderProviderProfilesAction } from "../../stores/api-actions/provider-actions.js";
@@ -30,6 +29,7 @@ import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { shouldUsePersistedProviderForTest } from "../../lib/provider-proxy-policy.js";
 import { TtsSection } from "../settings/provider/tts/TtsSection.js";
 import { TtsProfileEditor } from "../settings/provider/tts/TtsProfileEditor.js";
+import { TtsAudioFooter } from "../settings/provider/tts/TtsAudioFooter.js";
 import { useTtsProfiles } from "../settings/provider/tts/use-tts-profiles.js";
 
 export interface FormState {
@@ -807,7 +807,9 @@ export function ProviderModal({
           )
         }
         footer={
-          activeCategory === "audio" ? undefined : (
+          activeCategory === "audio" ? (
+            <TtsAudioFooter tts={tts} />
+          ) : (
             <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}>
             <div className={cn("flex items-center gap-3", isMobile && "flex-wrap")}>
               <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-2">

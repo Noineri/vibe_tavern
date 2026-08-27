@@ -2477,6 +2477,7 @@ export default interface Resources {
     "tts_mute_hint": "Muted characters are never narrated — even when a default voice exists",
     "tts_mute_section": "Muted characters",
     "tts_preview": "Preview voice",
+    "tts_preview_downloading": "Downloading model… {pct}%",
     "tts_preview_failed": "Preview failed",
     "tts_preview_generating": "Generating…",
     "tts_preview_playing": "Playing…",

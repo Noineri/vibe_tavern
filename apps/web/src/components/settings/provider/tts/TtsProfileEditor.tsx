@@ -2,15 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "../../../../i18n/context.js";
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
-import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
-import { SaveBar } from "../../../shared/SaveBar.js";
+import { Ic } from "../../../shared/icons.js";
 import { inputCls, lblCls, monoUICls } from "../../../build/fields/field-styles.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
 import { listTtsVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
-import { Ic } from "../../../shared/icons.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
@@ -18,6 +16,24 @@ import { configString, updateConfigField } from "./tts-form-helpers.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
+
+/** Known Gemini TTS models (the backend defaults to flash when `model` is
+ *  empty). A dropdown instead of manual typing — the "entered the key, now
+ *  what?" dead end. Keep in sync with gemini-tts.ts DEFAULT_MODEL. */
+const GEMINI_TTS_MODEL_OPTIONS = [
+  { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
+  { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
+] as const;
+
+/** Dropdown options: the known roster plus the profile's current value if it
+ *  is something else (older profiles keep their saved model selectable). */
+function geminiModelOptions(form: NonNullable<TtsHook["form"]>): Array<{ id: string; label: string }> {
+  const current = configString(form.config, "model");
+  if (current === "" || GEMINI_TTS_MODEL_OPTIONS.some((o) => o.id === current)) {
+    return [...GEMINI_TTS_MODEL_OPTIONS];
+  }
+  return [{ id: current, label: current }, ...GEMINI_TTS_MODEL_OPTIONS];
+}
 
 function configNumber(config: Record<string, unknown>, key: string, fallback: number): number {
   const value = config[key];
@@ -95,7 +111,6 @@ function TtsVoicePickerField({
 
 export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const { t } = useT();
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [voices, setVoices] = useState<TtsVoiceRecord[] | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [voicesError, setVoicesError] = useState<string | null>(null);
@@ -302,12 +317,16 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           </div>
           <div>
             <label className={lblCls}>{t("tts_field_model")}</label>
-            <input
-              data-testid="tts-field-model"
-              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-              value={configString(form.config, "model")}
-              onChange={(e) => updateConfigField(tts, form, "model", e.target.value)}
-              placeholder="gemini-2.5-flash-preview-tts"
+            {/* Known-model dropdown — no manual typing: the backend falls back
+                to flash when empty, so unset maps to the default. A custom
+                saved value (older profiles) stays selectable. */}
+            <DropdownSelect
+              triggerTestId="tts-field-model"
+              className="mt-1"
+              value={configString(form.config, "model") || GEMINI_TTS_MODEL_OPTIONS[0].id}
+              options={geminiModelOptions(form)}
+              defaultOption={GEMINI_TTS_MODEL_OPTIONS[0].id}
+              onChange={(id) => updateConfigField(tts, form, "model", id)}
             />
           </div>
           <div>
@@ -433,7 +452,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         >
           <Ic.speaker className="h-3.5 w-3.5" />
           {preview.state === "generating"
-            ? t("tts_preview_generating")
+            ? preview.downloadPct !== null
+              ? t("tts_preview_downloading", { pct: preview.downloadPct })
+              : t("tts_preview_generating")
             : preview.state === "playing"
               ? t("tts_preview_playing")
               : t("tts_preview")}
@@ -456,35 +477,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         </div>
       )}
 
-      <SaveBar
-        dirty={tts.dirty}
-        saveState={tts.saving ? "saving" : "idle"}
-        onClick={() => void tts.save()}
-        onReset={() => tts.cancelEdit()}
-      />
-
-      <button
-        type="button"
-        data-testid="tts-delete-btn"
-        disabled={form.id === null}
-        className="self-start font-ui text-[13px] text-danger/80 transition-colors hover:text-danger disabled:opacity-40 disabled:pointer-events-none"
-        onClick={() => setConfirmDelete(true)}
-      >
-        {t("delete")}
-      </button>
-
-      {confirmDelete && (
-        <DestructiveConfirmModal
-          title={t("tts_profile_delete_confirm_title")}
-          body={t("tts_profile_delete_confirm_body", { name: form.name })}
-          confirmLabel={t("delete_btn")}
-          onConfirm={() => {
-            setConfirmDelete(false);
-            void tts.remove();
-          }}
-          onCancel={() => setConfirmDelete(false)}
-        />
-      )}
+      {/* Save/Delete live in the modal FOOTER (MasterDetailFooter, ProviderModal
+          audio branch) per the master-detail house pattern — same fix as the
+          regex/service tabs. Nothing inline here. */}
     </div>
   );
 }

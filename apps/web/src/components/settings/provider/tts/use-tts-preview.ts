@@ -39,6 +39,22 @@ export interface TtsPreviewInput {
 export interface TtsPreviewDeps {
   synthesize(input: TtsPreviewInput): Promise<{ blob: Blob; mime: string }>;
   play(blob: Blob, mime: string): Promise<void>;
+  /** Optional: kokoro model-download progress (percent 0-100, null when the
+   *  payload carries no percent — e.g. transformers "initiate"/"done"
+   *  events). The hook shows "Downloading model… N%" while generating. */
+  subscribeLoadProgress?(cb: (pct: number | null) => void): () => void;
+}
+
+/** Extracts the percent from an opaque transformers.js progress payload
+ *  ({status:"progress", file, progress: 0-100, …}) — null when absent. */
+function readProgressPercent(data: unknown): number | null {
+  if (typeof data !== "object" || data === null || !("progress" in data)) return null;
+  const value = data.progress;
+  return typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : null;
+}
+
+function defaultSubscribeLoadProgress(cb: (pct: number | null) => void): () => void {
+  return getSharedKokoroClient().onLoadProgress((progress) => cb(readProgressPercent(progress.data)));
 }
 
 let depsOverride: TtsPreviewDeps | null = null;
@@ -99,10 +115,13 @@ async function defaultPlay(blob: Blob, _mime: string): Promise<void> {
 export function useTtsPreview(): {
   state: TtsPreviewState;
   error: string | null;
+  /** Kokoro model-download percent while generating; null = not downloading. */
+  downloadPct: number | null;
   preview(input: TtsPreviewInput): void;
 } {
   const [state, setState] = useState<TtsPreviewState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [downloadPct, setDownloadPct] = useState<number | null>(null);
   const busyRef = useRef(false);
 
   const preview = useCallback((input: TtsPreviewInput): void => {
@@ -118,9 +137,11 @@ export function useTtsPreview(): {
     busyRef.current = true;
     setError(null);
     setState("generating");
+    setDownloadPct(null);
     // A preview must never overlap chat narration — stop the lane first.
     useTtsPlaybackStore.getState().stopNarration();
     const deps = depsOverride ?? { synthesize: defaultSynthesize, play: defaultPlay };
+    const unsubscribe = deps.subscribeLoadProgress?.(setDownloadPct) ?? null;
     void (async () => {
       try {
         const { blob, mime } = await deps.synthesize(input);
@@ -131,10 +152,12 @@ export function useTtsPreview(): {
         setError(cause instanceof Error ? cause.message : String(cause));
         setState("idle");
       } finally {
+        unsubscribe?.();
+        setDownloadPct(null);
         busyRef.current = false;
       }
     })();
   }, []);
 
-  return { state, error, preview };
+  return { state, error, downloadPct, preview };
 }

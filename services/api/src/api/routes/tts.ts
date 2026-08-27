@@ -72,8 +72,17 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
     })
     // ── Voices ───────────────────────────────────────────────────────────
     .get("/api/tts/profiles/:id/voices", async (c) => {
-      const voices = await runtime.listTtsVoices(c.req.param("id"));
-      if (voices === null) return c.json({ error: "TTS profile not found" }, 404);
-      return c.json(voices);
+      try {
+        const voices = await runtime.listTtsVoices(c.req.param("id"));
+        if (voices === null) return c.json({ error: "TTS profile not found" }, 404);
+        return c.json(voices);
+      } catch (error) {
+        // Browser-only backend (kokoro): a clean 400, not an unhandled 500 —
+        // the client synthesizes and lists voices for it locally.
+        if (error instanceof KokoroClientSideError) {
+          return c.json({ error: "kokoro runs client-side" }, 400);
+        }
+        throw error;
+      }
     });
 }

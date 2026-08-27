@@ -40,17 +40,26 @@ function makeHarness() {
   const states: TtsPreviewState[] = [];
   const errors: Array<string | null> = [];
   const capture: { preview?: (input: TtsPreviewInput) => void } = {};
+  const downloadPcts: Array<number | null> = [];
   const synthDeferred = makeDeferred<{ blob: Blob; mime: string }>();
   const playDeferred = makeDeferred<void>();
   const synthesize = mock((_input: TtsPreviewInput) => synthDeferred.promise);
   const play = mock((_blob: Blob, _mime: string) => playDeferred.promise);
-  __setTtsPreviewDepsForTests({ synthesize, play });
+  let progressSink: ((pct: number | null) => void) | null = null;
+  const subscribeLoadProgress = mock((cb: (pct: number | null) => void) => {
+    progressSink = cb;
+    return () => {
+      progressSink = null;
+    };
+  });
+  __setTtsPreviewDepsForTests({ synthesize, play, subscribeLoadProgress });
   render(
     React.createElement(
       function HookProbe(): null {
-        const { state, error, preview } = useTtsPreview();
+        const { state, error, downloadPct, preview } = useTtsPreview();
         states.push(state);
         errors.push(error);
+        downloadPcts.push(downloadPct);
         capture.preview = preview;
         return null;
       },
@@ -59,7 +68,11 @@ function makeHarness() {
   return {
     states,
     errors,
+    downloadPcts,
     capture,
+    emitProgress: (pct: number | null): void => {
+      progressSink?.(pct);
+    },
     resolveSynthesize: synthDeferred.resolve,
     rejectSynthesize: synthDeferred.reject,
     resolvePlay: playDeferred.resolve,
@@ -193,4 +206,27 @@ describe("useTtsPreview", () => {
     expect(h.states[h.states.length - 1]).toBe("idle");
     expect(h.errors[h.errors.length - 1]).toBe("playback failed");
   });
+
+  it('surfaces kokoro model-download percent while generating and clears it when done', async () => {
+    const h = makeHarness();
+    act(() => {
+      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: 'af_heart', speed: 1, profileId: null });
+    });
+    await flush();
+    expect(h.states).toContain('generating');
+    // Model download progress arrives mid-generate — the button label source.
+    act(() => {
+      h.emitProgress(37);
+    });
+    await flush();
+    expect(h.downloadPcts).toContain(37);
+    h.resolveSynthesize({ blob: new Blob(['x']), mime: 'audio/wav' });
+    await flush();
+    h.resolvePlay();
+    await flush();
+    expect(h.states[h.states.length - 1]).toBe('idle');
+    // Cleared after the run — no stale percent on the next preview.
+    expect(h.downloadPcts[h.downloadPcts.length - 1]).toBeNull();
+  });
+
 });

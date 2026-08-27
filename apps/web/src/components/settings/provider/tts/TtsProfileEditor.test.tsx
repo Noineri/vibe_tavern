@@ -63,50 +63,25 @@ describe("TtsProfileEditor", () => {
     expect(patch.name).toBe("Alpha-2");
   });
 
-  it("Save is disabled when not dirty and enabled when dirty with a name", async () => {
-    const ttsClean = makeTts({ dirty: false, form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "" } as never });
-    const view1 = render(React.createElement(TtsProfileEditor as never, { tts: ttsClean } as never));
-    // SaveBar's save button is disabled when not dirty — find by aria-label tts key? The button label is t("save_btn") -> "save_btn" via mock.
-    // The SaveButton renders with disabled prop when !dirty, so the button should be disabled.
-    const saveBtn1 = view1.getByRole("button", { name: /save_btn|saving|saved/ });
-    expect((saveBtn1 as HTMLButtonElement).disabled).toBe(true);
-    cleanup();
-
-    const ttsDirty = makeTts({ dirty: true, form: { id: "p1", name: "Beta", backend: TTS_BACKEND.Gemini as never, config: {}, voiceId: "" } as never });
-    const view2 = render(React.createElement(TtsProfileEditor as never, { tts: ttsDirty } as never));
-    const saveBtn2 = view2.getByRole("button", { name: /save_btn|saving|saved/ });
-    expect((saveBtn2 as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it("clicking Save calls tts.save", async () => {
-    const save = mock(async () => {});
-    const tts = makeTts({ dirty: true, saving: false, save, form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "" } as never });
+  it("save/delete controls live in the modal FOOTER, not inline in the editor (audio-tab pattern fix)", async () => {
+    // The master-detail house pattern (regex/service tabs precedent): the
+    // detail pane has NO inline SaveBar/delete — they render in
+    // MasterDetailFooter (pinned in provider-modal.test.ts). If this test
+    // fails, someone reintroduced an inline control.
+    const tts = makeTts({ dirty: true, form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "" } as never });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
-    const btn = view.getByRole("button", { name: /save_btn|saving|saved/ });
-    fireEvent.click(btn);
-    expect(save).toHaveBeenCalled();
+    expect(view.queryAllByRole("button", { name: /save_btn|saving|saved/ })).toHaveLength(0);
+    expect(view.queryByTestId("tts-delete-btn")).toBeNull();
   });
 
-  it("delete button disabled for unsaved form and opens confirm modal for saved form", async () => {
-    // Unsaved
-    const ttsUnsaved = makeTts({ form: { id: null, name: "", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "" } as never });
-    const view1 = render(React.createElement(TtsProfileEditor as never, { tts: ttsUnsaved } as never));
-    const del1 = view1.getByTestId("tts-delete-btn") as HTMLButtonElement;
-    expect(del1.disabled).toBe(true);
-    cleanup();
-
-    // Saved form
+  it("delete confirm flow lives in the modal footer (moved to ProviderModal; see provider-modal.test.ts)", async () => {
+    // The editor pane no longer owns delete — nothing to click here. The full
+    // trash→confirm→remove flow is pinned end-to-end in provider-modal.test.ts.
     const remove = mock(async () => {});
     const ttsSaved = makeTts({ form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "" } as never, remove });
-    const view2 = render(React.createElement(TtsProfileEditor as never, { tts: ttsSaved } as never));
-    const del2 = view2.getByTestId("tts-delete-btn") as HTMLButtonElement;
-    expect(del2.disabled).toBe(false);
-    fireEvent.click(del2);
-    // Confirm modal should appear with title key
-    await waitFor(() => expect(view2.getByText("tts_profile_delete_confirm_title")).toBeTruthy());
-    const confirmBtn = view2.getByText("delete_btn");
-    fireEvent.click(confirmBtn);
-    await waitFor(() => expect(remove).toHaveBeenCalled());
+    const view = render(React.createElement(TtsProfileEditor as never, { tts: ttsSaved } as never));
+    expect(view.queryByTestId("tts-delete-btn")).toBeNull();
+    expect(view.queryByText("tts_profile_delete_confirm_title")).toBeNull();
   });
 
   it("tier-gating: kokoro shows voice + speed only", async () => {

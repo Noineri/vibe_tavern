@@ -2591,5 +2591,6 @@
   "tts_quickstart_copy_unsupported": "Copying is not supported in this browser",
   "tts_quickstart_copy_failed": "Copy failed",
   "summary_history_auto": "Auto",
-  "summary_history_auto_hint": "All messages, no limit. Turn off to set a fixed limit."
+  "summary_history_auto_hint": "All messages, no limit. Turn off to set a fixed limit.",
+  "tts_preview_downloading": "Downloading model… {pct}%"
 }

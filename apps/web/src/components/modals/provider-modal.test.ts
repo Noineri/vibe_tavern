@@ -63,6 +63,12 @@ mock.module("../../stores/api-actions/provider-actions.js", () => ({
   getProviderModelSettingsAction: async () => null,
 }));
 
+// Audio-tab footer controls (Save/Cancel/Delete wiring) are pinned in
+// TtsAudioFooter.test.tsx — the extracted footer unit — so this file does NOT
+// mock use-tts-profiles (a mock.module wrapper here hung the whole file).
+const realTtsProfiles = await import("../settings/provider/tts/use-tts-profiles.js");
+void realTtsProfiles;
+
 const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { useModalStore } = await import("../../stores/modal-store.js");
 const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js");

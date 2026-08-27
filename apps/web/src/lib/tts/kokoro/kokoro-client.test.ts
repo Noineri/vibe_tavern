@@ -176,3 +176,66 @@ describe("KokoroTtsClient", () => {
     await expect(outputPromise).rejects.toBeInstanceOf(KokoroGenerateError);
   });
 });
+
+// ─── Load stall watchdog ("Послушать виснет" fix) ────────────────────────────
+
+import { __setKokoroLoadStallMsForTests } from "./kokoro-client.js";
+
+describe("load stall watchdog", () => {
+  test("silence beyond the stall window rejects the load with a diagnosable error", async () => {
+    __setKokoroLoadStallMsForTests(20);
+    try {
+      const { client, requests } = makeClient();
+      const promise = client.load();
+      // No progress, no loaded — a blackholed huggingface.co connection.
+      await expect(promise).rejects.toThrow(/stalled.*huggingface\.co/s);
+      // The failed load is not cached — a retry re-posts the load request.
+      void client.load();
+      expect(requests.filter((r) => r.type === "load")).toHaveLength(2);
+      // Tear down: the retry's watchdog must not fire into the next test as
+      // an unhandled rejection.
+      client.dispose();
+    } finally {
+      __setKokoroLoadStallMsForTests(null);
+    }
+  });
+
+  test("progress events push the window out — a slow-but-alive download never trips", async () => {
+    __setKokoroLoadStallMsForTests(120);
+    try {
+      const { client, emit } = makeClient();
+      const promise = client.load();
+      // Two progress ticks straddling the stall window: still alive.
+      await new Promise((r) => setTimeout(r, 80));
+      emit({ type: "load-progress", data: { status: "progress", progress: 10 } });
+      await new Promise((r) => setTimeout(r, 80));
+      emit({ type: "load-progress", data: { status: "progress", progress: 60 } });
+      await new Promise((r) => setTimeout(r, 40));
+      expect(client.isLoaded()).toBe(false); // still loading, NOT rejected
+      emit({ type: "loaded" });
+      await promise; // resolves normally
+      expect(client.isLoaded()).toBe(true);
+    } finally {
+      __setKokoroLoadStallMsForTests(null);
+    }
+  });
+
+  test("dispose clears the watchdog — no late rejection after teardown", async () => {
+    __setKokoroLoadStallMsForTests(15);
+    try {
+      const { client } = makeClient();
+      let rejected = false;
+      client.load().catch(() => {
+        rejected = true;
+      });
+      client.dispose();
+      // Wait PAST the stall window: the timer was cleared by dispose, so the
+      // load promise must stay pending (no late rejection firing into a torn
+      // down client).
+      await new Promise((r) => setTimeout(r, 40));
+      expect(rejected).toBe(false);
+    } finally {
+      __setKokoroLoadStallMsForTests(null);
+    }
+  });
+});

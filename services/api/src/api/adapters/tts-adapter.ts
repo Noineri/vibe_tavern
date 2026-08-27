@@ -85,6 +85,13 @@ export class TtsAdapter implements TtsRuntimeApi {
   listTtsVoices: TtsRuntimeApi["listTtsVoices"] = async (profileId) => {
     const profile = await this.stores.tts.getById(profileId);
     if (!profile) return null;
+    // Kokoro runs in-browser (Web Worker) — the server registry has no
+    // factory for it and never will; the web client uses its static English
+    // roster. Mirror the generate path: KokoroClientSideError → the route
+    // maps it to 400 instead of an unhandled TtsBackendNotRegisteredError.
+    if (profile.backend === TTS_BACKEND.Kokoro) {
+      throw new KokoroClientSideError();
+    }
     const backend = createTtsBackend(profile.backend, profile.config);
     return backend.listVoices();
   };

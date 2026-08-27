@@ -40,6 +40,20 @@ export type WorkerLike = {
 
 export type WorkerFactory = () => WorkerLike;
 
+/** Stall watchdog: max silence (no progress event, no completion) during a
+ *  model load before we give up with an actionable error. The model comes
+ *  from huggingface.co — a blackholed connection otherwise hangs the load
+ *  promise FOREVER with zero feedback ("Послушать виснет"). Progress events
+ *  reset the timer, so a slow-but-alive download never trips it. */
+export const KOKORO_LOAD_STALL_MS = 30_000;
+
+let stallMsForTests: number | null = null;
+
+/** Test seam: shrink the watchdog so the stall path is testable in ms. */
+export function __setKokoroLoadStallMsForTests(ms: number | null): void {
+  stallMsForTests = ms;
+}
+
 /** Default factory — real Web Worker from the Vite `?worker` import at the call
  *  site in app code; kept indirect so this module stays DOM-optional for tests. */
 export type { KokoroWorkerRequest, KokoroWorkerResponse };
@@ -85,18 +99,21 @@ export class KokoroTtsClient {
     if (!this.loadPromise) {
       this.loadPromise = new Promise<void>((resolve, reject) => {
         this.loadResolve = () => {
+          this.clearStallWatchdog();
           this.loaded = true;
           this.loadResolve = null;
           this.loadReject = null;
           resolve();
         };
         this.loadReject = (error: Error) => {
+          this.clearStallWatchdog();
           this.loadResolve = null;
           this.loadReject = null;
           this.loadPromise = null;
           reject(error);
         };
       });
+      this.armStallWatchdog();
       this.worker.postMessage({ type: "load", dtype, device });
     }
     return this.loadPromise;
@@ -104,6 +121,31 @@ export class KokoroTtsClient {
 
   private loadResolve: (() => void) | null = null;
   private loadReject: ((error: Error) => void) | null = null;
+  private stallTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** (Re)arm the silence watchdog — called on load start and every progress
+   *  event. Fires → reject the load with a diagnosable error. */
+  private armStallWatchdog(): void {
+    if (this.stallTimer !== null) clearTimeout(this.stallTimer);
+    const ms = stallMsForTests ?? KOKORO_LOAD_STALL_MS;
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = null;
+      const error = new KokoroGenerateError(
+        `Model download stalled (${Math.round(ms / 1000)}s without progress) — huggingface.co may be unreachable. Check the connection and retry.`,
+      );
+      this.loadReject?.(error);
+      this.loadReject = null;
+      this.loadResolve = null;
+      this.loadPromise = null;
+    }, ms);
+  }
+
+  private clearStallWatchdog(): void {
+    if (this.stallTimer !== null) {
+      clearTimeout(this.stallTimer);
+      this.stallTimer = null;
+    }
+  }
 
   /** Synthesize text to a WAV Blob. Rejects with the typed Kokoro errors. */
   async generate(text: string, voice: string, speed?: number): Promise<KokoroGenerateOutput> {
@@ -127,6 +169,7 @@ export class KokoroTtsClient {
 
   /** Drop the worker and its model reference. The client is unusable after. */
   dispose(): void {
+    this.clearStallWatchdog();
     this.worker.postMessage({ type: "dispose" });
     this.worker.terminate();
     this.rejectAllPending(new KokoroGenerateError("Client disposed."));
@@ -137,6 +180,10 @@ export class KokoroTtsClient {
   private handleResponse(response: KokoroWorkerResponse): void {
     switch (response.type) {
       case "load-progress": {
+        // Alive download — push the silence window out (only while a load is
+        // actually pending; after `loaded` the resolved promise stays behind
+        // and stale events must not re-arm the watchdog).
+        if (this.loadReject !== null) this.armStallWatchdog();
         const progress = { data: response.data };
         for (const listener of this.progressListeners) listener(progress);
         return;
