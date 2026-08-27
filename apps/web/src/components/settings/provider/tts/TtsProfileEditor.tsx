@@ -12,6 +12,7 @@ import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
 import { listTtsVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { Ic } from "../../../shared/icons.js";
 import { useTtsPreview } from "./use-tts-preview.js";
+import { TtsBindingFields } from "./TtsBindingFields.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
@@ -464,6 +465,8 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           </div>
         )}
       </div>
+
+      {form.id !== null && <TtsBindingFields tts={tts} form={form} />}
 
       {tts.error && (
         <div data-testid="tts-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">

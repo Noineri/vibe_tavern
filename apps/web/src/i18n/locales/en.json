@@ -2563,5 +2563,12 @@
   "tts_preview_generating": "Generating…",
   "tts_preview_playing": "Playing…",
   "tts_preview_save_first": "Save the profile to preview server voices",
-  "tts_preview_failed": "Preview failed"
+  "tts_preview_failed": "Preview failed",
+  "tts_bind_section": "Voice map",
+  "tts_bind_hint": "Speak this voice for the selected characters and personas",
+  "tts_bind_add": "Bind characters / personas",
+  "tts_mute_section": "Muted characters",
+  "tts_mute_hint": "Muted characters are never narrated — even when a default voice exists",
+  "tts_mute_add": "Mute characters",
+  "tts_links_error": "Failed to save the voice map"
 }
