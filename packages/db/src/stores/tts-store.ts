@@ -1,8 +1,9 @@
 import { and, asc, eq, ne } from 'drizzle-orm';
 
-import { brandId, TTS_BACKEND, TTS_TARGET_TYPE } from '@vibe-tavern/domain';
+import { brandId, TTS_BACKEND, TTS_LINK_MODE, TTS_TARGET_TYPE } from '@vibe-tavern/domain';
 import type {
   TtsBackendSlug,
+  TtsLinkMode,
   TtsProfile,
   TtsProfileConfig,
   TtsProfileId,
@@ -45,6 +46,10 @@ function isTtsBackendSlug(v: string): v is TtsBackendSlug {
 
 function isTtsTargetType(v: string): v is TtsTargetType {
   return v === TTS_TARGET_TYPE.Character || v === TTS_TARGET_TYPE.Persona;
+}
+
+function isTtsLinkMode(v: string): v is TtsLinkMode {
+  return v === TTS_LINK_MODE.Voice || v === TTS_LINK_MODE.Disabled;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -194,7 +199,8 @@ export class TtsStore {
   /**
    * Get all junction links for a profile — its character/persona bindings.
    * Unknown future target kinds (if any migration ever adds one) are skipped,
-   * not thrown: reads never crash on forward-compatible data.
+   * not thrown: reads never crash on forward-compatible data. Unknown link
+   * modes degrade to `voice` (same forward-compat rule).
    */
   async getLinks(ttsProfileId: string): Promise<TtsProfileLink[]> {
     const rows = await this.db
@@ -209,6 +215,7 @@ export class TtsStore {
           ttsProfileId: brandId<TtsProfileId>(r.ttsProfileId),
           targetType: r.targetType,
           targetId: r.targetId,
+          mode: isTtsLinkMode(r.mode) ? r.mode : TTS_LINK_MODE.Voice,
         },
       ];
     });
@@ -222,25 +229,24 @@ export class TtsStore {
    */
   async setLinks(
     ttsProfileId: string,
-    links: Array<{ targetType: TtsTargetType; targetId: string }>,
+    links: Array<{ targetType: TtsTargetType; targetId: string; mode?: TtsLinkMode }>,
   ): Promise<TtsProfileLink[]> {
     // Dedup by (targetType, targetId) BEFORE the delete: the composite PK
     // would reject a duplicate tuple mid-insert — AFTER the old set is already
-    // deleted. Normalizing first keeps the replace whole.
-    const seen = new Set<string>();
-    const unique: Array<{ targetType: TtsTargetType; targetId: string }> = [];
+    // deleted. Normalizing first keeps the replace whole. Later duplicates
+    // win on mode (last-write semantics within one payload).
+    const seen = new Map<string, { targetType: TtsTargetType; targetId: string; mode: TtsLinkMode }>();
     for (const link of links) {
       const key = JSON.stringify([link.targetType, link.targetId]);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(link);
+      seen.set(key, { ...link, mode: link.mode ?? TTS_LINK_MODE.Voice });
     }
+    const unique = [...seen.values()];
 
     this.db.transaction((tx) => {
       tx.delete(ttsProfileLinks).where(eq(ttsProfileLinks.ttsProfileId, ttsProfileId)).run();
       for (const link of unique) {
         tx.insert(ttsProfileLinks)
-          .values({ ttsProfileId, targetType: link.targetType, targetId: link.targetId })
+          .values({ ttsProfileId, targetType: link.targetType, targetId: link.targetId, mode: link.mode })
           .run();
       }
     });
@@ -248,10 +254,15 @@ export class TtsStore {
   }
 
   /** Add a single link (idempotent — ignores duplicates via the composite PK). */
-  async addLink(ttsProfileId: string, targetType: TtsTargetType, targetId: string): Promise<void> {
+  async addLink(
+    ttsProfileId: string,
+    targetType: TtsTargetType,
+    targetId: string,
+    mode: TtsLinkMode = TTS_LINK_MODE.Voice,
+  ): Promise<void> {
     await this.db
       .insert(ttsProfileLinks)
-      .values({ ttsProfileId, targetType, targetId })
+      .values({ ttsProfileId, targetType, targetId, mode })
       .onConflictDoNothing()
       .run();
   }

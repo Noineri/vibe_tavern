@@ -167,6 +167,30 @@ describe("TtsStore links (voice map)", () => {
 		expect(links).toHaveLength(2);
 		const ids = links.map((l) => `${l.targetType}:${l.targetId}`).sort();
 		expect(ids).toEqual(["character:char_1", "persona:persona_1"]);
+		// Links written without an explicit mode default to voice.
+		expect(links.every((l) => l.mode === "voice")).toBe(true);
+	});
+
+	test("setLinks persists mode; disabled links survive the round-trip (TS-9a-foundation)", async () => {
+		const { store } = await setup();
+		const profile = await store.create(baseInput());
+
+		const links = await store.setLinks(profile.id, [
+			{ targetType: TTS_TARGET_TYPE.Character, targetId: "char_voiced" },
+			{ targetType: TTS_TARGET_TYPE.Character, targetId: "char_muted", mode: "disabled" },
+			{ targetType: TTS_TARGET_TYPE.Persona, targetId: "persona_1", mode: "voice" },
+		]);
+
+		expect(links).toHaveLength(3);
+		const byId = new Map(links.map((l) => [l.targetId, l]));
+		expect(byId.get("char_voiced")?.mode).toBe("voice");
+		expect(byId.get("char_muted")?.mode).toBe("disabled");
+		expect(byId.get("persona_1")?.mode).toBe("voice");
+
+		// addLink carries mode too and stays idempotent.
+		await store.addLink(profile.id, TTS_TARGET_TYPE.Persona, "persona_2", "disabled");
+		const after = await store.getLinks(profile.id);
+		expect(after.find((l) => l.targetId === "persona_2")?.mode).toBe("disabled");
 	});
 
 	test("deleteLinksForTarget removes only links targeting that entity", async () => {

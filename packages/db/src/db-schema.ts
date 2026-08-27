@@ -582,6 +582,9 @@ export const ttsProfileLinks = sqliteTable('tts_profile_links', {
   ttsProfileId: text('tts_profile_id').notNull().references(() => ttsProfiles.id, { onDelete: 'cascade' }),
   targetType: text('target_type').notNull(),  // 'character' | 'persona'
   targetId: text('target_id').notNull(),
+  // TS-9a-foundation: 'voice' | 'disabled' (design's disable-per-character);
+  // additive column, default keeps pre-existing rows as voice bindings.
+  mode: text('mode').notNull().default('voice'),
 }, (table) => ({
   // Composite PK: one link per (profile, target) pair.
   pk: primaryKey({ columns: [table.ttsProfileId, table.targetType, table.targetId] }),

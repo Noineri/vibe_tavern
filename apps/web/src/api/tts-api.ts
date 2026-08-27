@@ -23,6 +23,9 @@ export interface TtsLinkRecord {
   ttsProfileId: string;
   targetType: TtsTargetType;
   targetId: string;
+  /** 'voice' | 'disabled' — omitted-by-old-servers tolerant default: treat
+   *  missing as 'voice' when reading raw JSON. */
+  mode?: "voice" | "disabled";
 }
 
 export interface TtsVoiceRecord {
@@ -98,7 +101,7 @@ export async function getTtsLinks(id: string): Promise<TtsLinkRecord[]> {
 
 export async function setTtsLinks(
   id: string,
-  links: Array<{ targetType: TtsTargetType; targetId: string }>,
+  links: Array<{ targetType: TtsTargetType; targetId: string; mode?: "voice" | "disabled" }>,
 ): Promise<TtsLinkRecord[]> {
   const response = await client.api.tts.profiles[":id"].links.$put({
     param: { id },

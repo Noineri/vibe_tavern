@@ -79,12 +79,16 @@ export type UpdateTtsProfileInput = z.infer<typeof updateTtsProfileSchema>;
 // ─── Links (voice map) ────────────────────────────────────────────────────────
 
 /** Replace-all voice-map binding payload for a TTS profile (mirrors
- *  `setRegexLinksSchema` / ScriptStore link API). */
+ *  `setRegexLinksSchema` / ScriptStore link API). `mode` is optional with
+ *  `voice` default — callers written before TS-9a-foundation stay valid. */
+export const ttsLinkModeSchema = z.enum(['voice', 'disabled']);
+
 export const setTtsLinksSchema = z.object({
   links: z.array(
     z.object({
       targetType: ttsTargetTypeSchema,
       targetId: z.string().min(1),
+      mode: ttsLinkModeSchema.optional(),
     }),
   ),
 });

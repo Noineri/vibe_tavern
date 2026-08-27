@@ -386,7 +386,7 @@ export interface TtsRuntimeApi {
 	setTtsDefault: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
 	getDefaultTtsProfile: () => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
 	getTtsLinks: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
-	setTtsLinks: (id: string, links: Array<{ targetType: import("@vibe-tavern/domain").TtsTargetType; targetId: string }>) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
+	setTtsLinks: (id: string, links: Array<{ targetType: import("@vibe-tavern/domain").TtsTargetType; targetId: string; mode?: import("@vibe-tavern/domain").TtsLinkMode }>) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
 	generateTtsSpeech: (body: import("@vibe-tavern/api-contracts").GenerateTtsInput) => Promise<{ audio: Buffer; mime: string } | null>;
 	listTtsVoices: (profileId: string) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null>;
 }

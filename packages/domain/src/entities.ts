@@ -534,6 +534,19 @@ export const TTS_TARGET_TYPE = {
 } as const;
 export type TtsTargetType = (typeof TTS_TARGET_TYPE)[keyof typeof TTS_TARGET_TYPE];
 
+/** Voice-map binding mode (TTS_PLAN TS-9a-foundation). `voice` = the target
+ *  speaks with the linked profile; `disabled` = the target is explicitly
+ *  excluded from narration (the design's disable-per-character marker —
+ *  expressed as a link row against the DEFAULT profile so the junction keeps
+ *  its FK shape; the resolver treats any disabled-link-on-target as a skip
+ *  regardless of profile). Additive to the TS-1 junction: rows written
+ *  before this column default to `voice`. */
+export const TTS_LINK_MODE = {
+  Voice: "voice",
+  Disabled: "disabled",
+} as const;
+export type TtsLinkMode = (typeof TTS_LINK_MODE)[keyof typeof TTS_LINK_MODE];
+
 /** Backend-specific config bag (API key ref, model, endpoint, sliders, ...).
  *  `unknown` values are correct at this type-erased boundary: the real shapes
  *  live in the per-backend zod contracts + backend registry (TS-2+). */
@@ -565,11 +578,13 @@ export interface TtsProfile {
 
 /** Many-to-many voice-map binding — which characters/personas speak with
  *  which profile. Junction-pattern instance with a persona-aware target
- *  vocabulary (see {@link TTS_TARGET_TYPE}). */
+ *  vocabulary (see {@link TTS_TARGET_TYPE}). `mode` distinguishes a voice
+ *  binding from an explicit narration-disable for the target. */
 export interface TtsProfileLink {
   ttsProfileId: TtsProfileId;
   targetType: TtsTargetType;
   targetId: string;
+  mode: TtsLinkMode;
 }
 
 // ─── TTS backend capabilities (TTS_PLAN TS-2) ───────────────────────────────
