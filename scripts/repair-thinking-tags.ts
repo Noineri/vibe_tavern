@@ -26,9 +26,15 @@ db.exec("PRAGMA journal_mode = WAL");
 
 const THINKING_RE = /<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi;
 
+interface VariantRow {
+  id: string;
+  content: string;
+  reasoning: string | null;
+}
+
 // ── Phase 1: Fix variants ──
 const variantRows = db
-  .query("SELECT id, content, reasoning FROM message_variants WHERE content LIKE '%<think%'")
+  .query<VariantRow, []>("SELECT id, content, reasoning FROM message_variants WHERE content LIKE '%<think%'")
   .all();
 
 console.log(`Phase 1: Found ${variantRows.length} variants with <thinking> tags in content.`);
@@ -68,8 +74,13 @@ tx1();
 console.log(`Phase 1: Fixed ${variantsFixed}/${variantRows.length} variants.`);
 
 // ── Phase 2: Sync messages.content from selected variant ──
+interface MessageRow {
+  msg_id: string;
+  variant_content: string;
+}
+
 const messageRows = db
-  .query(`
+  .query<MessageRow, []>(`
     SELECT m.id as msg_id, mv.content as variant_content
     FROM messages m
     JOIN message_variants mv ON mv.message_id = m.id AND mv.is_selected = 1

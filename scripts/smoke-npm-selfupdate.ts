@@ -90,6 +90,13 @@ function pickFreePort(): number {
 	const probe = Bun.serve({ port: 0, fetch: () => new Response("") });
 	const port = probe.port;
 	probe.stop(true);
+	// Bun assigns a concrete port for `port: 0`; the type is `number | undefined`
+	// only because a fixed port can stay unbound. A failed ephemeral bind is not
+	// a recoverable state for this smoke script — fail loudly instead of
+	// returning a bogus 0.
+	if (port === undefined) {
+		throw new Error("pickFreePort: Bun.serve({ port: 0 }) returned no assigned port");
+	}
 	return port;
 }
 

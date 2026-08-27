@@ -13,6 +13,7 @@
  */
 
 import { chmod, cp, mkdir, rm } from "node:fs/promises";
+import { copyPromptAssets } from "./_prompt-assets.js";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathExists } from "./_fs.js";

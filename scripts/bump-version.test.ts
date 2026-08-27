@@ -36,7 +36,7 @@ afterEach(async () => {
 	await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-async function run(command: readonly string[], cwd: string): Promise<CommandResult> {
+async function run(command: string[], cwd: string): Promise<CommandResult> {
 	const process = Bun.spawn(command, { cwd, stdout: "pipe", stderr: "pipe" });
 	const [exitCode, stdout, stderr] = await Promise.all([
 		process.exited,

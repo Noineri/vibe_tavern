@@ -132,7 +132,6 @@ async function buildPackage(pkg: PackageConfig) {
         external: pkg.external,
         sourcemap: "external",
         minify: false,
-        declaration: true,
       });
 
       if (!result.success) {

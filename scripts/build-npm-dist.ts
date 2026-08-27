@@ -6,7 +6,7 @@
  *   - web/                  (pre-built frontend SPA)
  *   - tokenizers/           (runtime tokenizer JSON files)
  *   - drizzle/              (SQLite DB migrations)
- *   - *.md, coauthor/       (AI assistant prompt assets)
+ *   - *.md, prompt trees/    (AI assistant prompt assets: coauthor/, experience-copilot/)
  *   - package.json          (GENERATED — see below)
  *
  * Usage:
@@ -33,6 +33,7 @@
 import { chmod, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathExists } from "./_fs.js";
+import { copyPromptAssets } from "./_prompt-assets.js";
 import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
