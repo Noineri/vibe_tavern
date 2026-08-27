@@ -29,6 +29,8 @@ import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { shouldUsePersistedProviderForTest } from "../../lib/provider-proxy-policy.js";
 import { TtsSection } from "../settings/provider/tts/TtsSection.js";
+import { TtsProfileEditor } from "../settings/provider/tts/TtsProfileEditor.js";
+import { useTtsProfiles } from "../settings/provider/tts/use-tts-profiles.js";
 
 export interface FormState {
   id: string;
@@ -224,6 +226,7 @@ export function ProviderModal({
   const [coauthorCreatedProfileId, setCoauthorCreatedProfileId] = useState<string | null>(null);
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState<ProviderCategoryTab>("llm");
+  const tts = useTtsProfiles();
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -448,7 +451,7 @@ export function ProviderModal({
   };
   const requestClose = (target: "close" | "return") => {
     flushLazyAutoSave();
-    if (dirty && activeCategory === "llm") {
+    if ((dirty && activeCategory === "llm") || (tts.dirty && activeCategory === "audio")) {
       setCloseTarget(target);
       setConfirmClose(true);
     } else completeClose(target);
@@ -650,8 +653,8 @@ export function ProviderModal({
         onClose={handleClose}
         title={t("provider_settings_title")}
         subtitle={t("provider_settings_desc")}
-        detailTitle={activeCategory === "audio" ? t("tts_section_title") : (form?.name ?? t("provider_settings_title"))}
-        dirty={dirty && activeCategory === "llm"}
+        detailTitle={activeCategory === "audio" ? (tts.form ? (tts.form.name || t("tts_profile_new_title")) : t("tts_section_title")) : (form?.name ?? t("provider_settings_title"))}
+        dirty={activeCategory === "audio" ? tts.dirty : dirty}
         tabs={{
           items: [
             { value: "llm", label: t("providers_category_llm") },
@@ -667,7 +670,7 @@ export function ProviderModal({
         headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
         masterContent={() =>
           activeCategory === "audio" ? (
-            <TtsSection />
+            <TtsSection tts={tts} />
           ) : (
             <ProviderProfileList
               filteredProfiles={filteredProfiles}
@@ -688,9 +691,13 @@ export function ProviderModal({
         }
         detailContent={
           activeCategory === "audio" ? (
-            <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
-              {t("tts_section_placeholder")}
-            </div>
+            tts.form ? (
+              <TtsProfileEditor tts={tts} />
+            ) : (
+              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+                {t("tts_section_placeholder")}
+              </div>
+            )
           ) : !form ? (
             <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
               {t("provider_select_profile")}
