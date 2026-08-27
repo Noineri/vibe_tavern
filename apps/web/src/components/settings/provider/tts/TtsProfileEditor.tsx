@@ -12,6 +12,7 @@ import { listTtsVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
+import { KokoroModelPanel } from "./KokoroModelPanel.js";
 import { configString, updateConfigField } from "./tts-form-helpers.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
@@ -236,6 +237,10 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                 step={0.1}
               />
             </div>
+          </div>
+          <div>
+            <label className={lblCls}>{t("tts_kokoro_model")}</label>
+            <KokoroModelPanel />
           </div>
         </>
       )}

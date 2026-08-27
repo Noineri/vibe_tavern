@@ -2624,5 +2624,10 @@
   "tts_quickstart_copy_failed": "Не удалось скопировать",
   "summary_history_auto": "Авто",
   "summary_history_auto_hint": "Все сообщения, без лимита. Выключите, чтобы задать фиксированный лимит.",
-  "tts_preview_downloading": "Загрузка модели… {pct}%"
+  "tts_preview_downloading": "Загрузка модели… {pct}%",
+  "tts_kokoro_model": "Модель движка",
+  "tts_kokoro_model_download": "Скачать модель",
+  "tts_kokoro_model_downloading": "Загрузка модели…",
+  "tts_kokoro_model_ready": "Модель готова",
+  "tts_kokoro_model_failed": "Не удалось скачать"
 }

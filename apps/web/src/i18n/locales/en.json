@@ -2592,5 +2592,10 @@
   "tts_quickstart_copy_failed": "Copy failed",
   "summary_history_auto": "Auto",
   "summary_history_auto_hint": "All messages, no limit. Turn off to set a fixed limit.",
-  "tts_preview_downloading": "Downloading model… {pct}%"
+  "tts_preview_downloading": "Downloading model… {pct}%",
+  "tts_kokoro_model": "Engine model",
+  "tts_kokoro_model_download": "Download model",
+  "tts_kokoro_model_downloading": "Downloading model…",
+  "tts_kokoro_model_ready": "Model ready",
+  "tts_kokoro_model_failed": "Download failed"
 }
