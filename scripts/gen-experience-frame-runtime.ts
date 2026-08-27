@@ -12,7 +12,11 @@
  * `experience-frame-runtime.test.ts` keeps it honest: it re-runs this script
  * in `--check` mode (subprocess) and byte-compares. Regenerate after touching
  * the port, the loop host, the entry, or any of their imports (domain helpers /
- * contracts schemas), and after Bun upgrades (the minifier's output can shift):
+ * contracts schemas), after Bun upgrades (the minifier's output can shift), and
+ * after ANY DEPENDENCY CHANGE that touches bun.lock (bun add / bun install
+ * re-resolutions): a shifted dependency graph changes the minified bytes even
+ * with zero source edits, so the freshness test FAILING right after a package
+ * update is EXPECTED — the fix is a regeneration, not a debug:
  *
  *   bun run gen:experience-frame-runtime
  *
@@ -42,7 +46,10 @@ const HEADER = [
   " * The realtime frame runtime IIFE (kernel port + loop host + boot), built by",
   " * `bun run gen:experience-frame-runtime` from experience-frame-runtime.entry.ts.",
  " * Guarded by experience-frame-runtime.test.ts: it re-bundles and byte-compares.",
- " * Regenerate after touching the entry's import graph or after a Bun upgrade.",
+ " * Regenerate after touching the entry's import graph, after a Bun upgrade, or",
+ " * after any dependency change (bun.lock) — the freshness test WILL fail on",
+ " * package updates until this file is regenerated:",
+ " *   bun run gen:experience-frame-runtime",
  " */",
 ].join("\n");
 
@@ -74,6 +81,7 @@ async function check(): Promise<void> {
 	if (js !== EXPERIENCE_FRAME_RUNTIME_SOURCE) {
 		console.error(
 			"experience-frame-runtime.source.ts is STALE: the committed IIFE does not match a fresh build of experience-frame-runtime.entry.ts. " +
+				"A dependency change (bun.lock) is the most common cause — the test failing right after a package update is EXPECTED. " +
 				"Regenerate with: bun run gen:experience-frame-runtime",
 		);
 		process.exit(1);

@@ -7,7 +7,12 @@
  * 1. FRESHNESS — re-run the GENERATOR ITSELF as a subprocess in `--check`
  *    mode (build in memory, byte-compare, no write) and assert exit 0. The
  *    artifact must never drift from the source modules: its bytes ARE the
- *    frame-side kernel the RM-8 replay trusts. Spawning the generator (rather
+ *    frame-side kernel the RM-8 replay trusts. NOTE: this test FAILS BY
+ *    DESIGN after any dependency change that touches bun.lock (bun add /
+ *    bun install re-resolutions shift the minified bundle bytes even with
+ *    zero source edits) and after Bun upgrades — that is not a bug to debug;
+ *    regenerate the artifact with `bun run gen:experience-frame-runtime`
+ *    from the repo root and commit it. Spawning the generator (rather
  *    than calling Bun.build in-test) is load-bearing twice over: (a) the
  *    freshness check can never drift from the generator's build options —
  *    there is exactly ONE copy of the bundle config; (b) the generator
