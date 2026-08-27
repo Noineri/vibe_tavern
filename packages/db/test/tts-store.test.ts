@@ -218,6 +218,27 @@ describe("TtsStore links (voice map)", () => {
 		await store.delete(profile.id);
 		expect(await store.getLinks(profile.id)).toHaveLength(0);
 	});
+
+	test("listAllLinks returns links across all profiles with modes; empty table → []", async () => {
+		const { store } = await setup();
+		let empty = await store.listAllLinks();
+		expect(empty).toEqual([]);
+
+		const a = await store.create(baseInput());
+		const b = await store.create(baseInput());
+		await store.addLink(a.id, TTS_TARGET_TYPE.Character, "char_1");
+		await store.setLinks(b.id, [
+			{ targetType: TTS_TARGET_TYPE.Character, targetId: "char_2", mode: "voice" },
+			{ targetType: TTS_TARGET_TYPE.Persona, targetId: "persona_1", mode: "disabled" },
+		]);
+
+		const all = await store.listAllLinks();
+		expect(all).toHaveLength(3);
+		const modes = new Map(all.map((l) => [`${l.targetType}:${l.targetId}`, l.mode]));
+		expect(modes.get("character:char_1")).toBe("voice");
+		expect(modes.get("character:char_2")).toBe("voice");
+		expect(modes.get("persona:persona_1")).toBe("disabled");
+	});
 });
 
 describe("TtsStore JSON hygiene", () => {

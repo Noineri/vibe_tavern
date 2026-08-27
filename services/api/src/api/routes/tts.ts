@@ -50,6 +50,9 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
         return c.json(await runtime.setTtsLinks(c.req.param("id"), body.links));
       },
     )
+    .get("/api/tts/links", async (c) => {
+      return c.json(await runtime.listAllTtsLinks());
+    })
     // ── Generation (buffered audio) ──────────────────────────────────────
     .post("/api/tts/generate", zValidator("json", schemas.generateTtsSchema), async (c) => {
       const body = c.req.valid("json");

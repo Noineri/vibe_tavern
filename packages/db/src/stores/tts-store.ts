@@ -221,6 +221,23 @@ export class TtsStore {
     });
   }
 
+  /** All voice-map links across all profiles (resolver data source; the link
+   *  count is small — one chat's worth of characters/personas). */
+  async listAllLinks(): Promise<TtsProfileLink[]> {
+    const rows = await this.db.select().from(ttsProfileLinks).all();
+    return rows.flatMap((r) => {
+      if (!isTtsTargetType(r.targetType)) return [];
+      return [
+        {
+          ttsProfileId: brandId<TtsProfileId>(r.ttsProfileId),
+          targetType: r.targetType,
+          targetId: r.targetId,
+          mode: isTtsLinkMode(r.mode) ? r.mode : TTS_LINK_MODE.Voice,
+        },
+      ];
+    });
+  }
+
   /**
    * Replace all links for a profile. Deletes existing and inserts new ones in a
    * synchronous-callback transaction (same shape as RegexStore.setLinks): a

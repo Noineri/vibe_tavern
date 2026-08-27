@@ -51,6 +51,8 @@ export class TtsAdapter implements TtsRuntimeApi {
 
   setTtsLinks: TtsRuntimeApi["setTtsLinks"] = (id, links) => this.stores.tts.setLinks(id, links);
 
+  listAllTtsLinks = () => this.stores.tts.listAllLinks();
+
   generateTtsSpeech: TtsRuntimeApi["generateTtsSpeech"] = async (body) => {
     const profile = await this.stores.tts.getById(body.profileId);
     if (!profile) return null;

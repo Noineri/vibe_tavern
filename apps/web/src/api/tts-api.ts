@@ -110,6 +110,12 @@ export async function setTtsLinks(
   return unwrapRpc<TtsLinkRecord[]>(response);
 }
 
+export async function listAllTtsLinks(): Promise<Array<TtsLinkRecord & { mode: "voice" | "disabled" }>> {
+  const response = await client.api.tts.links.$get();
+  const raw = await unwrapRpc<TtsLinkRecord[]>(response);
+  return raw.map((r) => ({ ...r, mode: r.mode ?? "voice" }));
+}
+
 // ─── Binary generation + voices (raw fetch, mobile-token aware) ──────────────
 
 /**

@@ -134,6 +134,31 @@ describe("TTS routes — CRUD", () => {
     const fetched = (await getRes.json()) as unknown[];
     expect(fetched.length).toBe(1);
   });
+
+  test("GET /api/tts/links returns all links across profiles", async () => {
+    const { app, store } = await makeApp();
+
+    const aRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "A", backend: "kokoro" }),
+    });
+    const a = (await aRes.json()) as { id: string };
+    const bRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "B", backend: "kokoro" }),
+    });
+    const b = (await bRes.json()) as { id: string };
+
+    await store.addLink(a.id, "character" as never, "char_1");
+    await store.addLink(b.id, "persona" as never, "persona_1");
+
+    const res = await app.request("/api/tts/links");
+    expect(res.status).toBe(200);
+    const all = (await res.json()) as unknown[];
+    expect(all.length).toBe(2);
+  });
 });
 
 describe("TTS routes — generate + voices", () => {
