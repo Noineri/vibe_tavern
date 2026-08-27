@@ -75,3 +75,13 @@ describe("ttsUiSpecFor (field configuration)", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
 });
+
+describe("ttsUiSpecFor — voicePlaceholder (F6)", () => {
+  it("each variant carries a real example voice id as placeholder", () => {
+    expect(ttsUiSpecFor("kokoro").voicePlaceholder).toBe("af_heart");
+    expect(ttsUiSpecFor("local").voicePlaceholder).toBe("alloy");
+    expect(ttsUiSpecFor("openai").voicePlaceholder).toBe("alloy");
+    expect(ttsUiSpecFor("gemini").voicePlaceholder).toBe("Kore");
+    expect(ttsUiSpecFor("elevenlabs").voicePlaceholder).toBe("JBFqnCBsd6RMkjVDRZzb");
+  });
+});

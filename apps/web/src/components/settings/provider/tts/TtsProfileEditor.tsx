@@ -5,7 +5,7 @@ import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { Ic } from "../../../shared/icons.js";
 import { inputCls, lblCls, monoUICls } from "../../../build/fields/field-styles.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
-import { NumberInput } from "../../../shared/NumberInput.js";
+import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
 import { listTtsDraftModels, listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
@@ -41,14 +41,17 @@ function TtsVoicePickerField({
   voices,
   voicesLoading,
   voicesError,
+  voicePlaceholder,
 }: {
   tts: TtsHook;
   form: NonNullable<TtsHook["form"]>;
   voices: TtsVoiceRecord[] | null;
   voicesLoading: boolean;
   voicesError: string | null;
+  voicePlaceholder?: string;
 }): ReactNode {
   const { t } = useT();
+  const placeholder = voicePlaceholder ?? t("tts_field_voice");
   if (voicesLoading) {
     return (
       <div data-testid="tts-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
@@ -64,12 +67,23 @@ function TtsVoicePickerField({
           className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
           value={form.voiceId}
           onChange={(e) => tts.setForm({ voiceId: e.target.value })}
-          placeholder={t("tts_field_voice")}
+          placeholder={placeholder}
         />
         <div data-testid="tts-voices-load-error" className="mt-1 font-ui text-[11px] text-danger">
           {t("tts_voices_load_error")}
         </div>
       </>
+    );
+  }
+  if (voices !== null && voices.length === 0) {
+    return (
+      <input
+        data-testid="tts-voice-input"
+        className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+        value={form.voiceId}
+        onChange={(e) => tts.setForm({ voiceId: e.target.value })}
+        placeholder={placeholder}
+      />
     );
   }
   return (
@@ -79,7 +93,7 @@ function TtsVoicePickerField({
         options={(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))}
         onChange={(value) => tts.setForm({ voiceId: value })}
         searchable={true}
-        placeholder={t("tts_field_voice")}
+        placeholder={placeholder}
         triggerTestId="tts-voice-select"
       />
     </div>
@@ -98,24 +112,23 @@ function TtsSectionCard({ title, testid, children }: { title: string; testid: st
 }
 
 /** Renders ONE declarative tuning field from the variant spec (D5): the
- *  duplicated per-backend JSX branches collapse into this single switch.
- *  F6 will swap the "number" arm to the slider pattern — one place. */
+ *  duplicated per-backend JSX branches collapse into this single switch. */
 function TtsTuningField({ tts, form, field }: { tts: TtsHook; form: NonNullable<TtsHook["form"]>; field: TtsTuningFieldSpec }): ReactNode {
   const { t } = useT();
   if (field.kind === "number") {
+    const val = configNumber(form.config, field.key, field.fallback);
     return (
-      <div>
-        <label className={lblCls}>{t(field.labelKey)}</label>
-        <div className="mt-1">
-          <NumberInput
-            value={configNumber(form.config, field.key, field.fallback)}
-            onChange={(val) => updateConfigField(tts, form, field.key, val)}
-            min={field.min}
-            max={field.max}
-            step={field.step}
-          />
-        </div>
-      </div>
+      <SliderField
+        label={t(field.labelKey)}
+        value={val}
+        min={field.min}
+        max={field.max}
+        step={field.step}
+        onChange={(v) => updateConfigField(tts, form, field.key, v)}
+        ariaLabel={t(field.labelKey)}
+        rangeTestId={`tts-field-${field.key}-range`}
+        numberTestId={`tts-field-${field.key}-number`}
+      />
     );
   }
   if (field.kind === "toggle") {
@@ -446,12 +459,19 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                 options={kokoroVoiceOptions}
                 onChange={(value) => tts.setForm({ voiceId: value })}
                 searchable={true}
-                placeholder={t("tts_field_voice")}
+                placeholder={spec.voicePlaceholder ?? t("tts_field_voice")}
                 triggerTestId="tts-voice-select"
               />
             </div>
           ) : (
-            <TtsVoicePickerField tts={tts} form={form} voices={voices} voicesLoading={voicesLoading} voicesError={voicesError} />
+            <TtsVoicePickerField
+              tts={tts}
+              form={form}
+              voices={voices}
+              voicesLoading={voicesLoading}
+              voicesError={voicesError}
+              voicePlaceholder={spec.voicePlaceholder}
+            />
           )}
         </div>
         {spec.tuning.map((field) => (

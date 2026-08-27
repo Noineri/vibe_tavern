@@ -429,3 +429,131 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
     cleanup();
   });
 });
+
+describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
+  it("tuning number field renders slider + compact number (elevenlabs stability)", async () => {
+    const setForm = mock(() => {});
+    const tts = makeTts({
+      setForm,
+      form: {
+        id: "p1",
+        name: "EL",
+        backend: TTS_BACKEND.ElevenLabs as never,
+        config: { stability: 0.5 },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const range = view.getByTestId("tts-field-stability-range") as HTMLInputElement;
+    expect(range.type).toBe("range");
+    expect(range.min).toBe("0");
+    expect(range.max).toBe("1");
+    const numberWrapper = view.getByTestId("tts-field-stability-number");
+    expect(numberWrapper).toBeTruthy();
+    const numberInput = numberWrapper.querySelector("input") as HTMLInputElement;
+    expect(numberInput).toBeTruthy();
+    // Range commits immediately
+    fireEvent.change(range, { target: { value: "0.8" } });
+    expect(setForm).toHaveBeenCalled();
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { config: Record<string, unknown> };
+    expect(patch.config.stability).toBe(0.8);
+    cleanup();
+  });
+
+  it("slider range and number input both update the same config key (openai speed)", async () => {
+    const setForm = mock(() => {});
+    const tts = makeTts({
+      setForm,
+      form: {
+        id: "p1",
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { speed: 1 },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const range = view.getByTestId("tts-field-speed-range") as HTMLInputElement;
+    expect(range).toBeTruthy();
+    fireEvent.change(range, { target: { value: "1.5" } });
+    expect(setForm).toHaveBeenCalled();
+    let patch = (setForm.mock.calls[0] as unknown[])[0] as { config: Record<string, unknown> };
+    expect(patch.config.speed).toBe(1.5);
+    setForm.mockClear();
+    const numberWrapper = view.getByTestId("tts-field-speed-number");
+    const numberInput = numberWrapper.querySelector("input") as HTMLInputElement;
+    fireEvent.change(numberInput, { target: { value: "1.2" } });
+    fireEvent.blur(numberInput);
+    expect(setForm).toHaveBeenCalled();
+    patch = (setForm.mock.calls[setForm.mock.calls.length - 1] as unknown[])[0] as { config: Record<string, unknown> };
+    expect(patch.config.speed).toBe(1.2);
+    cleanup();
+  });
+
+  it("voice fallback placeholder shows per-variant example (openai → alloy)", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://x", apiKey: "k" },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
+    expect(input.placeholder).toBe("alloy");
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("voice fallback placeholder shows per-variant example (gemini → Kore)", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Gem",
+        backend: TTS_BACKEND.Gemini as never,
+        config: { apiKey: "k" },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
+    expect(input.placeholder).toBe("Kore");
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("voice fallback placeholder shows per-variant example (elevenlabs → JBFqnCBsd6RMkjVDRZzb)", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "EL",
+        backend: TTS_BACKEND.ElevenLabs as never,
+        config: { apiKey: "k" },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
+    expect(input.placeholder).toBe("JBFqnCBsd6RMkjVDRZzb");
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("kokoro voice select placeholder is the example id af_heart", async () => {
+    const tts = makeTts({
+      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const trigger = view.getByTestId("tts-voice-select") as HTMLElement;
+    expect(trigger.textContent).toContain("af_heart");
+    cleanup();
+  });
+});

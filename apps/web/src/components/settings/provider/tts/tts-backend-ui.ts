@@ -85,6 +85,8 @@ export interface TtsUiSpec {
   tuning: TtsTuningFieldSpec[];
   /** Local-server helpers (discovery + quickstart) — the "local" variant only. */
   localHelpers: boolean;
+  /** Example voice id shown as placeholder in the manual fallback input (D6). */
+  voicePlaceholder?: string;
 }
 
 const RESPONSE_FORMAT_OPTIONS = [
@@ -112,6 +114,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     connection: {},
     tuning: [{ kind: "number", key: "speed", labelKey: "tts_field_speed", min: 0.5, max: 2.0, step: 0.1, fallback: 1 }],
     localHelpers: false,
+    voicePlaceholder: "af_heart",
   },
   local: {
     connection: {
@@ -121,6 +124,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     },
     tuning: OPENAI_TUNING,
     localHelpers: true,
+    voicePlaceholder: "alloy",
   },
   openai: {
     connection: {
@@ -130,6 +134,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     },
     tuning: OPENAI_TUNING,
     localHelpers: false,
+    voicePlaceholder: "alloy",
   },
   gemini: {
     connection: {
@@ -145,6 +150,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
       },
     ],
     localHelpers: false,
+    voicePlaceholder: "Kore",
   },
   elevenlabs: {
     connection: {
@@ -159,6 +165,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
       { kind: "number", key: "speed", labelKey: "tts_field_speed", min: 0.7, max: 1.2, step: 0.05, fallback: 1 },
     ],
     localHelpers: false,
+    voicePlaceholder: "JBFqnCBsd6RMkjVDRZzb",
   },
 };
 
