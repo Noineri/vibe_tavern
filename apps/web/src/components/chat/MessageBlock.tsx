@@ -36,6 +36,7 @@ import { useChatController } from "../../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MessageShell, type MessageShellAuthorInfo } from "./MessageShell.js";
+import { useMessageNarration } from "./use-message-narration.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { AttachmentGrid } from "./AttachmentGrid.js";
@@ -81,6 +82,15 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     if (!s.activeChatId) return null;
     return s.generations[s.activeChatId]?.pendingUserMessageContent ?? null;
   });
+  const activeCharacterId = useSnapshotStore((s) => s.activeChat?.characterId ?? null);
+  const activePersonaId = useSnapshotStore((s) => s.activeChat?.personaId ?? null);
+  const narrationTextRef = useRef("");
+  const narrationHook = useMessageNarration(
+    input.messageId,
+    activeCharacterId ? String(activeCharacterId) : null,
+    activePersonaId ? String(activePersonaId) : null,
+    () => narrationTextRef.current,
+  );
   // Source-agnostic streaming identity: reads streamingMessageId, so non-target
   // blocks get `false` / EMPTY and never re-render on a streaming tick.
   const isStreamingTarget = useIsStreamingTarget(input.messageId);
@@ -282,6 +292,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // transformed — a partial stream would double-apply partial matches; the
   // settled render picks the transform up the moment streaming ends.
   const renderContent = regexDisplayContent ?? activeContent;
+  narrationTextRef.current = renderContent ?? "";
   const greetingActive = isGreeting && !isUser && variantCount > 1;
 
   const isStreamingHere = !isUser && isStreamingTarget && !!(globalStreamingRevealedText || globalStreamingReasoning);
@@ -550,6 +561,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       greetingControls={greetingControls}
       desktopVariantControls={desktopVariantControls}
       mobileVariantControls={mobileVariantControls}
+      narrating={narrationHook.narrating}
       actions={{
         onCopy: async () => {
           const result = await copyText(msg.displayContent);
@@ -564,6 +576,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         onBranch: () => void chat.handleFork(msg.id),
         onRegenerate: () => void chat.handleRegenerateMessage(msg.id),
         onResend: () => void chat.handleResend(),
+        ...(msg.role === "assistant" && narrationHook.available ? { onNarrate: narrationHook.onNarrate } : {}),
       }}
     >
       {messageContent}

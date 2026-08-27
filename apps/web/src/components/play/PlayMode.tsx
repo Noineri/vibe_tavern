@@ -5,8 +5,10 @@ import { DicePanel } from "../chat/DicePanel.js";
 import { MessageAiEditorModal } from "../chat/MessageAiEditorModal.js";
 import { ExperienceLauncher } from "../experience/ExperienceLauncher.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useAutoNarrate } from "../../hooks/use-auto-narrate.js";
 
 export function PlayMode() {
+  useAutoNarrate();
   // Remount at the chat/branch boundary so message-local UI and Virtuoso's
   // old-history measurement cache cannot leak across conversations. The shared
   // scroll hook establishes the new scope's native bottom position.

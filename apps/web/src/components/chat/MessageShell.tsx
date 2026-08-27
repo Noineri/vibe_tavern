@@ -64,6 +64,7 @@ export interface MessageShellActions {
   onRegenerate: () => void;
   onResend: () => void;
   onAiEdit: () => void;
+  onNarrate?: () => void;
 }
 
 export interface MessageShellProps {
@@ -123,6 +124,8 @@ export interface MessageShellProps {
   children: ReactNode;
   /** Callbacks. */
   actions: MessageShellActions;
+  /** Whether this message is currently being narrated (TTS). */
+  narrating?: boolean;
 }
 
 const msgWrap = "relative group py-2.5";
@@ -157,6 +160,7 @@ export function MessageShell(props: MessageShellProps) {
     mobileVariantControls,
     children,
     actions,
+    narrating = false,
   } = props;
 
   const { t, tDynamic } = useT();
@@ -289,6 +293,15 @@ export function MessageShell(props: MessageShellProps) {
               onClose={() => setMobileMenuOpen(false)}
               title={t("message_actions_title")}
               items={[
+                ...(actions.onNarrate
+                  ? [
+                      {
+                        icon: narrating ? <Icons.stopSquare /> : <Icons.speaker />,
+                        label: narrating ? t("narrate_stop") : t("narrate_action"),
+                        action: actions.onNarrate,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
                 {
                   icon: copied ? <Icons.Check /> : <Icons.Copy />,
                   label: copied ? t("copied") : copyLabel,
@@ -371,6 +384,10 @@ export function MessageShell(props: MessageShellProps) {
               onCopy={actions.onCopy}
               onDelete={actions.onDelete}
               onEdit={actions.onEdit}
+              onNarrate={actions.onNarrate}
+              narrating={narrating}
+              narrateTooltip={t("narrate_tooltip")}
+              narrateStopTooltip={t("narrate_stop_tooltip")}
               onRegenerate={actions.onRegenerate}
               onResend={actions.onResend}
               variantControls={desktopVariantControls}
@@ -397,6 +414,10 @@ export function MessageShell(props: MessageShellProps) {
               variantCount={variantCount}
               onAiEdit={actions.onAiEdit}
               onBranch={actions.onBranch}
+              onNarrate={actions.onNarrate}
+              narrating={narrating}
+              narrateTooltip={t("narrate_tooltip")}
+              narrateStopTooltip={t("narrate_stop_tooltip")}
               onRegenerate={actions.onRegenerate}
               onResend={actions.onResend}
               variantControls={mobileVariantControls}
@@ -490,6 +511,10 @@ function DesktopMessageActions(props: {
   onCopy: () => void;
   onDelete: () => void;
   onEdit: () => void;
+  onNarrate?: () => void;
+  narrating?: boolean;
+  narrateTooltip?: string;
+  narrateStopTooltip?: string;
   onRegenerate: () => void;
   onResend: () => void;
 }) {
@@ -500,7 +525,7 @@ function DesktopMessageActions(props: {
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControlsRef, variantCount,
     variantControls,
-    onAiEdit, onBranch, onCopy, onDelete, onEdit, onRegenerate, onResend,
+    onAiEdit, onBranch, onCopy, onDelete, onEdit, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
   } = props;
 
   return (
@@ -517,6 +542,23 @@ function DesktopMessageActions(props: {
         className={desktopActionClass}
         onClick={() => { if (!isBusy) onEdit(); }}
       ><Icons.Edit />{editLabel}</span>
+
+      {onNarrate && (
+        <CustomTooltip content={narrating ? narrateStopTooltip : narrateTooltip}>
+          <button
+            type="button"
+            aria-label={narrating ? narrateStopTooltip : narrateTooltip}
+            aria-disabled={isBusy}
+            disabled={isBusy}
+            data-testid="desktop-narrate-btn"
+            className={cn(
+              "flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40",
+              narrating ? "text-accent animate-pulse" : "text-t3",
+            )}
+            onClick={() => { if (!isBusy) onNarrate(); }}
+          >{narrating ? <Icons.stopSquare /> : <Icons.speaker />}</button>
+        </CustomTooltip>
+      )}
 
       {canAiEdit && (
         <CustomTooltip content={aiEditTooltip}>
@@ -570,6 +612,10 @@ function MobileMessageActions(props: {
   variantControls?: ReactNode;
   onAiEdit: () => void;
   onBranch: () => void;
+  onNarrate?: () => void;
+  narrating?: boolean;
+  narrateTooltip?: string;
+  narrateStopTooltip?: string;
   onRegenerate: () => void;
   onResend: () => void;
 }) {
@@ -578,7 +624,7 @@ function MobileMessageActions(props: {
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
-    onAiEdit, onBranch, onRegenerate, onResend,
+    onAiEdit, onBranch, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
   } = props;
 
   return (
@@ -594,6 +640,11 @@ function MobileMessageActions(props: {
         {!isUser && !isGreeting && canSwitchVariant && variantControls}
       </div>
       <div className="flex justify-end gap-1">
+        {onNarrate && (
+          <button type="button" aria-label={narrating ? narrateStopTooltip : narrateTooltip} data-testid="mobile-narrate-btn" className={cn("flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg active:bg-s2 [&_svg]:h-5 [&_svg]:w-5", narrating ? "text-accent animate-pulse" : "text-t3")} onClick={() => { if (!isBusy) onNarrate(); }} title={narrating ? narrateStopTooltip : narrateTooltip}>
+            {narrating ? <Icons.stopSquare /> : <Icons.speaker />}
+          </button>
+        )}
         {canAiEdit && (
           <button type="button" aria-label={aiEditTooltip} disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiEdit(); }} title={aiEditTooltip}>
             <Icons.Sparkles />

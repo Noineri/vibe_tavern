@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star } from 'lucide-react';
+import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star, Volume2, Square } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -110,6 +110,11 @@ export const Ic = {
   // Counterclockwise curved arrow — the copilot editor's «Отменить изменения»
   // (revert to turn-start snapshot). Lucide undo-2 geometry scaled to 16.
   undo:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9.33 2.67 6 6 2.67"/><path d="M2.67 6h7a3.67 3.67 0 0 1 0 7.33H7.33"/></svg>,
+  // Lucide `Volume2` — speaker for TTS narration; stroke 2 for toolbar legibility.
+  speaker: (props?: { className?: string }) => <Volume2 size={13} strokeWidth={2} {...props} />,
+  // Lucide `Square` filled — stop button for active narration; filled block
+  // signals "stop current playback" and pulses in the accent color when active.
+  stopSquare: (props?: { className?: string }) => <Square size={11} fill="currentColor" stroke="none" strokeWidth={0} {...props} />,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

@@ -15,6 +15,8 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { MediaMenu } from "../chat/MediaMenu.js";
 import { UpdateBadge } from "./UpdateBadge.js";
 import { useActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
+import { useTtsPlaybackStore } from "../../stores/tts-playback-store.js";
+import { useVoiceMapData } from "../../lib/tts/voice-map-data.js";
 
 interface TopBarProps {
   railHidden?: boolean;
@@ -66,6 +68,10 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
   const activeRegexPresets = useActiveRegexPresets(characterId, activePromptPresetId);
   const activeRegexCount = activeRegexPresets.filter((p) => !p.disabled).length;
   const activeRegexNames = activeRegexPresets.filter((p) => !p.disabled).map((p) => p.name);
+  const autoNarrate = useTtsPlaybackStore((s) => s.autoNarrate);
+  const setAutoNarrate = useTtsPlaybackStore((s) => s.setAutoNarrate);
+  const { data: voiceMapData } = useVoiceMapData();
+  const hasTtsProfiles = (voiceMapData?.profiles.length ?? 0) > 0;
 
   const canSwitchPresets = promptPresets.length > 0;
 
@@ -192,6 +198,24 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
                 <Icons.tool />
                 <span>{activeRegexCount}</span>
               </div>
+            </CustomTooltip>
+          )}
+
+          {hasTtsProfiles && (
+            <CustomTooltip content={autoNarrate ? t("topbar_autonarrate_on") : t("topbar_autonarrate_off")}>
+              <button
+                type="button"
+                data-testid="topbar-autonarrate-toggle"
+                aria-pressed={autoNarrate}
+                aria-label={autoNarrate ? t("topbar_autonarrate_on") : t("topbar_autonarrate_off")}
+                className={cn(
+                  "flex shrink-0 items-center justify-center rounded px-1.5 py-[3px] transition-colors",
+                  autoNarrate ? "bg-accent-dim text-accent" : "text-t3 hover:bg-s2 hover:text-t1",
+                )}
+                onClick={() => setAutoNarrate(!autoNarrate)}
+              >
+                <Icons.speaker />
+              </button>
             </CustomTooltip>
           )}
 
