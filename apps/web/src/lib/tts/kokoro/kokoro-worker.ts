@@ -20,6 +20,7 @@ import type { GenerateOptions } from "kokoro-js";
 
 import { tryResolveKokoroVoice } from "../kokoro-voices.js";
 import { KokoroGenerateError, KokoroModelNotLoadedError } from "./kokoro-errors.js";
+import { rewriteHfUrl } from "./kokoro-mirror.js";
 import type {
   KokoroDevice,
   KokoroDtype,
@@ -28,6 +29,25 @@ import type {
 } from "./kokoro-protocol.js";
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+
+// F4: every huggingface.co download (transformers.js model files AND the
+// voice blobs kokoro-js fetches from a hardcoded dist URL) is rerouted to the
+// server-side mirror, which uses the app's proxy. Browser fetch cannot use
+// the env/app proxy at all, so the direct HF path silently stalls in
+// geo-blocked regions. See ./kokoro-mirror.ts for why this is a fetch wrap.
+const directFetch = globalThis.fetch.bind(globalThis);
+const mirroredFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const mirrored = rewriteHfUrl(url);
+  if (mirrored !== null) {
+    return directFetch(mirrored, init);
+  }
+  return directFetch(input, init);
+};
+// Keep the fetch namespace shape assignable to `typeof fetch` (same pattern
+// as the server-side proxied fetch in provider-fetch-factory.ts).
+mirroredFetch.preconnect = () => {};
+globalThis.fetch = mirroredFetch;
 
 let tts: KokoroTTS | null = null;
 let loading: Promise<KokoroTTS> | null = null;

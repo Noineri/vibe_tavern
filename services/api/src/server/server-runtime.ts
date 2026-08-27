@@ -301,6 +301,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const app = await createApp({
 		runtime,
 		staticDir: config.staticDir,
+		dataDir: config.dataDir,
 		embeddedWebFiles: config.embeddedWebFiles,
 		mobileAccessToken: () => mobileAccessService.getToken(),
 		enforceMobileAuth: true,

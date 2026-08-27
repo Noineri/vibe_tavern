@@ -6,6 +6,8 @@ import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../s
 import { ProviderExecutionError } from "../infrastructure/ai/provider-execution-types.js";
 import { logSendDebug } from "../shared/send-debug-log.js";
 import { createApiRouter, type RuntimeApi } from "../api/routes/index.js";
+import { createKokoroMirrorRoutes } from "../api/routes/kokoro-mirror.js";
+import { KokoroMirrorService } from "../domain/tts/kokoro-mirror.js";
 import { createMobileAuthMiddleware, type MobileAccessTokenSource } from "../domain/mobile-access/mobile-auth.js";
 import {
 	createOriginGuardMiddleware,
@@ -24,6 +26,10 @@ export interface AppDeps {
 	enforceMobileAuth?: boolean;
 	/** Mount feature routes before static frontend fallback and final 404 catch-all. */
 	configureFeatures?: (app: Hono) => void;
+	/** App data directory (DB, assets, caches). When set, the Kokoro model
+	 *  mirror route is mounted, caching the in-browser TTS model under
+	 *  <dataDir>/kokoro-model-cache. */
+	dataDir?: string;
 	/** Embedded frontend files baked into the standalone .exe via
 	 *  `import ... with { type: "file" }`. Map of URL pathname → embedded
 	 *  file path. When non-empty, the SPA is served from the binary itself
@@ -39,6 +45,12 @@ export interface AppDeps {
 export async function createApp(deps: AppDeps): Promise<Hono> {
 	const { runtime } = deps;
 	const apiRouter = createApiRouter(runtime);
+	if (deps.dataDir) {
+		apiRouter.route(
+			"/",
+			createKokoroMirrorRoutes(new KokoroMirrorService(deps.dataDir)),
+		);
+	}
 
 	const app = new Hono();
 
