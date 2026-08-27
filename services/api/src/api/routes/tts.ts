@@ -124,5 +124,10 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
         }
         throw error;
       }
+    })
+    // ── Local-server helpers (D8) ────────────────────────────────────
+    .get("/api/tts/local/docker", async (c) => {
+      // Never throws — every probe failure degrades to available:false.
+      return c.json(await runtime.probeLocalDocker());
     });
 }

@@ -378,13 +378,13 @@ export interface RegexRuntimeApi {
 // ─── TTS profiles (TTS_PLAN TS-6) ──────────────────────────────────────────
 
 export interface TtsRuntimeApi {
-	listTtsProfiles: () => Promise<import("@vibe-tavern/domain").TtsProfile[]>;
-	getTtsProfile: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
-	createTtsProfile: (body: import("@vibe-tavern/api-contracts").CreateTtsProfileInput) => Promise<import("@vibe-tavern/domain").TtsProfile>;
-	updateTtsProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateTtsProfileInput) => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
+	listTtsProfiles: () => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord[]>;
+	getTtsProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord | null>;
+	createTtsProfile: (body: import("@vibe-tavern/api-contracts").CreateTtsProfileInput) => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord>;
+	updateTtsProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateTtsProfileInput) => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord | null>;
 	deleteTtsProfile: (id: string) => Promise<void>;
-	setTtsDefault: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
-	getDefaultTtsProfile: () => Promise<import("@vibe-tavern/domain").TtsProfile | null>;
+	setTtsDefault: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord | null>;
+	getDefaultTtsProfile: () => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord | null>;
 	getTtsLinks: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
 	setTtsLinks: (id: string, links: Array<{ targetType: import("@vibe-tavern/domain").TtsTargetType; targetId: string; mode?: import("@vibe-tavern/domain").TtsLinkMode }>) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
 	listAllTtsLinks: () => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
@@ -397,6 +397,9 @@ export interface TtsRuntimeApi {
 	 *  KokoroClientSideError for the browser-only backend (route → 400). */
 	draftPreviewTts: (body: import("@vibe-tavern/api-contracts").DraftTtsPreviewInput) => Promise<{ audio: Buffer; mime: string }>;
 	draftListTtsModels: (body: import("@vibe-tavern/api-contracts").DraftTtsModelsInput) => Promise<import("../../domain/tts/tts-backend.js").TtsModelInfo[] | null>;
+	/** Honest docker-availability check for the local-server quickstart
+	 *  (D8): `docker --version` bounded by a timeout; never throws. */
+	probeLocalDocker: () => Promise<import("@vibe-tavern/api-contracts").LocalDockerStatus>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────

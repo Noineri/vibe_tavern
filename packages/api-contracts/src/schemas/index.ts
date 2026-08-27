@@ -155,8 +155,8 @@ export {
 } from "./script-schema.js";
 export { regexPlacementSchema, regexSubstituteSchema, regexApplyTargetSchema, regexTargetTypeSchema, createRegexPresetSchema, updateRegexPresetSchema, setRegexLinksSchema, resolveActiveRegexQuerySchema, createRegexProfileSchema, updateRegexProfileSchema, deleteRegexProfileQuerySchema, attachRegexRuleSchema, setRegexProfileLinksSchema } from "./regex-schema.js";
 export type { RegexPlacementCode, RegexSubstituteCode, RegexApplyTargetValue, RegexTargetTypeValue, CreateRegexPresetInput, UpdateRegexPresetInput, SetRegexLinksInput, ResolveActiveRegexQuery, CreateRegexProfileInput, UpdateRegexProfileInput, DeleteRegexProfileQuery, AttachRegexRuleInput, SetRegexProfileLinksInput } from "./regex-schema.js";
-export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfileSchema, createTtsProfileSchema, updateTtsProfileSchema, setTtsLinksSchema, generateTtsSchema, draftTtsVoicesSchema, draftTtsPreviewSchema, draftTtsModelsSchema } from "./tts-schema.js";
-export type { TtsBackendValue, TtsTargetTypeValue, TtsProfileValue, CreateTtsProfileInput, UpdateTtsProfileInput, SetTtsLinksInput, GenerateTtsInput, DraftTtsVoicesInput, DraftTtsPreviewInput, DraftTtsModelsInput } from "./tts-schema.js";
+export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfileSchema, createTtsProfileSchema, updateTtsProfileSchema, setTtsLinksSchema, generateTtsSchema, draftTtsVoicesSchema, draftTtsPreviewSchema, draftTtsModelsSchema, localDockerStatusSchema } from "./tts-schema.js";
+export type { TtsBackendValue, TtsTargetTypeValue, TtsProfileValue, CreateTtsProfileInput, UpdateTtsProfileInput, SetTtsLinksInput, GenerateTtsInput, DraftTtsVoicesInput, DraftTtsPreviewInput, DraftTtsModelsInput, LocalDockerStatus } from "./tts-schema.js";
 
 export {
   coauthorModuleSchema,

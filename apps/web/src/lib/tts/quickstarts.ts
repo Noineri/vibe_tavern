@@ -1,11 +1,24 @@
 import type { DiscoveryDiagnosticCode } from "./server-discovery.js";
+import type Resources from "../../i18n/resources.js";
+
+/** Typed i18n key — a typo'd/missing key is a compile error (TFunc pattern). */
+export type TtsI18nKey = keyof Resources["en"];
 
 export interface LocalTtsQuickstart {
   id: string;
   name: string;
+  /** Primary (docker) launch command — one line, copyable. */
   command: string;
   port: number;
   endpoint: string;
+  /** Non-docker launch variant (D8): verified against the upstream README —
+   *  both quickstart servers genuinely support direct launch. Rendered
+   *  beside the docker command so the card stays honest without docker. */
+  alt: {
+    command: string;
+    /** i18n key of the one-line prerequisite note. */
+    noteKey: TtsI18nKey;
+  };
 }
 
 export const LOCAL_TTS_QUICKSTARTS: LocalTtsQuickstart[] = [
@@ -15,6 +28,10 @@ export const LOCAL_TTS_QUICKSTARTS: LocalTtsQuickstart[] = [
     command: "docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest",
     port: 8880,
     endpoint: "http://127.0.0.1:8880/v1",
+    alt: {
+      command: "git clone https://github.com/remsky/Kokoro-FastAPI.git && cd Kokoro-FastAPI && ./start-cpu.sh",
+      noteKey: "tts_quickstart_alt_uv",
+    },
   },
   {
     id: "openai-edge-tts",
@@ -22,6 +39,10 @@ export const LOCAL_TTS_QUICKSTARTS: LocalTtsQuickstart[] = [
     command: "docker run -d -p 5050:5050 -e PORT=5050 travisvn/openai-edge-tts:latest",
     port: 5050,
     endpoint: "http://127.0.0.1:5050/v1",
+    alt: {
+      command: "git clone https://github.com/travisvn/openai-edge-tts.git && cd openai-edge-tts && pip install -r requirements.txt && python app/server.py",
+      noteKey: "tts_quickstart_alt_python",
+    },
   },
 ];
 

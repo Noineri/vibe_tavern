@@ -27,12 +27,19 @@ export type TtsTargetTypeValue = z.infer<typeof ttsTargetTypeSchema>;
  */
 export const ttsProfileConfigSchema = z.record(z.string(), z.unknown());
 
-/** Full TTS profile as served by the API (mirrors the domain `TtsProfile`). */
+/** Full TTS profile as served by the API — SECURITY PROJECTION of the
+ *  stored domain row: the secret `config.apiKey` is stripped server-side and
+ *  reported as the boolean `hasStoredApiKey` (same wire contract as
+ *  `ClientProviderProfileRecord.hasStoredApiKey`). The key never crosses the
+ *  boundary in either direction of a read; writes merge-on-save (empty/
+ *  absent `apiKey` in the incoming config = keep the stored key). */
 export const ttsProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
   backend: ttsBackendSchema,
   config: ttsProfileConfigSchema,
+  /** True when the stored config bag holds a non-empty apiKey. */
+  hasStoredApiKey: z.boolean(),
   voiceId: z.string(),
   lang: z.string(),
   sortOrder: z.number(),
@@ -112,6 +119,12 @@ export type GenerateTtsInput = z.infer<typeof generateTtsSchema>;
 export const draftTtsVoicesSchema = z.object({
   backend: ttsBackendSchema,
   config: ttsProfileConfigSchema,
+  /** Saved-profile id for stored-key resolution: when the transient config
+   *  carries NO apiKey (strip-on-read) and this id points at a stored profile
+   *  with the SAME backend (and, for endpoint backends, the same endpoint),
+   *  the server injects the stored key for this one request — the LLM
+   *  branch's test-draft pattern. Optional: a brand-new profile sends none. */
+  profileId: z.string().optional(),
 });
 export type DraftTtsVoicesInput = z.infer<typeof draftTtsVoicesSchema>;
 
@@ -122,6 +135,8 @@ export type DraftTtsVoicesInput = z.infer<typeof draftTtsVoicesSchema>;
 export const draftTtsPreviewSchema = z.object({
   backend: ttsBackendSchema,
   config: ttsProfileConfigSchema,
+  /** Stored-key resolution — same semantics as in {@link draftTtsVoicesSchema}. */
+  profileId: z.string().optional(),
   voiceId: z.string().optional().default(""),
   text: z.string().min(1),
   speed: z.number().optional(),
@@ -132,5 +147,18 @@ export type DraftTtsPreviewInput = z.infer<typeof draftTtsPreviewSchema>;
 export const draftTtsModelsSchema = z.object({
   backend: ttsBackendSchema,
   config: ttsProfileConfigSchema,
+  /** Stored-key resolution — same semantics as in {@link draftTtsVoicesSchema}. */
+  profileId: z.string().optional(),
 });
 export type DraftTtsModelsInput = z.infer<typeof draftTtsModelsSchema>;
+
+/** Response of GET /api/tts/local/docker — honest availability check for the
+ *  local-server quickstart: `version` is the first line of `docker --version`
+ *  when the CLI resolves, null when it does not (not installed / not on
+ *  PATH / timed out). The quickstart UI shows non-docker launch variants
+ *  next to it either way. */
+export const localDockerStatusSchema = z.object({
+  available: z.boolean(),
+  version: z.string().nullable(),
+});
+export type LocalDockerStatus = z.infer<typeof localDockerStatusSchema>;

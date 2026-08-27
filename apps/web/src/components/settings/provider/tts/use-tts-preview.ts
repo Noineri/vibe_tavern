@@ -36,6 +36,11 @@ export interface TtsPreviewInput {
    *  sent to the draft endpoint once, never persisted). Kokoro synthesizes
    *  from form values client-side and ignores it. */
   config: Record<string, unknown> | null;
+  /** Saved-profile id for stored-key resolution (F2b): when the transient
+   *  config carries no apiKey (strip-on-read form) and this id matches the
+   *  saved row (same backend/endpoint), the server injects the stored key
+   *  for this one preview. Optional — new profiles send none. */
+  profileId?: string | null;
 }
 
 export interface TtsPreviewDeps {
@@ -81,6 +86,7 @@ async function defaultSynthesize(input: TtsPreviewInput): Promise<{ blob: Blob; 
   return previewTtsDraft({
     backend: input.backend,
     config: input.config,
+    profileId: input.profileId ?? undefined,
     voiceId: input.voiceId,
     text: TTS_PREVIEW_SENTENCE,
     speed: input.speed,

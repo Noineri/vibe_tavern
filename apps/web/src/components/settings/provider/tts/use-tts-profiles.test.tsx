@@ -32,6 +32,7 @@ function makeRecord(overrides: Partial<TtsRecord> = {}): TtsRecord {
     backend: "kokoro",
     config: {},
     voiceId: "af_heart",
+    hasStoredApiKey: false,
     lang: "en",
     sortOrder: 0,
     isDefault: false,
@@ -264,5 +265,65 @@ describe("useTtsProfiles", () => {
     expect(hook!.form?.backend).toBe("kokoro");
     expect(hook!.form?.voiceId).toBe("af_heart");
     expect(hook!.form?.config).toEqual({});
+  });
+});
+
+// ─── F5/F2b: the form mirrors the record's hasStoredApiKey and drops it on
+// a backend switch — the UI must never believe a stored key survives a
+// backend change (server-side merge has the same guard, pinned in
+// services/api/test/tts-routes.test.ts). ─────────────────────────────────
+
+describe("useTtsProfiles — hasStoredApiKey lifecycle (F2b)", () => {
+  it("select() mirrors the record's hasStoredApiKey into the form", async () => {
+    store = [
+      makeRecord({
+        id: "p1",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1" },
+        hasStoredApiKey: true,
+      }),
+      makeRecord({ id: "p2", backend: "gemini", config: {}, hasStoredApiKey: false }),
+    ];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+
+    hook!.select("p1");
+    await waitFor(() => expect(hook!.editingId).toBe("p1"));
+    expect(hook!.form?.hasStoredApiKey).toBe(true);
+
+    hook!.select("p2");
+    await waitFor(() => expect(hook!.form?.backend).toBe("gemini"));
+    expect(hook!.form?.hasStoredApiKey).toBe(false);
+    cleanup();
+  });
+
+  it("switching the backend resets hasStoredApiKey to false", async () => {
+    store = [
+      makeRecord({
+        id: "p1",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1", apiKey: "" },
+        hasStoredApiKey: true,
+      }),
+    ];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook!.form?.hasStoredApiKey).toBe(true));
+
+    hook!.setForm({ backend: "gemini", config: {}, voiceId: "" });
+    await waitFor(() => expect(hook!.form?.backend).toBe("gemini"));
+    expect(hook!.form?.hasStoredApiKey).toBe(false);
+    cleanup();
   });
 });

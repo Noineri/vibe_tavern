@@ -2632,5 +2632,17 @@
   "tts_kokoro_model_download": "Скачать модель",
   "tts_kokoro_model_downloading": "Загрузка модели…",
   "tts_kokoro_model_ready": "Модель готова",
-  "tts_kokoro_model_failed": "Не удалось скачать"
+  "tts_kokoro_model_failed": "Не удалось скачать",
+  "tts_backend_local_server": "Локальный сервер (OpenAI-совместимый)",
+  "tts_section_connection": "Подключение",
+  "tts_section_voice_tuning": "Голос и настройка",
+  "tts_field_api_key_stored": "Ключ сохранён — оставьте пустым, чтобы не менять",
+  "tts_field_api_key_status_stored": "В профиле сохранён ключ. Пустое поле — оставить прежний; введите новый, чтобы заменить.",
+  "tts_docker_status_probing": "Проверяем docker…",
+  "tts_docker_status_ok": "Docker найден: {version}",
+  "tts_docker_status_missing": "Docker не найден — используйте команду без docker ниже",
+  "tts_docker_status_unknown": "Статус docker неизвестен",
+  "tts_quickstart_copy_alt": "Копировать без docker",
+  "tts_quickstart_alt_uv": "Без docker: нужны git + uv (astral); в Windows запустите .\\start-cpu.ps1",
+  "tts_quickstart_alt_python": "Без docker: нужны git + Python 3; сервер поднимется на порту 5050"
 }

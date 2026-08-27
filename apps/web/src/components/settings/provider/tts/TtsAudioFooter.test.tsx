@@ -20,6 +20,7 @@ function makeTts(overrides: Partial<TtsHook> = {}): TtsHook {
     backend: TTS_BACKEND.Kokoro,
     config: {},
     voiceId: "af_heart",
+    hasStoredApiKey: false,
     lang: "en",
     sortOrder: 0,
     isDefault: false,

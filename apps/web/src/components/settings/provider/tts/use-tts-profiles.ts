@@ -14,6 +14,11 @@ export interface TtsProfileForm {
   backend: TtsBackendSlug;
   config: Record<string, unknown>;
   voiceId: string;
+  /** Mirror of the record's strip-on-read flag (F2b): true while editing a
+   *  profile whose STORED config has a key. Drives the key field's "saved"
+   *  placeholder; an empty typed key + this flag = keep the stored one on
+   *  save (server-side merge-on-write). */
+  hasStoredApiKey: boolean;
 }
 
 /** Wire-boundary normalizer: the server already degrades unknown backend
@@ -77,8 +82,11 @@ export function useTtsProfiles(): {
         id: record.id,
         name: record.name,
         backend: toBackendSlug(record.backend),
+        // record.config arrives WITHOUT the apiKey (strip-on-read) — the key
+        // field starts empty and shows the "saved" placeholder instead.
         config: { ...record.config },
         voiceId: record.voiceId ?? "",
+        hasStoredApiKey: record.hasStoredApiKey,
       });
       setDirty(false);
       setError(null);
@@ -88,7 +96,7 @@ export function useTtsProfiles(): {
 
   const startCreate = useCallback(() => {
     setEditingId(null);
-    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "af_heart" });
+    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "af_heart", hasStoredApiKey: false });
     setDirty(false);
     setError(null);
   }, []);
@@ -96,11 +104,13 @@ export function useTtsProfiles(): {
   const setForm = useCallback((patch: Partial<TtsProfileForm>) => {
     setFormState((prev) => {
       if (!prev) return prev;
-      // Backend switch resets config and voiceId — stale keys must never leak.
+      // Backend switch resets config and voiceId — stale keys must never leak
+      // (and a stored key from the OLD backend must not survive into the new
+      // one: hasStoredApiKey resets with it — the user re-enters a key).
       if (patch.backend !== undefined && patch.backend !== prev.backend) {
         const nextBackend = patch.backend;
         const nextVoiceId = nextBackend === TTS_BACKEND.Kokoro ? "af_heart" : "";
-        return { ...prev, ...patch, config: {}, voiceId: nextVoiceId };
+        return { ...prev, ...patch, config: {}, voiceId: nextVoiceId, hasStoredApiKey: false };
       }
       return { ...prev, ...patch };
     });
@@ -117,6 +127,7 @@ export function useTtsProfiles(): {
           backend: toBackendSlug(record.backend),
           config: { ...record.config },
           voiceId: record.voiceId ?? "",
+          hasStoredApiKey: record.hasStoredApiKey,
         });
       }
       setDirty(false);
@@ -160,6 +171,7 @@ export function useTtsProfiles(): {
         backend: toBackendSlug(saved.backend),
         config: { ...saved.config },
         voiceId: saved.voiceId ?? "",
+        hasStoredApiKey: saved.hasStoredApiKey,
       });
       setDirty(false);
     } catch (cause) {

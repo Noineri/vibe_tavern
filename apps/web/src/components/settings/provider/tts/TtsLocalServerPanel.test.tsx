@@ -9,7 +9,7 @@ import { __setTtsDiscoveryDepsForTests } from "./use-tts-discovery.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import type { DiscoveredServer, ProbeOutcome } from "../../../../lib/tts/server-discovery.js";
 
-const { render, act, cleanup, fireEvent } = await import("@testing-library/react");
+const { render, act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
 
 // Track setForm calls
 let lastFormPatch: Record<string, unknown> | null = null;
@@ -23,6 +23,7 @@ const ttsHookBase: {
     backend: TtsBackendSlug;
     config: Record<string, unknown>;
     voiceId: string;
+    hasStoredApiKey: boolean;
     lang: string;
     sortOrder: number;
     isDefault: boolean;
@@ -49,6 +50,7 @@ const ttsHookBase: {
     backend: TTS_BACKEND.OpenAiCompatible,
     config: {} as Record<string, unknown>,
     voiceId: "alloy",
+    hasStoredApiKey: false,
     lang: "en",
     sortOrder: 0,
     isDefault: false,
@@ -90,12 +92,25 @@ const realI18n = await import("../../../../i18n/context.js");
 mock.module("../../../../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({
-    t: (key: string) => key,
+    t: (key: string, params?: Record<string, unknown>) =>
+      params && "version" in params ? `${key}:${String(params.version)}` : key,
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
     ready: true,
   }),
+}));
+
+// Docker probe (D8): deterministic states per test — default mirrors the
+// honest "not found" shape so no test ever depends on a real fetch.
+let dockerStatusNext: { available: boolean; version: string | null } | Error = { available: false, version: null };
+const realTtsApi = await import("../../../../api/tts-api.js");
+mock.module("../../../../api/tts-api.js", () => ({
+  ...realTtsApi,
+  fetchLocalDockerStatus: async () => {
+    if (dockerStatusNext instanceof Error) throw dockerStatusNext;
+    return dockerStatusNext;
+  },
 }));
 
 const { TtsLocalServerPanel } = await import("./TtsLocalServerPanel.js");
@@ -114,6 +129,40 @@ afterEach(() => {
 });
 
 describe("TtsLocalServerPanel", () => {
+  test("docker status line: available with version (D8)", async () => {
+    dockerStatusNext = { available: true, version: "27.3.1" };
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    const status = await waitFor(() => view.getByTestId("tts-docker-status"));
+    expect(status.textContent).toContain("tts_docker_status_ok");
+    expect(status.textContent).toContain("27.3.1");
+    cleanup();
+  });
+
+  test("docker status line: not found + alt commands shown anyway", async () => {
+    dockerStatusNext = { available: false, version: null };
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    const status = await waitFor(() => view.getByTestId("tts-docker-status"));
+    expect(status.textContent).toContain("tts_docker_status_missing");
+    // The non-docker variant row must exist on the card (honesty pin).
+    expect(view.getByTestId("tts-quickstart-copy-alt-kokoro-fastapi")).toBeTruthy();
+    expect(view.getByTestId("tts-quickstart-copy-alt-openai-edge-tts")).toBeTruthy();
+    expect(view.getByTestId("tts-quickstart-card-kokoro-fastapi").textContent).toContain("start-cpu.sh");
+    cleanup();
+  });
+
+  test("docker status line: transport failure → unknown, panel stays usable", async () => {
+    dockerStatusNext = new Error("route unreachable");
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    const status = await waitFor(() => view.getByTestId("tts-docker-status"));
+    expect(status.textContent).toContain("tts_docker_status_unknown");
+    expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
+    cleanup();
+    dockerStatusNext = { available: false, version: null };
+  });
+
   test("renders null for non-openai backend (kokoro)", () => {
     const tts = makeTtsHook({ form: { ...ttsHookBase.form, backend: TTS_BACKEND.Kokoro } });
     const panelProps = { tts, form: tts.form };

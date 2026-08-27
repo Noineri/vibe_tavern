@@ -9,6 +9,7 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
     name: "Profile 1",
     backend: "kokoro",
     config: {},
+    hasStoredApiKey: false,
     voiceId: "af_heart",
     lang: "en",
     sortOrder: 0,

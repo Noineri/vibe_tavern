@@ -27,6 +27,22 @@ describe("quickstarts", () => {
     }
   });
 
+  test("every quickstart carries a non-docker launch variant (D8 honesty)", () => {
+    // Verified against the upstream READMEs (2026-08-27): remsky/Kokoro-FastAPI
+    // runs directly via uv start scripts; travisvn/openai-edge-tts via venv +
+    // pip + python app/server.py. A card without an alt command would silently
+    // assume docker again — exactly the defect D8 fixed.
+    for (const q of LOCAL_TTS_QUICKSTARTS) {
+      expect(q.alt.command.length).toBeGreaterThan(0);
+      expect(q.alt.command).not.toContain("docker run");
+      expect(q.alt.noteKey.length).toBeGreaterThan(0);
+    }
+    const kokoro = LOCAL_TTS_QUICKSTARTS.find((q) => q.id === "kokoro-fastapi");
+    expect(kokoro?.alt.command).toContain("start-cpu");
+    const edge = LOCAL_TTS_QUICKSTARTS.find((q) => q.id === "openai-edge-tts");
+    expect(edge?.alt.command).toContain("app/server.py");
+  });
+
   test("worstDiagnostic priority matrix", () => {
     expect(worstDiagnostic([])).toBeNull();
     expect(worstDiagnostic(["server-not-running"])).toBe("server-not-running");

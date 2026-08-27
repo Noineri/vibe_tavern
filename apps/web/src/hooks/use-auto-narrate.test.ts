@@ -17,6 +17,7 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
     name: "Default",
     backend: "kokoro",
     config: {},
+    hasStoredApiKey: false,
     voiceId: "af_heart",
     lang: "en",
     sortOrder: 0,

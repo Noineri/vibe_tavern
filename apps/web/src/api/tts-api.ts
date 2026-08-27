@@ -10,7 +10,12 @@ export interface TtsProfileRecord {
   id: string;
   name: string;
   backend: string;
+  /** Backend-specific bag WITHOUT the apiKey — strip-on-read projection
+   *  (F2b): the secret never crosses the wire; `hasStoredApiKey` reports
+   *  its existence instead. */
   config: Record<string, unknown>;
+  /** True when the stored profile has a non-empty apiKey. */
+  hasStoredApiKey: boolean;
   voiceId: string;
   lang: string;
   sortOrder: number;
@@ -161,11 +166,14 @@ export async function listTtsVoices(profileId: string): Promise<TtsVoiceRecord[]
 
 /** Voices for a config straight from the profile-editor form — no saved
  *  profile needed. The apiKey inside `config` is transient (used once for
- *  this request). Kokoro is rejected by the server (browser-only) — callers
- *  gate on the backend before reaching here. */
+ *  this request); when it is empty and `profileId` names the saved profile
+ *  this form belongs to (same backend/endpoint), the server injects the
+ *  STORED key for this one request (strip-on-read UX). Kokoro is rejected
+ *  by the server (browser-only) — callers gate on the backend first. */
 export async function listTtsDraftVoices(body: {
   backend: string;
   config: Record<string, unknown>;
+  profileId?: string;
 }): Promise<TtsVoiceRecord[]> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/draft/voices`), {
@@ -183,6 +191,7 @@ export async function listTtsDraftVoices(body: {
 export async function listTtsDraftModels(body: {
   backend: string;
   config: Record<string, unknown>;
+  profileId?: string;
 }): Promise<Array<{ id: string; label: string }>> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/draft/models`), {
@@ -197,11 +206,26 @@ export async function listTtsDraftModels(body: {
   return (await response.json()) as Array<{ id: string; label: string }>;
 }
 
+// ─── Local-server helpers (D8) ───────────────────────────────────────────
+
+/** Server-side docker availability probe — `docker --version` via the API
+ *  server (bounded, never throws server-side); degrades to
+ *  `{available:false, version:null}` when the CLI is missing or hung. */
+export async function fetchLocalDockerStatus(): Promise<{ available: boolean; version: string | null }> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/local/docker`));
+  if (!response.ok) {
+    throw new Error(`Docker probe failed: ${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as { available: boolean; version: string | null };
+}
+
 /** One-shot preview synthesis from an unsaved form config — the
  *  "Прослушать голос" path for server backends BEFORE saving. */
 export async function previewTtsDraft(body: {
   backend: string;
   config: Record<string, unknown>;
+  profileId?: string;
   voiceId: string;
   text: string;
   speed?: number;

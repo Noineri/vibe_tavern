@@ -10,6 +10,7 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
     name: "Test",
     backend: "openai",
     config: {},
+    hasStoredApiKey: false,
     voiceId: "alloy",
     lang: "en",
     sortOrder: 0,

@@ -41,6 +41,9 @@ mock.module("../../../../api/tts-api.js", () => ({
   ...realTtsApi,
   listTtsDraftVoices: listTtsDraftVoicesMock,
   listTtsDraftModels: listTtsDraftModelsMock,
+  // Docker probe (D8): deterministic "not found" for every editor test —
+  // only the local-variant test below cares, and only that the panel renders.
+  fetchLocalDockerStatus: async () => ({ available: false, version: null }),
 }));
 
 function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
@@ -328,5 +331,101 @@ describe("TtsProfileEditor", () => {
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
+  });
+});
+
+describe("TtsProfileEditor — F5 restructure (sections, local variant, stored key)", () => {
+  it("server backends render BOTH section cards, endpoint lives in the connection card", () => {
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://api.example.com/v1", apiKey: "k", model: "m" },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const connection = view.getByTestId("tts-connection-card");
+    const voice = view.getByTestId("tts-voice-card");
+    expect(within(connection).getByTestId("tts-field-endpoint")).toBeTruthy();
+    expect(within(voice).getByText("tts_field_voice")).toBeTruthy();
+    // The preview button docks in the voice card (F1 layout preserved).
+    expect(within(voice).getByTestId("tts-preview-btn")).toBeTruthy();
+    cleanup();
+  });
+
+  it("kokoro has NO connection card (browser-local: nothing to connect to)", () => {
+    const tts = makeTts({
+      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "af_heart" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.queryByTestId("tts-connection-card")).toBeNull();
+    expect(view.getByTestId("tts-voice-card")).toBeTruthy();
+    cleanup();
+  });
+
+  it("D8: the local server panel is gated on the localServer flag, not the backend alone", () => {
+    const localTts = makeTts({
+      form: {
+        id: null,
+        name: "Local",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "http://127.0.0.1:8880/v1", localServer: true },
+        voiceId: "af_heart",
+      } as never,
+    });
+    const localView = render(React.createElement(TtsProfileEditor as never, { tts: localTts } as never));
+    expect(localView.getByTestId("tts-local-server-panel")).toBeTruthy();
+    localView.unmount();
+
+    // Same backend WITHOUT the flag = the cloud variant — no local helpers.
+    const cloudTts = makeTts({
+      form: {
+        id: null,
+        name: "Cloud",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://api.example.com/v1", apiKey: "k" },
+        voiceId: "alloy",
+      } as never,
+    });
+    const cloudView = render(React.createElement(TtsProfileEditor as never, { tts: cloudTts } as never));
+    expect(cloudView.queryByTestId("tts-local-server-panel")).toBeNull();
+    cleanup();
+  });
+
+  it("F2b: a stored key shows the placeholder status while the field itself stays empty", () => {
+    const tts = makeTts({
+      form: {
+        id: "p1",
+        name: "Cloud",
+        backend: TTS_BACKEND.Gemini as never,
+        config: { model: "m" },
+        voiceId: "",
+        hasStoredApiKey: true,
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const status = view.getByTestId("tts-field-api-key-status");
+    expect(status.textContent).toContain("tts_field_api_key_status_stored");
+    const field = view.getByTestId("tts-field-api-key") as HTMLInputElement;
+    expect(field.value).toBe("");
+    cleanup();
+  });
+
+  it("F2b: no status line when nothing is stored", () => {
+    const tts = makeTts({
+      form: {
+        id: "p1",
+        name: "Cloud",
+        backend: TTS_BACKEND.Gemini as never,
+        config: { model: "m" },
+        voiceId: "",
+        hasStoredApiKey: false,
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.queryByTestId("tts-field-api-key-status")).toBeNull();
+    cleanup();
   });
 });
