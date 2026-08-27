@@ -396,6 +396,7 @@ export interface TtsRuntimeApi {
 	/** Transient one-shot synthesis from an unsaved form config. Throws
 	 *  KokoroClientSideError for the browser-only backend (route → 400). */
 	draftPreviewTts: (body: import("@vibe-tavern/api-contracts").DraftTtsPreviewInput) => Promise<{ audio: Buffer; mime: string }>;
+	draftListTtsModels: (body: import("@vibe-tavern/api-contracts").DraftTtsModelsInput) => Promise<import("../../domain/tts/tts-backend.js").TtsModelInfo[] | null>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────

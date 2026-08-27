@@ -128,3 +128,9 @@ export const draftTtsPreviewSchema = z.object({
   instructions: z.string().optional(),
 });
 export type DraftTtsPreviewInput = z.infer<typeof draftTtsPreviewSchema>;
+
+export const draftTtsModelsSchema = z.object({
+  backend: ttsBackendSchema,
+  config: ttsProfileConfigSchema,
+});
+export type DraftTtsModelsInput = z.infer<typeof draftTtsModelsSchema>;

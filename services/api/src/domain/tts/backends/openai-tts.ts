@@ -269,6 +269,34 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       return { audio, mime };
     },
 
+    async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
+      const response = await fetchOrWrap(
+        `${cfg.endpoint}/models`,
+        {
+          method: "GET",
+          headers: buildHeaders(cfg.apiKey),
+          signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+        },
+        "model list",
+      );
+      if (!response.ok) {
+        const excerpt = await readErrorExcerpt(response);
+        throw new OpenAiCompatTtsError(httpErrorMessage("model list", response, excerpt));
+      }
+      const parsed: unknown = await response.json().catch(() => null);
+      if (typeof parsed !== "object" || parsed === null) return [];
+      const data = (parsed as Record<string, unknown>).data;
+      if (!Array.isArray(data)) return [];
+      const out: import("../tts-backend.js").TtsModelInfo[] = [];
+      for (const entry of data) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const id = (entry as Record<string, unknown>).id;
+        if (typeof id !== "string" || id.length === 0) continue;
+        out.push({ id, label: id });
+      }
+      return out;
+    },
+
     async listVoices(): Promise<TtsVoiceInfo[]> {
       // Never throws for unreachable servers: voices → models → static roster.
       try {

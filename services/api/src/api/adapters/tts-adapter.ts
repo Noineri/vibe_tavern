@@ -108,6 +108,15 @@ export class TtsAdapter implements TtsRuntimeApi {
     });
     return { audio: await bufferTtsAudio(result.audio), mime: result.mime };
   };
+
+  draftListTtsModels: TtsRuntimeApi["draftListTtsModels"] = async (body) => {
+    if (body.backend === TTS_BACKEND.Kokoro) {
+      throw new KokoroClientSideError();
+    }
+    const backend = createTtsBackend(body.backend, body.config);
+    if (typeof backend.listModels !== "function") return null;
+    return backend.listModels();
+  };
 }
 
 /** Normalize a backend audio result (Buffer or chunk stream) to a single

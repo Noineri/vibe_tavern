@@ -111,5 +111,18 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
         }
         throw error;
       }
+    })
+    .post("/api/tts/draft/models", zValidator("json", schemas.draftTtsModelsSchema), async (c) => {
+      const body = c.req.valid("json");
+      try {
+        const models = await runtime.draftListTtsModels(body);
+        if (models === null) return c.json({ error: "model listing not supported" }, 400);
+        return c.json(models);
+      } catch (error) {
+        if (error instanceof KokoroClientSideError) {
+          return c.json({ error: "kokoro runs client-side" }, 400);
+        }
+        throw error;
+      }
     });
 }

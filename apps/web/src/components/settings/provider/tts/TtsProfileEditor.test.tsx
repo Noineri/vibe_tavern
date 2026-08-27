@@ -26,17 +26,21 @@ const { act, cleanup, fireEvent, render, waitFor, within } = await import("@test
 const { TtsProfileEditor } = await import("./TtsProfileEditor.js");
 const { TTS_BACKEND } = await import("@vibe-tavern/domain");
 
-// Draft voices (F1): pin that an UNSAVED server form fetches its voice list
-// through the transient endpoint. Safe mock.module pattern — real module
-// captured first, only listTtsDraftVoices overridden.
+// Draft voices (F1) + models (F3): safe mock.module pattern — real module
+// captured first, only draft helpers overridden.
 const realTtsApi = await import("../../../../api/tts-api.js");
 const listTtsDraftVoicesMock = mock(async (_body: { backend: string; config: Record<string, unknown> }) => [
   { id: "alloy", label: "Alloy", lang: "en" },
   { id: "echo", label: "Echo", lang: "en" },
 ]);
+const listTtsDraftModelsMock = mock(async (_body: { backend: string; config: Record<string, unknown> }) => [
+  { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
+  { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
+]);
 mock.module("../../../../api/tts-api.js", () => ({
   ...realTtsApi,
   listTtsDraftVoices: listTtsDraftVoicesMock,
+  listTtsDraftModels: listTtsDraftModelsMock,
 }));
 
 function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
@@ -237,6 +241,90 @@ describe("TtsProfileEditor", () => {
     expect(call.backend).toBe(TTS_BACKEND.OpenAiCompatible);
     expect(call.config.endpoint).toBe("https://x/v1");
 
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("F3 draft models: gemini form fetches models via draft endpoint, refresh button visible", async () => {
+    // Clear prior calls (voices/models mocks are process-scoped).
+    (listTtsDraftModelsMock as unknown as { mockClear: () => void }).mockClear?.();
+    (listTtsDraftVoicesMock as unknown as { mockClear: () => void }).mockClear?.();
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Gem",
+        backend: TTS_BACKEND.Gemini as never,
+        config: { apiKey: "k", model: "gemini-2.5-flash-preview-tts" },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const refresh = view.getByTestId("tts-models-refresh") as HTMLButtonElement;
+    expect(refresh).toBeTruthy();
+    // Wait for debounced fetch — look for a call with gemini backend specifically.
+    await waitFor(
+      () => {
+        const calls = listTtsDraftModelsMock.mock.calls as unknown[][];
+        expect(calls.some((c) => (c[0] as { backend: string }).backend === TTS_BACKEND.Gemini)).toBe(true);
+      },
+      { timeout: 2500 },
+    );
+    const geminiCalls = (listTtsDraftModelsMock.mock.calls as unknown[][]).filter(
+      (c) => (c[0] as { backend: string }).backend === TTS_BACKEND.Gemini,
+    );
+    const lastGemini = geminiCalls[geminiCalls.length - 1][0] as { backend: string; config: Record<string, unknown> };
+    expect(lastGemini.backend).toBe(TTS_BACKEND.Gemini);
+    // Clicking refresh re-fetches
+    const before = listTtsDraftModelsMock.mock.calls.length;
+    fireEvent.click(refresh);
+    await waitFor(() => expect(listTtsDraftModelsMock.mock.calls.length).toBeGreaterThan(before), { timeout: 1000 });
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("F3: openai model is now a select with refresh, not a plain input", async () => {
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://x", apiKey: "k", model: "kokoro" },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    // Old plain input gone, select present
+    expect(view.queryByTestId("tts-field-model")).toBeTruthy();
+    expect(view.getByTestId("tts-models-refresh")).toBeTruthy();
+    // No hardcoded GEMINI_TTS_MODEL_OPTIONS reference in DOM; just a select.
+    cleanup();
+  });
+
+  it("F3 manual fallback: empty model list degrades the field to a typeable input", async () => {
+    // First (debounced) fetch for this render returns an empty list — e.g. an
+    // unreachable local endpoint. The field must stay manually typeable.
+    listTtsDraftModelsMock.mockImplementationOnce(async () => []);
+    const setForm = mock(() => {});
+    const tts = makeTts({
+      setForm,
+      form: {
+        id: null,
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://half-configured", apiKey: "k", model: "" },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    // Wait out the 400 ms debounce: with an empty list the fallback input
+    // (same testid, native input) must be present and accept typing.
+    const input = await waitFor(() => view.getByTestId("tts-field-model") as HTMLInputElement, { timeout: 2500 });
+    expect(input.tagName).toBe("INPUT");
+    fireEvent.change(input, { target: { value: "kokoro" } });
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { config: Record<string, unknown> };
+    expect(patch.config.model).toBe("kokoro");
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});

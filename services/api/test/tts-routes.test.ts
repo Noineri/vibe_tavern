@@ -350,4 +350,53 @@ describe("TTS routes — draft (transient, unsaved form config)", () => {
     });
     expect(badTextRes.status).toBe(400);
   });
+
+  test("POST /api/tts/draft/models → transient config, listModels passthrough", async () => {
+    let seenConfig: Record<string, unknown> | null = null;
+    registerTtsBackend(TTS_BACKEND.Gemini, (config) => {
+      seenConfig = { ...(config as Record<string, unknown>) };
+      return stubBackend({
+        listModels: async () => [
+          { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
+          { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
+        ],
+      });
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "gemini", config: { apiKey: "transient" } }),
+    });
+    expect(res.status).toBe(200);
+    const models = (await res.json()) as Array<{ id: string }>;
+    expect(models.length).toBe(2);
+    expect(models[0].id).toBe("gemini-2.5-flash-preview-tts");
+    expect(seenConfig?.apiKey).toBe("transient");
+  });
+
+  test("POST /api/tts/draft/models kokoro → 400", async () => {
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "kokoro", config: {} }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("kokoro runs client-side");
+  });
+
+  test("POST /api/tts/draft/models backend without listModels → 400", async () => {
+    registerTtsBackend(TTS_BACKEND.ElevenLabs, () => stubBackend());
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "elevenlabs", config: { apiKey: "k" } }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("model listing not supported");
+  });
 });

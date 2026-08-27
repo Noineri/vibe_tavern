@@ -8,7 +8,7 @@ import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
-import { listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
+import { listTtsDraftModels, listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { TtsApiKeyField } from "./TtsApiKeyField.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
@@ -18,24 +18,6 @@ import { configString, updateConfigField } from "./tts-form-helpers.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
-
-/** Known Gemini TTS models (the backend defaults to flash when `model` is
- *  empty). A dropdown instead of manual typing — the "entered the key, now
- *  what?" dead end. Keep in sync with gemini-tts.ts DEFAULT_MODEL. */
-const GEMINI_TTS_MODEL_OPTIONS = [
-  { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
-  { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
-] as const;
-
-/** Dropdown options: the known roster plus the profile's current value if it
- *  is something else (older profiles keep their saved model selectable). */
-function geminiModelOptions(form: NonNullable<TtsHook["form"]>): Array<{ id: string; label: string }> {
-  const current = configString(form.config, "model");
-  if (current === "" || GEMINI_TTS_MODEL_OPTIONS.some((o) => o.id === current)) {
-    return [...GEMINI_TTS_MODEL_OPTIONS];
-  }
-  return [{ id: current, label: current }, ...GEMINI_TTS_MODEL_OPTIONS];
-}
 
 function configNumber(config: Record<string, unknown>, key: string, fallback: number): number {
   const value = config[key];
@@ -104,6 +86,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const [voices, setVoices] = useState<TtsVoiceRecord[] | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [voicesError, setVoicesError] = useState<string | null>(null);
+  const [models, setModels] = useState<Array<{ id: string; label: string }> | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const formBackend = tts.form?.backend;
   const formConfig = tts.form?.config;
   const needsRemoteVoices = formBackend !== undefined && formBackend !== TTS_BACKEND.Kokoro;
@@ -148,6 +133,43 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
       clearTimeout(timer);
     };
   }, [needsRemoteVoices, voicesConfigKey, formBackend, formConfig]);
+
+  // Models (F3): fetched from the server for gemini + openai-compatible via
+  // the transient draft endpoint — mirrors the voices effect (debounced,
+  // JSON-stringified config dep). Kokoro/elevenlabs have no model listing.
+  const needsRemoteModels =
+    formBackend === TTS_BACKEND.Gemini || formBackend === TTS_BACKEND.OpenAiCompatible;
+  const modelsConfigKey = formConfig === undefined ? null : JSON.stringify(formConfig);
+  useEffect(() => {
+    if (!needsRemoteModels || modelsConfigKey === null) {
+      setModels(null);
+      setModelsError(null);
+      setModelsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const backend = formBackend as string;
+    const config = formConfig as Record<string, unknown>;
+    setModelsLoading(true);
+    setModelsError(null);
+    const timer = setTimeout(() => {
+      listTtsDraftModels({ backend, config })
+        .then((list) => {
+          if (cancelled) return;
+          setModels(list);
+          setModelsLoading(false);
+        })
+        .catch((cause) => {
+          if (cancelled) return;
+          setModelsError(cause instanceof Error ? cause.message : String(cause));
+          setModelsLoading(false);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [needsRemoteModels, modelsConfigKey, formBackend, formConfig]);
 
   if (!tts.form) return null;
 
@@ -261,14 +283,66 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             />
           </div>
           <div>
-            <label className={lblCls}>{t("tts_field_model")}</label>
-            <input
-              data-testid="tts-field-model"
-              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-              value={configString(form.config, "model")}
-              onChange={(e) => updateConfigField(tts, form, "model", e.target.value)}
-              placeholder="kokoro"
-            />
+            <div className="flex items-center justify-between">
+              <label className={lblCls}>{t("tts_field_model")}</label>
+              <button
+                type="button"
+                data-testid="tts-models-refresh"
+                onClick={() => {
+                  if (!needsRemoteModels || formConfig === undefined) return;
+                  const backend = formBackend as string;
+                  const config = formConfig as Record<string, unknown>;
+                  setModelsLoading(true);
+                  setModelsError(null);
+                  listTtsDraftModels({ backend, config })
+                    .then((list) => {
+                      setModels(list);
+                      setModelsLoading(false);
+                    })
+                    .catch((cause) => {
+                      setModelsError(cause instanceof Error ? cause.message : String(cause));
+                      setModelsLoading(false);
+                    });
+                }}
+                disabled={modelsLoading}
+                className="flex items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-40"
+              >
+                <Ic.regen />
+                {modelsLoading ? t("tts_models_loading") : t("tts_models_refresh")}
+              </button>
+            </div>
+            <div className="mt-1">
+              {/* Manual fallback (F3): DropdownSelect is filter-only, so while the
+                  fetched list is empty/unavailable the field degrades to a plain
+                  input — a half-configured local endpoint must stay typeable. */}
+              {models !== null && models.length > 0 ? (
+                <DropdownSelect
+                  value={configString(form.config, "model")}
+                  options={(() => {
+                    const current = configString(form.config, "model");
+                    if (current === "" || models.some((o) => o.id === current)) return models;
+                    return [{ id: current, label: current }, ...models];
+                  })()}
+                  onChange={(value) => updateConfigField(tts, form, "model", value)}
+                  searchable={true}
+                  placeholder="kokoro"
+                  triggerTestId="tts-field-model"
+                />
+              ) : (
+                <input
+                  data-testid="tts-field-model"
+                  className={monoUICls + " w-full px-3 py-2 text-[13px]"}
+                  value={configString(form.config, "model")}
+                  onChange={(e) => updateConfigField(tts, form, "model", e.target.value)}
+                  placeholder="kokoro"
+                />
+              )}
+            </div>
+            {modelsError !== null && (
+              <div data-testid="tts-models-error" className="mt-1 font-ui text-[11px] text-danger">
+                {t("tts_models_load_error")}
+              </div>
+            )}
           </div>
           <div>
             <label className={lblCls}>{t("tts_field_response_format")}</label>
@@ -312,18 +386,65 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             />
           </div>
           <div>
-            <label className={lblCls}>{t("tts_field_model")}</label>
-            {/* Known-model dropdown — no manual typing: the backend falls back
-                to flash when empty, so unset maps to the default. A custom
-                saved value (older profiles) stays selectable. */}
-            <DropdownSelect
-              triggerTestId="tts-field-model"
-              className="mt-1"
-              value={configString(form.config, "model") || GEMINI_TTS_MODEL_OPTIONS[0].id}
-              options={geminiModelOptions(form)}
-              defaultOption={GEMINI_TTS_MODEL_OPTIONS[0].id}
-              onChange={(id) => updateConfigField(tts, form, "model", id)}
-            />
+            <div className="flex items-center justify-between">
+              <label className={lblCls}>{t("tts_field_model")}</label>
+              <button
+                type="button"
+                data-testid="tts-models-refresh"
+                onClick={() => {
+                  if (!needsRemoteModels || formConfig === undefined) return;
+                  const backend = formBackend as string;
+                  const config = formConfig as Record<string, unknown>;
+                  setModelsLoading(true);
+                  setModelsError(null);
+                  listTtsDraftModels({ backend, config })
+                    .then((list) => {
+                      setModels(list);
+                      setModelsLoading(false);
+                    })
+                    .catch((cause) => {
+                      setModelsError(cause instanceof Error ? cause.message : String(cause));
+                      setModelsLoading(false);
+                    });
+                }}
+                disabled={modelsLoading}
+                className="flex items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-40"
+              >
+                <Ic.regen />
+                {modelsLoading ? t("tts_models_loading") : t("tts_models_refresh")}
+              </button>
+            </div>
+            <div className="mt-1">
+              {/* Same manual fallback as openai-compat (F3): a failed/unfetched
+                  list must not block pasting a model id. */}
+              {models !== null && models.length > 0 ? (
+                <DropdownSelect
+                  value={configString(form.config, "model")}
+                  options={(() => {
+                    const current = configString(form.config, "model");
+                    if (current === "" || models.some((o) => o.id === current)) return models;
+                    return [{ id: current, label: current }, ...models];
+                  })()}
+                  onChange={(value) => updateConfigField(tts, form, "model", value)}
+                  searchable={true}
+                  placeholder="gemini-2.5-flash-preview-tts"
+                  triggerTestId="tts-field-model"
+                />
+              ) : (
+                <input
+                  data-testid="tts-field-model"
+                  className={monoUICls + " w-full px-3 py-2 text-[13px]"}
+                  value={configString(form.config, "model")}
+                  onChange={(e) => updateConfigField(tts, form, "model", e.target.value)}
+                  placeholder="gemini-2.5-flash-preview-tts"
+                />
+              )}
+            </div>
+            {modelsError !== null && (
+              <div data-testid="tts-models-error" className="mt-1 font-ui text-[11px] text-danger">
+                {t("tts_models_load_error")}
+              </div>
+            )}
           </div>
           <div>
             <label className={lblCls}>{t("tts_field_style_instructions")}</label>

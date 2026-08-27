@@ -180,6 +180,23 @@ export async function listTtsDraftVoices(body: {
   return (await response.json()) as TtsVoiceRecord[];
 }
 
+export async function listTtsDraftModels(body: {
+  backend: string;
+  config: Record<string, unknown>;
+}): Promise<Array<{ id: string; label: string }>> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/draft/models`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`TTS draft model list failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, 200)}` : ""}`);
+  }
+  return (await response.json()) as Array<{ id: string; label: string }>;
+}
+
 /** One-shot preview synthesis from an unsaved form config — the
  *  "Прослушать голос" path for server backends BEFORE saving. */
 export async function previewTtsDraft(body: {

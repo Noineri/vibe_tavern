@@ -265,6 +265,33 @@ export const geminiTtsFactory: TtsBackendFactory = (config) => {
       return [...GEMINI_TTS_VOICES];
     },
 
+    async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
+      const response = await fetch(MODELS_URL, {
+        headers: { "x-goog-api-key": apiKey },
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new GeminiTtsError(
+          `Gemini TTS model list failed: ${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+        );
+      }
+      const payload: unknown = await response.json().catch(() => null);
+      if (typeof payload !== "object" || payload === null) return [];
+      const models = (payload as Record<string, unknown>).models;
+      if (!Array.isArray(models)) return [];
+      const out: import("../tts-backend.js").TtsModelInfo[] = [];
+      for (const entry of models) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const raw = (entry as Record<string, unknown>).name;
+        if (typeof raw !== "string" || raw.length === 0) continue;
+        const id = raw.replace(/^models\//, "").trim();
+        if (id.length === 0) continue;
+        if (!id.includes("tts")) continue;
+        out.push({ id, label: id });
+      }
+      return out;
+    },
+
     async probe(): Promise<TtsProbeResult> {
       // NOTE: the models catalogue returns Google's own shape
       // `{ models: [{ name: "models/<id>", ... }] }` — NOT an OpenAI-style
