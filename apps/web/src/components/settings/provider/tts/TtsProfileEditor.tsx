@@ -9,6 +9,7 @@ import { NumberInput } from "../../../shared/NumberInput.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
 import { listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
+import { TtsApiKeyField } from "./TtsApiKeyField.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
@@ -253,11 +254,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           </div>
           <div>
             <label className={lblCls}>{t("tts_field_api_key")}</label>
-            <input
-              data-testid="tts-field-api-key"
-              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+            <TtsApiKeyField
               value={configString(form.config, "apiKey")}
-              onChange={(e) => updateConfigField(tts, form, "apiKey", e.target.value)}
+              onChange={(v) => updateConfigField(tts, form, "apiKey", v)}
               placeholder="sk-..."
             />
           </div>
@@ -306,11 +305,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         <>
           <div>
             <label className={lblCls}>{t("tts_field_api_key")}</label>
-            <input
-              data-testid="tts-field-api-key"
-              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+            <TtsApiKeyField
               value={configString(form.config, "apiKey")}
-              onChange={(e) => updateConfigField(tts, form, "apiKey", e.target.value)}
+              onChange={(v) => updateConfigField(tts, form, "apiKey", v)}
               placeholder="AIza..."
             />
           </div>
@@ -351,11 +348,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         <>
           <div>
             <label className={lblCls}>{t("tts_field_api_key")}</label>
-            <input
-              data-testid="tts-field-api-key"
-              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+            <TtsApiKeyField
               value={configString(form.config, "apiKey")}
-              onChange={(e) => updateConfigField(tts, form, "apiKey", e.target.value)}
+              onChange={(v) => updateConfigField(tts, form, "apiKey", v)}
               placeholder="sk_..."
             />
           </div>

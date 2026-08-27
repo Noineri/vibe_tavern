@@ -461,6 +461,8 @@
   "tts_profile_delete_confirm_title": "Delete profile?",
   "tts_profile_delete_confirm_body": "Delete \"{name}\"? This cannot be undone.",
   "tts_profiles_load_failed": "Failed to load TTS profiles",
+  "tts_field_api_key_hide": "Hide API key",
+  "tts_field_api_key_show": "Show API key",
   "tts_field_endpoint": "Endpoint",
   "tts_field_api_key": "API Key",
   "tts_field_model": "Model",
