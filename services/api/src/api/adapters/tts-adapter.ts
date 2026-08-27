@@ -1,4 +1,4 @@
-import type { GenerateTtsInput } from "@vibe-tavern/api-contracts";
+import type { DraftTtsPreviewInput, DraftTtsVoicesInput, GenerateTtsInput } from "@vibe-tavern/api-contracts";
 import type { CreateTtsProfileData, UpdateTtsProfileData } from "@vibe-tavern/db";
 import type { TtsRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -67,19 +67,7 @@ export class TtsAdapter implements TtsRuntimeApi {
       speed: body.speed,
       instructions: body.instructions,
     });
-    // Normalize streaming result to a single buffer (paragraph-level buffering
-    // is the v1 design; byte-level SSE is unnecessary).
-    let audio: Buffer;
-    if (Buffer.isBuffer(result.audio)) {
-      audio = result.audio;
-    } else {
-      const chunks: Buffer[] = [];
-      for await (const chunk of result.audio as AsyncIterable<Buffer>) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      audio = Buffer.concat(chunks);
-    }
-    return { audio, mime: result.mime };
+    return { audio: await bufferTtsAudio(result.audio), mime: result.mime };
   };
 
   listTtsVoices: TtsRuntimeApi["listTtsVoices"] = async (profileId) => {
@@ -95,6 +83,43 @@ export class TtsAdapter implements TtsRuntimeApi {
     const backend = createTtsBackend(profile.backend, profile.config);
     return backend.listVoices();
   };
+
+  draftListTtsVoices: TtsRuntimeApi["draftListTtsVoices"] = async (body) => {
+    // Same browser-only guard as the saved-profile paths.
+    if (body.backend === TTS_BACKEND.Kokoro) {
+      throw new KokoroClientSideError();
+    }
+    // Transient config: validated by the registry factory, used once for this
+    // request, never stored — the apiKey lives only inside the request body.
+    const backend = createTtsBackend(body.backend, body.config);
+    return backend.listVoices();
+  };
+
+  draftPreviewTts: TtsRuntimeApi["draftPreviewTts"] = async (body) => {
+    if (body.backend === TTS_BACKEND.Kokoro) {
+      throw new KokoroClientSideError();
+    }
+    const backend = createTtsBackend(body.backend, body.config);
+    const result = await backend.generate({
+      text: body.text,
+      voiceId: body.voiceId,
+      speed: body.speed,
+      instructions: body.instructions,
+    });
+    return { audio: await bufferTtsAudio(result.audio), mime: result.mime };
+  };
+}
+
+/** Normalize a backend audio result (Buffer or chunk stream) to a single
+ *  buffer — paragraph-level buffering is the v1 design; byte-level SSE is
+ *  unnecessary. Shared by the saved-profile and draft preview paths. */
+async function bufferTtsAudio(audio: Buffer | AsyncIterable<Buffer>): Promise<Buffer> {
+  if (Buffer.isBuffer(audio)) return audio;
+  const chunks: Buffer[] = [];
+  for await (const chunk of audio) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 export class KokoroClientSideError extends Error {

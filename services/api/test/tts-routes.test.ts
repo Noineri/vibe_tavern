@@ -268,3 +268,86 @@ describe("TTS routes — generate + voices", () => {
     expect(genRes.status).toBe(400);
   });
 });
+
+describe("TTS routes — draft (transient, unsaved form config)", () => {
+  test("POST /api/tts/draft/voices → factory gets the transient config verbatim; no DB row needed", async () => {
+    let seenConfig: Record<string, unknown> | null = null;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, (config) => {
+      seenConfig = { ...(config as Record<string, unknown>) };
+      return stubBackend({ listVoices: async () => [{ id: "alloy", label: "Alloy", lang: "en" }] });
+    });
+    const { app } = await makeApp();
+
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: "openai-compatible",
+        config: { endpoint: "http://localhost:8880/v1", apiKey: "transient-key" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const voices = (await res.json()) as Array<{ id: string }>;
+    expect(voices[0].id).toBe("alloy");
+    expect((seenConfig as Record<string, unknown> | null)?.endpoint).toBe("http://localhost:8880/v1");
+  });
+
+  test("POST /api/tts/draft/voices kokoro → 400 (browser-only), not a registry 500", async () => {
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "kokoro", config: {} }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("kokoro runs client-side");
+  });
+
+  test("POST /api/tts/draft/preview → buffered audio + mime; transient voiceId/text reach the factory", async () => {
+    let seenRequest: { text: string; voiceId: string } | null = null;
+    registerTtsBackend(TTS_BACKEND.ElevenLabs, () =>
+      stubBackend({
+        generate: async (req) => {
+          seenRequest = { text: req.text, voiceId: req.voiceId };
+          return { audio: Buffer.from([9, 9, 9]), mime: "audio/mpeg" };
+        },
+      }),
+    );
+    const { app } = await makeApp();
+
+    const res = await app.request("/api/tts/draft/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: "elevenlabs",
+        config: { apiKey: "transient" },
+        voiceId: "Rachel",
+        text: "Hello! Preview.",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("audio/mpeg");
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.length).toBe(3);
+    expect(seenRequest?.voiceId).toBe("Rachel");
+  });
+
+  test("POST /api/tts/draft/preview kokoro → 400; empty text → 400 (zod)", async () => {
+    const { app } = await makeApp();
+
+    const kokoroRes = await app.request("/api/tts/draft/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "kokoro", config: {}, text: "hi" }),
+    });
+    expect(kokoroRes.status).toBe(400);
+
+    const badTextRes = await app.request("/api/tts/draft/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "elevenlabs", config: {}, text: "" }),
+    });
+    expect(badTextRes.status).toBe(400);
+  });
+});

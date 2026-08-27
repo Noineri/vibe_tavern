@@ -103,7 +103,7 @@ describe("useTtsPreview", () => {
     const h = makeHarness();
 
     await act(async () => {
-      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: "af_heart", speed: 1.2, profileId: null });
+      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: "af_heart", speed: 1.2, config: null });
     });
     await flush();
     expect(h.states).toContain("generating");
@@ -111,7 +111,7 @@ describe("useTtsPreview", () => {
     // The injected synthesize receives the FORM's voice + speed.
     expect(h.synthesize.mock.calls[0][0].voiceId).toBe("af_heart");
     expect(h.synthesize.mock.calls[0][0].speed).toBe(1.2);
-    expect(h.synthesize.mock.calls[0][0].profileId).toBeNull();
+    expect(h.synthesize.mock.calls[0][0].config).toBeNull();
 
     await act(async () => {
       h.resolveSynthesize({ blob: new Blob(["wav"], { type: "audio/wav" }), mime: "audio/wav" });
@@ -129,16 +129,16 @@ describe("useTtsPreview", () => {
     expect(h.errors[h.errors.length - 1]).toBeNull();
   });
 
-  it("server backend happy path: synthesize receives the saved profileId, ends idle", async () => {
+  it("server backend happy path (unsaved ok): synthesize receives the form config, ends idle", async () => {
     const h = makeHarness();
 
     await act(async () => {
-      h.capture.preview?.({ backend: TTS_BACKEND.OpenAiCompatible, voiceId: "alloy", speed: 1, profileId: "p9" });
+      h.capture.preview?.({ backend: TTS_BACKEND.OpenAiCompatible, voiceId: "alloy", speed: 1, config: { endpoint: "http://localhost:8880/v1" } });
     });
     await flush();
     expect(h.states).toContain("generating");
     expect(h.synthesize).toHaveBeenCalledTimes(1);
-    expect(h.synthesize.mock.calls[0][0].profileId).toBe("p9");
+    expect(h.synthesize.mock.calls[0][0].config).toEqual({ endpoint: "http://localhost:8880/v1" });
 
     await act(async () => {
       h.resolveSynthesize({ blob: new Blob(["mp3"], { type: "audio/mpeg" }), mime: "audio/mpeg" });
@@ -157,7 +157,7 @@ describe("useTtsPreview", () => {
     const h = makeHarness();
 
     await act(async () => {
-      h.capture.preview?.({ backend: TTS_BACKEND.Gemini, voiceId: "kore", speed: 1, profileId: "p1" });
+      h.capture.preview?.({ backend: TTS_BACKEND.Gemini, voiceId: "kore", speed: 1, config: { apiKey: "k" } });
     });
     await flush();
     expect(h.states).toContain("generating");
@@ -171,11 +171,11 @@ describe("useTtsPreview", () => {
     expect(h.errors[h.errors.length - 1]).toBe("engine exploded");
   });
 
-  it("server backend with null profileId → error set, synthesize NOT called", async () => {
+  it("server backend with null config → error set, synthesize NOT called", async () => {
     const h = makeHarness();
 
     await act(async () => {
-      h.capture.preview?.({ backend: TTS_BACKEND.ElevenLabs, voiceId: "rachel", speed: 1, profileId: null });
+      h.capture.preview?.({ backend: TTS_BACKEND.ElevenLabs, voiceId: "rachel", speed: 1, config: null });
     });
     await flush();
 
@@ -190,7 +190,7 @@ describe("useTtsPreview", () => {
     const h = makeHarness();
 
     await act(async () => {
-      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: "af_heart", speed: 1, profileId: null });
+      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: "af_heart", speed: 1, config: null });
     });
     await flush();
     await act(async () => {
@@ -210,7 +210,7 @@ describe("useTtsPreview", () => {
   it('surfaces kokoro model-download percent while generating and clears it when done', async () => {
     const h = makeHarness();
     act(() => {
-      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: 'af_heart', speed: 1, profileId: null });
+      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: 'af_heart', speed: 1, config: null });
     });
     await flush();
     expect(h.states).toContain('generating');

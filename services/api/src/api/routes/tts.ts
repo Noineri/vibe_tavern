@@ -84,5 +84,32 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
         }
         throw error;
       }
+    })
+    // ── Draft (transient) check — unsaved form config ─────────────────────
+    .post("/api/tts/draft/voices", zValidator("json", schemas.draftTtsVoicesSchema), async (c) => {
+      const body = c.req.valid("json");
+      try {
+        return c.json(await runtime.draftListTtsVoices(body));
+      } catch (error) {
+        if (error instanceof KokoroClientSideError) {
+          return c.json({ error: "kokoro runs client-side" }, 400);
+        }
+        throw error;
+      }
+    })
+    .post("/api/tts/draft/preview", zValidator("json", schemas.draftTtsPreviewSchema), async (c) => {
+      const body = c.req.valid("json");
+      try {
+        const result = await runtime.draftPreviewTts(body);
+        return c.body(new Uint8Array(result.audio), 200, {
+          "Content-Type": result.mime,
+          "Cache-Control": "no-store",
+        });
+      } catch (error) {
+        if (error instanceof KokoroClientSideError) {
+          return c.json({ error: "kokoro runs client-side" }, 400);
+        }
+        throw error;
+      }
     });
 }

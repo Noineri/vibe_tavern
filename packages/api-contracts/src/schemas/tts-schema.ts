@@ -101,3 +101,30 @@ export const generateTtsSchema = z.object({
   instructions: z.string().optional(),
 });
 export type GenerateTtsInput = z.infer<typeof generateTtsSchema>;
+
+// ─── Draft (transient) check — unsaved form config ──────────────────────────
+
+/** Voices for a backend config straight from the profile-editor form —
+ *  no saved profile row involved. The config bag is validated by the
+ *  backend registry factory exactly like a saved profile's config; the
+ *  apiKey inside it is transient (used once for this request, never
+ *  persisted or logged). Kokoro is rejected by the route (browser-only). */
+export const draftTtsVoicesSchema = z.object({
+  backend: ttsBackendSchema,
+  config: ttsProfileConfigSchema,
+});
+export type DraftTtsVoicesInput = z.infer<typeof draftTtsVoicesSchema>;
+
+/** One short synthesis from an unsaved form config — the "Прослушать голос"
+ *  path for server backends BEFORE saving (mirrors the LLM branch's
+ *  test-draft pattern). Same transient-key semantics as
+ *  {@link draftTtsVoicesSchema}. */
+export const draftTtsPreviewSchema = z.object({
+  backend: ttsBackendSchema,
+  config: ttsProfileConfigSchema,
+  voiceId: z.string().optional().default(""),
+  text: z.string().min(1),
+  speed: z.number().optional(),
+  instructions: z.string().optional(),
+});
+export type DraftTtsPreviewInput = z.infer<typeof draftTtsPreviewSchema>;

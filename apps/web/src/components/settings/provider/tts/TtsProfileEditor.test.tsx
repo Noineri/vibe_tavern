@@ -26,6 +26,19 @@ const { act, cleanup, fireEvent, render, waitFor, within } = await import("@test
 const { TtsProfileEditor } = await import("./TtsProfileEditor.js");
 const { TTS_BACKEND } = await import("@vibe-tavern/domain");
 
+// Draft voices (F1): pin that an UNSAVED server form fetches its voice list
+// through the transient endpoint. Safe mock.module pattern — real module
+// captured first, only listTtsDraftVoices overridden.
+const realTtsApi = await import("../../../../api/tts-api.js");
+const listTtsDraftVoicesMock = mock(async (_body: { backend: string; config: Record<string, unknown> }) => [
+  { id: "alloy", label: "Alloy", lang: "en" },
+  { id: "echo", label: "Echo", lang: "en" },
+]);
+mock.module("../../../../api/tts-api.js", () => ({
+  ...realTtsApi,
+  listTtsDraftVoices: listTtsDraftVoicesMock,
+}));
+
 function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
   const base = {
     profiles: [],
@@ -193,7 +206,38 @@ describe("TtsProfileEditor", () => {
       expect(bodyText).not.toContain(japanese.id);
     }
     cleanup();
-    // Clean portal leftovers
+  });
+
+  it("F1 draft contract: unsaved server form loads voices via draft endpoint, preview button enabled, no save-first hints", async () => {
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Draft",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://x/v1", apiKey: "k", model: "m" },
+        voiceId: "",
+      } as never,
+      dirty: true,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+
+    // Preview is NOT gated on save anymore.
+    const previewBtn = view.getByTestId("tts-preview-btn") as HTMLButtonElement;
+    expect(previewBtn.disabled).toBe(false);
+    // No save-first hints — neither voices nor preview.
+    expect(view.queryByText("tts_voices_save_first_hint")).toBeNull();
+    expect(view.queryByText("tts_preview_save_first")).toBeNull();
+
+    // Voices arrive after the 400ms debounce — via the transient endpoint with
+    // the CURRENT form config (unsaved id: null).
+    const select = await view.findByTestId("tts-voice-select", undefined, { timeout: 2500 });
+    expect(select).toBeTruthy();
+    expect(listTtsDraftVoicesMock).toHaveBeenCalled();
+    const call = listTtsDraftVoicesMock.mock.calls[0][0] as { backend: string; config: Record<string, unknown> };
+    expect(call.backend).toBe(TTS_BACKEND.OpenAiCompatible);
+    expect(call.config.endpoint).toBe("https://x/v1");
+
+    cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
   });

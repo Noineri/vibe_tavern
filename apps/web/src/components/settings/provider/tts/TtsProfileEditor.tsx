@@ -8,7 +8,7 @@ import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
-import { listTtsVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
+import { listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
@@ -59,20 +59,8 @@ function TtsVoicePickerField({
   voicesError: string | null;
 }): ReactNode {
   const { t } = useT();
-  if (form.id === null) {
-    return (
-      <>
-        <input
-          data-testid="tts-voice-input"
-          className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-          value={form.voiceId}
-          onChange={(e) => tts.setForm({ voiceId: e.target.value })}
-          placeholder={t("tts_field_voice")}
-        />
-        <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_voices_save_first_hint")}</div>
-      </>
-    );
-  }
+  // Draft voices (F1): unsaved forms load them too — the save-first branch
+  // is gone; loading/error states degrade to a plain input below.
   if (voicesLoading) {
     return (
       <div data-testid="tts-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
@@ -115,39 +103,50 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const [voices, setVoices] = useState<TtsVoiceRecord[] | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [voicesError, setVoicesError] = useState<string | null>(null);
-  const formId = tts.form?.id ?? null;
   const formBackend = tts.form?.backend;
+  const formConfig = tts.form?.config;
   const needsRemoteVoices = formBackend !== undefined && formBackend !== TTS_BACKEND.Kokoro;
   const preview = useTtsPreview();
 
   // Hooks stay ABOVE the early return — `if (!tts.form) return null` between
   // useState and useEffect would be a hooks-order violation the day any
   // caller keeps this mounted across a form→null transition.
+  //
+  // Voices come from the TRANSIENT draft endpoint (F1): the CURRENT form
+  // config, saved or not — no save-to-test detour. The dep is a serialized
+  // config key (object identity changes per keystroke), debounced so typing
+  // an endpoint/key doesn't spam the backend.
+  const voicesConfigKey = formConfig === undefined ? null : JSON.stringify(formConfig);
   useEffect(() => {
-    if (!needsRemoteVoices || formId === null) {
+    if (!needsRemoteVoices || formConfig === undefined) {
       setVoices(null);
       setVoicesError(null);
       setVoicesLoading(false);
       return;
     }
     let cancelled = false;
+    const backend = formBackend;
+    const config = formConfig;
     setVoicesLoading(true);
     setVoicesError(null);
-    listTtsVoices(formId)
-      .then((list) => {
-        if (cancelled) return;
-        setVoices(list);
-        setVoicesLoading(false);
-      })
-      .catch((cause) => {
-        if (cancelled) return;
-        setVoicesError(cause instanceof Error ? cause.message : String(cause));
-        setVoicesLoading(false);
-      });
+    const timer = setTimeout(() => {
+      listTtsDraftVoices({ backend, config })
+        .then((list) => {
+          if (cancelled) return;
+          setVoices(list);
+          setVoicesLoading(false);
+        })
+        .catch((cause) => {
+          if (cancelled) return;
+          setVoicesError(cause instanceof Error ? cause.message : String(cause));
+          setVoicesLoading(false);
+        });
+    }, 400);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [formId, formBackend, needsRemoteVoices]);
+  }, [needsRemoteVoices, voicesConfigKey, formBackend, formConfig]);
 
   if (!tts.form) return null;
 
@@ -164,11 +163,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const isOpenAi = form.backend === TTS_BACKEND.OpenAiCompatible;
   const isGemini = form.backend === TTS_BACKEND.Gemini;
   const isElevenLabs = form.backend === TTS_BACKEND.ElevenLabs;
-  // Server backends preview from the SAVED profile (the generate API keys on
-  // profileId) — unsaved or dirty forms cannot preview; kokoro synthesizes
-  // client-side from form values, so it previews without saving.
-  const serverNeedsSave = !isKokoro && (form.id === null || tts.dirty);
-
 
   const kokoroEnglishVoices = KOKORO_VOICES.filter((v) => v.lang === "a" || v.lang === "b");
   const kokoroVoiceOptions = kokoroEnglishVoices.map((v) => ({ id: v.id, label: v.id }));
@@ -444,14 +438,14 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         <button
           type="button"
           data-testid="tts-preview-btn"
-          disabled={preview.state !== "idle" || serverNeedsSave}
+          disabled={preview.state !== "idle"}
           className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
           onClick={() =>
             preview.preview({
               backend: form.backend,
               voiceId: form.voiceId,
               speed: configNumber(form.config, "speed", 1),
-              profileId: form.id,
+              config: form.config,
             })
           }
         >
@@ -464,9 +458,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               ? t("tts_preview_playing")
               : t("tts_preview")}
         </button>
-        {serverNeedsSave && (
-          <div className="font-ui text-[11px] text-t3">{t("tts_preview_save_first")}</div>
-        )}
         {preview.error && (
           <div data-testid="tts-preview-error" className="font-ui text-[11px] text-danger">
             {t("tts_preview_failed")}: {preview.error}

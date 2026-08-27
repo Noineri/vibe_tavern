@@ -1,5 +1,5 @@
 /**
- * TTS voice preview hook (TTS_PLAN TS-7d).
+ * TTS voice preview hook (TTS_PLAN TS-7d; F1: draft contract).
  *
  * "Say a test sentence with this voice" — verifies any backend in isolation
  * from the profile editor, BEFORE saving/binding. Semantics (locked):
@@ -7,9 +7,9 @@
  *    a brand-new unsaved profile — the model download is shared with the
  *    narration lane via getSharedKokoroClient);
  *  - server backends (openai-compat / gemini / elevenlabs) → POST
- *    /api/tts/generate, which requires a SAVED profile id — the editor
- *    disables the button for unsaved/dirty forms and this hook refuses the
- *    call (guarded) if a null id ever reaches it.
+ *    /api/tts/draft/preview with the CURRENT FORM CONFIG (transient key,
+ *    never persisted) — works for unsaved profiles AND previews the exact
+ *    values on screen, including unsaved edits (no save-to-test detour).
  *
  * Preview audio is a short-lived independent <audio> element — deliberately
  * NOT the playback store's player singleton — and starting a preview first
@@ -19,7 +19,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
-import { generateTtsSpeech } from "../../../../api/tts-api.js";
+import { previewTtsDraft } from "../../../../api/tts-api.js";
 import { getSharedKokoroClient } from "../../../../lib/tts/kokoro/kokoro-client-instance.js";
 import { useTtsPlaybackStore } from "../../../../stores/tts-playback-store.js";
 
@@ -32,8 +32,10 @@ export interface TtsPreviewInput {
   backend: TtsBackendSlug;
   voiceId: string;
   speed: number;
-  /** Required for server backends (kokoro synthesizes from form values). */
-  profileId: string | null;
+  /** Required for server backends: the CURRENT form config (transient —
+   *  sent to the draft endpoint once, never persisted). Kokoro synthesizes
+   *  from form values client-side and ignores it. */
+  config: Record<string, unknown> | null;
 }
 
 export interface TtsPreviewDeps {
@@ -71,13 +73,15 @@ async function defaultSynthesize(input: TtsPreviewInput): Promise<{ blob: Blob; 
     const out = await client.generate(TTS_PREVIEW_SENTENCE, input.voiceId, input.speed);
     return { blob: out.blob, mime: "audio/wav" };
   }
-  // Defense-in-depth: the hook's preview() already refuses null ids, but the
-  // API contract requires a string — refuse here too instead of casting.
-  if (input.profileId === null) {
-    throw new Error("Preview requires a saved profile for server backends.");
+  // Defense-in-depth: the editor always passes the form config, but the
+  // draft endpoint needs it — refuse instead of casting a null.
+  if (input.config === null) {
+    throw new Error("Preview requires the form config for server backends.");
   }
-  return generateTtsSpeech({
-    profileId: input.profileId,
+  return previewTtsDraft({
+    backend: input.backend,
+    config: input.config,
+    voiceId: input.voiceId,
     text: TTS_PREVIEW_SENTENCE,
     speed: input.speed,
   });
@@ -128,10 +132,10 @@ export function useTtsPreview(): {
     // Last call wins is not needed beyond this guard: the button is disabled
     // while generating/playing, and a stray call mid-flight is ignored.
     if (busyRef.current) return;
-    // Server backends need a saved profile id — unreachable via the editor's
-    // disabled button, but never send a null id to the API.
-    if (input.backend !== TTS_BACKEND.Kokoro && input.profileId === null) {
-      setError("Save the profile first — server backends preview from the saved profile.");
+    // Server backends need the form config for the transient draft request —
+    // unreachable via the editor, but never send a null config to the API.
+    if (input.backend !== TTS_BACKEND.Kokoro && input.config === null) {
+      setError("Missing form config for server backends.");
       return;
     }
     busyRef.current = true;
