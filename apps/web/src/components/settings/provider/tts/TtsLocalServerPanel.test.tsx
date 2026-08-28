@@ -147,6 +147,11 @@ describe("TtsLocalServerPanel", () => {
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
     const status = await waitFor(() => view.getByTestId("tts-docker-status"));
     expect(status.textContent).toContain("tts_docker_status_missing");
+    // Open accordion to see quickstart cards (TE2-11: setup help under accordion).
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
+      await new Promise((r) => setTimeout(r, 350));
+    });
     // The non-docker variant row must exist on the card (honesty pin).
     expect(view.getByTestId("tts-quickstart-copy-alt-kokoro-fastapi")).toBeTruthy();
     expect(view.getByTestId("tts-quickstart-copy-alt-openai-edge-tts")).toBeTruthy();
@@ -176,21 +181,30 @@ describe("TtsLocalServerPanel", () => {
     clipboardResult = { ok: true };
     const tts = makeTtsHook();
     const panelProps = { tts, form: tts.form };
-    const { getByTestId } = render(React.createElement(TtsLocalServerPanel, panelProps));
-    const btn = getByTestId("tts-quickstart-copy-kokoro-fastapi");
+    const view = render(React.createElement(TtsLocalServerPanel, panelProps));
+    // Open accordion first (TE2-11).
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    const btn = view.getByTestId("tts-quickstart-copy-kokoro-fastapi");
     expect(btn.textContent).toContain("tts_quickstart_copy");
     await act(async () => {
       fireEvent.click(btn);
       await new Promise((r) => setTimeout(r, 20));
     });
-    expect(getByTestId("tts-quickstart-copy-kokoro-fastapi").textContent).toContain("tts_quickstart_copied");
+    expect(view.getByTestId("tts-quickstart-copy-kokoro-fastapi").textContent).toContain("tts_quickstart_copied");
   });
 
   test("quickstart use button writes endpoint via tts.setForm", async () => {
     const tts = makeTtsHook();
     const panelProps = { tts, form: tts.form };
-    const { getByTestId } = render(React.createElement(TtsLocalServerPanel, panelProps));
-    const useBtn = document.querySelector('[data-testid="tts-quickstart-use-kokoro-fastapi"]') ?? getByTestId("tts-quickstart-use-kokoro-fastapi");
+    const view = render(React.createElement(TtsLocalServerPanel, panelProps));
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    const useBtn = view.getByTestId("tts-quickstart-use-kokoro-fastapi");
     await act(async () => {
       fireEvent.click(useBtn);
     });
@@ -217,6 +231,78 @@ describe("TtsLocalServerPanel", () => {
       fireEvent.click(adoptBtn);
     });
     expect((lastFormPatch?.config as Record<string, unknown>)?.["endpoint"]).toBe("http://127.0.0.1:8880/v1");
+  });
+
+  test("setup help accordion: closed by default, quickstart cards hidden", async () => {
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    expect(view.getByTestId("tts-setup-help-accordion")).toBeTruthy();
+    expect(view.getByTestId("tts-setup-help-toggle")).toBeTruthy();
+    // Cards are inside the collapsed accordion — not in DOM when closed.
+    expect(view.queryByTestId("tts-quickstart-card-kokoro-fastapi")).toBeNull();
+    expect(view.queryByTestId("tts-quickstart-card-openai-edge-tts")).toBeNull();
+    cleanup();
+  });
+
+  test("setup help accordion: opens on click and shows commands", async () => {
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    expect(view.getByTestId("tts-quickstart-card-kokoro-fastapi").textContent).toContain("ghcr.io/remsky/kokoro-fastapi-cpu:latest");
+    expect(view.getByTestId("tts-quickstart-card-openai-edge-tts").textContent).toContain("travisvn/openai-edge-tts:latest");
+    // Alt non-docker commands still visible inside the open accordion.
+    expect(view.getByTestId("tts-quickstart-card-kokoro-fastapi").textContent).toContain("start-cpu.sh");
+    expect(view.getByTestId("tts-quickstart-card-openai-edge-tts").textContent).toContain("app/server.py");
+    // Endpoint hint inside each card.
+    expect(view.getByTestId("tts-quickstart-card-kokoro-fastapi").textContent).toContain("8880");
+    cleanup();
+  });
+
+  test("setup help accordion: toggles closed on second click", async () => {
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    expect(view.getByTestId("tts-quickstart-card-kokoro-fastapi")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    expect(view.queryByTestId("tts-quickstart-card-kokoro-fastapi")).toBeNull();
+    cleanup();
+  });
+
+  test("discovery row visible without opening the accordion", async () => {
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    // Accordion closed — quickstarts hidden.
+    expect(view.queryByTestId("tts-quickstart-card-kokoro-fastapi")).toBeNull();
+    // Discovery stays outside the accordion, always visible.
+    expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
+    expect(view.getByTestId("tts-docker-status")).toBeTruthy();
+    cleanup();
+  });
+
+  test("copy works after opening the accordion", async () => {
+    clipboardResult = { ok: true };
+    const tts = makeTtsHook();
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    const btn = view.getByTestId("tts-quickstart-copy-alt-kokoro-fastapi");
+    await act(async () => {
+      fireEvent.click(btn);
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(view.getByTestId("tts-quickstart-copy-alt-kokoro-fastapi").textContent).toContain("tts_quickstart_copied");
+    cleanup();
   });
 
   test("none-found renders diag line for worst code (timeout wins)", async () => {

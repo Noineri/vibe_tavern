@@ -3,8 +3,10 @@ import { useState } from "react";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { copyText } from "../../../../lib/clipboard.js";
+import { cn } from "../../../../lib/cn.js";
 import { lblCls, monoUICls } from "../../../build/fields/field-styles.js";
-import { Ic } from "../../../shared/icons.js";
+import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
+import { Icons } from "../../../shared/icons.js";
 import { LOCAL_TTS_QUICKSTARTS, diagnosticI18nKey, worstDiagnostic } from "../../../../lib/tts/quickstarts.js";
 import { useDockerStatus } from "./use-docker-status.js";
 import { useTtsDiscovery } from "./use-tts-discovery.js";
@@ -24,6 +26,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
   const docker = useDockerStatus();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Locked: whole block renders ONLY for openai-compatible backend — the
   // "Local server" UI variant is exactly that backend plus the localServer
@@ -73,63 +76,78 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
         )}
       </div>
 
-      <div className="flex flex-col gap-2">
-        <label className={lblCls}>{t("tts_quickstart_section")}</label>
-        <div className="font-ui text-[11px] text-t4">{t("tts_quickstart_hint")}</div>
-        {LOCAL_TTS_QUICKSTARTS.map((quickstart) => (
-          <div
-            key={quickstart.id}
-            data-testid={`tts-quickstart-card-${quickstart.id}`}
-            className="flex flex-col gap-1.5 rounded-md border border-border bg-s1 px-3 py-2.5"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-ui text-[12px] font-medium text-t1">{quickstart.name}</span>
-              <span className="font-ui text-[11px] text-t3">
-                127.0.0.1:{quickstart.port} · {t("tts_quickstart_port")} {quickstart.port}
-              </span>
-            </div>
-            <div className={`${monoUICls} overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px]`}>
-              {quickstart.command}
-            </div>
-            {/* Non-docker variant (D8) — always shown; the prerequisite note
+      {/* Setup help accordion — disclosure block forked verbatim from
+          ProviderSamplerPanel.tsx (advOpen + caret rotate-90 chrome). */}
+      <div className="overflow-hidden rounded-lg border border-border2" data-testid="tts-setup-help-accordion">
+        <div
+          className={cn(
+            "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
+            helpOpen && "!rounded-b-none",
+          )}
+        >
+          <span className="flex items-center gap-2" onClick={() => setHelpOpen(!helpOpen)} data-testid="tts-setup-help-toggle">
+            <span className={cn("transition-transform", helpOpen && "rotate-90")}>
+              <Icons.Caret direction="r" />
+            </span>
+            {t("tts_setup_help")}
+          </span>
+        </div>
+
+        <AnimatedDisclosure open={helpOpen} className="border-t border-border2 bg-surface p-4" data-testid="tts-setup-help-body">
+          <div className="flex flex-col gap-2">
+            <div className="font-ui text-[11px] text-t4">{t("tts_quickstart_hint")}</div>
+            {LOCAL_TTS_QUICKSTARTS.map((quickstart) => (
+              <div
+                key={quickstart.id}
+                data-testid={`tts-quickstart-card-${quickstart.id}`}
+                className="flex flex-col gap-1.5 rounded-md border border-border bg-s1 px-3 py-2.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-ui text-[12px] font-medium text-t1">{quickstart.name}</span>
+                  <span className="font-ui text-[11px] text-t3">
+                    127.0.0.1:{quickstart.port} · {t("tts_quickstart_port")} {quickstart.port}
+                  </span>
+                </div>
+                <div className={`${monoUICls} overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px]`}>{quickstart.command}</div>
+                {/* Non-docker variant (D8) — always shown; the prerequisite note
                 keeps it honest about what the command needs. */}
-            <div className={`${monoUICls} overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px] text-t3`}>
-              {quickstart.alt.command}
-            </div>
-            <div className="font-ui text-[11px] text-t4">{t(quickstart.alt.noteKey)}</div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                data-testid={`tts-quickstart-copy-${quickstart.id}`}
-                className="flex cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-                onClick={() => void handleCopy(quickstart.id, quickstart.command)}
-              >
-                <Ic.copy />
-                {copiedId === quickstart.id ? t("tts_quickstart_copied") : t("tts_quickstart_copy")}
-              </button>
-              <button
-                type="button"
-                data-testid={`tts-quickstart-copy-alt-${quickstart.id}`}
-                className="flex cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-                onClick={() => void handleCopy(`${quickstart.id}-alt`, quickstart.alt.command)}
-              >
-                <Ic.copy />
-                {t("tts_quickstart_copy_alt")}
-              </button>
-              <button
-                type="button"
-                data-testid={`tts-quickstart-use-${quickstart.id}`}
-                className="flex cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
-                onClick={() => setEndpoint(quickstart.endpoint)}
-              >
-                {t("tts_discover_adopt")}
-              </button>
-            </div>
+                <div className={`${monoUICls} overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px] text-t3`}>
+                  {quickstart.alt.command}
+                </div>
+                <div className="font-ui text-[11px] text-t4">{t(quickstart.alt.noteKey)}</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid={`tts-quickstart-copy-${quickstart.id}`}
+                    className="flex cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+                    onClick={() => void handleCopy(quickstart.id, quickstart.command)}
+                  >
+                    <Icons.Copy />
+                    {copiedId === quickstart.id ? t("tts_quickstart_copied") : t("tts_quickstart_copy")}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`tts-quickstart-copy-alt-${quickstart.id}`}
+                    className="flex cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+                    onClick={() => void handleCopy(`${quickstart.id}-alt`, quickstart.alt.command)}
+                  >
+                    <Icons.Copy />
+                    {copiedId === `${quickstart.id}-alt` ? t("tts_quickstart_copied") : t("tts_quickstart_copy_alt")}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`tts-quickstart-use-${quickstart.id}`}
+                    className="flex cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
+                    onClick={() => setEndpoint(quickstart.endpoint)}
+                  >
+                    {t("tts_discover_adopt")}
+                  </button>
+                </div>
+              </div>
+            ))}
+            {copyError !== null && <div className="font-ui text-[11px] text-danger">{copyError}</div>}
           </div>
-        ))}
-        {copyError !== null && (
-          <div className="font-ui text-[11px] text-danger">{copyError}</div>
-        )}
+        </AnimatedDisclosure>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -191,7 +209,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                     }
                     onClick={() => setEndpoint(`${server.baseUrl}/v1`)}
                   >
-                    {isAdopted && <Ic.check />}
+                    {isAdopted && <Icons.Check />}
                     {t("tts_discover_adopt")}
                   </button>
                 </div>

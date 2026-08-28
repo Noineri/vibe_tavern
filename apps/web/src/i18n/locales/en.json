@@ -2630,6 +2630,7 @@
   "tts_quickstart_copy_alt": "Copy non-docker",
   "tts_quickstart_alt_uv": "Without docker: needs git + uv (astral); on Windows run .\\start-cpu.ps1 instead",
   "tts_quickstart_alt_python": "Without docker: needs git + Python 3; server starts on port 5050",
+  "tts_setup_help": "Setup help",
   "tts_is_default": "Default",
   "tts_make_default": "Make default"
 }

@@ -2534,6 +2534,7 @@ export default interface Resources {
     "tts_section_placeholder": "TTS profiles will appear here",
     "tts_section_title": "Text-to-Speech",
     "tts_section_voice_tuning": "Voice & tuning",
+    "tts_setup_help": "Setup help",
     "tts_voice_accent_a": "American",
     "tts_voice_accent_b": "British",
     "tts_voice_gender_female": "Female",

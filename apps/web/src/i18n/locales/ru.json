@@ -2662,6 +2662,7 @@
   "tts_quickstart_copy_alt": "Копировать без docker",
   "tts_quickstart_alt_uv": "Без docker: нужны git + uv (astral); в Windows запустите .\\start-cpu.ps1",
   "tts_quickstart_alt_python": "Без docker: нужны git + Python 3; сервер поднимется на порту 5050",
+  "tts_setup_help": "Справка по установке",
   "tts_is_default": "По умолчанию",
   "tts_make_default": "Сделать по умолчанию"
 }
