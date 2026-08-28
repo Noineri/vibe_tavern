@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
+import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { Ic } from "../../../shared/icons.js";
@@ -23,7 +23,9 @@ import {
   type TtsTuningFieldSpec,
   type TtsUiVariant,
 } from "./tts-backend-ui.js";
-import type { useTtsProfiles } from "./use-tts-profiles.js";
+import { TtsProviderForm } from "./TtsProviderForm.js";
+import { TTS_PRESETS } from "../../../../lib/tts/tts-presets.js";
+import type { TtsProfileForm, useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 
@@ -284,28 +286,24 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const spec = ttsUiSpecFor(variant);
   const isKokoro = variant === "kokoro";
 
-  const backendOptions: Array<{ id: TtsUiVariant; label: string }> = [
-    { id: "kokoro", label: t("tts_backend_kokoro") },
-    { id: "local", label: t("tts_backend_local_server") },
-    { id: "openai", label: t("tts_backend_openai_compatible") },
-    { id: "gemini", label: t("tts_backend_gemini") },
-    { id: "elevenlabs", label: t("tts_backend_elevenlabs") },
-  ];
+  function handleApplyPreset(presetId: string): void {
+    const preset = TTS_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    const nextBackend =
+      preset.backend === "gemini"
+        ? TTS_BACKEND.Gemini
+        : preset.backend === "elevenlabs"
+          ? TTS_BACKEND.ElevenLabs
+          : TTS_BACKEND.OpenAiCompatible;
+    const nextConfig: Record<string, unknown> = {};
+    if (preset.baseUrl) nextConfig["endpoint"] = preset.baseUrl;
+    nextConfig["preset"] = preset.id;
+    tts.setForm({ backend: nextBackend, config: nextConfig, voiceId: "" });
+  }
 
-  /** Variant switch (D8): "local" and "openai" share the wire backend — the
-   *  flip keeps the typed config and toggles only the localServer marker;
-   *  any real backend change resets config/voice via setForm's reset rule. */
-  function onVariantChange(next: string): void {
-    const target = next as TtsUiVariant;
-    const backend = backendForVariant(target);
-    if (target === "local" || target === "openai") {
-      const nextConfig = { ...form.config };
-      if (target === "local") nextConfig[TTS_LOCAL_SERVER_FLAG] = true;
-      else delete nextConfig[TTS_LOCAL_SERVER_FLAG];
-      tts.setForm({ backend, config: nextConfig });
-      return;
-    }
-    tts.setForm({ backend });
+  function handleUpdateForm<K extends keyof TtsProfileForm>(k: K, v: TtsProfileForm[K]): void {
+    // Generic computed-key object can't be proven assignable — single scoped cast.
+    tts.setForm({ [k]: v } as Pick<TtsProfileForm, K>);
   }
 
   const kokoroVoiceOptions = KOKORO_VOICES.filter((v) => v.lang === "a" || v.lang === "b").map((v) => ({
@@ -320,57 +318,25 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
 
   return (
     <div data-testid="tts-profile-editor" className="flex flex-col gap-4">
-      <div>
-        <label className={lblCls}>{t("tts_profile_name_label")}</label>
-        <input
-          data-testid="tts-profile-name-input"
-          className={inputCls + " mt-1 px-3 py-2 text-[13px]"}
-          value={form.name}
-          onChange={(e) => tts.setForm({ name: e.target.value })}
-          placeholder={t("tts_profile_name_label")}
-        />
-      </div>
-
-      <div>
-        <label className={lblCls}>{t("tts_profile_backend_label")}</label>
-        <div className="mt-1">
-          <DropdownSelect
-            value={variant}
-            options={backendOptions}
-            onChange={onVariantChange}
-            searchable={false}
-            triggerTestId="tts-backend-select"
-          />
-        </div>
-      </div>
+      <TtsProviderForm
+        form={form}
+        editingId={form.id}
+        ttsProfiles={tts.profiles}
+        updateForm={handleUpdateForm}
+        applyPreset={handleApplyPreset}
+        testOk={null}
+        testing={false}
+        testingChat={false}
+        chatResult={null}
+        onTest={() => {}}
+        onTestChat={() => {}}
+      />
 
       {/* ── Connection card (D5): identity + credentials + model choice.
           Rendered from the variant spec — kokoro has none (browser-local). */}
       {hasConnectionCard && (
         <TtsSectionCard title={t("tts_section_connection")} testid="tts-connection-card">
-          {spec.connection.endpoint !== undefined && (
-            <div>
-              <label className={lblCls}>{t("tts_field_endpoint")}</label>
-              <input
-                data-testid="tts-field-endpoint"
-                className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-                value={configString(form.config, "endpoint")}
-                onChange={(e) => updateConfigField(tts, form, "endpoint", e.target.value)}
-                placeholder={spec.connection.endpoint.placeholder}
-              />
-            </div>
-          )}
-          {spec.connection.apiKey !== undefined && (
-            <div>
-              <label className={lblCls}>{t("tts_field_api_key")}</label>
-              <TtsApiKeyField
-                value={configString(form.config, "apiKey")}
-                onChange={(v) => updateConfigField(tts, form, "apiKey", v)}
-                placeholder={spec.connection.apiKey.placeholder}
-                stored={form.hasStoredApiKey}
-              />
-            </div>
-          )}
+
           {modelSpec?.mode === "fetch" && (
             <div>
               <div className="flex items-center justify-between">

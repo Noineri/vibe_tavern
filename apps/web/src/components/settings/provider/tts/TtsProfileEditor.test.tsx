@@ -355,7 +355,9 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
     const connection = view.getByTestId("tts-connection-card");
     const voice = view.getByTestId("tts-voice-card");
-    expect(within(connection).getByTestId("tts-field-endpoint")).toBeTruthy();
+    // TE2-8: endpoint moved from the connection card into the forked TtsProviderForm header (still globally present).
+    expect(view.getByTestId("tts-field-endpoint")).toBeTruthy();
+    expect(connection).toBeTruthy();
     expect(within(voice).getByText("tts_field_voice")).toBeTruthy();
     // The preview button docks in the voice card (F1 layout preserved).
     expect(within(voice).getByTestId("tts-preview-btn")).toBeTruthy();
@@ -675,5 +677,141 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
+  });
+});
+
+describe("TtsProfileEditor — TE2-8 provider form fork", () => {
+  function checkedSegment(view: ReturnType<typeof render>): string {
+    const el = view.container.querySelector('[data-state="checked"]');
+    return el?.textContent?.trim() ?? "";
+  }
+
+  it("re-open: preset config → Cloud with that preset selected", async () => {
+    const tts = makeTts({
+      profiles: [],
+      form: {
+        id: "p1",
+        name: "P",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { preset: "openai", endpoint: "https://api.openai.com/v1" },
+        voiceId: "alloy",
+        narratorVoiceId: "",
+      } as never,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    expect(checkedSegment(view)).toContain("Cloud");
+    // Preset endpoint readonly shows the preset baseUrl
+    const endpointInputs = Array.from(view.container.querySelectorAll('input')) as HTMLInputElement[];
+    const presetEndpoint = endpointInputs.find((el) => el.readOnly && el.value.includes("api.openai.com"));
+    expect(presetEndpoint).toBeTruthy();
+    // Dropdown shows OpenAI label
+    expect(view.container.textContent ?? "").toContain("OpenAI");
+    cleanup();
+  });
+
+  it("re-open: bare endpoint (no preset) → Custom", async () => {
+    const tts = makeTts({
+      form: {
+        id: "p1",
+        name: "P",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://custom.example/v1" },
+        voiceId: "alloy",
+        narratorVoiceId: "",
+      } as never,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    expect(checkedSegment(view).toLowerCase()).toContain("custom");
+    const input = view.getByTestId("tts-field-endpoint") as HTMLInputElement;
+    expect(input.value).toBe("https://custom.example/v1");
+    cleanup();
+  });
+
+  it("re-open: kokoro backend → Browser (no connection card)", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "af_heart", narratorVoiceId: "" } as never,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    expect(checkedSegment(view).toLowerCase()).toContain("kokoro");
+    expect(checkedSegment(view).toLowerCase()).not.toContain("custom");
+    expect(view.queryByTestId("tts-connection-card")).toBeNull();
+    cleanup();
+  });
+
+  it("re-open: gemini backend without preset → Cloud", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: { apiKey: "k" }, voiceId: "", narratorVoiceId: "" } as never,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    expect(checkedSegment(view)).toContain("Cloud");
+    cleanup();
+  });
+
+  it("re-open: elevenlabs backend without preset → Cloud", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.ElevenLabs as never, config: { apiKey: "k" }, voiceId: "", narratorVoiceId: "" } as never,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    expect(checkedSegment(view)).toContain("Cloud");
+    cleanup();
+  });
+
+  it("duplicate-name warning renders for a colliding profile name", async () => {
+    const profiles = [{ id: "other", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "", narratorVoiceId: null, hasStoredApiKey: false, lang: "en", sortOrder: 0, isDefault: false, createdAt: "", updatedAt: "" } as never];
+    const tts = makeTts({
+      profiles,
+      form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByText("profile_name_exists")).toBeTruthy();
+    cleanup();
+  });
+
+  it("segment switch resets config like the source form does", async () => {
+    const setForm = mock(() => {});
+    const tts = makeTts({
+      setForm,
+      profiles: [],
+      form: {
+        id: "p1",
+        name: "P",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { preset: "openai", endpoint: "https://api.openai.com/v1" },
+        voiceId: "alloy",
+        narratorVoiceId: "",
+      } as never,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    // Click Custom segment
+    const customRadio = view.getAllByRole("radio").find((el) => el.textContent?.toLowerCase().includes("custom"));
+    expect(customRadio).toBeTruthy();
+    fireEvent.click(customRadio as HTMLElement);
+    await waitFor(() => expect(setForm).toHaveBeenCalled(), { timeout: 1000 });
+    const calls = (setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
+    // At least one call resets config to {}
+    const hasReset = calls.some((patch) => {
+      const cfg = patch["config"] as Record<string, unknown> | undefined;
+      return cfg !== undefined && Object.keys(cfg).length === 0;
+    });
+    expect(hasReset).toBe(true);
+    cleanup();
   });
 });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
+import { TTS_PRESET_CONFIG_KEY } from "./tts-backend-ui.js";
 import {
   createTtsProfile,
   deleteTtsProfile,
@@ -112,7 +113,12 @@ export function useTtsProfiles(): {
       if (patch.backend !== undefined && patch.backend !== prev.backend) {
         const nextBackend = patch.backend;
         const nextVoiceId = nextBackend === TTS_BACKEND.Kokoro ? "af_heart" : "";
-        return { ...prev, ...patch, config: {}, voiceId: nextVoiceId, narratorVoiceId: "", hasStoredApiKey: false };
+        // TE2-8 preset glue: when the patch carries a preset-bearing config
+        // (Cloud applyPreset), keep that config instead of wiping to {}.
+        const preset = patch.config?.[TTS_PRESET_CONFIG_KEY];
+        const nextConfig =
+          patch.config !== undefined && typeof preset === "string" && preset.length > 0 ? { ...patch.config } : {};
+        return { ...prev, ...patch, config: nextConfig, voiceId: nextVoiceId, narratorVoiceId: "", hasStoredApiKey: false };
       }
       return { ...prev, ...patch };
     });

@@ -23,6 +23,16 @@ export type TtsI18nKey = keyof Resources["en"];
  *  OpenAI-compatible variant (see module doc). */
 export const TTS_LOCAL_SERVER_FLAG = "localServer";
 
+/** Preset id key in the config bag — distinguishes Cloud (preset-driven) from
+ *  Custom (bare openai-compatible) and survives save/reopen. */
+export const TTS_PRESET_CONFIG_KEY = "preset";
+
+/** Top-level segments rendered by the forked ProviderForm (TtsProviderForm).
+ *  The five original variants are grouped into four segments; cloud presets
+ *  (including native gemini/elevenlabs via the TE2-1 registry) share one.
+ */
+export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
+
 export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs";
 
 export interface TtsNumberFieldSpec {
@@ -183,6 +193,29 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Gemini) return "gemini";
   if (backend === TTS_BACKEND.ElevenLabs) return "elevenlabs";
   return "kokoro";
+}
+
+/** Derive the four-segment view for the forked ProviderForm (TE2-8):
+ *  Cloud = preset-driven (config.preset present) or native gemini/
+ *  elevenlabs; Custom = bare openai-compatible; Local = localServer flag;
+ *  Browser = kokoro. Existing profiles without a preset reopen in the
+ *  intuitive segment (preset presence is authoritative). */
+export function ttsProviderSegmentOf(
+  backend: TtsBackendSlug,
+  config: Record<string, unknown>,
+): TtsProviderSegment {
+  if (backend === TTS_BACKEND.Kokoro) return "browser";
+  if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
+  if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
+    return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs) return "cloud";
+  return "custom";
+}
+
+/** Preset id stored in config.preset (or '' when none). */
+export function ttsPresetIdOf(config: Record<string, unknown>): string {
+  const v = config[TTS_PRESET_CONFIG_KEY];
+  return typeof v === "string" ? v : "";
 }
 
 /** The wire backend a UI variant edits (the local variant rides the
