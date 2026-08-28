@@ -1,6 +1,142 @@
 import type { RegexPreset } from "@vibe-tavern/domain";
 import { applyRegexLayer, type RegexMacroSource } from "@vibe-tavern/prompt-pipeline";
 
+export type NarrationRole = "character" | "narrator";
+
+export interface NarrationRoleRun {
+  role: NarrationRole;
+  text: string;
+}
+
+/**
+ * Split prepared narration text into ordered role runs.
+ * Substrings inside double quotes ("...", “...", «...") are
+ * "character"; everything between them is "narrator". Quotes
+ * themselves are stripped and do not appear in the output text.
+ * Adjacent runs of the same role are merged. Whitespace-only
+ * narrator gaps are dropped. Unclosed quotes consume the rest of
+ * the input as a trailing character run. Returns [] for empty or
+ * whitespace-only input. Pure.
+ */
+export function splitNarrationRoles(text: string): NarrationRoleRun[] {
+  if (!text || text.trim() === "") return [];
+  const runs: NarrationRoleRun[] = [];
+  function pushRun(role: NarrationRole, t: string): void {
+    if (t === "") return;
+    if (role === "narrator" && t.trim() === "") return;
+    const last = runs[runs.length - 1];
+    if (last && last.role === role) {
+      last.text += t;
+    } else {
+      runs.push({ role, text: t });
+    }
+  }
+  let i = 0;
+  const len = text.length;
+  while (i < len) {
+    let openIndex = -1;
+    let openChar = "";
+    let closeChar = "";
+    // Find earliest opening among ", «, "
+    const idxDouble = text.indexOf('"', i);
+    const idxGuilOpen = text.indexOf("«", i);
+    const idxCurlyOpen = text.indexOf("“", i);
+    let earliest = -1;
+    let earliestChar = "";
+    for (const [idx, ch] of [
+      [idxDouble, '"'] as const,
+      [idxGuilOpen, "«"] as const,
+      [idxCurlyOpen, "“"] as const,
+    ]) {
+      if (idx !== -1 && (earliest === -1 || idx < earliest)) {
+        earliest = idx;
+        earliestChar = ch;
+      }
+    }
+    openIndex = earliest;
+    openChar = earliestChar;
+    if (openIndex === -1) {
+      pushRun("narrator", text.slice(i));
+      break;
+    }
+    // Narrator gap before the opening quote
+    if (openIndex > i) {
+      pushRun("narrator", text.slice(i, openIndex));
+    }
+    if (openChar === '"') closeChar = '"';
+    else if (openChar === "«") closeChar = "»";
+    else if (openChar === "“") closeChar = "”";
+    const closeIndex = text.indexOf(closeChar, openIndex + 1);
+    if (closeIndex === -1) {
+      pushRun("character", text.slice(openIndex + 1));
+      break;
+    }
+    pushRun("character", text.slice(openIndex + 1, closeIndex));
+    i = closeIndex + 1;
+  }
+  return runs;
+}
+
+/**
+ * Map role runs into synthesis-ready chunks where every output piece
+ * is ≤ maxLen. Splits long runs on the same boundary discipline as
+ * kokoro-text.ts: sentence punctuation (.[!?…] + whitespace) first,
+ * then word whitespace, then hard cut. Every piece keeps its source
+ * role and the concatenation of all pieces equals the concatenation
+ * of all input runs exactly (no characters dropped or duplicated).
+ * Pure.
+ */
+export function chunkRoleRuns(runs: NarrationRoleRun[], maxLen: number): NarrationRoleRun[] {
+  if (maxLen <= 0) throw new Error("maxLen must be > 0");
+  const out: NarrationRoleRun[] = [];
+  for (const run of runs) {
+    const t = run.text;
+    if (t.length <= maxLen) {
+      out.push({ role: run.role, text: t });
+      continue;
+    }
+    let pos = 0;
+    while (pos < t.length) {
+      const remaining = t.length - pos;
+      if (remaining <= maxLen) {
+        out.push({ role: run.role, text: t.slice(pos) });
+        break;
+      }
+      const windowEnd = pos + maxLen;
+      const windowText = t.slice(pos, windowEnd);
+      // Prefer last sentence boundary inside the window: punctuation + whitespace
+      let lastSentenceEnd = -1;
+      const sentenceRe = /[.!?…]\s+/g;
+      let m: RegExpExecArray | null;
+      while ((m = sentenceRe.exec(windowText)) !== null) {
+        lastSentenceEnd = m.index + m[0].length;
+      }
+      let cut: number;
+      if (lastSentenceEnd > 0) {
+        cut = pos + lastSentenceEnd;
+      } else {
+        // Last whitespace inside window (word boundary), keep it in the first piece
+        let lastWs = -1;
+        for (let k = windowText.length - 1; k >= 0; k--) {
+          if (/\s/.test(windowText[k]!)) {
+            lastWs = k;
+            break;
+          }
+        }
+        if (lastWs > 0) {
+          cut = pos + lastWs + 1;
+        } else {
+          cut = windowEnd;
+        }
+      }
+      if (cut <= pos) cut = windowEnd;
+      out.push({ role: run.role, text: t.slice(pos, cut) });
+      pos = cut;
+    }
+  }
+  return out;
+}
+
 export interface NarrationTextOptions {
   /** Apply these (already-filtered) regex presets to the raw text first. */
   regexPresets: RegexPreset[];

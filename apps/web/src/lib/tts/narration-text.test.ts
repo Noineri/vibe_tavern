@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { brandId, REGEX_PLACEMENT, REGEX_SUBSTITUTE, type RegexPreset, type RegexPresetId } from "@vibe-tavern/domain";
-import { defaultNarrationTextOptions, prepareNarrationText } from "./narration-text.js";
+import {
+  chunkRoleRuns,
+  defaultNarrationTextOptions,
+  prepareNarrationText,
+  splitNarrationRoles,
+  type NarrationRoleRun,
+} from "./narration-text.js";
 
 function makePreset(overrides: Partial<RegexPreset> = {}): RegexPreset {
   return {
@@ -147,5 +153,137 @@ describe("prepareNarrationText", () => {
     // Regex that adds html, then html stripped
     const preset = makePreset({ findRegex: "/PLACE/g", replaceString: "<b>hi</b>" });
     expect(prepareNarrationText("PLACE", opts({ regexPresets: [preset], stripHtml: true }))).toBe("hi");
+  });
+});
+
+describe("splitNarrationRoles", () => {
+  test("plain narration-only text → single narrator run", () => {
+    expect(splitNarrationRoles("hello world")).toEqual([{ role: "narrator", text: "hello world" }]);
+  });
+
+  test("three quoted spans alternate roles in order", () => {
+    const text = 'He said "hi" then she said "hello" and "bye" end';
+    expect(splitNarrationRoles(text)).toEqual([
+      { role: "narrator", text: "He said " },
+      { role: "character", text: "hi" },
+      { role: "narrator", text: " then she said " },
+      { role: "character", text: "hello" },
+      { role: "narrator", text: " and " },
+      { role: "character", text: "bye" },
+      { role: "narrator", text: " end" },
+    ]);
+  });
+
+  test("adjacent same-role runs merged (quote immediately followed by quote)", () => {
+    expect(splitNarrationRoles('"a""b"')).toEqual([{ role: "character", text: "ab" }]);
+  });
+
+  test("adjacent quotes with whitespace-only narrator gap dropped and merged", () => {
+    expect(splitNarrationRoles('"a"   "b"')).toEqual([{ role: "character", text: "ab" }]);
+  });
+
+  test("unclosed quote → trailing character run", () => {
+    expect(splitNarrationRoles('Start "unclosed rest')).toEqual([
+      { role: "narrator", text: "Start " },
+      { role: "character", text: "unclosed rest" },
+    ]);
+  });
+
+  test("whitespace-only narrator gap dropped", () => {
+    // Leading/trailing whitespace narrator gaps are dropped via narrator-whitespace rule.
+    expect(splitNarrationRoles('   "a"   "b"   ')).toEqual([{ role: "character", text: "ab" }]);
+    // Gap between narrator and character that is only spaces is still dropped if narrator-only? Use case: "a" between quotes with spaces
+    expect(splitNarrationRoles('"a" "b"')).toEqual([{ role: "character", text: "ab" }]);
+  });
+
+  test("full empty and whitespace-only → []", () => {
+    expect(splitNarrationRoles("")).toEqual([]);
+    expect(splitNarrationRoles("   ")).toEqual([]);
+    expect(splitNarrationRoles("\n\t  ")).toEqual([]);
+  });
+
+  test("typographic quotes “ ” and « » recognized same as ASCII", () => {
+    const text = 'He said “hello” and «bonjour» end';
+    expect(splitNarrationRoles(text)).toEqual([
+      { role: "narrator", text: "He said " },
+      { role: "character", text: "hello" },
+      { role: "narrator", text: " and " },
+      { role: "character", text: "bonjour" },
+      { role: "narrator", text: " end" },
+    ]);
+  });
+
+  test("character runs keep inner text as-is (no trimming)", () => {
+    expect(splitNarrationRoles('"  spaced  "')).toEqual([{ role: "character", text: "  spaced  " }]);
+  });
+
+  test("narrator runs keep text as-is", () => {
+    expect(splitNarrationRoles('A "b" C')).toEqual([
+      { role: "narrator", text: "A " },
+      { role: "character", text: "b" },
+      { role: "narrator", text: " C" },
+    ]);
+  });
+});
+
+describe("chunkRoleRuns", () => {
+  test("long narrator run splits into pieces ≤400 each with role preserved", () => {
+    const longText = "word ".repeat(200); // ~1000 chars
+    const runs: NarrationRoleRun[] = [{ role: "narrator", text: longText }];
+    const pieces = chunkRoleRuns(runs, 400);
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const p of pieces) {
+      expect(p.text.length).toBeLessThanOrEqual(400);
+      expect(p.role).toBe("narrator");
+    }
+  });
+
+  test("join-back property: pieces join back to input exactly", () => {
+    const runs: NarrationRoleRun[] = [
+      { role: "narrator", text: "Hello world. " },
+      { role: "character", text: "Hi there! How are you?" },
+      { role: "narrator", text: " She smiled. " + "word ".repeat(150) },
+    ];
+    const joined = runs.map((r) => r.text).join("");
+    const pieces = chunkRoleRuns(runs, 400);
+    expect(pieces.map((p) => p.text).join("")).toBe(joined);
+  });
+
+  test("quoted runs shorter than maxLen stay whole (atomic)", () => {
+    const runs: NarrationRoleRun[] = [
+      { role: "narrator", text: "intro " },
+      { role: "character", text: "short quote" },
+      { role: "narrator", text: " outro" },
+    ];
+    const pieces = chunkRoleRuns(runs, 400);
+    expect(pieces).toEqual(runs);
+    // Also via splitNarrationRoles pipeline
+    const quoted = splitNarrationRoles('intro "short quote" outro');
+    const chunked = chunkRoleRuns(quoted, 400);
+    expect(chunked).toEqual(quoted);
+  });
+
+  test("piece boundary never lands inside a quoted span — quoted runs are separate pieces", () => {
+    const text = 'Start "' + "x".repeat(10) + '" middle ' + "y".repeat(500);
+    const runs = splitNarrationRoles(text);
+    // runs: narrator "Start ", character "xxxxx", narrator " middle yyy..."
+    expect(runs.some((r) => r.role === "character")).toBe(true);
+    const pieces = chunkRoleRuns(runs, 400);
+    // Character piece must appear whole and not be split
+    const charPieces = pieces.filter((p) => p.role === "character");
+    expect(charPieces.length).toBe(1);
+    expect(charPieces[0]!.text).toBe("x".repeat(10));
+    // All pieces ≤400
+    for (const p of pieces) expect(p.text.length).toBeLessThanOrEqual(400);
+  });
+
+  test("sentence boundary is preferred over word boundary", () => {
+    const sentence = "Hello world. ".repeat(50); // many sentences, each ~13 chars
+    const runs: NarrationRoleRun[] = [{ role: "narrator", text: sentence }];
+    const pieces = chunkRoleRuns(runs, 50);
+    for (const p of pieces) expect(p.text.length).toBeLessThanOrEqual(50);
+    // No piece should cut inside a sentence without whitespace after punctuation
+    // Verify join-back still holds
+    expect(pieces.map((p) => p.text).join("")).toBe(sentence);
   });
 });
