@@ -147,6 +147,82 @@ describe("KokoroTtsClient", () => {
     expect(String.fromCharCode(...bytes.slice(0, 4))).toBe("RIFF");
   });
 
+  test("generateChunked round-trip: sequential requests per chunk, ONE WAV with concatenated PCM", async () => {
+    const { client, requests, emit } = makeClient();
+    const loadPromise = client.load();
+    emit({ type: "loaded" });
+    await loadPromise;
+
+    const outputPromise = client.generateChunked(["Hello there.", "General Kenobi!"], "af_heart", 1.0);
+    // Two microtask rounds: chunk 1 request flushes, is answered, then chunk 2.
+    for (let step = 0; step < 2; step++) {
+      await Promise.resolve();
+      const pending = requests.filter((r) => r.type === "generate")[step];
+      expect(pending).toBeDefined();
+      const pcm = step === 0 ? new Float32Array([0, 0.25]) : new Float32Array([-0.5, 0.5, -1]);
+      emit({ type: "generated", id: (pending as { id: number }).id, audio: pcm, sampleRate: 24000 });
+      await Promise.resolve();
+    }
+    const output = await outputPromise;
+
+    // One generate request per chunk, in order, carrying the exact texts.
+    const gens = requests.filter((r) => r.type === "generate");
+    expect(gens.map((r) => (r as { text: string }).text)).toEqual(["Hello there.", "General Kenobi!"]);
+
+    // The blob is a single WAV whose PCM is chunk1 ++ chunk2.
+    expect(output.sampleRate).toBe(24000);
+    expect(output.blob.type).toBe("audio/wav");
+    const bytes = new Uint8Array(await output.blob.arrayBuffer());
+    expect(bytes.byteLength).toBe(44 + 5 * 2); // 2 + 3 samples, 16-bit
+    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe("RIFF");
+    const view = new DataView(bytes.buffer);
+    const read = (i: number) => view.getInt16(44 + i * 2, true);
+    // float32-to-wav convention: negative samples scale by 0x8000, positive by 0x7fff.
+    expect(read(0)).toBe(0);
+    expect(read(1)).toBe(Math.round(0.25 * 0x7fff));
+    expect(read(2)).toBe(Math.round(-0.5 * 0x8000));
+    expect(read(3)).toBe(Math.round(0.5 * 0x7fff));
+    expect(read(4)).toBe(-0x8000); // -1 clamps
+  });
+
+  test("generateChunked: a mid-chunk worker failure rejects the whole call", async () => {
+    const { client, requests, emit } = makeClient();
+    const loadPromise = client.load();
+    emit({ type: "loaded" });
+    await loadPromise;
+
+    const outputPromise = client.generateChunked(["first", "second"], "af_heart");
+    await Promise.resolve();
+    emit({ type: "generated", id: (requests.at(-1) as { id: number }).id, audio: new Float32Array([0.5]), sampleRate: 24000 });
+    await Promise.resolve();
+    await Promise.resolve();
+    const second = requests.at(-1) as { id: number };
+    emit({ type: "error", id: second.id, name: "KokoroGenerateError", message: "wasm exploded" });
+
+    await expect(outputPromise).rejects.toBeInstanceOf(KokoroGenerateError);
+    await expect(outputPromise).rejects.toThrow("wasm exploded");
+  });
+
+  test("generateChunked: empty or all-empty input is a typed error; single chunk behaves like generate", async () => {
+    const { client, requests, emit } = makeClient();
+    const loadPromise = client.load();
+    emit({ type: "loaded" });
+    await loadPromise;
+
+    await expect(client.generateChunked([], "af_heart")).rejects.toBeInstanceOf(KokoroGenerateError);
+    await expect(client.generateChunked(["", ""], "af_heart")).rejects.toBeInstanceOf(KokoroGenerateError);
+    // Also rejects before any round-trip when the voice is not loaded-eligible.
+    expect(requests.filter((r) => r.type === "generate")).toHaveLength(0);
+
+    const single = client.generateChunked(["one liner"], "af_heart");
+    await Promise.resolve();
+    const request = requests.at(-1) as { id: number; text: string };
+    expect(request.text).toBe("one liner");
+    emit({ type: "generated", id: request.id, audio: new Float32Array([0.1, -0.1]), sampleRate: 24000 });
+    const out = await single;
+    expect(new Uint8Array(await out.blob.arrayBuffer()).byteLength).toBe(44 + 2 * 2);
+  });
+
   test("worker error envelope reconstructs the typed error class", async () => {
     const { client, emit } = makeClient();
     const loadPromise = client.load();

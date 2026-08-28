@@ -84,8 +84,8 @@ describe("prepareNarrationText", () => {
     expect(prepareNarrationText("no quotes here", opts({ quotedOnly: true }))).toBe("no quotes here");
   });
 
-  test("quotedOnly collapses newlines inside quotes to space", () => {
-    expect(prepareNarrationText('"hello\nworld"', opts({ quotedOnly: true }))).toBe("hello world");
+  test("quotedOnly preserves newlines inside quotes (paragraph boundaries for chunking)", () => {
+    expect(prepareNarrationText('"hello\nworld"', opts({ quotedOnly: true }))).toBe("hello\nworld");
   });
 
   // 6. Stage order
@@ -105,14 +105,24 @@ describe("prepareNarrationText", () => {
     expect(prepareNarrationText(text, opts({ skipCodeblocks: false, stripAsteriskActions: true }))).toBe("before ``` ``` after end");
   });
 
-  // 7. Whitespace collapse
-  test("whitespace collapse trims and collapses; everything filtered away yields empty", () => {
-    expect(prepareNarrationText("a   b\n\n  c", opts())).toBe("a b c");
+  // 7. Whitespace collapse (D10: newlines survive — they carry paragraph
+  // boundaries to the orchestrator's splitParagraphs)
+  test("whitespace collapse trims and collapses but PRESERVES paragraph boundaries", () => {
+    // Blank line stays a \n\n boundary; runs inside a line collapse to one space.
+    expect(prepareNarrationText("a   b\n\n  c", opts())).toBe("a b\n\nc");
     expect(prepareNarrationText("  hello   world  ", opts())).toBe("hello world");
     expect(prepareNarrationText("*a*", opts({ stripAsteriskActions: true }))).toBe("");
     expect(prepareNarrationText("   \n\n  ", opts())).toBe("");
     // Removals that leave extra spaces collapse:
     expect(prepareNarrationText("a <b> </b>  b", opts({ stripHtml: true }))).toBe("a b");
+    // Single newline (soft break within a paragraph) survives as-is.
+    expect(prepareNarrationText("a\n b", opts())).toBe("a\nb");
+    // CRLF and blank lines with stray whitespace normalize to clean \n\n.
+    expect(prepareNarrationText("a\r\n \r\nb", opts())).toBe("a\n\nb");
+    // Spaces around a boundary are trimmed, blank-line runs are preserved.
+    expect(prepareNarrationText("a  \n\n\n  b", opts())).toBe("a\n\n\nb");
+    // Tab-heavy lines collapse to single spaces without eating the boundary.
+    expect(prepareNarrationText("a \t \n \t b", opts())).toBe("a\nb");
   });
 
   // 8. defaults

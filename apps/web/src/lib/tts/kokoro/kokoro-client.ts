@@ -71,7 +71,10 @@ export class KokoroTtsClient {
   private loadPromise: Promise<void> | null = null;
   private readonly pendingGenerate = new Map<
     number,
-    { resolve: (out: KokoroGenerateOutput) => void; reject: (error: Error) => void }
+    {
+      resolve: (out: { audio: Float32Array; sampleRate: number }) => void;
+      reject: (error: Error) => void;
+    }
   >();
   private progressListeners = new Set<(progress: KokoroLoadProgress) => void>();
 
@@ -149,6 +152,52 @@ export class KokoroTtsClient {
 
   /** Synthesize text to a WAV Blob. Rejects with the typed Kokoro errors. */
   async generate(text: string, voice: string, speed?: number): Promise<KokoroGenerateOutput> {
+    const raw = await this.generateRaw(text, voice, speed);
+    const wav = float32ToWavBytes(raw.audio, raw.sampleRate);
+    return { blob: new Blob([wav], { type: "audio/wav" }), sampleRate: raw.sampleRate };
+  }
+
+  /** Synthesize PRE-SPLIT chunks sequentially and return ONE WAV whose PCM is
+   *  the concatenation of the per-chunk waveforms (D10: kokoro-js caps its
+   *  internal generation length, so over-long narration text must arrive in
+   *  model-safe pieces — the chunk POLICY lives in kokoro-text.ts; this method
+   *  is transport only). Chunks run one at a time (the wasm engine is not
+   *  concurrent-friendly); all-or-nothing: a mid-chunk failure rejects and
+   *  discards the partial audio. */
+  async generateChunked(
+    chunks: readonly string[],
+    voice: string,
+    speed?: number,
+  ): Promise<KokoroGenerateOutput> {
+    const parts: string[] = chunks.filter((chunk) => chunk.length > 0);
+    if (parts.length === 0) {
+      throw new KokoroGenerateError("Nothing to synthesize — the chunk list is empty.");
+    }
+    const waveforms: Float32Array[] = [];
+    let sampleRate = 0;
+    for (const chunk of parts) {
+      const raw = await this.generateRaw(chunk, voice, speed);
+      waveforms.push(raw.audio);
+      sampleRate = raw.sampleRate;
+    }
+    const total = waveforms.reduce((sum, waveform) => sum + waveform.length, 0);
+    const audio = new Float32Array(total);
+    let offset = 0;
+    for (const waveform of waveforms) {
+      audio.set(waveform, offset);
+      offset += waveform.length;
+    }
+    const wav = float32ToWavBytes(audio, sampleRate);
+    return { blob: new Blob([wav], { type: "audio/wav" }), sampleRate };
+  }
+
+  /** One worker round-trip returning raw PCM (shared by generate and
+   *  generateChunked so both paths validate voices identically). */
+  private async generateRaw(
+    text: string,
+    voice: string,
+    speed?: number,
+  ): Promise<{ audio: Float32Array; sampleRate: number }> {
     // Eager manifest validation (typed errors before any worker round-trip).
     const info = resolveKokoroVoice(voice);
     if (info.lang !== "a" && info.lang !== "b") {
@@ -161,7 +210,7 @@ export class KokoroTtsClient {
     }
     const id = ++this.nextId;
     const request: KokoroWorkerRequest = { type: "generate", id, text, voice, speed };
-    return new Promise<KokoroGenerateOutput>((resolve, reject) => {
+    return new Promise<{ audio: Float32Array; sampleRate: number }>((resolve, reject) => {
       this.pendingGenerate.set(id, { resolve, reject });
       this.worker.postMessage(request);
     });
@@ -198,8 +247,7 @@ export class KokoroTtsClient {
         const pending = this.pendingGenerate.get(response.id);
         if (!pending) return;
         this.pendingGenerate.delete(response.id);
-        const wav = float32ToWavBytes(response.audio, response.sampleRate);
-        pending.resolve({ blob: new Blob([wav], { type: "audio/wav" }), sampleRate: response.sampleRate });
+        pending.resolve({ audio: response.audio, sampleRate: response.sampleRate });
         return;
       }
       case "error": {

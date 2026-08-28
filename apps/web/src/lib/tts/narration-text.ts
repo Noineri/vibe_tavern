@@ -18,7 +18,12 @@ export interface NarrationTextOptions {
 /** Pre-narration text pipeline (TTS_PLAN TS-10). Stage order is FIXED:
  *  regex layer → stripHtml → skipCodeblocks → stripAsteriskActions → quotedOnly → whitespace collapse + trim.
  *  Returns "" when nothing survives the filters (the orchestrator's
- *  splitParagraphs then yields zero paragraphs → immediate complete). */
+ *  splitParagraphs then yields zero paragraphs → immediate complete).
+ *  The final collapse PRESERVES newlines (D10): collapsing all `\s+` erased
+ *  every paragraph boundary, so the orchestrator synthesized the whole
+ *  message as one unbounded segment. Blank lines survive as `\n\n`
+ *  boundaries; CRLF is normalized; spaces/tabs around newlines are trimmed
+ *  so `splitParagraphs` never sees padded boundaries. */
 export function prepareNarrationText(text: string, options: NarrationTextOptions): string {
   let out = text;
 
@@ -47,8 +52,15 @@ export function prepareNarrationText(text: string, options: NarrationTextOptions
     out = extractQuotedOnly(out);
   }
 
-  // 6. whitespace collapse + trim
-  out = out.replace(/\s+/g, " ").trim();
+  // 6. whitespace collapse + trim — collapse non-newline runs to single
+  // spaces, then trim spaces around each newline. Newlines themselves stay:
+  // they are the paragraph boundaries splitParagraphs splits on. ` *\n *`
+  // contains exactly one \n so it can never eat a blank-line boundary.
+  out = out
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
 
   return out;
 }

@@ -20,6 +20,7 @@ import {
 } from "../lib/tts/kokoro/kokoro-client-instance.js";
 import { createHtmlAudioNarrationPlayer } from "../lib/tts/narration-player.js";
 import type { NarrationPlayer } from "../lib/tts/narration-player.js";
+import { chunkNarrationText } from "../lib/tts/kokoro/kokoro-text.js";
 import { createTtsOrchestrator } from "../lib/tts/tts-orchestrator.js";
 import type { NarrationState } from "../lib/tts/tts-orchestrator.js";
 
@@ -56,7 +57,11 @@ async function defaultSynthesize(text: string, profile: TtsProfileRecord): Promi
   if (profile.backend === "kokoro") {
     const client = getSharedKokoroClient();
     if (!client.isLoaded()) await client.load();
-    const out = await client.generate(text, profile.voiceId, readSpeed(profile));
+    // D10: kokoro-js caps its internal generation length, so narration text
+    // must arrive in model-safe (≤400-char, sentence-aware) pieces — the
+    // whole segment in one call truncates the audio mid-text. The client
+    // concatenates the per-chunk PCM into one WAV.
+    const out = await client.generateChunked(chunkNarrationText(text), profile.voiceId, readSpeed(profile));
     return { blob: out.blob, mime: "audio/wav" };
   }
   return generateTtsSpeech({ profileId: profile.id, text, speed: readSpeed(profile) });
