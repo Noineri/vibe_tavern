@@ -22,6 +22,8 @@ const ttsHookBase: {
     name: string;
     backend: TtsBackendSlug;
     config: Record<string, unknown>;
+    apiKey: string;
+    providerRef: string | null;
     voiceId: string;
     narratorVoiceId: string;
     hasStoredApiKey: boolean;
@@ -50,6 +52,8 @@ const ttsHookBase: {
     name: "test",
     backend: TTS_BACKEND.OpenAiCompatible,
     config: {} as Record<string, unknown>,
+    apiKey: "",
+    providerRef: null,
     voiceId: "alloy",
     narratorVoiceId: "",
     hasStoredApiKey: false,

@@ -10,12 +10,15 @@ export interface TtsProfileRecord {
   id: string;
   name: string;
   backend: string;
-  /** Backend-specific bag WITHOUT the apiKey — strip-on-read projection
-   *  (F2b): the secret never crosses the wire; `hasStoredApiKey` reports
-   *  its existence instead. */
+  /** Backend-specific bag — never carries the apiKey (TE2-16 typed column):
+   *  the secret never crosses the wire; `hasStoredApiKey` reports its
+   *  existence instead. */
   config: Record<string, unknown>;
-  /** True when the stored profile has a non-empty apiKey. */
+  /** True when the typed api_key column holds a non-empty key. */
   hasStoredApiKey: boolean;
+  /** Optional providerProfiles.id link — key + baseUrl resolve server-side
+   *  at synthesis/test time (TE2-16); never carries a secret either. */
+  providerRef: string | null;
   voiceId: string;
   narratorVoiceId: string | null;
   lang: string;
@@ -57,6 +60,11 @@ export async function createTtsProfile(body: {
   name: string;
   backend: string;
   config?: Record<string, unknown>;
+  /** Write-only API key (TE2-16): non-empty = set, absent = none. Never
+   *  returned by a read. */
+  apiKey?: string;
+  /** Optional providerProfiles.id link (server-side key resolution). */
+  providerRef?: string;
   voiceId?: string;
   narratorVoiceId?: string | null;
   lang?: string;
@@ -73,6 +81,10 @@ export async function updateTtsProfile(
     name: string;
     backend: string;
     config: Record<string, unknown>;
+    /** Write-only tri-state (TE2-16): undefined = keep, "" = clear,
+     *  non-empty = set. */
+    apiKey: string;
+    providerRef: string;
     voiceId: string;
     narratorVoiceId: string | null;
     lang: string;

@@ -28,18 +28,23 @@ export type TtsTargetTypeValue = z.infer<typeof ttsTargetTypeSchema>;
 export const ttsProfileConfigSchema = z.record(z.string(), z.unknown());
 
 /** Full TTS profile as served by the API — SECURITY PROJECTION of the
- *  stored domain row: the secret `config.apiKey` is stripped server-side and
- *  reported as the boolean `hasStoredApiKey` (same wire contract as
- *  `ClientProviderProfileRecord.hasStoredApiKey`). The key never crosses the
- *  boundary in either direction of a read; writes merge-on-save (empty/
- *  absent `apiKey` in the incoming config = keep the stored key). */
+ *  stored domain row: the secret lives in the typed `api_key` column
+ *  (TE2-16), never inside `config`, and is reported as the boolean
+ *  `hasStoredApiKey` (same wire contract as `ClientProviderProfileRecord`).
+ *  The key never crosses the boundary on a read; writes carry it as the
+ *  top-level write-only `apiKey` field (`undefined` = keep, `""` = clear,
+ *  non-empty = set — see the update schema). */
 export const ttsProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
   backend: ttsBackendSchema,
   config: ttsProfileConfigSchema,
-  /** True when the stored config bag holds a non-empty apiKey. */
+  /** True when the typed api_key column holds a non-empty key. */
   hasStoredApiKey: z.boolean(),
+  /** Optional providerProfiles.id link: key + baseUrl resolve server-side
+   *  from the provider store at synthesis/test time (TE2-16) — the provider
+   *  key never crosses the boundary either. Null = no link. */
+  providerRef: z.string().nullable(),
   voiceId: z.string(),
   narratorVoiceId: z.string().nullable(),
   lang: z.string(),
@@ -57,8 +62,16 @@ export const createTtsProfileSchema = z.object({
   name: z.string().min(1),
   /** Backend discriminator (see {@link ttsBackendSchema}). */
   backend: ttsBackendSchema,
-  /** Backend-specific config bag (validated by the registry, not here). */
+  /** Backend-specific config bag (validated by the registry, not here).
+ *  Carries NO secret — an `apiKey`/`providerRef` inside it is stripped
+ *  server-side (TE2-16); send the top-level write-only fields instead. */
   config: ttsProfileConfigSchema.optional().default({}),
+  /** Write-only API key (TE2-16): non-empty = set, empty/absent = none.
+  *  Never returned by a read (see `hasStoredApiKey`). */
+  apiKey: z.string().optional(),
+  /** Optional providerProfiles.id — server-side key + baseUrl resolution
+   *  at synthesis/test time. Empty/absent = no link. */
+  providerRef: z.string().optional(),
   /** Selected voice id; empty until the user picks one (editor gates
    *  "ready"/preview on a non-empty value). */
   voiceId: z.string().optional().default(""),
@@ -77,6 +90,12 @@ export const updateTtsProfileSchema = z.object({
   name: z.string().min(1).optional(),
   backend: ttsBackendSchema.optional(),
   config: ttsProfileConfigSchema.optional(),
+  /** Write-only tri-state (TE2-16): `undefined` = keep the stored key,
+   *  `""` = clear it, non-empty = replace it. */
+  apiKey: z.string().optional(),
+  /** Tri-state link to a providerProfiles row: `undefined` = keep,
+   *  `""` = clear, non-empty = set. */
+  providerRef: z.string().optional(),
   voiceId: z.string().optional(),
   narratorVoiceId: z.string().nullable().optional(),
   lang: z.string().optional(),
@@ -125,10 +144,11 @@ export const draftTtsVoicesSchema = z.object({
   backend: ttsBackendSchema,
   config: ttsProfileConfigSchema,
   /** Saved-profile id for stored-key resolution: when the transient config
-   *  carries NO apiKey (strip-on-read) and this id points at a stored profile
-   *  with the SAME backend (and, for endpoint backends, the same endpoint),
-   *  the server injects the stored key for this one request — the LLM
-   *  branch's test-draft pattern. Optional: a brand-new profile sends none. */
+   *  carries NO apiKey and this id points at a stored profile with the SAME
+   *  backend (and, for endpoint backends, the same endpoint), the server
+   *  injects the stored typed-column key (or the linked provider's key —
+   *  TE2-16 providerRef) for this one request — the LLM branch's test-draft
+   *  pattern. Optional: a brand-new profile sends none. */
   profileId: z.string().optional(),
 });
 export type DraftTtsVoicesInput = z.infer<typeof draftTtsVoicesSchema>;

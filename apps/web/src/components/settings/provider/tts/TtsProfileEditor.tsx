@@ -12,7 +12,7 @@ import { Toggle } from "../../../shared/Toggle.js";
 import { listTtsDraftModels, listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
-import { configString, updateConfigField } from "./tts-form-helpers.js";
+import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
 import {
   ttsPresetIdOf,
   ttsUiSpecFor,
@@ -121,7 +121,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [tuningOpen, setTuningOpen] = useState(false);
   const formBackend = tts.form?.backend;
-  const formConfig = tts.form?.config;
+  // TE2-16: the form's typed apiKey is injected into the TRANSIENT draft
+  // requests only (formDraft below) — the stored bag never carries it.
+  const formDraft = tts.form === null || tts.form === undefined ? undefined : formDraftConfig(tts.form);
   const formId = tts.form?.id ?? null;
   const needsRemoteVoices = formBackend !== undefined && formBackend !== TTS_BACKEND.Kokoro;
   const preview = useTtsPreview();
@@ -131,13 +133,13 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   // caller keeps this mounted across a form→null transition.
   //
   // Voices come from the TRANSIENT draft endpoint (F1): the CURRENT form
-  // config, saved or not. profileId (F2b) lets the server inject the STORED
-  // key when the form's apiKey is empty (strip-on-read) and the identity
+  // config, saved or not. profileId (TE2-16) lets the server inject the
+  // STORED typed-column key when the form's apiKey is empty and the identity
   // matches. The dep is a serialized config key (object identity changes per
   // keystroke), debounced so typing an endpoint/key doesn't spam the backend.
-  const voicesConfigKey = formConfig === undefined ? null : JSON.stringify(formConfig);
+  const voicesConfigKey = formDraft === undefined ? null : JSON.stringify(formDraft);
   useEffect(() => {
-    if (!needsRemoteVoices || formConfig === undefined) {
+    if (!needsRemoteVoices || formDraft === undefined) {
       setVoices(null);
       setVoicesError(null);
       setVoicesLoading(false);
@@ -145,7 +147,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     }
     let cancelled = false;
     const backend = formBackend;
-    const config = formConfig;
+    const config = formDraft;
     const profileId = formId ?? undefined;
     setVoicesLoading(true);
     setVoicesError(null);
@@ -176,7 +178,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [needsRemoteVoices, voicesConfigKey, formBackend, formConfig, formId]);
+  }, [needsRemoteVoices, voicesConfigKey, formBackend, formDraft, formId]);
 
   // Models (F3): fetched from the server for fetch-mode model fields (the
   // local/openai/gemini variants) via the transient draft endpoint —
@@ -184,8 +186,8 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   // profileId stored-key resolution).
   const needsRemoteModels =
     (formBackend === TTS_BACKEND.Gemini || formBackend === TTS_BACKEND.OpenAiCompatible) &&
-    formConfig !== undefined;
-  const modelsConfigKey = formConfig === undefined ? null : JSON.stringify(formConfig);
+    formDraft !== undefined;
+  const modelsConfigKey = formDraft === undefined ? null : JSON.stringify(formDraft);
   useEffect(() => {
     if (!needsRemoteModels || modelsConfigKey === null) {
       setModels(null);
@@ -195,7 +197,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     }
     let cancelled = false;
     const backend = formBackend as string;
-    const config = formConfig as Record<string, unknown>;
+    const config = formDraft;
     const profileId = formId ?? undefined;
     setModelsLoading(true);
     setModelsError(null);
@@ -220,7 +222,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [needsRemoteModels, modelsConfigKey, formBackend, formConfig, formId]);
+  }, [needsRemoteModels, modelsConfigKey, formBackend, formDraft, formId]);
 
   if (!tts.form) return null;
 
@@ -310,9 +312,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                   type="button"
                   data-testid="tts-models-refresh"
                   onClick={() => {
-                    if (!needsRemoteModels || formConfig === undefined) return;
+                    if (!needsRemoteModels || formDraft === undefined) return;
                     const backend = formBackend as string;
-                    const config = formConfig as Record<string, unknown>;
+                    const config = formDraft;
                     const profileId = formId ?? undefined;
                     setModelsLoading(true);
                     setModelsError(null);
@@ -421,7 +423,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                       voiceId: form.voiceId,
                       narratorVoiceId: form.narratorVoiceId,
                       speed: configNumber(form.config, "speed", 1),
-                      config: form.config,
+                      config: formDraftConfig(form),
                       profileId: form.id,
                     })
                   }

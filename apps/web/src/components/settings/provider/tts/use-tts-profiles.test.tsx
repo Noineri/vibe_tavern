@@ -34,6 +34,7 @@ function makeRecord(overrides: Partial<TtsRecord> = {}): TtsRecord {
     voiceId: "af_heart",
     narratorVoiceId: null,
     hasStoredApiKey: false,
+    providerRef: null,
     lang: "en",
     sortOrder: 0,
     isDefault: false,

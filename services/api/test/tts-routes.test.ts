@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { createDb } from "@vibe-tavern/db";
-import { TtsStore } from "@vibe-tavern/db";
+import { ProviderStore, TtsStore } from "@vibe-tavern/db";
 
 import { createTtsRoutes } from "../src/api/routes/tts.js";
 import { __setDockerProbeRunnerForTests } from "../src/domain/tts/docker-probe.js";
@@ -23,9 +23,10 @@ function makeIdGen() {
 async function makeApp() {
   const db = await createDb(":memory:");
   const store = new TtsStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
-  const adapter = new TtsAdapter({ tts: store } as never);
+  const providers = new ProviderStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
+  const adapter = new TtsAdapter({ tts: store, providers });
   const app = createTtsRoutes(adapter);
-  return { app, store, db };
+  return { app, store, providers, db };
 }
 
 beforeEach(() => {
@@ -468,15 +469,17 @@ function capturingRegistry(seen: SeenConfig): void {
 
 type RouteApp = ReturnType<Awaited<ReturnType<typeof makeApp>>["app"]>;
 
-async function seedCloudProfile(app: RouteApp): Promise<string> {
+async function seedCloudProfile(app: RouteApp, overrides: Record<string, unknown> = {}): Promise<string> {
   const res = await app.request("/api/tts/profiles", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name: "Cloud",
       backend: "openai-compatible",
-      config: { endpoint: "https://api.example.com/v1", apiKey: "sk-original" },
+      config: { endpoint: "https://api.example.com/v1", model: "tts-1" },
+      apiKey: "sk-original",
       voiceId: "alloy",
+      ...overrides,
     }),
   });
   return ((await res.json()) as { id: string }).id;
@@ -496,8 +499,8 @@ async function storedKeyReachesFactory(app: RouteApp, id: string, config: Record
   return seen.capture?.apiKey as string | undefined;
 }
 
-describe("TTS routes — F2b strip-on-read wire projection", () => {
-  test("reads never carry config.apiKey; hasStoredApiKey reports it instead", async () => {
+describe("TTS routes — TE2-16 typed key columns (wire projection)", () => {
+  test("reads never carry the key; hasStoredApiKey + providerRef report it instead", async () => {
     const { app } = await makeApp();
     const createdRes = await app.request("/api/tts/profiles", {
       method: "POST",
@@ -505,14 +508,16 @@ describe("TTS routes — F2b strip-on-read wire projection", () => {
       body: JSON.stringify({
         name: "Cloud",
         backend: "openai-compatible",
-        config: { endpoint: "https://api.example.com/v1", apiKey: "sk-secret", model: "tts-1" },
+        config: { endpoint: "https://api.example.com/v1", model: "tts-1" },
+        apiKey: "sk-secret",
         voiceId: "alloy",
       }),
     });
-    const created = (await createdRes.json()) as { id: string; config: Record<string, unknown>; hasStoredApiKey: boolean };
+    const created = (await createdRes.json()) as { id: string; config: Record<string, unknown>; hasStoredApiKey: boolean; providerRef: string | null };
     expect(created.hasStoredApiKey).toBe(true);
     expect(created.config.apiKey).toBeUndefined();
     expect(created.config.endpoint).toBe("https://api.example.com/v1");
+    expect(created.providerRef).toBeNull();
 
     const getRes = await app.request(`/api/tts/profiles/${created.id}`);
     const fetched = (await getRes.json()) as { config: Record<string, unknown>; hasStoredApiKey: boolean };
@@ -522,6 +527,27 @@ describe("TTS routes — F2b strip-on-read wire projection", () => {
     const allRes = await app.request("/api/tts/profiles/all");
     const all = (await allRes.json()) as Array<{ config: Record<string, unknown> }>;
     expect(all[0].config.apiKey).toBeUndefined();
+  });
+
+  test("a config-bag apiKey sent by a legacy client is stripped, not persisted", async () => {
+    const { app, store } = await makeApp();
+    const res = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Legacy",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1", apiKey: "sk-in-bag" },
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await res.json()) as { id: string; hasStoredApiKey: boolean };
+    // The bag is NOT a key channel anymore: hasStoredApiKey stays false and
+    // the stored blob (checked raw, through the store) carries no secret.
+    expect(created.hasStoredApiKey).toBe(false);
+    const stored = await store.getById(created.id);
+    expect(stored?.config.apiKey).toBeUndefined();
+    expect(stored?.apiKey).toBeNull();
   });
 
   test("keyless profiles report hasStoredApiKey:false (local server without a key)", async () => {
@@ -536,13 +562,14 @@ describe("TTS routes — F2b strip-on-read wire projection", () => {
         voiceId: "af_heart",
       }),
     });
-    const created = (await createdRes.json()) as { hasStoredApiKey: boolean };
+    const created = (await createdRes.json()) as { hasStoredApiKey: boolean; providerRef: string | null };
     expect(created.hasStoredApiKey).toBe(false);
+    expect(created.providerRef).toBeNull();
   });
 });
 
-describe("TTS routes — F2b merge-on-write (empty keeps the stored key)", () => {
-  test("PATCH with an empty-key config keeps the stored key", async () => {
+describe("TTS routes — TE2-16 apiKey tri-state update", () => {
+  test("PATCH without apiKey keeps the stored key", async () => {
     const { app } = await makeApp();
     const id = await seedCloudProfile(app);
     const patchRes = await app.request(`/api/tts/profiles/${id}`, {
@@ -564,19 +591,35 @@ describe("TTS routes — F2b merge-on-write (empty keeps the stored key)", () =>
     await app.request(`/api/tts/profiles/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: { endpoint: "https://api.example.com/v1", apiKey: "sk-new" } }),
+      body: JSON.stringify({ config: { endpoint: "https://api.example.com/v1" }, apiKey: "sk-new" }),
     });
     expect(await storedKeyReachesFactory(app, id, { endpoint: "https://api.example.com/v1" })).toBe("sk-new");
   });
 
-  test("backend change never merges the old backend's key into the new config", async () => {
+  test("PATCH with apiKey:\"\" explicitly clears the key", async () => {
     const { app } = await makeApp();
     const id = await seedCloudProfile(app);
-    await app.request(`/api/tts/profiles/${id}`, {
+    const patchRes = await app.request(`/api/tts/profiles/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ backend: "gemini", config: { apiKey: "" } }),
+      body: JSON.stringify({ apiKey: "" }),
     });
+    const patched = (await patchRes.json()) as { hasStoredApiKey: boolean };
+    expect(patched.hasStoredApiKey).toBe(false);
+    expect(await storedKeyReachesFactory(app, id, { endpoint: "https://api.example.com/v1" })).toBeUndefined();
+  });
+
+  test("backend flip clears the stored key (never leaks across backends); a new key in the same patch survives", async () => {
+    const { app } = await makeApp();
+    const id = await seedCloudProfile(app);
+    const patchRes = await app.request(`/api/tts/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "gemini", config: {} }),
+    });
+    const patched = (await patchRes.json()) as { hasStoredApiKey: boolean };
+    expect(patched.hasStoredApiKey).toBe(false);
+    // The stored openai-compatible key never travels into a gemini request.
     let geminiSeen: Record<string, unknown> | null = null;
     registerTtsBackend(TTS_BACKEND.Gemini, (config) => {
       geminiSeen = { ...(config as Record<string, unknown>) };
@@ -589,10 +632,21 @@ describe("TTS routes — F2b merge-on-write (empty keeps the stored key)", () =>
     });
     expect(res.status).toBe(200);
     expect((geminiSeen as Record<string, unknown> | null)?.apiKey ?? "").toBe("");
+
+    // Flip + a fresh key in the same patch: the new key IS the gemini key.
+    const { app: app2 } = await makeApp();
+    const id2 = await seedCloudProfile(app2);
+    const flipRes = await app2.request(`/api/tts/profiles/${id2}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "gemini", config: {}, apiKey: "gem-key" }),
+    });
+    const flipped = (await flipRes.json()) as { hasStoredApiKey: boolean };
+    expect(flipped.hasStoredApiKey).toBe(true);
   });
 });
 
-describe("TTS routes — F2b draft stored-key resolution (profileId)", () => {
+describe("TTS routes — TE2-16 draft stored-key resolution (profileId)", () => {
   test("profileId + matching endpoint injects the stored key for the one request", async () => {
     const { app } = await makeApp();
     const id = await seedCloudProfile(app);
@@ -617,6 +671,85 @@ describe("TTS routes — F2b draft stored-key resolution (profileId)", () => {
         config: { endpoint: "https://api.example.com/v1" },
         profileId: "tts_profile_test_missing",
       }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen.capture?.apiKey).toBeUndefined();
+  });
+});
+
+describe("TTS routes — TE2-16 providerRef (server-side key + baseUrl)", () => {
+  test("a providerRef profile synthesizes with the provider's key and endpoint — neither crosses the wire", async () => {
+    const { app, providers } = await makeApp();
+    const provider = await providers.create({
+      name: "OpenRouter",
+      providerPreset: "openrouter",
+      endpoint: "https://openrouter.example/api/v1",
+      apiKey: "prov-key-1",
+    });
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Via provider",
+        backend: "openai-compatible",
+        config: { model: "tts-1" },
+        providerRef: provider.id,
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await createdRes.json()) as { id: string; hasStoredApiKey: boolean; providerRef: string | null; config: Record<string, unknown> };
+    expect(created.hasStoredApiKey).toBe(false);
+    expect(created.providerRef).toBe(provider.id);
+    expect(created.config.endpoint).toBeUndefined();
+
+    // Draft with the provider's endpoint + no transient key → the server
+    // injects BOTH the provider key and the provider endpoint.
+    const seen: SeenConfig = { capture: null };
+    capturingRegistry(seen);
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "openai-compatible", config: { endpoint: "https://openrouter.example/api/v1" }, profileId: created.id }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen.capture?.apiKey).toBe("prov-key-1");
+  });
+
+  test("an own key beats the provider's key (explicit profile key wins)", async () => {
+    const { app, providers } = await makeApp();
+    const provider = await providers.create({
+      name: "OpenRouter",
+      providerPreset: "openrouter",
+      endpoint: "https://openrouter.example/api/v1",
+      apiKey: "prov-key-1",
+    });
+    const id = await seedCloudProfile(app, { providerRef: provider.id });
+    // Own endpoint wins too — the draft names the stored endpoint, and the
+    // injected key is the OWN key, not the provider's.
+    expect(await storedKeyReachesFactory(app, id, { endpoint: "https://api.example.com/v1" })).toBe("sk-original");
+  });
+
+  test("a broken providerRef (missing provider row) degrades to the plain config", async () => {
+    const { app } = await makeApp();
+    // No own key — the providerRef is the only key source, and it is broken.
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Broken ref",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1" },
+        providerRef: "provider_missing",
+        voiceId: "alloy",
+      }),
+    });
+    const { id } = (await createdRes.json()) as { id: string };
+    const seen: SeenConfig = { capture: null };
+    capturingRegistry(seen);
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "openai-compatible", config: { endpoint: "https://api.example.com/v1" }, profileId: id }),
     });
     expect(res.status).toBe(200);
     expect(seen.capture?.apiKey).toBeUndefined();

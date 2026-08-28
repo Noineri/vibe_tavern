@@ -15,12 +15,21 @@ export interface TtsProfileForm {
   name: string;
   backend: TtsBackendSlug;
   config: Record<string, unknown>;
+  /** Typed write-only API key (TE2-16): lives in the form while editing,
+   *  rides the top-level save field — NEVER inside `config`. Empty while
+   *  editing a stored-key profile = keep the stored one on save (the
+   *  server's tri-state: undefined=keep, ""=clear, non-empty=set). */
+  apiKey: string;
+  /** Stored providerProfiles.id link (TE2-16) — round-tripped for display;
+   *  the form does not edit it (no picker yet), so save sends it as
+   *  undefined (= keep). */
+  providerRef: string | null;
   voiceId: string;
   narratorVoiceId: string;
-  /** Mirror of the record's strip-on-read flag (F2b): true while editing a
-   *  profile whose STORED config has a key. Drives the key field's "saved"
-   *  placeholder; an empty typed key + this flag = keep the stored one on
-   *  save (server-side merge-on-write). */
+  /** Mirror of the record's write-only flag (TE2-16): true while editing a
+   *  profile whose typed api_key column holds a key. Drives the key field's
+   *  "saved" placeholder; an empty typed key + this flag = keep the stored
+   *  one on save (tri-state update). */
   hasStoredApiKey: boolean;
 }
 
@@ -99,9 +108,11 @@ export function useTtsProfiles(): {
         id: record.id,
         name: record.name,
         backend: toBackendSlug(record.backend),
-        // record.config arrives WITHOUT the apiKey (strip-on-read) — the key
-        // field starts empty and shows the "saved" placeholder instead.
+        // record.config never carries the apiKey (TE2-16 typed column) — the
+        // key field starts empty and shows the "saved" placeholder instead.
         config: { ...record.config },
+        apiKey: "",
+        providerRef: record.providerRef ?? null,
         voiceId: record.voiceId ?? "",
         narratorVoiceId: record.narratorVoiceId ?? "",
         hasStoredApiKey: record.hasStoredApiKey,
@@ -115,7 +126,7 @@ export function useTtsProfiles(): {
 
   const startCreate = useCallback(() => {
     setEditingId(null);
-    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
+    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
     setDirty(false);
     setHeaderMode("edit");
     setError(null);
@@ -149,7 +160,7 @@ export function useTtsProfiles(): {
         const preset = patch.config?.[TTS_PRESET_CONFIG_KEY];
         const nextConfig =
           patch.config !== undefined && typeof preset === "string" && preset.length > 0 ? { ...patch.config } : {};
-        return { ...prev, ...patch, config: nextConfig, voiceId: nextVoiceId, narratorVoiceId: "", hasStoredApiKey: false };
+        return { ...prev, ...patch, config: nextConfig, apiKey: "", providerRef: null, voiceId: nextVoiceId, narratorVoiceId: "", hasStoredApiKey: false };
       }
       return { ...prev, ...patch };
     });
@@ -165,6 +176,8 @@ export function useTtsProfiles(): {
           name: record.name,
           backend: toBackendSlug(record.backend),
           config: { ...record.config },
+          apiKey: "",
+          providerRef: record.providerRef ?? null,
           voiceId: record.voiceId ?? "",
           narratorVoiceId: record.narratorVoiceId ?? "",
           hasStoredApiKey: record.hasStoredApiKey,
@@ -189,11 +202,17 @@ export function useTtsProfiles(): {
     setError(null);
     try {
       let saved: TtsProfileRecord;
+      // TE2-16: the typed form key rides the top-level write-only field.
+      // Update with a BLANK key sends undefined = keep the stored one (the
+      // key field's placeholder communicates that); create treats blank as
+      // absent. `config` itself is sent bag-only — no secret inside, ever.
+      const apiKeyPayload = form.apiKey.trim() === "" ? undefined : form.apiKey.trim();
       if (form.id === null) {
         saved = await createTtsProfile({
           name: trimmedName,
           backend: form.backend,
           config: form.config,
+          apiKey: apiKeyPayload,
           voiceId: form.voiceId,
           narratorVoiceId: form.narratorVoiceId.trim() === "" ? null : form.narratorVoiceId,
         });
@@ -202,6 +221,7 @@ export function useTtsProfiles(): {
           name: trimmedName,
           backend: form.backend,
           config: form.config,
+          apiKey: apiKeyPayload,
           voiceId: form.voiceId,
           narratorVoiceId: form.narratorVoiceId.trim() === "" ? null : form.narratorVoiceId,
         });
@@ -214,6 +234,8 @@ export function useTtsProfiles(): {
         name: saved.name,
         backend: toBackendSlug(saved.backend),
         config: { ...saved.config },
+        apiKey: "",
+        providerRef: saved.providerRef ?? null,
         voiceId: saved.voiceId ?? "",
         narratorVoiceId: (saved as unknown as { narratorVoiceId?: string | null }).narratorVoiceId ?? "",
         hasStoredApiKey: saved.hasStoredApiKey,

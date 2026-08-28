@@ -547,9 +547,11 @@ export const TTS_LINK_MODE = {
 } as const;
 export type TtsLinkMode = (typeof TTS_LINK_MODE)[keyof typeof TTS_LINK_MODE];
 
-/** Backend-specific config bag (API key ref, model, endpoint, sliders, ...).
- *  `unknown` values are correct at this type-erased boundary: the real shapes
- *  live in the per-backend zod contracts + backend registry (TS-2+). */
+/** Backend-specific config bag (model, endpoint, sliders, ...). `unknown`
+ *  values are correct at this type-erased boundary: the real shapes live in
+ *  the per-backend zod contracts + backend registry (TS-2+). The SECRET
+ *  apiKey lives in the typed `TtsProfile.apiKey` column (TE2-16) — it never
+ *  travels inside this bag; store writes strip it defensively. */
 export type TtsProfileConfig = Record<string, unknown>;
 
 /** One named TTS voice profile. */
@@ -559,8 +561,19 @@ export interface TtsProfile {
   name: string;
   /** Backend discriminator (see {@link TTS_BACKEND}). */
   backend: TtsBackendSlug;
-  /** Backend-specific config bag, persisted as JSON. */
+  /** Backend-specific config bag, persisted as JSON — carries NO secret (the
+   *  key lives in the typed {@link TtsProfile.apiKey} column; TE2-16). */
   config: TtsProfileConfig;
+  /** Write-only API key for the backend — typed column (TE2-16), never
+   *  serialized to the client; the wire record reports `hasStoredApiKey`
+   *  instead. Empty string or null = no own key (local servers, or profiles
+   *  that resolve their key from {@link TtsProfile.providerRef}). */
+  apiKey: string | null;
+  /** Optional `providerProfiles.id` link (TE2-16): when set and the profile
+   *  has no own key, synthesis/test requests resolve key + baseUrl from the
+   *  provider store SERVER-SIDE — the provider key never crosses the API
+   *  boundary either. */
+  providerRef: string | null;
   /** Selected voice id — backend-specific ("af_heart", "Kore", ElevenLabs
    *  voice_id, ...); empty until the user picks one (the editor gates
    *  "ready" / preview on it). */

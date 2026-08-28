@@ -15,19 +15,20 @@ import { createTtsBackend } from "../../domain/tts/tts-registry.js";
 import { probeDockerAvailability } from "../../domain/tts/docker-probe.js";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 
-/** Strip-on-read wire projection (F2b): the secret never crosses the
- *  boundary — `config.apiKey` is removed and reported as `hasStoredApiKey`,
- *  exactly like `ClientProviderProfileRecord`. */
+/** Wire projection (TE2-16): the secret lives in the typed `apiKey` column
+ *  and is reported as `hasStoredApiKey` — exactly like
+ *  `ClientProviderProfileRecord`. `config` comes back exactly as stored: the
+ *  store's strip-on-write invariant means the blob NEVER carried a key in the
+ *  first place, so there is nothing to strip here (the F2b strip-on-read
+ *  projection is gone with the blob keys). */
 function toClientTtsProfile(profile: TtsProfile): ClientTtsProfileRecord {
-	const config = { ...profile.config };
-	const hasStoredApiKey = typeof config.apiKey === "string" && config.apiKey !== "";
-	delete config.apiKey;
 	return {
 		id: profile.id,
 		name: profile.name,
 		backend: profile.backend,
-		config,
-		hasStoredApiKey,
+		config: profile.config,
+		hasStoredApiKey: typeof profile.apiKey === "string" && profile.apiKey !== "",
+		providerRef: profile.providerRef,
 		voiceId: profile.voiceId,
 		narratorVoiceId: profile.narratorVoiceId,
 		lang: profile.lang,
@@ -45,32 +46,45 @@ function configApiKey(config: Record<string, unknown>): string {
 	return typeof value === "string" ? value.trim() : "";
 }
 
-/** Merge-on-write (F2b): an incoming config whose apiKey is empty/absent
- *  means "keep the stored key" — the form always re-sends the whole bag, so
- *  absent is expressed as empty. Guards: the stored key survives only when
- *  the backend is unchanged (never leaks across backends) and only when the
- *  stored row actually had one. */
-function mergeStoredApiKey(
-	existing: TtsProfile,
-	incomingConfig: Record<string, unknown>,
-	incomingBackend: TtsProfile["backend"] | undefined,
-): Record<string, unknown> {
-	const storedKey = configApiKey(existing.config);
-	if (storedKey === "") return incomingConfig;
-	if (incomingBackend !== undefined && incomingBackend !== existing.backend) return incomingConfig;
-	if (configApiKey(incomingConfig) !== "") return incomingConfig;
-	return { ...incomingConfig, apiKey: existing.config.apiKey };
+/** Resolve the SYNTHESIS config for a saved profile (TE2-16): the typed
+ *  `apiKey` column and — via `providerRef` — the linked provider's key +
+ *  baseUrl are injected SERVER-SIDE, so neither secret ever crosses the API
+ *  boundary. Precedence: an own key beats the provider's key; an explicit
+ *  `config.endpoint` beats the provider's endpoint (only endpoint-bearing
+ *  backends get one injected — gemini/elevenlabs read no endpoint). A broken
+ *  providerRef (missing row / no key) degrades to the plain config and lets
+ *  the backend factory surface the auth error. */
+async function resolveSynthesisConfig(
+	stores: Pick<StoreContainer, "tts" | "providers">,
+	profile: TtsProfile,
+): Promise<Record<string, unknown>> {
+	const config: Record<string, unknown> = { ...profile.config };
+	const ownKey = profile.apiKey ?? "";
+	if (ownKey !== "") {
+		config.apiKey = ownKey;
+		return config;
+	}
+	if (profile.providerRef === null) return config;
+	const provider = await stores.providers.getById(profile.providerRef);
+	if (provider === null || !provider.apiKey) return config;
+	config.apiKey = provider.apiKey;
+	if (profile.backend === TTS_BACKEND.OpenAiCompatible && typeof config.endpoint !== "string") {
+		config.endpoint = provider.endpoint;
+	}
+	return config;
 }
 
 /** Draft (transient) stored-key resolution — the LLM branch's test-draft
- *  pattern: a strip-on-read form sends NO apiKey back; when the draft names
- *  its saved profile and the identity matches (same backend; for endpoint
- *  backends also the same endpoint — a stored key may only be reused where
- *  it was saved), the server injects the stored key for this ONE request.
- *  Unknown profileId / mismatched identity → the config passes through
- *  untouched (the backend factory will surface an auth error if any). */
+ *  pattern: the form sends NO apiKey back (reads never carried one, TE2-16);
+ *  when the draft names its saved profile and the identity matches (same
+ *  backend; for endpoint backends also the same endpoint — a stored key may
+ *  only be reused where it was saved), the server injects the stored key for
+ *  this ONE request. The key comes from the typed column (own) or, via
+ *  providerRef, from the provider store — never from the config blob. Unknown
+ *  profileId / mismatched identity → the config passes through untouched (the
+ *  backend factory will surface an auth error if any). */
 async function resolveDraftConfig(
-	stores: Pick<StoreContainer, "tts">,
+	stores: Pick<StoreContainer, "tts" | "providers">,
 	backend: DraftTtsVoicesInput["backend"],
 	config: Record<string, unknown>,
 	profileId: string | undefined,
@@ -80,21 +94,25 @@ async function resolveDraftConfig(
 	const profile = await stores.tts.getById(profileId);
 	if (profile === null) return config;
 	if (profile.backend !== backend) return config;
-	const storedKey = configApiKey(profile.config);
-	if (storedKey === "") return config;
+	if (profile.apiKey === null && profile.providerRef === null) return config;
 	// Endpoint-bearing backend: a stored key may only be reused for the
 	// endpoint it was saved with (write-only key UX without letting a caller
-	// aim the secret at an arbitrary replacement URL).
+	// aim the secret at an arbitrary replacement URL). A providerRef profile
+	// resolves its endpoint from the provider, so the guard compares against
+	// the effective synthesis endpoint, not the raw blob.
 	if (backend === TTS_BACKEND.OpenAiCompatible) {
 		const incomingEndpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
-		const storedEndpoint = typeof profile.config.endpoint === "string" ? profile.config.endpoint.trim() : "";
+		if (incomingEndpoint === "") return config;
+		const effective = await resolveSynthesisConfig(stores, profile);
+		const storedEndpoint = typeof effective.endpoint === "string" ? effective.endpoint.trim() : "";
 		if (incomingEndpoint !== storedEndpoint) return config;
+		return effective;
 	}
-	return { ...config, apiKey: profile.config.apiKey };
+	return resolveSynthesisConfig(stores, profile);
 }
 
 export class TtsAdapter implements TtsRuntimeApi {
-  constructor(private readonly stores: Pick<StoreContainer, "tts">) {}
+  constructor(private readonly stores: Pick<StoreContainer, "tts" | "providers">) {}
 
   listTtsProfiles = async () => (await this.stores.tts.listAll()).map(toClientTtsProfile);
 
@@ -105,11 +123,14 @@ export class TtsAdapter implements TtsRuntimeApi {
 
   createTtsProfile: TtsRuntimeApi["createTtsProfile"] = async (body) => {
     // Zod-inferred input and the store input are structurally the same shape;
-    // fields are mapped explicitly (no casts — house rule).
+    // fields are mapped explicitly (no casts — house rule). The secret rides
+    // the top-level write-only field (TE2-16), never the config bag.
     const input: CreateTtsProfileData = {
       name: body.name,
       backend: body.backend,
       config: body.config,
+      apiKey: body.apiKey && body.apiKey !== "" ? body.apiKey : null,
+      providerRef: body.providerRef && body.providerRef !== "" ? body.providerRef : null,
       voiceId: body.voiceId,
       narratorVoiceId: body.narratorVoiceId ?? null,
       lang: body.lang,
@@ -121,15 +142,10 @@ export class TtsAdapter implements TtsRuntimeApi {
   };
 
   updateTtsProfile: TtsRuntimeApi["updateTtsProfile"] = async (id, body) => {
-    // Merge-on-write first (see mergeStoredApiKey): the stored key survives
-    // an empty-key update — then a plain store patch.
-    let config = body.config;
-    if (config !== undefined) {
-      const existing = await this.stores.tts.getById(id);
-      if (existing) config = mergeStoredApiKey(existing, config, body.backend);
-    }
-    const patch: UpdateTtsProfileData = { ...body, ...(config !== undefined ? { config } : {}) };
-    const updated = await this.stores.tts.update(id, patch);
+    // TE2-16 tri-state: apiKey/providerRef are `undefined` = untouched,
+    // `""` = cleared, non-empty = set — the store maps them onto the typed
+    // columns; the old F2b merge-on-read dance is gone.
+    const updated = await this.stores.tts.update(id, { ...body });
     return updated ? toClientTtsProfile(updated) : null;
   };
 
@@ -160,7 +176,7 @@ export class TtsAdapter implements TtsRuntimeApi {
     if (profile.backend === TTS_BACKEND.Kokoro) {
       throw new KokoroClientSideError();
     }
-    const backend = createTtsBackend(profile.backend, profile.config);
+    const backend = createTtsBackend(profile.backend, await resolveSynthesisConfig(this.stores, profile));
     const result = await backend.generate({
       text: body.text,
       voiceId: body.voiceId ?? profile.voiceId,
@@ -180,7 +196,7 @@ export class TtsAdapter implements TtsRuntimeApi {
     if (profile.backend === TTS_BACKEND.Kokoro) {
       throw new KokoroClientSideError();
     }
-    const backend = createTtsBackend(profile.backend, profile.config);
+    const backend = createTtsBackend(profile.backend, await resolveSynthesisConfig(this.stores, profile));
     return backend.listVoices();
   };
 
@@ -191,7 +207,7 @@ export class TtsAdapter implements TtsRuntimeApi {
     }
     // Transient config: validated by the registry factory, used once for this
     // request, never stored. With profileId + no transient key the stored key
-    // is injected server-side for this request only (strip-on-read UX).
+    // is injected server-side for this request only (write-only key UX).
     const config = await resolveDraftConfig(this.stores, body.backend, body.config, body.profileId);
     const backend = createTtsBackend(body.backend, config);
     return backend.listVoices();

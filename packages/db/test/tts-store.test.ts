@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { eq } from "drizzle-orm";
+
 import { TTS_BACKEND, TTS_TARGET_TYPE } from "@vibe-tavern/domain";
 
 import { createDb } from "../src/db-connection.js";
@@ -268,6 +270,59 @@ describe("TtsStore links (voice map)", () => {
 		expect(modes.get("character:char_1")).toBe("voice");
 		expect(modes.get("character:char_2")).toBe("voice");
 		expect(modes.get("persona:persona_1")).toBe("disabled");
+	});
+});
+
+describe("TtsStore typed key columns (TE2-16)", () => {
+	test("create round-trips apiKey + providerRef; the config bag never carries them", async () => {
+		const { store } = await setup();
+		const created = await store.create(
+			baseInput({
+				backend: TTS_BACKEND.OpenAiCompatible,
+				config: { endpoint: "https://api.example.com/v1", apiKey: "smuggled", providerRef: "smuggled-too" },
+				apiKey: "sk-real",
+				providerRef: "provider_1",
+			}),
+		);
+		expect(created.apiKey).toBe("sk-real");
+		expect(created.providerRef).toBe("provider_1");
+		// Strip-on-write: bag-sent secrets are dropped, not persisted.
+		expect(created.config).toEqual({ endpoint: "https://api.example.com/v1" });
+	});
+
+	test("update tri-state: undefined keeps, empty clears, value replaces", async () => {
+		const { store } = await setup();
+		const p = await store.create(baseInput({ backend: TTS_BACKEND.Gemini, apiKey: "sk-1" }));
+		const kept = await store.update(p.id, { name: "renamed" });
+		expect(kept?.apiKey).toBe("sk-1");
+		const replaced = await store.update(p.id, { apiKey: "sk-2" });
+		expect(replaced?.apiKey).toBe("sk-2");
+		const cleared = await store.update(p.id, { apiKey: "" });
+		expect(cleared?.apiKey).toBeNull();
+	});
+
+	test("backend flip clears the stored key; flip + new key keeps the new one", async () => {
+		const { store } = await setup();
+		const p = await store.create(baseInput({ backend: TTS_BACKEND.OpenAiCompatible, apiKey: "sk-old" }));
+		const flipped = await store.update(p.id, { backend: TTS_BACKEND.Gemini, config: {} });
+		expect(flipped?.apiKey).toBeNull();
+		const flippedWithKey = await store.update(p.id, { backend: TTS_BACKEND.OpenAiCompatible, apiKey: "sk-new" });
+		expect(flippedWithKey?.apiKey).toBe("sk-new");
+	});
+
+	test("legacy rows with a key inside config_json are stripped on read (pre-0056 bypass defense)", async () => {
+		const { store, db } = await setup();
+		const profile = await store.create(baseInput({ backend: TTS_BACKEND.Gemini }));
+		// Simulate a row the backfill never touched (fresh DB seeded by
+		// import, restored backup): the key sits in the blob.
+		await db
+			.update(ttsProfiles)
+			.set({ configJson: '{"apiKey":"sk-legacy","model":"tts-1"}' })
+			.where(eq(ttsProfiles.id, profile.id))
+			.run();
+		const loaded = await store.getById(profile.id);
+		expect(loaded?.config).toEqual({ model: "tts-1" });
+		expect(loaded?.apiKey).toBeNull();
 	});
 });
 

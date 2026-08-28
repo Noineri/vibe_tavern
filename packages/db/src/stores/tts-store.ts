@@ -34,10 +34,23 @@ function parseConfig(raw: string): TtsProfileConfig {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    return parsed as TtsProfileConfig;
+    return stripConfigSecrets(parsed as TtsProfileConfig);
   } catch {
     return {};
   }
+}
+
+/** TE2-16 invariant: the config blob NEVER carries the secret or the
+ *  provider link — both live in typed columns. Writes strip them so no
+ *  caller (adapter, import, future script) can smuggle a key into JSON;
+ *  reads strip defensively too, covering rows written before 0056 by a
+ *  code path the migration did not touch (fresh DBs, restored backups). */
+function stripConfigSecrets(config: TtsProfileConfig): TtsProfileConfig {
+  if (!('apiKey' in config) && !('providerRef' in config)) return config;
+  const clean = { ...config };
+  delete clean.apiKey;
+  delete clean.providerRef;
+  return clean;
 }
 
 function isTtsBackendSlug(v: string): v is TtsBackendSlug {
@@ -125,7 +138,9 @@ export class TtsStore {
           id,
           name: input.name,
           backend: input.backend,
-          configJson: JSON.stringify(input.config),
+          configJson: JSON.stringify(stripConfigSecrets(input.config)),
+          apiKey: input.apiKey ?? null,
+          providerRef: input.providerRef ?? null,
           voiceId: input.voiceId,
           narratorVoiceId: input.narratorVoiceId,
           lang: input.lang,
@@ -152,7 +167,13 @@ export class TtsStore {
     const values: Partial<typeof ttsProfiles.$inferInsert> = { updatedAt: now };
     if (patch.name !== undefined) values.name = patch.name;
     if (patch.backend !== undefined) values.backend = patch.backend;
-    if (patch.config !== undefined) values.configJson = JSON.stringify(patch.config);
+    if (patch.config !== undefined) values.configJson = JSON.stringify(stripConfigSecrets(patch.config));
+    // TE2-16 tri-state: apiKey/providerRef are `undefined` = untouched,
+    // `null`/`""` = cleared, non-empty string = set. The old merge-on-write
+    // dance (read stored blob, re-inject the key) is gone — the typed column
+    // is patched like any other field.
+    if (patch.apiKey !== undefined) values.apiKey = patch.apiKey === '' ? null : patch.apiKey;
+    if (patch.providerRef !== undefined) values.providerRef = patch.providerRef === '' ? null : patch.providerRef;
     if (patch.voiceId !== undefined) values.voiceId = patch.voiceId;
     if (patch.narratorVoiceId !== undefined) values.narratorVoiceId = patch.narratorVoiceId;
     if (patch.lang !== undefined) values.lang = patch.lang;
@@ -164,11 +185,23 @@ export class TtsStore {
     // see the create note; existence is pre-checked because the sync tx
     // client's `.run()` is typed void (no `.changes`).
     const existing = await this.db
-      .select({ id: ttsProfiles.id })
+      .select({ id: ttsProfiles.id, backend: ttsProfiles.backend })
       .from(ttsProfiles)
       .where(eq(ttsProfiles.id, id))
       .get();
     if (!existing) return null;
+    // Backend-flip hygiene: a key is only valid for the backend it was
+    // entered for — switching backends clears the stored key unless the SAME
+    // patch provides a new one (the editor form already communicates this:
+    // its stored-key flag resets on a segment switch). Keeps the F2b
+    // "never leaks across backends" guarantee in the typed-column world.
+    if (
+      patch.backend !== undefined &&
+      patch.backend !== existing.backend &&
+      (patch.apiKey === undefined || patch.apiKey === '')
+    ) {
+      values.apiKey = null;
+    }
     this.db.transaction((tx) => {
       tx.update(ttsProfiles).set(values).where(eq(ttsProfiles.id, id)).run();
       if (patch.isDefault === true) {
@@ -323,6 +356,8 @@ export class TtsStore {
       name: row.name,
       backend: isTtsBackendSlug(row.backend) ? row.backend : TTS_BACKEND.Kokoro,
       config: parseConfig(row.configJson),
+      apiKey: row.apiKey ?? null,
+      providerRef: row.providerRef ?? null,
       voiceId: row.voiceId,
       narratorVoiceId: row.narratorVoiceId ?? null,
       lang: row.lang,

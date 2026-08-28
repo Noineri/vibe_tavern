@@ -15,6 +15,7 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
     backend: "openai",
     config: {},
     hasStoredApiKey: false,
+    providerRef: null,
     voiceId: "alloy",
     narratorVoiceId: null,
     lang: "en",

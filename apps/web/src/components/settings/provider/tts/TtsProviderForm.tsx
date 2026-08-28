@@ -13,7 +13,7 @@ import { labelCls, inputCls } from "../form-field-classes.js";
 import { monoUICls } from "../../../build/fields/field-styles.js";
 import { TtsApiKeyField } from "./TtsApiKeyField.js";
 import { ttsProviderSegmentOf, ttsPresetIdOf, ttsUiSpecFor, ttsUiVariantOf, type TtsProviderSegment } from "./tts-backend-ui.js";
-import { configString } from "./tts-form-helpers.js";
+import { configString, formDraftConfig } from "./tts-form-helpers.js";
 import { KokoroModelPanel } from "./KokoroModelPanel.js";
 import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
 import { useTtsPreview } from "./use-tts-preview.js";
@@ -62,7 +62,7 @@ export function TtsProviderForm({
   const filteredPresets = visiblePresetGroup ? visiblePresets.filter((f) => f.group === visiblePresetGroup) : visiblePresets;
   const preset = presetId ? TTS_PRESETS.find((p) => p.id === presetId) : undefined;
   const presetEndpoint = preset?.baseUrl ?? "";
-  const apiKey = configString(form.config, "apiKey");
+  const apiKey = form.apiKey;
   const variant = ttsUiVariantOf(form.backend, form.config);
   const spec = ttsUiSpecFor(variant);
 
@@ -121,7 +121,7 @@ export function TtsProviderForm({
     setTesting(true);
     setTestOk(null);
     const backend = form.backend;
-    const config = form.config;
+    const config = formDraftConfig(form);
     const profileId = editingId ?? undefined;
     const results = await Promise.allSettled([
       listTtsDraftModels({ backend, config, profileId }),
@@ -141,7 +141,7 @@ export function TtsProviderForm({
       voiceId: form.voiceId,
       narratorVoiceId: form.narratorVoiceId,
       speed: configNumber("speed", 1),
-      config: form.config,
+      config: formDraftConfig(form),
       profileId: editingId,
     });
   }
@@ -237,12 +237,7 @@ export function TtsProviderForm({
           <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
           <TtsApiKeyField
             value={apiKey}
-            onChange={(v) => {
-              const next = { ...form.config };
-              if (v === "") delete next["apiKey"];
-              else next["apiKey"] = v;
-              updateForm("config", next);
-            }}
+            onChange={(v) => updateForm("apiKey", v)}
             placeholder={t("api_key_placeholder")}
             stored={form.hasStoredApiKey}
           />

@@ -558,6 +558,11 @@ export const servicePromptProfiles = sqliteTable('service_prompt_profiles', {
 // registry contracts (TS-2+), not by the DB. `isDefault` is the voice map's
 // [Default Voice] pointer — at most one row, store-maintained.
 //
+// TE2-16: the secret lives in the typed `api_key` column (same rule as
+// providerProfiles.api_key — keys are NEVER stored inside JSON blobs);
+// `provider_ref` optionally links a providerProfiles row for server-side
+// key + baseUrl resolution. `configJson` carries everything else.
+//
 // `ttsProfileLinks` is the voice-map junction ({profileId, targetType,
 // targetId}, composite PK, cascade FK); targets are characters AND personas
 // (the user's own voice) — a deliberately different vocabulary from the
@@ -567,6 +572,12 @@ export const ttsProfiles = sqliteTable('tts_profiles', {
   name: text('name').notNull(),
   backend: text('backend').notNull(),  // TTS_BACKEND slug
   configJson: text('config_json').notNull().default('{}'),
+  // TE2-16 typed key columns — the secret left config_json for good:
+  // api_key is write-only across the API (hasStoredApiKey on the wire),
+  // provider_ref resolves key + baseUrl from providerProfiles at synthesis
+  // time. Both nullable: local servers need neither.
+  apiKey: text('api_key'),
+  providerRef: text('provider_ref'),
   voiceId: text('voice_id').notNull().default(''),
   narratorVoiceId: text('narrator_voice_id'),
   lang: text('lang').notNull().default('en'),

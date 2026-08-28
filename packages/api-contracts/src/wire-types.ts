@@ -198,18 +198,22 @@ export interface PersonaRecord {
 // ─── TTS ──────────────────────────────────────────────────────────────
 
 /** TTS profile as sent to the client — security projection of the stored
- *  domain row (mirrors `ClientProviderProfileRecord`): the secret
- *  `config.apiKey` is stripped server-side and reported as
- *  `hasStoredApiKey`. The projection lives here so BOTH sides compile
- *  against the same wire truth (drift = compile error, not runtime bug). */
+ *  domain row (mirrors `ClientProviderProfileRecord`): the secret lives in
+ *  the typed api_key column (TE2-16) and is reported as `hasStoredApiKey`;
+ *  `config` never carries it. The projection lives here so BOTH sides
+ *  compile against the same wire truth (drift = compile error, not runtime
+ *  bug). */
 export interface ClientTtsProfileRecord {
 	id: string;
 	name: string;
 	backend: import("@vibe-tavern/domain").TtsBackendSlug;
-	/** Backend-specific bag WITHOUT the apiKey (see {@link hasStoredApiKey}). */
+	/** Backend-specific bag — never carries the apiKey (see {@link hasStoredApiKey}). */
 	config: Record<string, unknown>;
-	/** True when the stored config holds a non-empty apiKey. */
+	/** True when the typed api_key column holds a non-empty key. */
 	hasStoredApiKey: boolean;
+	/** Optional providerProfiles.id link — key + baseUrl resolve server-side
+	 *  at synthesis/test time (TE2-16); the provider key never crosses either. */
+	providerRef: string | null;
 	voiceId: string;
 	narratorVoiceId: string | null;
 	lang: string;
