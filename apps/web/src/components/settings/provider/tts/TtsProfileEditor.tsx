@@ -482,6 +482,53 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             />
           )}
         </div>
+        <div>
+          <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
+          {isKokoro ? (
+            <div className="mt-1">
+              <DropdownSelect
+                value={form.narratorVoiceId}
+                options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...kokoroVoiceOptions]}
+                onChange={(value) => tts.setForm({ narratorVoiceId: value })}
+                searchable={true}
+                placeholder={t("tts_field_narrator_voice_none")}
+                triggerTestId="tts-narrator-voice-select"
+              />
+            </div>
+          ) : voicesLoading ? (
+            <div data-testid="tts-narrator-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
+              {t("tts_voices_loading")}
+            </div>
+          ) : voicesError !== null ? (
+            <input
+              data-testid="tts-narrator-voice-input"
+              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+              value={form.narratorVoiceId}
+              onChange={(e) => tts.setForm({ narratorVoiceId: e.target.value })}
+              placeholder={t("tts_field_narrator_voice_none")}
+            />
+          ) : voices !== null && voices.length === 0 ? (
+            <input
+              data-testid="tts-narrator-voice-input"
+              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+              value={form.narratorVoiceId}
+              onChange={(e) => tts.setForm({ narratorVoiceId: e.target.value })}
+              placeholder={t("tts_field_narrator_voice_none")}
+            />
+          ) : (
+            <div className="mt-1">
+              <DropdownSelect
+                value={form.narratorVoiceId}
+                options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))]} 
+                onChange={(value) => tts.setForm({ narratorVoiceId: value })}
+                searchable={true}
+                placeholder={t("tts_field_narrator_voice_none")}
+                triggerTestId="tts-narrator-voice-select"
+              />
+            </div>
+          )}
+          <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+        </div>
         {spec.tuning.map((field) => (
           <TtsTuningField key={field.key + field.kind} tts={tts} form={form} field={field} />
         ))}
@@ -501,6 +548,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               preview.preview({
                 backend: form.backend,
                 voiceId: form.voiceId,
+                narratorVoiceId: form.narratorVoiceId,
                 speed: configNumber(form.config, "speed", 1),
                 config: form.config,
                 profileId: form.id,

@@ -23,14 +23,18 @@ import { previewTtsDraft } from "../../../../api/tts-api.js";
 import { ensureSharedKokoroModel, getSharedKokoroClient } from "../../../../lib/tts/kokoro/kokoro-client-instance.js";
 import { useTtsPlaybackStore } from "../../../../stores/tts-playback-store.js";
 
-/** Fixed test sentence — intentionally NOT localized. */
+/** Fixed test sentences — intentionally NOT localized. */
 const TTS_PREVIEW_SENTENCE = "Hello! This is a preview of the selected voice.";
+const TTS_PREVIEW_SENTENCE_DUAL = 'Hello! This is the narrator. "And this is the character."';
 
 export type TtsPreviewState = "idle" | "generating" | "playing";
 
 export interface TtsPreviewInput {
   backend: TtsBackendSlug;
   voiceId: string;
+  /** Optional narrator voice — when set, the preview sample includes a quoted span
+   *  so the character voice reads the quoted part and the narrator reads the rest. */
+  narratorVoiceId?: string | null;
   speed: number;
   /** Required for server backends: the CURRENT form config (transient —
    *  sent to the draft endpoint once, never persisted). Kokoro synthesizes
@@ -73,8 +77,18 @@ export function __setTtsPreviewDepsForTests(deps: TtsPreviewDeps | null): void {
 
 async function defaultSynthesize(input: TtsPreviewInput): Promise<{ blob: Blob; mime: string }> {
   if (input.backend === TTS_BACKEND.Kokoro) {
-    // Variant-aware load (stored choice or auto WebGPU/CPU) — same lane as narration.
     const client = await ensureSharedKokoroModel();
+    const hasNarrator = typeof input.narratorVoiceId === "string" && input.narratorVoiceId.trim() !== "";
+    if (hasNarrator) {
+      const out = await client.generateChunked(
+        [
+          { text: "Hello! This is the narrator. ", voiceId: input.narratorVoiceId as string },
+          { text: '"And this is the character."', voiceId: input.voiceId },
+        ],
+        input.speed,
+      );
+      return { blob: out.blob, mime: "audio/wav" };
+    }
     const out = await client.generate(TTS_PREVIEW_SENTENCE, input.voiceId, input.speed);
     return { blob: out.blob, mime: "audio/wav" };
   }
@@ -83,12 +97,13 @@ async function defaultSynthesize(input: TtsPreviewInput): Promise<{ blob: Blob; 
   if (input.config === null) {
     throw new Error("Preview requires the form config for server backends.");
   }
+  const hasNarrator = typeof input.narratorVoiceId === "string" && input.narratorVoiceId.trim() !== "";
   return previewTtsDraft({
     backend: input.backend,
     config: input.config,
     profileId: input.profileId ?? undefined,
     voiceId: input.voiceId,
-    text: TTS_PREVIEW_SENTENCE,
+    text: hasNarrator ? TTS_PREVIEW_SENTENCE_DUAL : TTS_PREVIEW_SENTENCE,
     speed: input.speed,
   });
 }

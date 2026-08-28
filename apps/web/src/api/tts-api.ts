@@ -58,6 +58,7 @@ export async function createTtsProfile(body: {
   backend: string;
   config?: Record<string, unknown>;
   voiceId?: string;
+  narratorVoiceId?: string | null;
   lang?: string;
   sortOrder?: number;
   isDefault?: boolean;
@@ -73,6 +74,7 @@ export async function updateTtsProfile(
     backend: string;
     config: Record<string, unknown>;
     voiceId: string;
+    narratorVoiceId: string | null;
     lang: string;
     sortOrder: number;
     isDefault: boolean;

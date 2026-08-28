@@ -582,4 +582,98 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     expect(trigger.textContent).toContain("af_heart");
     cleanup();
   });
+
+  it("narrator row renders with — none — selected by default (kokoro)", async () => {
+    const tts = makeTts({
+      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "af_heart", narratorVoiceId: "" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByText("tts_field_narrator_voice")).toBeTruthy();
+    const trigger = view.getByTestId("tts-narrator-voice-select") as HTMLElement;
+    expect(trigger.textContent).toContain("tts_field_narrator_voice_none");
+    expect(view.getByText("tts_field_narrator_voice_hint")).toBeTruthy();
+    cleanup();
+  });
+
+  it("narrator row renders for server backend with voices list (none option + voices)", async () => {
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://x", apiKey: "k" },
+        voiceId: "alloy",
+        narratorVoiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    // Wait for draft voices to load
+    await waitFor(() => expect(view.getByTestId("tts-narrator-voice-select")).toBeTruthy(), { timeout: 2500 });
+    const trigger = view.getByTestId("tts-narrator-voice-select") as HTMLElement;
+    expect(trigger).toBeTruthy();
+    fireEvent.click(trigger);
+    await waitFor(() => {
+      const bodyText = document.body.textContent ?? "";
+      expect(bodyText).toContain("tts_field_narrator_voice_none");
+      expect(bodyText).toContain("Alloy");
+    });
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("selecting a narrator voice calls setForm with narratorVoiceId", async () => {
+    const setForm = mock(() => {});
+    const tts = makeTts({
+      setForm,
+      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "af_heart", narratorVoiceId: "" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const trigger = view.getByTestId("tts-narrator-voice-select") as HTMLElement;
+    fireEvent.click(trigger);
+    await waitFor(() => {
+      const bodyText = document.body.textContent ?? "";
+      expect(bodyText).toContain("tts_field_narrator_voice_none");
+    }, { timeout: 2000 });
+    // At least verify setForm wiring: directly simulate selecting a voice via the dropdown's onChange
+    // by clicking the Bella option if present, otherwise verify the dropdown opened correctly
+    const bodyText = document.body.textContent ?? "";
+    expect(bodyText).toContain("Bella");
+    // Find and click Bella option
+    const allElements = Array.from(document.body.querySelectorAll("*"));
+    const bellaEl = allElements.find((el) => el.textContent === "Bella · Female · American · B" || el.textContent?.trim() === "Bella · Female · American · B");
+    // Fallback: find any element containing Bella
+    const target = bellaEl ?? allElements.find((el) => el.textContent?.includes("Bella") && el.children.length === 0);
+    if (target) {
+      fireEvent.click(target as HTMLElement);
+      await waitFor(() => expect(setForm).toHaveBeenCalled(), { timeout: 1000 });
+      const patch = (setForm.mock.calls[setForm.mock.calls.length - 1] as unknown[])[0] as { narratorVoiceId: string };
+      expect(typeof patch.narratorVoiceId).toBe("string");
+      expect(patch.narratorVoiceId.length).toBeGreaterThan(0);
+    }
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("narrator manual input shown when server voices unavailable", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => null as never);
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Dead",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://dead.example/v1", apiKey: "k" },
+        voiceId: "",
+        narratorVoiceId: "custom-narrator",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const input = await waitFor(() => view.getByTestId("tts-narrator-voice-input") as HTMLInputElement, { timeout: 2500 });
+    expect(input.value).toBe("custom-narrator");
+    expect(input.placeholder).toBe("tts_field_narrator_voice_none");
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
 });

@@ -49,18 +49,19 @@ let failUpdate = false;
 let failMessage = "save boom";
 
 const listAllMock = mock(async () => [...store]);
-const createMock = mock(async (body: { name: string; backend: string; config?: Record<string, unknown>; voiceId?: string }) => {
+const createMock = mock(async (body: { name: string; backend: string; config?: Record<string, unknown>; voiceId?: string; narratorVoiceId?: string | null }) => {
   const rec = makeRecord({
     id: `p${store.length + 1}`,
     name: body.name,
     backend: body.backend,
     config: body.config ?? {},
     voiceId: body.voiceId ?? "",
+    narratorVoiceId: body.narratorVoiceId ?? null,
   });
   store.push(rec);
   return rec;
 });
-const updateMock = mock(async (id: string, body: Partial<{ name: string; backend: string; config: Record<string, unknown>; voiceId: string }>) => {
+const updateMock = mock(async (id: string, body: Partial<{ name: string; backend: string; config: Record<string, unknown>; voiceId: string; narratorVoiceId: string | null }>) => {
   if (failUpdate) throw new Error(failMessage);
   const idx = store.findIndex((p) => p.id === id);
   if (idx === -1) throw new Error("not found");
@@ -217,6 +218,45 @@ describe("useTtsProfiles", () => {
     await waitFor(() => expect(hook?.form?.backend).toBe("kokoro"));
     expect(hook!.form?.config).toEqual({});
     expect(hook!.form?.voiceId).toBe("af_heart");
+  });
+
+  it("narratorVoiceId round-trips through select/startCreate/backend-switch/save", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro", narratorVoiceId: "af_bella" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe("af_bella"));
+    // Backend switch resets narratorVoiceId
+    hook!.setForm({ backend: "gemini" as never });
+    await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe(""));
+    // Set narrator and save — payload maps "" -> null and value -> string
+    hook!.setForm({ narratorVoiceId: "Kore" });
+    await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe("Kore"));
+    hook!.setForm({ name: "Alpha2" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(updateMock).toHaveBeenCalled());
+    const updateArg = (updateMock.mock.calls[updateMock.mock.calls.length - 1] as unknown[])[1] as { narratorVoiceId: string | null };
+    expect(updateArg.narratorVoiceId).toBe("Kore");
+    // Empty narrator maps to null
+    hook!.setForm({ narratorVoiceId: "" });
+    await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe(""));
+    hook!.setForm({ name: "Alpha3" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(updateMock.mock.calls.length).toBe(2));
+    const secondArg = (updateMock.mock.calls[1] as unknown[])[1] as { narratorVoiceId: string | null };
+    expect(secondArg.narratorVoiceId).toBeNull();
+    // startCreate defaults narratorVoiceId to ""
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    expect(hook!.form?.narratorVoiceId).toBe("");
+    cleanup();
   });
 
   it("save passes config and voiceId through create and update", async () => {

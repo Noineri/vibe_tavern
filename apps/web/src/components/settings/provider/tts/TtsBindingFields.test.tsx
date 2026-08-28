@@ -75,7 +75,7 @@ function profile(id: string, isDefault: boolean): TtsProfileRecord {
 }
 
 function makeForm(id: string | null): TtsProfileForm {
-  return { id, name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "", hasStoredApiKey: false };
+  return { id, name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "", narratorVoiceId: "", hasStoredApiKey: false };
 }
 
 type TtsHook = ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;

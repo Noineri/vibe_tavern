@@ -14,6 +14,7 @@ export interface TtsProfileForm {
   backend: TtsBackendSlug;
   config: Record<string, unknown>;
   voiceId: string;
+  narratorVoiceId: string;
   /** Mirror of the record's strip-on-read flag (F2b): true while editing a
    *  profile whose STORED config has a key. Drives the key field's "saved"
    *  placeholder; an empty typed key + this flag = keep the stored one on
@@ -86,6 +87,7 @@ export function useTtsProfiles(): {
         // field starts empty and shows the "saved" placeholder instead.
         config: { ...record.config },
         voiceId: record.voiceId ?? "",
+        narratorVoiceId: record.narratorVoiceId ?? "",
         hasStoredApiKey: record.hasStoredApiKey,
       });
       setDirty(false);
@@ -96,7 +98,7 @@ export function useTtsProfiles(): {
 
   const startCreate = useCallback(() => {
     setEditingId(null);
-    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "af_heart", hasStoredApiKey: false });
+    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
     setDirty(false);
     setError(null);
   }, []);
@@ -110,7 +112,7 @@ export function useTtsProfiles(): {
       if (patch.backend !== undefined && patch.backend !== prev.backend) {
         const nextBackend = patch.backend;
         const nextVoiceId = nextBackend === TTS_BACKEND.Kokoro ? "af_heart" : "";
-        return { ...prev, ...patch, config: {}, voiceId: nextVoiceId, hasStoredApiKey: false };
+        return { ...prev, ...patch, config: {}, voiceId: nextVoiceId, narratorVoiceId: "", hasStoredApiKey: false };
       }
       return { ...prev, ...patch };
     });
@@ -127,6 +129,7 @@ export function useTtsProfiles(): {
           backend: toBackendSlug(record.backend),
           config: { ...record.config },
           voiceId: record.voiceId ?? "",
+          narratorVoiceId: record.narratorVoiceId ?? "",
           hasStoredApiKey: record.hasStoredApiKey,
         });
       }
@@ -153,6 +156,7 @@ export function useTtsProfiles(): {
           backend: form.backend,
           config: form.config,
           voiceId: form.voiceId,
+          narratorVoiceId: form.narratorVoiceId.trim() === "" ? null : form.narratorVoiceId,
         });
       } else {
         saved = await updateTtsProfile(form.id, {
@@ -160,6 +164,7 @@ export function useTtsProfiles(): {
           backend: form.backend,
           config: form.config,
           voiceId: form.voiceId,
+          narratorVoiceId: form.narratorVoiceId.trim() === "" ? null : form.narratorVoiceId,
         });
       }
       const list = await listAllTtsProfiles();
@@ -171,6 +176,7 @@ export function useTtsProfiles(): {
         backend: toBackendSlug(saved.backend),
         config: { ...saved.config },
         voiceId: saved.voiceId ?? "",
+        narratorVoiceId: (saved as unknown as { narratorVoiceId?: string | null }).narratorVoiceId ?? "",
         hasStoredApiKey: saved.hasStoredApiKey,
       });
       setDirty(false);
