@@ -109,6 +109,9 @@ describe("TtsProfileEditor", () => {
       form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "af_heart" } as never,
     });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    // TE2-12 tuning accordion is closed by default — open to check tuning fields.
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     expect(view.queryByText("tts_field_voice")).toBeTruthy();
     expect(view.queryByText("tts_field_speed")).toBeTruthy();
     expect(view.queryByTestId("tts-field-endpoint")).toBeNull();
@@ -132,6 +135,8 @@ describe("TtsProfileEditor", () => {
       } as never,
     });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     expect(view.getByTestId("tts-field-endpoint")).toBeTruthy();
     expect(view.getByTestId("tts-field-api-key")).toBeTruthy();
     expect(view.getByTestId("tts-field-model")).toBeTruthy();
@@ -155,6 +160,8 @@ describe("TtsProfileEditor", () => {
       } as never,
     });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     expect(view.getByTestId("tts-field-api-key")).toBeTruthy();
     expect(view.getByTestId("tts-field-model")).toBeTruthy();
     expect(view.getByTestId("tts-field-style-instructions")).toBeTruthy();
@@ -178,6 +185,8 @@ describe("TtsProfileEditor", () => {
       } as never,
     });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     expect(view.getByTestId("tts-field-api-key")).toBeTruthy();
     expect(view.getByTestId("tts-field-model-id")).toBeTruthy();
     expect(view.queryByText("tts_field_stability")).toBeTruthy();
@@ -234,6 +243,9 @@ describe("TtsProfileEditor", () => {
       dirty: true,
     });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    // TE2-12: preview button is inside the tuning accordion — open first, keep same boundary.
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
 
     // Preview is NOT gated on save anymore.
     const previewBtn = view.getByTestId("tts-preview-btn") as HTMLButtonElement;
@@ -342,7 +354,7 @@ describe("TtsProfileEditor", () => {
 });
 
 describe("TtsProfileEditor — F5 restructure (sections, local variant, stored key)", () => {
-  it("server backends render BOTH section cards, endpoint lives in the connection card", () => {
+  it("server backends render BOTH section cards, endpoint lives in the connection card", async () => {
     const tts = makeTts({
       form: {
         id: null,
@@ -353,6 +365,9 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
       } as never,
     });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    // TE2-12: tuning card is now an accordion (closed by default) — open to reach preview button, same boundary.
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     const connection = view.getByTestId("tts-connection-card");
     const voice = view.getByTestId("tts-voice-card");
     // TE2-8: endpoint moved from the connection card into the forked TtsProviderForm header (still globally present).
@@ -455,6 +470,8 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
       } as never,
     });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     const range = view.getByTestId("tts-field-stability-range") as HTMLInputElement;
     expect(range.type).toBe("range");
     expect(range.min).toBe("0");
@@ -484,6 +501,8 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
       } as never,
     });
     const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     const range = view.getByTestId("tts-field-speed-range") as HTMLInputElement;
     expect(range).toBeTruthy();
     fireEvent.change(range, { target: { value: "1.5" } });
@@ -941,8 +960,11 @@ describe("TtsProfileEditor — TE2-10 collapsed base card", () => {
     expect((view.getByTestId("tts-base-card-default-btn") as HTMLButtonElement).disabled).toBe(false);
     expect(view.getByTestId("tts-base-card-default-btn").textContent).toContain("tts_make_default");
     // Base form fields hidden, but tuning + bindings stay visible per plan
+    // TE2-12 tuning is now an accordion (closed by default) — open to verify tuning field.
     expect(view.queryByTestId("tts-field-endpoint")).toBeNull();
     expect(view.getByTestId("tts-voice-card")).toBeTruthy();
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     expect(view.getByTestId("tts-voice-card").textContent).toContain("tts_field_speed");
     cleanup();
   });
@@ -1091,6 +1113,116 @@ describe("TtsProfileEditor — TE2-10 collapsed base card", () => {
     // The bindings card renders with at least the bind section visible for default profiles or fallback
     // For kokoro non-default, mute section hidden but bind section hidden as well? We at least check the voice tuning card is there
     expect(view.getByTestId("tts-voice-card")).toBeTruthy();
+    cleanup();
+  });
+});
+
+describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
+  it("tuning accordion is closed by default, opens on toggle click → sliders and preview button reachable", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "Kokoro", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "af_heart" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByTestId("tts-tuning-accordion")).toBeTruthy();
+    expect(view.getByTestId("tts-tuning-accordion-toggle")).toBeTruthy();
+    // Closed by default — tuning fields and preview button hidden (progressive disclosure).
+    expect(view.queryByTestId("tts-tuning-accordion-body")).toBeNull();
+    expect(view.queryByTestId("tts-field-speed-range")).toBeNull();
+    expect(view.queryByTestId("tts-preview-btn")).toBeNull();
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
+    // Sliders visible after open; preview button reachable inside the accordion body (same boundary, moved location).
+    expect(view.getByTestId("tts-field-speed-range")).toBeTruthy();
+    expect(view.getByTestId("tts-preview-btn")).toBeTruthy();
+    expect(within(view.getByTestId("tts-voice-card")).getByTestId("tts-preview-btn")).toBeTruthy();
+    // Close again → hidden.
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.queryByTestId("tts-tuning-accordion-body")).toBeNull());
+    expect(view.queryByTestId("tts-field-speed-range")).toBeNull();
+    cleanup();
+  });
+
+  it("toggle-card renders with title + Toggle for a toggle-kind field (elevenlabs useSpeakerBoost)", async () => {
+    const tts = makeTts({
+      form: {
+        id: "p1",
+        name: "EL",
+        backend: TTS_BACKEND.ElevenLabs as never,
+        config: { apiKey: "k", modelId: "eleven_multilingual_v2", useSpeakerBoost: true, speed: 1 },
+        voiceId: "JBFqnCBsd6RMkjVDRZzb",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
+    const card = view.getByTestId("tts-toggle-card-useSpeakerBoost");
+    expect(card).toBeTruthy();
+    expect(card.textContent).toContain("tts_field_speaker_boost");
+    // Forked class strings verbatim from ProviderForm stream-toggle card.
+    expect(card.className).toContain("rounded-lg");
+    expect(card.className).toContain("border-border2");
+    expect(card.className).toContain("bg-s2");
+    const toggle = card.querySelector('[role="switch"]') as HTMLElement | null;
+    expect(toggle).toBeTruthy();
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    // Also verify the card is inside the tuning accordion body.
+    expect(within(view.getByTestId("tts-tuning-accordion-body")).getByTestId("tts-toggle-card-useSpeakerBoost")).toBeTruthy();
+    cleanup();
+  });
+
+  it("collapsed view also has tuning accordion (closed by default, toggle-card reachable)", async () => {
+    const profiles = [
+      {
+        id: "p1",
+        name: "EL Voice",
+        backend: TTS_BACKEND.ElevenLabs,
+        config: { apiKey: "k", modelId: "eleven_multilingual_v2", useSpeakerBoost: false },
+        voiceId: "JBFqnCBsd6RMkjVDRZzb",
+        narratorVoiceId: null,
+        hasStoredApiKey: true,
+        lang: "en",
+        sortOrder: 0,
+        isDefault: false,
+        createdAt: "",
+        updatedAt: "",
+      } as never,
+    ];
+    const tts = {
+      profiles,
+      loading: false,
+      editingId: "p1",
+      form: {
+        id: "p1",
+        name: "EL Voice",
+        backend: TTS_BACKEND.ElevenLabs as never,
+        config: { apiKey: "k", modelId: "eleven_multilingual_v2", useSpeakerBoost: false, speed: 1 },
+        voiceId: "JBFqnCBsd6RMkjVDRZzb",
+        narratorVoiceId: "",
+        hasStoredApiKey: true,
+      } as never,
+      dirty: false,
+      error: null,
+      saving: false,
+      isBaseCollapsed: true,
+      expandBase: mock(() => {}),
+      collapseBase: mock(() => {}),
+      setDefault: mock(async () => {}),
+      select: mock(() => {}),
+      startCreate: mock(() => {}),
+      setForm: mock(() => {}),
+      save: mock(async () => {}),
+      remove: mock(async () => {}),
+      cancelEdit: mock(() => {}),
+      reload: mock(async () => {}),
+    } as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByTestId("tts-base-card")).toBeTruthy();
+    expect(view.getByTestId("tts-tuning-accordion")).toBeTruthy();
+    expect(view.queryByTestId("tts-tuning-accordion-body")).toBeNull();
+    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
+    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
+    expect(view.getByTestId("tts-toggle-card-useSpeakerBoost")).toBeTruthy();
+    expect(view.getByTestId("tts-preview-btn")).toBeTruthy();
     cleanup();
   });
 });

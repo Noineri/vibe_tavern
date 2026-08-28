@@ -2,8 +2,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
-import { Ic } from "../../../shared/icons.js";
+import { Ic, Icons } from "../../../shared/icons.js";
 import { inputCls, lblCls, monoUICls } from "../../../build/fields/field-styles.js";
+import { cn } from "../../../../lib/cn.js";
+import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
@@ -63,13 +65,15 @@ function TtsTuningField({ tts, form, field }: { tts: TtsHook; form: NonNullable<
   }
   if (field.kind === "toggle") {
     return (
-      <div className="flex items-center gap-2">
-        <label className={lblCls}>{t(field.labelKey)}</label>
-        <Toggle
-          checked={form.config[field.key] === true}
-          onChange={(checked) => updateConfigField(tts, form, field.key, checked || undefined)}
-          aria-label={t(field.labelKey)}
-        />
+      <div className="rounded-lg border border-border2 bg-s2 px-4 py-2.5" data-testid={`tts-toggle-card-${field.key}`}>
+        <div className="flex items-center gap-3">
+          <Toggle
+            checked={form.config[field.key] === true}
+            onChange={(checked) => updateConfigField(tts, form, field.key, checked || undefined)}
+            aria-label={t(field.labelKey)}
+          />
+          <div className="font-ui text-[13px] font-medium text-t1">{t(field.labelKey)}</div>
+        </div>
       </div>
     );
   }
@@ -113,6 +117,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const [models, setModels] = useState<Array<{ id: string; label: string }> | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [tuningOpen, setTuningOpen] = useState(false);
   const formBackend = tts.form?.backend;
   const formConfig = tts.form?.config;
   const formId = tts.form?.id ?? null;
@@ -376,44 +381,67 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
 
       {/* Local-server helpers now owned by the form (defect 3) — editor copy removed. */}
 
-      {/* Tuning card — voice pickers now owned by the form (defect 2) */}
-      <TtsSectionCard title={t("tts_section_voice_tuning")} testid="tts-voice-card">
-        {spec.tuning.map((field) => (
-          <TtsTuningField key={field.key + field.kind} tts={tts} form={form} field={field} />
-        ))}
-        <div className="flex flex-col gap-1">
-          <button
-            type="button"
-            data-testid="tts-preview-btn"
-            disabled={preview.state !== "idle"}
-            className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
-            onClick={() =>
-              preview.preview({
-                backend: form.backend,
-                voiceId: form.voiceId,
-                narratorVoiceId: form.narratorVoiceId,
-                speed: configNumber(form.config, "speed", 1),
-                config: form.config,
-                profileId: form.id,
-              })
-            }
+      {/* Tuning accordion — progressive disclosure forked verbatim from ProviderSamplerPanel/TtsLocalServerPanel */}
+      <div data-testid="tts-voice-card">
+        <div className="overflow-hidden rounded-lg border border-border2" data-testid="tts-tuning-accordion">
+          <div
+            className={cn(
+              "flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer",
+              tuningOpen && "!rounded-b-none",
+            )}
           >
-            <Ic.speaker className="h-3.5 w-3.5" />
-            {preview.state === "generating"
-              ? preview.downloadPct !== null
-                ? t("tts_preview_downloading", { pct: preview.downloadPct })
-                : t("tts_preview_generating")
-              : preview.state === "playing"
-                ? t("tts_preview_playing")
-                : t("tts_preview")}
-          </button>
-          {preview.error && (
-            <div data-testid="tts-preview-error" className="font-ui text-[11px] text-danger">
-              {t("tts_preview_failed")}: {preview.error}
+            <span
+              className="flex items-center gap-2"
+              onClick={() => setTuningOpen(!tuningOpen)}
+              data-testid="tts-tuning-accordion-toggle"
+            >
+              <span className={cn("transition-transform", tuningOpen && "rotate-90")}>
+                <Icons.Caret direction="r" />
+              </span>
+              {t("tts_section_voice_tuning")}
+            </span>
+          </div>
+          <AnimatedDisclosure open={tuningOpen} className="border-t border-border2 bg-surface p-4" data-testid="tts-tuning-accordion-body">
+            <div className="flex flex-col gap-3">
+              {spec.tuning.map((field) => (
+                <TtsTuningField key={field.key + field.kind} tts={tts} form={form} field={field} />
+              ))}
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  data-testid="tts-preview-btn"
+                  disabled={preview.state !== "idle"}
+                  className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
+                  onClick={() =>
+                    preview.preview({
+                      backend: form.backend,
+                      voiceId: form.voiceId,
+                      narratorVoiceId: form.narratorVoiceId,
+                      speed: configNumber(form.config, "speed", 1),
+                      config: form.config,
+                      profileId: form.id,
+                    })
+                  }
+                >
+                  <Ic.speaker className="h-3.5 w-3.5" />
+                  {preview.state === "generating"
+                    ? preview.downloadPct !== null
+                      ? t("tts_preview_downloading", { pct: preview.downloadPct })
+                      : t("tts_preview_generating")
+                    : preview.state === "playing"
+                      ? t("tts_preview_playing")
+                      : t("tts_preview")}
+                </button>
+                {preview.error && (
+                  <div data-testid="tts-preview-error" className="font-ui text-[11px] text-danger">
+                    {t("tts_preview_failed")}: {preview.error}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          </AnimatedDisclosure>
         </div>
-      </TtsSectionCard>
+      </div>
 
       {form.id !== null && <TtsBindingFields tts={tts} form={form} />}
 
