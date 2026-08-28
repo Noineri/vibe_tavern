@@ -5,15 +5,28 @@
  * Pipeline: preprocess → splitParagraphs → sequential synthesize (one in
  * flight) pushing blobs into a FIFO, while a serial playback loop starts as
  * soon as the FIRST blob is ready (audio starts on paragraph 1 while later
- * paragraphs still generate — acceptance requirement). One narration lane:
- * a new narrate() stops whatever was active (epoch guard makes late synthesize
- * resolves from the abandoned epoch a no-op).
+ * paragraphs still generate — acceptance requirement). Generation is PACED
+ * (TE2-14): it never runs more than GENERATION_LOOKAHEAD_CAP segments ahead
+ * of playback and yields INTER_SYNTHESIS_YIELD_MS between syntheses — the
+ * browser GPU is shared between WebGPU inference and page compositing, and
+ * unpaced generation saturates it for the whole message (owner-visible UI
+ * jank). First-audio latency is unaffected: the cap only bites once audio is
+ * already playing. One narration lane: a new narrate() stops whatever was
+ * active (epoch guard makes late synthesize resolves from the abandoned
+ * epoch a no-op).
  */
 
 import { splitParagraphs } from "./kokoro/kokoro-text.js";
 import { chunkRoleRuns, splitNarrationRoles } from "./narration-text.js";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
 import type { NarrationPlayer } from "./narration-player.js";
+
+/** TE2-14 GPU pacing: max synthesized-but-unplayed segments the generation
+ *  loop may hold queued (one more may be actively playing). */
+export const GENERATION_LOOKAHEAD_CAP = 3;
+/** TE2-14 GPU pacing: pause between consecutive syntheses so the shared GPU
+ *  gets compositor breathing room during the initial burst. */
+export const INTER_SYNTHESIS_YIELD_MS = 60;
 
 export type NarrationStatus = "generating" | "playing" | "paused" | "complete" | "error";
 
@@ -54,6 +67,16 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
   /** Resolved when the current playback loop exits, so narrate() can await
    *  completion without polling. Single slot: only one loop runs at a time. */
   let playbackSettled: (() => void) | null = null;
+  /** Resolved when the playback queue shrinks / playback exits, so the paced
+   *  generation loop can re-check the lookahead cap. Single slot: only one
+   *  generation loop exists per orchestrator. */
+  let generationQueueDrained: (() => void) | null = null;
+
+  function wakeGeneration(): void {
+    const wake = generationQueueDrained;
+    generationQueueDrained = null;
+    wake?.();
+  }
 
   function emitState(status: NarrationStatus, error?: string): void {
     if (!activeMessageId) return;
@@ -75,6 +98,8 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     const settle = playbackSettled;
     playbackSettled = null;
     settle?.();
+    // Playback exited — the paced generation loop must re-check its wait.
+    wakeGeneration();
   }
 
   /** Wake the waiter WITHOUT touching the running flag — used when the loop
@@ -84,6 +109,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     const settle = playbackSettled;
     playbackSettled = null;
     settle?.();
+    wakeGeneration();
   }
 
   async function runPlayback(myEpoch: number): Promise<void> {
@@ -106,6 +132,8 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
         settlePlayback();
         return;
       }
+      // The queue just shrank — paced generation may resume (TE2-14).
+      wakeGeneration();
       emitState("playing");
       const result = await deps.player.play(blob, currentRate);
       if (myEpoch !== epoch) {
@@ -140,6 +168,10 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     playedCount = 0;
     totalSegments = 0;
     lastState = null;
+    // A previous generation loop may be parked on the lookahead cap — wake it
+    // so its epoch check can retire it (otherwise narrate() would leak a
+    // pending promise).
+    wakeGeneration();
   }
 
   return {
@@ -170,10 +202,22 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       emitState("generating");
 
       // Generation loop: synthesize sequentially, enqueue, kick playback on
-      // first blob so it overlaps with the remaining synthesis.
+      // first blob so it overlaps with the remaining synthesis. TE2-14: wait
+      // while the lookahead queue is full (generationDone is set by the
+      // error/stop paths — checked here so we never synthesize into a dead
+      // narration), and yield between syntheses to pace the shared GPU.
       const genPromise = (async () => {
         for (const segment of segments) {
-          if (myEpoch !== epoch) return;
+          while (
+            myEpoch === epoch &&
+            !generationDone &&
+            pendingBlobs.length >= GENERATION_LOOKAHEAD_CAP
+          ) {
+            await new Promise<void>((resolve) => {
+              generationQueueDrained = resolve;
+            });
+          }
+          if (myEpoch !== epoch || generationDone) return;
           try {
             const result = await deps.synthesize(segment.text, profile, segment.voiceId);
             if (myEpoch !== epoch) return;
@@ -181,6 +225,9 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
             if (!playbackRunning && !paused) {
               void runPlayback(myEpoch);
             }
+            // TE2-14: breathe between syntheses. First audio was already
+            // kicked above, so this yield is inaudible to the listener.
+            await new Promise<void>((resolve) => setTimeout(resolve, INTER_SYNTHESIS_YIELD_MS));
           } catch (error) {
             if (myEpoch !== epoch) return;
             const message = error instanceof Error ? error.message : String(error);

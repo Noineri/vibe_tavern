@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
-import { createTtsOrchestrator } from "./tts-orchestrator.js";
+import { createTtsOrchestrator, GENERATION_LOOKAHEAD_CAP, INTER_SYNTHESIS_YIELD_MS } from "./tts-orchestrator.js";
 import type { NarrationState } from "./tts-orchestrator.js";
 import type { NarrationPlayer, SegmentPlayResult } from "./narration-player.js";
 
@@ -141,6 +141,11 @@ function createDeferredSynthesize(): {
 }
 
 describe("TtsOrchestrator", () => {
+  /** Advance past the paced generation's inter-synthesis yield (+margin). */
+  async function genTick(): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, INTER_SYNTHESIS_YIELD_MS + 40));
+  }
+
   test("paragraph dispatch: 3-paragraph text → synthesize called 3× with exact paragraphs", async () => {
     const player = createDeferredPlayer();
     const synth = createDeferredSynthesize();
@@ -159,14 +164,14 @@ describe("TtsOrchestrator", () => {
     expect(synth.calls.map((c) => c.text)).toEqual(["Para one."]);
     // Resolve first
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     // After first resolves, second synthesize starts
     expect(synth.calls.map((c) => c.text)).toEqual(["Para one.", "Para two."]);
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     expect(synth.calls.map((c) => c.text)).toEqual(["Para one.", "Para two.", "Para three."]);
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
 
     // Now playback: first segment should be playing; resolve it
     // Drive playback to completion
@@ -208,15 +213,15 @@ describe("TtsOrchestrator", () => {
     expect(synth.calls[0]!.voiceId).toBe("verse");
     expect(synth.calls[0]!.text).toBe("Intro narration. ");
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     expect(synth.calls[1]!.voiceId).toBe("alloy");
     expect(synth.calls[1]!.text).toBe("Hello there!");
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     expect(synth.calls[2]!.voiceId).toBe("verse");
     expect(synth.calls[2]!.text).toBe(" More narration here.");
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     // Drain playback
     for (let i = 0; i < 5; i++) {
       player.resolveCurrent("ended");
@@ -245,11 +250,11 @@ describe("TtsOrchestrator", () => {
     expect(synth.calls[0]!.text).toBe('Intro "quoted" tail.');
     expect(synth.calls[0]!.voiceId).toBe("alloy");
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     expect(synth.calls[1]!.text).toBe("Second para.");
     expect(synth.calls[1]!.voiceId).toBe("alloy");
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     player.resolveCurrent("ended");
     await new Promise<void>((r) => setTimeout(r, 0));
     player.resolveCurrent("ended");
@@ -271,11 +276,11 @@ describe("TtsOrchestrator", () => {
     const p = orch.narrate("m1", text, profile());
     await Promise.resolve();
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
 
     // Resolve sequentially, checking maxConcurrent stays 1
     player.resolveCurrent("ended");
@@ -308,13 +313,11 @@ describe("TtsOrchestrator", () => {
     // Only first synthesize pending
     expect(synth.calls.map((c) => c.text)).toEqual(["Para one."]);
     synth.resolveNext();
-    // After first resolves, playback should start and second synthesize should be pending
-    await Promise.resolve();
-    await Promise.resolve();
-    // Player should have been called for first paragraph already
+    // After first resolves, playback should start immediately; the second
+    // synthesize starts after the inter-synthesis yield (TE2-14 pacing).
+    await new Promise<void>((r) => setTimeout(r, 0));
     expect(player.calls.length).toBeGreaterThanOrEqual(1);
-    // Second and third synthesizes may be in flight or queued; at least second call exists
-    // Due to sequential generation, second call should exist now
+    await genTick();
     expect(synth.calls.length).toBeGreaterThanOrEqual(2);
     // Third synthesize should NOT yet be resolved (still pending deferred)
     expect(synth.deferreds.length).toBeGreaterThanOrEqual(1);
@@ -323,12 +326,12 @@ describe("TtsOrchestrator", () => {
     // Generation creates deferreds lazily, so resolve in a loop with ticks.
     for (let iter = 0; iter < 10 && (synth.deferreds.length > 0 || synth.calls.length < 3); iter++) {
       if (synth.deferreds.length > 0) synth.resolveNext();
-      await new Promise<void>((r) => setTimeout(r, 0));
+      await genTick();
     }
     // Drain any remaining deferreds
     while (synth.deferreds.length > 0) {
       synth.resolveNext();
-      await new Promise<void>((r) => setTimeout(r, 0));
+      await genTick();
     }
     // Drain playback
     for (let i = 0; i < 5; i++) {
@@ -352,11 +355,11 @@ describe("TtsOrchestrator", () => {
     const p = orch.narrate("m1", text, profile());
     await Promise.resolve();
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     await new Promise<void>((r) => setTimeout(r, 0));
 
     // First segment is playing; skip it
@@ -390,7 +393,9 @@ describe("TtsOrchestrator", () => {
     const p = orch.narrate("m1", text, profile());
     await Promise.resolve();
     synth.resolveNext();
-    await Promise.resolve();
+    // Let the paced second call START so a pending deferred exists (the pin:
+    // its late resolve after stop must be dropped).
+    await genTick();
     // Stop before second synthesize resolves
     orch.stop();
     await Promise.resolve();
@@ -439,9 +444,9 @@ describe("TtsOrchestrator", () => {
     const p = orch.narrate("m1", text, profile());
     await Promise.resolve();
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     synth.resolveNext();
-    await Promise.resolve();
+    await genTick();
     await p;
 
     expect(setRateArgs).toContain(1.5);
@@ -487,5 +492,105 @@ describe("TtsOrchestrator", () => {
     expect(states.at(-1)?.status).toBe("complete");
     expect(states.at(-1)?.total).toBe(0);
     expect(player.calls.length).toBe(0);
+  });
+
+  test("TE2-14 pacing: generation caps at 3 queued segments and resumes on drain", async () => {
+    const player = createDeferredPlayer();
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      onState: (_id, s) => states.push({ ...s }),
+    });
+
+    const text = "S1.\n\nS2.\n\nS3.\n\nS4.\n\nS5.\n\nS6.";
+    const p = orch.narrate("m-cap", text, profile());
+    // Resolve every synthesize as it appears until calls stop growing.
+    for (let iter = 0; iter < 12; iter++) {
+      if (synth.deferreds.length > 0) synth.resolveNext();
+      await genTick();
+    }
+    // 1 playing + 3 queued = cap reached: the 5th call must NOT have started.
+    expect(synth.calls.length).toBe(GENERATION_LOOKAHEAD_CAP + 1);
+    // Playback drains one segment → generation wakes and synthesizes the 5th.
+    player.resolveCurrent("ended");
+    for (let iter = 0; iter < 12 && synth.calls.length < GENERATION_LOOKAHEAD_CAP + 2; iter++) {
+      if (synth.deferreds.length > 0) synth.resolveNext();
+      await genTick();
+    }
+    expect(synth.calls.length).toBe(GENERATION_LOOKAHEAD_CAP + 2);
+    // Drain everything to completion.
+    for (let iter = 0; iter < 24; iter++) {
+      if (synth.deferreds.length > 0) synth.resolveNext();
+      player.resolveCurrent("ended");
+      await genTick();
+      if (states.at(-1)?.status === "complete") break;
+    }
+    await p;
+    expect(states.at(-1)?.status).toBe("complete");
+    expect(states.at(-1)?.played).toBe(6);
+    expect(synth.calls.length).toBe(6);
+  });
+
+  test("TE2-14 pacing: stop() while generation waits at the cap unblocks narrate", async () => {
+    const player = createDeferredPlayer();
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      onState: (_id, s) => states.push({ ...s }),
+    });
+
+    const text = "S1.\n\nS2.\n\nS3.\n\nS4.\n\nS5.";
+    const p = orch.narrate("m-stop", text, profile());
+    for (let iter = 0; iter < 12; iter++) {
+      if (synth.deferreds.length > 0) synth.resolveNext();
+      await genTick();
+    }
+    expect(synth.calls.length).toBe(GENERATION_LOOKAHEAD_CAP + 1); // parked at the cap
+    orch.stop();
+    await p; // must not hang: the parked generator must be woken and retired
+    expect(synth.calls.length).toBe(GENERATION_LOOKAHEAD_CAP + 1);
+    expect(states.at(-1)?.status).toBe("complete");
+  });
+
+  test("TE2-14 pacing: consecutive syntheses are spaced by the inter-synthesis yield", async () => {
+    const player: NarrationPlayer = {
+      play: () => Promise.resolve("ended"),
+      skipCurrent(): void {},
+      pause(): void {},
+      resume(): void {},
+      setRate(): void {},
+      dispose(): void {},
+    };
+    const stamps: number[] = [];
+    const synth = createDeferredSynthesize();
+    const wrapped = (text: string, profileArg: TtsProfileRecord, voiceId: string) => {
+      stamps.push(Date.now());
+      return synth.fn(text, profileArg, voiceId);
+    };
+    const orch = createTtsOrchestrator({
+      synthesize: wrapped,
+      player,
+      onState: () => {},
+    });
+
+    const text = "A.\n\nB.\n\nC.";
+    const p = orch.narrate("m-yield", text, profile());
+    for (let iter = 0; iter < 12 && stamps.length < 3; iter++) {
+      if (synth.deferreds.length > 0) synth.resolveNext();
+      await genTick();
+    }
+    // Drain the final pending deferred so generation can finish.
+    while (synth.deferreds.length > 0) {
+      synth.resolveNext();
+      await genTick();
+    }
+    await p;
+    expect(stamps.length).toBe(3);
+    // Two yields between three calls: total span ≥ 2 × yield.
+    expect(stamps[2]! - stamps[0]!).toBeGreaterThanOrEqual(2 * INTER_SYNTHESIS_YIELD_MS);
   });
 });
