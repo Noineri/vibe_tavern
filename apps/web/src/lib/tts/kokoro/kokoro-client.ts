@@ -65,7 +65,7 @@ export interface KokoroGenerateOutput {
 }
 
 export class KokoroTtsClient {
-  private readonly worker: WorkerLike;
+  private worker: WorkerLike | null = null;
   private nextId = 0;
   private loaded = false;
   private loadPromise: Promise<void> | null = null;
@@ -78,9 +78,26 @@ export class KokoroTtsClient {
   >();
   private progressListeners = new Set<(progress: KokoroLoadProgress) => void>();
 
+  private readonly workerFactory: WorkerFactory;
+
+  /** The worker is created LAZILY (first load/generate/dispose), not here:
+   * `new Worker(...)` can throw synchronously (dev server serves modules
+   * from a file:// origin — a SecurityError from an http page), and a throw
+   * from the constructor would crash the whole React tree that merely
+   * RENDERS a component holding a client. Deferred creation turns the same
+   * failure into a rejected load/generate promise the UI can show. */
   constructor(workerFactory: WorkerFactory) {
-    this.worker = workerFactory();
-    this.worker.onmessage = (event) => this.handleResponse(event.data);
+    this.workerFactory = workerFactory;
+  }
+
+  /** Create the worker on first use and wire its message handler once. */
+  private ensureWorker(): WorkerLike {
+    if (this.worker === null) {
+      const worker = this.workerFactory();
+      worker.onmessage = (event) => this.handleResponse(event.data);
+      this.worker = worker;
+    }
+    return this.worker;
   }
 
   /** True after a successful `load()` round-trip. */
@@ -115,9 +132,25 @@ export class KokoroTtsClient {
           this.loadPromise = null;
           reject(error);
         };
+        try {
+          this.armStallWatchdog();
+          this.ensureWorker().postMessage({ type: "load", dtype, device });
+        } catch (err) {
+          // Worker construction failed (e.g. dev file:// origin) — surface it
+          // as a load failure instead of crashing the caller.
+          this.clearStallWatchdog();
+          this.loadResolve = null;
+          this.loadReject = null;
+          reject(toError(err));
+        }
       });
-      this.armStallWatchdog();
-      this.worker.postMessage({ type: "load", dtype, device });
+      // The executor runs BEFORE `this.loadPromise =` is assigned, so a
+      // synchronous rejection cannot null the cache from inside — clear it
+      // from a rejection handler so a retry goes through the factory again.
+      const pending = this.loadPromise;
+      pending.catch(() => {
+        if (this.loadPromise === pending && !this.loaded) this.loadPromise = null;
+      });
     }
     return this.loadPromise;
   }
@@ -214,15 +247,22 @@ export class KokoroTtsClient {
     const request: KokoroWorkerRequest = { type: "generate", id, text, voice, speed };
     return new Promise<{ audio: Float32Array; sampleRate: number }>((resolve, reject) => {
       this.pendingGenerate.set(id, { resolve, reject });
-      this.worker.postMessage(request);
+      try {
+        this.ensureWorker().postMessage(request);
+      } catch (err) {
+        this.pendingGenerate.delete(id);
+        reject(toError(err));
+      }
     });
   }
 
   /** Drop the worker and its model reference. The client is unusable after. */
   dispose(): void {
     this.clearStallWatchdog();
-    this.worker.postMessage({ type: "dispose" });
-    this.worker.terminate();
+    if (this.worker !== null) {
+      this.worker.postMessage({ type: "dispose" });
+      this.worker.terminate();
+    }
     this.rejectAllPending(new KokoroGenerateError("Client disposed."));
   }
 
@@ -275,6 +315,10 @@ export class KokoroTtsClient {
     for (const pending of this.pendingGenerate.values()) pending.reject(error);
     this.pendingGenerate.clear();
   }
+}
+
+function toError(err: unknown): Error {
+  return err instanceof Error ? err : new KokoroGenerateError(String(err));
 }
 
 function reconstructError(name: string, message: string, voiceId?: string): Error {

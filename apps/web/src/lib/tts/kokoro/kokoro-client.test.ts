@@ -103,10 +103,31 @@ describe("KokoroTtsClient", () => {
     expect(requests).toHaveLength(2);
   });
 
+  test("lazy worker: constructor never spawns, throwing factory rejects load instead of crashing", async () => {
+    // The client is constructed while a component RENDERS (shared singleton
+    // via getSharedKokoroClient) — a synchronous `new Worker` throw there
+    // used to unmount the whole React tree (dev server file:// origin).
+    let spawned = 0;
+    const client = new KokoroTtsClient(() => {
+      spawned++;
+      throw new Error("SecurityError: Failed to construct 'Worker'");
+    });
+    expect(spawned).toBe(0); // constructor must not call the factory
+    await expect(client.load()).rejects.toThrow("SecurityError");
+    expect(spawned).toBe(1);
+    // A later retry goes through the factory again (no cached broken worker).
+    await expect(client.load()).rejects.toThrow("SecurityError");
+    expect(spawned).toBe(2);
+  });
+
   test("load-progress events reach subscribers and stop after unsubscribe", async () => {
     const { client, emit } = makeClient();
     const seen: unknown[] = [];
     const unsubscribe = client.onLoadProgress((p) => seen.push(p.data));
+
+    // Lazy worker (SecurityError guard): the message handler is wired on
+    // first use, so start a load to bring the worker up before emitting.
+    void client.load().catch(() => {});
 
     emit({ type: "load-progress", data: { file: "model.onnx", progress: 42 } });
     expect(seen).toEqual([{ file: "model.onnx", progress: 42 }]);
