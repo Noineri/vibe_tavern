@@ -2664,5 +2664,7 @@
   "tts_quickstart_alt_python": "Без docker: нужны git + Python 3; сервер поднимется на порту 5050",
   "tts_setup_help": "Справка по установке",
   "tts_is_default": "По умолчанию",
-  "tts_make_default": "Сделать по умолчанию"
+  "tts_make_default": "Сделать по умолчанию",
+  "tts_segment_browser": "Kokoro",
+  "tts_segment_local": "Локальный сервер"
 }

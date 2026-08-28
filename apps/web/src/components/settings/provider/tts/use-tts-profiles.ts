@@ -34,6 +34,12 @@ export function toBackendSlug(raw: string): TtsBackendSlug {
   return TTS_BACKEND.Kokoro;
 }
 
+/** Editor screen state, mirroring the LLM modal's headerMode: "view" = saved
+ *  profile shown as the compact TtsBaseCard with config sections below;
+ *  "edit" = the connection form alone (a separate screen — config sections
+ *  hidden), entered via Edit settings / New, exited by Save / Cancel / select. */
+export type TtsHeaderMode = "view" | "edit";
+
 export function useTtsProfiles(): {
   profiles: TtsProfileRecord[];
   loading: boolean;
@@ -42,13 +48,10 @@ export function useTtsProfiles(): {
   dirty: boolean;
   error: string | null;
   saving: boolean;
-  /** True when the collapsed TtsBaseCard is showing instead of the expanded
-   *  TtsProviderForm — a saved profile selected without dirty edits. */
-  isBaseCollapsed: boolean;
-  /** Expand the base card to the full form (Edit settings / any field edit). */
-  expandBase(): void;
-  /** Programmatic collapse (unused externally — save/cancel do it). */
-  collapseBase(): void;
+  /** Current editor screen (LLM headerMode analog). */
+  headerMode: TtsHeaderMode;
+  /** Open the connection form screen (Edit settings / New profile). */
+  startEdit(): void;
   /** Mark a saved profile as the default voice (first UI surface for
    *  isDefault — the API already existed, see Current state). */
   setDefault(id: string): Promise<void>;
@@ -67,7 +70,7 @@ export function useTtsProfiles(): {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [baseEditing, setBaseEditing] = useState(false);
+  const [headerMode, setHeaderMode] = useState<TtsHeaderMode>("view");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -104,7 +107,7 @@ export function useTtsProfiles(): {
         hasStoredApiKey: record.hasStoredApiKey,
       });
       setDirty(false);
-      setBaseEditing(false);
+      setHeaderMode("view");
       setError(null);
     },
     [profiles],
@@ -114,12 +117,11 @@ export function useTtsProfiles(): {
     setEditingId(null);
     setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
     setDirty(false);
-    setBaseEditing(true);
+    setHeaderMode("edit");
     setError(null);
   }, []);
 
-  const expandBase = useCallback(() => setBaseEditing(true), []);
-  const collapseBase = useCallback(() => setBaseEditing(false), []);
+  const startEdit = useCallback(() => setHeaderMode("edit"), []);
 
   const setDefault = useCallback(async (id: string) => {
     setError(null);
@@ -134,8 +136,6 @@ export function useTtsProfiles(): {
   }, []);
 
   const setForm = useCallback((patch: Partial<TtsProfileForm>) => {
-    // Any field edit re-expands the collapsed base card (TE2-10 contract).
-    setBaseEditing(true);
     setFormState((prev) => {
       if (!prev) return prev;
       // Backend switch resets config and voiceId — stale keys must never leak
@@ -171,13 +171,13 @@ export function useTtsProfiles(): {
         });
       }
       setDirty(false);
-      setBaseEditing(false);
+      setHeaderMode("view");
       setError(null);
       return;
     }
     setFormState(null);
     setDirty(false);
-    setBaseEditing(false);
+    setHeaderMode("view");
     setError(null);
   }, [editingId, profiles]);
 
@@ -219,7 +219,7 @@ export function useTtsProfiles(): {
         hasStoredApiKey: saved.hasStoredApiKey,
       });
       setDirty(false);
-      setBaseEditing(false);
+      setHeaderMode("view");
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(message);
@@ -252,8 +252,6 @@ export function useTtsProfiles(): {
     }
   }, [form]);
 
-  const isBaseCollapsed = form !== null && form.id !== null && !dirty && !baseEditing && editingId !== null;
-
   return {
     profiles,
     loading,
@@ -262,9 +260,8 @@ export function useTtsProfiles(): {
     dirty,
     error,
     saving,
-    isBaseCollapsed,
-    expandBase,
-    collapseBase,
+    headerMode,
+    startEdit,
     setDefault,
     select,
     startCreate,

@@ -377,8 +377,8 @@ describe("useTtsProfiles — hasStoredApiKey lifecycle (F2b)", () => {
   });
 });
 
-describe("useTtsProfiles — TE2-10 collapsed base card (isBaseCollapsed)", () => {
-  it("select() collapses, startCreate() expands, save() collapses, setForm() re-expands", async () => {
+describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mechanism)", () => {
+  it("select() -> view; setForm keeps view; save() from edit -> view; startCreate/startEdit -> edit; cancelEdit -> view", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" })];
     let hook: any = null;
     function Probe() {
@@ -387,29 +387,46 @@ describe("useTtsProfiles — TE2-10 collapsed base card (isBaseCollapsed)", () =
     }
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
-    // Initially no form -> not collapsed
-    expect(hook?.isBaseCollapsed).toBe(false);
+    // No form yet — the modal shows the empty placeholder, not the editor.
+    expect(hook?.form).toBeNull();
     hook!.select("p1");
-    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(true));
-    expect(hook?.form?.id).toBe("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+    // Selecting a SAVED profile opens in view mode (the base card), not the form.
+    expect(hook?.headerMode).toBe("view");
     expect(hook?.dirty).toBe(false);
-    // Any edit re-expands (TE2-10 contract)
+    // Config-section edits (voice, tuning) mark dirty but do NOT open the
+    // connection form screen — LLM mechanism: the edit screen is a separate
+    // menu entered only via Edit settings / New.
     hook!.setForm({ name: "Alpha-2" });
-    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(false));
-    expect(hook?.dirty).toBe(true);
-    // Save collapses again
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    expect(hook?.headerMode).toBe("view");
+    // Edit settings opens the connection screen.
+    hook!.startEdit();
+    await waitFor(() => expect(hook?.headerMode).toBe("edit"));
+    // Save returns to the view card.
     await hook!.save();
-    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(true));
+    await waitFor(() => expect(hook?.headerMode).toBe("view"));
     expect(hook?.dirty).toBe(false);
-    // startCreate always expands (new profile)
+    // New profile opens straight in edit mode.
     hook!.startCreate();
     await waitFor(() => expect(hook?.form?.id).toBeNull());
-    expect(hook?.isBaseCollapsed).toBe(false);
-    // expandBase explicit
+    expect(hook?.headerMode).toBe("edit");
+    // Canceling a NEW profile drops the draft entirely (form null — the
+    // modal placeholder), view mode.
+    hook!.cancelEdit();
+    await waitFor(() => expect(hook?.form).toBeNull());
+    expect(hook?.headerMode).toBe("view");
+    // Canceling an EDIT of a saved profile restores the saved values.
     hook!.select("p1");
-    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(true));
-    hook!.expandBase();
-    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(false));
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+    hook!.startEdit();
+    await waitFor(() => expect(hook?.headerMode).toBe("edit"));
+    hook!.setForm({ name: "Discard me" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    hook!.cancelEdit();
+    await waitFor(() => expect(hook?.headerMode).toBe("view"));
+    expect(hook?.form?.name).toBe("Alpha-2");
+    expect(hook?.dirty).toBe(false);
     cleanup();
   });
 

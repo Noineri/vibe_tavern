@@ -14,14 +14,16 @@ import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { configString, updateConfigField } from "./tts-form-helpers.js";
 import {
+  ttsPresetIdOf,
   ttsUiSpecFor,
   ttsUiVariantOf,
   type TtsTuningFieldSpec,
   type TtsUiVariant,
 } from "./tts-backend-ui.js";
-import { TtsProviderForm, TtsVoiceFields, ttsStaticVoicesOf } from "./TtsProviderForm.js";
+import { TtsProviderForm } from "./TtsProviderForm.js";
 import { TtsBaseCard } from "./TtsBaseCard.js";
 import { TTS_PRESETS } from "../../../../lib/tts/tts-presets.js";
+import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
 import type { TtsProfileForm, useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
@@ -147,6 +149,10 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     const profileId = formId ?? undefined;
     setVoicesLoading(true);
     setVoicesError(null);
+    // A new (debounced) fetch starts from an empty slate — a stale list
+    // from a previous profile/backend must never render under a dead or
+    // switched endpoint (honest-data rule, same as models below).
+    setVoices(null);
     const timer = setTimeout(() => {
       listTtsDraftVoices({ backend, config, profileId })
         .then((list) => {
@@ -193,6 +199,10 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     const profileId = formId ?? undefined;
     setModelsLoading(true);
     setModelsError(null);
+    // Same slate rule: while the new fetch is in flight (or failing — a
+    // dead local server), the field must degrade to manual input, never
+    // keep rendering the previous profile's model list.
+    setModels(null);
     const timer = setTimeout(() => {
       listTtsDraftModels({ backend, config, profileId })
         .then((list) => {
@@ -242,35 +252,12 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const hasConnectionCard = spec.connection.endpoint !== undefined || spec.connection.apiKey !== undefined || modelSpec !== undefined;
   const savedProfile =
     tts.editingId !== null ? (tts.profiles.find((p) => p.id === tts.editingId) ?? null) : null;
-  const isCollapsed = tts.isBaseCollapsed && savedProfile !== null;
+  const isView = tts.headerMode === "view" && savedProfile !== null;
+  const isEdit = tts.headerMode === "edit";
 
   return (
     <div data-testid="tts-profile-editor" className="flex flex-col gap-4">
-      {isCollapsed ? (
-        <>
-          <TtsBaseCard
-            profile={savedProfile}
-            form={form}
-            isDefault={savedProfile.isDefault}
-            onEdit={tts.expandBase}
-            onSetDefault={() => void tts.setDefault(savedProfile.id)}
-          />
-          {/* TE2-10 plan row: voices stay visible when the base card is
-              collapsed (with speed + bindings below) — same single-owner
-              pickers as the expanded form. */}
-          <TtsSectionCard title={t("tts_field_voice")} testid="tts-collapsed-voice-card">
-            <TtsVoiceFields
-              form={form}
-              updateForm={handleUpdateForm}
-              voicePlaceholder={spec.voicePlaceholder}
-              staticVoices={ttsStaticVoicesOf(form)}
-              voices={voices}
-              voicesLoading={voicesLoading}
-              voicesError={voicesError}
-            />
-          </TtsSectionCard>
-        </>
-      ) : (
+      {isEdit ? (
         <TtsProviderForm
           form={form}
           editingId={form.id}
@@ -284,19 +271,35 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           onTest={() => {}}
           onTestChat={() => {}}
           tts={tts}
-          voices={voices}
-          voicesLoading={voicesLoading}
-          voicesError={voicesError}
-          models={models}
-          modelsLoading={modelsLoading}
-          modelsError={modelsError}
         />
-      )}
+      ) : savedProfile !== null ? (
+        <>
+          <TtsBaseCard
+            profile={savedProfile}
+            form={form}
+            isDefault={savedProfile.isDefault}
+            onEdit={tts.startEdit}
+            onSetDefault={() => void tts.setDefault(savedProfile.id)}
+          />
+          {/* View mode (LLM headerMode mechanism): compact card on top,
+              config sections always visible below — voices first (plan
+              Goal: always-visible voice/speed/binding sections). */}
+          <TtsSectionCard title={t("tts_field_voice")} testid="tts-voice-section">
+            <TtsVoiceFields
+              form={form}
+              updateForm={handleUpdateForm}
+              voicePlaceholder={spec.voicePlaceholder}
+              staticVoices={ttsStaticVoicesOf(form)}
+              voices={voices}
+              voicesLoading={voicesLoading}
+              voicesError={voicesError}
+            />
+          </TtsSectionCard>
 
-      {/* ── Connection card (D5): identity + credentials + model choice.
-          Rendered from the variant spec — kokoro has none (browser-local).
-          Hidden when the base card is collapsed (TE2-10). */}
-      {!isCollapsed && hasConnectionCard && (
+      {/* ── Connection card (D5): model choice, rendered from the variant
+          spec — kokoro has none (browser-local). View mode only (the edit
+          screen is connection-form-only, LLM mechanism). */}
+      {hasConnectionCard && (
         <TtsSectionCard title={t("tts_section_connection")} testid="tts-connection-card">
 
           {modelSpec?.mode === "fetch" && (
@@ -444,6 +447,8 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
       </div>
 
       {form.id !== null && <TtsBindingFields tts={tts} form={form} />}
+        </>
+      ) : null}
 
       {tts.error && (
         <div data-testid="tts-editor-error" className="rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">
@@ -455,5 +460,199 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           audio branch) per the master-detail house pattern — same fix as the
           regex/service tabs. Nothing inline here. */}
     </div>
+  );
+}
+
+export interface TtsVoiceFieldsProps {
+  form: TtsProfileForm;
+  updateForm: <K extends keyof TtsProfileForm>(k: K, v: TtsProfileForm[K]) => void;
+  /** Per-variant placeholder override (tts-backend-ui spec), if any. */
+  voicePlaceholder?: string;
+  /** Static preset roster — non-null only for voiceMode "static" presets. */
+  staticVoices: Array<{ id: string; label: string }> | null;
+  /** Editor-owned dynamic discovery state (single fetch owner). */
+  voices: TtsVoiceRecord[] | null;
+  voicesLoading: boolean;
+  voicesError: string | null;
+}
+
+/** Static preset roster for the form's config.preset — null when the profile
+ *  is not preset-static (kokoro, dynamic fetch, native backends). */
+export function ttsStaticVoicesOf(form: TtsProfileForm): Array<{ id: string; label: string }> | null {
+  const presetId = ttsPresetIdOf(form.config);
+  const preset = presetId ? TTS_PRESETS.find((p) => p.id === presetId) : undefined;
+  if (preset?.voiceMode === "static" && preset.staticVoices && preset.staticVoices.length > 0) {
+    return preset.staticVoices;
+  }
+  return null;
+}
+
+/** The character + narrator voice pickers (TE2-9): kokoro manifest dropdown,
+ *  static preset roster, or the editor-fetched dynamic list with the TE2-3
+ *  null-contract degradation. Rendered ONLY in the editor's view mode —
+ *  the connection form (edit screen) never shows voices (LLM mechanism:
+ *  header form is connection-only; voices are a config section below the
+ *  base card, always visible in view mode). */
+export function TtsVoiceFields({
+  form,
+  updateForm,
+  voicePlaceholder,
+  staticVoices,
+  voices,
+  voicesLoading,
+  voicesError,
+}: TtsVoiceFieldsProps): ReactNode {
+  const { t } = useT();
+  const isKokoro = form.backend === TTS_BACKEND.Kokoro;
+  const placeholder = voicePlaceholder ?? t("tts_field_voice");
+  const kokoroVoiceOptions = KOKORO_VOICES.filter((v) => v.lang === "a" || v.lang === "b").map((v) => ({
+    id: v.id,
+    label: kokoroVoiceLabel(v, t),
+  }));
+  if (isKokoro) {
+    return (
+      <>
+        <div className="mb-3">
+      <label className={lblCls}>{t("tts_field_voice")}</label>
+      <div className="mt-1">
+        <DropdownSelect
+          value={form.voiceId}
+          options={kokoroVoiceOptions}
+          onChange={(value) => updateForm("voiceId", value)}
+          searchable={true}
+          placeholder={placeholder}
+          triggerTestId="tts-voice-select"
+        />
+      </div>
+        </div>
+        <div className="mb-3">
+      <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
+      <div className="mt-1">
+        <DropdownSelect
+          value={form.narratorVoiceId}
+          options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...kokoroVoiceOptions]}
+          onChange={(value) => updateForm("narratorVoiceId", value)}
+          searchable={true}
+          placeholder={t("tts_field_narrator_voice_none")}
+          triggerTestId="tts-narrator-voice-select"
+        />
+      </div>
+      <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+        </div>
+      </>
+    );
+  }
+  if (staticVoices !== null) {
+    return (
+      <>
+        <div className="mb-3">
+      <label className={lblCls}>{t("tts_field_voice")}</label>
+      <div className="mt-1">
+        <DropdownSelect
+          value={form.voiceId}
+          options={staticVoices}
+          onChange={(value) => updateForm("voiceId", value)}
+          searchable={true}
+          placeholder={placeholder}
+          triggerTestId="tts-voice-select"
+        />
+      </div>
+        </div>
+        <div className="mb-3">
+      <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
+      <div className="mt-1">
+        <DropdownSelect
+          value={form.narratorVoiceId}
+          options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...staticVoices]}
+          onChange={(value) => updateForm("narratorVoiceId", value)}
+          searchable={true}
+          placeholder={t("tts_field_narrator_voice_none")}
+          triggerTestId="tts-narrator-voice-select"
+        />
+      </div>
+      <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="mb-3">
+        <label className={lblCls}>{t("tts_field_voice")}</label>
+        {voicesLoading ? (
+      <div data-testid="tts-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
+        {t("tts_voices_loading")}
+      </div>
+        ) : voicesError !== null ? (
+      <>
+        <input
+          data-testid="tts-voice-input"
+          className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+          value={form.voiceId}
+          onChange={(e) => updateForm("voiceId", e.target.value)}
+          placeholder={placeholder}
+        />
+        <div data-testid="tts-voices-load-error" className="mt-1 font-ui text-[11px] text-danger">
+          {t("tts_voices_load_error")}
+        </div>
+      </>
+        ) : voices !== null && voices.length === 0 ? (
+      <input
+        data-testid="tts-voice-input"
+        className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+        value={form.voiceId}
+        onChange={(e) => updateForm("voiceId", e.target.value)}
+        placeholder={placeholder}
+      />
+        ) : (
+      <div className="mt-1">
+        <DropdownSelect
+          value={form.voiceId}
+          options={(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))}
+          onChange={(value) => updateForm("voiceId", value)}
+          searchable={true}
+          placeholder={placeholder}
+          triggerTestId="tts-voice-select"
+        />
+      </div>
+        )}
+      </div>
+      <div className="mb-3">
+        <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
+        {voicesLoading ? (
+      <div data-testid="tts-narrator-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
+        {t("tts_voices_loading")}
+      </div>
+        ) : voicesError !== null ? (
+      <input
+        data-testid="tts-narrator-voice-input"
+        className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+        value={form.narratorVoiceId}
+        onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
+        placeholder={t("tts_field_narrator_voice_none")}
+      />
+        ) : voices !== null && voices.length === 0 ? (
+      <input
+        data-testid="tts-narrator-voice-input"
+        className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+        value={form.narratorVoiceId}
+        onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
+        placeholder={t("tts_field_narrator_voice_none")}
+      />
+        ) : (
+      <div className="mt-1">
+        <DropdownSelect
+          value={form.narratorVoiceId}
+          options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))]}
+          onChange={(value) => updateForm("narratorVoiceId", value)}
+          searchable={true}
+          placeholder={t("tts_field_narrator_voice_none")}
+          triggerTestId="tts-narrator-voice-select"
+        />
+      </div>
+        )}
+        <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+      </div>
+    </>
   );
 }

@@ -2534,6 +2534,8 @@ export default interface Resources {
     "tts_section_placeholder": "TTS profiles will appear here",
     "tts_section_title": "Text-to-Speech",
     "tts_section_voice_tuning": "Voice & tuning",
+    "tts_segment_browser": "Kokoro",
+    "tts_segment_local": "Local server",
     "tts_setup_help": "Setup help",
     "tts_voice_accent_a": "American",
     "tts_voice_accent_b": "British",

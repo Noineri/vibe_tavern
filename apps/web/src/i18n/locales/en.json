@@ -2632,5 +2632,7 @@
   "tts_quickstart_alt_python": "Without docker: needs git + Python 3; server starts on port 5050",
   "tts_setup_help": "Setup help",
   "tts_is_default": "Default",
-  "tts_make_default": "Make default"
+  "tts_make_default": "Make default",
+  "tts_segment_browser": "Kokoro",
+  "tts_segment_local": "Local server"
 }
