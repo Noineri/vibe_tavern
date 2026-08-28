@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { TTS_PRESETS, getVisibleTtsPresets, getVisibleTtsPresetGroups, getTtsPresetGroup } from "../../../../lib/tts/tts-presets.js";
@@ -118,7 +118,6 @@ export function TtsProviderForm({
 
   const wantsStaticVoices = preset?.voiceMode === "static" && preset.staticVoices && preset.staticVoices.length > 0;
   const isKokoroSegment = segment === "browser";
-
   // Test card wiring (real)
   const [testOk, setTestOk] = useState<boolean | null>(testOkProp);
   const [testing, setTesting] = useState(testingProp);
@@ -286,147 +285,18 @@ export function TtsProviderForm({
 
           {/* Model fields are rendered in the editor's connection card (spec-driven) — form owns only static voice for cloud presets to avoid duplicate fetch owners */}
 
-          {/* Voice pickers — form owns all voice rendering (defect 2) */}
-          {isKokoroSegment ? (
-            <>
-              <div className="mb-3">
-                <label className={labelCls}>{t("tts_field_voice")}</label>
-                <div className="mt-1">
-                  <DropdownSelect
-                    value={form.voiceId}
-                    options={kokoroVoiceOptions}
-                    onChange={(value) => updateForm("voiceId", value)}
-                    searchable={true}
-                    placeholder={spec.voicePlaceholder ?? t("tts_field_voice")}
-                    triggerTestId="tts-voice-select"
-                  />
-                </div>
-              </div>
-              <div className="mb-3">
-                <label className={labelCls}>{t("tts_field_narrator_voice")}</label>
-                <div className="mt-1">
-                  <DropdownSelect
-                    value={form.narratorVoiceId}
-                    options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...kokoroVoiceOptions]}
-                    onChange={(value) => updateForm("narratorVoiceId", value)}
-                    searchable={true}
-                    placeholder={t("tts_field_narrator_voice_none")}
-                    triggerTestId="tts-narrator-voice-select"
-                  />
-                </div>
-                <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
-              </div>
-            </>
-          ) : wantsStaticVoices ? (
-            <>
-              <div className="mb-3">
-                <label className={labelCls}>{t("tts_field_voice")}</label>
-                <div className="mt-1">
-                  <DropdownSelect
-                    value={form.voiceId}
-                    options={(preset?.staticVoices ?? []).map((v) => ({ id: v.id, label: v.label }))}
-                    onChange={(value) => updateForm("voiceId", value)}
-                    searchable={true}
-                    placeholder={spec.voicePlaceholder ?? t("tts_field_voice")}
-                    triggerTestId="tts-voice-select"
-                  />
-                </div>
-              </div>
-              <div className="mb-3">
-                <label className={labelCls}>{t("tts_field_narrator_voice")}</label>
-                <div className="mt-1">
-                  <DropdownSelect
-                    value={form.narratorVoiceId}
-                    options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...(preset?.staticVoices ?? []).map((v) => ({ id: v.id, label: v.label }))]} 
-                    onChange={(value) => updateForm("narratorVoiceId", value)}
-                    searchable={true}
-                    placeholder={t("tts_field_narrator_voice_none")}
-                    triggerTestId="tts-narrator-voice-select"
-                  />
-                </div>
-                <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="mb-3">
-                <label className={labelCls}>{t("tts_field_voice")}</label>
-                {voicesLoading ? (
-                  <div data-testid="tts-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
-                    {t("tts_voices_loading")}
-                  </div>
-                ) : voicesError !== null ? (
-                  <>
-                    <input
-                      data-testid="tts-voice-input"
-                      className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-                      value={form.voiceId}
-                      onChange={(e) => updateForm("voiceId", e.target.value)}
-                      placeholder={spec.voicePlaceholder ?? t("tts_field_voice")}
-                    />
-                    <div data-testid="tts-voices-load-error" className="mt-1 font-ui text-[11px] text-danger">
-                      {t("tts_voices_load_error")}
-                    </div>
-                  </>
-                ) : voices !== null && voices.length === 0 ? (
-                  <input
-                    data-testid="tts-voice-input"
-                    className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-                    value={form.voiceId}
-                    onChange={(e) => updateForm("voiceId", e.target.value)}
-                    placeholder={spec.voicePlaceholder ?? t("tts_field_voice")}
-                  />
-                ) : (
-                  <div className="mt-1">
-                    <DropdownSelect
-                      value={form.voiceId}
-                      options={(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))}
-                      onChange={(value) => updateForm("voiceId", value)}
-                      searchable={true}
-                      placeholder={spec.voicePlaceholder ?? t("tts_field_voice")}
-                      triggerTestId="tts-voice-select"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="mb-3">
-                <label className={labelCls}>{t("tts_field_narrator_voice")}</label>
-                {voicesLoading ? (
-                  <div data-testid="tts-narrator-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
-                    {t("tts_voices_loading")}
-                  </div>
-                ) : voicesError !== null ? (
-                  <input
-                    data-testid="tts-narrator-voice-input"
-                    className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-                    value={form.narratorVoiceId}
-                    onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
-                    placeholder={t("tts_field_narrator_voice_none")}
-                  />
-                ) : voices !== null && voices.length === 0 ? (
-                  <input
-                    data-testid="tts-narrator-voice-input"
-                    className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-                    value={form.narratorVoiceId}
-                    onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
-                    placeholder={t("tts_field_narrator_voice_none")}
-                  />
-                ) : (
-                  <div className="mt-1">
-                    <DropdownSelect
-                      value={form.narratorVoiceId}
-                      options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))]} 
-                      onChange={(value) => updateForm("narratorVoiceId", value)}
-                      searchable={true}
-                      placeholder={t("tts_field_narrator_voice_none")}
-                      triggerTestId="tts-narrator-voice-select"
-                    />
-                  </div>
-                )}
-                <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
-              </div>
-            </>
-          )}
+          {/* Voice pickers — single-owner component (TE2-9 defect 2); the
+              collapsed view reuses TtsVoiceFields so voices stay visible
+              when the base card is collapsed (TE2-10 plan row). */}
+          <TtsVoiceFields
+            form={form}
+            updateForm={updateForm}
+            voicePlaceholder={spec.voicePlaceholder}
+            staticVoices={wantsStaticVoices && preset?.staticVoices ? preset.staticVoices : null}
+            voices={voices}
+            voicesLoading={voicesLoading}
+            voicesError={voicesError}
+          />
 
           {/* Test connection card */}
           <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="tts-test-card">
@@ -516,6 +386,199 @@ export function TtsProviderForm({
           </div>
         </>
       )}
+    </>
+  );
+}
+
+export interface TtsVoiceFieldsProps {
+  form: TtsProfileForm;
+  updateForm: <K extends keyof TtsProfileForm>(k: K, v: TtsProfileForm[K]) => void;
+  /** Per-variant placeholder override (tts-backend-ui spec), if any. */
+  voicePlaceholder?: string;
+  /** Static preset roster — non-null only for voiceMode "static" presets. */
+  staticVoices: Array<{ id: string; label: string }> | null;
+  /** Editor-owned dynamic discovery state (single fetch owner). */
+  voices: TtsVoiceRecord[] | null;
+  voicesLoading: boolean;
+  voicesError: string | null;
+}
+
+/** Static preset roster for the form's config.preset — null when the profile
+ *  is not preset-static (kokoro, dynamic fetch, native backends). */
+export function ttsStaticVoicesOf(form: TtsProfileForm): Array<{ id: string; label: string }> | null {
+  const presetId = ttsPresetIdOf(form.config);
+  const preset = presetId ? TTS_PRESETS.find((p) => p.id === presetId) : undefined;
+  if (preset?.voiceMode === "static" && preset.staticVoices && preset.staticVoices.length > 0) {
+    return preset.staticVoices;
+  }
+  return null;
+}
+
+/** The character + narrator voice pickers (TE2-9): kokoro manifest dropdown,
+ *  static preset roster, or the editor-fetched dynamic list with the TE2-3
+ *  null-contract degradation. Single owner — TtsProviderForm renders it in
+ *  the expanded flow; TtsProfileEditor renders it under the collapsed base
+ *  card (TE2-10: voices stay visible when the base card is collapsed). */
+export function TtsVoiceFields({
+  form,
+  updateForm,
+  voicePlaceholder,
+  staticVoices,
+  voices,
+  voicesLoading,
+  voicesError,
+}: TtsVoiceFieldsProps): ReactNode {
+  const { t } = useT();
+  const isKokoro = form.backend === TTS_BACKEND.Kokoro;
+  const placeholder = voicePlaceholder ?? t("tts_field_voice");
+  const kokoroVoiceOptions = KOKORO_VOICES.filter((v) => v.lang === "a" || v.lang === "b").map((v) => ({
+    id: v.id,
+    label: kokoroVoiceLabel(v, t),
+  }));
+  if (isKokoro) {
+    return (
+      <>
+        <div className="mb-3">
+          <label className={labelCls}>{t("tts_field_voice")}</label>
+          <div className="mt-1">
+            <DropdownSelect
+              value={form.voiceId}
+              options={kokoroVoiceOptions}
+              onChange={(value) => updateForm("voiceId", value)}
+              searchable={true}
+              placeholder={placeholder}
+              triggerTestId="tts-voice-select"
+            />
+          </div>
+        </div>
+        <div className="mb-3">
+          <label className={labelCls}>{t("tts_field_narrator_voice")}</label>
+          <div className="mt-1">
+            <DropdownSelect
+              value={form.narratorVoiceId}
+              options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...kokoroVoiceOptions]}
+              onChange={(value) => updateForm("narratorVoiceId", value)}
+              searchable={true}
+              placeholder={t("tts_field_narrator_voice_none")}
+              triggerTestId="tts-narrator-voice-select"
+            />
+          </div>
+          <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+        </div>
+      </>
+    );
+  }
+  if (staticVoices !== null) {
+    return (
+      <>
+        <div className="mb-3">
+          <label className={labelCls}>{t("tts_field_voice")}</label>
+          <div className="mt-1">
+            <DropdownSelect
+              value={form.voiceId}
+              options={staticVoices}
+              onChange={(value) => updateForm("voiceId", value)}
+              searchable={true}
+              placeholder={placeholder}
+              triggerTestId="tts-voice-select"
+            />
+          </div>
+        </div>
+        <div className="mb-3">
+          <label className={labelCls}>{t("tts_field_narrator_voice")}</label>
+          <div className="mt-1">
+            <DropdownSelect
+              value={form.narratorVoiceId}
+              options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...staticVoices]}
+              onChange={(value) => updateForm("narratorVoiceId", value)}
+              searchable={true}
+              placeholder={t("tts_field_narrator_voice_none")}
+              triggerTestId="tts-narrator-voice-select"
+            />
+          </div>
+          <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="mb-3">
+        <label className={labelCls}>{t("tts_field_voice")}</label>
+        {voicesLoading ? (
+          <div data-testid="tts-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
+            {t("tts_voices_loading")}
+          </div>
+        ) : voicesError !== null ? (
+          <>
+            <input
+              data-testid="tts-voice-input"
+              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+              value={form.voiceId}
+              onChange={(e) => updateForm("voiceId", e.target.value)}
+              placeholder={placeholder}
+            />
+            <div data-testid="tts-voices-load-error" className="mt-1 font-ui text-[11px] text-danger">
+              {t("tts_voices_load_error")}
+            </div>
+          </>
+        ) : voices !== null && voices.length === 0 ? (
+          <input
+            data-testid="tts-voice-input"
+            className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+            value={form.voiceId}
+            onChange={(e) => updateForm("voiceId", e.target.value)}
+            placeholder={placeholder}
+          />
+        ) : (
+          <div className="mt-1">
+            <DropdownSelect
+              value={form.voiceId}
+              options={(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))}
+              onChange={(value) => updateForm("voiceId", value)}
+              searchable={true}
+              placeholder={placeholder}
+              triggerTestId="tts-voice-select"
+            />
+          </div>
+        )}
+      </div>
+      <div className="mb-3">
+        <label className={labelCls}>{t("tts_field_narrator_voice")}</label>
+        {voicesLoading ? (
+          <div data-testid="tts-narrator-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
+            {t("tts_voices_loading")}
+          </div>
+        ) : voicesError !== null ? (
+          <input
+            data-testid="tts-narrator-voice-input"
+            className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+            value={form.narratorVoiceId}
+            onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
+            placeholder={t("tts_field_narrator_voice_none")}
+          />
+        ) : voices !== null && voices.length === 0 ? (
+          <input
+            data-testid="tts-narrator-voice-input"
+            className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+            value={form.narratorVoiceId}
+            onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
+            placeholder={t("tts_field_narrator_voice_none")}
+          />
+        ) : (
+          <div className="mt-1">
+            <DropdownSelect
+              value={form.narratorVoiceId}
+              options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))]}
+              onChange={(value) => updateForm("narratorVoiceId", value)}
+              searchable={true}
+              placeholder={t("tts_field_narrator_voice_none")}
+              triggerTestId="tts-narrator-voice-select"
+            />
+          </div>
+        )}
+        <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
+      </div>
     </>
   );
 }

@@ -17,7 +17,8 @@ import {
   type TtsTuningFieldSpec,
   type TtsUiVariant,
 } from "./tts-backend-ui.js";
-import { TtsProviderForm } from "./TtsProviderForm.js";
+import { TtsProviderForm, TtsVoiceFields, ttsStaticVoicesOf } from "./TtsProviderForm.js";
+import { TtsBaseCard } from "./TtsBaseCard.js";
 import { TTS_PRESETS } from "../../../../lib/tts/tts-presets.js";
 import type { TtsProfileForm, useTtsProfiles } from "./use-tts-profiles.js";
 
@@ -234,33 +235,63 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
 
   const modelSpec = spec.connection.model;
   const hasConnectionCard = spec.connection.endpoint !== undefined || spec.connection.apiKey !== undefined || modelSpec !== undefined;
+  const savedProfile =
+    tts.editingId !== null ? (tts.profiles.find((p) => p.id === tts.editingId) ?? null) : null;
+  const isCollapsed = tts.isBaseCollapsed && savedProfile !== null;
 
   return (
     <div data-testid="tts-profile-editor" className="flex flex-col gap-4">
-      <TtsProviderForm
-        form={form}
-        editingId={form.id}
-        ttsProfiles={tts.profiles}
-        updateForm={handleUpdateForm}
-        applyPreset={handleApplyPreset}
-        testOk={null}
-        testing={false}
-        testingChat={false}
-        chatResult={null}
-        onTest={() => {}}
-        onTestChat={() => {}}
-        tts={tts}
-        voices={voices}
-        voicesLoading={voicesLoading}
-        voicesError={voicesError}
-        models={models}
-        modelsLoading={modelsLoading}
-        modelsError={modelsError}
-      />
+      {isCollapsed ? (
+        <>
+          <TtsBaseCard
+            profile={savedProfile}
+            form={form}
+            isDefault={savedProfile.isDefault}
+            onEdit={tts.expandBase}
+            onSetDefault={() => void tts.setDefault(savedProfile.id)}
+          />
+          {/* TE2-10 plan row: voices stay visible when the base card is
+              collapsed (with speed + bindings below) — same single-owner
+              pickers as the expanded form. */}
+          <TtsSectionCard title={t("tts_field_voice")} testid="tts-collapsed-voice-card">
+            <TtsVoiceFields
+              form={form}
+              updateForm={handleUpdateForm}
+              voicePlaceholder={spec.voicePlaceholder}
+              staticVoices={ttsStaticVoicesOf(form)}
+              voices={voices}
+              voicesLoading={voicesLoading}
+              voicesError={voicesError}
+            />
+          </TtsSectionCard>
+        </>
+      ) : (
+        <TtsProviderForm
+          form={form}
+          editingId={form.id}
+          ttsProfiles={tts.profiles}
+          updateForm={handleUpdateForm}
+          applyPreset={handleApplyPreset}
+          testOk={null}
+          testing={false}
+          testingChat={false}
+          chatResult={null}
+          onTest={() => {}}
+          onTestChat={() => {}}
+          tts={tts}
+          voices={voices}
+          voicesLoading={voicesLoading}
+          voicesError={voicesError}
+          models={models}
+          modelsLoading={modelsLoading}
+          modelsError={modelsError}
+        />
+      )}
 
       {/* ── Connection card (D5): identity + credentials + model choice.
-          Rendered from the variant spec — kokoro has none (browser-local). */}
-      {hasConnectionCard && (
+          Rendered from the variant spec — kokoro has none (browser-local).
+          Hidden when the base card is collapsed (TE2-10). */}
+      {!isCollapsed && hasConnectionCard && (
         <TtsSectionCard title={t("tts_section_connection")} testid="tts-connection-card">
 
           {modelSpec?.mode === "fetch" && (

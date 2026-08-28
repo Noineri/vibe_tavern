@@ -18,7 +18,7 @@ function kindLabel(kind: string): string {
   return "OpenAI-compatible";
 }
 
-export function TtsLocalServerPanel({ tts, form }: { tts: TtsHook; form: NonNullable<TtsHook["form"]> }) {
+export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm">; form: NonNullable<TtsHook["form"]> }) {
   const { t, tDynamic } = useT();
   const discovery = useTtsDiscovery();
   const docker = useDockerStatus();

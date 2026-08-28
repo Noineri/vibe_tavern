@@ -5,6 +5,7 @@ import {
   createTtsProfile,
   deleteTtsProfile,
   listAllTtsProfiles,
+  setTtsDefault,
   updateTtsProfile,
   type TtsProfileRecord,
 } from "../../../../api/tts-api.js";
@@ -26,7 +27,7 @@ export interface TtsProfileForm {
 /** Wire-boundary normalizer: the server already degrades unknown backend
  *  slugs to kokoro on read, but the client stays defensive — mirrors that
  *  forward-compat rule without a blind cast. */
-function toBackendSlug(raw: string): TtsBackendSlug {
+export function toBackendSlug(raw: string): TtsBackendSlug {
   for (const slug of Object.values(TTS_BACKEND)) {
     if (slug === raw) return slug;
   }
@@ -41,6 +42,16 @@ export function useTtsProfiles(): {
   dirty: boolean;
   error: string | null;
   saving: boolean;
+  /** True when the collapsed TtsBaseCard is showing instead of the expanded
+   *  TtsProviderForm — a saved profile selected without dirty edits. */
+  isBaseCollapsed: boolean;
+  /** Expand the base card to the full form (Edit settings / any field edit). */
+  expandBase(): void;
+  /** Programmatic collapse (unused externally — save/cancel do it). */
+  collapseBase(): void;
+  /** Mark a saved profile as the default voice (first UI surface for
+   *  isDefault — the API already existed, see Current state). */
+  setDefault(id: string): Promise<void>;
   select(id: string): void;
   startCreate(): void;
   setForm(patch: Partial<TtsProfileForm>): void;
@@ -56,6 +67,7 @@ export function useTtsProfiles(): {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [baseEditing, setBaseEditing] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -92,6 +104,7 @@ export function useTtsProfiles(): {
         hasStoredApiKey: record.hasStoredApiKey,
       });
       setDirty(false);
+      setBaseEditing(false);
       setError(null);
     },
     [profiles],
@@ -101,10 +114,28 @@ export function useTtsProfiles(): {
     setEditingId(null);
     setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
     setDirty(false);
+    setBaseEditing(true);
     setError(null);
   }, []);
 
+  const expandBase = useCallback(() => setBaseEditing(true), []);
+  const collapseBase = useCallback(() => setBaseEditing(false), []);
+
+  const setDefault = useCallback(async (id: string) => {
+    setError(null);
+    try {
+      await setTtsDefault(id);
+      const list = await listAllTtsProfiles();
+      setProfiles(list);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+    }
+  }, []);
+
   const setForm = useCallback((patch: Partial<TtsProfileForm>) => {
+    // Any field edit re-expands the collapsed base card (TE2-10 contract).
+    setBaseEditing(true);
     setFormState((prev) => {
       if (!prev) return prev;
       // Backend switch resets config and voiceId — stale keys must never leak
@@ -140,11 +171,13 @@ export function useTtsProfiles(): {
         });
       }
       setDirty(false);
+      setBaseEditing(false);
       setError(null);
       return;
     }
     setFormState(null);
     setDirty(false);
+    setBaseEditing(false);
     setError(null);
   }, [editingId, profiles]);
 
@@ -186,6 +219,7 @@ export function useTtsProfiles(): {
         hasStoredApiKey: saved.hasStoredApiKey,
       });
       setDirty(false);
+      setBaseEditing(false);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(message);
@@ -218,6 +252,8 @@ export function useTtsProfiles(): {
     }
   }, [form]);
 
+  const isBaseCollapsed = form !== null && form.id !== null && !dirty && !baseEditing && editingId !== null;
+
   return {
     profiles,
     loading,
@@ -226,6 +262,10 @@ export function useTtsProfiles(): {
     dirty,
     error,
     saving,
+    isBaseCollapsed,
+    expandBase,
+    collapseBase,
+    setDefault,
     select,
     startCreate,
     setForm,

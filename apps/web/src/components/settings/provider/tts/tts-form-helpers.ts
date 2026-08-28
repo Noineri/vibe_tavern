@@ -10,7 +10,7 @@ import type { useTtsProfiles } from "./use-tts-profiles.js";
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 
 export function updateConfigField(
-  tts: TtsHook,
+  tts: Pick<TtsHook, "setForm">,
   form: NonNullable<TtsHook["form"]>,
   key: string,
   value: unknown,

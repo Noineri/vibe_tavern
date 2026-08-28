@@ -72,6 +72,12 @@ const updateMock = mock(async (id: string, body: Partial<{ name: string; backend
 const deleteMock = mock(async (id: string) => {
   store = store.filter((p) => p.id !== id);
 });
+const setDefaultMock = mock(async (id: string) => {
+  store = store.map((p) => ({ ...p, isDefault: p.id === id }));
+  const updated = store.find((p) => p.id === id);
+  if (!updated) throw new Error("not found");
+  return updated;
+});
 
 mock.module("../../../../api/tts-api.js", () => ({
   ...realTtsApi,
@@ -79,6 +85,7 @@ mock.module("../../../../api/tts-api.js", () => ({
   createTtsProfile: createMock,
   updateTtsProfile: updateMock,
   deleteTtsProfile: deleteMock,
+  setTtsDefault: setDefaultMock,
 }));
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
@@ -95,6 +102,7 @@ afterEach(async () => {
   createMock.mockClear();
   updateMock.mockClear();
   deleteMock.mockClear();
+  setDefaultMock.mockClear();
 });
 
 describe("useTtsProfiles", () => {
@@ -368,3 +376,60 @@ describe("useTtsProfiles — hasStoredApiKey lifecycle (F2b)", () => {
     cleanup();
   });
 });
+
+describe("useTtsProfiles — TE2-10 collapsed base card (isBaseCollapsed)", () => {
+  it("select() collapses, startCreate() expands, save() collapses, setForm() re-expands", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    // Initially no form -> not collapsed
+    expect(hook?.isBaseCollapsed).toBe(false);
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(true));
+    expect(hook?.form?.id).toBe("p1");
+    expect(hook?.dirty).toBe(false);
+    // Any edit re-expands (TE2-10 contract)
+    hook!.setForm({ name: "Alpha-2" });
+    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(false));
+    expect(hook?.dirty).toBe(true);
+    // Save collapses again
+    await hook!.save();
+    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(true));
+    expect(hook?.dirty).toBe(false);
+    // startCreate always expands (new profile)
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    expect(hook?.isBaseCollapsed).toBe(false);
+    // expandBase explicit
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(true));
+    hook!.expandBase();
+    await waitFor(() => expect(hook?.isBaseCollapsed).toBe(false));
+    cleanup();
+  });
+
+  it("setDefault() calls the API and refreshes profiles", async () => {
+    store = [makeRecord({ id: "p1", isDefault: true }), makeRecord({ id: "p2", isDefault: false })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+    expect(store.find((p) => p.id === "p1")?.isDefault).toBe(true);
+    expect(store.find((p) => p.id === "p2")?.isDefault).toBe(false);
+    await hook!.setDefault("p2");
+    await waitFor(() => expect(setDefaultMock).toHaveBeenCalled());
+    expect(setDefaultMock.mock.calls[0][0]).toBe("p2");
+    await waitFor(() => expect(hook?.profiles.find((p: TtsRecord) => p.id === "p2")?.isDefault).toBe(true));
+    expect(hook?.profiles.find((p: TtsRecord) => p.id === "p1")?.isDefault).toBe(false);
+    cleanup();
+  });
+});
+
