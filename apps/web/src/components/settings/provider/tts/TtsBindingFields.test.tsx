@@ -64,6 +64,7 @@ function profile(id: string, isDefault: boolean): TtsProfileRecord {
     backend: TTS_BACKEND.Kokoro,
     config: {},
     voiceId: "af_heart",
+    narratorVoiceId: null,
     lang: "en",
     sortOrder: 0,
     isDefault,

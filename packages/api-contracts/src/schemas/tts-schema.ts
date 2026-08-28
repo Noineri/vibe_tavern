@@ -110,6 +110,7 @@ export const generateTtsSchema = z.object({
   text: z.string().min(1),
   speed: z.number().optional(),
   instructions: z.string().optional(),
+  voiceId: z.string().optional(),
 });
 export type GenerateTtsInput = z.infer<typeof generateTtsSchema>;
 

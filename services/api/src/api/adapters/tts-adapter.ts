@@ -163,7 +163,7 @@ export class TtsAdapter implements TtsRuntimeApi {
     const backend = createTtsBackend(profile.backend, profile.config);
     const result = await backend.generate({
       text: body.text,
-      voiceId: profile.voiceId,
+      voiceId: body.voiceId ?? profile.voiceId,
       speed: body.speed,
       instructions: body.instructions,
     });

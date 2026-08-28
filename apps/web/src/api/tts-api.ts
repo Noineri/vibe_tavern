@@ -17,6 +17,7 @@ export interface TtsProfileRecord {
   /** True when the stored profile has a non-empty apiKey. */
   hasStoredApiKey: boolean;
   voiceId: string;
+  narratorVoiceId: string | null;
   lang: string;
   sortOrder: number;
   isDefault: boolean;
@@ -133,6 +134,7 @@ export async function generateTtsSpeech(body: {
   text: string;
   speed?: number;
   instructions?: string;
+  voiceId?: string;
 }): Promise<{ blob: Blob; mime: string }> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/generate`), {

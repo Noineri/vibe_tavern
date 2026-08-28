@@ -16,6 +16,7 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
     config: {},
     hasStoredApiKey: false,
     voiceId: "alloy",
+    narratorVoiceId: null,
     lang: "en",
     sortOrder: 0,
     isDefault: false,
@@ -82,7 +83,7 @@ describe("tts-playback-store", () => {
 
   test("startNarration records state into narrations[messageId]; stopNarration clears playback", async () => {
     const player = createFakePlayer();
-    const synthesize = async (text: string): Promise<{ blob: Blob; mime: string }> => ({
+    const synthesize = async (text: string, _profile: TtsProfileRecord, _voiceId: string): Promise<{ blob: Blob; mime: string }> => ({
       blob: new Blob([text], { type: "audio/mpeg" }),
       mime: "audio/mpeg",
     });
@@ -95,7 +96,7 @@ describe("tts-playback-store", () => {
     expect(narr?.total).toBe(2);
 
     // Start another narration then stop
-    const slowSynthesize = (text: string): Promise<{ blob: Blob; mime: string }> =>
+    const slowSynthesize = (text: string, _p: TtsProfileRecord, _v: string): Promise<{ blob: Blob; mime: string }> =>
       new Promise<{ blob: Blob; mime: string }>((resolve) => {
         setTimeout(() => resolve({ blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" }), 50);
       });
@@ -169,11 +170,97 @@ describe("tts-playback-store", () => {
 
       const gens = seenRequests.filter((r) => r.type === "generate");
       const expectedChunks = [...chunkNarrationText(para), ...chunkNarrationText(longPara), ...chunkNarrationText("short end")];
-      expect(gens.map((r) => r.text)).toEqual(expectedChunks);
+      expect(gens.map((r) => (r as { text: string }).text)).toEqual(expectedChunks);
       // …and every request is model-safe length.
-      for (const gen of gens) expect((gen.text as string).length).toBeLessThanOrEqual(400);
+      for (const gen of gens) expect(((gen as { text: string }).text as string).length).toBeLessThanOrEqual(400);
       expect(gens.length).toBeGreaterThan(3); // chunking actually engaged
       expect(seenRequests.filter((r) => r.type === "load")).toHaveLength(1);
+    } finally {
+      __setKokoroWorkerFactoryForTests(null);
+      __resetSharedKokoroClientForTests();
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+
+  test("dual-voice kokoro: role runs synthesize with per-segment voiceIds via the worker", async () => {
+    const seen: Array<{ text: string; voice: string }> = [];
+    let handler: ((event: { data: unknown }) => void) | null = null;
+    const worker = {
+      postMessage(request: { type: string; text?: string; voice?: string; id?: number }) {
+        if (request.type === "load") {
+          queueMicrotask(() => handler?.({ data: { type: "loaded" } }));
+        } else if (request.type === "generate") {
+          seen.push({ text: request.text ?? "", voice: request.voice ?? "" });
+          queueMicrotask(() =>
+            handler?.({ data: { type: "generated", id: request.id, audio: new Float32Array([0.1]), sampleRate: 24000 } }),
+          );
+        }
+      },
+      terminate() {
+        handler = null;
+      },
+      set onmessage(h: ((event: { data: unknown }) => void) | null) {
+        handler = h;
+      },
+      get onmessage() {
+        return handler;
+      },
+    };
+    __setKokoroWorkerFactoryForTests(() => worker);
+    __resetSharedKokoroClientForTests();
+    try {
+      __setTtsPlaybackDepsForTests({ player: createFakePlayer() });
+      const kokoroDual = profile({ backend: "kokoro", voiceId: "af_heart", narratorVoiceId: "af_bella", config: {} });
+      const text = 'Intro narration here. "Hello quoted!" More narration after.';
+      await useTtsPlaybackStore.getState().startNarration("m-dual", text, kokoroDual);
+      // At least 3 worker generates: narrator intro, quoted character, trailing narration
+      expect(seen.length).toBeGreaterThanOrEqual(3);
+      const narratorGens = seen.filter((s) => s.voice === "af_bella");
+      const characterGens = seen.filter((s) => s.voice === "af_heart");
+      expect(narratorGens.length).toBeGreaterThanOrEqual(2);
+      expect(characterGens.length).toBe(1);
+      expect(characterGens[0]!.text).toBe("Hello quoted!");
+      expect(useTtsPlaybackStore.getState().narrations["m-dual"]?.status).toBe("complete");
+    } finally {
+      __setKokoroWorkerFactoryForTests(null);
+      __resetSharedKokoroClientForTests();
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+
+  test("narrator-empty kokoro path stays byte-identical: same chunks as before", async () => {
+    const seenPlain: string[] = [];
+    let handler: ((event: { data: unknown }) => void) | null = null;
+    const worker = {
+      postMessage(request: { type: string; text?: string; id?: number }) {
+        if (request.type === "load") {
+          queueMicrotask(() => handler?.({ data: { type: "loaded" } }));
+        } else if (request.type === "generate") {
+          seenPlain.push(request.text ?? "");
+          queueMicrotask(() =>
+            handler?.({ data: { type: "generated", id: request.id, audio: new Float32Array([0.2]), sampleRate: 24000 } }),
+          );
+        }
+      },
+      terminate() {
+        handler = null;
+      },
+      set onmessage(h: ((event: { data: unknown }) => void) | null) {
+        handler = h;
+      },
+      get onmessage() {
+        return handler;
+      },
+    };
+    __setKokoroWorkerFactoryForTests(() => worker);
+    __resetSharedKokoroClientForTests();
+    try {
+      __setTtsPlaybackDepsForTests({ player: createFakePlayer() });
+      const para = "Hello world. This is a plain paragraph without narrator.";
+      const kokoroSingle = profile({ backend: "kokoro", voiceId: "af_heart", narratorVoiceId: null, config: {} });
+      await useTtsPlaybackStore.getState().startNarration("m-plain", para, kokoroSingle);
+      const expected = chunkNarrationText(para);
+      expect(seenPlain).toEqual(expected);
     } finally {
       __setKokoroWorkerFactoryForTests(null);
       __resetSharedKokoroClientForTests();

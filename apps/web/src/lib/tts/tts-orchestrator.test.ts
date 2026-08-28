@@ -12,6 +12,7 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
     config: {},
     hasStoredApiKey: false,
     voiceId: "alloy",
+    narratorVoiceId: null,
     lang: "en",
     sortOrder: 0,
     isDefault: false,
@@ -110,18 +111,18 @@ function createDeferredPlayer(): NarrationPlayer & {
 // ── Helpers for deferred synthesize ────────────────────────────────────────
 
 function createDeferredSynthesize(): {
-  fn: (text: string, profile: TtsProfileRecord) => Promise<{ blob: Blob; mime: string }>;
-  calls: string[];
-  deferreds: Array<{ text: string; resolve: (v: { blob: Blob; mime: string }) => void; reject: (e: Error) => void }>;
+  fn: (text: string, profile: TtsProfileRecord, voiceId: string) => Promise<{ blob: Blob; mime: string }>;
+  calls: Array<{ text: string; voiceId: string }>;
+  deferreds: Array<{ text: string; voiceId: string; resolve: (v: { blob: Blob; mime: string }) => void; reject: (e: Error) => void }>;
   resolveNext(blobText?: string): void;
   rejectNext(message?: string): void;
 } {
-  const calls: string[] = [];
-  const deferreds: Array<{ text: string; resolve: (v: { blob: Blob; mime: string }) => void; reject: (e: Error) => void }> = [];
-  const fn = (text: string, _profile: TtsProfileRecord): Promise<{ blob: Blob; mime: string }> => {
-    calls.push(text);
+  const calls: Array<{ text: string; voiceId: string }> = [];
+  const deferreds: Array<{ text: string; voiceId: string; resolve: (v: { blob: Blob; mime: string }) => void; reject: (e: Error) => void }> = [];
+  const fn = (text: string, _profile: TtsProfileRecord, voiceId: string): Promise<{ blob: Blob; mime: string }> => {
+    calls.push({ text, voiceId });
     return new Promise<{ blob: Blob; mime: string }>((resolve, reject) => {
-      deferreds.push({ text, resolve, reject });
+      deferreds.push({ text, voiceId, resolve, reject });
     });
   };
   return {
@@ -155,15 +156,15 @@ describe("TtsOrchestrator", () => {
 
     // Let generation start; first synthesize call is pending.
     await Promise.resolve();
-    expect(synth.calls).toEqual(["Para one."]);
+    expect(synth.calls.map((c) => c.text)).toEqual(["Para one."]);
     // Resolve first
     synth.resolveNext();
     await Promise.resolve();
     // After first resolves, second synthesize starts
-    expect(synth.calls).toEqual(["Para one.", "Para two."]);
+    expect(synth.calls.map((c) => c.text)).toEqual(["Para one.", "Para two."]);
     synth.resolveNext();
     await Promise.resolve();
-    expect(synth.calls).toEqual(["Para one.", "Para two.", "Para three."]);
+    expect(synth.calls.map((c) => c.text)).toEqual(["Para one.", "Para two.", "Para three."]);
     synth.resolveNext();
     await Promise.resolve();
 
@@ -181,11 +182,80 @@ describe("TtsOrchestrator", () => {
     await new Promise<void>((r) => setTimeout(r, 0));
 
     await narratePromise;
-    expect(synth.calls).toEqual(["Para one.", "Para two.", "Para three."]);
+    expect(synth.calls.map((c) => c.text)).toEqual(["Para one.", "Para two.", "Para three."]);
     const last = states.at(-1);
     expect(last?.status).toBe("complete");
     expect(last?.total).toBe(3);
     expect(last?.played).toBe(3);
+  });
+
+  test("dual-voice: narrator profile splits quoted vs narrator runs with role-resolved voiceId", async () => {
+    const player = createDeferredPlayer();
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      onState: (_id, s) => states.push({ ...s }),
+    });
+
+    const dualProfile = profile({ voiceId: "alloy", narratorVoiceId: "verse" });
+    const text = 'Intro narration. "Hello there!" More narration here.';
+    const p = orch.narrate("m-dual", text, dualProfile);
+    await Promise.resolve();
+    // First segment should be the leading narration chunk
+    expect(synth.calls.length).toBe(1);
+    expect(synth.calls[0]!.voiceId).toBe("verse");
+    expect(synth.calls[0]!.text).toBe("Intro narration. ");
+    synth.resolveNext();
+    await Promise.resolve();
+    expect(synth.calls[1]!.voiceId).toBe("alloy");
+    expect(synth.calls[1]!.text).toBe("Hello there!");
+    synth.resolveNext();
+    await Promise.resolve();
+    expect(synth.calls[2]!.voiceId).toBe("verse");
+    expect(synth.calls[2]!.text).toBe(" More narration here.");
+    synth.resolveNext();
+    await Promise.resolve();
+    // Drain playback
+    for (let i = 0; i < 5; i++) {
+      player.resolveCurrent("ended");
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
+    await p;
+    // Narrator runs all use narratorVoiceId, quoted runs use voiceId
+    expect(synth.calls.every((c) => c.voiceId === "alloy" || c.voiceId === "verse")).toBe(true);
+    expect(synth.calls.filter((c) => c.voiceId === "verse").length).toBe(2);
+    expect(synth.calls.filter((c) => c.voiceId === "alloy").length).toBe(1);
+  });
+
+  test("narrator-empty profile still synthesizes per paragraph with voiceId = profile.voiceId", async () => {
+    const player = createDeferredPlayer();
+    const synth = createDeferredSynthesize();
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      onState: () => {},
+    });
+    // Quotes present but no narrator — should NOT split by role
+    const emptyProfile = profile({ voiceId: "alloy", narratorVoiceId: null });
+    const text = 'Intro "quoted" tail.\n\nSecond para.';
+    const p = orch.narrate("m-plain", text, emptyProfile);
+    await Promise.resolve();
+    expect(synth.calls[0]!.text).toBe('Intro "quoted" tail.');
+    expect(synth.calls[0]!.voiceId).toBe("alloy");
+    synth.resolveNext();
+    await Promise.resolve();
+    expect(synth.calls[1]!.text).toBe("Second para.");
+    expect(synth.calls[1]!.voiceId).toBe("alloy");
+    synth.resolveNext();
+    await Promise.resolve();
+    player.resolveCurrent("ended");
+    await new Promise<void>((r) => setTimeout(r, 0));
+    player.resolveCurrent("ended");
+    await new Promise<void>((r) => setTimeout(r, 0));
+    await p;
+    expect(synth.calls.length).toBe(2);
   });
 
   test("serial playback: never more than one concurrent play", async () => {
@@ -236,7 +306,7 @@ describe("TtsOrchestrator", () => {
     const p = orch.narrate("m1", text, profile());
     await Promise.resolve();
     // Only first synthesize pending
-    expect(synth.calls).toEqual(["Para one."]);
+    expect(synth.calls.map((c) => c.text)).toEqual(["Para one."]);
     synth.resolveNext();
     // After first resolves, playback should start and second synthesize should be pending
     await Promise.resolve();

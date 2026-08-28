@@ -44,7 +44,7 @@ export interface TtsPlaybackActions {
 
 export type TtsPlaybackStore = TtsPlaybackState & TtsPlaybackActions;
 
-type SynthesizeFn = (text: string, profile: TtsProfileRecord) => Promise<{ blob: Blob; mime: string }>;
+type SynthesizeFn = (text: string, profile: TtsProfileRecord, voiceId: string) => Promise<{ blob: Blob; mime: string }>;
 type Orchestrator = ReturnType<typeof createTtsOrchestrator>;
 
 function readSpeed(profile: TtsProfileRecord): number | undefined {
@@ -53,19 +53,16 @@ function readSpeed(profile: TtsProfileRecord): number | undefined {
   return undefined;
 }
 
-async function defaultSynthesize(text: string, profile: TtsProfileRecord): Promise<{ blob: Blob; mime: string }> {
+async function defaultSynthesize(text: string, profile: TtsProfileRecord, voiceId: string): Promise<{ blob: Blob; mime: string }> {
   if (profile.backend === "kokoro") {
-    // Variant-aware load (stored choice or auto WebGPU/CPU) — never resets an
-    // in-flight lane; joins the shared load promise.
     const client = await ensureSharedKokoroModel();
-    // D10: kokoro-js caps its internal generation length, so narration text
-    // must arrive in model-safe (≤400-char, sentence-aware) pieces — the
-    // whole segment in one call truncates the audio mid-text. The client
-    // concatenates the per-chunk PCM into one WAV.
-    const out = await client.generateChunked(chunkNarrationText(text), profile.voiceId, readSpeed(profile));
+    const out = await client.generateChunked(
+      chunkNarrationText(text).map((chunk) => ({ text: chunk, voiceId })),
+      readSpeed(profile),
+    );
     return { blob: out.blob, mime: "audio/wav" };
   }
-  return generateTtsSpeech({ profileId: profile.id, text, speed: readSpeed(profile) });
+  return generateTtsSpeech({ profileId: profile.id, text, speed: readSpeed(profile), voiceId });
 }
 
 // ── HTML-audio player singleton (lazy — DOM-free until first play) ──────────

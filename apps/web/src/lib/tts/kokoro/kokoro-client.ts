@@ -161,22 +161,24 @@ export class KokoroTtsClient {
    *  the concatenation of the per-chunk waveforms (D10: kokoro-js caps its
    *  internal generation length, so over-long narration text must arrive in
    *  model-safe pieces — the chunk POLICY lives in kokoro-text.ts; this method
-   *  is transport only). Chunks run one at a time (the wasm engine is not
-   *  concurrent-friendly); all-or-nothing: a mid-chunk failure rejects and
-   *  discards the partial audio. */
+   *  is transport only). Each chunk carries its own voiceId so a dual-voice
+   *  profile can assign narrator vs character voices per segment (TE2-6);
+   *  single-voice callers pass the same voiceId in every chunk (byte-identical
+   *  to the pre-TE2-6 single-voice path). Chunks run one at a time (the wasm
+   *  engine is not concurrent-friendly); all-or-nothing: a mid-chunk failure
+   *  rejects and discards the partial audio. */
   async generateChunked(
-    chunks: readonly string[],
-    voice: string,
+    chunks: readonly { text: string; voiceId: string }[],
     speed?: number,
   ): Promise<KokoroGenerateOutput> {
-    const parts: string[] = chunks.filter((chunk) => chunk.length > 0);
+    const parts = chunks.filter((chunk) => chunk.text.length > 0);
     if (parts.length === 0) {
       throw new KokoroGenerateError("Nothing to synthesize — the chunk list is empty.");
     }
     const waveforms: Float32Array[] = [];
     let sampleRate = 0;
     for (const chunk of parts) {
-      const raw = await this.generateRaw(chunk, voice, speed);
+      const raw = await this.generateRaw(chunk.text, chunk.voiceId, speed);
       waveforms.push(raw.audio);
       sampleRate = raw.sampleRate;
     }

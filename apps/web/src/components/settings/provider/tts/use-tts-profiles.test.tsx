@@ -32,6 +32,7 @@ function makeRecord(overrides: Partial<TtsRecord> = {}): TtsRecord {
     backend: "kokoro",
     config: {},
     voiceId: "af_heart",
+    narratorVoiceId: null,
     hasStoredApiKey: false,
     lang: "en",
     sortOrder: 0,

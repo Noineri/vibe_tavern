@@ -11,6 +11,7 @@
  */
 
 import { splitParagraphs } from "./kokoro/kokoro-text.js";
+import { chunkRoleRuns, splitNarrationRoles } from "./narration-text.js";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
 import type { NarrationPlayer } from "./narration-player.js";
 
@@ -24,7 +25,7 @@ export interface NarrationState {
 }
 
 export interface NarrationDeps {
-  synthesize(text: string, profile: TtsProfileRecord): Promise<{ blob: Blob; mime: string }>;
+  synthesize(text: string, profile: TtsProfileRecord, voiceId: string): Promise<{ blob: Blob; mime: string }>;
   player: NarrationPlayer;
   /** Pre-narration text transform — identity seam, TS-10 wires the real pipeline. */
   preprocess?(text: string): string;
@@ -149,14 +150,20 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       activeMessageId = messageId;
 
       const raw = deps.preprocess ? deps.preprocess(text) : text;
-      const paragraphs = splitParagraphs(raw);
+      const hasNarrator = typeof profile.narratorVoiceId === "string" && profile.narratorVoiceId.trim() !== "";
+      const segments: Array<{ text: string; voiceId: string }> = hasNarrator
+        ? chunkRoleRuns(splitNarrationRoles(raw), 400).map((run) => ({
+            text: run.text,
+            voiceId: run.role === "narrator" ? (profile.narratorVoiceId as string) : profile.voiceId,
+          }))
+        : splitParagraphs(raw).map((paragraph) => ({ text: paragraph, voiceId: profile.voiceId }));
 
-      if (paragraphs.length === 0) {
+      if (segments.length === 0) {
         emitState("complete");
         return;
       }
 
-      totalSegments = paragraphs.length;
+      totalSegments = segments.length;
       playedCount = 0;
       generationDone = false;
       pendingBlobs = [];
@@ -165,10 +172,10 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       // Generation loop: synthesize sequentially, enqueue, kick playback on
       // first blob so it overlaps with the remaining synthesis.
       const genPromise = (async () => {
-        for (const paragraph of paragraphs) {
+        for (const segment of segments) {
           if (myEpoch !== epoch) return;
           try {
-            const result = await deps.synthesize(paragraph, profile);
+            const result = await deps.synthesize(segment.text, profile, segment.voiceId);
             if (myEpoch !== epoch) return;
             pendingBlobs.push(result.blob);
             if (!playbackRunning && !paused) {

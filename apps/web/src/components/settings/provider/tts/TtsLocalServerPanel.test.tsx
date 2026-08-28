@@ -23,6 +23,7 @@ const ttsHookBase: {
     backend: TtsBackendSlug;
     config: Record<string, unknown>;
     voiceId: string;
+    narratorVoiceId: string | null;
     hasStoredApiKey: boolean;
     lang: string;
     sortOrder: number;
@@ -50,6 +51,7 @@ const ttsHookBase: {
     backend: TTS_BACKEND.OpenAiCompatible,
     config: {} as Record<string, unknown>,
     voiceId: "alloy",
+    narratorVoiceId: null,
     hasStoredApiKey: false,
     lang: "en",
     sortOrder: 0,

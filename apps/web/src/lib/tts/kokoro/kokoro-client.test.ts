@@ -153,7 +153,13 @@ describe("KokoroTtsClient", () => {
     emit({ type: "loaded" });
     await loadPromise;
 
-    const outputPromise = client.generateChunked(["Hello there.", "General Kenobi!"], "af_heart", 1.0);
+    const outputPromise = client.generateChunked(
+      [
+        { text: "Hello there.", voiceId: "af_heart" },
+        { text: "General Kenobi!", voiceId: "af_heart" },
+      ],
+      1.0,
+    );
     // Two microtask rounds: chunk 1 request flushes, is answered, then chunk 2.
     for (let step = 0; step < 2; step++) {
       await Promise.resolve();
@@ -185,13 +191,44 @@ describe("KokoroTtsClient", () => {
     expect(read(4)).toBe(-0x8000); // -1 clamps
   });
 
+  test("generateChunked: per-chunk voices are carried into each worker request", async () => {
+    const { client, requests, emit } = makeClient();
+    const loadPromise = client.load();
+    emit({ type: "loaded" });
+    await loadPromise;
+
+    const outputPromise = client.generateChunked(
+      [
+        { text: "hello", voiceId: "af_heart" },
+        { text: "world", voiceId: "af_bella" },
+      ],
+      1.0,
+    );
+    for (let step = 0; step < 2; step++) {
+      await Promise.resolve();
+      const pending = requests.filter((r) => r.type === "generate")[step];
+      expect(pending).toBeDefined();
+      const expectedVoice = step === 0 ? "af_heart" : "af_bella";
+      expect((pending as { voice: string }).voice).toBe(expectedVoice);
+      emit({ type: "generated", id: (pending as { id: number }).id, audio: new Float32Array([0.1]), sampleRate: 24000 });
+      await Promise.resolve();
+    }
+    const out = await outputPromise;
+    expect(out.blob.type).toBe("audio/wav");
+  });
+
   test("generateChunked: a mid-chunk worker failure rejects the whole call", async () => {
     const { client, requests, emit } = makeClient();
     const loadPromise = client.load();
     emit({ type: "loaded" });
     await loadPromise;
 
-    const outputPromise = client.generateChunked(["first", "second"], "af_heart");
+    const outputPromise = client.generateChunked(
+      [
+        { text: "first", voiceId: "af_heart" },
+        { text: "second", voiceId: "af_heart" },
+      ],
+    );
     await Promise.resolve();
     emit({ type: "generated", id: (requests.at(-1) as { id: number }).id, audio: new Float32Array([0.5]), sampleRate: 24000 });
     await Promise.resolve();
@@ -209,12 +246,20 @@ describe("KokoroTtsClient", () => {
     emit({ type: "loaded" });
     await loadPromise;
 
-    await expect(client.generateChunked([], "af_heart")).rejects.toBeInstanceOf(KokoroGenerateError);
-    await expect(client.generateChunked(["", ""], "af_heart")).rejects.toBeInstanceOf(KokoroGenerateError);
+    await expect(client.generateChunked([], 1.0)).rejects.toBeInstanceOf(KokoroGenerateError);
+    await expect(
+      client.generateChunked(
+        [
+          { text: "", voiceId: "af_heart" },
+          { text: "", voiceId: "af_heart" },
+        ],
+        1.0,
+      ),
+    ).rejects.toBeInstanceOf(KokoroGenerateError);
     // Also rejects before any round-trip when the voice is not loaded-eligible.
     expect(requests.filter((r) => r.type === "generate")).toHaveLength(0);
 
-    const single = client.generateChunked(["one liner"], "af_heart");
+    const single = client.generateChunked([{ text: "one liner", voiceId: "af_heart" }]);
     await Promise.resolve();
     const request = requests.at(-1) as { id: number; text: string };
     expect(request.text).toBe("one liner");

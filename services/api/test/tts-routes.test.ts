@@ -250,6 +250,41 @@ describe("TTS routes — generate + voices", () => {
     expect(missingRes.status).toBe(404);
   });
 
+  test("POST /api/tts/generate with voiceId override → backend receives the override", async () => {
+    let seenVoiceId: string | null = null;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({
+        generate: async (req) => {
+          seenVoiceId = req.voiceId;
+          return { audio: Buffer.from([1, 2, 3, 4]), mime: "audio/wav" };
+        },
+      }),
+    );
+    const { app } = await makeApp();
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "P", backend: "openai-compatible", voiceId: "alloy" }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+    // Without override uses stored voiceId
+    const genPlain = await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "hi" }),
+    });
+    expect(genPlain.status).toBe(200);
+    expect(seenVoiceId).toBe("alloy");
+    // With override uses body.voiceId
+    const genOverride = await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "hi", voiceId: "verse" }),
+    });
+    expect(genOverride.status).toBe(200);
+    expect(seenVoiceId).toBe("verse");
+  });
+
   test("POST /api/tts/generate validation: empty text → 400", async () => {
     registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () => stubBackend());
     const { app } = await makeApp();
