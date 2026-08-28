@@ -47,6 +47,12 @@ const FALLBACK_MIME = "audio/mpeg";
 const MIN_SPEED = 0.25;
 const MAX_SPEED = 4.0;
 
+/** Heuristic for filtering chat models out of a mixed /models list —
+ *  keeps only ids that look like TTS models. Empty result falls back
+ *  to the full list so the UI is never left with an empty dropdown. */
+const TTS_MODEL_HEURISTIC_RE =
+  /tts|speech|audio|kokoro|orpheus|fish|cosy|dia|melo|voice/i;
+
 /** Error body excerpt length included in HTTP-failure messages. */
 const ERROR_BODY_EXCERPT_LENGTH = 200;
 
@@ -270,8 +276,13 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
     },
 
     async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
+      const modelFilter = readString(config, "modelFilter");
+      const url =
+        modelFilter === "modality"
+          ? `${cfg.endpoint}/models?output_modalities=speech`
+          : `${cfg.endpoint}/models`;
       const response = await fetchOrWrap(
-        `${cfg.endpoint}/models`,
+        url,
         {
           method: "GET",
           headers: buildHeaders(cfg.apiKey),
@@ -293,6 +304,10 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
         const id = (entry as Record<string, unknown>).id;
         if (typeof id !== "string" || id.length === 0) continue;
         out.push({ id, label: id });
+      }
+      if (modelFilter === "name-heuristic") {
+        const filtered = out.filter((m) => TTS_MODEL_HEURISTIC_RE.test(m.id));
+        if (filtered.length > 0) return filtered;
       }
       return out;
     },

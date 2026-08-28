@@ -271,3 +271,60 @@ describe("rosters + registration", () => {
     expect(typeof backend.generate).toBe("function");
   });
 });
+
+describe("OpenAI-compatible TTS listModels filtering", () => {
+  test("modality → request URL contains output_modalities=speech", async () => {
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, { data: [{ id: "voice-1" }] }),
+    );
+    const backend = openAiCompatTtsFactory({
+      endpoint: "http://localhost:8880/v1",
+      modelFilter: "modality",
+    });
+    await backend.listModels();
+    expect(captured()!.url).toBe("http://localhost:8880/v1/models?output_modalities=speech");
+  });
+
+  test("heuristic → mixed model list comes back filtered", async () => {
+    captureFetch(() =>
+      jsonResponse(200, {
+        data: [
+          { id: "gpt-4o" },
+          { id: "tts-1" },
+          { id: "canopylabs/orpheus-v1-english" },
+          { id: "whisper-1" },
+        ],
+      }),
+    );
+    const backend = openAiCompatTtsFactory({
+      endpoint: "http://localhost:8880/v1",
+      modelFilter: "name-heuristic",
+    });
+    const models = await backend.listModels();
+    expect(models.map((m) => m.id)).toEqual(["tts-1", "canopylabs/orpheus-v1-english"]);
+  });
+
+  test("heuristic → zero matches returns the full list unchanged", async () => {
+    captureFetch(() =>
+      jsonResponse(200, { data: [{ id: "gpt-4o" }, { id: "gpt-4o-mini" }] }),
+    );
+    const backend = openAiCompatTtsFactory({
+      endpoint: "http://localhost:8880/v1",
+      modelFilter: "name-heuristic",
+    });
+    const models = await backend.listModels();
+    expect(models.map((m) => m.id)).toEqual(["gpt-4o", "gpt-4o-mini"]);
+  });
+
+  test("absent hint → unfiltered, URL has NO query param", async () => {
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, {
+        data: [{ id: "gpt-4o" }, { id: "tts-1" }, { id: "whisper-1" }],
+      }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:8880/v1" });
+    const models = await backend.listModels();
+    expect(captured()!.url).toBe("http://localhost:8880/v1/models");
+    expect(models.map((m) => m.id)).toEqual(["gpt-4o", "tts-1", "whisper-1"]);
+  });
+});

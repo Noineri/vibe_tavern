@@ -147,6 +147,10 @@ export type DraftTtsPreviewInput = z.infer<typeof draftTtsPreviewSchema>;
 export const draftTtsModelsSchema = z.object({
   backend: ttsBackendSchema,
   config: ttsProfileConfigSchema,
+  /** Optional filter hint computed client-side from the registry — the
+   *  registry lives in `apps/web` so the server must not import it
+   *  (dependency graph points the other way). Transient per request. */
+  modelFilter: z.enum(["modality", "name-heuristic", "none"]).optional(),
   /** Stored-key resolution — same semantics as in {@link draftTtsVoicesSchema}. */
   profileId: z.string().optional(),
 });

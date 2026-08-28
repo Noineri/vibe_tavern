@@ -214,7 +214,11 @@ export class TtsAdapter implements TtsRuntimeApi {
     if (body.backend === TTS_BACKEND.Kokoro) {
       throw new KokoroClientSideError();
     }
-    const config = await resolveDraftConfig(this.stores, body.backend, body.config, body.profileId);
+    const baseConfig = await resolveDraftConfig(this.stores, body.backend, body.config, body.profileId);
+    const config: Record<string, unknown> = { ...baseConfig };
+    if (body.modelFilter !== undefined) {
+      config.modelFilter = body.modelFilter;
+    }
     const backend = createTtsBackend(body.backend, config);
     if (typeof backend.listModels !== "function") return null;
     return backend.listModels();
