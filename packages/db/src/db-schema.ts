@@ -568,6 +568,7 @@ export const ttsProfiles = sqliteTable('tts_profiles', {
   backend: text('backend').notNull(),  // TTS_BACKEND slug
   configJson: text('config_json').notNull().default('{}'),
   voiceId: text('voice_id').notNull().default(''),
+  narratorVoiceId: text('narrator_voice_id'),
   lang: text('lang').notNull().default('en'),
   sortOrder: integer('sort_order').notNull().default(0),
   isDefault: integer('is_default').notNull().default(0),

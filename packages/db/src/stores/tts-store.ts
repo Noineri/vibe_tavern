@@ -127,6 +127,7 @@ export class TtsStore {
           backend: input.backend,
           configJson: JSON.stringify(input.config),
           voiceId: input.voiceId,
+          narratorVoiceId: input.narratorVoiceId,
           lang: input.lang,
           sortOrder: input.sortOrder,
           isDefault: input.isDefault ? 1 : 0,
@@ -153,6 +154,7 @@ export class TtsStore {
     if (patch.backend !== undefined) values.backend = patch.backend;
     if (patch.config !== undefined) values.configJson = JSON.stringify(patch.config);
     if (patch.voiceId !== undefined) values.voiceId = patch.voiceId;
+    if (patch.narratorVoiceId !== undefined) values.narratorVoiceId = patch.narratorVoiceId;
     if (patch.lang !== undefined) values.lang = patch.lang;
     if (patch.sortOrder !== undefined) values.sortOrder = patch.sortOrder;
     if (patch.isDefault !== undefined) values.isDefault = patch.isDefault ? 1 : 0;
@@ -322,6 +324,7 @@ export class TtsStore {
       backend: isTtsBackendSlug(row.backend) ? row.backend : TTS_BACKEND.Kokoro,
       config: parseConfig(row.configJson),
       voiceId: row.voiceId,
+      narratorVoiceId: row.narratorVoiceId ?? null,
       lang: row.lang,
       sortOrder: row.sortOrder,
       isDefault: row.isDefault === 1,

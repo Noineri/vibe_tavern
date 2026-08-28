@@ -211,6 +211,7 @@ export interface ClientTtsProfileRecord {
 	/** True when the stored config holds a non-empty apiKey. */
 	hasStoredApiKey: boolean;
 	voiceId: string;
+	narratorVoiceId: string | null;
 	lang: string;
 	sortOrder: number;
 	isDefault: boolean;

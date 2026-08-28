@@ -1,0 +1,1 @@
+ALTER TABLE `tts_profiles` ADD `narrator_voice_id` text;

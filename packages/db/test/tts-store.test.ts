@@ -26,6 +26,7 @@ function baseInput(overrides: Partial<CreateTtsProfileData> = {}): CreateTtsProf
 		backend: TTS_BACKEND.Kokoro,
 		config: {},
 		voiceId: "af_heart",
+		narratorVoiceId: null,
 		lang: "en",
 		sortOrder: 0,
 		isDefault: false,
@@ -128,6 +129,35 @@ describe("TtsStore CRUD", () => {
 
 		const names = (await store.listAll()).map((p) => p.name);
 		expect(names).toEqual(["mid", "alpha", "zeta"]);
+	});
+});
+
+describe("TtsStore narratorVoiceId (TE2-4)", () => {
+	test("create with narratorVoiceId round-trips", async () => {
+		const { store } = await setup();
+		const created = await store.create(baseInput({ narratorVoiceId: "af_bella" }));
+		expect(created.narratorVoiceId).toBe("af_bella");
+		const loaded = await store.getById(created.id);
+		expect(loaded?.narratorVoiceId).toBe("af_bella");
+	});
+
+	test("create without narratorVoiceId defaults to null", async () => {
+		const { store } = await setup();
+		const created = await store.create(baseInput());
+		expect(created.narratorVoiceId).toBeNull();
+		const loaded = await store.getById(created.id);
+		expect(loaded?.narratorVoiceId).toBeNull();
+	});
+
+	test("update changes narratorVoiceId and can clear to null", async () => {
+		const { store } = await setup();
+		const created = await store.create(baseInput({ narratorVoiceId: "af_heart" }));
+		const updated = await store.update(created.id, { narratorVoiceId: "af_bella" });
+		expect(updated?.narratorVoiceId).toBe("af_bella");
+		const cleared = await store.update(created.id, { narratorVoiceId: null });
+		expect(cleared?.narratorVoiceId).toBeNull();
+		const loaded = await store.getById(created.id);
+		expect(loaded?.narratorVoiceId).toBeNull();
 	});
 });
 

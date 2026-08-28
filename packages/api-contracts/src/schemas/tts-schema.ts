@@ -41,6 +41,7 @@ export const ttsProfileSchema = z.object({
   /** True when the stored config bag holds a non-empty apiKey. */
   hasStoredApiKey: z.boolean(),
   voiceId: z.string(),
+  narratorVoiceId: z.string().nullable(),
   lang: z.string(),
   sortOrder: z.number(),
   isDefault: z.boolean(),
@@ -61,6 +62,8 @@ export const createTtsProfileSchema = z.object({
   /** Selected voice id; empty until the user picks one (editor gates
    *  "ready"/preview on a non-empty value). */
   voiceId: z.string().optional().default(""),
+  /** Optional narrator voice id — null/empty keeps single-voice semantics. */
+  narratorVoiceId: z.string().nullable().optional().default(null),
   /** Language hint (BCP-47-ish); English-first per owner decision. */
   lang: z.string().optional().default("en"),
   /** Deterministic order in the profile list. */
@@ -75,6 +78,7 @@ export const updateTtsProfileSchema = z.object({
   backend: ttsBackendSchema.optional(),
   config: ttsProfileConfigSchema.optional(),
   voiceId: z.string().optional(),
+  narratorVoiceId: z.string().nullable().optional(),
   lang: z.string().optional(),
   sortOrder: z.number().optional(),
   /** `true` moves the [Default Voice] pointer (store clears others); `false`

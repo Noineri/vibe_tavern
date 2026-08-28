@@ -565,6 +565,9 @@ export interface TtsProfile {
    *  voice_id, ...); empty until the user picks one (the editor gates
    *  "ready" / preview on it). */
   voiceId: string;
+  /** Optional narrator voice id for dual-voice profiles — when non-null, quoted
+   *  spans use `voiceId` and the rest uses this id; null = single-voice mode. */
+  narratorVoiceId: string | null;
   /** Language hint (BCP-47-ish); English-first per owner decision. */
   lang: string;
   /** Deterministic order in the profile list. */

@@ -618,3 +618,38 @@ describe("TTS routes — D8 docker probe", () => {
     __setDockerProbeRunnerForTests(null);
   });
 });
+
+describe("TTS routes — narratorVoiceId persistence (TE2-4)", () => {
+  test("POST with narratorVoiceId round-trips via GET; null clears to single-voice", async () => {
+    const { app } = await makeApp();
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Narr", backend: "kokoro", voiceId: "af_heart", narratorVoiceId: "af_bella" }),
+    });
+    expect(createdRes.status).toBe(201);
+    const created = (await createdRes.json()) as { id: string; narratorVoiceId: string | null };
+    expect(created.narratorVoiceId).toBe("af_bella");
+    const getRes = await app.request(`/api/tts/profiles/${created.id}`);
+    const fetched = (await getRes.json()) as { narratorVoiceId: string | null };
+    expect(fetched.narratorVoiceId).toBe("af_bella");
+    const patchRes = await app.request(`/api/tts/profiles/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ narratorVoiceId: null }),
+    });
+    const patched = (await patchRes.json()) as { narratorVoiceId: string | null };
+    expect(patched.narratorVoiceId).toBeNull();
+  });
+
+  test("POST without narratorVoiceId defaults to null", async () => {
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "NoNarr", backend: "kokoro", voiceId: "af_heart" }),
+    });
+    const body = (await res.json()) as { narratorVoiceId: string | null };
+    expect(body.narratorVoiceId).toBeNull();
+  });
+});
