@@ -7,17 +7,11 @@ import { inputCls, lblCls, monoUICls } from "../../../build/fields/field-styles.
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
-import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
 import { listTtsDraftModels, listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
-import { TtsApiKeyField } from "./TtsApiKeyField.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
-import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
-import { KokoroModelPanel } from "./KokoroModelPanel.js";
 import { configString, updateConfigField } from "./tts-form-helpers.js";
 import {
-  TTS_LOCAL_SERVER_FLAG,
-  backendForVariant,
   ttsUiSpecFor,
   ttsUiVariantOf,
   type TtsTuningFieldSpec,
@@ -34,73 +28,6 @@ function configNumber(config: Record<string, unknown>, key: string, fallback: nu
   return typeof value === "number" ? value : fallback;
 }
 
-/** The per-backend voice picker: async server voice list (draft endpoint,
- *  F1) with loading and error-fallback states; degrades to a plain input.
- *  Kokoro does not go through here (static manifest picker below). */
-function TtsVoicePickerField({
-  tts,
-  form,
-  voices,
-  voicesLoading,
-  voicesError,
-  voicePlaceholder,
-}: {
-  tts: TtsHook;
-  form: NonNullable<TtsHook["form"]>;
-  voices: TtsVoiceRecord[] | null;
-  voicesLoading: boolean;
-  voicesError: string | null;
-  voicePlaceholder?: string;
-}): ReactNode {
-  const { t } = useT();
-  const placeholder = voicePlaceholder ?? t("tts_field_voice");
-  if (voicesLoading) {
-    return (
-      <div data-testid="tts-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
-        {t("tts_voices_loading")}
-      </div>
-    );
-  }
-  if (voicesError !== null) {
-    return (
-      <>
-        <input
-          data-testid="tts-voice-input"
-          className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-          value={form.voiceId}
-          onChange={(e) => tts.setForm({ voiceId: e.target.value })}
-          placeholder={placeholder}
-        />
-        <div data-testid="tts-voices-load-error" className="mt-1 font-ui text-[11px] text-danger">
-          {t("tts_voices_load_error")}
-        </div>
-      </>
-    );
-  }
-  if (voices !== null && voices.length === 0) {
-    return (
-      <input
-        data-testid="tts-voice-input"
-        className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-        value={form.voiceId}
-        onChange={(e) => tts.setForm({ voiceId: e.target.value })}
-        placeholder={placeholder}
-      />
-    );
-  }
-  return (
-    <div className="mt-1">
-      <DropdownSelect
-        value={form.voiceId}
-        options={(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))}
-        onChange={(value) => tts.setForm({ voiceId: value })}
-        searchable={true}
-        placeholder={placeholder}
-        triggerTestId="tts-voice-select"
-      />
-    </div>
-  );
-}
 
 /** One section card of the restructured editor (D5): a titled block that
  *  groups related fields instead of one flat per-backend list. */
@@ -284,7 +211,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const form = tts.form;
   const variant = ttsUiVariantOf(form.backend, form.config);
   const spec = ttsUiSpecFor(variant);
-  const isKokoro = variant === "kokoro";
 
   function handleApplyPreset(presetId: string): void {
     const preset = TTS_PRESETS.find((p) => p.id === presetId);
@@ -306,13 +232,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     tts.setForm({ [k]: v } as Pick<TtsProfileForm, K>);
   }
 
-  const kokoroVoiceOptions = KOKORO_VOICES.filter((v) => v.lang === "a" || v.lang === "b").map((v) => ({
-    id: v.id,
-    // Human-readable picker label (owner request): "Heart · Female · American · A"
-    // — the stored voiceId stays the raw id (af_heart).
-    label: kokoroVoiceLabel(v, t),
-  }));
-
   const modelSpec = spec.connection.model;
   const hasConnectionCard = spec.connection.endpoint !== undefined || spec.connection.apiKey !== undefined || modelSpec !== undefined;
 
@@ -330,6 +249,13 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         chatResult={null}
         onTest={() => {}}
         onTestChat={() => {}}
+        tts={tts}
+        voices={voices}
+        voicesLoading={voicesLoading}
+        voicesError={voicesError}
+        models={models}
+        modelsLoading={modelsLoading}
+        modelsError={modelsError}
       />
 
       {/* ── Connection card (D5): identity + credentials + model choice.
@@ -417,93 +343,13 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         </TtsSectionCard>
       )}
 
-      {/* ── Local-server helpers (D8): ONLY the "local" variant mounts the
-          quickstart/discovery panel — a cloud API profile never sees it. */}
-      {spec.localHelpers && <TtsLocalServerPanel tts={tts} form={form} />}
+      {/* Local-server helpers now owned by the form (defect 3) — editor copy removed. */}
 
-      {/* ── Voice & tuning card (D5): voice selector + declarative tuning
-          fields + the preview ("audition") button. */}
+      {/* Tuning card — voice pickers now owned by the form (defect 2) */}
       <TtsSectionCard title={t("tts_section_voice_tuning")} testid="tts-voice-card">
-        <div>
-          <label className={lblCls}>{t("tts_field_voice")}</label>
-          {isKokoro ? (
-            <div className="mt-1">
-              <DropdownSelect
-                value={form.voiceId}
-                options={kokoroVoiceOptions}
-                onChange={(value) => tts.setForm({ voiceId: value })}
-                searchable={true}
-                placeholder={spec.voicePlaceholder ?? t("tts_field_voice")}
-                triggerTestId="tts-voice-select"
-              />
-            </div>
-          ) : (
-            <TtsVoicePickerField
-              tts={tts}
-              form={form}
-              voices={voices}
-              voicesLoading={voicesLoading}
-              voicesError={voicesError}
-              voicePlaceholder={spec.voicePlaceholder}
-            />
-          )}
-        </div>
-        <div>
-          <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
-          {isKokoro ? (
-            <div className="mt-1">
-              <DropdownSelect
-                value={form.narratorVoiceId}
-                options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...kokoroVoiceOptions]}
-                onChange={(value) => tts.setForm({ narratorVoiceId: value })}
-                searchable={true}
-                placeholder={t("tts_field_narrator_voice_none")}
-                triggerTestId="tts-narrator-voice-select"
-              />
-            </div>
-          ) : voicesLoading ? (
-            <div data-testid="tts-narrator-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
-              {t("tts_voices_loading")}
-            </div>
-          ) : voicesError !== null ? (
-            <input
-              data-testid="tts-narrator-voice-input"
-              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-              value={form.narratorVoiceId}
-              onChange={(e) => tts.setForm({ narratorVoiceId: e.target.value })}
-              placeholder={t("tts_field_narrator_voice_none")}
-            />
-          ) : voices !== null && voices.length === 0 ? (
-            <input
-              data-testid="tts-narrator-voice-input"
-              className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-              value={form.narratorVoiceId}
-              onChange={(e) => tts.setForm({ narratorVoiceId: e.target.value })}
-              placeholder={t("tts_field_narrator_voice_none")}
-            />
-          ) : (
-            <div className="mt-1">
-              <DropdownSelect
-                value={form.narratorVoiceId}
-                options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))]} 
-                onChange={(value) => tts.setForm({ narratorVoiceId: value })}
-                searchable={true}
-                placeholder={t("tts_field_narrator_voice_none")}
-                triggerTestId="tts-narrator-voice-select"
-              />
-            </div>
-          )}
-          <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
-        </div>
         {spec.tuning.map((field) => (
           <TtsTuningField key={field.key + field.kind} tts={tts} form={form} field={field} />
         ))}
-        {isKokoro && (
-          <div>
-            <label className={lblCls}>{t("tts_kokoro_model")}</label>
-            <KokoroModelPanel />
-          </div>
-        )}
         <div className="flex flex-col gap-1">
           <button
             type="button"

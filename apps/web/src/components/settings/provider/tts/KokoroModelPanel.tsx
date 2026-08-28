@@ -18,9 +18,11 @@
  * here is joined (never duplicated) by an impatient Preview click.
  */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useT } from "../../../../i18n/context.js";
+import { TTS_BACKEND } from "@vibe-tavern/domain";
+import { useTtsPreview } from "./use-tts-preview.js";
 import { Ic } from "../../../shared/icons.js";
 import {
   autoKokoroVariant,
@@ -91,6 +93,20 @@ function VariantCards({
 export function KokoroModelPanel() {
   const { t } = useT();
   const model = useKokoroModel();
+  const preview = useTtsPreview();
+  const prevStateRef = useRef(model.state);
+  useEffect(() => {
+    const prev = prevStateRef.current;
+    prevStateRef.current = model.state;
+    if (prev === "downloading" && model.state === "ready" && preview.state === "idle") {
+      preview.preview({
+        backend: TTS_BACKEND.Kokoro,
+        voiceId: "af_heart",
+        speed: 1,
+        config: null,
+      });
+    }
+  }, [model.state, preview.state]);
   // "Switch variant" reveals the picker again from the ready state.
   const [choosing, setChoosing] = useState(false);
   const [selected, setSelected] = useState<KokoroModelVariant>(

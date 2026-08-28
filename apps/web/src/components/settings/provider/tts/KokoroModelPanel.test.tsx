@@ -24,6 +24,16 @@ mock.module("../../../../i18n/context.js", () => ({
   }),
 }));
 
+// Preview mock for auto-preview test — use the real module as base and
+// override only the hook. The mock is process-global (bun:test), so we
+// keep a mutable handle that the last test controls.
+let mockPreviewFn = mock(() => {});
+const realPreviewMod = await import("./use-tts-preview.js");
+mock.module("./use-tts-preview.js", () => ({
+  ...realPreviewMod,
+  useTtsPreview: () => ({ state: "idle" as const, error: null, downloadPct: null, preview: mockPreviewFn }),
+}));
+
 import {
   __setKokoroModelDepsForTests,
   type KokoroModelClient,
@@ -103,6 +113,7 @@ function renderPanel() {
 beforeEach(() => {
   __setKokoroModelDepsForTests(null);
   clearStoredKokoroVariant();
+  mockPreviewFn = mock(() => {});
 });
 
 afterEach(async () => {
@@ -263,5 +274,39 @@ describe("useKokoroModel + KokoroModelPanel", () => {
     });
     await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
     expect(fake.loadVariants).toEqual(["gpu", "gpu"]);
+  });
+
+  it("auto-preview fires once after download success, not on mount or twice", async () => {
+    const fake = makeFakeEngine();
+    __setKokoroModelDepsForTests(fake);
+    mockPreviewFn = mock(() => {});
+    const view = renderPanel();
+    expect(mockPreviewFn).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
+    expect(mockPreviewFn).not.toHaveBeenCalled();
+    act(() => {
+      fake.resolveLoad("gpu");
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
+    await waitFor(() => expect(mockPreviewFn).toHaveBeenCalledTimes(1));
+    expect(((mockPreviewFn.mock.calls[0] as unknown as unknown[])[0] as { voiceId: string }).voiceId).toBe("af_heart");
+    // Second download should fire again once
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-switch-btn"));
+    });
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-variant-cpu"));
+    });
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
+    act(() => {
+      fake.resolveLoad("cpu");
+    });
+    await waitFor(() => expect(mockPreviewFn).toHaveBeenCalledTimes(2));
   });
 });

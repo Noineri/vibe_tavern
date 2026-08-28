@@ -14,14 +14,6 @@ import {
 const { render, cleanup, act } = await import("@testing-library/react");
 const { useTtsPreview } = await import("./use-tts-preview.js");
 
-/**
- * Intermediate hook states are observed by driving the async chain through
- * MANUALLY-RESOLVED promises, one act() flush per phase. Immediately-resolving
- * mocks let React coalesce generating/playing/idle into a single commit (only
- * the final state renders), which would hide the transitions under test.
- */
-/** Deferred with synchronously-assigned resolve/reject (the Promise executor
- *  runs at construction, so both are usable immediately after makeDeferred). */
 function makeDeferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -41,10 +33,18 @@ function makeHarness() {
   const errors: Array<string | null> = [];
   const capture: { preview?: (input: TtsPreviewInput) => void } = {};
   const downloadPcts: Array<number | null> = [];
-  const synthDeferred = makeDeferred<{ blob: Blob; mime: string }>();
-  const playDeferred = makeDeferred<void>();
-  const synthesize = mock((_input: TtsPreviewInput) => synthDeferred.promise);
-  const play = mock((_blob: Blob, _mime: string) => playDeferred.promise);
+  const synthDeferreds: Array<ReturnType<typeof makeDeferred<{ blob: Blob; mime: string }>>> = [];
+  const playDeferreds: Array<ReturnType<typeof makeDeferred<void>>> = [];
+  const synthesize = mock((_input: TtsPreviewInput) => {
+    const d = makeDeferred<{ blob: Blob; mime: string }>();
+    synthDeferreds.push(d);
+    return d.promise;
+  });
+  const play = mock((_blob: Blob, _mime: string) => {
+    const d = makeDeferred<void>();
+    playDeferreds.push(d);
+    return d.promise;
+  });
   let progressSink: ((pct: number | null) => void) | null = null;
   const subscribeLoadProgress = mock((cb: (pct: number | null) => void) => {
     progressSink = cb;
@@ -73,10 +73,22 @@ function makeHarness() {
     emitProgress: (pct: number | null): void => {
       progressSink?.(pct);
     },
-    resolveSynthesize: synthDeferred.resolve,
-    rejectSynthesize: synthDeferred.reject,
-    resolvePlay: playDeferred.resolve,
-    rejectPlay: playDeferred.reject,
+    resolveSynthesize: (v: { blob: Blob; mime: string }) => {
+      const d = synthDeferreds.shift();
+      d?.resolve(v);
+    },
+    rejectSynthesize: (e: Error) => {
+      const d = synthDeferreds.shift();
+      d?.reject(e);
+    },
+    resolvePlay: () => {
+      const d = playDeferreds.shift();
+      d?.resolve();
+    },
+    rejectPlay: (e: Error) => {
+      const d = playDeferreds.shift();
+      d?.reject(e);
+    },
     synthesize,
     play,
   };
@@ -108,7 +120,6 @@ describe("useTtsPreview", () => {
     await flush();
     expect(h.states).toContain("generating");
     expect(h.synthesize).toHaveBeenCalledTimes(1);
-    // The injected synthesize receives the FORM's voice + speed.
     expect(h.synthesize.mock.calls[0][0].voiceId).toBe("af_heart");
     expect(h.synthesize.mock.calls[0][0].speed).toBe(1.2);
     expect(h.synthesize.mock.calls[0][0].config).toBeNull();
@@ -181,7 +192,6 @@ describe("useTtsPreview", () => {
 
     expect(h.synthesize).not.toHaveBeenCalled();
     expect(h.play).not.toHaveBeenCalled();
-    // Never left idle — the guard fires before the generating state.
     expect(h.states.every((s) => s === "idle")).toBe(true);
     expect(h.errors[h.errors.length - 1]).not.toBeNull();
   });
@@ -207,26 +217,91 @@ describe("useTtsPreview", () => {
     expect(h.errors[h.errors.length - 1]).toBe("playback failed");
   });
 
-  it('surfaces kokoro model-download percent while generating and clears it when done', async () => {
+  it("dual-voice remote: narrator set → two synthesize calls with voiceIds in order (narrator first)", async () => {
     const h = makeHarness();
-    act(() => {
-      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: 'af_heart', speed: 1, config: null });
+    await act(async () => {
+      h.capture.preview?.({
+        backend: TTS_BACKEND.OpenAiCompatible,
+        voiceId: "alloy",
+        narratorVoiceId: "verse",
+        speed: 1,
+        config: { endpoint: "https://x/v1" },
+      });
     });
     await flush();
-    expect(h.states).toContain('generating');
-    // Model download progress arrives mid-generate — the button label source.
+    expect(h.synthesize).toHaveBeenCalledTimes(1);
+    expect(h.synthesize.mock.calls[0][0].voiceId).toBe("verse");
+    expect(h.synthesize.mock.calls[0][0].text).toBe("Hello! This is the narrator. ");
+    await act(async () => {
+      h.resolveSynthesize({ blob: new Blob(["a"], { type: "audio/mpeg" }), mime: "audio/mpeg" });
+    });
+    await flush();
+    expect(h.play).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      h.resolvePlay();
+    });
+    await flush();
+    expect(h.synthesize).toHaveBeenCalledTimes(2);
+    expect(h.synthesize.mock.calls[1][0].voiceId).toBe("alloy");
+    expect(h.synthesize.mock.calls[1][0].text).toBe('"And this is the character."');
+    await act(async () => {
+      h.resolveSynthesize({ blob: new Blob(["b"], { type: "audio/mpeg" }), mime: "audio/mpeg" });
+    });
+    await flush();
+    expect(h.play).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      h.resolvePlay();
+    });
+    await flush();
+    expect(h.states[h.states.length - 1]).toBe("idle");
+  });
+
+  it("dual-voice remote single voice when narrator null → one call", async () => {
+    const h = makeHarness();
+    await act(async () => {
+      h.capture.preview?.({
+        backend: TTS_BACKEND.OpenAiCompatible,
+        voiceId: "alloy",
+        narratorVoiceId: null,
+        speed: 1,
+        config: { endpoint: "https://x/v1" },
+      });
+    });
+    await flush();
+    expect(h.synthesize).toHaveBeenCalledTimes(1);
+    expect(h.synthesize.mock.calls[0][0].voiceId).toBe("alloy");
+    await act(async () => {
+      h.resolveSynthesize({ blob: new Blob(["x"], { type: "audio/mpeg" }), mime: "audio/mpeg" });
+    });
+    await flush();
+    await act(async () => {
+      h.resolvePlay();
+    });
+    await flush();
+    expect(h.synthesize).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces kokoro model-download percent while generating and clears it when done", async () => {
+    const h = makeHarness();
+    act(() => {
+      h.capture.preview?.({ backend: TTS_BACKEND.Kokoro, voiceId: "af_heart", speed: 1, config: null });
+    });
+    await flush();
+    expect(h.states).toContain("generating");
     act(() => {
       h.emitProgress(37);
     });
     await flush();
     expect(h.downloadPcts).toContain(37);
-    h.resolveSynthesize({ blob: new Blob(['x']), mime: 'audio/wav' });
+    await act(async () => {
+      h.resolveSynthesize({ blob: new Blob(["x"]), mime: "audio/wav" });
+    });
     await flush();
-    h.resolvePlay();
+    await act(async () => {
+      h.resolvePlay();
+    });
     await flush();
-    expect(h.states[h.states.length - 1]).toBe('idle');
-    // Cleared after the run — no stale percent on the next preview.
+    expect(h.states[h.states.length - 1]).toBe("idle");
     expect(h.downloadPcts[h.downloadPcts.length - 1]).toBeNull();
   });
-
 });

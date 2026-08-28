@@ -356,9 +356,11 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
     const connection = view.getByTestId("tts-connection-card");
     const voice = view.getByTestId("tts-voice-card");
     // TE2-8: endpoint moved from the connection card into the forked TtsProviderForm header (still globally present).
+    // TE2-9: voice pickers moved from voice card into the form — card now holds tuning only.
     expect(view.getByTestId("tts-field-endpoint")).toBeTruthy();
     expect(connection).toBeTruthy();
-    expect(within(voice).getByText("tts_field_voice")).toBeTruthy();
+    expect(view.getByText("tts_field_voice")).toBeTruthy();
+    expect(within(voice).getByTestId("tts-preview-btn")).toBeTruthy();
     // The preview button docks in the voice card (F1 layout preserved).
     expect(within(voice).getByTestId("tts-preview-btn")).toBeTruthy();
     cleanup();
@@ -812,6 +814,34 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
       return cfg !== undefined && Object.keys(cfg).length === 0;
     });
     expect(hasReset).toBe(true);
+    cleanup();
+  });
+});
+
+describe("TtsProfileEditor — TE2-9 test card states", () => {
+  it("no-key dot when cloud needsKey and no stored key", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.OpenAiCompatible as never, config: { preset: "openai", endpoint: "https://api.openai.com/v1" }, voiceId: "alloy", narratorVoiceId: "" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByTestId("tts-test-dot-enter-key")).toBeTruthy();
+    cleanup();
+  });
+  it("no-voice dot when voiceId empty", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: { apiKey: "k" }, voiceId: "", narratorVoiceId: "" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByTestId("tts-test-dot-no-voice")).toBeTruthy();
+    cleanup();
+  });
+  it("test card shows buttons when key and voice present", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: { apiKey: "k", model: "m" }, voiceId: "Kore", narratorVoiceId: "" } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByTestId("tts-test-connection-btn")).toBeTruthy();
+    expect(view.getByTestId("tts-test-preview-btn")).toBeTruthy();
     cleanup();
   });
 });

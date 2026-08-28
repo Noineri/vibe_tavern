@@ -25,7 +25,8 @@ import { useTtsPlaybackStore } from "../../../../stores/tts-playback-store.js";
 
 /** Fixed test sentences — intentionally NOT localized. */
 const TTS_PREVIEW_SENTENCE = "Hello! This is a preview of the selected voice.";
-const TTS_PREVIEW_SENTENCE_DUAL = 'Hello! This is the narrator. "And this is the character."';
+const TTS_PREVIEW_CHARACTER_TEXT = '"And this is the character."';
+const TTS_PREVIEW_NARRATOR_TEXT = "Hello! This is the narrator. ";
 
 export type TtsPreviewState = "idle" | "generating" | "playing";
 
@@ -36,6 +37,9 @@ export interface TtsPreviewInput {
    *  so the character voice reads the quoted part and the narrator reads the rest. */
   narratorVoiceId?: string | null;
   speed: number;
+  /** Optional text override — used for the remote dual-voice sequence so each
+   *  synthesize call carries its sentence. Falls back to TTS_PREVIEW_SENTENCE. */
+  text?: string;
   /** Required for server backends: the CURRENT form config (transient —
    *  sent to the draft endpoint once, never persisted). Kokoro synthesizes
    *  from form values client-side and ignores it. */
@@ -78,18 +82,19 @@ export function __setTtsPreviewDepsForTests(deps: TtsPreviewDeps | null): void {
 async function defaultSynthesize(input: TtsPreviewInput): Promise<{ blob: Blob; mime: string }> {
   if (input.backend === TTS_BACKEND.Kokoro) {
     const client = await ensureSharedKokoroModel();
-    const hasNarrator = typeof input.narratorVoiceId === "string" && input.narratorVoiceId.trim() !== "";
-    if (hasNarrator) {
+    const narratorVoiceId =
+      typeof input.narratorVoiceId === "string" && input.narratorVoiceId.trim() !== "" ? input.narratorVoiceId : null;
+    if (narratorVoiceId !== null) {
       const out = await client.generateChunked(
         [
-          { text: "Hello! This is the narrator. ", voiceId: input.narratorVoiceId as string },
+          { text: "Hello! This is the narrator. ", voiceId: narratorVoiceId },
           { text: '"And this is the character."', voiceId: input.voiceId },
         ],
         input.speed,
       );
       return { blob: out.blob, mime: "audio/wav" };
     }
-    const out = await client.generate(TTS_PREVIEW_SENTENCE, input.voiceId, input.speed);
+    const out = await client.generate(input.text ?? TTS_PREVIEW_SENTENCE, input.voiceId, input.speed);
     return { blob: out.blob, mime: "audio/wav" };
   }
   // Defense-in-depth: the editor always passes the form config, but the
@@ -97,13 +102,12 @@ async function defaultSynthesize(input: TtsPreviewInput): Promise<{ blob: Blob; 
   if (input.config === null) {
     throw new Error("Preview requires the form config for server backends.");
   }
-  const hasNarrator = typeof input.narratorVoiceId === "string" && input.narratorVoiceId.trim() !== "";
   return previewTtsDraft({
     backend: input.backend,
     config: input.config,
     profileId: input.profileId ?? undefined,
     voiceId: input.voiceId,
-    text: hasNarrator ? TTS_PREVIEW_SENTENCE_DUAL : TTS_PREVIEW_SENTENCE,
+    text: input.text ?? TTS_PREVIEW_SENTENCE,
     speed: input.speed,
   });
 }
@@ -167,12 +171,37 @@ export function useTtsPreview(): {
     useTtsPlaybackStore.getState().stopNarration();
     const deps = depsOverride ?? { synthesize: defaultSynthesize, play: defaultPlay };
     const unsubscribe = deps.subscribeLoadProgress?.(setDownloadPct) ?? null;
+    const narratorVoiceIdLocal =
+      typeof input.narratorVoiceId === "string" && input.narratorVoiceId.trim() !== "" ? input.narratorVoiceId : null;
+    const hasNarrator = narratorVoiceIdLocal !== null;
+    const isKokoro = input.backend === TTS_BACKEND.Kokoro;
     void (async () => {
       try {
-        const { blob, mime } = await deps.synthesize(input);
-        setState("playing");
-        await deps.play(blob, mime);
-        setState("idle");
+        if (!isKokoro && hasNarrator) {
+          // Dual-voice remote: two sequential synthesizes (narrator first,
+          // mirrors the kokoro dual chunk queue order). Single code path
+          // for prod and tests — deps.synthesize receives per-sentence
+          // voiceId+text overrides.
+          const first = await deps.synthesize({
+            ...input,
+            voiceId: narratorVoiceIdLocal,
+            text: TTS_PREVIEW_NARRATOR_TEXT,
+          });
+          setState("playing");
+          await deps.play(first.blob, first.mime);
+          const second = await deps.synthesize({
+            ...input,
+            voiceId: input.voiceId,
+            text: TTS_PREVIEW_CHARACTER_TEXT,
+          });
+          await deps.play(second.blob, second.mime);
+          setState("idle");
+        } else {
+          const { blob, mime } = await deps.synthesize(input);
+          setState("playing");
+          await deps.play(blob, mime);
+          setState("idle");
+        }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
         setState("idle");
