@@ -123,3 +123,34 @@ export function resolveKokoroVoice(id: string): KokoroVoiceInfo {
 export function tryResolveKokoroVoice(id: string): KokoroVoiceInfo | null {
   return KOKORO_VOICES_BY_ID.get(id) ?? null;
 }
+
+/** i18n keys the picker label needs (only the English accents are shown in
+ *  the UI — kokoro-js ships en voices only; other langs fall back to the
+ *  upstream English label from the manifest). */
+export type KokoroVoiceLabelKey =
+  | "tts_voice_gender_female"
+  | "tts_voice_gender_male"
+  | "tts_voice_accent_a"
+  | "tts_voice_accent_b";
+
+const KOKORO_LANG_LABEL_KEYS: Partial<Record<KokoroLangCode, KokoroVoiceLabelKey>> = {
+  a: "tts_voice_accent_a",
+  b: "tts_voice_accent_b",
+};
+
+/**
+ * Human-readable picker label for a voice: capitalized name (derived from
+ * the id tail — `af_heart` → "Heart"), gender, accent, upstream quality
+ * grade (skipped when unknown). Example: "Heart · Female · American · A".
+ * Voice names are proper nouns and stay untranslated; `t` is injected by
+ * the component layer (this module stays UI-framework-free).
+ */
+export function kokoroVoiceLabel(voice: KokoroVoiceInfo, t: (key: KokoroVoiceLabelKey) => string): string {
+  const tail = voice.id.split("_")[1] ?? voice.id;
+  const name = tail.charAt(0).toUpperCase() + tail.slice(1);
+  const parts = [name, t(voice.gender === "female" ? "tts_voice_gender_female" : "tts_voice_gender_male")];
+  const accentKey = KOKORO_LANG_LABEL_KEYS[voice.lang];
+  parts.push(accentKey === undefined ? KOKORO_LANGS[voice.lang].label : t(accentKey));
+  if (voice.grade !== null) parts.push(voice.grade);
+  return parts.join(" · ");
+}

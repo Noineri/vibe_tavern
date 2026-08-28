@@ -7,7 +7,7 @@ import { inputCls, lblCls, monoUICls } from "../../../build/fields/field-styles.
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
-import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
+import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
 import { listTtsDraftModels, listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { TtsApiKeyField } from "./TtsApiKeyField.js";
 import { useTtsPreview } from "./use-tts-preview.js";
@@ -304,7 +304,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
 
   const kokoroVoiceOptions = KOKORO_VOICES.filter((v) => v.lang === "a" || v.lang === "b").map((v) => ({
     id: v.id,
-    label: v.id,
+    // Human-readable picker label (owner request): "Heart · Female · American · A"
+    // — the stored voiceId stays the raw id (af_heart).
+    label: kokoroVoiceLabel(v, t),
   }));
 
   const modelSpec = spec.connection.model;

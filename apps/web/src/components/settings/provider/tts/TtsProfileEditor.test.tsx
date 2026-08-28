@@ -1,7 +1,7 @@
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
-import { KOKORO_VOICES } from "../../../../lib/tts/kokoro-voices.js";
+import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
 
 useDomEnv();
 
@@ -194,7 +194,7 @@ describe("TtsProfileEditor", () => {
     cleanup();
   });
 
-  it("kokoro voice picker lists only English voices", async () => {
+  it("kokoro voice picker lists only English voices (human-readable labels)", async () => {
     const tts = makeTts({
       form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "af_heart" } as never,
     });
@@ -204,13 +204,20 @@ describe("TtsProfileEditor", () => {
     await waitFor(() => {
       // Dropdown portal renders options into body
       const bodyText = document.body.textContent ?? "";
-      expect(bodyText).toContain("af_heart");
+      expect(bodyText).toContain("Heart ·");
     });
-    // Derive a Japanese id from the manifest to avoid blind hardcoding
+    // The trigger shows the human label of the selected voice, not the raw id.
+    expect(trigger.textContent).toContain("Heart");
+    // Derive a Japanese voice from the manifest to avoid blind hardcoding:
+    // neither its raw id nor its human label may leak into the English-only
+    // picker (the label embeds the language word, so it cannot collide with
+    // any English option).
     const japanese = KOKORO_VOICES.find((v) => v.lang === "j");
     if (japanese) {
       const bodyText = document.body.textContent ?? "";
+      const jpLabel = kokoroVoiceLabel(japanese, (key) => key);
       expect(bodyText).not.toContain(japanese.id);
+      expect(bodyText).not.toContain(jpLabel);
     }
     cleanup();
   });
