@@ -47,7 +47,7 @@ export type TtsBackendFactory = (config: TtsProfileConfig) => TtsBackend;
 
 export interface TtsBackend {
   generate(req: TtsGenerateRequest): Promise<TtsAudioResult>;
-  listVoices(): Promise<TtsVoiceInfo[]>;
+  listVoices(): Promise<TtsVoiceInfo[] | null>;
   listModels?(): Promise<TtsModelInfo[]>;
   probe(): Promise<TtsProbeResult>;
   dispose(): Promise<void>;

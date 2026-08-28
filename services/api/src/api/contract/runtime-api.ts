@@ -392,7 +392,7 @@ export interface TtsRuntimeApi {
 	listTtsVoices: (profileId: string) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null>;
 	/** Transient voices lookup from an unsaved form config (no DB row). Throws
 	 *  KokoroClientSideError for the browser-only backend (route → 400). */
-	draftListTtsVoices: (body: import("@vibe-tavern/api-contracts").DraftTtsVoicesInput) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo[]>;
+	draftListTtsVoices: (body: import("@vibe-tavern/api-contracts").DraftTtsVoicesInput) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null>;
 	/** Transient one-shot synthesis from an unsaved form config. Throws
 	 *  KokoroClientSideError for the browser-only backend (route → 400). */
 	draftPreviewTts: (body: import("@vibe-tavern/api-contracts").DraftTtsPreviewInput) => Promise<{ audio: Buffer; mime: string }>;

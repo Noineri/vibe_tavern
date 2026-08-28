@@ -216,6 +216,12 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
       listTtsDraftVoices({ backend, config, profileId })
         .then((list) => {
           if (cancelled) return;
+          if (list === null) {
+            setVoices(null);
+            setVoicesError("unavailable");
+            setVoicesLoading(false);
+            return;
+          }
           setVoices(list);
           setVoicesLoading(false);
         })

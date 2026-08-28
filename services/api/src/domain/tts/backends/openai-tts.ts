@@ -7,16 +7,17 @@
  * base URL INCLUDING `/v1` (house `normalizeOpenAiCompatibleBaseUrl` also
  * tolerates a trailing slash or a pasted `/chat/completions` suffix).
  *
- * API facts (verified 2026-08-27):
+ * API facts (verified 2026-08-27, TE2-3 honest):
  * - POST {endpoint}/audio/speech, body { model, input, voice, response_format,
  *   speed? } (snake_case). `Authorization: Bearer` ONLY when a key is set —
  *   local servers run keyless. `instructions` is OpenAI-specific and works
  *   ONLY on gpt-4o-mini-tts* models (rejected/ignored on tts-1 family), so it
  *   is included only for that model family.
  * - Voices: kokoro-fastapi exposes GET /v1/audio/voices → { voices: [{ id, name? }] };
- *   OpenAI's canonical list endpoint is GET /v1/models → { data: [{ id }] }.
- *   Voice listing falls back voices→models→static OpenAI roster so a cloud
- *   endpoint always yields a usable list even offline.
+ *   Honest (TE2-3): listVoices hits ONLY /audio/voices and returns null on
+ *   any failure — no fallback to /models or to the static OpenAI roster.
+ *   Static voice lists for cloud presets now live client-side
+ *   (apps/web/src/lib/tts/tts-presets.ts).
  */
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
@@ -208,24 +209,7 @@ function parseVoicesPayload(parsed: unknown): TtsVoiceInfo[] | null {
   return voices.length > 0 ? voices : null;
 }
 
-/** OpenAI /v1/models shape: { data: [{ id }] }. */
-function parseModelsAsVoices(parsed: unknown): TtsVoiceInfo[] | null {
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const data = (parsed as Record<string, unknown>).data;
-  if (!Array.isArray(data)) return null;
-  const voices: TtsVoiceInfo[] = [];
-  for (const entry of data) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const voice = toVoiceInfo((entry as Record<string, unknown>).id, undefined);
-    if (voice) voices.push(voice);
-  }
-  return voices.length > 0 ? voices : null;
-}
 
-/** Static roster so api.openai.com-style endpoints always list something. */
-function staticRosterVoices(): TtsVoiceInfo[] {
-  return VOICES_GPT4O_MINI_TTS.map((id) => ({ id, label: id, lang: "en" }));
-}
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
@@ -312,8 +296,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       return out;
     },
 
-    async listVoices(): Promise<TtsVoiceInfo[]> {
-      // Never throws for unreachable servers: voices → models → static roster.
+    async listVoices(): Promise<TtsVoiceInfo[] | null> {
       try {
         const voicesResponse = await fetch(`${cfg.endpoint}/audio/voices`, {
           headers: buildHeaders(cfg.apiKey),
@@ -324,25 +307,10 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           const voices = parseVoicesPayload(parsed);
           if (voices) return voices;
         }
+        return null;
       } catch {
-        // Unreachable → fall through to the models endpoint.
+        return null;
       }
-
-      try {
-        const modelsResponse = await fetch(`${cfg.endpoint}/models`, {
-          headers: buildHeaders(cfg.apiKey),
-          signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
-        });
-        if (modelsResponse.ok) {
-          const parsed: unknown = await modelsResponse.json().catch(() => null);
-          const voices = parseModelsAsVoices(parsed);
-          if (voices) return voices;
-        }
-      } catch {
-        // Unreachable → fall through to the static roster.
-      }
-
-      return staticRosterVoices();
     },
 
     async probe(): Promise<TtsProbeResult> {

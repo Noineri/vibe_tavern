@@ -174,7 +174,7 @@ export async function listTtsDraftVoices(body: {
   backend: string;
   config: Record<string, unknown>;
   profileId?: string;
-}): Promise<TtsVoiceRecord[]> {
+}): Promise<TtsVoiceRecord[] | null> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/draft/voices`), {
     method: "POST",
@@ -185,7 +185,9 @@ export async function listTtsDraftVoices(body: {
     const text = await response.text().catch(() => "");
     throw new Error(`TTS draft voice list failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, 200)}` : ""}`);
   }
-  return (await response.json()) as TtsVoiceRecord[];
+  const json = (await response.json()) as TtsVoiceRecord[] | null;
+  if (json === null) return null;
+  return json;
 }
 
 export async function listTtsDraftModels(body: {

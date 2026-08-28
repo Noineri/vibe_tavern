@@ -196,30 +196,44 @@ describe("OpenAI-compatible TTS listVoices", () => {
     expect(voices).toEqual([{ id: "ef_dora", label: "ef_dora", lang: "en" }]);
   });
 
-  test("falls back to /models when /audio/voices 404s", async () => {
-    let call = 0;
-    globalThis.fetch = mock(async (input: FetchArgs[0]) => {
-      call += 1;
-      const url = String(input);
-      if (call === 1) return jsonResponse(404, { detail: "not found" });
-      expect(url).toBe("http://localhost:8000/v1/models");
-      return jsonResponse(200, { data: [{ id: "kokoro" }] });
+  test("/audio/voices 404 → null (honest, no fallback to /models or static roster)", async () => {
+    let callCount = 0;
+    globalThis.fetch = mock(async () => {
+      callCount += 1;
+      return jsonResponse(404, { detail: "not found" });
     });
     const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:8000/v1" });
 
     const voices = await backend.listVoices();
 
-    expect(voices).toEqual([{ id: "kokoro", label: "kokoro", lang: "en" }]);
+    expect(voices).toBeNull();
+    expect(callCount).toBe(1);
+    // Null means no fake roster — assert none of the static ids leak through.
+    // (VOICES_GPT4O_MINI_TTS contains alloy, echo, etc.)
   });
 
-  test("both endpoints fail → static 13-voice OpenAI roster", async () => {
+  test("network failure → null (honest, no static roster)", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const backend = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1" });
+
+    const voices = await backend.listVoices();
+
+    expect(voices).toBeNull();
+  });
+
+  test("both endpoints unavailable must NOT return the static OpenAI roster", async () => {
     globalThis.fetch = mock(async () => jsonResponse(500, { error: "down" }));
     const backend = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1" });
 
     const voices = await backend.listVoices();
 
-    expect(voices.map((v) => v.id)).toEqual([...VOICES_GPT4O_MINI_TTS]);
-    expect(voices).toHaveLength(13);
+    expect(voices).toBeNull();
+    if (voices !== null) {
+      expect(voices.map((v) => v.id)).not.toContain("alloy");
+      expect(voices.map((v) => v.id)).not.toContain("echo");
+    }
   });
 });
 

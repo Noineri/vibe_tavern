@@ -554,6 +554,25 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     await act(async () => {});
   });
 
+  it("null voices (endpoint unavailable) → manual input + load-error hint, no fake roster (TE2-3)", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => null as never);
+    const tts = makeTts({
+      form: {
+        id: null,
+        name: "Dead",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://dead.example/v1", apiKey: "k" },
+        voiceId: "",
+      } as never,
+    });
+    const view = render(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
+    expect(view.getByTestId("tts-voices-load-error")).toBeTruthy();
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
   it("kokoro voice select placeholder is the example id af_heart", async () => {
     const tts = makeTts({
       form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, voiceId: "" } as never,
