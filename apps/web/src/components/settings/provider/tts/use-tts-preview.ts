@@ -20,7 +20,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
 import { previewTtsDraft } from "../../../../api/tts-api.js";
-import { getSharedKokoroClient } from "../../../../lib/tts/kokoro/kokoro-client-instance.js";
+import { ensureSharedKokoroModel, getSharedKokoroClient } from "../../../../lib/tts/kokoro/kokoro-client-instance.js";
 import { useTtsPlaybackStore } from "../../../../stores/tts-playback-store.js";
 
 /** Fixed test sentence — intentionally NOT localized. */
@@ -73,8 +73,8 @@ export function __setTtsPreviewDepsForTests(deps: TtsPreviewDeps | null): void {
 
 async function defaultSynthesize(input: TtsPreviewInput): Promise<{ blob: Blob; mime: string }> {
   if (input.backend === TTS_BACKEND.Kokoro) {
-    const client = getSharedKokoroClient();
-    if (!client.isLoaded()) await client.load();
+    // Variant-aware load (stored choice or auto WebGPU/CPU) — same lane as narration.
+    const client = await ensureSharedKokoroModel();
     const out = await client.generate(TTS_PREVIEW_SENTENCE, input.voiceId, input.speed);
     return { blob: out.blob, mime: "audio/wav" };
   }

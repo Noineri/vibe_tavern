@@ -4,51 +4,96 @@ import { useDomEnv } from "../../../../../test/dom-env.js";
 
 useDomEnv();
 
+// Same i18n fake as TtsProfileEditor.test.tsx: the panel renders under a
+// raw-key t (interpolated params appended after ":"). Registered BEFORE the
+// component import so the panel picks up the mocked context.
+const realI18n = await import("../../../../i18n/context.js");
+mock.module("../../../../i18n/context.js", () => ({
+  ...realI18n,
+  useT: () => ({
+    t: (key: string, params?: Record<string, unknown>) => {
+      if (params && typeof params === "object") {
+        return `${key}:${Object.values(params).map(String).join(":")}`;
+      }
+      return key;
+    },
+    tDynamic: (key: string) => key,
+    locale: "en",
+    setLocale: () => {},
+    ready: true,
+  }),
+}));
+
 import {
   __setKokoroModelDepsForTests,
   type KokoroModelClient,
+  type KokoroModelDeps,
 } from "./use-kokoro-model.js";
-import { KokoroModelPanel } from "./KokoroModelPanel.js";
+import { clearStoredKokoroVariant } from "../../../../lib/tts/kokoro/kokoro-load-options.js";
 
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { KokoroModelPanel } = await import("./KokoroModelPanel.js");
 
-/** Fake client: isLoaded flag, scripted load, manual progress emission. */
-function makeFakeClient(options: { alreadyLoaded?: boolean } = {}) {
+/**
+ * Fake engine: the client surface (isLoaded + progress listeners) with a
+ * scriptable loadModel (records the requested variant, resolves/rejects
+ * manually), plus the activeVariant/consumeFallbackNotice getters.
+ */
+function makeFakeEngine(options: { alreadyLoaded?: boolean; startActive?: "gpu" | "cpu" | null } = {}) {
   let loaded = options.alreadyLoaded === true;
-  let loadPromise: Promise<void> | null = null;
   const listeners = new Set<(progress: { data: unknown }) => void>();
   const client: KokoroModelClient = {
     isLoaded: () => loaded,
-    load: () => {
-      if (loadPromise === null) {
-        loadPromise = new Promise<void>((resolve, reject) => {
-          fake.resolveLoad = () => {
-            loaded = true;
-            loadPromise = null; // mirror the real client: settled load is not cached
-            resolve();
-          };
-          fake.rejectLoad = (error: Error) => {
-            loadPromise = null; // a failed load retries cleanly on the next call
-            reject(error);
-          };
-        });
-      }
-      return loadPromise;
-    },
     onLoadProgress: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
   };
-  const fake = {
+  let active: "gpu" | "cpu" | null = options.startActive ?? (loaded ? "cpu" : null);
+  const deps: KokoroModelDeps & {
+    client: KokoroModelClient;
+    loadVariants: string[];
+    emit: (data: unknown) => void;
+    resolveLoad: (activeAfter?: "gpu" | "cpu") => void;
+    rejectLoad: (error: Error) => void;
+    pendingResolve: ((activeAfter?: "gpu" | "cpu") => void) | null;
+    pendingReject: ((error: Error) => void) | null;
+    nextNotice: string | null;
+  } = {
     client,
+    loadModel: (variant: "gpu" | "cpu") => {
+      deps.loadVariants.push(variant);
+      if (deps.pendingResolve === null) {
+        deps.pendingResolve = () => {};
+        deps.pendingReject = () => {};
+      }
+      return new Promise<void>((resolve, reject) => {
+        deps.pendingResolve = (activeAfter) => {
+          loaded = true;
+          active = activeAfter ?? variant;
+          resolve();
+        };
+        deps.pendingReject = (error) => reject(error);
+      });
+    },
+    activeVariant: () => active,
+    consumeFallbackNotice: () => {
+      const notice = deps.nextNotice;
+      deps.nextNotice = null;
+      return notice;
+    },
+    webgpuAvailable: true,
+    loadVariants: [],
     emit: (data: unknown) => {
       for (const listener of listeners) listener({ data });
     },
-    resolveLoad: (): void => {},
-    rejectLoad: (_error: Error): void => {},
+    resolveLoad: (activeAfter) => deps.pendingResolve?.(activeAfter),
+    rejectLoad: (error) => deps.pendingReject?.(error),
+    pendingResolve: null as ((activeAfter?: "gpu" | "cpu") => void) | null,
+    pendingReject: null as ((error: Error) => void) | null,
+    nextNotice: null as string | null,
   };
-  return fake;
+  return deps;
 }
 
 function renderPanel() {
@@ -57,6 +102,7 @@ function renderPanel() {
 
 beforeEach(() => {
   __setKokoroModelDepsForTests(null);
+  clearStoredKokoroVariant();
 });
 
 afterEach(async () => {
@@ -65,28 +111,32 @@ afterEach(async () => {
 });
 
 describe("useKokoroModel + KokoroModelPanel", () => {
-  it("already-loaded client renders the ready state without any download", async () => {
-    const fake = makeFakeClient({ alreadyLoaded: true });
-    __setKokoroModelDepsForTests({ client: fake.client });
+  it("already-loaded client renders the ready state: active variant + switch, no download", async () => {
+    const fake = makeFakeEngine({ alreadyLoaded: true, startActive: "gpu" });
+    __setKokoroModelDepsForTests(fake);
     const view = renderPanel();
     expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy();
     expect(view.queryByTestId("tts-kokoro-model-download-btn")).toBeNull();
+    expect(view.getByTestId("tts-kokoro-model-active").textContent).toContain("tts_kokoro_variant_gpu_name");
+    expect(view.getByTestId("tts-kokoro-model-switch-btn")).toBeTruthy();
   });
 
-  it("idle: explicit download button; click starts the load and shows live aggregated progress", async () => {
-    const fake = makeFakeClient();
-    const originalLoad = fake.client.load;
-    let loadCalls = 0;
-    fake.client.load = () => {
-      loadCalls += 1;
-      return originalLoad();
-    };
-    __setKokoroModelDepsForTests({ client: fake.client });
+  it("idle: two variant cards (gpu recommended), download passes the SELECTED variant", async () => {
+    const fake = makeFakeEngine();
+    __setKokoroModelDepsForTests(fake);
     const view = renderPanel();
+    const gpu = view.getByTestId("tts-kokoro-variant-gpu") as HTMLButtonElement;
+    const cpu = view.getByTestId("tts-kokoro-variant-cpu") as HTMLButtonElement;
+    // WebGPU available: gpu first with the recommended badge, enabled.
+    expect(gpu.disabled).toBe(false);
+    expect(view.getByTestId("tts-kokoro-variant-list").textContent).toContain("tts_kokoro_variant_recommended");
+    // Auto selection (no stored choice, webgpu) is gpu; download forwards it.
     await act(async () => {
       fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
     });
     await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
+    expect(fake.loadVariants).toEqual(["gpu"]);
+
     // Two files (model ~90MB, wasm ~25MB): aggregate counters + percent.
     act(() => {
       fake.emit({ status: "progress", file: "model.onnx", loaded: 45 * 1048576, total: 90 * 1048576 });
@@ -102,15 +152,103 @@ describe("useKokoroModel + KokoroModelPanel", () => {
       fake.emit(null);
     });
     act(() => {
-      fake.resolveLoad();
+      fake.resolveLoad("gpu");
     });
     await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
-    expect(loadCalls).toBe(1);
+    expect(view.getByTestId("tts-kokoro-model-active").textContent).toContain("tts_kokoro_variant_gpu_name");
   });
 
-  it("load failure renders the error + Retry; retry path goes back to downloading", async () => {
-    const fake = makeFakeClient();
-    __setKokoroModelDepsForTests({ client: fake.client });
+  it("no WebGPU: gpu card disabled with the unavailable note, cpu preselected", async () => {
+    const fake = makeFakeEngine();
+    fake.webgpuAvailable = false;
+    __setKokoroModelDepsForTests(fake);
+    const view = renderPanel();
+    const gpu = view.getByTestId("tts-kokoro-variant-gpu") as HTMLButtonElement;
+    expect(gpu.disabled).toBe(true);
+    expect(view.getByTestId("tts-kokoro-variant-list").textContent).toContain("tts_kokoro_variant_gpu_unavailable");
+    expect(view.getByTestId("tts-kokoro-variant-list").textContent).not.toContain("tts_kokoro_variant_recommended");
+
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
+    expect(fake.loadVariants).toEqual(["cpu"]);
+  });
+
+  it("cpu variant can be selected explicitly and reaches the engine on download", async () => {
+    const fake = makeFakeEngine();
+    __setKokoroModelDepsForTests(fake);
+    const view = renderPanel();
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-variant-cpu"));
+    });
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
+    expect(fake.loadVariants).toEqual(["cpu"]);
+    act(() => {
+      fake.resolveLoad("cpu");
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
+    expect(view.getByTestId("tts-kokoro-model-active").textContent).toContain("tts_kokoro_variant_cpu_name");
+  });
+
+  it("ready → Сменить вариант reveals the picker; switching reloads the new variant", async () => {
+    const fake = makeFakeEngine({ alreadyLoaded: true, startActive: "gpu" });
+    __setKokoroModelDepsForTests(fake);
+    const view = renderPanel();
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-switch-btn"));
+    });
+    // Picker reappears with the download button (separate acts: each click
+    // must see the previous state update flushed).
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-variant-cpu"));
+    });
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
+    expect(fake.loadVariants).toEqual(["cpu"]);
+    act(() => {
+      fake.resolveLoad("cpu");
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
+    expect(view.getByTestId("tts-kokoro-model-active").textContent).toContain("tts_kokoro_variant_cpu_name");
+    expect(view.getByTestId("tts-kokoro-model-switch-btn")).toBeTruthy();
+  });
+
+  it("gpu→cpu fallback notice is rendered once after the load", async () => {
+    const fake = makeFakeEngine();
+    fake.nextNotice = "adapter is blocklisted";
+    __setKokoroModelDepsForTests(fake);
+    const view = renderPanel();
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
+    });
+    act(() => {
+      fake.resolveLoad("cpu");
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
+    expect(view.getByTestId("tts-kokoro-model-fallback").textContent).toContain("blocklisted");
+    // Second load with no notice: the line disappears.
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-switch-btn"));
+    });
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
+    });
+    act(() => {
+      fake.resolveLoad("gpu");
+    });
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
+    expect(view.queryByTestId("tts-kokoro-model-fallback")).toBeNull();
+  });
+
+  it("load failure renders the error + Retry; retry re-sends the selected variant", async () => {
+    const fake = makeFakeEngine();
+    __setKokoroModelDepsForTests(fake);
     const view = renderPanel();
     await act(async () => {
       fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
@@ -119,9 +257,11 @@ describe("useKokoroModel + KokoroModelPanel", () => {
       fake.rejectLoad(new Error("stalled — huggingface.co unreachable"));
     });
     await waitFor(() => expect(view.getByTestId("tts-kokoro-model-error").textContent).toContain("huggingface.co"));
+    // The picker stays usable from the error state; retry re-sends the selection.
     await act(async () => {
       fireEvent.click(view.getByTestId("tts-kokoro-model-retry-btn"));
     });
     await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
+    expect(fake.loadVariants).toEqual(["gpu", "gpu"]);
   });
 });

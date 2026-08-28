@@ -16,7 +16,7 @@ import type { TtsProfileRecord } from "../api/tts-api.js";
 import { generateTtsSpeech } from "../api/tts-api.js";
 import {
   __resetSharedKokoroClientForTests,
-  getSharedKokoroClient,
+  ensureSharedKokoroModel,
 } from "../lib/tts/kokoro/kokoro-client-instance.js";
 import { createHtmlAudioNarrationPlayer } from "../lib/tts/narration-player.js";
 import type { NarrationPlayer } from "../lib/tts/narration-player.js";
@@ -55,8 +55,9 @@ function readSpeed(profile: TtsProfileRecord): number | undefined {
 
 async function defaultSynthesize(text: string, profile: TtsProfileRecord): Promise<{ blob: Blob; mime: string }> {
   if (profile.backend === "kokoro") {
-    const client = getSharedKokoroClient();
-    if (!client.isLoaded()) await client.load();
+    // Variant-aware load (stored choice or auto WebGPU/CPU) — never resets an
+    // in-flight lane; joins the shared load promise.
+    const client = await ensureSharedKokoroModel();
     // D10: kokoro-js caps its internal generation length, so narration text
     // must arrive in model-safe (≤400-char, sentence-aware) pieces — the
     // whole segment in one call truncates the audio mid-text. The client
