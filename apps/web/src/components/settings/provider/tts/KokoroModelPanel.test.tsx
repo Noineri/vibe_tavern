@@ -24,15 +24,13 @@ mock.module("../../../../i18n/context.js", () => ({
   }),
 }));
 
-// Preview mock for auto-preview test — use the real module as base and
-// override only the hook. The mock is process-global (bun:test), so we
-// keep a mutable handle that the last test controls.
-let mockPreviewFn = mock(() => {});
-const realPreviewMod = await import("./use-tts-preview.js");
-mock.module("./use-tts-preview.js", () => ({
-  ...realPreviewMod,
-  useTtsPreview: () => ({ state: "idle" as const, error: null, downloadPct: null, preview: mockPreviewFn }),
-}));
+// Auto-preview interception — via the RESETTABLE deps seam, not a module
+// mock: mock.module("./use-tts-preview.js") is process-global and would leak
+// a stubbed useTtsPreview into every later file in a shared bun-test process
+// (observed: use-tts-preview.test.ts phantom failures in combined runs).
+// The seam keeps the real hook logic; only synthesize/play are intercepted,
+// and afterEach resets it to null.
+import { __setTtsPreviewDepsForTests, type TtsPreviewDeps } from "./use-tts-preview.js";
 
 import {
   __setKokoroModelDepsForTests,
@@ -110,13 +108,24 @@ function renderPanel() {
   return render(React.createElement(KokoroModelPanel));
 }
 
+let previewSynth: ReturnType<typeof mock>;
+let previewPlay: ReturnType<typeof mock>;
+
 beforeEach(() => {
   __setKokoroModelDepsForTests(null);
   clearStoredKokoroVariant();
-  mockPreviewFn = mock(() => {});
+  // Intercept synthesis for the whole file: download-flow tests reach the
+  // ready state, and the auto-preview effect must not hit the real kokoro
+  // client. Synthesize resolves a throwaway blob; play is a no-op.
+  previewSynth = mock((input: { voiceId?: string }) =>
+    Promise.resolve({ blob: new Blob(["x"]), mime: "audio/wav" }));
+  previewPlay = mock(() => Promise.resolve());
+  const deps: TtsPreviewDeps = { synthesize: previewSynth as TtsPreviewDeps["synthesize"], play: previewPlay as TtsPreviewDeps["play"] };
+  __setTtsPreviewDepsForTests(deps);
 });
 
 afterEach(async () => {
+  __setTtsPreviewDepsForTests(null);
   await act(async () => {});
   cleanup();
 });
@@ -279,20 +288,19 @@ describe("useKokoroModel + KokoroModelPanel", () => {
   it("auto-preview fires once after download success, not on mount or twice", async () => {
     const fake = makeFakeEngine();
     __setKokoroModelDepsForTests(fake);
-    mockPreviewFn = mock(() => {});
     const view = renderPanel();
-    expect(mockPreviewFn).not.toHaveBeenCalled();
+    expect(previewSynth).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.click(view.getByTestId("tts-kokoro-model-download-btn"));
     });
     await waitFor(() => expect(view.getByTestId("tts-kokoro-model-downloading")).toBeTruthy());
-    expect(mockPreviewFn).not.toHaveBeenCalled();
+    expect(previewSynth).not.toHaveBeenCalled();
     act(() => {
       fake.resolveLoad("gpu");
     });
     await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
-    await waitFor(() => expect(mockPreviewFn).toHaveBeenCalledTimes(1));
-    expect(((mockPreviewFn.mock.calls[0] as unknown as unknown[])[0] as { voiceId: string }).voiceId).toBe("af_heart");
+    await waitFor(() => expect(previewSynth).toHaveBeenCalledTimes(1));
+    expect(((previewSynth.mock.calls[0] as unknown as unknown[])[0] as { voiceId: string }).voiceId).toBe("af_heart");
     // Second download should fire again once
     await act(async () => {
       fireEvent.click(view.getByTestId("tts-kokoro-model-switch-btn"));
@@ -307,6 +315,7 @@ describe("useKokoroModel + KokoroModelPanel", () => {
     act(() => {
       fake.resolveLoad("cpu");
     });
-    await waitFor(() => expect(mockPreviewFn).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
+    await waitFor(() => expect(previewSynth).toHaveBeenCalledTimes(2));
   });
 });
