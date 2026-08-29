@@ -7,7 +7,14 @@ import { cn } from "../../../../lib/cn.js";
 import { lblCls, monoUICls } from "../../../build/fields/field-styles.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
-import { LOCAL_TTS_QUICKSTARTS, diagnosticI18nKey, worstDiagnostic } from "../../../../lib/tts/quickstarts.js";
+import {
+  TTS_SERVER_SETUP_GUIDES,
+  detectTtsOsKind,
+  diagnosticI18nKey,
+  worstDiagnostic,
+} from "../../../../lib/tts/quickstarts.js";
+import type { TtsHelpStep, TtsOsKind } from "../../../../lib/tts/quickstarts.js";
+import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { useDockerStatus } from "./use-docker-status.js";
 import { useTtsDiscovery } from "./use-tts-discovery.js";
 import { configString, updateConfigField } from "./tts-form-helpers.js";
@@ -27,6 +34,11 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  // TE2-17: the setup reference is scoped to ONE chosen server; the OS
+  // toggle defaults to the browser platform (auto-detect) and is always
+  // manually switchable. It only affects the no-Docker branch.
+  const [guideId, setGuideId] = useState<string>(TTS_SERVER_SETUP_GUIDES[0].id);
+  const [os, setOs] = useState<TtsOsKind>(() => detectTtsOsKind(navigator.userAgent));
 
   // Locked: whole block renders ONLY for openai-compatible backend — the
   // "Local server" UI variant is exactly that backend plus the localServer
@@ -42,12 +54,12 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
     updateConfigField(tts, form, "endpoint", endpoint);
   }
 
-  async function handleCopy(quickstartId: string, command: string): Promise<void> {
+  async function handleCopy(copyId: string, command: string): Promise<void> {
     setCopyError(null);
     const result = await copyText(command);
     if (result.ok) {
-      setCopiedId(quickstartId);
-      window.setTimeout(() => setCopiedId((current) => (current === quickstartId ? null : current)), 1500);
+      setCopiedId(copyId);
+      window.setTimeout(() => setCopiedId((current) => (current === copyId ? null : current)), 1500);
     } else {
       setCopyError(result.error === "unsupported" ? t("tts_quickstart_copy_unsupported") : t("tts_quickstart_copy_failed"));
     }
@@ -94,57 +106,109 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
         </div>
 
         <AnimatedDisclosure open={helpOpen} className="border-t border-border2 bg-surface p-4" data-testid="tts-setup-help-body">
-          <div className="flex flex-col gap-2">
-            <div className="font-ui text-[11px] text-t4">{t("tts_quickstart_hint")}</div>
-            {LOCAL_TTS_QUICKSTARTS.map((quickstart) => (
-              <div
-                key={quickstart.id}
-                data-testid={`tts-quickstart-card-${quickstart.id}`}
-                className="flex flex-col gap-1.5 rounded-md border border-border bg-s1 px-3 py-2.5"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-ui text-[12px] font-medium text-t1">{quickstart.name}</span>
-                  <span className="font-ui text-[11px] text-t3">
-                    127.0.0.1:{quickstart.port} · {t("tts_quickstart_port")} {quickstart.port}
-                  </span>
-                </div>
-                <div className={`${monoUICls} overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px]`}>{quickstart.command}</div>
-                {/* Non-docker variant (D8) — always shown; the prerequisite note
-                keeps it honest about what the command needs. */}
-                <div className={`${monoUICls} overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px] text-t3`}>
-                  {quickstart.alt.command}
-                </div>
-                <div className="font-ui text-[11px] text-t4">{t(quickstart.alt.noteKey)}</div>
-                <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3">
+            <div className="font-ui text-[11px] text-t4">{t("tts_help_hint")}</div>
+
+            {/* Step 1 — choose the server (TE2-17). */}
+            <div data-testid="tts-help-step-choose" className="flex flex-col gap-1.5">
+              <label className={lblCls}>{t("tts_help_step_choose")}</label>
+              {TTS_SERVER_SETUP_GUIDES.map((guide) => {
+                const selected = guide.id === guideId;
+                return (
                   <button
                     type="button"
-                    data-testid={`tts-quickstart-copy-${quickstart.id}`}
-                    className="flex cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-                    onClick={() => void handleCopy(quickstart.id, quickstart.command)}
+                    key={guide.id}
+                    data-testid={`tts-help-choice-${guide.id}`}
+                    onClick={() => setGuideId(guide.id)}
+                    className={cn(
+                      "flex cursor-pointer flex-col gap-0.5 rounded-md border bg-s1 px-3 py-2 text-left transition-colors hover:bg-s2",
+                      selected ? "border-accent" : "border-border",
+                    )}
                   >
-                    <Icons.Copy />
-                    {copiedId === quickstart.id ? t("tts_quickstart_copied") : t("tts_quickstart_copy")}
+                    <span className="flex items-center gap-2 font-ui text-[12px] font-medium text-t1">
+                      {selected && <Icons.Check />}
+                      {guide.name}
+                    </span>
+                    <span className="font-ui text-[11px] text-t3">{t(guide.descriptionKey)}</span>
                   </button>
-                  <button
-                    type="button"
-                    data-testid={`tts-quickstart-copy-alt-${quickstart.id}`}
-                    className="flex cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-                    onClick={() => void handleCopy(`${quickstart.id}-alt`, quickstart.alt.command)}
-                  >
-                    <Icons.Copy />
-                    {copiedId === `${quickstart.id}-alt` ? t("tts_quickstart_copied") : t("tts_quickstart_copy_alt")}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid={`tts-quickstart-use-${quickstart.id}`}
-                    className="flex cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
-                    onClick={() => setEndpoint(quickstart.endpoint)}
-                  >
-                    {t("tts_discover_adopt")}
-                  </button>
+                );
+              })}
+            </div>
+
+            {/* OS toggle — no-Docker branch only (Docker is OS-identical). */}
+            <div data-testid="tts-help-os-toggle" className="flex items-center justify-between gap-2">
+              <span className={lblCls}>{t("tts_help_os_label")}</span>
+              <SegmentedControl<TtsOsKind>
+                compact
+                value={os}
+                options={[
+                  { value: "windows", label: t("tts_help_os_windows") },
+                  { value: "unix", label: t("tts_help_os_unix") },
+                ]}
+                onChange={setOs}
+              />
+            </div>
+
+            {(() => {
+              const guide = TTS_SERVER_SETUP_GUIDES.find((g) => g.id === guideId) ?? TTS_SERVER_SETUP_GUIDES[0];
+              const step = (id: string, s: TtsHelpStep) => (
+                <div key={id} data-testid={`tts-help-step-${id}`} className="flex flex-col gap-1.5">
+                  <label className={lblCls}>{t(s.titleKey)}</label>
+                  {s.commands[os].map((command, index) => {
+                    const copyId = `${guide.id}-${id}-${index}`;
+                    return (
+                      <div key={index} className="flex items-center gap-2">
+                        <div className={`${monoUICls} min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px]`}>
+                          {command}
+                        </div>
+                        <button
+                          type="button"
+                          data-testid={`tts-help-copy-${copyId}`}
+                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+                          onClick={() => void handleCopy(copyId, command)}
+                        >
+                          <Icons.Copy />
+                          {copiedId === copyId ? t("tts_quickstart_copied") : t("tts_quickstart_copy")}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {s.noteKey !== undefined && (
+                    <div className="font-ui text-[11px] text-t4">{t(s.noteKey)}</div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+              return (
+                <>
+                  {/* Step 2 — download: docker or clone. */}
+                  {step("download-docker", guide.docker)}
+                  {step("download-clone", guide.clone)}
+                  {/* Step 3 — install (per-OS; note-only when the server
+                      bootstraps itself). */}
+                  {step("install", guide.install)}
+                  {/* Step 4 — run: a separate copyable command, never glued
+                      into the clone with &&. */}
+                  {step("run", guide.run)}
+                  {/* Step 5 — endpoint to paste (adopt flow preserved). */}
+                  <div data-testid="tts-help-step-endpoint" className="flex flex-col gap-1.5">
+                    <label className={lblCls}>{t("tts_help_step_endpoint")}</label>
+                    <div className="flex items-center gap-2">
+                      <div className={`${monoUICls} min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px] text-t3`}>
+                        {guide.endpoint}
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`tts-help-use-${guide.id}`}
+                        className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
+                        onClick={() => setEndpoint(guide.endpoint)}
+                      >
+                        {t("tts_discover_adopt")}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
             {copyError !== null && <div className="font-ui text-[11px] text-danger">{copyError}</div>}
           </div>
         </AnimatedDisclosure>

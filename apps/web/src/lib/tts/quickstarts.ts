@@ -4,44 +4,123 @@ import type Resources from "../../i18n/resources.js";
 /** Typed i18n key — a typo'd/missing key is a compile error (TFunc pattern). */
 export type TtsI18nKey = keyof Resources["en"];
 
-export interface LocalTtsQuickstart {
-  id: string;
-  name: string;
-  /** Primary (docker) launch command — one line, copyable. */
-  command: string;
-  port: number;
-  endpoint: string;
-  /** Non-docker launch variant (D8): verified against the upstream README —
-   *  both quickstart servers genuinely support direct launch. Rendered
-   *  beside the docker command so the card stays honest without docker. */
-  alt: {
-    command: string;
-    /** i18n key of the one-line prerequisite note. */
-    noteKey: TtsI18nKey;
-  };
+/** The two OS families the no-Docker branch differentiates between
+ *  (TE2-17). The Docker branch is OS-identical and ignores this. */
+export type TtsOsKind = "windows" | "unix";
+
+/** Detect the OS family for the help's default OS toggle position from a
+ *  user-agent string (TE2-17: browser platform auto-detect, manual switch
+ *  always available in the UI). Anything unrecognizable falls back to unix —
+ *  the commands are the more portable spelling of the two. */
+export function detectTtsOsKind(userAgent: string): TtsOsKind {
+  return /win/i.test(userAgent) ? "windows" : "unix";
 }
 
-export const LOCAL_TTS_QUICKSTARTS: LocalTtsQuickstart[] = [
+/** One step of the setup reference: a heading, per-OS command lists (each
+ *  command gets its own copy button — never a glued compound), and an
+ *  optional note. Steps whose commands are OS-identical repeat the same
+ *  list for both keys (pinned by tests). */
+export interface TtsHelpStep {
+  /** i18n key of the step heading. */
+  titleKey: TtsI18nKey;
+  commands: Record<TtsOsKind, string[]>;
+  /** Optional i18n note rendered under the commands. */
+  noteKey?: TtsI18nKey;
+}
+
+/** A server's full setup guide (TE2-17): choose → download (docker | clone)
+ *  → install → run → endpoint. Facts verified against the upstream repos:
+ *  remsky/Kokoro-FastAPI ships `start-cpu.sh` AND `start-cpu.ps1` in the repo
+ *  root (the start scripts bootstrap their own dependencies — install is a
+ *  note, not commands); travisvn/openai-edge-tts README documents venv
+ *  activation per OS (`venv\Scripts\activate` vs `source venv/bin/activate`)
+ *  and `python app/server.py` to run. */
+export interface TtsServerSetupGuide {
+  id: string;
+  name: string;
+  /** i18n key of the one-line "what this server is" description (step 1). */
+  descriptionKey: TtsI18nKey;
+  port: number;
+  endpoint: string;
+  docker: TtsHelpStep;
+  clone: TtsHelpStep;
+  install: TtsHelpStep;
+  run: TtsHelpStep;
+}
+
+export const TTS_SERVER_SETUP_GUIDES: TtsServerSetupGuide[] = [
   {
     id: "kokoro-fastapi",
     name: "Kokoro FastAPI",
-    command: "docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest",
+    descriptionKey: "tts_help_choose_kokoro",
     port: 8880,
     endpoint: "http://127.0.0.1:8880/v1",
-    alt: {
-      command: "git clone https://github.com/remsky/Kokoro-FastAPI.git && cd Kokoro-FastAPI && ./start-cpu.sh",
-      noteKey: "tts_quickstart_alt_uv",
+    docker: {
+      titleKey: "tts_help_download_docker",
+      commands: {
+        windows: ["docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest"],
+        unix: ["docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest"],
+      },
+      noteKey: "tts_help_docker_same_note",
+    },
+    clone: {
+      titleKey: "tts_help_download_nodocker",
+      commands: {
+        windows: ["git clone https://github.com/remsky/Kokoro-FastAPI.git"],
+        unix: ["git clone https://github.com/remsky/Kokoro-FastAPI.git"],
+      },
+    },
+    install: {
+      titleKey: "tts_help_step_install",
+      commands: { windows: [], unix: [] },
+      // Upstream start scripts self-bootstrap via uv — an install command
+      // list would be invented, which the honesty rule forbids.
+      noteKey: "tts_help_install_note_kokoro",
+    },
+    run: {
+      titleKey: "tts_help_step_run",
+      commands: {
+        windows: [".\\start-cpu.ps1"],
+        unix: ["./start-cpu.sh"],
+      },
+      noteKey: "tts_help_cwd_note",
     },
   },
   {
     id: "openai-edge-tts",
     name: "OpenAI Edge TTS",
-    command: "docker run -d -p 5050:5050 -e PORT=5050 travisvn/openai-edge-tts:latest",
+    descriptionKey: "tts_help_choose_edge",
     port: 5050,
     endpoint: "http://127.0.0.1:5050/v1",
-    alt: {
-      command: "git clone https://github.com/travisvn/openai-edge-tts.git && cd openai-edge-tts && pip install -r requirements.txt && python app/server.py",
-      noteKey: "tts_quickstart_alt_python",
+    docker: {
+      titleKey: "tts_help_download_docker",
+      commands: {
+        windows: ["docker run -d -p 5050:5050 -e PORT=5050 travisvn/openai-edge-tts:latest"],
+        unix: ["docker run -d -p 5050:5050 -e PORT=5050 travisvn/openai-edge-tts:latest"],
+      },
+      noteKey: "tts_help_docker_same_note",
+    },
+    clone: {
+      titleKey: "tts_help_download_nodocker",
+      commands: {
+        windows: ["git clone https://github.com/travisvn/openai-edge-tts.git"],
+        unix: ["git clone https://github.com/travisvn/openai-edge-tts.git"],
+      },
+    },
+    install: {
+      titleKey: "tts_help_step_install",
+      commands: {
+        windows: ["python -m venv venv", "venv\\Scripts\\activate", "pip install -r requirements.txt"],
+        unix: ["python -m venv venv", "source venv/bin/activate", "pip install -r requirements.txt"],
+      },
+      noteKey: "tts_help_cwd_note",
+    },
+    run: {
+      titleKey: "tts_help_step_run",
+      commands: {
+        windows: ["python app/server.py"],
+        unix: ["python app/server.py"],
+      },
     },
   },
 ];
