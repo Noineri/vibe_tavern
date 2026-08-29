@@ -511,11 +511,32 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     expect(captured()!.url).toBe("https://nano-gpt.com/api/v1/audio-models?type=tts&detailed=true");
   });
 
-  test("explicit modality + nano-gpt host → documented modality URL wins (explicit filter beats host default)", async () => {
-    const { captured } = captureFetch(() => jsonResponse(200, { data: [] }));
-    const backend = openAiCompatTtsFactory({ endpoint: "https://nano-gpt.com/api/v1", modelFilter: "modality" });
-    await backend.listModels();
-    expect(captured()!.url).toBe("https://nano-gpt.com/api/v1/models?output_modalities=speech");
+  test("legacy name-heuristic stamp + nano-gpt host → audio-models wins (field fix: pre-F6 presets stamped it)", async () => {
+    // The owner's live profile: saved while the preset stamped
+    // "name-heuristic" — an explicit-looking value that is preset glue, not
+    // a user choice. The host must heal it, or the chat-only /models
+    // catalog leaks LLM ids into the TTS picker.
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, { data: [{ id: "xai-tts", capabilities: { text_to_speech: true } }] }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "https://nano-gpt.com/api/v1", modelFilter: "name-heuristic" });
+    const models = await backend.listModels();
+    expect(captured()!.url).toBe("https://nano-gpt.com/api/v1/audio-models?type=tts&detailed=true");
+    expect(models.map((m) => m.id)).toEqual(["xai-tts"]);
+  });
+
+  test("legacy stamp + nano-gpt host → listVoices also resolves from the audio-models catalog by model", async () => {
+    captureFetch(() =>
+      jsonResponse(200, {
+        data: [{ id: "xai-tts", capabilities: { text_to_speech: true }, supported_parameters: { voices: ["Eve", "Ara"] } }],
+      }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "https://nano-gpt.com/api/v1", modelFilter: "name-heuristic", model: "xai-tts" });
+    const voices = await backend.listVoices();
+    expect(voices).toEqual([
+      { id: "Eve", label: "Eve", lang: "en" },
+      { id: "Ara", label: "Ara", lang: "en" },
+    ]);
   });
 
   test("explicit name-heuristic + non-openrouter host → plain URL (param must not leak elsewhere)", async () => {

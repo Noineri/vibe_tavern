@@ -255,9 +255,20 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
    *  `plain` = the ordinary OpenAI-compatible /models catalog. */
   const catalogRequest = (): { kind: "audio-models" | "modality" | "plain"; url: string } => {
     const modelFilter = readString(config, "modelFilter");
-    if (modelFilter === "audio-models" || (modelFilter === undefined && isNanoGptStyleEndpoint(cfg.endpoint))) {
+    // NanoGPT: the HOST ALWAYS wins (field fix 2026-08-29). Every pre-F6
+    // nanogpt profile carries the OLD preset stamp `modelFilter:
+    // "name-heuristic"` — an explicit-LOOKING value that is not a user
+    // choice (no UI edits modelFilter; it is preset glue only), so healing
+    // only the undefined case missed exactly the live profiles it existed
+    // for (owner field report: chat catalog + no voices). The plain
+    // /models catalog on nano-gpt is chat-only — there is no legitimate
+    // plain case there.
+    if (modelFilter === "audio-models" || isNanoGptStyleEndpoint(cfg.endpoint)) {
       return { kind: "audio-models", url: `${cfg.endpoint}/audio-models?type=tts&detailed=true` };
     }
+    // OpenRouter keeps the heal-on-undefined contract: its stamp era began
+    // with "modality" (D15), so undefined is the only legacy shape in the
+    // wild — no stamped-but-wrong class exists here.
     if (modelFilter === "modality" || (modelFilter === undefined && isOpenRouterStyleEndpoint(cfg.endpoint))) {
       return { kind: "modality", url: `${cfg.endpoint}/models?output_modalities=speech` };
     }
