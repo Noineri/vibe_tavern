@@ -75,11 +75,14 @@ describe("TtsAudioFooter — audio-tab footer controls (moved out of the editor 
     expect(save).toHaveBeenCalled();
   });
 
-  it("clean form: Save disabled, no Cancel", async () => {
-    const view = render(React.createElement(TtsAudioFooter, { tts: makeTts({ dirty: false }) }));
+  it("clean form: Save disabled, but Cancel STAYS (owner 2026-08-29 — a clean editor must have an exit)", async () => {
+    const cancelEdit = mock(() => {});
+    const view = render(React.createElement(TtsAudioFooter, { tts: makeTts({ dirty: false, cancelEdit }) }));
     const saveBtn = view.getByRole("button", { name: /save_btn|saving|saved/ }) as HTMLButtonElement;
     expect(saveBtn.disabled).toBe(true);
-    expect(view.queryByText("cancel_btn")).toBeNull();
+    const cancel = view.getByTestId("tts-cancel-btn");
+    fireEvent.click(cancel);
+    expect(cancelEdit).toHaveBeenCalled();
   });
 
   it("Cancel click calls tts.cancelEdit and the form resets are the hook's business", async () => {

@@ -39,9 +39,14 @@ export function TtsAudioFooter({ tts }: { tts: TtsHook }) {
         }
         right={
           <div className="flex items-center gap-2">
-            {tts.dirty && (
+            {/* Cancel is ALWAYS available while a form is open (owner
+             * 2026-08-29): gating it on `dirty` left the editor with no
+             * exit — Save disabled by the same flag, the card could not be
+             * collapsed without making a change. */}
+            {tts.form !== null && (
               <button
                 type="button"
+                data-testid="tts-cancel-btn"
                 className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:text-t1"
                 onClick={tts.cancelEdit}
               >
