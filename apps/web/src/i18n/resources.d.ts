@@ -2466,6 +2466,7 @@ export default interface Resources {
     "tts_editor_fields_placeholder": "Voice & connection settings for this backend appear here",
     "tts_field_api_key": "API Key",
     "tts_field_api_key_hide": "Hide API key",
+    "tts_field_api_key_local_placeholder": "Optional — some local servers (e.g. edge-tts) require one",
     "tts_field_api_key_show": "Show API key",
     "tts_field_api_key_status_stored": "A key is saved with this profile. Leave the field empty to keep it; type a new key to replace it.",
     "tts_field_api_key_stored": "API key saved — leave empty to keep it",

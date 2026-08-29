@@ -102,7 +102,12 @@ export function TtsProviderForm({
     }
   }
 
+  // D19: the key input ALSO renders for the local segment — some local
+  // servers require a Bearer key by default (openai-edge-tts ships
+  // REQUIRE_API_KEY=True with the literal key `your_api_key_here`). A key
+  // stays OPTIONAL there: an empty field still sends no Authorization header.
   const needsKey = segment === "cloud" || segment === "custom";
+  const showKeyInput = needsKey || segment === "local";
   const showEndpoint = segment === "custom" || segment === "local" || (segment === "cloud" && form.backend === TTS_BACKEND.OpenAiCompatible);
 
   const isKokoroSegment = segment === "browser";
@@ -237,13 +242,13 @@ export function TtsProviderForm({
       )}
 
       {/* API key */}
-      {needsKey && (
+      {showKeyInput && (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
           <TtsApiKeyField
             value={apiKey}
             onChange={(v) => updateForm("apiKey", v)}
-            placeholder={t("api_key_placeholder")}
+            placeholder={segment === "local" ? t("tts_field_api_key_local_placeholder") : t("api_key_placeholder")}
             stored={form.hasStoredApiKey}
           />
           {/* Default-on key reuse (owner decision): when an LLM provider

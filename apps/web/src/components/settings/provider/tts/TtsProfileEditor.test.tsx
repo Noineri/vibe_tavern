@@ -514,6 +514,11 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
     });
     const localView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: localTts } as never));
     expect(localView.getByTestId("tts-local-server-panel")).toBeTruthy();
+    // D19: local servers can still REQUIRE a key (openai-edge-tts ships
+    // REQUIRE_API_KEY=True) — the key input renders for the local segment,
+    // but the test card must not demand one (a keyless local server is normal).
+    expect(localView.getByTestId("tts-field-api-key")).toBeTruthy();
+    expect(localView.queryByTestId("tts-test-dot-enter-key")).toBeNull();
     localView.unmount();
 
     // Same backend WITHOUT the flag = the cloud variant — no local helpers.
