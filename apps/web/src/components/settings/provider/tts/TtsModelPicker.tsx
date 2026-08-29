@@ -14,15 +14,14 @@ import { getModalPortal } from "../../../shared/modal-helpers.js";
  * favorites, context-budget sync, local-connection banner. Added: TTS
  * affordances — `isFree` / `description` row badges (aggregators like
  * OpenRouter ship both) and the same manual-input fallback the LLM
- * selector has for an empty list. Rendered BARE (no section card) —
- * like the LLM picker, it carries its own "Модель" header — and must
- * sit ABOVE the voice section (voices are model-dependent).
+ * selector manual-input fallback was REMOVED (owner directive
+ * 2026-08-29): the dropdown trigger always renders — while the first
+ * fetch is in flight it reports loading, a hand-typed id stays reachable
+ * through the popover's custom-slug row. Rendered BARE (no section card)
+ * and must sit ABOVE the voice section (voices are model-dependent).
  */
 
 const labelCls = "block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3";
-const inputCls =
-  "w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]";
-
 /** Row option for the TTS model list. `id` is the wire model id; `label`
  *  the display name; `isFree` / `description` are optional enrichment the
  *  draft-models endpoint parses out of the provider's /models payload. */
@@ -42,7 +41,6 @@ interface TtsModelPickerProps {
   fetchError: string | null;
   onRefresh: () => void;
   label: string;
-  placeholder?: string;
 }
 
 export function TtsModelPicker({
@@ -53,7 +51,6 @@ export function TtsModelPicker({
   fetchError,
   onRefresh,
   label,
-  placeholder,
 }: TtsModelPickerProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -98,8 +95,7 @@ export function TtsModelPicker({
       <div className="flex items-end gap-3">
         <div className="flex-1">
           <label className={`${labelCls} mb-[6px]`}>{t("selected_model_label")}</label>
-          {models.length > 0 ? (
-            <div className="relative">
+          <div className="relative">
               <Popover.Root open={open} onOpenChange={setOpen}>
                 <Popover.Trigger asChild>
                   <button
@@ -108,7 +104,11 @@ export function TtsModelPicker({
                     className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
                   >
                     <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
-                      {selectedModel?.label || value || placeholder || t("select_model")}
+                      {/* No placeholder stub (owner directive 2026-08-29): the
+                       * trigger reports loading while the first fetch is in
+                       * flight — a bare input with a fake example id must
+                       * never stand in for the real fetched list. */}
+                      {fetching && models.length === 0 ? t("tts_models_loading") : selectedModel?.label || value || t("select_model")}
                     </span>
                     <span className="text-t3">
                       <Icons.Caret direction="d" />
@@ -187,17 +187,7 @@ export function TtsModelPicker({
               {!selectedModel && value && (
                 <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: value })}</div>
               )}
-            </div>
-          ) : (
-            <input
-              type="text"
-              data-testid="tts-field-model"
-              value={value}
-              onChange={(event) => onChange(event.target.value)}
-              placeholder={placeholder || t("custom_model_id_placeholder")}
-              className={inputCls}
-            />
-          )}
+          </div>
         </div>
         <button
           type="button"

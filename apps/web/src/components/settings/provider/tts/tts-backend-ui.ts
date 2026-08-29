@@ -86,7 +86,6 @@ export interface TtsConnectionSpec {
     /** Config key: "model" everywhere except ElevenLabs ("modelId"). */
     key: "model" | "modelId";
     labelKey: TtsI18nKey;
-    placeholder: string;
   };
 }
 
@@ -130,7 +129,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     connection: {
       endpoint: { placeholder: "http://127.0.0.1:8880/v1" },
       apiKey: { placeholder: "" },
-      model: { mode: "fetch", key: "model", labelKey: "tts_field_model", placeholder: "kokoro" },
+      model: { mode: "fetch", key: "model", labelKey: "tts_field_model" },
     },
     tuning: OPENAI_TUNING,
     localHelpers: true,
@@ -140,7 +139,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     connection: {
       endpoint: { placeholder: "https://api.example.com/v1" },
       apiKey: { placeholder: "sk-..." },
-      model: { mode: "fetch", key: "model", labelKey: "tts_field_model", placeholder: "tts-1" },
+      model: { mode: "fetch", key: "model", labelKey: "tts_field_model" },
     },
     tuning: OPENAI_TUNING,
     localHelpers: false,
@@ -149,7 +148,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
   gemini: {
     connection: {
       apiKey: { placeholder: "AIza..." },
-      model: { mode: "fetch", key: "model", labelKey: "tts_field_model", placeholder: "gemini-2.5-flash-preview-tts" },
+      model: { mode: "fetch", key: "model", labelKey: "tts_field_model" },
     },
     tuning: [
       {
@@ -165,7 +164,7 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
   elevenlabs: {
     connection: {
       apiKey: { placeholder: "sk_..." },
-      model: { mode: "input", key: "modelId", labelKey: "tts_field_model_id", placeholder: "eleven_multilingual_v2" },
+      model: { mode: "input", key: "modelId", labelKey: "tts_field_model_id" },
     },
     tuning: [
       { kind: "number", key: "stability", labelKey: "tts_field_stability", min: 0, max: 1, step: 0.05, fallback: 0.5 },

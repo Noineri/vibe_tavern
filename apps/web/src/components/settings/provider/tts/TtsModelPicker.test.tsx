@@ -52,7 +52,6 @@ function mountPicker(overrides: Partial<React.ComponentProps<typeof TtsModelPick
       fetchError: null,
       onRefresh: () => {},
       label: "tts_field_model",
-      placeholder: "tts-1",
       ...overrides,
     }),
   );
@@ -68,15 +67,20 @@ afterEach(async () => {
 });
 
 describe("TtsModelPicker (ProviderModelSelector fork)", () => {
-  it("renders the manual input fallback while the fetched list is empty (F3)", async () => {
-    const { view, onChange } = mountPicker({ models: [] });
-    const input = view.getByTestId("tts-field-model") as HTMLInputElement;
-    expect(input.tagName).toBe("INPUT");
-    expect(input.placeholder).toBe("tts-1");
-    // The change wiring is the same onChange prop the row-click path proves
-    // below; here pin it via the native input event inside act.
-    fireEvent.input(input, { target: { value: "hand-typed" } });
-    expect(onChange.mock.calls.at(-1)?.[0]).toBe("hand-typed");
+  it("no placeholder stub (owner directive): the trigger reports loading while the first fetch is in flight", () => {
+    const { view } = mountPicker({ models: [], fetching: true });
+    const trigger = view.getByTestId("tts-field-model") as HTMLElement;
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.textContent).toContain("tts_models_loading");
+    // And it never surfaces a fake example model id.
+    expect(trigger.textContent).not.toContain("tts-1");
+  });
+
+  it("an idle empty list still renders the dropdown trigger (custom slug stays reachable)", () => {
+    const { view } = mountPicker({ models: [], fetching: false, fetchError: null });
+    const trigger = view.getByTestId("tts-field-model") as HTMLElement;
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.textContent).toContain("select_model");
   });
 
   it("renders enriched rows: free badge, wire id, description, ctx (aggregator payload)", async () => {

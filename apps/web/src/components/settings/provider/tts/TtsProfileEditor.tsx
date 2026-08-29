@@ -318,18 +318,32 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               config sections always visible below — the MODEL picker sits
               first (owner rule: voices are model-dependent, so the model
               is chosen before the voice), then voices, tuning, bindings. */}
-          {modelSpec !== undefined && (
-            <TtsModelPicker
-              value={configString(form.config, modelSpec.key)}
-              onChange={(id) => updateConfigField(tts, form, modelSpec.key, id)}
-              models={modelSpec.mode === "fetch" ? (models ?? []) : []}
-              fetching={modelsLoading}
-              fetchError={modelsError}
-              onRefresh={refreshModels}
-              label={t(modelSpec.labelKey)}
-              placeholder={modelSpec.placeholder}
-            />
-          )}
+          {modelSpec !== undefined &&
+            (modelSpec.mode === "fetch" ? (
+              <TtsModelPicker
+                value={configString(form.config, modelSpec.key)}
+                onChange={(id) => updateConfigField(tts, form, modelSpec.key, id)}
+                models={models ?? []}
+                fetching={modelsLoading}
+                fetchError={modelsError}
+                onRefresh={refreshModels}
+                label={t(modelSpec.labelKey)}
+              />
+            ) : (
+              /* Input-mode model id (ElevenLabs): a plain field, NO example
+               * placeholder (owner directive 2026-08-29 — a fake example id
+               * must never stand in for data). */
+              <div className="my-4">
+                <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">{t(modelSpec.labelKey)}</div>
+                <input
+                  type="text"
+                  data-testid="tts-field-model"
+                  value={configString(form.config, modelSpec.key)}
+                  onChange={(event) => updateConfigField(tts, form, modelSpec.key, event.target.value)}
+                  className="h-[38px] w-full rounded-[6px] border border-border bg-s2 px-[13px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent"
+                />
+              </div>
+            ))}
           <TtsSectionCard title={t("tts_field_voice")} testid="tts-voice-section">
             <TtsVoiceFields
               form={form}

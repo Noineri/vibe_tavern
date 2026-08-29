@@ -407,9 +407,11 @@ describe("TtsProfileEditor", () => {
     cleanup();
   });
 
-  it("F3 manual fallback: empty model list degrades the field to a typeable input", async () => {
+  it("F3 fallback (owner rework 2026-08-29): empty fetched list keeps the dropdown trigger, a custom id rides the popover slug row", async () => {
     // First (debounced) fetch for this render returns an empty list — e.g. an
-    // unreachable local endpoint. The field must stay manually typeable.
+    // unreachable local endpoint. The input STUB is gone (owner directive):
+    // the trigger stays a dropdown and a hand-typed id is reachable through
+    // the popover search + custom-slug row.
     listTtsDraftModelsMock.mockImplementationOnce(async () => []);
     const setForm = mock(() => {});
     const tts = viewTts({
@@ -423,11 +425,21 @@ describe("TtsProfileEditor", () => {
       } as never,
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
-    // Wait out the 400 ms debounce: with an empty list the fallback input
-    // (same testid, native input) must be present and accept typing.
-    const input = await waitFor(() => view.getByTestId("tts-field-model") as HTMLInputElement, { timeout: 2500 });
-    expect(input.tagName).toBe("INPUT");
-    fireEvent.change(input, { target: { value: "kokoro" } });
+    // Wait out the 400 ms debounce: the empty list leaves the trigger a
+    // BUTTON (never a bare input stub, never a fake example id).
+    const trigger = await waitFor(() => view.getByTestId("tts-field-model") as HTMLElement, { timeout: 2500 });
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.textContent).not.toContain("tts-1");
+    fireEvent.click(trigger);
+    const search = await waitFor(() => document.querySelector("[cmdk-input]") as HTMLInputElement | null, { timeout: 2500 });
+    expect(search).toBeTruthy();
+    fireEvent.input(search!, { target: { value: "kokoro" } });
+    const slug = await waitFor(() => {
+      const el = document.querySelector('[data-testid="use-custom-model"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    fireEvent.click(slug);
     const patch = (setForm.mock.calls[0] as unknown[])[0] as { config: Record<string, unknown> };
     expect(patch.config.model).toBe("kokoro");
     cleanup();
