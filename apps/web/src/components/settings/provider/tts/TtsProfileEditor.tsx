@@ -140,6 +140,11 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   // would restart the debounced fetch (and blank the list) on every pick.
   const formVoiceIdRef = useRef("");
   formVoiceIdRef.current = tts.form?.voiceId ?? "";
+  // Mirror of the live config bag (read at fetch-completion time) for the
+  // auto-settle model write below (D20) — config is NOT an effect dep for
+  // the same reason as voiceId (a dep would restart the debounced fetch).
+  const formConfigRef = useRef<Record<string, unknown>>({});
+  formConfigRef.current = tts.form?.config ?? {};
 
   // Hooks stay ABOVE the early return — `if (!tts.form) return null` between
   // useState and useEffect would be a hooks-order violation the day any
@@ -168,15 +173,18 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     // from a previous profile/backend must never render under a dead or
     // switched endpoint (honest-data rule, same as models below).
     setVoices(null);
-    // A stale voiceId must not survive a roster that does not carry it
-    // (D22: rosters are model-scoped — switching models swaps the roster).
-    // Cleared through the same form path the voice select uses; guarded by
-    // the membership check so a settled selection never loops.
-    const clearStaleVoice = (list: TtsVoiceRecord[]): void => {
+    // LLM rule (D20, owner directive): keep the user's pick while the roster
+    // carries it; otherwise settle on the first roster entry. An empty or
+    // stale (D22: rosters are model-scoped — switching models swaps the
+    // roster) selection lands on list[0], so a profile always shows a real
+    // voice from the server instead of a blank/example stub. Guarded so a
+    // settled selection never loops; an empty roster keeps "" (manual
+    // input stays honest).
+    const settleVoice = (list: TtsVoiceRecord[]): void => {
       const current = formVoiceIdRef.current;
-      if (current !== "" && !list.some((v) => v.id === current)) {
-        tts.setForm({ voiceId: "" });
-      }
+      if (current !== "" && list.some((v) => v.id === current)) return;
+      const next = list[0]?.id ?? "";
+      if (next !== current) tts.setForm({ voiceId: next });
     };
     const timer = setTimeout(() => {
       listTtsDraftVoices({ backend, config, profileId })
@@ -188,7 +196,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             setVoicesLoading(false);
             return;
           }
-          clearStaleVoice(list);
+          settleVoice(list);
           setVoices(list);
           setVoicesLoading(false);
         })
@@ -235,6 +243,12 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           if (cancelled) return;
           setModels(list);
           setModelsLoading(false);
+          // LLM rule (D20, owner directive): an empty model field settles
+          // on the first fetched entry — same one-key semantics as
+          // updateConfigField; a user pick survives refetches.
+          if (list.length > 0 && configString(formConfigRef.current, "model") === "") {
+            tts.setForm({ config: { ...formConfigRef.current, model: list[0].id } });
+          }
         })
         .catch((cause) => {
           if (cancelled) return;
@@ -363,8 +377,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             <TtsVoiceFields
               form={form}
               updateForm={handleUpdateForm}
-              voicePlaceholder={spec.voicePlaceholder}
-              staticVoices={ttsStaticVoicesOf(form)}
               voices={voices}
               voicesLoading={voicesLoading}
               voicesError={voicesError}
@@ -459,25 +471,10 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
 export interface TtsVoiceFieldsProps {
   form: TtsProfileForm;
   updateForm: <K extends keyof TtsProfileForm>(k: K, v: TtsProfileForm[K]) => void;
-  /** Per-variant placeholder override (tts-backend-ui spec), if any. */
-  voicePlaceholder?: string;
-  /** Static preset roster — non-null only for voiceMode "static" presets. */
-  staticVoices: Array<{ id: string; label: string }> | null;
   /** Editor-owned dynamic discovery state (single fetch owner). */
   voices: TtsVoiceRecord[] | null;
   voicesLoading: boolean;
   voicesError: string | null;
-}
-
-/** Static preset roster for the form's config.preset — null when the profile
- *  is not preset-static (kokoro, dynamic fetch, native backends). */
-export function ttsStaticVoicesOf(form: TtsProfileForm): Array<{ id: string; label: string }> | null {
-  const presetId = ttsPresetIdOf(form.config);
-  const preset = presetId ? TTS_PRESETS.find((p) => p.id === presetId) : undefined;
-  if (preset?.voiceMode === "static" && preset.staticVoices && preset.staticVoices.length > 0) {
-    return preset.staticVoices;
-  }
-  return null;
 }
 
 /** The character + narrator voice pickers (TE2-9): kokoro manifest dropdown,
@@ -489,15 +486,17 @@ export function ttsStaticVoicesOf(form: TtsProfileForm): Array<{ id: string; lab
 export function TtsVoiceFields({
   form,
   updateForm,
-  voicePlaceholder,
-  staticVoices,
   voices,
   voicesLoading,
   voicesError,
 }: TtsVoiceFieldsProps): ReactNode {
   const { t } = useT();
   const isKokoro = form.backend === TTS_BACKEND.Kokoro;
-  const placeholder = voicePlaceholder ?? t("tts_field_voice");
+  // No example-id placeholder stubs (owner directive 2026-08-29): the
+  // dropdown hint is the field label; the manual fallback input gets a
+  // neutral hint instead of a fake voice id.
+  const dropdownPlaceholder = t("tts_field_voice");
+  const manualPlaceholder = t("tts_field_voice_manual_placeholder");
   const kokoroVoiceOptions = KOKORO_VOICES.filter((v) => v.lang === "a" || v.lang === "b").map((v) => ({
     id: v.id,
     label: kokoroVoiceLabel(v, t),
@@ -513,7 +512,7 @@ export function TtsVoiceFields({
           options={kokoroVoiceOptions}
           onChange={(value) => updateForm("voiceId", value)}
           searchable={true}
-          placeholder={placeholder}
+          placeholder={dropdownPlaceholder}
           triggerTestId="tts-voice-select"
         />
       </div>
@@ -524,39 +523,6 @@ export function TtsVoiceFields({
         <DropdownSelect
           value={form.narratorVoiceId}
           options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...kokoroVoiceOptions]}
-          onChange={(value) => updateForm("narratorVoiceId", value)}
-          searchable={true}
-          placeholder={t("tts_field_narrator_voice_none")}
-          triggerTestId="tts-narrator-voice-select"
-        />
-      </div>
-      <div className="mt-1 font-ui text-[11px] text-t3">{t("tts_field_narrator_voice_hint")}</div>
-        </div>
-      </>
-    );
-  }
-  if (staticVoices !== null) {
-    return (
-      <>
-        <div className="mb-3">
-      <label className={lblCls}>{t("tts_field_voice")}</label>
-      <div className="mt-1">
-        <DropdownSelect
-          value={form.voiceId}
-          options={staticVoices}
-          onChange={(value) => updateForm("voiceId", value)}
-          searchable={true}
-          placeholder={placeholder}
-          triggerTestId="tts-voice-select"
-        />
-      </div>
-        </div>
-        <div className="mb-3">
-      <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
-      <div className="mt-1">
-        <DropdownSelect
-          value={form.narratorVoiceId}
-          options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...staticVoices]}
           onChange={(value) => updateForm("narratorVoiceId", value)}
           searchable={true}
           placeholder={t("tts_field_narrator_voice_none")}
@@ -583,7 +549,7 @@ export function TtsVoiceFields({
           className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
           value={form.voiceId}
           onChange={(e) => updateForm("voiceId", e.target.value)}
-          placeholder={placeholder}
+          placeholder={manualPlaceholder}
         />
         <div data-testid="tts-voices-load-error" className="mt-1 font-ui text-[11px] text-danger">
           {t("tts_voices_load_error")}
@@ -595,7 +561,7 @@ export function TtsVoiceFields({
         className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
         value={form.voiceId}
         onChange={(e) => updateForm("voiceId", e.target.value)}
-        placeholder={placeholder}
+        placeholder={manualPlaceholder}
       />
         ) : (
       <div className="mt-1">
@@ -604,7 +570,7 @@ export function TtsVoiceFields({
           options={(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))}
           onChange={(value) => updateForm("voiceId", value)}
           searchable={true}
-          placeholder={placeholder}
+          placeholder={dropdownPlaceholder}
           triggerTestId="tts-voice-select"
         />
       </div>

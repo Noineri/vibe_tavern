@@ -636,9 +636,10 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     cleanup();
   });
 
-  it("D22: a stale voiceId is cleared when the arriving roster does not carry it (model switch swaps rosters)", async () => {
+  it("D20/LLM rule: a stale voiceId settles on the FIRST entry of the arriving roster (model switch swaps rosters)", async () => {
     // Roster for the NEW model (single voice "new-voice"); the form still
-    // holds the previous model's pick "old-voice".
+    // holds the previous model's pick "old-voice" — not carried by the new
+    // roster, so the LLM settle rule lands on list[0].
     listTtsDraftVoicesMock.mockImplementationOnce(async () => [{ id: "new-voice", label: "New Voice", lang: "en" }]);
     const setForm = mock(() => {});
     const tts = viewTts({
@@ -652,13 +653,61 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
       } as never,
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
-    await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "" }), { timeout: 2500 });
+    await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "new-voice" }), { timeout: 2500 });
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
   });
 
-  it("voice fallback placeholder shows per-variant example (openai → alloy)", async () => {
+  it("D20/LLM rule: an empty voiceId settles on the first roster entry (real voice, no placeholder stub)", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => [
+      { id: "first-voice", label: "First", lang: "en" },
+      { id: "second-voice", label: "Second", lang: "en" },
+    ]);
+    const setForm = mock(() => {});
+    const tts = viewTts({
+      setForm,
+      form: {
+        id: null,
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://x/v1", apiKey: "k", model: "m1" },
+        voiceId: "",
+      } as never,
+    });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "first-voice" }), { timeout: 2500 });
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("D20/LLM rule: a carried voiceId is KEPT — settle never overwrites a live pick", async () => {
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => [
+      { id: "first-voice", label: "First", lang: "en" },
+      { id: "my-voice", label: "Mine", lang: "en" },
+    ]);
+    const setForm = mock(() => {});
+    const tts = viewTts({
+      setForm,
+      form: {
+        id: null,
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://x/v1", apiKey: "k", model: "m1" },
+        voiceId: "my-voice",
+      } as never,
+    });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    // Wait past the debounce so a (wrong) settle would have fired.
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(setForm).not.toHaveBeenCalledWith({ voiceId: "first-voice" });
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("manual fallback input placeholder is the neutral i18n hint — no fake example id (openai)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
     const tts = viewTts({
       form: {
@@ -671,13 +720,13 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
-    expect(input.placeholder).toBe("alloy");
+    expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
   });
 
-  it("voice fallback placeholder shows per-variant example (gemini → Kore)", async () => {
+  it("manual fallback input placeholder is the neutral i18n hint (gemini)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
     const tts = viewTts({
       form: {
@@ -690,13 +739,13 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
-    expect(input.placeholder).toBe("Kore");
+    expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
   });
 
-  it("voice fallback placeholder shows per-variant example (elevenlabs → JBFqnCBsd6RMkjVDRZzb)", async () => {
+  it("manual fallback input placeholder is the neutral i18n hint (elevenlabs)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
     const tts = viewTts({
       form: {
@@ -709,7 +758,7 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
-    expect(input.placeholder).toBe("JBFqnCBsd6RMkjVDRZzb");
+    expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
@@ -734,13 +783,14 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     await act(async () => {});
   });
 
-  it("kokoro voice select placeholder is the example id af_heart", async () => {
+  it("kokoro voice select placeholder is the neutral field label (no example id)", async () => {
     const tts = viewTts({
       form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "" } as never,
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     const trigger = view.getByTestId("tts-voice-select") as HTMLElement;
-    expect(trigger.textContent).toContain("af_heart");
+    expect(trigger.textContent).toContain("tts_field_voice");
+    expect(trigger.textContent).not.toContain("af_heart");
     cleanup();
   });
 

@@ -76,12 +76,12 @@ describe("ttsUiSpecFor (field configuration)", () => {
   });
 });
 
-describe("ttsUiSpecFor — voicePlaceholder (F6)", () => {
-  it("each variant carries a real example voice id as placeholder", () => {
-    expect(ttsUiSpecFor("kokoro").voicePlaceholder).toBe("af_heart");
-    expect(ttsUiSpecFor("local").voicePlaceholder).toBe("alloy");
-    expect(ttsUiSpecFor("openai").voicePlaceholder).toBe("alloy");
-    expect(ttsUiSpecFor("gemini").voicePlaceholder).toBe("Kore");
-    expect(ttsUiSpecFor("elevenlabs").voicePlaceholder).toBe("JBFqnCBsd6RMkjVDRZzb");
+describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
+  it("no variant carries a voicePlaceholder (fake example id) field", () => {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs"] as const) {
+      const spec = ttsUiSpecFor(variant);
+      expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
+      expect(JSON.stringify(spec)).not.toContain("alloy");
+    }
   });
 });

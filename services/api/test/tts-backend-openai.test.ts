@@ -5,8 +5,6 @@ import { TTS_BACKEND } from "@vibe-tavern/domain";
 import {
   OpenAiCompatTtsConfigError,
   OpenAiCompatTtsError,
-  VOICES_GPT4O_MINI_TTS,
-  VOICES_TTS1,
   openAiCompatTtsFactory,
 } from "../src/domain/tts/backends/openai-tts.js";
 import {
@@ -263,8 +261,8 @@ describe("OpenAI-compatible TTS listVoices", () => {
 
     expect(voices).toBeNull();
     expect(callCount).toBe(1);
-    // Null means no fake roster — assert none of the static ids leak through.
-    // (VOICES_GPT4O_MINI_TTS contains alloy, echo, etc.)
+    // Null means no fake roster — the static id tables were removed (D20);
+    // nothing can leak through.
   });
 
   test("network failure → null (honest, no static roster)", async () => {
@@ -326,14 +324,6 @@ describe("OpenAI-compatible TTS probe", () => {
 });
 
 describe("rosters + registration", () => {
-  test("static rosters are the documented OpenAI sets", () => {
-    expect(VOICES_GPT4O_MINI_TTS).toHaveLength(13);
-    expect(VOICES_TTS1).toHaveLength(9);
-    for (const voice of VOICES_TTS1) {
-      expect(VOICES_GPT4O_MINI_TTS).toContain(voice);
-    }
-  });
-
   test("explicit registration → createTtsBackend resolves the factory", () => {
     registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);
     const backend = createTtsBackend("openai-compatible", { endpoint: "http://localhost:8880/v1" });

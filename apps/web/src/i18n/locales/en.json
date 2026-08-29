@@ -470,6 +470,7 @@
   "tts_field_response_format": "Response Format",
   "tts_field_speed": "Speed",
   "tts_field_voice": "Voice",
+  "tts_field_voice_manual_placeholder": "voice id from the provider’s catalog",
   "tts_field_narrator_voice": "Narrator voice",
   "tts_field_narrator_voice_none": "— none —",
   "tts_field_narrator_voice_hint": "When set, quoted text is read with the character voice and the rest with the narrator voice.",

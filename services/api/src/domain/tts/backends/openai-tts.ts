@@ -91,36 +91,6 @@ function isNanoGptStyleEndpoint(endpoint: string): boolean {
 /** Error body excerpt length included in HTTP-failure messages. */
 const ERROR_BODY_EXCERPT_LENGTH = 200;
 
-/** OpenAI's gpt-4o-mini-tts built-in voice roster (13, docs 2026-08-27). */
-export const VOICES_GPT4O_MINI_TTS: readonly string[] = [
-  "alloy",
-  "ash",
-  "ballad",
-  "coral",
-  "echo",
-  "fable",
-  "nova",
-  "onyx",
-  "sage",
-  "shimmer",
-  "verse",
-  "marin",
-  "cedar",
-];
-
-/** The tts-1 / tts-1-hd subset (9 voices, docs 2026-08-27). */
-export const VOICES_TTS1: readonly string[] = [
-  "alloy",
-  "ash",
-  "coral",
-  "echo",
-  "fable",
-  "onyx",
-  "nova",
-  "sage",
-  "shimmer",
-];
-
 /** HTTP / transport failure of a speech or voices request. */
 export class OpenAiCompatTtsError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {

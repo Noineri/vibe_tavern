@@ -2485,6 +2485,7 @@ export default interface Resources {
     "tts_field_style_instructions": "Style Instructions",
     "tts_field_style_instructions_placeholder": "e.g. Speak warmly and slowly...",
     "tts_field_voice": "Voice",
+    "tts_field_voice_manual_placeholder": "voice id from the provider’s catalog",
     "tts_help_choose_edge": "Microsoft Edge online voices: no model download, needs internet",
     "tts_help_choose_kokoro": "The same engine as the built-in browser voice: fully offline, the model downloads once",
     "tts_help_cwd_note": "Run these inside the cloned repository folder",

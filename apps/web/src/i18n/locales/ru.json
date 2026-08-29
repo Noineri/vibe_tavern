@@ -472,6 +472,7 @@
   "tts_field_response_format": "Формат ответа",
   "tts_field_speed": "Скорость",
   "tts_field_voice": "Голос",
+  "tts_field_voice_manual_placeholder": "id голоса из каталога провайдера",
   "tts_field_narrator_voice": "Голос нарратора",
   "tts_field_narrator_voice_none": "— нет —",
   "tts_field_narrator_voice_hint": "Когда задан, текст в кавычках озвучивается голосом персонажа, остальное — голосом нарратора.",

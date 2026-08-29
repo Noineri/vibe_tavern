@@ -40,20 +40,11 @@ describe("tts-presets", () => {
     expect(counts.elevenlabs).toBe(1);
   });
 
-  test("static voice counts: openai 11, groq 12, siliconflow 8", () => {
-    const openai = TTS_PRESETS.find((p) => p.id === "openai");
-    expect(openai?.staticVoices?.length).toBe(11);
-    const groq = TTS_PRESETS.find((p) => p.id === "groq");
-    expect(groq?.staticVoices?.length).toBe(12);
-    const siliconflow = TTS_PRESETS.find((p) => p.id === "siliconflow");
-    expect(siliconflow?.staticVoices?.length).toBe(8);
-  });
-
-  test("every siliconflow static voice id starts with fishaudio/fish-speech-1.5:", () => {
-    const siliconflow = TTS_PRESETS.find((p) => p.id === "siliconflow");
-    expect(siliconflow).toBeDefined();
-    for (const v of siliconflow!.staticVoices!) {
-      expect(v.id.startsWith("fishaudio/fish-speech-1.5:")).toBe(true);
+  test("no preset carries static voice data (D20: fetched lists are the only source)", () => {
+    for (const p of TTS_PRESETS) {
+      expect(Object.hasOwn(p, "staticVoices")).toBe(false);
+      expect(Object.hasOwn(p, "voiceMode")).toBe(false);
+      expect(JSON.stringify(p)).not.toContain("alloy");
     }
   });
 
@@ -81,28 +72,14 @@ describe("tts-presets", () => {
     expect(getVisibleTtsPresetGroups(false).length).toBe(1);
   });
 
-  test("modelFilter and voiceMode values are within the declared unions", () => {
+  test("modelFilter values are within the declared union", () => {
     const allowedFilters = new Set(["modality", "audio-models", "name-heuristic", "none"]);
-    const allowedVoiceModes = new Set(["static", "fetch", "manual"]);
     for (const p of TTS_PRESETS) {
       expect(allowedFilters.has(p.modelFilter)).toBe(true);
-      expect(allowedVoiceModes.has(p.voiceMode)).toBe(true);
     }
     expect(TTS_PRESETS.find((p) => p.id === "openrouter")?.modelFilter).toBe("modality");
     // D23: NanoGPT discovery comes from /audio-models, not the chat catalog.
     expect(TTS_PRESETS.find((p) => p.id === "nanogpt")?.modelFilter).toBe("audio-models");
     expect(TTS_PRESETS.find((p) => p.id === "gemini")?.modelFilter).toBe("none");
-    expect(TTS_PRESETS.find((p) => p.id === "openai")?.voiceMode).toBe("static");
-    expect(TTS_PRESETS.find((p) => p.id === "gemini")?.voiceMode).toBe("fetch");
-    expect(TTS_PRESETS.find((p) => p.id === "openrouter")?.voiceMode).toBe("manual");
-  });
-
-  test("static voice gender stays DATA (never baked into display label)", () => {
-    // Genders are raw "female"/"male" — UI translates via kokoroVoiceLabel pattern.
-    for (const p of TTS_PRESETS) {
-      for (const v of p.staticVoices ?? []) {
-        expect(v.gender === "female" || v.gender === "male").toBe(true);
-      }
-    }
   });
 });
