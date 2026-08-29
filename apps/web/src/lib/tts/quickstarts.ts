@@ -34,7 +34,15 @@ export interface TtsHelpStep {
  *  root (the start scripts bootstrap their own dependencies — install is a
  *  note, not commands); travisvn/openai-edge-tts README documents venv
  *  activation per OS (`venv\Scripts\activate` vs `source venv/bin/activate`)
- *  and `python app/server.py` to run. */
+ *  and `python app/server.py` to run; travisvn/chatterbox-tts-api README
+ *  (fetched 2026-08-29) documents the venv/pip Option B (python -m venv
+ *  .venv, pip install -r requirements.txt, copy .env.example .env, python
+ *  main.py, port 4123) and the docker compose files under docker/; Lex-au/
+ *  Orpheus-FastAPI README documents the native path (python ≤3.11, torch
+ *  cu124 index, requirements, mkdir outputs static, uvicorn app:app --port
+ *  5005) plus the llama.cpp parameters (--rope-scaling=linear, ctx-size =
+ *  n-predict = ORPHEUS_MAX_TOKENS) and the docker-compose-gpu variant that
+ *  bundles the llama.cpp server + GGUF download. */
 export interface TtsServerSetupGuide {
   id: string;
   name: string;
@@ -121,6 +129,127 @@ export const TTS_SERVER_SETUP_GUIDES: TtsServerSetupGuide[] = [
         windows: ["python app/server.py"],
         unix: ["python app/server.py"],
       },
+    },
+  },
+  {
+    id: "chatterbox-tts-api",
+    name: "Chatterbox TTS API",
+    descriptionKey: "tts_help_choose_chatterbox",
+    port: 4123,
+    endpoint: "http://127.0.0.1:4123/v1",
+    docker: {
+      titleKey: "tts_help_download_docker",
+      commands: {
+        windows: [
+          "git clone https://github.com/travisvn/chatterbox-tts-api.git",
+          "copy .env.example.docker .env",
+          "docker compose -f docker/docker-compose.gpu.yml up -d",
+        ],
+        unix: [
+          "git clone https://github.com/travisvn/chatterbox-tts-api.git",
+          "cp .env.example.docker .env",
+          "docker compose -f docker/docker-compose.gpu.yml up -d",
+        ],
+      },
+      noteKey: "tts_help_cwd_note",
+    },
+    clone: {
+      titleKey: "tts_help_download_nodocker",
+      commands: {
+        windows: ["git clone https://github.com/travisvn/chatterbox-tts-api.git"],
+        unix: ["git clone https://github.com/travisvn/chatterbox-tts-api.git"],
+      },
+    },
+    install: {
+      titleKey: "tts_help_step_install",
+      commands: {
+        windows: [
+          "python -m venv .venv",
+          ".venv\\Scripts\\activate",
+          "pip install -r requirements.txt",
+          "copy .env.example .env",
+        ],
+        unix: [
+          "python -m venv .venv",
+          "source .venv/bin/activate",
+          "pip install -r requirements.txt",
+          "cp .env.example .env",
+        ],
+      },
+      noteKey: "tts_help_install_note_chatterbox",
+    },
+    run: {
+      titleKey: "tts_help_step_run",
+      commands: {
+        windows: ["python main.py"],
+        unix: ["python main.py"],
+      },
+      noteKey: "tts_help_run_note_chatterbox",
+    },
+  },
+  {
+    id: "orpheus-fastapi",
+    name: "Orpheus FastAPI",
+    descriptionKey: "tts_help_choose_orpheus",
+    port: 5005,
+    endpoint: "http://127.0.0.1:5005/v1",
+    docker: {
+      titleKey: "tts_help_download_docker",
+      commands: {
+        windows: [
+          "git clone https://github.com/Lex-au/Orpheus-FastAPI.git",
+          "copy .env.example .env",
+          "docker compose -f docker-compose-gpu.yml up",
+        ],
+        unix: [
+          "git clone https://github.com/Lex-au/Orpheus-FastAPI.git",
+          "cp .env.example .env",
+          "docker compose -f docker-compose-gpu.yml up",
+        ],
+      },
+      noteKey: "tts_help_cwd_note",
+    },
+    clone: {
+      titleKey: "tts_help_download_nodocker",
+      commands: {
+        windows: ["git clone https://github.com/Lex-au/Orpheus-FastAPI.git"],
+        unix: ["git clone https://github.com/Lex-au/Orpheus-FastAPI.git"],
+      },
+    },
+    install: {
+      titleKey: "tts_help_step_install",
+      commands: {
+        windows: [
+          "python -m venv venv",
+          "venv\\Scripts\\activate",
+          "pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124",
+          "pip3 install -r requirements.txt",
+          "mkdir outputs",
+          "mkdir static",
+        ],
+        unix: [
+          "python -m venv venv",
+          "source venv/bin/activate",
+          "pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124",
+          "pip3 install -r requirements.txt",
+          "mkdir -p outputs static",
+        ],
+      },
+      noteKey: "tts_help_install_note_orpheus",
+    },
+    run: {
+      titleKey: "tts_help_step_run",
+      commands: {
+        windows: [
+          "llama-server -m Orpheus-3b-FT-Q4_K_M.gguf --ctx-size=8192 --n-predict=8192 --rope-scaling=linear",
+          "uvicorn app:app --host 0.0.0.0 --port 5005",
+        ],
+        unix: [
+          "llama-server -m Orpheus-3b-FT-Q4_K_M.gguf --ctx-size=8192 --n-predict=8192 --rope-scaling=linear",
+          "uvicorn app:app --host 0.0.0.0 --port 5005",
+        ],
+      },
+      noteKey: "tts_help_run_note_orpheus",
     },
   },
 ];

@@ -190,6 +190,8 @@ describe("TtsLocalServerPanel", () => {
     expect(view.getByTestId("tts-help-step-choose")).toBeTruthy();
     expect(view.getByTestId("tts-help-choice-kokoro-fastapi")).toBeTruthy();
     expect(view.getByTestId("tts-help-choice-openai-edge-tts")).toBeTruthy();
+    expect(view.getByTestId("tts-help-choice-chatterbox-tts-api")).toBeTruthy();
+    expect(view.getByTestId("tts-help-choice-orpheus-fastapi")).toBeTruthy();
     // Default guide = kokoro → its docker command visible.
     expect(view.getByTestId("tts-help-step-download-docker").textContent).toContain("ghcr.io/remsky/kokoro-fastapi-cpu:latest");
     expect(view.getByTestId("tts-help-step-download-clone").textContent).toContain("git clone https://github.com/remsky/Kokoro-FastAPI.git");

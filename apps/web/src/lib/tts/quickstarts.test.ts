@@ -9,10 +9,10 @@ import {
 import type { DiscoveryDiagnosticCode } from "@vibe-tavern/domain";
 
 describe("quickstarts (setup reference, TE2-17)", () => {
-  test("two guides with verified identity fields", () => {
-    expect(TTS_SERVER_SETUP_GUIDES.length).toBe(2);
+  test("four guides with verified identity fields", () => {
+    expect(TTS_SERVER_SETUP_GUIDES.length).toBe(4);
     const ids = TTS_SERVER_SETUP_GUIDES.map((g) => g.id);
-    expect(new Set(ids).size).toBe(2);
+    expect(new Set(ids).size).toBe(4);
     const kokoro = TTS_SERVER_SETUP_GUIDES.find((g) => g.id === "kokoro-fastapi");
     expect(kokoro).toBeDefined();
     expect(kokoro?.port).toBe(8880);
@@ -21,6 +21,14 @@ describe("quickstarts (setup reference, TE2-17)", () => {
     expect(edge).toBeDefined();
     expect(edge?.port).toBe(5050);
     expect(edge?.endpoint).toBe("http://127.0.0.1:5050/v1");
+    const chatterbox = TTS_SERVER_SETUP_GUIDES.find((g) => g.id === "chatterbox-tts-api");
+    expect(chatterbox).toBeDefined();
+    expect(chatterbox?.port).toBe(4123);
+    expect(chatterbox?.endpoint).toBe("http://127.0.0.1:4123/v1");
+    const orpheus = TTS_SERVER_SETUP_GUIDES.find((g) => g.id === "orpheus-fastapi");
+    expect(orpheus).toBeDefined();
+    expect(orpheus?.port).toBe(5005);
+    expect(orpheus?.endpoint).toBe("http://127.0.0.1:5005/v1");
     for (const g of TTS_SERVER_SETUP_GUIDES) {
       expect(g.name.length).toBeGreaterThan(0);
       expect(g.endpoint.startsWith("http://127.0.0.1:")).toBe(true);
@@ -37,12 +45,42 @@ describe("quickstarts (setup reference, TE2-17)", () => {
     const edgeDocker = edge?.docker.commands.unix.join(" ") ?? "";
     expect(edgeDocker).toContain("docker run -d -p 5050:5050 -e PORT=5050 travisvn/openai-edge-tts:latest");
     expect(edge?.clone.commands.windows.join(" ")).toContain("git clone https://github.com/travisvn/openai-edge-tts.git");
-    // Docker and clone are OS-identical by design — the OS toggle must not
-    // change them (TE2-17: the toggle affects only the no-Docker branch).
+    // Docker and clone commands are OS-identical by design — the OS toggle
+    // must not change them (TE2-17) — EXCEPT the single env-file copy line
+    // of the compose-based guides (copy vs cp per shell). Normalize that one
+    // spelling before comparing.
+    const normalize = (list: string[]) => list.map((c) => c.replace(/^copy /, "cp "));
     for (const g of TTS_SERVER_SETUP_GUIDES) {
-      expect(g.docker.commands.windows).toEqual(g.docker.commands.unix);
+      expect(normalize(g.docker.commands.windows)).toEqual(normalize(g.docker.commands.unix));
       expect(g.clone.commands.windows).toEqual(g.clone.commands.unix);
     }
+  });
+
+  test("chatterbox + orpheus docker branches verified against upstream READMEs (2026-08-29)", () => {
+    const chatterbox = TTS_SERVER_SETUP_GUIDES.find((g) => g.id === "chatterbox-tts-api");
+    const cbDocker = chatterbox?.docker.commands.unix.join(" ") ?? "";
+    expect(cbDocker).toContain("git clone https://github.com/travisvn/chatterbox-tts-api.git");
+    expect(cbDocker).toContain("cp .env.example.docker .env");
+    expect(cbDocker).toContain("docker compose -f docker/docker-compose.gpu.yml up -d");
+    const cbInstall = chatterbox?.install.commands.windows.join(" ") ?? "";
+    expect(cbInstall).toContain(".venv\\Scripts\\activate");
+    expect(cbInstall).toContain("pip install -r requirements.txt");
+    expect(chatterbox?.run.commands.unix).toEqual(["python main.py"]);
+
+    const orpheus = TTS_SERVER_SETUP_GUIDES.find((g) => g.id === "orpheus-fastapi");
+    const orDocker = orpheus?.docker.commands.windows.join(" ") ?? "";
+    expect(orDocker).toContain("git clone https://github.com/Lex-au/Orpheus-FastAPI.git");
+    expect(orDocker).toContain("docker compose -f docker-compose-gpu.yml up");
+    const orInstall = orpheus?.install.commands.unix.join(" ") ?? "";
+    // README-verbatim torch CUDA index + the repo's own directory bootstrap.
+    expect(orInstall).toContain("pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124");
+    expect(orInstall).toContain("mkdir -p outputs static");
+    const orRun = orpheus?.run.commands.unix.join(" ") ?? "";
+    // Two-process architecture: llama.cpp parameters are README-verbatim
+    // (rope-scaling linear, ctx = n-predict), API on 5005.
+    expect(orRun).toContain("llama-server -m Orpheus-3b-FT-Q4_K_M.gguf");
+    expect(orRun).toContain("--rope-scaling=linear");
+    expect(orRun).toContain("uvicorn app:app --host 0.0.0.0 --port 5005");
   });
 
   test("install: edge-tts per-OS venv activation; kokoro bootstraps itself (note, no invented commands)", () => {
