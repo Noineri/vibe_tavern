@@ -631,6 +631,28 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     cleanup();
   });
 
+  it("D22: a stale voiceId is cleared when the arriving roster does not carry it (model switch swaps rosters)", async () => {
+    // Roster for the NEW model (single voice "new-voice"); the form still
+    // holds the previous model's pick "old-voice".
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => [{ id: "new-voice", label: "New Voice", lang: "en" }]);
+    const setForm = mock(() => {});
+    const tts = viewTts({
+      setForm,
+      form: {
+        id: null,
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://x/v1", apiKey: "k", model: "flux-tts" },
+        voiceId: "old-voice",
+      } as never,
+    });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "" }), { timeout: 2500 });
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
   it("voice fallback placeholder shows per-variant example (openai → alloy)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
     const tts = viewTts({

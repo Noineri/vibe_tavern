@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
@@ -135,6 +135,11 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const formId = tts.form?.id ?? null;
   const needsRemoteVoices = formBackend !== undefined && formBackend !== TTS_BACKEND.Kokoro;
   const preview = useTtsPreview();
+  // Mirror of the live voiceId for the voices effect (D22): read at
+  // fetch-completion time, NOT an effect dep — putting voiceId in the deps
+  // would restart the debounced fetch (and blank the list) on every pick.
+  const formVoiceIdRef = useRef("");
+  formVoiceIdRef.current = tts.form?.voiceId ?? "";
 
   // Hooks stay ABOVE the early return — `if (!tts.form) return null` between
   // useState and useEffect would be a hooks-order violation the day any
@@ -163,6 +168,16 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     // from a previous profile/backend must never render under a dead or
     // switched endpoint (honest-data rule, same as models below).
     setVoices(null);
+    // A stale voiceId must not survive a roster that does not carry it
+    // (D22: rosters are model-scoped — switching models swaps the roster).
+    // Cleared through the same form path the voice select uses; guarded by
+    // the membership check so a settled selection never loops.
+    const clearStaleVoice = (list: TtsVoiceRecord[]): void => {
+      const current = formVoiceIdRef.current;
+      if (current !== "" && !list.some((v) => v.id === current)) {
+        tts.setForm({ voiceId: "" });
+      }
+    };
     const timer = setTimeout(() => {
       listTtsDraftVoices({ backend, config, profileId })
         .then((list) => {
@@ -173,6 +188,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             setVoicesLoading(false);
             return;
           }
+          clearStaleVoice(list);
           setVoices(list);
           setVoicesLoading(false);
         })

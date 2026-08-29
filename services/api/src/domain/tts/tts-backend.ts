@@ -36,6 +36,11 @@ export interface TtsModelInfo {
   isFree?: boolean;
   description?: string;
   contextLength?: number;
+  /** Per-model voice roster riding the catalog (D22): OpenRouter
+   *  `supported_voices` / NanoGPT `supported_parameters.voices`. Aggregator
+   *  servers have NO /audio/voices endpoint — the roster is model-scoped
+   *  data. Omitted when the catalog reports none (null). */
+  voices?: string[];
 }
 
 export interface TtsProbeResult {

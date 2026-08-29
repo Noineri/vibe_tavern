@@ -250,6 +250,20 @@ function parseVoicesPayload(parsed: unknown): TtsVoiceInfo[] | null {
 export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
   const cfg = parseConfig(config);
 
+  /** Catalog selection (D15/D23), shared by listModels and listVoices:
+   *  explicit stamp wins, else the host default heals pre-stamp profiles.
+   *  `plain` = the ordinary OpenAI-compatible /models catalog. */
+  const catalogRequest = (): { kind: "audio-models" | "modality" | "plain"; url: string } => {
+    const modelFilter = readString(config, "modelFilter");
+    if (modelFilter === "audio-models" || (modelFilter === undefined && isNanoGptStyleEndpoint(cfg.endpoint))) {
+      return { kind: "audio-models", url: `${cfg.endpoint}/audio-models?type=tts&detailed=true` };
+    }
+    if (modelFilter === "modality" || (modelFilter === undefined && isOpenRouterStyleEndpoint(cfg.endpoint))) {
+      return { kind: "modality", url: `${cfg.endpoint}/models?output_modalities=speech` };
+    }
+    return { kind: "plain", url: `${cfg.endpoint}/models` };
+  };
+
   const backend: TtsBackend = {
     async generate(req: TtsGenerateRequest): Promise<TtsAudioResult> {
       const voice = req.voiceId.trim();
@@ -295,19 +309,9 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
 
     async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
       const modelFilter = readString(config, "modelFilter");
-      const useModalityParam =
-        modelFilter === "modality" || (modelFilter === undefined && isOpenRouterStyleEndpoint(cfg.endpoint));
-      // D23: NanoGPT — dedicated audio-models catalog. Same contract as the
-      // OpenRouter modality param: the explicit "audio-models" stamp OR the
-      // host default when no explicit filter was chosen (heals profiles
-      // saved before the preset began stamping it).
-      const useAudioModelsCatalog =
-        modelFilter === "audio-models" || (modelFilter === undefined && isNanoGptStyleEndpoint(cfg.endpoint));
-      const url = useAudioModelsCatalog
-        ? `${cfg.endpoint}/audio-models?type=tts&detailed=true`
-        : useModalityParam
-          ? `${cfg.endpoint}/models?output_modalities=speech`
-          : `${cfg.endpoint}/models`;
+      const { kind, url } = catalogRequest();
+      const useModalityParam = kind === "modality";
+      const useAudioModelsCatalog = kind === "audio-models";
       const response = await fetchOrWrap(
         url,
         {
@@ -358,6 +362,13 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
         if (typeof record.context_length === "number" && Number.isFinite(record.context_length)) {
           info.contextLength = record.context_length;
         }
+        // D22: the per-model voice roster rides the catalog entry. Only the
+        // aggregator catalogs carry it (plain /models responses have none —
+        // their voices come from /audio/voices in listVoices).
+        if (useAudioModelsCatalog || useModalityParam) {
+          const voices = catalogEntryVoices(record, useAudioModelsCatalog);
+          if (voices !== undefined) info.voices = voices;
+        }
         if (useAudioModelsCatalog) {
           const pricing = record.pricing;
           if (typeof pricing === "object" && pricing !== null) {
@@ -398,6 +409,44 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
     },
 
     async listVoices(): Promise<TtsVoiceInfo[] | null> {
+      const { kind, url } = catalogRequest();
+      // D22: aggregators have NO /audio/voices endpoint (404 live-verified
+      // on openrouter.ai and nano-gpt.com) — the roster is PER-MODEL data
+      // riding the catalog. Resolve it by the selected model: refetch the
+      // catalog (cacheable upstream per NanoGPT docs), find the entry, read
+      // its voice list. Null (manual input) when no model is chosen, the
+      // model left the catalog, or the catalog reports none for it.
+      if (kind !== "plain") {
+        try {
+          const response = await fetchOrWrap(
+            url,
+            {
+              method: "GET",
+              headers: buildHeaders(cfg.apiKey),
+              signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+            },
+            "voice list",
+          );
+          if (!response.ok) return null;
+          const parsed: unknown = await response.json().catch(() => null);
+          const data =
+            typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>).data : undefined;
+          if (!Array.isArray(data)) return null;
+          const model = readString(config, "model");
+          if (model === undefined) return null;
+          for (const entry of data) {
+            if (typeof entry !== "object" || entry === null) continue;
+            const record = entry as Record<string, unknown>;
+            if (record.id !== model) continue;
+            const voices = catalogEntryVoices(record, kind === "audio-models");
+            if (voices === undefined) return null;
+            return voices.map((voice) => ({ id: voice, label: voice, lang: "en" }));
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      }
       try {
         const voicesResponse = await fetch(`${cfg.endpoint}/audio/voices`, {
           headers: buildHeaders(cfg.apiKey),
@@ -441,6 +490,24 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
 
   return backend;
 };
+
+/** Per-model voice roster off a catalog entry (D22): OpenRouter exposes
+ *  `supported_voices: string[] | null`, NanoGPT
+ *  `supported_parameters.voices`. Returns undefined for absent/null/empty —
+ *  the callers treat that as "no roster" (manual voice input). */
+function catalogEntryVoices(record: Record<string, unknown>, useAudioModelsCatalog: boolean): string[] | undefined {
+	const raw = useAudioModelsCatalog
+		? typeof record.supported_parameters === "object" && record.supported_parameters !== null
+			? (record.supported_parameters as Record<string, unknown>).voices
+			: undefined
+		: record.supported_voices;
+	if (!Array.isArray(raw)) return undefined;
+	const voices: string[] = [];
+	for (const item of raw) {
+		if (typeof item === "string" && item.length > 0) voices.push(item);
+	}
+	return voices.length > 0 ? voices : undefined;
+}
 
 function countModelIds(parsed: unknown): number {
   if (typeof parsed !== "object" || parsed === null) return 0;

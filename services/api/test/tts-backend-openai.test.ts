@@ -187,6 +187,61 @@ describe("OpenAI-compatible TTS listVoices", () => {
     expect(voices).toEqual([{ id: "af_bella", label: "Bella", lang: "en" }]);
   });
 
+  // ── D22: aggregators have no /audio/voices — the roster is per-model
+  // catalog data, resolved by the selected model.
+  test("openrouter: listVoices resolves the roster from the modality catalog by model", async () => {
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, {
+        data: [
+          { id: "flux-tts", supported_voices: ["flux-alexis-en", "flux-bella-en"] },
+          { id: "fish-audio/speech", supported_voices: null },
+        ],
+      }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "https://openrouter.ai/api/v1", model: "flux-tts" });
+    const voices = await backend.listVoices();
+    expect(captured()!.url).toBe("https://openrouter.ai/api/v1/models?output_modalities=speech");
+    expect(voices).toEqual([
+      { id: "flux-alexis-en", label: "flux-alexis-en", lang: "en" },
+      { id: "flux-bella-en", label: "flux-bella-en", lang: "en" },
+    ]);
+  });
+
+  test("openrouter: null supported_voices (fish/minimax-style) → null roster (manual input)", async () => {
+    captureFetch(() => jsonResponse(200, { data: [{ id: "fish-audio/speech", supported_voices: null }] }));
+    const backend = openAiCompatTtsFactory({ endpoint: "https://openrouter.ai/api/v1", model: "fish-audio/speech" });
+    expect(await backend.listVoices()).toBeNull();
+  });
+
+  test("nanogpt: listVoices resolves supported_parameters.voices by model", async () => {
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, {
+        data: [
+          { id: "xai-tts", capabilities: { text_to_speech: true }, supported_parameters: { voices: ["Eve", "Ara", "Leo", "Rex", "Sal"] } },
+        ],
+      }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "https://nano-gpt.com/api/v1", model: "xai-tts" });
+    const voices = await backend.listVoices();
+    expect(captured()!.url).toBe("https://nano-gpt.com/api/v1/audio-models?type=tts&detailed=true");
+    expect(voices).toEqual([
+      { id: "Eve", label: "Eve", lang: "en" },
+      { id: "Ara", label: "Ara", lang: "en" },
+      { id: "Leo", label: "Leo", lang: "en" },
+      { id: "Rex", label: "Rex", lang: "en" },
+      { id: "Sal", label: "Sal", lang: "en" },
+    ]);
+  });
+
+  test("aggregator: no model chosen or model not in catalog → null", async () => {
+    captureFetch(() => jsonResponse(200, { data: [{ id: "flux-tts", supported_voices: ["flux-alexis-en"] }] }));
+    const noModel = openAiCompatTtsFactory({ endpoint: "https://openrouter.ai/api/v1" });
+    expect(await noModel.listVoices()).toBeNull();
+    captureFetch(() => jsonResponse(200, { data: [{ id: "flux-tts", supported_voices: ["flux-alexis-en"] }] }));
+    const missing = openAiCompatTtsFactory({ endpoint: "https://openrouter.ai/api/v1", model: "gone-model" });
+    expect(await missing.listVoices()).toBeNull();
+  });
+
   test("bare-array voices payload tolerated", async () => {
     captureFetch(() => jsonResponse(200, [{ id: "ef_dora" }]));
     const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:8880/v1" });
@@ -421,6 +476,32 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     expect(models.map((m) => m.id)).toEqual(["xai-tts", "free-tts"]);
     expect(models[0]).toEqual({ id: "xai-tts", label: "xAI TTS", description: "Speech model", isFree: false });
     expect(models[1]).toEqual({ id: "free-tts", label: "Free TTS", isFree: true });
+  });
+
+  test("D22: catalog entries carry the per-model voice roster (supported_voices / supported_parameters.voices)", async () => {
+    captureFetch(() =>
+      jsonResponse(200, {
+        data: [
+          { id: "flux-tts", supported_voices: ["flux-alexis-en"] },
+          { id: "fish-audio/speech", supported_voices: null },
+        ],
+      }),
+    );
+    const or = openAiCompatTtsFactory({ endpoint: "https://openrouter.ai/api/v1", modelFilter: "modality" });
+    const orModels = await or.listModels();
+    expect(orModels[0].voices).toEqual(["flux-alexis-en"]);
+    expect(orModels[1].voices).toBeUndefined();
+
+    captureFetch(() =>
+      jsonResponse(200, {
+        data: [
+          { id: "xai-tts", capabilities: { text_to_speech: true }, supported_parameters: { voices: ["Eve", "Ara"] } },
+        ],
+      }),
+    );
+    const nano = openAiCompatTtsFactory({ endpoint: "https://nano-gpt.com/api/v1", modelFilter: "audio-models" });
+    const nanoModels = await nano.listModels();
+    expect(nanoModels[0].voices).toEqual(["Eve", "Ara"]);
   });
 
   test("no filter + nano-gpt host → audio-models anyway (D23: heals pre-stamp name-heuristic profiles)", async () => {

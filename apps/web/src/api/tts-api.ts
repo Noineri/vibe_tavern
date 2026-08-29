@@ -228,14 +228,16 @@ export async function listTtsDraftModels(body: {
 }
 
 /** One entry of the draft model list — aggregator enrichment
- *  (isFree / description / contextLength) is parsed server-side when the
- *  provider ships it (OpenRouter-style /models payloads). */
+ *  (isFree / description / contextLength / voices) is parsed server-side
+ *  when the provider ships it (OpenRouter-style /models payloads; the
+ *  per-model voice roster rides aggregator catalogs, D22). */
 export interface TtsModelListEntry {
   id: string;
   label: string;
   isFree?: boolean;
   description?: string;
   contextLength?: number;
+  voices?: string[];
 }
 
 // ─── Local-server helpers (D8) ───────────────────────────────────────────
