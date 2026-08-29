@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
+import { useT } from "../../../../i18n/context.js";
 import { TTS_PRESET_CONFIG_KEY } from "./tts-backend-ui.js";
 import {
   createTtsProfile,
@@ -129,13 +130,16 @@ export function useTtsProfiles(): {
     [profiles],
   );
 
+  const { t } = useT();
+  // Owner 2026-08-29: a new profile starts with a localized default name —
+  // the owner had to invent one just to save-and-see the key hint (D20).
   const startCreate = useCallback(() => {
     setEditingId(null);
-    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, autoKeyProviderName: null, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
+    setFormState({ id: null, name: t("tts_profile_default_name"), backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, autoKeyProviderName: null, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
     setDirty(false);
     setHeaderMode("edit");
     setError(null);
-  }, []);
+  }, [t]);
 
   const startEdit = useCallback(() => setHeaderMode("edit"), []);
 

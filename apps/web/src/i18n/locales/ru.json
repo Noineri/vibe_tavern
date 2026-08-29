@@ -2667,5 +2667,6 @@
   "tts_make_default": "Сделать по умолчанию",
   "tts_segment_browser": "Kokoro",
   "tts_segment_local": "Локальный сервер",
-  "tts_key_from_provider_hint": "Ключ и адрес берутся из профиля провайдера «{name}» — введите свой ключ, чтобы переопределить."
+  "tts_key_from_provider_hint": "Ключ и адрес берутся из профиля провайдера «{name}» — введите свой ключ, чтобы переопределить.",
+  "tts_profile_default_name": "Новый профиль TTS"
 }

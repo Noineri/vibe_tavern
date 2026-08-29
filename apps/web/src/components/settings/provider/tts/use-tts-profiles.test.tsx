@@ -134,7 +134,9 @@ describe("useTtsProfiles", () => {
     hook!.startCreate();
     await waitFor(() => expect(hook?.form?.id).toBeNull());
     expect(hook!.form?.backend).toBe("kokoro");
-    expect(hook!.form?.name).toBe("");
+    // D20: prefilled localized default name. This probe renders without an
+    // i18n provider, so the context default `t` is the raw-key identity.
+    expect(hook!.form?.name).toBe("tts_profile_default_name");
     expect(hook!.editingId).toBeNull();
   });
 

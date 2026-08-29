@@ -2515,6 +2515,7 @@ export default interface Resources {
     "tts_preview_generating": "Generating…",
     "tts_preview_playing": "Playing…",
     "tts_profile_backend_label": "Backend",
+    "tts_profile_default_name": "New TTS profile",
     "tts_profile_delete_confirm_body": "Delete \"{name}\"? This cannot be undone.",
     "tts_profile_delete_confirm_title": "Delete profile?",
     "tts_profile_name_label": "Name",
