@@ -93,9 +93,13 @@ const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** HTTP / transport failure of a speech or voices request. */
 export class OpenAiCompatTtsError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
+  /** Upstream HTTP status when the failure came from a non-2xx response
+   *  (undefined for transport-level failures — DNS, refused, timeout). */
+  readonly status?: number;
+  constructor(message: string, options?: { cause?: unknown; status?: number }) {
     super(message, options);
     this.name = "OpenAiCompatTtsError";
+    this.status = options?.status;
   }
 }
 
@@ -281,7 +285,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
 
       if (!response.ok) {
         const excerpt = await readErrorExcerpt(response);
-        throw new OpenAiCompatTtsError(httpErrorMessage("generate", response, excerpt));
+        throw new OpenAiCompatTtsError(httpErrorMessage("generate", response, excerpt), { status: response.status });
       }
       const audio = Buffer.from(await response.arrayBuffer());
       const mime = response.headers.get("content-type") ?? FALLBACK_MIME;
@@ -304,7 +308,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       );
       if (!response.ok) {
         const excerpt = await readErrorExcerpt(response);
-        throw new OpenAiCompatTtsError(httpErrorMessage("model list", response, excerpt));
+        throw new OpenAiCompatTtsError(httpErrorMessage("model list", response, excerpt), { status: response.status });
       }
       const parsed: unknown = await response.json().catch(() => null);
       if (typeof parsed !== "object" || parsed === null) return [];

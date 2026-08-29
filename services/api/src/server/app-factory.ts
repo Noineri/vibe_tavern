@@ -4,6 +4,12 @@ import { resolve } from "node:path";
 import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../shared/errors.js";
 import { ProviderExecutionError } from "../infrastructure/ai/provider-execution-types.js";
+import {
+	OpenAiCompatTtsConfigError,
+	OpenAiCompatTtsError,
+} from "../domain/tts/backends/openai-tts.js";
+import { GeminiTtsError } from "../domain/tts/backends/gemini-tts.js";
+import { ElevenLabsTtsError } from "../domain/tts/backends/elevenlabs-tts.js";
 import { logSendDebug } from "../shared/send-debug-log.js";
 import { createApiRouter, type RuntimeApi } from "../api/routes/index.js";
 import { createKokoroMirrorRoutes } from "../api/routes/kokoro-mirror.js";
@@ -123,6 +129,36 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 				{ error: { kind: "Conflict" as const, message: err.message, details: { code: err.code } } },
 				409,
 			);
+		}
+		if (
+			err instanceof OpenAiCompatTtsError ||
+			err instanceof GeminiTtsError ||
+			err instanceof ElevenLabsTtsError
+		) {
+			// TTS upstream failure (any server-side backend): the request itself was
+			// fine — the provider refused or failed (bad key → 401, dead endpoint,
+			// bad model → 4xx from upstream). Unmapped these fell through to the
+			// generic 500 "Internal", which hid the upstream status (an edge-tts
+			// 401 on a wrong key read as our own crash). Map to the same 502
+			// "Provider" shape as ProviderExecutionError, carrying the captured
+			// upstream status when the failure came from an HTTP response.
+			return c.json(
+				{
+					error: {
+						kind: "Provider" as const,
+						message: err.message,
+						details: { ...(err.status !== undefined ? { upstreamStatus: err.status } : {}) },
+					},
+				},
+				502,
+			);
+		}
+		if (err instanceof OpenAiCompatTtsConfigError) {
+			// TTS profile config problem (missing/empty endpoint after
+			// normalization): the caller's config is incomplete, not a server
+			// fault — 400 with the Validation kind, matching
+			// httpStatusForDomainError's mapping for the same vocabulary.
+			return c.json({ error: { kind: "Validation" as const, message: err.message } }, 400);
 		}
 		if (isDomainError(err)) {
 			return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 422 | 500 | 502);

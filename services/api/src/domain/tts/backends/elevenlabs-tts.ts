@@ -42,9 +42,13 @@ interface ParsedVoiceEntry {
 }
 
 export class ElevenLabsTtsError extends Error {
-  constructor(message: string) {
+  /** Upstream HTTP status when the failure came from a non-2xx response
+   *  (undefined for transport-level failures). */
+  readonly status?: number;
+  constructor(message: string, options?: { status?: number }) {
     super(message);
     this.name = "ElevenLabsTtsError";
+    this.status = options?.status;
   }
 }
 
@@ -123,6 +127,7 @@ async function expectOk(response: Response, operation: string): Promise<void> {
   const excerpt = await readErrorExcerpt(response);
   throw new ElevenLabsTtsError(
     `ElevenLabs ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
+    { status: response.status },
   );
 }
 

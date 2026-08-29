@@ -43,9 +43,13 @@ const DEFAULT_VOICE = "Kore";
 const DEFAULT_SAMPLE_RATE = 24000;
 
 export class GeminiTtsError extends Error {
-  constructor(message: string) {
+  /** Upstream HTTP status when the failure came from a non-2xx response
+   *  (undefined for transport-level failures). */
+  readonly status?: number;
+  constructor(message: string, options?: { status?: number }) {
     super(message);
     this.name = "GeminiTtsError";
+    this.status = options?.status;
   }
 }
 
@@ -245,6 +249,7 @@ export const geminiTtsFactory: TtsBackendFactory = (config) => {
           `Gemini TTS generate failed: ${response.status} ${
             response.statusText
           }${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+          { status: response.status },
         );
       }
 
@@ -273,6 +278,7 @@ export const geminiTtsFactory: TtsBackendFactory = (config) => {
         const errorText = await response.text().catch(() => "");
         throw new GeminiTtsError(
           `Gemini TTS model list failed: ${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+          { status: response.status },
         );
       }
       const payload: unknown = await response.json().catch(() => null);
