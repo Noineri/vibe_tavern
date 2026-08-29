@@ -84,6 +84,9 @@ function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles
     remove: mock(async () => {}),
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
+    // D21: the live-form auto-key mirror — default null (no provider match);
+    // tests set it to pin the draft-hint path.
+    draftAutoKeyProviderName: null,
   };
   const merged = { ...base, ...overrides };
   if (overrides.form !== undefined) {
@@ -1422,6 +1425,14 @@ describe("TTS editor — auto key hint + gate (D16)", () => {
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
     cleanup();
+  });
+
+  it("D21 draft hint: the hook's live-form match shows the hint with NO server decoration", () => {
+    // A brand-new draft has autoKeyProviderName null — the old behavior hid
+    // the hint until save. The hook's client-side mirror feeds the form now.
+    const tts = makeTts({ form: orForm({ autoKeyProviderName: null, id: null }), draftAutoKeyProviderName: "NanoLLM" });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
   });
 
   it("no hint once an own key is typed (own beats the auto key)", () => {

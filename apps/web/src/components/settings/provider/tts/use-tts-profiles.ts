@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
+import { listProviderProfiles } from "../../../../api/provider-api.js";
+import { matchAutoKeyProviderName, type AutoKeyProviderCandidate } from "./tts-form-helpers.js";
 import { TTS_PRESET_CONFIG_KEY } from "./tts-backend-ui.js";
 import {
   createTtsProfile,
@@ -64,6 +66,10 @@ export function useTtsProfiles(): {
   saving: boolean;
   /** Current editor screen (LLM headerMode analog). */
   headerMode: TtsHeaderMode;
+  /** D21: endpoint-match auto-key resolution for the LIVE form (drafts
+   *  included — the server decorates only saved records). Mirrors the
+   *  server's autoMatchProviderKey; null when nothing matches. */
+  draftAutoKeyProviderName: string | null;
   /** Open the connection form screen (Edit settings / New profile). */
   startEdit(): void;
   /** Mark a saved profile as the default voice (first UI surface for
@@ -85,6 +91,10 @@ export function useTtsProfiles(): {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [headerMode, setHeaderMode] = useState<TtsHeaderMode>("view");
+  // D21: wire projection of the LLM provider profiles, fetched once for the
+  // client-side auto-key hint. Hint-only data: a failed fetch degrades to
+  // "no hint" and never blocks the editor.
+  const [autoKeyProviders, setAutoKeyProviders] = useState<AutoKeyProviderCandidate[]>([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -103,6 +113,22 @@ export function useTtsProfiles(): {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await listProviderProfiles();
+        if (cancelled) return;
+        setAutoKeyProviders(list.map((p) => ({ endpoint: p.endpoint, hasStoredApiKey: p.hasStoredApiKey, name: p.name })));
+      } catch (cause) {
+        console.debug("[tts] auto-key hint: provider list unavailable", cause);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const select = useCallback(
     (id: string) => {
@@ -289,6 +315,19 @@ export function useTtsProfiles(): {
     }
   }, [form]);
 
+  // D21: resolve the auto-key hint for the LIVE form. A server-decorated
+  // name (saved record) wins; drafts and endpoint edits fall through to the
+  // client-side mirror of autoMatchProviderKey.
+  const draftAutoKeyProviderName =
+    form?.autoKeyProviderName !== null && form?.autoKeyProviderName !== undefined
+      ? form.autoKeyProviderName
+      : form === null || form.backend !== TTS_BACKEND.OpenAiCompatible
+        ? null
+        : matchAutoKeyProviderName(
+            typeof form.config.endpoint === "string" ? form.config.endpoint : "",
+            autoKeyProviders,
+          );
+
   return {
     profiles,
     loading,
@@ -298,6 +337,7 @@ export function useTtsProfiles(): {
     error,
     saving,
     headerMode,
+    draftAutoKeyProviderName,
     startEdit,
     setDefault,
     select,

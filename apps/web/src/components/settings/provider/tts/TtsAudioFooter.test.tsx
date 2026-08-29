@@ -39,6 +39,7 @@ function makeTts(overrides: Partial<TtsHook> = {}): TtsHook {
     dirty: true,
     error: null,
     saving: false,
+draftAutoKeyProviderName: null,
     headerMode: "view",
     startEdit: () => {},
     setDefault: async () => {},

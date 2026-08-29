@@ -91,6 +91,7 @@ function makeTts(profiles: TtsProfileRecord[]): TtsHook {
     dirty: false,
     error: null,
     saving: false,
+draftAutoKeyProviderName: null,
     headerMode: "view",
     startEdit: () => {},
     setDefault: async () => {},

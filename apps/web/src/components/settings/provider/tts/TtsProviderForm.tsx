@@ -14,6 +14,8 @@ import { monoUICls } from "../../../build/fields/field-styles.js";
 import { TtsApiKeyField } from "./TtsApiKeyField.js";
 import { ttsProviderSegmentOf, ttsPresetIdOf, ttsUiSpecFor, ttsUiVariantOf, type TtsProviderSegment } from "./tts-backend-ui.js";
 import { configString, formDraftConfig } from "./tts-form-helpers.js";
+// D21: effective auto-key name — the server decorates saved records only, the
+// hook's draftAutoKeyProviderName covers the live form (create / endpoint edit).
 import { KokoroModelPanel } from "./KokoroModelPanel.js";
 import { TtsLocalServerPanel } from "./TtsLocalServerPanel.js";
 import { useTtsPreview } from "./use-tts-preview.js";
@@ -63,6 +65,9 @@ export function TtsProviderForm({
   const preset = presetId ? TTS_PRESETS.find((p) => p.id === presetId) : undefined;
   const presetEndpoint = preset?.baseUrl ?? "";
   const apiKey = form.apiKey;
+  // D21: the hint follows the LIVE endpoint — a saved record's decorated
+  // name wins, otherwise the hook's client-side mirror covers drafts too.
+  const autoKeyName = form.autoKeyProviderName ?? tts?.draftAutoKeyProviderName ?? null;
   const variant = ttsUiVariantOf(form.backend, form.config);
   const spec = ttsUiSpecFor(variant);
 
@@ -244,12 +249,12 @@ export function TtsProviderForm({
           {/* Default-on key reuse (owner decision): when an LLM provider
               profile's endpoint auto-matches, say WHERE the key comes from —
               typing an own key above overrides it. */}
-          {!apiKey && !form.hasStoredApiKey && form.autoKeyProviderName !== null && (
+          {!apiKey && !form.hasStoredApiKey && autoKeyName !== null && (
             <div className="mt-1.5 flex items-center gap-1.5 font-ui text-[11px] text-t3" data-testid="tts-key-source-hint">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px] shrink-0">
                 <Icons.lock />
               </span>
-              {t("tts_key_from_provider_hint", { name: form.autoKeyProviderName })}
+              {t("tts_key_from_provider_hint", { name: autoKeyName })}
             </div>
           )}
         </div>
@@ -272,7 +277,7 @@ export function TtsProviderForm({
 
       {/* Test connection card */}
       <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="tts-test-card">
-        {needsKey && !apiKey && !form.hasStoredApiKey && form.autoKeyProviderName === null ? (
+        {needsKey && !apiKey && !form.hasStoredApiKey && autoKeyName === null ? (
           <div className="flex items-center gap-2 font-ui text-[13px] text-t3" data-testid="tts-test-dot-enter-key">
             <span className="h-2 w-2 rounded-full bg-t4" />
             {t("no_connection_enter_key")}

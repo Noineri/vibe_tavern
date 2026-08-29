@@ -45,3 +45,41 @@ export function configString(config: Record<string, unknown>, key: string, fallb
   const value = config[key];
   return typeof value === "string" ? value : fallback;
 }
+
+/** Mirrors the server-side endpoint normalization in
+ *  `services/api/src/api/adapters/tts-adapter.ts` (normalizeEndpoint): trim,
+ *  https:// prefix for scheme-less input, trailing slashes stripped,
+ *  lowercased. Kept in lockstep so the client-side draft hint (D21) matches
+ *  exactly what the server will auto-resolve on synthesis. */
+export function normalizeTtsEndpoint(raw: string): string {
+	let value = raw.trim();
+	if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+	return value.replace(/\/+$/, "").toLowerCase();
+}
+
+/** Minimal wire shape the auto-key matcher needs (D21): the client-side
+ *  projection of a provider profile — `hasStoredApiKey` stands in for the
+ *  server's `apiKey` presence check without leaking the secret. */
+export interface AutoKeyProviderCandidate {
+	endpoint: string;
+	hasStoredApiKey: boolean;
+	name: string;
+}
+
+/** Client-side mirror of the server's autoMatchProviderKey (owner decision
+ *  2026-08-28, D21 follow-up): the FIRST key-bearing provider (list order)
+ *  whose endpoint matches wins. Pure — the hook feeds it the wire provider
+ *  list, the editor feeds it the live draft form. */
+export function matchAutoKeyProviderName(
+	endpoint: string | null | undefined,
+	providers: AutoKeyProviderCandidate[],
+): string | null {
+	const raw = typeof endpoint === "string" ? endpoint.trim() : "";
+	if (raw === "") return null;
+	const target = normalizeTtsEndpoint(raw);
+	for (const provider of providers) {
+		if (!provider.hasStoredApiKey) continue;
+		if (normalizeTtsEndpoint(provider.endpoint) === target) return provider.name;
+	}
+	return null;
+}

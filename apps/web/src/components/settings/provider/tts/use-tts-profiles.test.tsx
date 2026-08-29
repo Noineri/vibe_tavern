@@ -6,6 +6,7 @@ useDomEnv();
 
 const realTtsApi = await import("../../../../api/tts-api.js");
 const realI18n = await import("../../../../i18n/context.js");
+const realProviderApi = await import("../../../../api/provider-api.js");
 
 mock.module("../../../../i18n/context.js", () => ({
   ...realI18n,
@@ -90,6 +91,16 @@ mock.module("../../../../api/tts-api.js", () => ({
   setTtsDefault: setDefaultMock,
 }));
 
+// D21: the hook fetches the provider wire list once for the client-side
+// auto-key hint. Same safe pattern as above — real module first, spread,
+// override only the one function the hook touches.
+let providerStore: Array<{ endpoint: string; hasStoredApiKey: boolean; name: string }> = [];
+const listProvidersMock = mock(async () => providerStore);
+mock.module("../../../../api/provider-api.js", () => ({
+  ...realProviderApi,
+  listProviderProfiles: listProvidersMock,
+}));
+
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
 const { useTtsProfiles } = await import("./use-tts-profiles.js");
 
@@ -98,6 +109,7 @@ afterEach(async () => {
   cleanup();
   // reset mutable state
   store = [];
+  providerStore = [];
   failUpdate = false;
   // clear mock call history
   listAllMock.mockClear();
@@ -105,9 +117,41 @@ afterEach(async () => {
   updateMock.mockClear();
   deleteMock.mockClear();
   setDefaultMock.mockClear();
+  listProvidersMock.mockClear();
 });
 
 describe("useTtsProfiles", () => {
+  it("D21 draft auto-key hint: a draft endpoint matching a keyful provider resolves the name client-side", async () => {
+    providerStore = [
+      { endpoint: "NanoGPT", hasStoredApiKey: false, name: "NoKey" },
+      { endpoint: "https://nano-gpt.com/api/v1/", hasStoredApiKey: true, name: "NanoLLM" },
+      { endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OpenRouter" },
+    ];
+    store = [];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    await waitFor(() => expect(listProvidersMock).toHaveBeenCalled());
+    // Draft: create flow + openai-compat backend + matching endpoint (trim,
+    // scheme, trailing slash and case all normalize) → FIRST keyful match.
+    act(() => hook!.startCreate());
+    // Two separate patches: a backend switch wipes config by design
+    // (stale keys must not leak into the new backend's config).
+    act(() => hook!.setForm({ backend: "openai-compatible" as never }));
+    act(() => hook!.setForm({ config: { endpoint: "https://NANO-GPT.com/api/v1//" } as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("NanoLLM"));
+    // A decorated saved record still wins over the live computation.
+    act(() => hook!.setForm({ autoKeyProviderName: "Decorated" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Decorated"));
+    // No match → null (no fake hint).
+    act(() => hook!.setForm({ autoKeyProviderName: null as never, config: { endpoint: "https://nowhere.example/v1" } as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
+  });
+
   it("loads profiles on mount and supports select + startCreate", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" }), makeRecord({ id: "p2", name: "Beta", backend: "gemini" })];
 
