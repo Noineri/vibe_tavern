@@ -241,6 +241,17 @@ export function TtsProviderForm({
             placeholder={t("api_key_placeholder")}
             stored={form.hasStoredApiKey}
           />
+          {/* Default-on key reuse (owner decision): when an LLM provider
+              profile's endpoint auto-matches, say WHERE the key comes from —
+              typing an own key above overrides it. */}
+          {!apiKey && !form.hasStoredApiKey && form.autoKeyProviderName !== null && (
+            <div className="mt-1.5 flex items-center gap-1.5 font-ui text-[11px] text-t3" data-testid="tts-key-source-hint">
+              <span className="[&_svg]:h-[12px] [&_svg]:w-[12px] shrink-0">
+                <Icons.lock />
+              </span>
+              {t("tts_key_from_provider_hint", { name: form.autoKeyProviderName })}
+            </div>
+          )}
         </div>
       )}
 
@@ -261,7 +272,7 @@ export function TtsProviderForm({
 
       {/* Test connection card */}
       <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="tts-test-card">
-        {needsKey && !apiKey && !form.hasStoredApiKey ? (
+        {needsKey && !apiKey && !form.hasStoredApiKey && form.autoKeyProviderName === null ? (
           <div className="flex items-center gap-2 font-ui text-[13px] text-t3" data-testid="tts-test-dot-enter-key">
             <span className="h-2 w-2 rounded-full bg-t4" />
             {t("no_connection_enter_key")}

@@ -341,4 +341,60 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     expect(captured()!.url).toBe("http://localhost:8880/v1/models");
     expect(models.map((m) => m.id)).toEqual(["gpt-4o", "tts-1", "whisper-1"]);
   });
+
+  test("aggregator enrichment: name/description/pricing/context parsed into the entry", async () => {
+    captureFetch(() =>
+      jsonResponse(200, {
+        data: [
+          {
+            id: "deepgram/flux-tts:free",
+            name: "Flux TTS (free)",
+            description: "Fast TTS model by Deepgram",
+            context_length: 4096,
+            pricing: { prompt: "0", completion: "0" },
+          },
+          { id: "paid/tts", name: "Paid TTS", pricing: { prompt: "3", completion: "0" } },
+          { id: "bare/tts" },
+        ],
+      }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "https://openrouter.ai/api/v1", modelFilter: "modality" });
+    const models = await backend.listModels();
+    expect(models[0]).toEqual({
+      id: "deepgram/flux-tts:free",
+      label: "Flux TTS (free)",
+      description: "Fast TTS model by Deepgram",
+      contextLength: 4096,
+      isFree: true,
+    });
+    expect(models[1]).toEqual({ id: "paid/tts", label: "Paid TTS", isFree: false });
+    expect(models[2]).toEqual({ id: "bare/tts", label: "bare/tts" });
+  });
+
+  test("no filter + openrouter host → modality param applied anyway (D15: heals pre-stamp profiles)", async () => {
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, { data: [{ id: "deepgram/flux-tts:free" }] }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "https://openrouter.ai/api/v1" });
+    const models = await backend.listModels();
+    expect(captured()!.url).toBe("https://openrouter.ai/api/v1/models?output_modalities=speech");
+    expect(models.map((m) => m.id)).toEqual(["deepgram/flux-tts:free"]);
+  });
+
+  test("no filter + openrouter host written without scheme → modality param still applies", async () => {
+    const { captured } = captureFetch(() => jsonResponse(200, { data: [] }));
+    const backend = openAiCompatTtsFactory({ endpoint: "openrouter.ai/api/v1" });
+    await backend.listModels();
+    expect(captured()!.url).toBe("openrouter.ai/api/v1/models?output_modalities=speech");
+  });
+
+  test("explicit name-heuristic + non-openrouter host → plain URL (param must not leak elsewhere)", async () => {
+    const { captured } = captureFetch(() => jsonResponse(200, { data: [{ id: "tts-1" }] }));
+    const backend = openAiCompatTtsFactory({
+      endpoint: "https://api.groq.com/openai/v1",
+      modelFilter: "name-heuristic",
+    });
+    await backend.listModels();
+    expect(captured()!.url).toBe("https://api.groq.com/openai/v1/models");
+  });
 });

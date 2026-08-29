@@ -2485,6 +2485,7 @@ export default interface Resources {
     "tts_field_style_instructions_placeholder": "e.g. Speak warmly and slowly...",
     "tts_field_voice": "Voice",
     "tts_is_default": "Default",
+    "tts_key_from_provider_hint": "Key and endpoint are taken from the \"{name}\" provider profile — type your own key here to override.",
     "tts_kokoro_model": "Engine model",
     "tts_kokoro_model_active": "Active: {name}",
     "tts_kokoro_model_download": "Download model",

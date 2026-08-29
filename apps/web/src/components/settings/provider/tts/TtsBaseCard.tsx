@@ -46,7 +46,8 @@ export function TtsBaseCard({ profile, form, isDefault, onEdit, onSetDefault }: 
 
   const presetLabel = ttsPresetLabelFor(form);
   const isKokoro = form.backend === TTS_BACKEND.Kokoro;
-  const hasKey = isKokoro || form.hasStoredApiKey || Boolean(configString(form.config, "apiKey"));
+  const hasKey =
+    isKokoro || form.hasStoredApiKey || form.autoKeyProviderName !== null || Boolean(configString(form.config, "apiKey"));
   // Keep the same status rendering pattern as ProviderViewHeader: a colored chip with icon.
   // Kokoro has no key — show "Model ready" instead.
   const statusKey = isKokoro ? "tts_kokoro_model_ready" : hasKey ? "api_key_saved" : "no_api_key";
@@ -77,6 +78,11 @@ export function TtsBaseCard({ profile, form, isDefault, onEdit, onSetDefault }: 
           >
             <span>{presetLabel}</span>
             <span className="h-1 w-1 rounded-full bg-t4" />
+            {form.autoKeyProviderName !== null && (
+              <span className="text-t3" data-testid="tts-key-source-hint">
+                {t("tts_key_from_provider_hint", { name: form.autoKeyProviderName })}
+              </span>
+            )}
             {hasKey ? (
               <span className="flex items-center gap-1.5 text-success">
                 <Icons.Check /> {t(statusKey)}

@@ -24,6 +24,10 @@ export interface TtsProfileForm {
    *  the form does not edit it (no picker yet), so save sends it as
    *  undefined (= keep). */
   providerRef: string | null;
+  /** Server-computed hint: provider profile name whose endpoint auto-matches
+   *  (default-on key reuse) — drives the "key from «X»" hint + the test-card
+   *  key gate. Null when no provider matches. */
+  autoKeyProviderName: string | null;
   voiceId: string;
   narratorVoiceId: string;
   /** Mirror of the record's write-only flag (TE2-16): true while editing a
@@ -113,6 +117,7 @@ export function useTtsProfiles(): {
         config: { ...record.config },
         apiKey: "",
         providerRef: record.providerRef ?? null,
+        autoKeyProviderName: record.autoKeyProviderName ?? null,
         voiceId: record.voiceId ?? "",
         narratorVoiceId: record.narratorVoiceId ?? "",
         hasStoredApiKey: record.hasStoredApiKey,
@@ -126,7 +131,7 @@ export function useTtsProfiles(): {
 
   const startCreate = useCallback(() => {
     setEditingId(null);
-    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
+    setFormState({ id: null, name: "", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, autoKeyProviderName: null, voiceId: "af_heart", narratorVoiceId: "", hasStoredApiKey: false });
     setDirty(false);
     setHeaderMode("edit");
     setError(null);
@@ -160,7 +165,7 @@ export function useTtsProfiles(): {
         const preset = patch.config?.[TTS_PRESET_CONFIG_KEY];
         const nextConfig =
           patch.config !== undefined && typeof preset === "string" && preset.length > 0 ? { ...patch.config } : {};
-        return { ...prev, ...patch, config: nextConfig, apiKey: "", providerRef: null, voiceId: nextVoiceId, narratorVoiceId: "", hasStoredApiKey: false };
+        return { ...prev, ...patch, config: nextConfig, apiKey: "", providerRef: null, autoKeyProviderName: null, voiceId: nextVoiceId, narratorVoiceId: "", hasStoredApiKey: false };
       }
       return { ...prev, ...patch };
     });
@@ -178,6 +183,7 @@ export function useTtsProfiles(): {
           config: { ...record.config },
           apiKey: "",
           providerRef: record.providerRef ?? null,
+          autoKeyProviderName: record.autoKeyProviderName ?? null,
           voiceId: record.voiceId ?? "",
           narratorVoiceId: record.narratorVoiceId ?? "",
           hasStoredApiKey: record.hasStoredApiKey,
@@ -213,6 +219,8 @@ export function useTtsProfiles(): {
           backend: form.backend,
           config: form.config,
           apiKey: apiKeyPayload,
+          // null (no link) maps to "" on the wire: create stores null, update clears.
+          providerRef: form.providerRef ?? "",
           voiceId: form.voiceId,
           narratorVoiceId: form.narratorVoiceId.trim() === "" ? null : form.narratorVoiceId,
         });
@@ -222,6 +230,8 @@ export function useTtsProfiles(): {
           backend: form.backend,
           config: form.config,
           apiKey: apiKeyPayload,
+          // null (no link) maps to "" on the wire: create stores null, update clears.
+          providerRef: form.providerRef ?? "",
           voiceId: form.voiceId,
           narratorVoiceId: form.narratorVoiceId.trim() === "" ? null : form.narratorVoiceId,
         });
@@ -236,6 +246,7 @@ export function useTtsProfiles(): {
         config: { ...saved.config },
         apiKey: "",
         providerRef: saved.providerRef ?? null,
+        autoKeyProviderName: saved.autoKeyProviderName ?? null,
         voiceId: saved.voiceId ?? "",
         narratorVoiceId: (saved as unknown as { narratorVoiceId?: string | null }).narratorVoiceId ?? "",
         hasStoredApiKey: saved.hasStoredApiKey,

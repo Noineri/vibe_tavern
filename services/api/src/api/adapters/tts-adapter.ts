@@ -29,6 +29,7 @@ function toClientTtsProfile(profile: TtsProfile): ClientTtsProfileRecord {
 		config: profile.config,
 		hasStoredApiKey: typeof profile.apiKey === "string" && profile.apiKey !== "",
 		providerRef: profile.providerRef,
+		autoKeyProviderName: null,
 		voiceId: profile.voiceId,
 		narratorVoiceId: profile.narratorVoiceId,
 		lang: profile.lang,
@@ -44,6 +45,40 @@ function toClientTtsProfile(profile: TtsProfile): ClientTtsProfileRecord {
 function configApiKey(config: Record<string, unknown>): string {
 	const value = config.apiKey;
 	return typeof value === "string" ? value.trim() : "";
+}
+
+/** Endpoint normalization for auto-matching: scheme-tolerant (a bare host
+ *  gets https://), trailing slashes collapsed, case-insensitive host. */
+function normalizeEndpoint(raw: string): string {
+	let value = raw.trim();
+	if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+	return value.replace(/\/+$/, "").toLowerCase();
+}
+
+/** Owner decision (2026-08-28): an LLM provider profile's key is used
+ *  AUTOMATICALLY when a TTS profile's endpoint matches the provider's
+ *  endpoint — that is the DEFAULT path; the user overrides by typing an own
+ *  key (own key beats the provider key in resolveSynthesisConfig). Scope:
+ *  endpoint-bearing OpenAI-compatible profiles only (gemini/elevenlabs have
+ *  no endpoint in the bag to match on). Deterministic when several
+ *  providers share the endpoint: the first in list (sort) order wins. */
+async function autoMatchProviderKey(
+	stores: Pick<StoreContainer, "tts" | "providers">,
+	backend: TtsProfile["backend"] | DraftTtsVoicesInput["backend"],
+	config: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+	if (backend !== TTS_BACKEND.OpenAiCompatible) return config;
+	const endpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
+	if (endpoint === "") return config;
+	const target = normalizeEndpoint(endpoint);
+	const providers = await stores.providers.listAll();
+	for (const provider of providers) {
+		if (!provider.apiKey) continue;
+		if (normalizeEndpoint(provider.endpoint) === target) {
+			return { ...config, apiKey: provider.apiKey };
+		}
+	}
+	return config;
 }
 
 /** Resolve the SYNTHESIS config for a saved profile (TE2-16): the typed
@@ -64,14 +99,18 @@ async function resolveSynthesisConfig(
 		config.apiKey = ownKey;
 		return config;
 	}
-	if (profile.providerRef === null) return config;
-	const provider = await stores.providers.getById(profile.providerRef);
-	if (provider === null || !provider.apiKey) return config;
-	config.apiKey = provider.apiKey;
-	if (profile.backend === TTS_BACKEND.OpenAiCompatible && typeof config.endpoint !== "string") {
-		config.endpoint = provider.endpoint;
+	if (profile.providerRef !== null) {
+		const provider = await stores.providers.getById(profile.providerRef);
+		if (provider === null || !provider.apiKey) return config;
+		config.apiKey = provider.apiKey;
+		if (profile.backend === TTS_BACKEND.OpenAiCompatible && typeof config.endpoint !== "string") {
+			config.endpoint = provider.endpoint;
+		}
+		return config;
 	}
-	return config;
+	// No own key, no explicit link — auto-match the endpoint against the
+	// provider profiles (default-on key reuse).
+	return await autoMatchProviderKey(stores, profile.backend, config);
 }
 
 /** Draft (transient) stored-key resolution — the LLM branch's test-draft
@@ -90,35 +129,67 @@ async function resolveDraftConfig(
 	profileId: string | undefined,
 ): Promise<Record<string, unknown>> {
 	if (configApiKey(config) !== "") return config;
-	if (profileId === undefined) return config;
-	const profile = await stores.tts.getById(profileId);
-	if (profile === null) return config;
-	if (profile.backend !== backend) return config;
-	if (profile.apiKey === null && profile.providerRef === null) return config;
-	// Endpoint-bearing backend: a stored key may only be reused for the
-	// endpoint it was saved with (write-only key UX without letting a caller
-	// aim the secret at an arbitrary replacement URL). A providerRef profile
-	// resolves its endpoint from the provider, so the guard compares against
-	// the effective synthesis endpoint, not the raw blob.
-	if (backend === TTS_BACKEND.OpenAiCompatible) {
-		const incomingEndpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
-		if (incomingEndpoint === "") return config;
-		const effective = await resolveSynthesisConfig(stores, profile);
-		const storedEndpoint = typeof effective.endpoint === "string" ? effective.endpoint.trim() : "";
-		if (incomingEndpoint !== storedEndpoint) return config;
-		return effective;
+	if (profileId !== undefined) {
+		const profile = await stores.tts.getById(profileId);
+		if (
+			profile !== null &&
+			profile.backend === backend &&
+			!(profile.apiKey === null && profile.providerRef === null)
+		) {
+			// Endpoint-bearing backend: a stored key may only be reused for the
+			// endpoint it was saved with (write-only key UX without letting a
+			// caller aim the secret at an arbitrary replacement URL). A
+			// providerRef profile resolves its endpoint from the provider, so
+			// the guard compares against the effective synthesis endpoint, not
+			// the raw blob.
+			if (backend === TTS_BACKEND.OpenAiCompatible) {
+				const incomingEndpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
+				if (incomingEndpoint !== "") {
+					const effective = await resolveSynthesisConfig(stores, profile);
+					const storedEndpoint = typeof effective.endpoint === "string" ? effective.endpoint.trim() : "";
+					if (incomingEndpoint === storedEndpoint && configApiKey(effective) !== "") return effective;
+				}
+			} else {
+				const effective = await resolveSynthesisConfig(stores, profile);
+				if (configApiKey(effective) !== "") return effective;
+			}
+		}
 	}
-	return resolveSynthesisConfig(stores, profile);
+	// No own key and no matching stored profile — auto-match the endpoint
+	// against the provider profiles (default-on key reuse; works for an
+	// unsaved draft too — a freshly typed endpoint immediately gets the
+	// provider key without any linking step).
+	return await autoMatchProviderKey(stores, backend, config);
 }
 
 export class TtsAdapter implements TtsRuntimeApi {
   constructor(private readonly stores: Pick<StoreContainer, "tts" | "providers">) {}
 
-  listTtsProfiles = async () => (await this.stores.tts.listAll()).map(toClientTtsProfile);
+  /** Owner decision (2026-08-28): the wire record reports WHICH provider
+   *  profile's key auto-matches the profile's endpoint, so the UI can show
+   *  "key from «X» in use" instead of silently borrowing it. Same matching
+   *  rule as autoMatchProviderKey (first provider with a key, sort order). */
+  private async decorateAutoKey(records: ClientTtsProfileRecord[]): Promise<ClientTtsProfileRecord[]> {
+    const providers = await this.stores.providers.listAll();
+    const keyful = providers.filter((p) => p.apiKey);
+    if (keyful.length === 0) return records;
+    const byEndpoint = new Map(keyful.map((p) => [normalizeEndpoint(p.endpoint), p.name]));
+    for (const record of records) {
+      if (record.hasStoredApiKey || record.providerRef !== null) continue;
+      if (record.backend !== TTS_BACKEND.OpenAiCompatible) continue;
+      const endpoint = typeof record.config.endpoint === "string" ? record.config.endpoint.trim() : "";
+      if (endpoint === "") continue;
+      const name = byEndpoint.get(normalizeEndpoint(endpoint));
+      record.autoKeyProviderName = name ?? null;
+    }
+    return records;
+  }
+
+  listTtsProfiles = async () => await this.decorateAutoKey((await this.stores.tts.listAll()).map(toClientTtsProfile));
 
   getTtsProfile = async (id: string) => {
     const profile = await this.stores.tts.getById(id);
-    return profile ? toClientTtsProfile(profile) : null;
+    return profile ? (await this.decorateAutoKey([toClientTtsProfile(profile)]))[0] : null;
   };
 
   createTtsProfile: TtsRuntimeApi["createTtsProfile"] = async (body) => {
@@ -138,7 +209,7 @@ export class TtsAdapter implements TtsRuntimeApi {
       isDefault: body.isDefault,
     };
     const created = await this.stores.tts.create(input);
-    return toClientTtsProfile(created);
+    return (await this.decorateAutoKey([toClientTtsProfile(created)]))[0];
   };
 
   updateTtsProfile: TtsRuntimeApi["updateTtsProfile"] = async (id, body) => {
@@ -146,7 +217,7 @@ export class TtsAdapter implements TtsRuntimeApi {
     // `""` = cleared, non-empty = set — the store maps them onto the typed
     // columns; the old F2b merge-on-read dance is gone.
     const updated = await this.stores.tts.update(id, { ...body });
-    return updated ? toClientTtsProfile(updated) : null;
+    return updated ? (await this.decorateAutoKey([toClientTtsProfile(updated)]))[0] : null;
   };
 
   deleteTtsProfile = async (id: string): Promise<void> => {
@@ -155,7 +226,7 @@ export class TtsAdapter implements TtsRuntimeApi {
 
   setTtsDefault: TtsRuntimeApi["setTtsDefault"] = async (id) => {
     const updated = await this.stores.tts.setDefault(id);
-    return updated ? toClientTtsProfile(updated) : null;
+    return updated ? (await this.decorateAutoKey([toClientTtsProfile(updated)]))[0] : null;
   };
 
   getDefaultTtsProfile = async () => {

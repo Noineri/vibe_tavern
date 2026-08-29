@@ -11,6 +11,7 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
     config: {},
     hasStoredApiKey: false,
     providerRef: null,
+    autoKeyProviderName: null,
     voiceId: "af_heart",
     narratorVoiceId: null,
     lang: "en",

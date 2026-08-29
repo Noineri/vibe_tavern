@@ -30,6 +30,12 @@ export interface TtsVoiceInfo {
 export interface TtsModelInfo {
   id: string;
   label: string;
+  /** Aggregator enrichment (OpenRouter-style /models payloads): free-tier
+   *  flag, human description and context length parsed when present —
+   *  plain OpenAI-compatible servers simply omit them. */
+  isFree?: boolean;
+  description?: string;
+  contextLength?: number;
 }
 
 export interface TtsProbeResult {

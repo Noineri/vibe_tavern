@@ -19,6 +19,9 @@ export interface TtsProfileRecord {
   /** Optional providerProfiles.id link — key + baseUrl resolve server-side
    *  at synthesis/test time (TE2-16); never carries a secret either. */
   providerRef: string | null;
+  /** Provider profile name whose endpoint auto-matches this profile
+   *  (default-on key reuse) - UI hint only. */
+  autoKeyProviderName: string | null;
   voiceId: string;
   narratorVoiceId: string | null;
   lang: string;
@@ -210,7 +213,7 @@ export async function listTtsDraftModels(body: {
   backend: string;
   config: Record<string, unknown>;
   profileId?: string;
-}): Promise<Array<{ id: string; label: string }>> {
+}): Promise<TtsModelListEntry[]> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/draft/models`), {
     method: "POST",
@@ -221,7 +224,18 @@ export async function listTtsDraftModels(body: {
     const text = await response.text().catch(() => "");
     throw new Error(`TTS draft model list failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, 200)}` : ""}`);
   }
-  return (await response.json()) as Array<{ id: string; label: string }>;
+  return (await response.json()) as TtsModelListEntry[];
+}
+
+/** One entry of the draft model list — aggregator enrichment
+ *  (isFree / description / contextLength) is parsed server-side when the
+ *  provider ships it (OpenRouter-style /models payloads). */
+export interface TtsModelListEntry {
+  id: string;
+  label: string;
+  isFree?: boolean;
+  description?: string;
+  contextLength?: number;
 }
 
 // ─── Local-server helpers (D8) ───────────────────────────────────────────

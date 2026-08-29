@@ -54,6 +54,23 @@ const MAX_SPEED = 4.0;
 const TTS_MODEL_HEURISTIC_RE =
   /tts|speech|audio|kokoro|orpheus|fish|cosy|dia|melo|voice/i;
 
+/** Known aggregator that hides speech models behind the
+ *  `output_modalities` query param: the unfiltered catalog is 300+
+ *  chat-only models with none of the TTS ones (verified live — the
+ *  speech-filtered request returns them, the plain one does not).
+ *  Host-based detection heals profiles saved before the preset began
+ *  stamping `modelFilter` into the config bag. */
+const MODALITY_FILTER_HOSTS = new Set(["openrouter.ai"]);
+
+function isOpenRouterStyleEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint.includes("://") ? endpoint : `https://${endpoint}`);
+    return MODALITY_FILTER_HOSTS.has(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /** Error body excerpt length included in HTTP-failure messages. */
 const ERROR_BODY_EXCERPT_LENGTH = 200;
 
@@ -261,10 +278,11 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
 
     async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
       const modelFilter = readString(config, "modelFilter");
-      const url =
-        modelFilter === "modality"
-          ? `${cfg.endpoint}/models?output_modalities=speech`
-          : `${cfg.endpoint}/models`;
+      const useModalityParam =
+        modelFilter === "modality" || (modelFilter === undefined && isOpenRouterStyleEndpoint(cfg.endpoint));
+      const url = useModalityParam
+        ? `${cfg.endpoint}/models?output_modalities=speech`
+        : `${cfg.endpoint}/models`;
       const response = await fetchOrWrap(
         url,
         {
@@ -285,9 +303,39 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       const out: import("../tts-backend.js").TtsModelInfo[] = [];
       for (const entry of data) {
         if (typeof entry !== "object" || entry === null) continue;
-        const id = (entry as Record<string, unknown>).id;
+        const record = entry as Record<string, unknown>;
+        const id = record.id;
         if (typeof id !== "string" || id.length === 0) continue;
-        out.push({ id, label: id });
+        // Enrichment (OpenRouter-style entries; absent on plain OpenAI):
+        // `name` is the display label, `description` human wording,
+        // `pricing.prompt/completion` per-Mtok strings ("0" = free tier),
+        // `context_length` the input window.
+        const info: import("../tts-backend.js").TtsModelInfo = {
+          id,
+          label: typeof record.name === "string" && record.name.length > 0 ? record.name : id,
+        };
+        if (typeof record.description === "string" && record.description.length > 0) {
+          info.description = record.description;
+        }
+        if (typeof record.context_length === "number" && Number.isFinite(record.context_length)) {
+          info.contextLength = record.context_length;
+        }
+        const pricing = record.pricing;
+        if (typeof pricing === "object" && pricing !== null) {
+          const p = pricing as Record<string, unknown>;
+          const toNumber = (v: unknown): number | null => {
+            if (typeof v === "number" && Number.isFinite(v)) return v;
+            if (typeof v === "string" && v.trim() !== "") {
+              const parsed = Number(v);
+              return Number.isFinite(parsed) ? parsed : null;
+            }
+            return null;
+          };
+          const prompt = toNumber(p.prompt);
+          const completion = toNumber(p.completion);
+          if (prompt !== null && completion !== null) info.isFree = prompt === 0 && completion === 0;
+        }
+        out.push(info);
       }
       if (modelFilter === "name-heuristic") {
         const filtered = out.filter((m) => TTS_MODEL_HEURISTIC_RE.test(m.id));

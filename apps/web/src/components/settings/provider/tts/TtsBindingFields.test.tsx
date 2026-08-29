@@ -70,13 +70,14 @@ function profile(id: string, isDefault: boolean): TtsProfileRecord {
     isDefault,
     hasStoredApiKey: false,
     providerRef: null,
+    autoKeyProviderName: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
 function makeForm(id: string | null): TtsProfileForm {
-  return { id, name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "", hasStoredApiKey: false };
+  return { id, name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, autoKeyProviderName: null, voiceId: "", narratorVoiceId: "", hasStoredApiKey: false };
 }
 
 type TtsHook = ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;

@@ -2634,5 +2634,6 @@
   "tts_is_default": "Default",
   "tts_make_default": "Make default",
   "tts_segment_browser": "Kokoro",
-  "tts_segment_local": "Local server"
+  "tts_segment_local": "Local server",
+  "tts_key_from_provider_hint": "Key and endpoint are taken from the \"{name}\" provider profile — type your own key here to override."
 }

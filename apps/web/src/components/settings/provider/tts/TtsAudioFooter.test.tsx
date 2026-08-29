@@ -23,6 +23,7 @@ function makeTts(overrides: Partial<TtsHook> = {}): TtsHook {
     narratorVoiceId: "",
     hasStoredApiKey: false,
     providerRef: null,
+    autoKeyProviderName: null,
     apiKey: "",
     lang: "en",
     sortOrder: 0,

@@ -214,6 +214,9 @@ export interface ClientTtsProfileRecord {
 	/** Optional providerProfiles.id link — key + baseUrl resolve server-side
 	 *  at synthesis/test time (TE2-16); the provider key never crosses either. */
 	providerRef: string | null;
+	/** Provider profile name whose endpoint auto-matches (default-on key
+	 *  reuse) — UI hint only; the key itself never crosses the boundary. */
+	autoKeyProviderName: string | null;
 	voiceId: string;
 	narratorVoiceId: string | null;
 	lang: string;

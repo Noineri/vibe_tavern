@@ -24,6 +24,7 @@ const ttsHookBase: {
     config: Record<string, unknown>;
     apiKey: string;
     providerRef: string | null;
+    autoKeyProviderName: string | null;
     voiceId: string;
     narratorVoiceId: string;
     hasStoredApiKey: boolean;
@@ -54,6 +55,7 @@ const ttsHookBase: {
     config: {} as Record<string, unknown>,
     apiKey: "",
     providerRef: null,
+    autoKeyProviderName: null,
     voiceId: "alloy",
     narratorVoiceId: "",
     hasStoredApiKey: false,

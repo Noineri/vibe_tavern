@@ -45,6 +45,11 @@ export const ttsProfileSchema = z.object({
    *  from the provider store at synthesis/test time (TE2-16) — the provider
    *  key never crosses the boundary either. Null = no link. */
   providerRef: z.string().nullable(),
+  /** Name of the provider profile whose endpoint AUTO-MATCHES this profile
+   *  (owner decision: default-on key reuse) — set when the profile has no
+   *  own key and no explicit link; the UI uses it for the "key from «X»"
+   *  hint. The provider KEY itself never crosses the boundary. */
+  autoKeyProviderName: z.string().nullable(),
   voiceId: z.string(),
   narratorVoiceId: z.string().nullable(),
   lang: z.string(),

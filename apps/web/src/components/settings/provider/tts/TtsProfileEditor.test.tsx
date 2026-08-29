@@ -61,7 +61,7 @@ mock.module("../../../../api/tts-api.js", () => ({
  *  hand-maintaining 40+ literals is how regressions slip through. */
 function normalizeForm(form: Record<string, unknown> | null | undefined) {
   if (form === null || form === undefined) return form;
-  return { apiKey: "", providerRef: null, hasStoredApiKey: false, ...form } as never;
+  return { apiKey: "", providerRef: null, autoKeyProviderName: null, hasStoredApiKey: false, ...form } as never;
 }
 
 function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>> = {}) {
@@ -69,7 +69,7 @@ function makeTts(overrides: Partial<ReturnType<typeof import("./use-tts-profiles
     profiles: [],
     loading: false,
     editingId: "p1",
-    form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as string, config: {}, apiKey: "", providerRef: null, voiceId: "" } as never,
+    form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as string, config: {}, apiKey: "", providerRef: null, autoKeyProviderName: null, voiceId: "" } as never,
     dirty: false,
     error: null as string | null,
     saving: false,
@@ -175,7 +175,6 @@ describe("TtsProfileEditor", () => {
     expect(view.queryByTestId("tts-field-model")).toBeNull();
     expect(view.queryByTestId("tts-field-response-format")).toBeNull();
     expect(view.queryByText("tts_field_style_instructions")).toBeNull();
-    expect(view.queryByTestId("tts-field-model-id")).toBeNull();
     expect(view.queryByText("tts_field_stability")).toBeNull();
     cleanup();
   });
@@ -202,7 +201,6 @@ describe("TtsProfileEditor", () => {
     expect(view.queryByText("tts_field_speed")).toBeTruthy();
     expect(view.queryAllByText("tts_field_voice").length).toBeGreaterThan(0);
     expect(view.queryByText("tts_field_style_instructions")).toBeNull();
-    expect(view.queryByTestId("tts-field-model-id")).toBeNull();
     expect(view.queryByText("tts_field_stability")).toBeNull();
     // Edit screen: endpoint + key.
     const editTts = makeTts({
@@ -246,7 +244,6 @@ describe("TtsProfileEditor", () => {
     const editView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: editTts } as never));
     expect(editView.getByTestId("tts-field-api-key")).toBeTruthy();
     expect(view.queryByTestId("tts-field-response-format")).toBeNull();
-    expect(view.queryByTestId("tts-field-model-id")).toBeNull();
     expect(view.queryByText("tts_field_stability")).toBeNull();
     cleanup();
   });
@@ -266,7 +263,7 @@ describe("TtsProfileEditor", () => {
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     // View mode: modelId/sliders/toggle/voices; apiKey is the edit screen.
     expect(view.queryByTestId("tts-field-api-key")).toBeNull();
-    expect(view.getByTestId("tts-field-model-id")).toBeTruthy();
+    expect(view.getByTestId("tts-field-model")).toBeTruthy();
     expect(view.queryByText("tts_field_stability")).toBeTruthy();
     const editTts = makeTts({
       form: {
@@ -454,12 +451,16 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
     // TE2-12: tuning card is now an accordion (closed by default) — open to reach preview button, same boundary.
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
-    const connection = view.getByTestId("tts-connection-card");
     const voice = view.getByTestId("tts-voice-card");
-    // LLM mechanism (rework): the connection card in VIEW mode holds the
-    // model field only; endpoint/key live on the separate edit screen.
-    expect(connection).toBeTruthy();
-    expect(view.getByTestId("tts-field-model")).toBeTruthy();
+    // LLM mechanism (rework) + owner rule: the MODEL picker is a bare
+    // section (no card wrapper) and sits ABOVE the voice section — voices
+    // are model-dependent. Endpoint/key live on the separate edit screen.
+    const modelField = view.getByTestId("tts-field-model");
+    expect(modelField).toBeTruthy();
+    expect(view.getByTestId("tts-models-refresh")).toBeTruthy();
+    expect(
+      modelField.compareDocumentPosition(voice) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(view.queryByTestId("tts-field-endpoint")).toBeNull();
     expect(view.queryByTestId("tts-field-api-key")).toBeNull();
     expect(view.queryAllByText("tts_field_voice").length).toBeGreaterThan(0);
@@ -479,12 +480,13 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
     cleanup();
   });
 
+
   it("kokoro has NO connection card (browser-local: nothing to connect to)", () => {
     const tts = viewTts({
       form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" } as never,
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
-    expect(view.queryByTestId("tts-connection-card")).toBeNull();
+    expect(view.queryByTestId("tts-field-model")).toBeNull();
     expect(view.getByTestId("tts-voice-card")).toBeTruthy();
     cleanup();
   });
@@ -831,6 +833,40 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     cleanup();
   });
 
+  it("D15: applying a preset stamps modelFilter into the config (openrouter → modality)", async () => {
+    const tts = makeTts({
+      profiles: [],
+      form: {
+        id: "p1",
+        name: "P",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { preset: "openai", endpoint: "https://api.openai.com/v1" },
+        voiceId: "alloy",
+        narratorVoiceId: "",
+      } as never,
+    });
+    const calls: Array<{ config?: Record<string, unknown> }> = [];
+    (tts as unknown as { setForm: (patch: { config?: Record<string, unknown> }) => void }).setForm = (patch) => calls.push(patch);
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    // api_format dropdown → OpenRouter option
+    const fmtTrigger = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("OpenAI"));
+    expect(fmtTrigger).toBeTruthy();
+    fireEvent.click(fmtTrigger!);
+    await waitFor(() => expect(document.body.textContent ?? "").toContain("OpenRouter"));
+    const option = Array.from(document.body.querySelectorAll("[cmdk-item]")).find((el) => el.textContent?.trim() === "OpenRouter");
+    expect(option).toBeTruthy();
+    fireEvent.click(option!);
+    const applied = calls.find((c) => c.config?.["preset"] === "openrouter");
+    expect(applied?.config?.["modelFilter"]).toBe("modality");
+    expect(applied?.config?.["endpoint"]).toBe("https://openrouter.ai/api/v1");
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
   it("re-open: bare endpoint (no preset) → Custom", async () => {
     const tts = makeTts({
       form: {
@@ -862,7 +898,7 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     });
     // View mode: base card + no connection card (kokoro is browser-local).
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
-    expect(view.queryByTestId("tts-connection-card")).toBeNull();
+    expect(view.queryByTestId("tts-field-model")).toBeNull();
     // Segment state is pinned on the edit screen.
     const editTts = makeTts({
       form: { id: "p1", name: "P", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" } as never,
@@ -1350,3 +1386,56 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
   });
 });
 
+// ─── D16: auto key from a matching LLM provider profile ────────────────────
+// Owner decision (2026-08-28): the provider key is the DEFAULT path (no
+// manual linking); the user only overrides by typing an own key.
+
+describe("TTS editor — auto key hint + gate (D16)", () => {
+  const orForm = (extra: Record<string, unknown> = {}) =>
+    ({
+      id: "p1",
+      name: "OR",
+      backend: TTS_BACKEND.OpenAiCompatible as never,
+      config: { endpoint: "https://openrouter.ai/api/v1", model: "deepgram/flux-tts" },
+      apiKey: "",
+      providerRef: null,
+      autoKeyProviderName: "LLM Hub",
+      hasStoredApiKey: false,
+      voiceId: "",
+      ...extra,
+    }) as never;
+
+  it("key field shows the provider-key hint when no own/stored key exists", () => {
+    const tts = makeTts({ form: orForm() });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
+    cleanup();
+  });
+
+  it("no hint once an own key is typed (own beats the auto key)", () => {
+    const tts = makeTts({ form: orForm({ apiKey: "sk-own" }) });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.queryByTestId("tts-key-source-hint")).toBeNull();
+    cleanup();
+  });
+
+  it("test-card gate passes with an auto key instead of demanding one", () => {
+    const autoTts = makeTts({ form: orForm({ voiceId: "alloy" }) });
+    const autoView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: autoTts } as never));
+    expect(autoView.queryByTestId("tts-test-dot-enter-key")).toBeNull();
+    expect(autoView.getByTestId("tts-test-connection-btn")).toBeTruthy();
+    cleanup();
+
+    const bareTts = makeTts({ form: orForm({ voiceId: "alloy", autoKeyProviderName: null }) });
+    const bareView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: bareTts } as never));
+    expect(bareView.getByTestId("tts-test-dot-enter-key")).toBeTruthy();
+    cleanup();
+  });
+
+  it("view mode: base card status row names the auto-key provider", () => {
+    const tts = viewTts({ form: orForm({ id: "p1", voiceId: "alloy" }) });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
+    cleanup();
+  });
+});

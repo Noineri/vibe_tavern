@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
@@ -9,7 +9,7 @@ import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
-import { listTtsDraftModels, listTtsDraftVoices, type TtsVoiceRecord } from "../../../../api/tts-api.js";
+import { listTtsDraftModels, listTtsDraftVoices, type TtsModelListEntry, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
@@ -22,6 +22,7 @@ import {
 } from "./tts-backend-ui.js";
 import { TtsProviderForm } from "./TtsProviderForm.js";
 import { TtsBaseCard } from "./TtsBaseCard.js";
+import { TtsModelPicker } from "./TtsModelPicker.js";
 import { TTS_PRESETS } from "../../../../lib/tts/tts-presets.js";
 import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
 import type { TtsProfileForm, useTtsProfiles } from "./use-tts-profiles.js";
@@ -116,14 +117,21 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const [voices, setVoices] = useState<TtsVoiceRecord[] | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [voicesError, setVoicesError] = useState<string | null>(null);
-  const [models, setModels] = useState<Array<{ id: string; label: string }> | null>(null);
+  const [models, setModels] = useState<TtsModelListEntry[] | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [tuningOpen, setTuningOpen] = useState(false);
   const formBackend = tts.form?.backend;
   // TE2-16: the form's typed apiKey is injected into the TRANSIENT draft
   // requests only (formDraft below) — the stored bag never carries it.
-  const formDraft = tts.form === null || tts.form === undefined ? undefined : formDraftConfig(tts.form);
+  // Memoized on the form identity: the voices/models effects depend on it,
+  // and a fresh object per render made them re-run on EVERY state change —
+  // each re-run's cleanup cancelled the in-flight fetch, so the list never
+  // landed (reproduced in the full-suite run; isolated runs hid it).
+  const formDraft = useMemo(
+    () => (tts.form === null || tts.form === undefined ? undefined : formDraftConfig(tts.form)),
+    [tts.form],
+  );
   const formId = tts.form?.id ?? null;
   const needsRemoteVoices = formBackend !== undefined && formBackend !== TTS_BACKEND.Kokoro;
   const preview = useTtsPreview();
@@ -224,6 +232,23 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     };
   }, [needsRemoteModels, modelsConfigKey, formBackend, formDraft, formId]);
 
+  // Refresh button handler for the model picker (TtsModelPicker) — the
+  // same fetch the debounced effect performs, on demand.
+  const refreshModels = () => {
+    if (!needsRemoteModels || formDraft === undefined) return;
+    setModelsLoading(true);
+    setModelsError(null);
+    listTtsDraftModels({ backend: formBackend as string, config: formDraft, profileId: formId ?? undefined })
+      .then((list) => {
+        setModels(list);
+        setModelsLoading(false);
+      })
+      .catch((cause) => {
+        setModelsError(cause instanceof Error ? cause.message : String(cause));
+        setModelsLoading(false);
+      });
+  };
+
   if (!tts.form) return null;
 
   const form = tts.form;
@@ -241,6 +266,13 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           : TTS_BACKEND.OpenAiCompatible;
     const nextConfig: Record<string, unknown> = {};
     if (preset.baseUrl) nextConfig["endpoint"] = preset.baseUrl;
+    // D15: the preset's modelFilter must ride the config bag — the server
+    // reads it to shape the /models request (openrouter → speech-only).
+    // Lost before: the registry declared it but nothing stamped it, so
+    // the fetch returned the unfiltered chat catalog.
+    if (preset.backend === "openai-compat" && preset.modelFilter !== "none") {
+      nextConfig["modelFilter"] = preset.modelFilter;
+    }
     nextConfig["preset"] = preset.id;
     tts.setForm({ backend: nextBackend, config: nextConfig, voiceId: "" });
   }
@@ -251,7 +283,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   }
 
   const modelSpec = spec.connection.model;
-  const hasConnectionCard = spec.connection.endpoint !== undefined || spec.connection.apiKey !== undefined || modelSpec !== undefined;
   const savedProfile =
     tts.editingId !== null ? (tts.profiles.find((p) => p.id === tts.editingId) ?? null) : null;
   const isView = tts.headerMode === "view" && savedProfile !== null;
@@ -284,8 +315,21 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             onSetDefault={() => void tts.setDefault(savedProfile.id)}
           />
           {/* View mode (LLM headerMode mechanism): compact card on top,
-              config sections always visible below — voices first (plan
-              Goal: always-visible voice/speed/binding sections). */}
+              config sections always visible below — the MODEL picker sits
+              first (owner rule: voices are model-dependent, so the model
+              is chosen before the voice), then voices, tuning, bindings. */}
+          {modelSpec !== undefined && (
+            <TtsModelPicker
+              value={configString(form.config, modelSpec.key)}
+              onChange={(id) => updateConfigField(tts, form, modelSpec.key, id)}
+              models={modelSpec.mode === "fetch" ? (models ?? []) : []}
+              fetching={modelsLoading}
+              fetchError={modelsError}
+              onRefresh={refreshModels}
+              label={t(modelSpec.labelKey)}
+              placeholder={modelSpec.placeholder}
+            />
+          )}
           <TtsSectionCard title={t("tts_field_voice")} testid="tts-voice-section">
             <TtsVoiceFields
               form={form}
@@ -298,91 +342,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             />
           </TtsSectionCard>
 
-      {/* ── Connection card (D5): model choice, rendered from the variant
-          spec — kokoro has none (browser-local). View mode only (the edit
-          screen is connection-form-only, LLM mechanism). */}
-      {hasConnectionCard && (
-        <TtsSectionCard title={t("tts_section_connection")} testid="tts-connection-card">
-
-          {modelSpec?.mode === "fetch" && (
-            <div>
-              <div className="flex items-center justify-between">
-                <label className={lblCls}>{t(modelSpec.labelKey)}</label>
-                <button
-                  type="button"
-                  data-testid="tts-models-refresh"
-                  onClick={() => {
-                    if (!needsRemoteModels || formDraft === undefined) return;
-                    const backend = formBackend as string;
-                    const config = formDraft;
-                    const profileId = formId ?? undefined;
-                    setModelsLoading(true);
-                    setModelsError(null);
-                    listTtsDraftModels({ backend, config, profileId })
-                      .then((list) => {
-                        setModels(list);
-                        setModelsLoading(false);
-                      })
-                      .catch((cause) => {
-                        setModelsError(cause instanceof Error ? cause.message : String(cause));
-                        setModelsLoading(false);
-                      });
-                  }}
-                  disabled={modelsLoading}
-                  className="flex items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-40"
-                >
-                  <Ic.regen />
-                  {modelsLoading ? t("tts_models_loading") : t("tts_models_refresh")}
-                </button>
-              </div>
-              <div className="mt-1">
-                {/* Manual fallback (F3): DropdownSelect is filter-only, so while the
-                    fetched list is empty/unavailable the field degrades to a plain
-                    input — a half-configured local endpoint must stay typeable. */}
-                {models !== null && models.length > 0 ? (
-                  <DropdownSelect
-                    value={configString(form.config, modelSpec.key)}
-                    options={(() => {
-                      const current = configString(form.config, modelSpec.key);
-                      if (current === "" || models.some((o) => o.id === current)) return models;
-                      return [{ id: current, label: current }, ...models];
-                    })()}
-                    onChange={(value) => updateConfigField(tts, form, modelSpec.key, value)}
-                    searchable={true}
-                    placeholder={modelSpec.placeholder}
-                    triggerTestId="tts-field-model"
-                  />
-                ) : (
-                  <input
-                    data-testid="tts-field-model"
-                    className={monoUICls + " w-full px-3 py-2 text-[13px]"}
-                    value={configString(form.config, modelSpec.key)}
-                    onChange={(e) => updateConfigField(tts, form, modelSpec.key, e.target.value)}
-                    placeholder={modelSpec.placeholder}
-                  />
-                )}
-              </div>
-              {modelsError !== null && (
-                <div data-testid="tts-models-error" className="mt-1 font-ui text-[11px] text-danger">
-                  {t("tts_models_load_error")}
-                </div>
-              )}
-            </div>
-          )}
-          {modelSpec?.mode === "input" && (
-            <div>
-              <label className={lblCls}>{t(modelSpec.labelKey)}</label>
-              <input
-                data-testid="tts-field-model-id"
-                className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-                value={configString(form.config, modelSpec.key)}
-                onChange={(e) => updateConfigField(tts, form, modelSpec.key, e.target.value)}
-                placeholder={modelSpec.placeholder}
-              />
-            </div>
-          )}
-        </TtsSectionCard>
-      )}
 
       {/* Local-server helpers now owned by the form (defect 3) — editor copy removed. */}
 

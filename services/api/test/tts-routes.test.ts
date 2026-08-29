@@ -821,3 +821,93 @@ describe("TTS routes — narratorVoiceId persistence (TE2-4)", () => {
     expect(body.narratorVoiceId).toBeNull();
   });
 });
+
+// ─── D16 auto key: an endpoint match against LLM provider profiles supplies
+// the key by default (owner decision 2026-08-28 — no manual linking step) ───
+
+async function seedLlmProvider(providers: ProviderStore, endpoint: string, apiKey: string): Promise<void> {
+  await providers.create({ name: "LLM Hub", providerPreset: "custom", endpoint, apiKey });
+}
+
+/** Draft voices without a profileId is the factory-visible seam: the config
+ *  that reaches registerTtsBackend shows what key resolution decided. */
+async function draftFactoryKey(app: RouteApp, config: Record<string, unknown>): Promise<string | undefined> {
+  const seen: SeenConfig = { capture: null };
+  capturingRegistry(seen);
+  const res = await app.request("/api/tts/draft/voices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backend: "openai-compatible", config }),
+  });
+  expect(res.status).toBe(200);
+  return seen.capture?.apiKey as string | undefined;
+}
+
+describe("TTS routes — auto key reuse by endpoint match (D16)", () => {
+  test("draft without a key: matching endpoint pulls the LLM provider key", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1", "sk-llm");
+    const key = await draftFactoryKey(app, { endpoint: "https://openrouter.ai/api/v1", model: "deepgram/flux-tts" });
+    expect(key).toBe("sk-llm");
+  });
+
+  test("normalization: scheme-less, trailing-slash endpoint still matches", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1/", "sk-llm");
+    const key = await draftFactoryKey(app, { endpoint: "openrouter.ai/api/v1///" });
+    expect(key).toBe("sk-llm");
+  });
+
+  test("no matching provider endpoint → factory gets no key", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://api.openai.com/v1", "sk-llm");
+    const key = await draftFactoryKey(app, { endpoint: "https://openrouter.ai/api/v1" });
+    expect(key).toBeUndefined();
+  });
+
+  test("own typed key beats the auto-matched provider key", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1", "sk-llm");
+    const key = await draftFactoryKey(app, { endpoint: "https://openrouter.ai/api/v1", apiKey: "sk-own" });
+    expect(key).toBe("sk-own");
+  });
+
+  test("keyless profile record reports autoKeyProviderName on create + list", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1", "sk-llm");
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Auto",
+        backend: "openai-compatible",
+        config: { endpoint: "https://openrouter.ai/api/v1", model: "deepgram/flux-tts" },
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await createdRes.json()) as { autoKeyProviderName: string | null };
+    expect(created.autoKeyProviderName).toBe("LLM Hub");
+
+    const listRes = await app.request("/api/tts/profiles/all");
+    const list = (await listRes.json()) as Array<{ autoKeyProviderName: string | null }>;
+    expect(list[0].autoKeyProviderName).toBe("LLM Hub");
+  });
+
+  test("profile with an own key (or no matching provider) reports null", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1", "sk-llm");
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Own",
+        backend: "openai-compatible",
+        config: { endpoint: "https://openrouter.ai/api/v1", model: "deepgram/flux-tts" },
+        apiKey: "sk-mine",
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await createdRes.json()) as { autoKeyProviderName: string | null };
+    expect(created.autoKeyProviderName).toBeNull();
+  });
+});
