@@ -6,6 +6,7 @@ import { ProviderStore, TtsStore } from "@vibe-tavern/db";
 
 import { createTtsRoutes } from "../src/api/routes/tts.js";
 import { __setDockerProbeRunnerForTests } from "../src/domain/tts/docker-probe.js";
+import { __setDiscoveryFetchForTests } from "../src/api/adapters/tts-adapter.js";
 import { TtsAdapter } from "../src/api/adapters/tts-adapter.js";
 import {
   __resetTtsRegistryForTests,
@@ -784,6 +785,52 @@ describe("TTS routes — D8 docker probe", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ available: false, version: null });
     __setDockerProbeRunnerForTests(null);
+  });
+});
+
+describe("TTS routes — local discovery (server-side, CORS-less servers)", () => {
+  test("GET /api/tts/local/discover → probe outcomes; edge-tts shapes recognized", async () => {
+    // Live-verified openai-edge-tts wire shapes (2026-08-29): models under
+    // the `models` key, voices under `voices` — kind must be
+    // openai-compatible, not kokoro.
+    __setDiscoveryFetchForTests(async (input: string) => {
+      if (!input.includes(":5050")) throw new TypeError("refused");
+      if (input.endsWith("/v1/models")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ models: [{ id: "tts-1" }, { id: "gpt-4o-mini-tts" }] }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ voices: [{ id: "alloy", name: "en-US-JennyNeural" }] }),
+      };
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/local/discover");
+    expect(res.status).toBe(200);
+    const outcomes = (await res.json()) as Array<{ port: number; status: string; server?: { kind: string; modelIds: string[]; voiceIds: string[] } }>;
+    const found = outcomes.find((o) => o.status === "found");
+    expect(found?.port).toBe(5050);
+    expect(found?.server?.kind).toBe("openai-compatible");
+    expect(found?.server?.modelIds).toEqual(["tts-1", "gpt-4o-mini-tts"]);
+    expect(found?.server?.voiceIds).toEqual(["alloy"]);
+    __setDiscoveryFetchForTests(null);
+  });
+
+  test("all ports refused → 200 with refused outcomes (no 500, no throw)", async () => {
+    __setDiscoveryFetchForTests(async () => {
+      throw new TypeError("refused");
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/local/discover");
+    expect(res.status).toBe(200);
+    const outcomes = (await res.json()) as Array<{ status: string }>;
+    expect(outcomes.length).toBe(5);
+    expect(outcomes.every((o) => o.status === "refused")).toBe(true);
+    __setDiscoveryFetchForTests(null);
   });
 });
 

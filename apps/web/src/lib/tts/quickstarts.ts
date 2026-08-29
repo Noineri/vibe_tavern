@@ -1,4 +1,4 @@
-import type { DiscoveryDiagnosticCode } from "./server-discovery.js";
+import type { DiscoveryDiagnosticCode } from "@vibe-tavern/domain";
 import type Resources from "../../i18n/resources.js";
 
 /** Typed i18n key — a typo'd/missing key is a compile error (TFunc pattern). */

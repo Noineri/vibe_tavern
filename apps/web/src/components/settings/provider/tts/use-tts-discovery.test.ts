@@ -5,7 +5,7 @@ import { useDomEnv } from "../../../../../test/dom-env.js";
 useDomEnv();
 
 import { __setTtsDiscoveryDepsForTests } from "./use-tts-discovery.js";
-import type { DiscoveredServer, ProbeOutcome } from "../../../../lib/tts/server-discovery.js";
+import type { DiscoveredServer, ProbeOutcome } from "@vibe-tavern/domain";
 
 const { render, act, cleanup } = await import("@testing-library/react");
 const { useTtsDiscovery } = await import("./use-tts-discovery.js");
@@ -33,7 +33,7 @@ function outcomeHttpOther(port: number): ProbeOutcome {
 interface Captured {
   scanning: boolean;
   servers: DiscoveredServer[];
-  notFoundCodes: import("../../../../lib/tts/server-discovery.js").DiscoveryDiagnosticCode[] | null;
+  notFoundCodes: import("@vibe-tavern/domain").DiscoveryDiagnosticCode[] | null;
   error: string | null;
   discover(): Promise<void>;
 }
@@ -61,8 +61,8 @@ afterEach(() => {
 describe("useTtsDiscovery", () => {
   test("found servers recorded in order", async () => {
     const outcomes: ProbeOutcome[] = [outcomeFound(8880, "kokoro-fastapi"), outcomeRefused(8000), outcomeFound(5050)];
-    const discoverMock = mock(async (_fetch: unknown) => outcomes);
-    __setTtsDiscoveryDepsForTests({ discoverLocalTtsServers: discoverMock });
+    const discoverMock = mock(async () => outcomes);
+    __setTtsDiscoveryDepsForTests({ discover: discoverMock });
 
     const { captured } = probeHarness();
     await act(async () => {
@@ -76,8 +76,8 @@ describe("useTtsDiscovery", () => {
 
   test("zero-found fills notFoundCodes", async () => {
     const outcomes: ProbeOutcome[] = [outcomeRefused(8880), outcomeTimeout(8000), outcomeHttpOther(7851)];
-    const discoverMock = mock(async (_fetch: unknown) => outcomes);
-    __setTtsDiscoveryDepsForTests({ discoverLocalTtsServers: discoverMock });
+    const discoverMock = mock(async () => outcomes);
+    __setTtsDiscoveryDepsForTests({ discover: discoverMock });
 
     const { captured } = probeHarness();
     await act(async () => {
@@ -93,11 +93,11 @@ describe("useTtsDiscovery", () => {
     const first: ProbeOutcome[] = [outcomeFound(8880)];
     const second: ProbeOutcome[] = [outcomeFound(5050)];
     let call = 0;
-    const discoverMock = mock(async (_fetch: unknown) => {
+    const discoverMock = mock(async () => {
       call += 1;
       return call === 1 ? first : second;
     });
-    __setTtsDiscoveryDepsForTests({ discoverLocalTtsServers: discoverMock });
+    __setTtsDiscoveryDepsForTests({ discover: discoverMock });
 
     const { captured } = probeHarness();
     await act(async () => {
@@ -111,10 +111,10 @@ describe("useTtsDiscovery", () => {
   });
 
   test("promise rejection -> error state", async () => {
-    const discoverMock = mock(async (_fetch: unknown) => {
+    const discoverMock = mock(async () => {
       throw new Error("network down");
     });
-    __setTtsDiscoveryDepsForTests({ discoverLocalTtsServers: discoverMock });
+    __setTtsDiscoveryDepsForTests({ discover: discoverMock });
 
     const { captured } = probeHarness();
     await act(async () => {

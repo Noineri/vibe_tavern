@@ -1,4 +1,4 @@
-import type { TtsTargetType } from "@vibe-tavern/domain";
+import type { ProbeOutcome, TtsTargetType } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
@@ -252,6 +252,19 @@ export async function fetchLocalDockerStatus(): Promise<{ available: boolean; ve
     throw new Error(`Docker probe failed: ${response.status} ${response.statusText}`);
   }
   return (await response.json()) as { available: boolean; version: string | null };
+}
+
+/** Local TTS server discovery, routed through the API server: some local
+ *  servers (openai-edge-tts) ship no CORS headers, so the browser cannot
+ *  probe them directly — the server-side fetch can (same seam as the docker
+ *  probe above). */
+export async function discoverLocalTtsServers(): Promise<ProbeOutcome[]> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/local/discover`));
+  if (!response.ok) {
+    throw new Error(`Local TTS discovery failed: ${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as ProbeOutcome[];
 }
 
 /** One-shot preview synthesis from an unsaved form config — the

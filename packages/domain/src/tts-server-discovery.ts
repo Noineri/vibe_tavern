@@ -1,4 +1,10 @@
-/** Local TTS server discovery — pure probe module (TTS_PLAN TS-11a). */
+/** Local TTS server discovery — pure probe module (TTS_PLAN TS-11a; lives in
+ *  domain so BOTH the web client and the API server can run it: discovery is
+ *  routed through the API (server-side fetch) because some local servers
+ *  (openai-edge-tts) ship no CORS headers at all, which makes direct browser
+ *  probing impossible — the browser kills the response before we can read
+ *  it. The fetch implementation is injected (FetchLike); the module itself
+ *  has zero dependencies and never touches I/O globals. */
 
 export type FetchLike = (
   input: string,
@@ -15,7 +21,9 @@ export interface DiscoveredServer {
   port: number;
   /** Base URL, e.g. http://127.0.0.1:8880 */
   baseUrl: string;
-  /** Best-effort server identity (kokoro-fastapi recognized by /v1/audio/voices shape; else "openai-compatible"). */
+  /** Best-effort server identity (kokoro-fastapi recognized by a "kokoro"
+   *  model id; the voices shape alone is NOT enough — openai-edge-tts returns
+   *  the same { voices: [{ id }] } shape and is not kokoro). */
   kind: "kokoro-fastapi" | "openai-compatible";
   /** Voice ids when the voices endpoint returned a usable list; else []. */
   voiceIds: string[];
@@ -50,6 +58,27 @@ class TimeoutError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Pull the model-id array out of a /v1/models body. Two shapes in the wild:
+ *  the OpenAI-compatible `{ data: [{ id }] }` and openai-edge-tts's
+ *  `{ models: [{ id }] }` — accept either. Returns null when neither key
+ *  holds an array. */
+function readModelIdArray(json: unknown): string[] | null {
+  if (!isRecord(json)) return null;
+  const source: unknown[] | undefined = Array.isArray(json.data)
+    ? json.data
+    : Array.isArray(json.models)
+      ? json.models
+      : undefined;
+  if (source === undefined) return null;
+  const modelIds: string[] = [];
+  for (const item of source) {
+    if (isRecord(item) && typeof item.id === "string" && item.id.length > 0) {
+      modelIds.push(item.id);
+    }
+  }
+  return modelIds;
 }
 
 function fetchWithTimeout(
@@ -101,15 +130,8 @@ async function probeModels(
   } catch {
     return { status: "bad-shape" };
   }
-  if (!isRecord(json) || !Array.isArray(json.data)) {
-    return { status: "bad-shape" };
-  }
-  const modelIds: string[] = [];
-  for (const item of json.data) {
-    if (isRecord(item) && typeof item.id === "string" && item.id.length > 0) {
-      modelIds.push(item.id);
-    }
-  }
+  const modelIds = readModelIdArray(json);
+  if (modelIds === null) return { status: "bad-shape" };
   return { status: "found", modelIds };
 }
 
@@ -159,9 +181,10 @@ async function probeVoices(
 /** Probe one port: GET {base}/v1/models and GET {base}/v1/audio/voices.
  *  AbortSignal with a caller-chosen timeout (default 1500ms).
  *  A port is "found" when /v1/models returns ok JSON shaped { data: [{ id }] }
- *  OR /v1/audio/voices returns ok JSON shaped { voices: [{ id }] } / bare array.
- *  ok-but-unparseable → "bad-shape". Non-2xx → "http-error". Network refusal →
- *  "refused". Timeout via the signal → "timeout". Never throws. */
+ *  or { models: [{ id }] } OR /v1/audio/voices returns ok JSON shaped
+ *  { voices: [{ id }] } / bare array. ok-but-unparseable → "bad-shape".
+ *  Non-2xx → "http-error". Network refusal → "refused". Timeout via the
+ *  signal → "timeout". Never throws. */
 export async function probeServerPort(
   port: number,
   fetchLike: FetchLike,
@@ -182,15 +205,10 @@ export async function probeServerPort(
   if (modelsFound || voicesFound) {
     const modelIds = modelsFound && modelsResult.modelIds !== undefined ? modelsResult.modelIds : [];
     const voiceIds = voicesFound && voicesResult.voiceIds !== undefined ? voicesResult.voiceIds : [];
-    // kokoro recognition: voices shape succeeded → kokoro-fastapi; else if any
-    // model id contains "kokoro" → kokoro-fastapi.
-    let kind: DiscoveredServer["kind"] = "openai-compatible";
-    if (voicesFound) {
-      kind = "kokoro-fastapi";
-    } else if (modelsFound) {
-      const hasKokoroModel = modelIds.some((id) => id.toLowerCase().includes("kokoro"));
-      if (hasKokoroModel) kind = "kokoro-fastapi";
-    }
+    // kokoro recognition: a "kokoro" model id. The voices shape alone is NOT
+    // evidence — openai-edge-tts serves the same { voices: [...] } shape.
+    const hasKokoroModel = modelIds.some((id) => id.toLowerCase().includes("kokoro"));
+    const kind: DiscoveredServer["kind"] = hasKokoroModel ? "kokoro-fastapi" : "openai-compatible";
     const server: DiscoveredServer = {
       port,
       baseUrl,

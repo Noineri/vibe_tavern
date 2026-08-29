@@ -400,6 +400,7 @@ export interface TtsRuntimeApi {
 	/** Honest docker-availability check for the local-server quickstart
 	 *  (D8): `docker --version` bounded by a timeout; never throws. */
 	probeLocalDocker: () => Promise<import("@vibe-tavern/api-contracts").LocalDockerStatus>;
+	discoverLocalTts: () => Promise<import("@vibe-tavern/domain").ProbeOutcome[]>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────

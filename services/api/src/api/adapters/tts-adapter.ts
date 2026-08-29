@@ -2,6 +2,8 @@ import type { ClientTtsProfileRecord } from "@vibe-tavern/api-contracts";
 import type { DraftTtsPreviewInput, DraftTtsVoicesInput, GenerateTtsInput } from "@vibe-tavern/api-contracts";
 import type { CreateTtsProfileData, UpdateTtsProfileData } from "@vibe-tavern/db";
 import type { TtsProfile } from "@vibe-tavern/domain";
+import { discoverLocalTtsServers } from "@vibe-tavern/domain";
+import type { FetchLike } from "@vibe-tavern/domain";
 import type { TtsRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 
@@ -314,6 +316,23 @@ export class TtsAdapter implements TtsRuntimeApi {
   };
 
   probeLocalDocker = () => probeDockerAvailability();
+
+  discoverLocalTts = () => {
+    // Server-side fetch satisfies the pure prober's FetchLike seam (the
+    // method/headers/signal subset of RequestInit); discovery runs in the API
+    // process so CORS-less local servers stay reachable.
+    const serverFetch: FetchLike = discoveryFetchOverride ?? ((input, init) => fetch(input, init));
+    return discoverLocalTtsServers(serverFetch);
+  };
+}
+
+/** Test seam for the discovery route — swaps the network fetch the pure
+ *  prober runs against (the docker-probe runner seam is the precedent).
+ *  Null restores the real server-side fetch. */
+let discoveryFetchOverride: FetchLike | null = null;
+
+export function __setDiscoveryFetchForTests(fetch: FetchLike | null): void {
+  discoveryFetchOverride = fetch;
 }
 
 /** Normalize a backend audio result (Buffer or chunk stream) to a single

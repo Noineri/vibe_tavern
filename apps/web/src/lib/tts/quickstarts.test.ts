@@ -6,7 +6,7 @@ import {
   TTS_SERVER_SETUP_GUIDES,
   worstDiagnostic,
 } from "./quickstarts.js";
-import type { DiscoveryDiagnosticCode } from "./server-discovery.js";
+import type { DiscoveryDiagnosticCode } from "@vibe-tavern/domain";
 
 describe("quickstarts (setup reference, TE2-17)", () => {
   test("two guides with verified identity fields", () => {

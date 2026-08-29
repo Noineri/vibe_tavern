@@ -397,6 +397,18 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     expect(models.map((m) => m.id)).toEqual(["gpt-4o", "tts-1", "whisper-1"]);
   });
 
+  test("{ models: [...] } body shape (openai-edge-tts) parses like data", async () => {
+    // Live-verified 2026-08-29: openai-edge-tts /v1/models returns
+    // {"models":[{"id":"tts-1"},{"id":"tts-1-hd"},{"id":"gpt-4o-mini-tts"}]}
+    // — the `data` key is absent entirely.
+    captureFetch(() =>
+      jsonResponse(200, { models: [{ id: "tts-1" }, { id: "tts-1-hd" }, { id: "gpt-4o-mini-tts" }] }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "http://127.0.0.1:5050/v1" });
+    const models = await backend.listModels();
+    expect(models.map((m) => m.id)).toEqual(["tts-1", "tts-1-hd", "gpt-4o-mini-tts"]);
+  });
+
   test("aggregator enrichment: name/description/pricing/context parsed into the entry", async () => {
     captureFetch(() =>
       jsonResponse(200, {

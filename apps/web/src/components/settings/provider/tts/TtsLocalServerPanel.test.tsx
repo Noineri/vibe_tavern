@@ -7,7 +7,7 @@ useDomEnv();
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
 import { __setTtsDiscoveryDepsForTests } from "./use-tts-discovery.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
-import type { DiscoveredServer, ProbeOutcome } from "../../../../lib/tts/server-discovery.js";
+import type { DiscoveredServer, ProbeOutcome } from "@vibe-tavern/domain";
 
 const { render, act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
 
@@ -344,8 +344,8 @@ describe("TtsLocalServerPanel", () => {
   test("adopt writes endpoint via tts.setForm", async () => {
     const discovered: DiscoveredServer = { port: 8880, baseUrl: "http://127.0.0.1:8880", kind: "kokoro-fastapi", voiceIds: ["a"], modelIds: [] };
     const outcomes: ProbeOutcome[] = [{ port: 8880, status: "found", server: discovered }];
-    const discoverMock = mock(async (_fetch: unknown) => outcomes);
-    __setTtsDiscoveryDepsForTests({ discoverLocalTtsServers: discoverMock });
+    const discoverMock = mock(async () => outcomes);
+    __setTtsDiscoveryDepsForTests({ discover: () => discoverMock() });
 
     const tts = makeTtsHook();
     const panelProps = { tts, form: tts.form };
@@ -368,8 +368,8 @@ describe("TtsLocalServerPanel", () => {
       { port: 8000, status: "timeout" },
       { port: 7851, status: "http-error", httpStatus: 500 },
     ];
-    const discoverMock = mock(async (_fetch: unknown) => outcomes);
-    __setTtsDiscoveryDepsForTests({ discoverLocalTtsServers: discoverMock });
+    const discoverMock = mock(async () => outcomes);
+    __setTtsDiscoveryDepsForTests({ discover: () => discoverMock() });
 
     const tts = makeTtsHook();
     const panelProps = { tts, form: tts.form };

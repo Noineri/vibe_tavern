@@ -129,5 +129,11 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
     .get("/api/tts/local/docker", async (c) => {
       // Never throws — every probe failure degrades to available:false.
       return c.json(await runtime.probeLocalDocker());
+    })
+    .get("/api/tts/local/discover", async (c) => {
+      // Server-side port probing: local servers without CORS headers
+      // (openai-edge-tts) are unreachable from the browser. Never throws —
+      // each port's failure mode is part of the ProbeOutcome data.
+      return c.json(await runtime.discoverLocalTts());
     });
 }

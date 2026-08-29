@@ -338,8 +338,11 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       }
       const parsed: unknown = await response.json().catch(() => null);
       if (typeof parsed !== "object" || parsed === null) return [];
-      const data = (parsed as Record<string, unknown>).data;
-      if (!Array.isArray(data)) return [];
+      // Two shapes in the wild: OpenAI-compatible `{data:[{id}]}` and
+      // openai-edge-tts's `{models:[{id}]}` — accept either.
+      const record = parsed as Record<string, unknown>;
+      const data = Array.isArray(record.data) ? record.data : Array.isArray(record.models) ? record.models : null;
+      if (data === null) return [];
       const out: import("../tts-backend.js").TtsModelInfo[] = [];
       for (const entry of data) {
         if (typeof entry !== "object" || entry === null) continue;

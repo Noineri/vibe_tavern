@@ -5,7 +5,7 @@ import {
   probeServerPort,
   type FetchLike,
   type ResponseLike,
-} from "./server-discovery.js";
+} from "../src/tts-server-discovery.js";
 
 function response(ok: boolean, status: number, body: unknown, shouldRejectJson = false): ResponseLike {
   return {
@@ -176,8 +176,30 @@ describe("server-discovery", () => {
     });
     const outcome = await probeServerPort(8880, fetchLike);
     expect(outcome.status).toBe("found");
-    expect(outcome.server?.kind).toBe("kokoro-fastapi");
+    // Recognition is model-id-only now: a voices shape alone does NOT imply
+    // kokoro (openai-edge-tts serves the same shapes and is not kokoro).
+    expect(outcome.server?.kind).toBe("openai-compatible");
     expect(outcome.server?.voiceIds).toEqual(["af_heart"]);
+  });
+
+  test("openai-edge-tts wire shape: { models: [...] } key + voices — found, not kokoro", async () => {
+    // Live-verified 2026-08-29: openai-edge-tts /v1/models returns
+    // {"models":[{"id":"tts-1"},...]} (no `data` key) and /v1/audio/voices
+    // returns {"voices":[{"id":"alloy","name":"en-US-JennyNeural"},...]}. 
+    const fetchLike: FetchLike = makeFetch((url) => {
+      if (url.endsWith("/v1/models")) {
+        return response(true, 200, { models: [{ id: "tts-1" }, { id: "tts-1-hd" }, { id: "gpt-4o-mini-tts" }] });
+      }
+      if (url.endsWith("/v1/audio/voices")) {
+        return response(true, 200, { voices: [{ id: "alloy", name: "en-US-JennyNeural" }, { id: "shimmer" }] });
+      }
+      return response(false, 404, {});
+    });
+    const outcome = await probeServerPort(5050, fetchLike);
+    expect(outcome.status).toBe("found");
+    expect(outcome.server?.kind).toBe("openai-compatible");
+    expect(outcome.server?.modelIds).toEqual(["tts-1", "tts-1-hd", "gpt-4o-mini-tts"]);
+    expect(outcome.server?.voiceIds).toEqual(["alloy", "shimmer"]);
   });
 
   test("kokoro recognition via model id when voices endpoint fails", async () => {

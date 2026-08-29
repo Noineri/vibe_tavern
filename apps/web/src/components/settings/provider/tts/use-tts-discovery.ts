@@ -1,16 +1,12 @@
 import { useCallback, useState } from "react";
 
-import {
-  diagnoseOutcome,
-  discoverLocalTtsServers as realDiscover,
-  type DiscoveredServer,
-  type DiscoveryDiagnosticCode,
-  type FetchLike,
-  type ProbeOutcome,
-} from "../../../../lib/tts/server-discovery.js";
+import { diagnoseOutcome, type DiscoveredServer, type DiscoveryDiagnosticCode, type ProbeOutcome } from "@vibe-tavern/domain";
+import { discoverLocalTtsServers as apiDiscover } from "../../../../api/tts-api.js";
 
 export interface TtsDiscoveryDeps {
-  discoverLocalTtsServers: typeof realDiscover;
+  /** Discovery runs SERVER-SIDE (via the API route) — local servers without
+   *  CORS headers (openai-edge-tts) are unreachable from the browser. */
+  discover: () => Promise<ProbeOutcome[]>;
 }
 
 let depsOverride: TtsDiscoveryDeps | null = null;
@@ -19,9 +15,9 @@ export function __setTtsDiscoveryDepsForTests(deps: TtsDiscoveryDeps | null): vo
   depsOverride = deps;
 }
 
-function currentDiscover(): typeof realDiscover {
-  if (depsOverride !== null) return depsOverride.discoverLocalTtsServers;
-  return realDiscover;
+function currentDiscover(): () => Promise<ProbeOutcome[]> {
+  if (depsOverride !== null) return depsOverride.discover;
+  return apiDiscover;
 }
 
 /** Type guard: a `found` probe carrying its server — narrows without casts. */
@@ -30,11 +26,6 @@ function foundWithServer(
 ): outcome is ProbeOutcome & { server: DiscoveredServer } {
   return outcome.status === "found" && outcome.server !== undefined;
 }
-
-/** The browser fetch satisfies FetchLike structurally (string input is a
- *  RequestInfo; Response covers ok/status/json). Annotated assignment lets
- *  the compiler verify it — no casts. */
-const browserFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
 
 export function useTtsDiscovery(): {
   scanning: boolean;
@@ -52,7 +43,7 @@ export function useTtsDiscovery(): {
     setScanning(true);
     setError(null);
     try {
-      const outcomes: ProbeOutcome[] = await currentDiscover()(browserFetch);
+      const outcomes: ProbeOutcome[] = await currentDiscover()();
       const found = outcomes.filter(foundWithServer).map((outcome) => outcome.server);
       setServers(found);
       if (found.length > 0) {
