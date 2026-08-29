@@ -324,17 +324,16 @@ describe("TtsProfileEditor", () => {
         name: "Draft",
         backend: TTS_BACKEND.OpenAiCompatible as never,
         config: { endpoint: "https://x/v1", apiKey: "k", model: "m" },
-        voiceId: "",
+        voiceId: "flux-alexis-en",
       } as never,
       dirty: true,
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
-    // TE2-12: preview button is inside the tuning accordion — open first, keep same boundary.
-    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
-    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
-
-    // Preview is NOT gated on save anymore.
+    // D18 (owner 2026-08-29): the listen button docks in the VOICE section,
+    // under the selection — reachable without opening the tuning accordion.
     const previewBtn = view.getByTestId("tts-preview-btn") as HTMLButtonElement;
+    expect(within(view.getByTestId("tts-voice-section")).getByTestId("tts-preview-btn")).toBeTruthy();
+    // Preview is NOT gated on save anymore — but IS gated on a chosen voice.
     expect(previewBtn.disabled).toBe(false);
     // No save-first hints — neither voices nor preview.
     expect(view.queryByText("tts_voices_save_first_hint")).toBeNull();
@@ -463,10 +462,7 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
       } as never,
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
-    // TE2-12: tuning card is now an accordion (closed by default) — open to reach preview button, same boundary.
-    fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
-    await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
-    const voice = view.getByTestId("tts-voice-card");
+    const voice = view.getByTestId("tts-voice-section");
     // LLM mechanism (rework) + owner rule: the MODEL picker is a bare
     // section (no card wrapper) and sits ABOVE the voice section — voices
     // are model-dependent. Endpoint/key live on the separate edit screen.
@@ -1116,9 +1112,15 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
     expect(view.getByTestId("tts-base-card-status")).toBeTruthy();
     expect(view.getByTestId("tts-base-card-edit-btn")).toBeTruthy();
     expect(view.getByTestId("tts-base-card-edit-btn").textContent).toContain("edit_settings_btn");
-    expect(view.getByTestId("tts-base-card-preview-btn")).toBeTruthy();
-    expect(view.getByTestId("tts-base-card-preview-btn").textContent).toContain("test_hi_btn");
+    // D18: no Test-"Hi" on the base card at all (owner directive); listening
+    // lives under the voice selection in the editor below.
+    expect(view.queryByTestId("tts-base-card-preview-btn")).toBeNull();
     expect(view.getByTestId("tts-base-card-default-btn")).toBeTruthy();
+    // Make-default shares ONE row with Edit settings, opposite side.
+    const actions = view.getByTestId("tts-base-card-actions");
+    expect(within(actions).getByTestId("tts-base-card-edit-btn")).toBeTruthy();
+    expect(within(actions).getByTestId("tts-base-card-default-btn")).toBeTruthy();
+    expect(actions.className).toContain("justify-between");
     // Not default -> enabled, label tts_make_default
     expect((view.getByTestId("tts-base-card-default-btn") as HTMLButtonElement).disabled).toBe(false);
     expect(view.getByTestId("tts-base-card-default-btn").textContent).toContain("tts_make_default");
@@ -1225,7 +1227,8 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
     __setTtsPreviewDepsForTests({ synthesize: synthesize as never, play: play as never });
     const tts = collapsedTts({});
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
-    const btn = view.getByTestId("tts-base-card-preview-btn") as HTMLButtonElement;
+    // D18: the trigger is the voice-section listen button now (kokoro voiceId af_heart → enabled).
+    const btn = view.getByTestId("tts-preview-btn") as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
     fireEvent.click(btn);
     await waitFor(() => expect(synthesize).toHaveBeenCalled(), { timeout: 1000 });
@@ -1290,27 +1293,43 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
 });
 
 describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
-  it("tuning accordion is closed by default, opens on toggle click → sliders and preview button reachable", async () => {
+  it("tuning accordion is closed by default, opens on toggle click → sliders reachable; the listen button stays OUTSIDE (D18)", async () => {
     const tts = viewTts({
       form: { id: "p1", name: "Kokoro", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" } as never,
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     expect(view.getByTestId("tts-tuning-accordion")).toBeTruthy();
     expect(view.getByTestId("tts-tuning-accordion-toggle")).toBeTruthy();
-    // Closed by default — tuning fields and preview button hidden (progressive disclosure).
+    // Closed by default — tuning fields hidden (progressive disclosure)…
     expect(view.queryByTestId("tts-tuning-accordion-body")).toBeNull();
     expect(view.queryByTestId("tts-field-speed-range")).toBeNull();
-    expect(view.queryByTestId("tts-preview-btn")).toBeNull();
+    // …but the listen button (D18) lives in the VOICE section, visible while closed.
+    expect(within(view.getByTestId("tts-voice-section")).getByTestId("tts-preview-btn")).toBeTruthy();
+    expect(within(view.queryByTestId("tts-voice-card") as HTMLElement).queryByTestId("tts-preview-btn")).toBeNull();
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
-    // Sliders visible after open; preview button reachable inside the accordion body (same boundary, moved location).
+    // Sliders visible after open.
     expect(view.getByTestId("tts-field-speed-range")).toBeTruthy();
-    expect(view.getByTestId("tts-preview-btn")).toBeTruthy();
-    expect(within(view.getByTestId("tts-voice-card")).getByTestId("tts-preview-btn")).toBeTruthy();
     // Close again → hidden.
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.queryByTestId("tts-tuning-accordion-body")).toBeNull());
     expect(view.queryByTestId("tts-field-speed-range")).toBeNull();
+    cleanup();
+  });
+
+  it("D18 gate: the listen button is disabled while no voice is chosen (no voiceId → server 500)", () => {
+    const tts = viewTts({
+      form: {
+        id: "p1",
+        name: "Open",
+        backend: TTS_BACKEND.OpenAiCompatible as never,
+        config: { endpoint: "https://x/v1", apiKey: "k", model: "m" },
+        voiceId: "",
+      } as never,
+    });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const btn = view.getByTestId("tts-preview-btn") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
     cleanup();
   });
 

@@ -308,7 +308,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
       ) : savedProfile !== null ? (
         <>
           <TtsBaseCard
-            profile={savedProfile}
             form={form}
             isDefault={savedProfile.isDefault}
             onEdit={tts.startEdit}
@@ -354,6 +353,41 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               voicesLoading={voicesLoading}
               voicesError={voicesError}
             />
+            {/* Owner 2026-08-29 (D18): listening docks UNDER the voice
+             *  selection. Gated on a chosen voice — synthesizing with an
+             *  empty voiceId is a guaranteed 500 on the server. */}
+            <div className="mt-3 flex flex-col gap-1">
+              <button
+                type="button"
+                data-testid="tts-preview-btn"
+                disabled={preview.state !== "idle" || form.voiceId === ""}
+                className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
+                onClick={() =>
+                  preview.preview({
+                    backend: form.backend,
+                    voiceId: form.voiceId,
+                    narratorVoiceId: form.narratorVoiceId,
+                    speed: configNumber(form.config, "speed", 1),
+                    config: formDraftConfig(form),
+                    profileId: form.id,
+                  })
+                }
+              >
+                <Ic.speaker className="h-3.5 w-3.5" />
+                {preview.state === "generating"
+                  ? preview.downloadPct !== null
+                    ? t("tts_preview_downloading", { pct: preview.downloadPct })
+                    : t("tts_preview_generating")
+                  : preview.state === "playing"
+                    ? t("tts_preview_playing")
+                    : t("tts_preview")}
+              </button>
+              {preview.error && (
+                <div data-testid="tts-preview-error" className="font-ui text-[11px] text-danger">
+                  {preview.error}
+                </div>
+              )}
+            </div>
           </TtsSectionCard>
 
 
@@ -384,38 +418,6 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               {spec.tuning.map((field) => (
                 <TtsTuningField key={field.key + field.kind} tts={tts} form={form} field={field} />
               ))}
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  data-testid="tts-preview-btn"
-                  disabled={preview.state !== "idle"}
-                  className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
-                  onClick={() =>
-                    preview.preview({
-                      backend: form.backend,
-                      voiceId: form.voiceId,
-                      narratorVoiceId: form.narratorVoiceId,
-                      speed: configNumber(form.config, "speed", 1),
-                      config: formDraftConfig(form),
-                      profileId: form.id,
-                    })
-                  }
-                >
-                  <Ic.speaker className="h-3.5 w-3.5" />
-                  {preview.state === "generating"
-                    ? preview.downloadPct !== null
-                      ? t("tts_preview_downloading", { pct: preview.downloadPct })
-                      : t("tts_preview_generating")
-                    : preview.state === "playing"
-                      ? t("tts_preview_playing")
-                      : t("tts_preview")}
-                </button>
-                {preview.error && (
-                  <div data-testid="tts-preview-error" className="font-ui text-[11px] text-danger">
-                    {t("tts_preview_failed")}: {preview.error}
-                  </div>
-                )}
-              </div>
             </div>
           </AnimatedDisclosure>
         </div>
