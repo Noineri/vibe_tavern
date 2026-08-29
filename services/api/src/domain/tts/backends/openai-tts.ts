@@ -71,6 +71,23 @@ function isOpenRouterStyleEndpoint(endpoint: string): boolean {
   }
 }
 
+/** NanoGPT serves TTS discovery from a DEDICATED catalog: GET
+ *  /audio-models?type=tts&detailed=true (docs: /api-reference/endpoint/
+ *  audio-models). The plain /models catalog is chat-only and silently
+ *  ignores output_modalities — verified live 2026-08-29 (D23). Host-based
+ *  detection heals profiles saved before the preset stamped `modelFilter:
+ *  "audio-models"`. */
+const AUDIO_MODELS_HOSTS = new Set(["nano-gpt.com"]);
+
+function isNanoGptStyleEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint.includes("://") ? endpoint : `https://${endpoint}`);
+    return AUDIO_MODELS_HOSTS.has(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /** Error body excerpt length included in HTTP-failure messages. */
 const ERROR_BODY_EXCERPT_LENGTH = 200;
 
@@ -280,9 +297,17 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       const modelFilter = readString(config, "modelFilter");
       const useModalityParam =
         modelFilter === "modality" || (modelFilter === undefined && isOpenRouterStyleEndpoint(cfg.endpoint));
-      const url = useModalityParam
-        ? `${cfg.endpoint}/models?output_modalities=speech`
-        : `${cfg.endpoint}/models`;
+      // D23: NanoGPT — dedicated audio-models catalog. Same contract as the
+      // OpenRouter modality param: the explicit "audio-models" stamp OR the
+      // host default when no explicit filter was chosen (heals profiles
+      // saved before the preset began stamping it).
+      const useAudioModelsCatalog =
+        modelFilter === "audio-models" || (modelFilter === undefined && isNanoGptStyleEndpoint(cfg.endpoint));
+      const url = useAudioModelsCatalog
+        ? `${cfg.endpoint}/audio-models?type=tts&detailed=true`
+        : useModalityParam
+          ? `${cfg.endpoint}/models?output_modalities=speech`
+          : `${cfg.endpoint}/models`;
       const response = await fetchOrWrap(
         url,
         {
@@ -306,10 +331,23 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
         const record = entry as Record<string, unknown>;
         const id = record.id;
         if (typeof id !== "string" || id.length === 0) continue;
+        // NanoGPT audio-models entries (D23): `type=tts` still returns music
+        // models — only entries with capabilities.text_to_speech === true
+        // synthesize via POST /audio/speech. Docs say to rely on the
+        // capability flag, never hardcode the roster.
+        if (useAudioModelsCatalog) {
+          const capabilities = record.capabilities;
+          const tts =
+            typeof capabilities === "object" && capabilities !== null
+              ? (capabilities as Record<string, unknown>).text_to_speech
+              : undefined;
+          if (tts !== true) continue;
+        }
         // Enrichment (OpenRouter-style entries; absent on plain OpenAI):
         // `name` is the display label, `description` human wording,
         // `pricing.prompt/completion` per-Mtok strings ("0" = free tier),
-        // `context_length` the input window.
+        // `context_length` the input window. NanoGPT prices per thousand
+        // CHARS instead (`pricing.per_thousand_chars`).
         const info: import("../tts-backend.js").TtsModelInfo = {
           id,
           label: typeof record.name === "string" && record.name.length > 0 ? record.name : id,
@@ -319,6 +357,21 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
         }
         if (typeof record.context_length === "number" && Number.isFinite(record.context_length)) {
           info.contextLength = record.context_length;
+        }
+        if (useAudioModelsCatalog) {
+          const pricing = record.pricing;
+          if (typeof pricing === "object" && pricing !== null) {
+            const perKCharsRaw = (pricing as Record<string, unknown>).per_thousand_chars;
+            const perKChars =
+              typeof perKCharsRaw === "number"
+                ? perKCharsRaw
+                : typeof perKCharsRaw === "string" && perKCharsRaw.trim() !== ""
+                  ? Number(perKCharsRaw)
+                  : Number.NaN;
+            if (Number.isFinite(perKChars)) info.isFree = perKChars === 0;
+          }
+          out.push(info);
+          continue;
         }
         const pricing = record.pricing;
         if (typeof pricing === "object" && pricing !== null) {

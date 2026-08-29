@@ -82,13 +82,15 @@ describe("tts-presets", () => {
   });
 
   test("modelFilter and voiceMode values are within the declared unions", () => {
-    const allowedFilters = new Set(["modality", "name-heuristic", "none"]);
+    const allowedFilters = new Set(["modality", "audio-models", "name-heuristic", "none"]);
     const allowedVoiceModes = new Set(["static", "fetch", "manual"]);
     for (const p of TTS_PRESETS) {
       expect(allowedFilters.has(p.modelFilter)).toBe(true);
       expect(allowedVoiceModes.has(p.voiceMode)).toBe(true);
     }
     expect(TTS_PRESETS.find((p) => p.id === "openrouter")?.modelFilter).toBe("modality");
+    // D23: NanoGPT discovery comes from /audio-models, not the chat catalog.
+    expect(TTS_PRESETS.find((p) => p.id === "nanogpt")?.modelFilter).toBe("audio-models");
     expect(TTS_PRESETS.find((p) => p.id === "gemini")?.modelFilter).toBe("none");
     expect(TTS_PRESETS.find((p) => p.id === "openai")?.voiceMode).toBe("static");
     expect(TTS_PRESETS.find((p) => p.id === "gemini")?.voiceMode).toBe("fetch");

@@ -388,6 +388,55 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     expect(captured()!.url).toBe("openrouter.ai/api/v1/models?output_modalities=speech");
   });
 
+  // ── D23: NanoGPT serves TTS discovery from /audio-models (docs:
+  // /api-reference/endpoint/audio-models; verified live 2026-08-29).
+  test("audio-models stamp → /audio-models?type=tts&detailed=true, music entries dropped by capability", async () => {
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, {
+        object: "list",
+        data: [
+          {
+            id: "xai-tts",
+            name: "xAI TTS",
+            description: "Speech model",
+            pricing: { currency: "USD", per_thousand_chars: 10 },
+            capabilities: { text_to_speech: true, speech_to_text: false },
+          },
+          {
+            id: "free-tts",
+            name: "Free TTS",
+            pricing: { currency: "USD", per_thousand_chars: 0 },
+            capabilities: { text_to_speech: true },
+          },
+          // type=tts still returns music models (live-verified: ACE-Step) —
+          // only capabilities.text_to_speech === true synthesizes speech.
+          { id: "ace-step-v1", name: "ACE Step", capabilities: { text_to_speech: false }, pricing: { per_thousand_chars: 2 } },
+          { id: "no-capability-flag", name: "Bare" },
+        ],
+      }),
+    );
+    const backend = openAiCompatTtsFactory({ endpoint: "https://nano-gpt.com/api/v1", modelFilter: "audio-models" });
+    const models = await backend.listModels();
+    expect(captured()!.url).toBe("https://nano-gpt.com/api/v1/audio-models?type=tts&detailed=true");
+    expect(models.map((m) => m.id)).toEqual(["xai-tts", "free-tts"]);
+    expect(models[0]).toEqual({ id: "xai-tts", label: "xAI TTS", description: "Speech model", isFree: false });
+    expect(models[1]).toEqual({ id: "free-tts", label: "Free TTS", isFree: true });
+  });
+
+  test("no filter + nano-gpt host → audio-models anyway (D23: heals pre-stamp name-heuristic profiles)", async () => {
+    const { captured } = captureFetch(() => jsonResponse(200, { data: [] }));
+    const backend = openAiCompatTtsFactory({ endpoint: "https://nano-gpt.com/api/v1" });
+    await backend.listModels();
+    expect(captured()!.url).toBe("https://nano-gpt.com/api/v1/audio-models?type=tts&detailed=true");
+  });
+
+  test("explicit modality + nano-gpt host → documented modality URL wins (explicit filter beats host default)", async () => {
+    const { captured } = captureFetch(() => jsonResponse(200, { data: [] }));
+    const backend = openAiCompatTtsFactory({ endpoint: "https://nano-gpt.com/api/v1", modelFilter: "modality" });
+    await backend.listModels();
+    expect(captured()!.url).toBe("https://nano-gpt.com/api/v1/models?output_modalities=speech");
+  });
+
   test("explicit name-heuristic + non-openrouter host → plain URL (param must not leak elsewhere)", async () => {
     const { captured } = captureFetch(() => jsonResponse(200, { data: [{ id: "tts-1" }] }));
     const backend = openAiCompatTtsFactory({

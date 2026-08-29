@@ -8,7 +8,7 @@
  */
 
 export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs";
-export type TtsModelFilter = "modality" | "name-heuristic" | "none";
+export type TtsModelFilter = "modality" | "audio-models" | "name-heuristic" | "none";
 export type TtsVoiceMode = "static" | "fetch" | "manual";
 
 export interface TtsStaticVoice {
@@ -123,8 +123,10 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "cloud",
     backend: "openai-compat",
     baseUrl: "https://nano-gpt.com/api/v1",
-    modelFilter: "name-heuristic",
-    // auth header variant unverified — live probe pending
+    // D23: NanoGPT serves TTS discovery from GET /audio-models (docs:
+    // /api-reference/endpoint/audio-models) — the plain /models catalog is
+    // chat-only slim and silently ignores output_modalities.
+    modelFilter: "audio-models",
     voiceMode: "manual",
   },
   {
