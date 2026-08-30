@@ -85,6 +85,18 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "text",
     jsonSchemaHint: null,
   },
+  // TPE-2 (AN-1): narration annotation — the model receives the selected
+  // variant and returns the SAME text with canonical [tag] tokens inserted
+  // (message-tts-annotate-ai-prompt.md). Text output, reasoning kept in the
+  // stream like the other editor modes.
+  message_tts_annotate: {
+    mode: "message_tts_annotate",
+    presetKey: "message_tts_annotate",
+    defaultPromptFile: "message-tts-annotate-ai-prompt.md",
+    stripReasoning: false,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
   lore_keys: {
     mode: "lore_keys",
     presetKey: "lore_keys",

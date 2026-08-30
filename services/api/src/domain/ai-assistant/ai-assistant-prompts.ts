@@ -50,6 +50,7 @@ const MODE_TO_FIELD: Record<AiAssistantMode, ServicePromptFieldKey> = {
   lore_entry: "lore_entry",
   message_edit: "message_edit",
   message_merge: "message_merge",
+  message_tts_annotate: "message_tts_annotate",
   lore_keys: "lore_keys",
   chat_impersonate: "chat_impersonate",
   md_import: "md_import",

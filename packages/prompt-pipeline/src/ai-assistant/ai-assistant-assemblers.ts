@@ -20,6 +20,10 @@ export const AI_ASSISTANT_ASSEMBLERS = {
   regex: DefaultAiAssistantAssembler,
   message_edit: MessageAiAssistantAssembler,
   message_merge: MessageAiAssistantAssembler,
+  // TPE-2 (AN-1): same assembler as edit/merge — it feeds the selected
+  // variant's content to the model; only the system prompt differs (the
+  // annotate contract: insert canonical [tag] tokens, never touch words).
+  message_tts_annotate: MessageAiAssistantAssembler,
 } as const satisfies Record<AiAssistantMode, AiAssistantAssembler>;
 
 export function getAiAssistantAssembler(mode: AiAssistantMode): AiAssistantAssembler {

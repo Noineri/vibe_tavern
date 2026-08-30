@@ -1071,7 +1071,7 @@ export interface AiAssistantChunk {
   finishReason?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "dice_script";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "message_tts_annotate" | "dice_script";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;

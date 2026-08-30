@@ -1,7 +1,7 @@
 import type { ChatBranchId, ChatId, ChatMode, MessageId, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
-import { createMessageVariant, updateChatDynamicPrompt, type CreateMessageVariantInput } from "../../api/chat-api.js";
+import { createMessageVariant, setVariantTtsAnnotation, updateChatDynamicPrompt, type CreateMessageVariantInput } from "../../api/chat-api.js";
 import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../../api/types.js";
 import {
   activateBranch,
@@ -271,6 +271,20 @@ export async function deleteVariantAction(chatId: ChatId, messageId: string, var
   // Stars key on immutable variant IDs — prune so compaction can never retarget a star.
   const surviving = useSnapshotStore.getState().messagesById[messageId]?.variants.map((v) => v.id) ?? [];
   useMessageAiEditorStore.getState().pruneStaleStars(brandId<MessageId>(messageId), surviving);
+}
+
+/** TPE-2 (AN-1): write the AI-annotated narration copy to the variant's side
+ *  field. The message content is never touched — narration prefers the
+ *  annotated variant (TPE-1 wiring). The response is a VariantResponse-shaped
+ *  partial snapshot (messages), same as createMessageVariantAction. */
+export async function setVariantTtsAnnotationAction(
+  chatId: ChatId,
+  messageId: string,
+  variantIndex: number,
+  text: string | null,
+): Promise<void> {
+  const snapshot = await setVariantTtsAnnotation(chatId, messageId, variantIndex, text);
+  syncSnapshot(snapshot);
 }
 
 export async function switchChatAction(chatId: ChatId): Promise<void> {

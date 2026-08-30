@@ -26,7 +26,7 @@
 import { create } from "zustand";
 import type { ChatId, MessageId, MessageVariantId } from "@vibe-tavern/domain";
 
-export type MessageAiEditorMode = "message_edit" | "message_merge";
+export type MessageAiEditorMode = "message_edit" | "message_merge" | "message_tts_annotate";
 
 export interface MessageAiEditorTarget {
   targetChatId: ChatId;
@@ -34,7 +34,11 @@ export interface MessageAiEditorTarget {
   requestedMode: MessageAiEditorMode;
   /** Edit mode only: the immutable variant that was selected when the editor
    *  opened — the diff base for the guarded Apply. Always null for merge,
-   *  whose sources are the current stars read at request time. */
+   *  whose sources are the current stars read at request time. The annotate
+   *  mode (TPE-2) has no external entry point — it is selected in-modal via
+   * the SegmentedControl, so its source is resolved live in the modal
+   * (this captured ID when opened via Edit, otherwise the currently
+   * selected variant). */
   selectedSourceVariantId: MessageVariantId | null;
 }
 

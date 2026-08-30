@@ -23,6 +23,7 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   scene_rules: "scene-rules.md",
   message_edit: "message-edit-ai-prompt.md",
   message_merge: "message-merge-ai-prompt.md",
+  message_tts_annotate: "message-tts-annotate-ai-prompt.md",
   regex: "regex-ai-prompt.md",
   // summary (1)
   summary: "summary-ai-prompt.md",

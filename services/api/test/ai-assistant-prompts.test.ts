@@ -95,6 +95,7 @@ describe("scene_schema prompt — format-aware default selection", () => {
 const MESSAGE_EDITOR_MODES = [
   { mode: "message_edit", asset: "message-edit-ai-prompt.md" },
   { mode: "message_merge", asset: "message-merge-ai-prompt.md" },
+  { mode: "message_tts_annotate", asset: "message-tts-annotate-ai-prompt.md" },
 ] as const;
 
 describe("message editor prompt modes", () => {

@@ -50,6 +50,9 @@ const countAiAssistantTokens = async () => ({ tokens: 42, model: "model-a", laye
 const fetchProviderModelsAction = async () => ({ models: [{ id: "model-a", label: "Model A" }] });
 const editMock = { fn: mock(async () => undefined) };
 const createVariantMock = { fn: mock(async () => undefined) };
+const setAnnotationMock = {
+  fn: mock(async (_chatId: ChatId, _messageId: MessageId, _variantIndex: number, _text: string | null) => {}),
+};
 const realAppClient = await import("../../app-client.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
 const realI18nContext = await import("../../i18n/context.js");
@@ -92,6 +95,7 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
     ...realChatActions,
     editMessageAction: editMock.fn,
     createMessageVariantAction: createVariantMock.fn,
+    setVariantTtsAnnotationAction: setAnnotationMock.fn,
 }));
 
 let MessageAiEditorModal: typeof import("./MessageAiEditorModal.js").MessageAiEditorModal;
@@ -254,6 +258,9 @@ beforeEach(() => {
   editMock.fn.mockImplementation(async () => {});
   createVariantMock.fn.mockReset();
   createVariantMock.fn.mockImplementation(async () => {});
+  setAnnotationMock.fn.mockClear();
+  setAnnotationMock.fn.mockReset();
+  setAnnotationMock.fn.mockImplementation(async () => {});
 
   useMessageAiEditorStore.setState({ target: null, starredVariantIdsByMessage: {} });
   useSnapshotStore.setState({
@@ -268,24 +275,27 @@ beforeEach(() => {
 });
 
 describe("MessageAiEditorModal — merge-option variant-count gate", () => {
-  it("hides the whole mode toggle when the message has ≤6 variants (no jump browser → merge sources cannot be starred)", () => {
+  it("≤6 variants: merge option hidden (no jump browser), but the toggle stays with edit+annotate", () => {
     seedMessage(makeVariants(6));
     seedBootstrap("prov", "model-a");
     openEditorForEdit(brandId<MessageVariantId>("var-0"));
     renderModal();
-    // With ≤6 variants there is no variant jump browser, so there is no way to
-    // star merge sources — the edit/merge SegmentedControl is hidden entirely.
-    expect(screen.queryByText("message_ai_editor_mode_edit")).toBeNull();
+    // With ≤6 variants there is no variant jump browser, so there is no way
+    // to star merge sources — merge is hidden. Annotate needs only the
+    // selected variant, so the toggle (edit+annotate) remains available.
+    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
     expect(screen.queryByText("message_ai_editor_mode_merge")).toBeNull();
+    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
   });
 
-  it("shows the edit+merge mode toggle when the message has >6 variants", () => {
+  it("shows the edit+merge+annotate mode toggle when the message has >6 variants", () => {
     seedMessage(makeVariants(7));
     seedBootstrap("prov", "model-a");
     openEditorForEdit(brandId<MessageVariantId>("var-0"));
     renderModal();
     expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
     expect(screen.getByText("message_ai_editor_mode_merge")).toBeTruthy();
+    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
   });
 });
 
@@ -810,5 +820,116 @@ describe("MessageAiEditorModal — zero persistence before acceptance", () => {
     expect(screen.queryByText("message_ai_editor_generate")).toBeNull();
     expect(editMock.fn).not.toHaveBeenCalled();
     expect(createVariantMock.fn).not.toHaveBeenCalled();
+  });
+});
+
+// ─── TPE-2: annotate mode («prepare for narration») ─────────────────────
+
+describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
+  beforeEach(() => {
+    useProviderDataStore.setState({
+      profiles: [makeProfile("prov-1", "Provider One")],
+      favoritesByProfile: {},
+    });
+    seedBootstrap("prov-1", "model-a");
+  });
+
+  function seedTwoVariantMessage() {
+    seedMessage([
+      { id: VA, messageId: MID, variantIndex: 0, content: "She laughed and said \"wait for me\".", isSelected: true, finishReason: "stop" },
+      { id: VB, messageId: MID, variantIndex: 1, content: "alternate", isSelected: false, finishReason: "stop" },
+    ] as AppMessage["variants"], 0);
+  }
+
+  async function switchToAnnotate() {
+    const segment = await screen.findByText("message_ai_editor_mode_annotate");
+    await act(async () => { fireEvent.click(segment); });
+  }
+
+  it("switching to annotate: the currently selected variant becomes the single source", async () => {
+    seedTwoVariantMessage();
+    openEditorForEdit(VA);
+    renderModal();
+
+    await switchToAnnotate();
+
+    // The annotate hint replaces the generic instruction hint.
+    expect(screen.getByText("message_ai_editor_annotate_hint")).toBeTruthy();
+    // Single read-only source row (variant #1), the other variant absent.
+    expect(screen.getByText(/#1/)).toBeTruthy();
+    expect(screen.queryByText(/#2/)).toBeNull();
+  });
+
+  it("opened via merge: annotate still resolves the currently selected variant as its source", async () => {
+    seedMessage(makeVariants(8)); // >6 so merge entry is possible; var-0 selected
+    openEditorForMerge();
+    renderModal();
+
+    await switchToAnnotate();
+
+    // No below-minimum gate in annotate: generation is not blocked by stars.
+    expect(screen.queryByText("message_ai_editor_merge_min_sources")).toBeNull();
+    // Exactly one source row (the selected variant) — not the starred set.
+    const rows = screen.queryAllByText(/#1/);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("generate emits mode=message_tts_annotate with the selected variant as the single source", async () => {
+    seedTwoVariantMessage();
+    openEditorForEdit(VA);
+    setChunks([
+      { type: "text", text: 'She [laugh] said "wait for me".' },
+      { type: "done" },
+    ]);
+    renderModal();
+
+    await switchToAnnotate();
+    await generateWithPrompt("add sound tags");
+
+    expect(mockState.requests).toHaveLength(1);
+    expect(mockState.requests[0].mode).toBe("message_tts_annotate");
+    expect(mockState.requests[0].sourceVariantIds).toEqual([VA]);
+    expect(mockState.requests[0].targetMessageId).toBe(MID);
+  });
+
+  it("Save writes the annotation to the variant's side field and never touches content actions", async () => {
+    seedTwoVariantMessage();
+    openEditorForEdit(VA);
+    setChunks([
+      { type: "text", text: 'She [laugh] said "wait for me".' },
+      { type: "done" },
+    ]);
+    renderModal();
+
+    await switchToAnnotate();
+    await generateWithPrompt("add sound tags");
+
+    const saveBtn = await screen.findByText("message_ai_editor_save_annotation");
+    await act(async () => { fireEvent.click(saveBtn); });
+
+    // Side-field write: chat id + message id + DISPLAY index of the source
+    // variant + the trimmed candidate. Content stays pristine.
+    await waitFor(() => expect(setAnnotationMock.fn).toHaveBeenCalledTimes(1));
+    expect(setAnnotationMock.fn.mock.calls[0]).toEqual([CID, MID, 0, 'She [laugh] said "wait for me".']);
+    expect(editMock.fn).not.toHaveBeenCalled();
+    expect(createVariantMock.fn).not.toHaveBeenCalled();
+
+    // Success closes the editor.
+    await waitFor(() => expect(useMessageAiEditorStore.getState().target).toBeNull());
+  });
+
+  it("annotate shows the word diff against the variant content (inserted tags are visible)", async () => {
+    seedTwoVariantMessage();
+    openEditorForEdit(VA);
+    setChunks([
+      { type: "text", text: 'She [laugh] and said "wait for me".' },
+      { type: "done" },
+    ]);
+    renderModal();
+
+    await switchToAnnotate();
+    await generateWithPrompt("add sound tags");
+
+    await waitFor(() => expect(screen.getByText("message_ai_editor_changes")).toBeTruthy());
   });
 });
