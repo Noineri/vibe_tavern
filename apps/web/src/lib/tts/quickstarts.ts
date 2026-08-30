@@ -168,6 +168,8 @@ export const TTS_SERVER_SETUP_GUIDES: TtsServerSetupGuide[] = [
           "py -3.11 -m venv .venv",
           ".venv\\Scripts\\activate",
           "pip install -r requirements.txt",
+          "pip uninstall -y torch torchvision torchaudio",
+          "pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124",
           "copy .env.example .env",
         ],
         unix: [
