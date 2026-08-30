@@ -249,10 +249,10 @@ describe("OpenAI-compatible TTS listVoices", () => {
     expect(voices).toEqual([{ id: "ef_dora", label: "ef_dora", lang: "en" }]);
   });
 
-  test("/audio/voices 404 → null (honest, no fallback to /models or static roster)", async () => {
-    let callCount = 0;
-    globalThis.fetch = mock(async () => {
-      callCount += 1;
+  test("both /audio/voices and /voices 404 → null (manual input floor)", async () => {
+    const calls: string[] = [];
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      calls.push(String(input));
       return jsonResponse(404, { detail: "not found" });
     });
     const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:8000/v1" });
@@ -260,9 +260,50 @@ describe("OpenAI-compatible TTS listVoices", () => {
     const voices = await backend.listVoices();
 
     expect(voices).toBeNull();
-    expect(callCount).toBe(1);
+    expect(calls).toEqual(["http://localhost:8000/v1/audio/voices", "http://localhost:8000/v1/voices"]);
     // Null means no fake roster — the static id tables were removed (D20);
     // nothing can leak through.
+  });
+
+  // ── Full-support rule: chatterbox-tts-api (setup card) serves its voice
+  // library at /voices — live-verified 2026-08-31 on the owner's server:
+  // /v1/audio/voices 404, /v1/voices 200 { voices: [{ name, language, ... }] }.
+  test("chatterbox: /audio/voices 404 → falls back to the /voices library", async () => {
+    const calls: string[] = [];
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("/audio/voices")) return jsonResponse(404, { detail: "not found" });
+      return jsonResponse(200, {
+        voices: [
+          { name: "my-clone", path: "/x/my-clone.wav", language: "ru", aliases: [], exists: true },
+          { name: "narrator", path: "/x/narrator.wav", language: "en", aliases: [], exists: true },
+        ],
+        count: 2,
+      });
+    });
+    const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:4123/v1" });
+
+    const voices = await backend.listVoices();
+
+    expect(voices).toEqual([
+      { id: "my-clone", label: "my-clone", lang: "ru" },
+      { id: "narrator", label: "narrator", lang: "en" },
+    ]);
+    expect(calls).toEqual(["http://localhost:4123/v1/audio/voices", "http://localhost:4123/v1/voices"]);
+  });
+
+  test("chatterbox: empty voice library → null (no invented voices)", async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/audio/voices")) return jsonResponse(404, { detail: "not found" });
+      return jsonResponse(200, { voices: [], count: 0 });
+    });
+    const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:4123/v1" });
+
+    const voices = await backend.listVoices();
+
+    expect(voices).toBeNull();
   });
 
   test("network failure → null (honest, no static roster)", async () => {

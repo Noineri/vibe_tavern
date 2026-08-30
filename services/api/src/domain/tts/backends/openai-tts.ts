@@ -273,7 +273,9 @@ function toVoiceInfo(id: unknown, name: unknown): TtsVoiceInfo | null {
   };
 }
 
-/** kokoro-fastapi shape: { voices: [{ id, name? }] } (bare array tolerated). */
+/** kokoro-fastapi shape: { voices: [{ id, name? }] } (bare array tolerated).
+ *  chatterbox-tts-api voice-library items are { name, language, ... } with
+ *  no id — the name doubles as the id there. */
 function parseVoicesPayload(parsed: unknown): TtsVoiceInfo[] | null {
   const raw = Array.isArray(parsed)
     ? parsed
@@ -285,8 +287,14 @@ function parseVoicesPayload(parsed: unknown): TtsVoiceInfo[] | null {
   for (const entry of raw) {
     if (typeof entry !== "object" || entry === null) continue;
     const record = entry as Record<string, unknown>;
-    const voice = toVoiceInfo(record.id, record.name);
-    if (voice) voices.push(voice);
+    const id = typeof record.id === "string" && record.id.length > 0 ? record.id : record.name;
+    const voice = toVoiceInfo(id, record.name);
+    if (voice) {
+      if (typeof record.language === "string" && record.language.length > 0) {
+        voice.lang = record.language;
+      }
+      voices.push(voice);
+    }
   }
   return voices.length > 0 ? voices : null;
 }
@@ -559,6 +567,25 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           const parsed: unknown = await voicesResponse.json().catch(() => null);
           const voices = parseVoicesPayload(parsed);
           if (voices) return voices;
+        }
+        // Full-support rule for recommended local servers: chatterbox-tts-api
+        // serves its voice library at /voices, not the kokoro-style
+        // /audio/voices (live-verified 2026-08-31: /v1/audio/voices 404,
+        // /v1/voices 200 { voices, count }). One fallback attempt when the
+        // primary route misses — plain/unknown hosts only: catalog kinds encode
+        // documented knowledge, and audio-type (SiliconFlow) documents no
+        // voices endpoint, so no second probe there. An empty library parses
+        // to null — the manual voice input floor stays honest.
+        if (kind === "plain") {
+          const libraryResponse = await fetch(`${cfg.endpoint}/voices`, {
+            headers: buildHeaders(cfg.apiKey),
+            signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+          });
+          if (libraryResponse.ok) {
+            const parsed: unknown = await libraryResponse.json().catch(() => null);
+            const voices = parseVoicesPayload(parsed);
+            if (voices) return voices;
+          }
         }
         return null;
       } catch {
