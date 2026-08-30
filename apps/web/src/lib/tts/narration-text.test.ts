@@ -5,6 +5,9 @@ import {
   defaultNarrationTextOptions,
   prepareNarrationText,
   splitNarrationRoles,
+  narrationTextOptionsForMode,
+  isNarrationTextMode,
+  NARRATION_TEXT_MODES,
   type NarrationRoleRun,
 } from "./narration-text.js";
 
@@ -153,6 +156,65 @@ describe("prepareNarrationText", () => {
     // Regex that adds html, then html stripped
     const preset = makePreset({ findRegex: "/PLACE/g", replaceString: "<b>hi</b>" });
     expect(prepareNarrationText("PLACE", opts({ regexPresets: [preset], stripHtml: true }))).toBe("hi");
+  });
+});
+
+describe("narration text mode (D26)", () => {
+  const MIXED = 'Hello *wave* — "I am *not* going" **done** ok';
+
+  test("narrationTextOptionsForMode maps all three modes onto the filter triple", () => {
+    expect(narrationTextOptionsForMode("full")).toEqual({
+      stripAsteriskActions: false,
+      stripAsteriskMarkers: true,
+      quotedOnly: false,
+    });
+    expect(narrationTextOptionsForMode("skip-asterisk-spans")).toEqual({
+      stripAsteriskActions: true,
+      stripAsteriskMarkers: false,
+      quotedOnly: false,
+    });
+    // Quoted mode uses the MARKERS strip — emphasized words inside quotes survive.
+    expect(narrationTextOptionsForMode("quoted-dialogue")).toEqual({
+      stripAsteriskActions: false,
+      stripAsteriskMarkers: true,
+      quotedOnly: true,
+    });
+  });
+
+  test("isNarrationTextMode accepts exactly the mode set", () => {
+    for (const m of NARRATION_TEXT_MODES) expect(isNarrationTextMode(m)).toBe(true);
+    for (const bad of [null, undefined, "actions", "quoted", "full-text", 1, ""])
+      expect(isNarrationTextMode(bad)).toBe(false);
+  });
+
+  test("full mode (default): markers stripped, ALL words spoken — emphasis survives", () => {
+    expect(prepareNarrationText(MIXED, opts(narrationTextOptionsForMode("full")))).toBe(
+      'Hello wave — "I am not going" done ok',
+    );
+  });
+
+  test("skip mode: v1 behavior — single-asterisk spans dropped WITH content (the meaning-inverting legacy, honestly labeled)", () => {
+    expect(prepareNarrationText(MIXED, opts(narrationTextOptionsForMode("skip-asterisk-spans")))).toBe(
+      'Hello — "I am going" done ok',
+    );
+  });
+
+  test("quoted mode: only quoted speech, emphasis inside quotes kept (order pin: markers run BEFORE quotedOnly)", () => {
+    expect(prepareNarrationText(MIXED, opts(narrationTextOptionsForMode("quoted-dialogue")))).toBe(
+      "I am not going",
+    );
+  });
+
+  test("quoted mode fallback: quote-less message narrates full text (markers stripped)", () => {
+    expect(prepareNarrationText("Plain text *emphasis* here", opts(narrationTextOptionsForMode("quoted-dialogue")))).toBe(
+      "Plain text emphasis here",
+    );
+  });
+
+  test("stripAsteriskMarkers stage: **bold** and *span* keep content, stray * dropped", () => {
+    expect(prepareNarrationText("**bold** and *not* and stray*", opts({ stripAsteriskMarkers: true }))).toBe(
+      "bold and not and stray",
+    );
   });
 });
 

@@ -1,5 +1,6 @@
 import { useT } from "../../../../i18n/context.js";
 import { TtsProfileList } from "./TtsProfileList.js";
+import { TtsNarrationModeBlock } from "./TtsNarrationModeBlock.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
@@ -25,6 +26,7 @@ export function TtsSection({ tts }: { tts: TtsHook }) {
           {t("tts_profiles_load_failed")}: {tts.error}
         </div>
       )}
+      <TtsNarrationModeBlock />
       <TtsProfileList
         profiles={tts.profiles}
         editingId={tts.editingId}

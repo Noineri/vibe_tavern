@@ -147,12 +147,14 @@ export interface NarrationTextOptions {
   stripHtml: boolean;
   /** Remove *action* spans (content too); strip **bold** markers keeping content. Default false. */
   stripAsteriskActions: boolean;
+  /** Strip asterisk MARKERS only, keeping the span content (`*not*` → `not`, `**bold**` → `bold`). Default false. (D26) */
+  stripAsteriskMarkers: boolean;
   /** Keep only quoted dialogue; if NO quotes found, keep the full text (fallback). Default false. */
   quotedOnly: boolean;
 }
 
 /** Pre-narration text pipeline (TTS_PLAN TS-10). Stage order is FIXED:
- *  regex layer → stripHtml → skipCodeblocks → stripAsteriskActions → quotedOnly → whitespace collapse + trim.
+ *  regex layer → stripHtml → skipCodeblocks → stripAsteriskActions → stripAsteriskMarkers → quotedOnly → whitespace collapse + trim.
  *  Returns "" when nothing survives the filters (the orchestrator's
  *  splitParagraphs then yields zero paragraphs → immediate complete).
  *  The final collapse PRESERVES newlines (D10): collapsing all `\s+` erased
@@ -183,6 +185,11 @@ export function prepareNarrationText(text: string, options: NarrationTextOptions
     out = stripAsteriskActions(out);
   }
 
+  // 4b. stripAsteriskMarkers (D26 "full text" mode: markers gone, words kept)
+  if (options.stripAsteriskMarkers) {
+    out = stripAsteriskMarkers(out);
+  }
+
   // 5. quotedOnly
   if (options.quotedOnly) {
     out = extractQuotedOnly(out);
@@ -209,8 +216,48 @@ export function defaultNarrationTextOptions(): NarrationTextOptions {
     skipCodeblocks: false,
     stripHtml: false,
     stripAsteriskActions: false,
+    stripAsteriskMarkers: false,
     quotedOnly: false,
   };
+}
+
+// ─── Narration text mode (D26) ───────────────────────────────────────────────
+
+/** D26 narration text mode — the ONE user-facing setting that replaces the
+ *  v1 hardcoded `stripAsteriskActions: true, quotedOnly: false` (the TS-10
+ *  silent scope cut). Neutral naming on purpose: asterisk spans are
+ *  mechanically indistinguishable between stage directions and emphasis
+ *  (`I'm *not* going`), so nothing here says "actions".
+ *  - "full": markers stripped, ALL words spoken (default — safe under any
+ *    writing style; emphasis survives).
+ *  - "skip-asterisk-spans": v1 behavior — single-asterisk spans dropped with
+ *    content (emphasis is dropped too; honestly labeled in the UI).
+ *  - "quoted-dialogue": only quoted speech is spoken; quote-less messages
+ *    fall back to full text (pipeline-level fallback). */
+export type NarrationTextMode = "full" | "skip-asterisk-spans" | "quoted-dialogue";
+
+export const NARRATION_TEXT_MODES = ["full", "skip-asterisk-spans", "quoted-dialogue"] as const;
+
+export function isNarrationTextMode(value: unknown): value is NarrationTextMode {
+  return typeof value === "string" && (NARRATION_TEXT_MODES as readonly string[]).includes(value);
+}
+
+/** The asterisk/quote filter triple for a mode — spread over the call site's
+ *  base options (`regexPresets` / `skipCodeblocks` / `stripHtml` stay at the
+ *  call site). Note "quoted-dialogue" uses the MARKERS strip, never the
+ *  actions strip: `*not*` inside a quoted line must keep the word "not" —
+ *  the meaning-inversion defect is exactly what D26 fixes. */
+export function narrationTextOptionsForMode(
+  mode: NarrationTextMode,
+): Pick<NarrationTextOptions, "stripAsteriskActions" | "stripAsteriskMarkers" | "quotedOnly"> {
+  switch (mode) {
+    case "full":
+      return { stripAsteriskActions: false, stripAsteriskMarkers: true, quotedOnly: false };
+    case "skip-asterisk-spans":
+      return { stripAsteriskActions: true, stripAsteriskMarkers: false, quotedOnly: false };
+    case "quoted-dialogue":
+      return { stripAsteriskActions: false, stripAsteriskMarkers: true, quotedOnly: true };
+  }
 }
 
 function stripHtml(input: string): string {
@@ -242,6 +289,18 @@ function stripAsteriskActions(input: string): string {
   // intentionally NOT touched in this slice (word-internal underscores make
   // naive removal unsafe).
   out = out.replace(/\*[^*]*?\*/g, "");
+  // Unmatched trailing/remaining asterisks → stripped.
+  out = out.replace(/\*/g, "");
+  return out;
+}
+
+function stripAsteriskMarkers(input: string): string {
+  let out = input;
+  // **bold** → bold
+  out = out.replace(/\*\*([^*]+?)\*\*/g, "$1");
+  // *span* → span (D26 "full text": the CONTENT survives — `I'm *not* going`
+  // must keep "not", unlike the actions strip above).
+  out = out.replace(/\*([^*]*?)\*/g, "$1");
   // Unmatched trailing/remaining asterisks → stripped.
   out = out.replace(/\*/g, "");
   return out;

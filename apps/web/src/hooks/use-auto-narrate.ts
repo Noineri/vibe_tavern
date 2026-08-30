@@ -7,7 +7,8 @@ import { replaceUiMacros } from "../lib/macros.js";
 import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
 import { useVoiceMapData } from "../lib/tts/voice-map-data.js";
 import { resolveNarrationProfile } from "../lib/tts/voice-map.js";
-import { prepareNarrationText } from "../lib/tts/narration-text.js";
+import { prepareNarrationText, narrationTextOptionsForMode } from "../lib/tts/narration-text.js";
+import { readTtsNarrationMode } from "../lib/local-storage.js";
 
 export function useAutoNarrate(): void {
   const autoNarrate = useTtsPlaybackStore((s) => s.autoNarrate);
@@ -85,8 +86,7 @@ export function useAutoNarrate(): void {
         regexPresets: [],
         skipCodeblocks: true,
         stripHtml: true,
-        stripAsteriskActions: true,
-        quotedOnly: false,
+        ...narrationTextOptionsForMode(readTtsNarrationMode()),
       });
       if (text.trim().length === 0) {
         prevStreamingIdRef.current = cur;

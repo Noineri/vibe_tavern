@@ -2,7 +2,8 @@ import { useCallback, useMemo } from "react";
 
 import { useTtsPlaybackStore } from "../../stores/tts-playback-store.js";
 import { resolveNarrationProfile } from "../../lib/tts/voice-map.js";
-import { prepareNarrationText } from "../../lib/tts/narration-text.js";
+import { prepareNarrationText, narrationTextOptionsForMode } from "../../lib/tts/narration-text.js";
+import { readTtsNarrationMode } from "../../lib/local-storage.js";
 import { useVoiceMapData } from "../../lib/tts/voice-map-data.js";
 
 export function useMessageNarration(
@@ -43,8 +44,7 @@ export function useMessageNarration(
       regexPresets: [],
       skipCodeblocks: true,
       stripHtml: true,
-      stripAsteriskActions: true,
-      quotedOnly: false,
+      ...narrationTextOptionsForMode(readTtsNarrationMode()),
     });
     if (text.trim().length === 0) return;
     void startNarration(messageId, text, resolution.profile);

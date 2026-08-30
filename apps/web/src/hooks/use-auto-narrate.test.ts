@@ -10,6 +10,7 @@ import type { TtsProfileRecord } from "../api/tts-api.js";
 import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
 import { useChatStore, type ChatGenerationState } from "../stores/chat-store.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
+import { TTS_NARRATION_MODE_KEY, persistTtsNarrationMode } from "../lib/local-storage.js";
 
 function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
   return {
@@ -146,6 +147,7 @@ beforeEach(() => {
   useChatStore.setState({ activeChatId: null, generations: {} });
   useSnapshotStore.setState({ activeChat: undefined, messagesById: {}, messageOrder: [] });
   currentData = { profiles: [pDefault], links: [] };
+  window.localStorage.removeItem(TTS_NARRATION_MODE_KEY);
   cleanup();
 });
 
@@ -238,5 +240,30 @@ describe("useAutoNarrate", () => {
     });
     await flushEffects();
     expect(callCount).toBe(1);
+  });
+
+  test("D26: narration text honors the stored mode pref — quoted-dialogue speaks only the quoted line", async () => {
+    persistTtsNarrationMode("quoted-dialogue");
+    const fired: Captured[] = [];
+    useTtsPlaybackStore.setState({
+      autoNarrate: true,
+      startNarration: async (id: string, text: string, prof: TtsProfileRecord) => {
+        fired.push({ id, text, prof });
+      },
+    });
+
+    seedActiveChatWith(makeMessage("m1", 'She sighed *softly* and said "wait for me".'));
+
+    await act(async () => {
+      render(React.createElement(Probe));
+    });
+    await act(async () => {
+      useChatStore.setState({ generations: { c1: genState(null) } });
+    });
+    await flushEffects();
+
+    expect(fired.length).toBe(1);
+    // Quoted mode: only quoted dialogue; markers inside quotes stripped, words kept.
+    expect(fired[0].text).toBe("wait for me");
   });
 });

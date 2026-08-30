@@ -6,6 +6,7 @@ useDomEnv();
 
 import { useTtsPlaybackStore, __setTtsPlaybackDepsForTests } from "../../stores/tts-playback-store.js";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
+import { TTS_NARRATION_MODE_KEY, persistTtsNarrationMode } from "../../lib/local-storage.js";
 
 function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
   return {
@@ -59,6 +60,7 @@ beforeEach(() => {
   } as never);
   __setTtsPlaybackDepsForTests(null);
   currentData = null;
+  window.localStorage.removeItem(TTS_NARRATION_MODE_KEY);
   cleanup();
 });
 
@@ -200,7 +202,7 @@ describe("useMessageNarration", () => {
     __setTtsPlaybackDepsForTests(null);
   });
 
-  test("narration text passed through prepareNarrationText (codeblock stripped)", async () => {
+  test("narration text honors the D26 mode pref (default full: codeblock dropped, asterisk content KEPT)", async () => {
     currentData = {
       profiles: [pDefault],
       links: [],
@@ -222,7 +224,7 @@ describe("useMessageNarration", () => {
 
     let hook: any = null;
     function Probe() {
-      hook = (useMessageNarration as any)("m1", null, null, () => "Hello ```code block``` world *action*");
+      hook = (useMessageNarration as any)("m1", null, null, () => "Hello ```code block``` world *shaking* **nervously**");
       return null;
     }
     await act(async () => {
@@ -232,12 +234,53 @@ describe("useMessageNarration", () => {
       hook!.onNarrate();
       await new Promise((r) => setTimeout(r, 20));
     });
-    // prepareNarrationText with skipCodeblocks/stripHtml/stripAsteriskActions should remove codeblock and action
+    // Default (no stored pref) = "full": codeblock stripped, asterisk MARKERS
+    // stripped, span content KEPT — the v1 silent-cut remediation (D26).
     expect(capturedText).not.toBeNull();
-    expect(capturedText as unknown as string).not.toContain("code block");
-    expect(capturedText as unknown as string).not.toContain("action");
-    expect(capturedText as unknown as string).toContain("Hello");
-    expect(capturedText as unknown as string).toContain("world");
+    const text = capturedText as unknown as string;
+    expect(text).not.toContain("code block");
+    expect(text).toContain("shaking");
+    expect(text).toContain("nervously");
+    expect(text).not.toContain("*");
+    __setTtsPlaybackDepsForTests(null);
+  });
+
+  test("stored mode drives the pipeline: quoted-dialogue speaks only the quoted line", async () => {
+    currentData = {
+      profiles: [pDefault],
+      links: [],
+    };
+    persistTtsNarrationMode("quoted-dialogue");
+    let capturedText: string | null = null;
+    const fakePlayer = {
+      play: async () => "ended" as const,
+      skipCurrent: () => {},
+      pause: () => {},
+      resume: () => {},
+      setRate: () => {},
+      dispose: () => {},
+    };
+    const fakeSynthesize = mock(async (text: string) => {
+      capturedText = text;
+      return { blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" };
+    });
+    __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
+
+    let hook: any = null;
+    function Probe() {
+      hook = (useMessageNarration as any)("m1", null, null, () => 'He whispered "don\u2019t *ever* come back" and left');
+      return null;
+    }
+    await act(async () => {
+      render(React.createElement(Probe));
+    });
+    await act(async () => {
+      hook!.onNarrate();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    // Quoted mode: only the quoted dialogue; the * markers inside the quote
+    // are stripped but "ever" survives (order: markers before quotedOnly).
+    expect(capturedText as unknown as string).toBe("don’t ever come back");
     __setTtsPlaybackDepsForTests(null);
   });
 });
