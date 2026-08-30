@@ -221,7 +221,8 @@ export const TTS_SERVER_SETUP_GUIDES: TtsServerSetupGuide[] = [
       titleKey: "tts_help_step_install",
       commands: {
         windows: [
-          "python -m venv venv",
+          "winget install -e --id Python.Python.3.11 --scope user",
+          "py -3.11 -m venv venv",
           "venv\\Scripts\\activate",
           "pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124",
           "pip3 install -r requirements.txt",
@@ -229,7 +230,7 @@ export const TTS_SERVER_SETUP_GUIDES: TtsServerSetupGuide[] = [
           "mkdir static",
         ],
         unix: [
-          "python -m venv venv",
+          "python3.11 -m venv venv",
           "source venv/bin/activate",
           "pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124",
           "pip3 install -r requirements.txt",
