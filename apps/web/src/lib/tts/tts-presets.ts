@@ -8,7 +8,11 @@
  */
 
 export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs";
-export type TtsModelFilter = "modality" | "audio-models" | "name-heuristic" | "none";
+/** F8 (owner decision 2026-08-29): `name-heuristic` is REMOVED. Known
+ *  presets stamp `documented` (doc-verified static catalog resolved
+ *  server-side) or `audio-type` (SiliconFlow ?type=audio); unknown
+ *  custom servers stay `none` → plain /models. */
+export type TtsModelFilter = "modality" | "audio-models" | "audio-type" | "documented" | "none";
 export interface TtsPreset {
   id: string;
   label: string;
@@ -31,7 +35,9 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "cloud",
     backend: "openai-compat",
     baseUrl: "https://api.openai.com/v1",
-    modelFilter: "name-heuristic",
+    // F8: documented catalog — server-side static table (models + 13/13/9
+    // voice rosters incl. marin/cedar), no network discovery needed.
+    modelFilter: "documented",
     defaultModel: "gpt-4o-mini-tts",
   },
   {
@@ -49,7 +55,9 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "cloud",
     backend: "openai-compat",
     baseUrl: "https://api.groq.com/openai/v1",
-    modelFilter: "name-heuristic",
+    // F8: documented catalog — orpheus EN/AR models + 6+6 voice rosters
+    // resolved server-side; playai is retired.
+    modelFilter: "documented",
     models: ["canopylabs/orpheus-v1-english", "canopylabs/orpheus-arabic-saudi"],
     // input hard limit 200 characters (chunking implication for TE2-6); response_format supports wav only
   },
@@ -59,7 +67,9 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "cloud",
     backend: "openai-compat",
     baseUrl: "https://api.siliconflow.cn/v1",
-    modelFilter: "name-heuristic",
+    // F8: documented server-side filter — GET /models?type=audio (the
+    // plain catalog is chat+image+audio mixed with no usable split).
+    modelFilter: "audio-type",
     models: ["fishaudio/fish-speech-1.5", "FunAudioLLM/CosyVoice2-0.5B"],
     // speed range [0.25, 4.0], gain range [-10, 10] are supported by the endpoint
     // wire ids are FULL "model:voice" strings for the default model
@@ -81,7 +91,10 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "cloud",
     backend: "openai-compat",
     baseUrl: "https://api.electronhub.ai/v1",
-    modelFilter: "name-heuristic",
+    // F8: documented catalog — 10 TTS models; voice rosters only for the
+    // openai-family trio, manual input otherwise (docs publish partial
+    // rosters for the rest).
+    modelFilter: "documented",
   },
   {
     id: "gemini",

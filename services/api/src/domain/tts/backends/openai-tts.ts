@@ -15,9 +15,9 @@
  *   is included only for that model family.
  * - Voices: kokoro-fastapi exposes GET /v1/audio/voices → { voices: [{ id, name? }] };
  *   Honest (TE2-3): listVoices hits ONLY /audio/voices and returns null on
- *   any failure — no fallback to /models or to the static OpenAI roster.
- *   Static voice lists for cloud presets now live client-side
- *   (apps/web/src/lib/tts/tts-presets.ts).
+ *   any failure — no fallback to /models. Documented hosts (F8) resolve
+ *   their per-model rosters from the static DOCUMENTED_MODELS table below
+ *   instead (no network); aggregator catalogs carry the roster per entry.
  */
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
@@ -48,12 +48,6 @@ const FALLBACK_MIME = "audio/mpeg";
 const MIN_SPEED = 0.25;
 const MAX_SPEED = 4.0;
 
-/** Heuristic for filtering chat models out of a mixed /models list —
- *  keeps only ids that look like TTS models. Empty result falls back
- *  to the full list so the UI is never left with an empty dropdown. */
-const TTS_MODEL_HEURISTIC_RE =
-  /tts|speech|audio|kokoro|orpheus|fish|cosy|dia|melo|voice/i;
-
 /** Known aggregator that hides speech models behind the
  *  `output_modalities` query param: the unfiltered catalog is 300+
  *  chat-only models with none of the TTS ones (verified live — the
@@ -62,13 +56,17 @@ const TTS_MODEL_HEURISTIC_RE =
  *  stamping `modelFilter` into the config bag. */
 const MODALITY_FILTER_HOSTS = new Set(["openrouter.ai"]);
 
-function isOpenRouterStyleEndpoint(endpoint: string): boolean {
+function hostnameOf(endpoint: string): string | null {
   try {
-    const url = new URL(endpoint.includes("://") ? endpoint : `https://${endpoint}`);
-    return MODALITY_FILTER_HOSTS.has(url.hostname.toLowerCase());
+    return new URL(endpoint.includes("://") ? endpoint : `https://${endpoint}`).hostname.toLowerCase();
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isOpenRouterStyleEndpoint(endpoint: string): boolean {
+  const host = hostnameOf(endpoint);
+  return host !== null && MODALITY_FILTER_HOSTS.has(host);
 }
 
 /** NanoGPT serves TTS discovery from a DEDICATED catalog: GET
@@ -80,12 +78,88 @@ function isOpenRouterStyleEndpoint(endpoint: string): boolean {
 const AUDIO_MODELS_HOSTS = new Set(["nano-gpt.com"]);
 
 function isNanoGptStyleEndpoint(endpoint: string): boolean {
-  try {
-    const url = new URL(endpoint.includes("://") ? endpoint : `https://${endpoint}`);
-    return AUDIO_MODELS_HOSTS.has(url.hostname.toLowerCase());
-  } catch {
-    return false;
-  }
+  const host = hostnameOf(endpoint);
+  return host !== null && AUDIO_MODELS_HOSTS.has(host);
+}
+
+// ─── Documented catalogs (F8, owner decision 2026-08-29) ─────────────────────
+
+/** Hosts whose TTS model catalog is fully documented — discovery is a
+ *  static table, no network fetch. The name-heuristic that used to filter
+ *  these hosts' mixed /models lists is REMOVED (owner decision 2026-08-29,
+ *  F8: known providers do not need a heuristic — their documented model
+ *  and voice discovery is known from primary docs; see the F8 handoff in
+ *  the plan repo for the verbatim decision).
+ *  The host ALWAYS wins over legacy stamps: every pre-F8 profile on these
+ *  hosts carries the preset glue `modelFilter: "name-heuristic"`, which is
+ *  not a user choice (no UI edits modelFilter) — same healing rule as the
+ *  nano-gpt field fix. */
+const DOCUMENTED_HOSTS = new Set(["api.openai.com", "api.groq.com", "api.electronhub.ai"]);
+
+/** SiliconFlow documents a server-side catalog filter: GET /v1/models?type=audio
+ *  (docs.siliconflow.cn/en/api-reference/models/get-model-list — `type`:
+ *  text/image/audio/video; `sub_type` has no text-to-speech option). */
+const AUDIO_TYPE_HOSTS = new Set(["api.siliconflow.cn", "api.siliconflow.com"]);
+
+/** One documented catalog entry: model id, its label, optional per-model
+ *  voice roster (`undefined` → the picker degrades to manual voice input),
+ *  and the roster language for voice labels. */
+interface DocumentedModel {
+  id: string;
+  label: string;
+  voices?: string[];
+  lang?: string;
+}
+
+const OPENAI_MINI_TTS_VOICES = [
+  "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova",
+  "sage", "shimmer", "verse", "marin", "cedar",
+];
+const OPENAI_TTS1_VOICES = [
+  "alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
+];
+const GROQ_EN_VOICES = ["autumn", "diana", "hannah", "austin", "daniel", "troy"];
+const GROQ_AR_VOICES = ["abdullah", "fahad", "sultan", "lulwa", "noura", "aisha"];
+const ELECTRONHUB_OPENAI_VOICES = [
+  "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova",
+  "sage", "shimmer", "verse",
+];
+
+/** Doc-verified rosters (all read 2026-08-29, F8 handoff matrix):
+ *  - OpenAI: developers.openai.com/api/docs/guides/text-to-speech — mini-tts
+ *    13 voices (marin/cedar were absent from the old preset), tts-1 family 9.
+ *  - Groq: console.groq.com/docs/text-to-speech — orpheus EN/AR 6+6 (playai
+ *    retired; their speech reference still showing playai-tts is THEIR docs
+ *    inconsistency — do not copy it).
+ *  - ElectronHub: docs.electronhub.ai/api-reference/audio/speech — the three
+ *    openai-family models share an 11-voice roster; elevenlabs/playai/kokoro/
+ *    microsoft document partial rosters only → manual input floor. */
+const DOCUMENTED_MODELS: Record<string, DocumentedModel[]> = {
+  "api.openai.com": [
+    { id: "gpt-4o-mini-tts", label: "gpt-4o-mini-tts", voices: OPENAI_MINI_TTS_VOICES, lang: "en" },
+    { id: "tts-1", label: "tts-1", voices: OPENAI_TTS1_VOICES, lang: "en" },
+    { id: "tts-1-hd", label: "tts-1-hd", voices: OPENAI_TTS1_VOICES, lang: "en" },
+  ],
+  "api.groq.com": [
+    { id: "canopylabs/orpheus-v1-english", label: "canopylabs/orpheus-v1-english", voices: GROQ_EN_VOICES, lang: "en" },
+    { id: "canopylabs/orpheus-arabic-saudi", label: "canopylabs/orpheus-arabic-saudi", voices: GROQ_AR_VOICES, lang: "ar" },
+  ],
+  "api.electronhub.ai": [
+    { id: "gpt-4o-mini-tts", label: "gpt-4o-mini-tts", voices: ELECTRONHUB_OPENAI_VOICES, lang: "en" },
+    { id: "tts-1", label: "tts-1", voices: ELECTRONHUB_OPENAI_VOICES, lang: "en" },
+    { id: "tts-1-hd", label: "tts-1-hd", voices: ELECTRONHUB_OPENAI_VOICES, lang: "en" },
+    { id: "elevenlabs", label: "elevenlabs" },
+    { id: "playai-tts", label: "playai-tts" },
+    { id: "playai-tts-arabic", label: "playai-tts-arabic" },
+    { id: "kokoro-82m", label: "kokoro-82m" },
+    { id: "dia-1.6b", label: "dia-1.6b" },
+    { id: "melotts", label: "melotts" },
+    { id: "microsoft-tts", label: "microsoft-tts" },
+  ],
+};
+
+function documentedTableFor(host: string | null): DocumentedModel[] | undefined {
+  return host === null ? undefined : DOCUMENTED_MODELS[host];
 }
 
 /** Error body excerpt length included in HTTP-failure messages. */
@@ -224,11 +298,29 @@ function parseVoicesPayload(parsed: unknown): TtsVoiceInfo[] | null {
 export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
   const cfg = parseConfig(config);
 
-  /** Catalog selection (D15/D23), shared by listModels and listVoices:
-   *  explicit stamp wins, else the host default heals pre-stamp profiles.
-   *  `plain` = the ordinary OpenAI-compatible /models catalog. */
-  const catalogRequest = (): { kind: "audio-models" | "modality" | "plain"; url: string } => {
+  /** Catalog selection (D15/D23/F8), shared by listModels and listVoices:
+   *  DOCUMENTED/audio-type hosts ALWAYS win over legacy stamps (the F6
+   * field-fix rule — old profiles carry preset-glue `name-heuristic`
+   * stamps that must heal); `plain` = the ordinary OpenAI-compatible
+   * /models catalog. */
+  const catalogRequest = (): {
+    kind: "audio-models" | "modality" | "audio-type" | "documented" | "plain";
+    url: string;
+  } => {
     const modelFilter = readString(config, "modelFilter");
+    const host = hostnameOf(cfg.endpoint);
+    // Documented hosts: the static table below is the only legitimate
+    // catalog — there is no valid stamp or fetch case past it.
+    if (documentedTableFor(host) !== undefined) {
+      return { kind: "documented", url: "" };
+    }
+    // SiliconFlow: documented server-side filter beats every stamp.
+    if ((host !== null && AUDIO_TYPE_HOSTS.has(host)) || modelFilter === "audio-type") {
+      return { kind: "audio-type", url: `${cfg.endpoint}/models?type=audio` };
+    }
+    if (modelFilter === "documented" && documentedTableFor(host) !== undefined) {
+      return { kind: "documented", url: "" };
+    }
     // NanoGPT: the HOST ALWAYS wins (field fix 2026-08-29). Every pre-F6
     // nanogpt profile carries the OLD preset stamp `modelFilter:
     // "name-heuristic"` — an explicit-LOOKING value that is not a user
@@ -293,8 +385,18 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
     },
 
     async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
-      const modelFilter = readString(config, "modelFilter");
       const { kind, url } = catalogRequest();
+      if (kind === "documented") {
+        // Static table — no network, no filtering, exactly what the
+        // provider documents (F8: the heuristic is gone; the picker shows
+        // the documented TTS models, zero chat models).
+        const table = documentedTableFor(hostnameOf(cfg.endpoint)) ?? [];
+        return table.map((entry) => ({
+          id: entry.id,
+          label: entry.label,
+          ...(entry.voices !== undefined ? { voices: entry.voices } : {}),
+        }));
+      }
       const useModalityParam = kind === "modality";
       const useAudioModelsCatalog = kind === "audio-models";
       const response = await fetchOrWrap(
@@ -389,22 +491,35 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
         }
         out.push(info);
       }
-      if (modelFilter === "name-heuristic") {
-        const filtered = out.filter((m) => TTS_MODEL_HEURISTIC_RE.test(m.id));
-        if (filtered.length > 0) return filtered;
-      }
       return out;
     },
 
     async listVoices(): Promise<TtsVoiceInfo[] | null> {
       const { kind, url } = catalogRequest();
-      // D22: aggregators have NO /audio/voices endpoint (404 live-verified
-      // on openrouter.ai and nano-gpt.com) — the roster is PER-MODEL data
-      // riding the catalog. Resolve it by the selected model: refetch the
-      // catalog (cacheable upstream per NanoGPT docs), find the entry, read
-      // its voice list. Null (manual input) when no model is chosen, the
-      // model left the catalog, or the catalog reports none for it.
-      if (kind !== "plain") {
+      // Documented hosts: the roster is part of the static table — resolve
+      // the selected model in it. No model / model left the table / entry
+      // documents no roster → null (manual voice input floor).
+      if (kind === "documented") {
+        const table = documentedTableFor(hostnameOf(cfg.endpoint)) ?? [];
+        const model = readString(config, "model");
+        if (model === undefined) return null;
+        const entry = table.find((m) => m.id === model);
+        if (entry === undefined || entry.voices === undefined) return null;
+        const lang = entry.lang ?? "en";
+        return entry.voices.map((id) => ({ id, label: id, lang }));
+      }
+      // D22: aggregators (audio-models/modality) have NO /audio/voices
+      // endpoint (404 live-verified on openrouter.ai and nano-gpt.com) —
+      // the roster is PER-MODEL data riding the catalog. Resolve it by
+      // the selected model: refetch the catalog (cacheable upstream per
+      // NanoGPT docs), find the entry, read its voice list. Null (manual
+      // input) when no model is chosen, the model left the catalog, or
+      // the catalog reports none for it. audio-type (SiliconFlow) does
+      // NOT take this path: its /models?type=audio entries carry no
+      // roster, and SF documents no voices endpoint — it falls through
+      // to the plain /audio/voices attempt, which is null → manual there
+      // (wire ids are full "model:voice" strings anyway).
+      if (kind === "audio-models" || kind === "modality") {
         try {
           const response = await fetchOrWrap(
             url,

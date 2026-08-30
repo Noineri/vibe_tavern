@@ -344,35 +344,17 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     expect(captured()!.url).toBe("http://localhost:8880/v1/models?output_modalities=speech");
   });
 
-  test("heuristic → mixed model list comes back filtered", async () => {
-    captureFetch(() =>
-      jsonResponse(200, {
-        data: [
-          { id: "gpt-4o" },
-          { id: "tts-1" },
-          { id: "canopylabs/orpheus-v1-english" },
-          { id: "whisper-1" },
-        ],
-      }),
+  test("legacy name-heuristic stamp + custom server → plain URL, list unfiltered (F8: the heuristic is REMOVED; stamps on unknown hosts are inert)", async () => {
+    const { captured } = captureFetch(() =>
+      jsonResponse(200, { data: [{ id: "gpt-4o" }, { id: "tts-1" }, { id: "whisper-1" }] }),
     );
     const backend = openAiCompatTtsFactory({
       endpoint: "http://localhost:8880/v1",
       modelFilter: "name-heuristic",
     });
     const models = await backend.listModels();
-    expect(models.map((m) => m.id)).toEqual(["tts-1", "canopylabs/orpheus-v1-english"]);
-  });
-
-  test("heuristic → zero matches returns the full list unchanged", async () => {
-    captureFetch(() =>
-      jsonResponse(200, { data: [{ id: "gpt-4o" }, { id: "gpt-4o-mini" }] }),
-    );
-    const backend = openAiCompatTtsFactory({
-      endpoint: "http://localhost:8880/v1",
-      modelFilter: "name-heuristic",
-    });
-    const models = await backend.listModels();
-    expect(models.map((m) => m.id)).toEqual(["gpt-4o", "gpt-4o-mini"]);
+    expect(captured()!.url).toBe("http://localhost:8880/v1/models");
+    expect(models.map((m) => m.id)).toEqual(["gpt-4o", "tts-1", "whisper-1"]);
   });
 
   test("absent hint → unfiltered, URL has NO query param", async () => {
@@ -541,13 +523,99 @@ describe("OpenAI-compatible TTS listModels filtering", () => {
     ]);
   });
 
-  test("explicit name-heuristic + non-openrouter host → plain URL (param must not leak elsewhere)", async () => {
-    const { captured } = captureFetch(() => jsonResponse(200, { data: [{ id: "tts-1" }] }));
+  test("legacy name-heuristic stamp + groq host → documented table wins, NO fetch (F8 host-heal)", async () => {
+    // Pre-F8 presets stamped groq profiles with `name-heuristic` (preset
+    // glue, not a user choice) — the host must heal it to the documented
+    // static catalog; the mixed chat /models must never be requested.
+    const { captured } = captureFetch(() => jsonResponse(200, { data: [{ id: "gpt-4o" }] }));
     const backend = openAiCompatTtsFactory({
       endpoint: "https://api.groq.com/openai/v1",
       modelFilter: "name-heuristic",
     });
-    await backend.listModels();
-    expect(captured()!.url).toBe("https://api.groq.com/openai/v1/models");
+    const models = await backend.listModels();
+    expect(captured()).toBeNull();
+    expect(models.map((m) => m.id)).toEqual([
+      "canopylabs/orpheus-v1-english",
+      "canopylabs/orpheus-arabic-saudi",
+    ]);
+  });
+});
+
+describe("openai-compat TTS documented + audio-type discovery (F8)", () => {
+  test("openai host → documented table: 3 models, no network", async () => {
+    const { captured } = captureFetch(() => jsonResponse(200, { data: [{ id: "gpt-4o" }] }));
+    const backend = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1" });
+    const models = await backend.listModels();
+    expect(captured()).toBeNull();
+    expect(models.map((m) => m.id)).toEqual(["gpt-4o-mini-tts", "tts-1", "tts-1-hd"]);
+  });
+
+  test("openai roster pins: mini-tts 13 voices incl. marin+cedar, tts-1 family 9", async () => {
+    captureFetch(() => jsonResponse(200, { data: [] }));
+    const backend = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1", model: "tts-1" });
+    const mini = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini-tts" });
+    expect((await mini.listVoices())!.map((v) => v.id)).toEqual([
+      "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova",
+      "sage", "shimmer", "verse", "marin", "cedar",
+    ]);
+    expect((await backend.listVoices())!.map((v) => v.id)).toEqual([
+      "alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
+    ]);
+    // Roster also rides the models list (model-scoped pickers).
+    const models = await mini.listModels();
+    expect(models.find((m) => m.id === "gpt-4o-mini-tts")!.voices).toHaveLength(13);
+    expect(models.find((m) => m.id === "gpt-4o-mini-tts")!.voices).toContain("marin");
+    expect(models.find((m) => m.id === "tts-1-hd")!.voices).toHaveLength(9);
+  });
+
+  test("documented listVoices: unknown model → null (manual), no model → null, per-model lang rides the answer", async () => {
+    captureFetch(() => jsonResponse(200, { data: [] }));
+    const unknown = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1", model: "not-a-model" });
+    expect(await unknown.listVoices()).toBeNull();
+    const unset = openAiCompatTtsFactory({ endpoint: "https://api.openai.com/v1" });
+    expect(await unset.listVoices()).toBeNull();
+    const groqAr = openAiCompatTtsFactory({
+      endpoint: "https://api.groq.com/openai/v1",
+      model: "canopylabs/orpheus-arabic-saudi",
+    });
+    const voices = await groqAr.listVoices();
+    expect(voices!.map((v) => v.id)).toEqual(["abdullah", "fahad", "sultan", "lulwa", "noura", "aisha"]);
+    expect(voices!.every((v) => v.lang === "ar")).toBe(true);
+  });
+
+  test("electronhub documented: 10 models; openai-trio 11-voice roster, others → manual floor", async () => {
+    const { captured } = captureFetch(() => jsonResponse(200, { data: [] }));
+    const backend = openAiCompatTtsFactory({ endpoint: "https://api.electronhub.ai/v1" });
+    const models = await backend.listModels();
+    expect(captured()).toBeNull();
+    expect(models).toHaveLength(10);
+    expect(models.find((m) => m.id === "tts-1")!.voices).toEqual([
+      "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse",
+    ]);
+    expect(models.find((m) => m.id === "gpt-4o-mini-tts")!.voices).not.toContain("marin");
+    expect(models.find((m) => m.id === "elevenlabs")!.voices).toBeUndefined();
+    const eleven = openAiCompatTtsFactory({ endpoint: "https://api.electronhub.ai/v1", model: "elevenlabs" });
+    expect(await eleven.listVoices()).toBeNull();
+  });
+
+  test("siliconflow host → audio-type URL, host beats legacy name-heuristic stamp", async () => {
+    const { captured } = captureFetch(() => jsonResponse(200, { data: [{ id: "FunAudioLLM/CosyVoice2-0.5B" }] }));
+    const stamped = openAiCompatTtsFactory({
+      endpoint: "https://api.siliconflow.cn/v1",
+      modelFilter: "name-heuristic",
+    });
+    const models = await stamped.listModels();
+    expect(captured()!.url).toBe("https://api.siliconflow.cn/v1/models?type=audio");
+    expect(models.map((m) => m.id)).toEqual(["FunAudioLLM/CosyVoice2-0.5B"]);
+  });
+
+  test("audio-type listVoices skips the aggregator refetch: plain /audio/voices attempt, null → manual on SF", async () => {
+    const { captured } = captureFetch(() => new Response("not found", { status: 404 }));
+    const backend = openAiCompatTtsFactory({
+      endpoint: "https://api.siliconflow.cn/v1",
+      model: "FunAudioLLM/CosyVoice2-0.5B",
+    });
+    expect(await backend.listVoices()).toBeNull();
+    expect(captured()!.url).toBe("https://api.siliconflow.cn/v1/audio/voices");
   });
 });

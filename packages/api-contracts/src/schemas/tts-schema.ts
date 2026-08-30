@@ -179,8 +179,13 @@ export const draftTtsModelsSchema = z.object({
   config: ttsProfileConfigSchema,
   /** Optional filter hint computed client-side from the registry — the
    *  registry lives in `apps/web` so the server must not import it
-   *  (dependency graph points the other way). Transient per request. */
-  modelFilter: z.enum(["modality", "audio-models", "name-heuristic", "none"]).optional(),
+   *  (dependency graph points the other way). Transient per request.
+   *  F8 (2026-08-30): `name-heuristic` REMOVED (owner decision); known
+   *  presets stamp `documented` (static doc-verified table server-side)
+   *  or `audio-type` (SiliconFlow ?type=audio). Legacy stored configs
+   *  may still carry the old `name-heuristic` string — it is loose bag
+   *  data, not validated here, and the backend host-maps heal it. */
+  modelFilter: z.enum(["modality", "audio-models", "audio-type", "documented", "none"]).optional(),
   /** Stored-key resolution — same semantics as in {@link draftTtsVoicesSchema}. */
   profileId: z.string().optional(),
 });
