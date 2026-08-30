@@ -14,6 +14,7 @@ import { MasterDetailFooter } from "../../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../../shared/SaveBar.js";
 import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
 import { Icons } from "../../../shared/icons.js";
+import { TtsNarrationModeBlock } from "./TtsNarrationModeBlock.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
@@ -39,6 +40,10 @@ export function TtsAudioFooter({ tts }: { tts: TtsHook }) {
         }
         right={
           <div className="flex items-center gap-2">
+            {/* Narration text-mode selector lives HERE in the footer row —
+             * the same slot pattern as the LLM footer's default-proxy control
+             * (owner 2026-08-31). */}
+            <TtsNarrationModeBlock />
             {/* Cancel is ALWAYS available while a form is open (owner
              * 2026-08-29): gating it on `dirty` left the editor with no
              * exit — Save disabled by the same flag, the card could not be

@@ -1,8 +1,9 @@
 import { useState } from "react";
 
 import { useT } from "../../../../i18n/context.js";
-import { SegmentedControl } from "../../../shared/SegmentedControl.js";
+import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import {
+  isNarrationTextMode,
   NARRATION_TEXT_MODES,
   type NarrationTextMode,
 } from "../../../../lib/tts/narration-text.js";
@@ -24,37 +25,40 @@ const MODE_DESC_KEYS: Record<NarrationTextMode, "tts_narration_mode_full_desc" |
  * D26: the ONE narration text-mode setting (TS-10 remediation). Replaces the
  * v1 hardcoded `stripAsteriskActions: true, quotedOnly: false`. Both narrate
  * call sites (manual button `useMessageNarration`, stream-end
- * `useAutoNarrate`) read the persisted mode at narrate time — this block only
- * writes it. Honest per-mode descriptions; neutral naming (no "actions" —
+ * `useAutoNarrate`) read the persisted mode at narrate time — this control
+ * only writes it. Honest per-mode descriptions; neutral naming (no "actions" —
  * asterisk spans are mechanically indistinguishable from emphasis).
- * Docked at the bottom of the section (below the profile list, above the
- * footer) — top placement pushed the profiles down (owner field feedback).
+ *
+ * Rendered INLINE in the TTS audio footer (owner 2026-08-31 field-test): a
+ * label + dropdown mirroring the LLM footer's default-proxy slot. The
+ * per-mode descriptions ride the options as `detail` (the proxy slot puts the
+ * proxy URL there), shown when the list is open — no extra footer rows.
  */
 export function TtsNarrationModeBlock() {
   const { t } = useT();
   const [mode, setMode] = useState<NarrationTextMode>(() => readTtsNarrationMode());
 
-  const change = (next: NarrationTextMode): void => {
+  const change = (next: string): void => {
+    if (!isNarrationTextMode(next)) return;
     setMode(next);
     persistTtsNarrationMode(next);
   };
 
   return (
-    <div data-testid="tts-narration-mode-block" className="mx-3 mt-2 flex flex-col gap-1.5 border-t border-border pt-3">
-      <div className="font-ui text-[12px] font-semibold uppercase tracking-wide text-t3">
-        {t("tts_narration_mode_label")}
-      </div>
-      <SegmentedControl<NarrationTextMode>
+    <div data-testid="tts-narration-mode-block" className="flex min-w-0 flex-1 items-center gap-2">
+      <label className="shrink-0 font-ui text-[12px] text-t3">{t("tts_narration_mode_label")}</label>
+      <DropdownSelect
         value={mode}
-        compact
-        mobileSelect
-        wrap
-        options={NARRATION_TEXT_MODES.map((m) => ({ value: m, label: t(MODE_LABEL_KEYS[m]) }))}
+        options={NARRATION_TEXT_MODES.map((m) => ({
+          id: m,
+          label: t(MODE_LABEL_KEYS[m]),
+          detail: t(MODE_DESC_KEYS[m]),
+        }))}
         onChange={change}
+        searchable={false}
+        className="min-w-0 flex-1"
+        triggerTestId="tts-narration-mode-select"
       />
-      <div data-testid="tts-narration-mode-desc" className="font-ui text-[12px] leading-snug text-t3">
-        {t(MODE_DESC_KEYS[mode])}
-      </div>
     </div>
   );
 }

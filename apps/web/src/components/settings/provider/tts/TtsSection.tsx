@@ -1,6 +1,5 @@
 import { useT } from "../../../../i18n/context.js";
 import { TtsProfileList } from "./TtsProfileList.js";
-import { TtsNarrationModeBlock } from "./TtsNarrationModeBlock.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
@@ -32,10 +31,6 @@ export function TtsSection({ tts }: { tts: TtsHook }) {
         onSelectProfile={tts.select}
         onAddProfile={tts.startCreate}
       />
-      {/* D26 placement follow-up (owner field-test): docked BELOW the
-       * scrollable profile list instead of above it — at the top it pushed
-       * the profiles down and made the list awkward to scroll. */}
-      <TtsNarrationModeBlock />
     </div>
   );
 }
