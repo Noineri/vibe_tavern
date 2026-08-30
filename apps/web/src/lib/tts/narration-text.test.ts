@@ -4,6 +4,7 @@ import {
   chunkRoleRuns,
   defaultNarrationTextOptions,
   prepareNarrationText,
+  prepareNarrationTextPreservingTags,
   splitNarrationRoles,
   narrationTextOptionsForMode,
   isNarrationTextMode,
@@ -347,5 +348,79 @@ describe("chunkRoleRuns", () => {
     // No piece should cut inside a sentence without whitespace after punctuation
     // Verify join-back still holds
     expect(pieces.map((p) => p.text).join("")).toBe(sentence);
+  });
+});
+
+// ─── TPE-1: annotation tags survive every D26 mode ───────────────────────────
+
+describe("prepareNarrationTextPreservingTags (TPE-1)", () => {
+  const annotated = 'She [laugh] softly. "Wait," he [sigh] said, "I\'m *not* joking."';
+
+  test("full mode: markers stripped, words kept, tags ride along", () => {
+    const out = prepareNarrationTextPreservingTags(annotated, {
+      regexPresets: [],
+      skipCodeblocks: true,
+      stripHtml: true,
+      ...narrationTextOptionsForMode("full"),
+    });
+    expect(out).toContain("[laugh]");
+    expect(out).toContain("[sigh]");
+    expect(out).toContain("not joking"); // emphasis word kept, markers gone
+    expect(out).not.toContain("*");
+  });
+
+  test("skip-asterisk-spans mode: spans dropped, tags outside spans preserved", () => {
+    const out = prepareNarrationTextPreservingTags(annotated, {
+      regexPresets: [],
+      skipCodeblocks: true,
+      stripHtml: true,
+      ...narrationTextOptionsForMode("skip-asterisk-spans"),
+    });
+    expect(out).toContain("[laugh]");
+    expect(out).toContain("[sigh]");
+    expect(out).not.toContain("not"); // the *span* content is dropped in this mode
+  });
+
+  test("quoted-dialogue mode: only quotes spoken, yet tags re-attach between them", () => {
+    const out = prepareNarrationTextPreservingTags(annotated, {
+      regexPresets: [],
+      skipCodeblocks: true,
+      stripHtml: true,
+      ...narrationTextOptionsForMode("quoted-dialogue"),
+    });
+    // Quoted speech survives; the laugh (anchor "softly" dropped) and the sigh
+    // (anchor "said" dropped — it lived OUTSIDE the quotes) fall to the end
+    // in original order rather than being silently lost.
+    expect(out).toContain("Wait");
+    expect(out).toContain("[laugh]");
+    expect(out).toContain("[sigh]");
+    expect(out.indexOf("[laugh]")).toBeLessThan(out.indexOf("[sigh]"));
+  });
+
+  test("quoted-dialogue mode: a tag anchored INSIDE a quote lands inside it", () => {
+    const out = prepareNarrationTextPreservingTags(
+      '"You [gasp] monster!" she cried.',
+      {
+        regexPresets: [],
+        skipCodeblocks: false,
+        stripHtml: false,
+        ...narrationTextOptionsForMode("quoted-dialogue"),
+      },
+    );
+    expect(out).toBe("You [gasp] monster!");
+  });
+
+  test("no tags in text → identical to the plain pipeline", () => {
+    for (const mode of NARRATION_TEXT_MODES) {
+      const plain = "Just words, no sounds.";
+      expect(
+        prepareNarrationTextPreservingTags(plain, {
+          regexPresets: [],
+          skipCodeblocks: false,
+          stripHtml: false,
+          ...narrationTextOptionsForMode(mode),
+        }),
+      ).toBe(prepareNarrationText(plain, { regexPresets: [], skipCodeblocks: false, stripHtml: false, ...narrationTextOptionsForMode(mode) }));
+    }
   });
 });

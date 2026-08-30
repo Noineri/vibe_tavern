@@ -18,6 +18,7 @@
 
 import { splitParagraphs } from "./kokoro/kokoro-text.js";
 import { chunkRoleRuns, splitNarrationRoles } from "./narration-text.js";
+import { mapTtsTagsForDialect, ttsTagDialectForProfile } from "./tts-tags.js";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
 import type { NarrationPlayer } from "./narration-player.js";
 
@@ -182,13 +183,20 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       activeMessageId = messageId;
 
       const raw = deps.preprocess ? deps.preprocess(text) : text;
+      // TPE-1: annotation tags are canonical `[tag]` tokens; the synthesis
+      // engine's dialect decides their fate. Mapping happens HERE — the single
+      // point where the narration profile (backend + model) is known — before
+      // any splitting, so every segment carries the mapped form. Strip
+      // dialects never speak a tag word aloud; orpheus gets <tag> inline tags;
+      // chatterbox speaks the canonical brackets natively.
+      const dialectText = mapTtsTagsForDialect(raw, ttsTagDialectForProfile(profile));
       const hasNarrator = typeof profile.narratorVoiceId === "string" && profile.narratorVoiceId.trim() !== "";
       const segments: Array<{ text: string; voiceId: string }> = hasNarrator
-        ? chunkRoleRuns(splitNarrationRoles(raw), 400).map((run) => ({
+        ? chunkRoleRuns(splitNarrationRoles(dialectText), 400).map((run) => ({
             text: run.text,
             voiceId: run.role === "narrator" ? (profile.narratorVoiceId as string) : profile.voiceId,
           }))
-        : splitParagraphs(raw).map((paragraph) => ({ text: paragraph, voiceId: profile.voiceId }));
+        : splitParagraphs(dialectText).map((paragraph) => ({ text: paragraph, voiceId: profile.voiceId }));
 
       if (segments.length === 0) {
         emitState("complete");

@@ -1350,6 +1350,11 @@ export interface MessageVariant {
   /** Canonical per-variant Scene record (SCENE_TRACKER_PLAN); null/undefined
    *  when the variant has none. Owned by this variant's immutable id. */
   sceneTracker?: SceneTrackerRecord | null;
+  /** TTS narration annotation (TPE-1, AN-1): the annotated copy of this
+   *  variant's content — expressive tags inserted, text otherwise identical.
+   *  Null/undefined = not annotated; narration then reads the content itself.
+   *  A persisted fact: content edits do NOT clear it. */
+  ttsAnnotation?: string | null;
 }
 
 export interface SummaryMemorySnapshot {

@@ -596,3 +596,72 @@ describe("TtsOrchestrator", () => {
     expect(stamps[2]! - stamps[0]!).toBeGreaterThanOrEqual(2 * INTER_SYNTHESIS_YIELD_MS);
   });
 });
+
+// ── TPE-1: annotation tag dialect mapping at the synthesis boundary ─────────
+
+function makeImmediatePlayer(): NarrationPlayer {
+  return {
+    play(_blob: Blob, _rate: number): Promise<SegmentPlayResult> {
+      return Promise.resolve("ended");
+    },
+    skipCurrent(): void {},
+    pause(): void {},
+    resume(): void {},
+    setRate(): void {},
+    dispose(): void {},
+  };
+}
+
+describe("TTS orchestrator — tag dialect mapping (TPE-1)", () => {
+  test("orpheus-model profile: canonical [laugh] synthesized as <laugh>", async () => {
+    const seen: string[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: async (text) => {
+        seen.push(text);
+        return { blob: new Blob(["x"]), mime: "audio/wav" };
+      },
+      player: makeImmediatePlayer(),
+      onState: () => {},
+    });
+    await orch.narrate(
+      "m1",
+      'Well [laugh] I never thought. "Really?"',
+      profile({ backend: "openai-compatible", config: { model: "orpheus-3b-0.1-ft" } }),
+    );
+    expect(seen.some((t) => t.includes("<laugh>") && !t.includes("[laugh]"))).toBe(true);
+  });
+
+  test("chatterbox-model profile: canonical [laugh] passes through verbatim", async () => {
+    const seen: string[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: async (text) => {
+        seen.push(text);
+        return { blob: new Blob(["x"]), mime: "audio/wav" };
+      },
+      player: makeImmediatePlayer(),
+      onState: () => {},
+    });
+    await orch.narrate(
+      "m1",
+      "Well [laugh] I never thought.",
+      profile({ backend: "openai-compatible", config: { model: "chatterbox-tts-1" } }),
+    );
+    expect(seen.some((t) => t.includes("[laugh]"))).toBe(true);
+  });
+
+  test("strip dialect profile (kokoro/elevenlabs/gemini/plain openai): tag removed, word never spoken", async () => {
+    const seen: string[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: async (text) => {
+        seen.push(text);
+        return { blob: new Blob(["x"]), mime: "audio/wav" };
+      },
+      player: makeImmediatePlayer(),
+      onState: () => {},
+    });
+    await orch.narrate("m1", "Well [laugh] I never.", profile({ backend: "elevenlabs", config: {} }));
+    expect(seen.join(" ")).not.toContain("[laugh]");
+    expect(seen.join(" ")).not.toContain("<laugh>");
+    expect(seen.join(" ")).toContain("Well I never.");
+  });
+});

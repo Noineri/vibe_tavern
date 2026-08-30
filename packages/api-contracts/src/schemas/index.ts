@@ -7,6 +7,7 @@ export {
   sendMessageSchema,
   attachmentSchema,
   editMessageSchema,
+  setVariantTtsAnnotationSchema,
   createMessageVariantSchema,
   renameChatSchema,
   setGreetingIndexSchema,

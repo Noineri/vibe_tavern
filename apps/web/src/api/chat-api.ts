@@ -229,6 +229,22 @@ export async function selectMessageVariant(chatId: ChatId, messageId: string, va
   return normalizeSnapshot(data);
 }
 
+/** TPE-1 (AN-1): set (or clear) a variant's TTS narration annotation —
+ *  the annotated copy the narrators prefer over the raw content. */
+export async function setVariantTtsAnnotation(
+  chatId: ChatId,
+  messageId: string,
+  variantIndex: number,
+  text: string | null,
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].messages[":messageId"].variants[":variantIndex"]["tts-annotation"].$put({
+    param: { chatId, messageId, variantIndex: String(variantIndex) },
+    json: { text },
+  });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export async function deleteMessageVariant(chatId: ChatId, messageId: string, variantIndex: number): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].variants[":variantIndex"].$delete({
     param: { chatId, messageId, variantIndex: String(variantIndex) },

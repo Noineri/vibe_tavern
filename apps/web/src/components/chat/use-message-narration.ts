@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 
 import { useTtsPlaybackStore } from "../../stores/tts-playback-store.js";
 import { resolveNarrationProfile } from "../../lib/tts/voice-map.js";
-import { prepareNarrationText, narrationTextOptionsForMode } from "../../lib/tts/narration-text.js";
+import { prepareNarrationTextPreservingTags, narrationTextOptionsForMode } from "../../lib/tts/narration-text.js";
 import { readTtsNarrationMode } from "../../lib/local-storage.js";
 import { useVoiceMapData } from "../../lib/tts/voice-map-data.js";
 
@@ -40,7 +40,9 @@ export function useMessageNarration(
     }
     if (!available || resolution === null || resolution.kind !== "profile") return;
     const raw = getText();
-    const text = prepareNarrationText(raw, {
+    // getText() already prefers the selected variant's TTS annotation
+    // (MessageBlock seam, TPE-1): when present it IS the narration source.
+    const text = prepareNarrationTextPreservingTags(raw, {
       regexPresets: [],
       skipCodeblocks: true,
       stripHtml: true,

@@ -7,7 +7,7 @@ import { replaceUiMacros } from "../lib/macros.js";
 import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
 import { useVoiceMapData } from "../lib/tts/voice-map-data.js";
 import { resolveNarrationProfile } from "../lib/tts/voice-map.js";
-import { prepareNarrationText, narrationTextOptionsForMode } from "../lib/tts/narration-text.js";
+import { prepareNarrationTextPreservingTags, narrationTextOptionsForMode } from "../lib/tts/narration-text.js";
 import { readTtsNarrationMode } from "../lib/local-storage.js";
 
 export function useAutoNarrate(): void {
@@ -78,11 +78,16 @@ export function useAutoNarrate(): void {
       // are NOT re-applied here (that seam lives inside MessageBlock's render
       // hooks); persist-mode regex already baked into stored content. The
       // manual narrate button reads the exact screen text.
+      // TPE-1: the selected variant's TTS annotation, when present, IS the
+      // narration source (same preference as the manual button) — the same
+      // macro rules apply to it.
+      const selectedVariant = msg.variants.find((variant) => variant.isSelected) ?? null;
+      const source = selectedVariant?.ttsAnnotation ?? msg.content;
       const base =
         macroContext && activeChat?.mode !== "coauthor"
-          ? replaceUiMacros(msg.content, macroContext)
-          : msg.content;
-      const text = prepareNarrationText(base, {
+          ? replaceUiMacros(source, macroContext)
+          : source;
+      const text = prepareNarrationTextPreservingTags(base, {
         regexPresets: [],
         skipCodeblocks: true,
         stripHtml: true,

@@ -4,7 +4,7 @@ import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
-import { brandId, type Chat, type ChatBranchId, type ChatId, type CharacterId, type MessageId, type PromptPresetId, type ToolProfileId } from "@vibe-tavern/domain";
+import { brandId, type Chat, type ChatBranchId, type ChatId, type CharacterId, type MessageId, type MessageVariantId, type PromptPresetId, type ToolProfileId } from "@vibe-tavern/domain";
 import type { AppMessage } from "../api/types.js";
 import type { TtsProfileRecord } from "../api/tts-api.js";
 import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
@@ -265,5 +265,45 @@ describe("useAutoNarrate", () => {
     expect(fired.length).toBe(1);
     // Quoted mode: only quoted dialogue; markers inside quotes stripped, words kept.
     expect(fired[0].text).toBe("wait for me");
+  });
+
+  test("TPE-1: the selected variant's annotation IS the narration source (content untouched otherwise)", async () => {
+    persistTtsNarrationMode("quoted-dialogue");
+    const fired: Captured[] = [];
+    useTtsPlaybackStore.setState({
+      autoNarrate: true,
+      startNarration: async (id: string, text: string, prof: TtsProfileRecord) => {
+        fired.push({ id, text, prof });
+      },
+    });
+
+    const msg = makeMessage("m1", 'She sighed and said "wait for me".');
+    msg.variants = [
+      {
+        id: brandId<MessageVariantId>("v1"),
+        messageId: brandId<MessageId>("m1"),
+        variantIndex: 0,
+        content: msg.content,
+        isSelected: true,
+        finishReason: null,
+        createdAt: NOW,
+        ttsAnnotation: 'She [sigh] said "wait for me [chuckle] now".',
+      },
+    ];
+    seedActiveChatWith(msg);
+
+    await act(async () => {
+      render(React.createElement(Probe));
+    });
+    await act(async () => {
+      useChatStore.setState({ generations: { c1: genState(null) } });
+    });
+    await flushEffects();
+
+    expect(fired.length).toBe(1);
+    // The annotated copy is narrated (quotes filter applies to IT, not to the
+    // raw content); tags survive the mode — the one inside the quote stays in
+    // place, and the pre-quote sigh falls to the end when its anchor drops.
+    expect(fired[0].text).toBe("wait for me [chuckle] now [sigh]");
   });
 });

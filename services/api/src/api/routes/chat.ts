@@ -206,6 +206,18 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         ),
       );
     })
+    .put("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/tts-annotation", zValidator("json", schemas.setVariantTtsAnnotationSchema), async (c) => {
+      // TPE-1 (AN-1): set/clear the per-variant narration annotation — the
+      // AI editor's "prepare for narration" button writes here (TPE-2).
+      return c.json(
+        await runtime.setVariantTtsAnnotation(
+          c.req.param("chatId"),
+          c.req.param("messageId"),
+          Number(c.req.param("variantIndex")),
+          c.req.valid("json").text,
+        ),
+      );
+    })
     .post("/api/chats/:chatId/messages/:messageId/variants", zValidator("json", schemas.createMessageVariantSchema), async (c) => {
       return c.json(await runtime.addEditorVariant(c.req.param("chatId"), c.req.param("messageId"), c.req.valid("json")));
     })

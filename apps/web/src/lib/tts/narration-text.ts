@@ -1,5 +1,6 @@
 import type { RegexPreset } from "@vibe-tavern/domain";
 import { applyRegexLayer, type RegexMacroSource } from "@vibe-tavern/prompt-pipeline";
+import { extractTtsTags, reinsertTtsTags } from "./tts-tags.js";
 
 export type NarrationRole = "character" | "narrator";
 
@@ -326,4 +327,23 @@ function extractQuotedOnly(input: string): string {
     return input;
   }
   return parts.join(" ");
+}
+
+// ─── TTS annotation tags (TPE-1, AN-1) ───────────────────────────────────────
+
+/** Narration preparation that PRESERVES annotation tags through the pipeline.
+ *
+ * The pipeline's mode filters can drop the words around a tag —
+ * quoted-dialogue keeps only quoted speech, skip-asterisk-spans drops whole
+ * spans — but an annotation tag marks an audible sound that must survive
+ * every D26 mode. Mechanism: extract the canonical `[tag]` tokens first
+ * (recording each tag's next-word anchor), run the ordinary
+ * prepareNarrationText on the tag-free text, then re-insert the tags before
+ * their anchors' surviving occurrences (tags whose anchor was dropped
+ * re-attach at the end, in order). The dialect translation to a provider's
+ * native syntax happens later, at the synthesis boundary. */
+export function prepareNarrationTextPreservingTags(text: string, options: NarrationTextOptions): string {
+  const { text: stripped, tags } = extractTtsTags(text);
+  if (tags.length === 0) return prepareNarrationText(stripped, options);
+  return reinsertTtsTags(prepareNarrationText(stripped, options), tags);
 }

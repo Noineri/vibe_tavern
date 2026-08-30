@@ -689,6 +689,14 @@ export const messageVariants = sqliteTable('message_variants', {
   // from the currently selected valid variant. Owned by the immutable variant
   // id, never by variantIndex (variantIndex is display order only).
   sceneTrackerJson: text('scene_tracker_json'),
+  // TTS narration annotation (TPE-1, AN-1): the annotated copy of this
+  // variant's content for narration — expressive tags inserted, text
+  // otherwise identical. Null = not annotated; narration then reads the
+  // variant content itself. A PERSISTED FACT like the Scene record: a
+  // content edit does NOT clear it (typo-fix precedent — wiping user
+  // authored side-data on edit proved awful UX). Owned by the immutable
+  // variant id, same as scene_tracker_json.
+  ttsAnnotation: text('tts_annotation'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),

@@ -72,6 +72,13 @@ export const editMessageSchema = z.object({
   expectedVariantId: messageVariantIdSchema.optional(),
 });
 
+/** TPE-1 (AN-1): set (or clear) the per-variant TTS narration annotation.
+ *  `text` null / empty / whitespace → annotation cleared. Cap mirrors a
+ *  generous message length so an annotated copy always fits. */
+export const setVariantTtsAnnotationSchema = z.object({
+  text: z.string().max(100_000).nullable(),
+});
+
 export const createMessageVariantSchema = z.object({
   content: z.string().min(1),
   sourceVariantIds: z.array(messageVariantIdSchema).min(2),

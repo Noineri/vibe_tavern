@@ -409,6 +409,26 @@ export class ChatRuntime {
     return await this.deps.buildVariantResponse(chatId);
   }
 
+  /** TPE-1 (AN-1): set/clear the per-variant TTS narration annotation. The
+   *  route addresses the variant by display index (same as select/delete);
+   *  the write itself is id-keyed on the immutable variant row (same
+   *  ownership rule as the Scene record). VariantResponse: a variant-field
+   *  change, exactly like selection. */
+  async setVariantTtsAnnotation(
+    chatId: ChatId,
+    messageId: MessageId,
+    variantIndex: number,
+    text: string | null,
+  ): Promise<VariantResponse> {
+    const variants = await this.deps.messages.getVariants(messageId);
+    const variant = variants.find((v) => v.variantIndex === variantIndex) ?? null;
+    if (variant === null) {
+      throw new Error(`Variant ${variantIndex} not found on message ${messageId}`);
+    }
+    await this.deps.messages.setTtsAnnotation(variant.id, text);
+    return await this.deps.buildVariantResponse(chatId);
+  }
+
   async deleteMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<MessageResponse> {
     await this.deps.messages.deleteVariant(messageId, variantIndex);
     return await this.deps.buildMessageResponse(chatId);

@@ -280,3 +280,61 @@ describe("Message AI editor guarded mutations (MAE-32)", () => {
     expect(variants[3]).toMatchObject({ modelId: "pending-generation-model", finishReason: "length" });
   });
 });
+
+// ─── TTS narration annotation route (TPE-1, AN-1) ─────────────────────────────
+
+describe("PUT /api/chats/:chatId/messages/:messageId/variants/:variantIndex/tts-annotation (TPE-1)", () => {
+  let env: TestEnvironment;
+
+  beforeEach(async () => {
+    env = await createTestEnvironment();
+  });
+  afterEach(async () => {
+    await env.cleanup();
+  });
+
+  async function putAnnotation(messageId: string, variantIndex: number, text: string | null): Promise<Response> {
+    return env.app.request(`/api/chats/${env.chatId}/messages/${messageId}/variants/${variantIndex}/tts-annotation`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  }
+
+  test("set → the snapshot's variant carries the annotated copy; other variants untouched", async () => {
+    const { message } = await seedTwoVariants(env);
+    const res = await putAnnotation(message.id, 0, "Seeded greeting [laugh] with a tag.");
+    expect(res.status).toBe(200);
+
+    const snap = await env.runtime.getSnapshot(env.chatId);
+    const variants = snap.messages[0]!.variants;
+    expect(variants[0]!.ttsAnnotation).toBe("Seeded greeting [laugh] with a tag.");
+    expect(variants[1]!.ttsAnnotation).toBeNull();
+  });
+
+  test("clear via null → annotation removed, content intact", async () => {
+    const { message, first } = await seedTwoVariants(env);
+    await env.stores.messages.setTtsAnnotation(first.id, "some [sigh] annotation");
+    const res = await putAnnotation(message.id, 0, null);
+    expect(res.status).toBe(200);
+    const snap = await env.runtime.getSnapshot(env.chatId);
+    expect(snap.messages[0]!.variants[0]!.ttsAnnotation).toBeNull();
+    expect(snap.messages[0]!.variants[0]!.content).toBe(variantContent(snap, 0));
+  });
+
+  test("unknown variant index → non-2xx (no silent write to a sibling)", async () => {
+    const { message } = await seedTwoVariants(env);
+    const res = await putAnnotation(message.id, 9, "x");
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  test("oversized text → zod rejection (400)", async () => {
+    const { message } = await seedTwoVariants(env);
+    const res = await putAnnotation(message.id, 0, "x".repeat(100_001));
+    expect([400, 422]).toContain(res.status);
+  });
+
+  function variantContent(snap: Awaited<ReturnType<typeof env.runtime.getSnapshot>>, index: number): string {
+    return snap.messages[0]!.variants[index]!.content;
+  }
+});

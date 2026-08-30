@@ -284,3 +284,47 @@ describe("useMessageNarration", () => {
     __setTtsPlaybackDepsForTests(null);
   });
 });
+
+// ── TPE-1: annotation tags survive the mode pipeline ─────────────────────────
+
+describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
+  test("tags in the narration source pass through quoted-dialogue mode instead of being dropped", async () => {
+    currentData = { profiles: [pDefault], links: [] };
+    persistTtsNarrationMode("quoted-dialogue");
+    let capturedText: unknown = null;
+    const fakePlayer = {
+      play: async () => "ended" as const,
+      skipCurrent: () => {},
+      pause: () => {},
+      resume: () => {},
+      setRate: () => {},
+      dispose: () => {},
+    };
+    const fakeSynthesize = mock(async (text: string) => ({ blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
+    __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
+    const origStart = useTtsPlaybackStore.getState().startNarration;
+    useTtsPlaybackStore.setState({
+      startNarration: async (...args: unknown[]) => {
+        capturedText = args[1];
+        return origStart(...(args as [string, string, TtsProfileRecord]));
+      },
+    } as never);
+
+    let hook: any = null;
+    function Probe() {
+      hook = (useMessageNarration as any)("m1", null, null, () => 'She [laugh] softly. "Wait, don’t *ever* go."');
+      return null;
+    }
+    await act(async () => {
+      render(React.createElement(Probe));
+    });
+    await act(async () => {
+      hook!.onNarrate();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    // Quoted mode keeps the dialogue; the laugh (anchor dropped by the
+    // quote filter) falls to the end instead of vanishing.
+    expect(capturedText as unknown as string).toBe("Wait, don’t ever go. [laugh]");
+    __setTtsPlaybackDepsForTests(null);
+  });
+});

@@ -234,6 +234,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 	selectVariant = (chatId: string, messageId: string, variantIndex: number) =>
 		this.sessionRuntime.chatRuntime.selectMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex);
 
+	setVariantTtsAnnotation = (chatId: string, messageId: string, variantIndex: number, text: string | null) =>
+		this.sessionRuntime.chatRuntime.setVariantTtsAnnotation(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex, text);
+
 	addEditorVariant = (
 		chatId: string,
 		messageId: string,

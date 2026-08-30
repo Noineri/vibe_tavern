@@ -292,7 +292,11 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // transformed — a partial stream would double-apply partial matches; the
   // settled render picks the transform up the moment streaming ends.
   const renderContent = regexDisplayContent ?? activeContent;
-  narrationTextRef.current = renderContent ?? "";
+  // TPE-1 (AN-1): narration prefers the selected variant's TTS annotation —
+  // it's the content plus inserted expressive tags, authored FOR narration,
+  // so it's used verbatim (the tag-preservation wrapper downstream keeps the
+  // tags alive through the D26 mode filters). No annotation → screen text.
+  narrationTextRef.current = selectedVariant?.ttsAnnotation ?? renderContent ?? "";
   const greetingActive = isGreeting && !isUser && variantCount > 1;
 
   const isStreamingHere = !isUser && isStreamingTarget && !!(globalStreamingRevealedText || globalStreamingReasoning);

@@ -153,6 +153,7 @@ export interface ChatRuntimeApi {
 	generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
 	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;
+	setVariantTtsAnnotation: (chatId: string, messageId: string, variantIndex: number, text: string | null) => Promise<VariantResponse>;
 	addEditorVariant: (chatId: string, messageId: string, body: {
 		readonly content: string;
 		readonly sourceVariantIds: readonly MessageVariantId[];

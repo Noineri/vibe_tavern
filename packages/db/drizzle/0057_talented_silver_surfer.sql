@@ -1,0 +1,1 @@
+ALTER TABLE `message_variants` ADD `tts_annotation` text;
