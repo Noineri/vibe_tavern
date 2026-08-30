@@ -164,7 +164,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                     const copyId = `${guide.id}-${id}-${index}`;
                     return (
                       <div key={index} className="flex items-center gap-2">
-                        <div className={`${monoUICls} min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px]`}>
+                        <div className={`${monoUICls} min-w-0 flex-1 whitespace-pre-wrap break-all px-2 py-1.5 text-[11px]`}>
                           {command}
                         </div>
                         <button
@@ -199,7 +199,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                   <div data-testid="tts-help-step-endpoint" className="flex flex-col gap-1.5">
                     <label className={lblCls}>{t("tts_help_step_endpoint")}</label>
                     <div className="flex items-center gap-2">
-                      <div className={`${monoUICls} min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-2 py-1.5 text-[11px] text-t3`}>
+                      <div className={`${monoUICls} min-w-0 flex-1 whitespace-pre-wrap break-all px-2 py-1.5 text-[11px] text-t3`}>
                         {guide.endpoint}
                       </div>
                       <button
