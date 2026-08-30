@@ -1098,7 +1098,7 @@
   "lore_depth_label": "Depth",
   "lore_depth_hint": "For '@ Depth', how many messages back from the end to insert. For Top/Bottom AN, used as Author's Note depth when supported.",
   "lore_priority_label": "Priority",
-  "lore_priority_hint": "Secondary priority for selection/sorting. The visual lorebook order now takes precedence for insertion order within the same position.",
+  "lore_priority_hint": "The higher the number, the better the entry's chances of beating other entries when the budget is limited. Does not affect insertion order within the same position — use the visual (drag) order for that.",
   "lore_sticky_window": "Sticky Window",
   "lore_cooldown_window": "Cooldown Window",
   "lore_delay_window": "Delay Window",

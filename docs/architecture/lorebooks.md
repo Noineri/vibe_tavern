@@ -373,11 +373,14 @@ color-coded by reason kind (`LoreReasonBadge` in
   because skipped entries have no card in the trace. Tracked as a future
   feature; see `vibe_tavern_plan/reports/lorebook-trace-conditions.md`.
 - **Post-filter losses** — an entry that activated but lost in inclusion
-  groups or budget overflow renders with its activation reason, not a
-  "lost to higher-priority entry" reason. The `reason` is a snapshot of the
-  moment of activation, taken before post-filters run; post-filter survival
-  would require either mutating `reason` after the fact or a separate
-  `survivalReason` field. Design decision deferred.
+  groups or budget overflow is **not rendered in the trace at all**: the
+  engine returns only the post-filter winners, so losers never reach
+  `activatedLoreDetail` (they have no layer card and no inject divider).
+  This is deliberate — the trace is payload-faithful: it shows what actually
+  reached the prompt, and a losing entry did not. A separate "why didn't it
+  fire" inspector (skip reasons and losses together) remains an optional
+  future feature; see
+  `vibe_tavern_plan/reports/lorebook-trace-conditions.md`.
 
 ### Architecture note
 
