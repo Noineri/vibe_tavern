@@ -26,13 +26,16 @@ export function TtsSection({ tts }: { tts: TtsHook }) {
           {t("tts_profiles_load_failed")}: {tts.error}
         </div>
       )}
-      <TtsNarrationModeBlock />
       <TtsProfileList
         profiles={tts.profiles}
         editingId={tts.editingId}
         onSelectProfile={tts.select}
         onAddProfile={tts.startCreate}
       />
+      {/* D26 placement follow-up (owner field-test): docked BELOW the
+       * scrollable profile list instead of above it — at the top it pushed
+       * the profiles down and made the list awkward to scroll. */}
+      <TtsNarrationModeBlock />
     </div>
   );
 }

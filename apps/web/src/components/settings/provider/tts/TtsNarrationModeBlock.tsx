@@ -27,6 +27,8 @@ const MODE_DESC_KEYS: Record<NarrationTextMode, "tts_narration_mode_full_desc" |
  * `useAutoNarrate`) read the persisted mode at narrate time — this block only
  * writes it. Honest per-mode descriptions; neutral naming (no "actions" —
  * asterisk spans are mechanically indistinguishable from emphasis).
+ * Docked at the bottom of the section (below the profile list, above the
+ * footer) — top placement pushed the profiles down (owner field feedback).
  */
 export function TtsNarrationModeBlock() {
   const { t } = useT();
@@ -38,7 +40,7 @@ export function TtsNarrationModeBlock() {
   };
 
   return (
-    <div data-testid="tts-narration-mode-block" className="mx-3 mb-2 mt-3 flex flex-col gap-1.5 border-b border-border pb-3">
+    <div data-testid="tts-narration-mode-block" className="mx-3 mt-2 flex flex-col gap-1.5 border-t border-border pt-3">
       <div className="font-ui text-[12px] font-semibold uppercase tracking-wide text-t3">
         {t("tts_narration_mode_label")}
       </div>
