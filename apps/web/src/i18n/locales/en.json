@@ -2659,6 +2659,7 @@
   "tts_help_step_install": "Install dependencies",
   "tts_help_install_note_kokoro": "Nothing to install: the start script sets up its own dependencies (you need git and uv from astral.sh)",
   "tts_help_cwd_note": "Run these inside the cloned repository folder",
+  "tts_help_terminal_hint": "How to run: every command goes into a terminal opened in the folder where you are setting the server up. On Windows — open that folder in Explorer, type cmd in the address bar, press Enter; run commands one at a time: copy → Enter.",
   "tts_help_step_run": "Run the server",
   "tts_help_step_endpoint": "Endpoint to paste"
 }

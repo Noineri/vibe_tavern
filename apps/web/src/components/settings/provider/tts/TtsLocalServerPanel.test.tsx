@@ -209,6 +209,8 @@ describe("TtsLocalServerPanel", () => {
     expect(view.getByTestId("tts-help-step-download-clone").textContent).toContain("git clone https://github.com/travisvn/openai-edge-tts.git");
     expect(view.getByTestId("tts-help-step-install").textContent).toContain("python -m venv venv");
     expect(view.getByTestId("tts-help-step-endpoint").textContent).toContain("http://127.0.0.1:5050/v1");
+    // Terminal hint renders once for every card (raw key: no i18n provider here).
+    expect(view.getByTestId("tts-help-terminal-hint")).toBeDefined();
     cleanup();
   });
 

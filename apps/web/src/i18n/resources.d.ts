@@ -2507,6 +2507,7 @@ export default interface Resources {
     "tts_help_step_endpoint": "Endpoint to paste",
     "tts_help_step_install": "Install dependencies",
     "tts_help_step_run": "Run the server",
+    "tts_help_terminal_hint": "How to run: every command goes into a terminal opened in the folder where you are setting the server up. On Windows — open that folder in Explorer, type cmd in the address bar, press Enter; run commands one at a time: copy → Enter.",
     "tts_is_default": "Default",
     "tts_key_from_provider_hint": "Key and endpoint are taken from the \"{name}\" provider profile — type your own key here to override.",
     "tts_kokoro_model": "Engine model",

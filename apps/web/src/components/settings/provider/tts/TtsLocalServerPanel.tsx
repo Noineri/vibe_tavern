@@ -149,6 +149,12 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
               />
             </div>
 
+            {/* How to run the commands below — one hint for every card
+                (novices paste blocks into nowhere; owner field-test finding). */}
+            <div data-testid="tts-help-terminal-hint" className="font-ui text-[11px] text-t4">
+              {t("tts_help_terminal_hint")}
+            </div>
+
             {(() => {
               const guide = TTS_SERVER_SETUP_GUIDES.find((g) => g.id === guideId) ?? TTS_SERVER_SETUP_GUIDES[0];
               const step = (id: string, s: TtsHelpStep) => (
