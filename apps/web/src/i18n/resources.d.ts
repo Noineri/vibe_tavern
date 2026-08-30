@@ -2495,7 +2495,7 @@ export default interface Resources {
     "tts_help_download_docker": "Download with Docker — one command, nothing to install",
     "tts_help_download_nodocker": "Without Docker — clone the repository",
     "tts_help_hint": "Follow the steps below once, then press Detect",
-    "tts_help_install_note_chatterbox": "Python 3.11 recommended. If CUDA torch breaks on Windows, reinstall it from the cu121 index (see the repo troubleshooting). The first run downloads the model.",
+    "tts_help_install_note_chatterbox": "Python 3.11 recommended — the first command installs it (no winget? download a 3.11.x installer from python.org). If .venv was already created with another Python — delete the .venv folder and rerun the commands starting from `py -3.11 -m venv`. If CUDA torch breaks on Windows, reinstall it from the cu121 index (see the repo troubleshooting). The first run downloads the model.",
     "tts_help_install_note_kokoro": "Nothing to install: the start script sets up its own dependencies (you need git and uv from astral.sh)",
     "tts_help_install_note_orpheus": "Python 3.8-3.11 (3.12 is not supported).",
     "tts_help_os_label": "Your system",

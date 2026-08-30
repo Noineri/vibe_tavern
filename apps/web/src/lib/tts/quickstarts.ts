@@ -164,13 +164,14 @@ export const TTS_SERVER_SETUP_GUIDES: TtsServerSetupGuide[] = [
       titleKey: "tts_help_step_install",
       commands: {
         windows: [
-          "python -m venv .venv",
+          "winget install -e --id Python.Python.3.11 --scope user",
+          "py -3.11 -m venv .venv",
           ".venv\\Scripts\\activate",
           "pip install -r requirements.txt",
           "copy .env.example .env",
         ],
         unix: [
-          "python -m venv .venv",
+          "python3.11 -m venv .venv",
           "source .venv/bin/activate",
           "pip install -r requirements.txt",
           "cp .env.example .env",

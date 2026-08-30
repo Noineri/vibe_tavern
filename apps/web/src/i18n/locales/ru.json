@@ -2678,7 +2678,7 @@
   "tts_help_choose_edge": "Онлайн-голоса Microsoft Edge: без скачивания модели, нужен интернет",
   "tts_help_choose_chatterbox": "Клонирование голоса из своего аудиосэмпла (Chatterbox, дружелюбен к GPU)",
   "tts_help_choose_orpheus": "Выразительные фиксированные голоса с тегами эмоций вроде <laugh> и <sigh> (Orpheus 3B; нужен llama.cpp или LM Studio)",
-  "tts_help_install_note_chatterbox": "Рекомендуется Python 3.11. Если torch под CUDA на Windows ломается — переустановите его с индекса cu121 (см. троблшутинг репозитория). При первом запуске модель скачается.",
+  "tts_help_install_note_chatterbox": "Рекомендуется Python 3.11 — его ставит первая команда (если winget нет — скачайте установщик 3.11.x с python.org). Если .venv уже создана с другим Python — удалите папку .venv и повторите команды со строки `py -3.11 -m venv`. Если torch под CUDA на Windows ломается — переустановите его с индекса cu121 (см. троблшутинг репозитория). При первом запуске модель скачается.",
   "tts_help_run_note_chatterbox": "API на порту 4123. Для клонирования замените voice-sample.mp3 своим клипом на 10–30 с или загрузите голоса через встроенный веб-интерфейс.",
   "tts_help_install_note_orpheus": "Python 3.8–3.11 (3.12 не поддерживается).",
   "tts_help_run_note_orpheus": "Два процесса: сначала сервер инференса с Orpheus GGUF (llama.cpp или LM Studio), затем этот API. Квантованные GGUF лежат на HuggingFace (коллекция lex-au); если сервер инференса не по адресу по умолчанию — задайте ORPHEUS_API_URL в .env.",
