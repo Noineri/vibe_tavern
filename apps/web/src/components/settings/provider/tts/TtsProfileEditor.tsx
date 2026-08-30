@@ -9,7 +9,7 @@ import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
-import { listTtsDraftModels, listTtsDraftVoices, type TtsBackendCapabilities, type TtsModelListEntry, type TtsVoiceRecord } from "../../../../api/tts-api.js";
+import { cloneTtsVoice, listTtsDraftModels, listTtsDraftVoices, type TtsBackendCapabilities, type TtsModelListEntry, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
@@ -43,6 +43,139 @@ function TtsSectionCard({ title, testid, children }: { title: string; testid: st
       <div className="font-ui text-[12px] font-medium tracking-wide text-t2 uppercase">{title}</div>
       {children}
     </div>
+  );
+}
+
+/** Voice-cloning section (clone field design, agreed with the owner
+ *  2026-08-31): name + reference audio + Clone button with inline
+ *  error/result — rendered only for backends that reported the capability
+ *  (the editor gates it). Single reusable form; provider differences live
+ *  in the backend adapters, not here. No language field in v1; mic input is
+ *  mic-later. The audio passes through the server's memory only — nothing
+ *  is persisted. */
+function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned }: {
+  backend: string;
+  config: Record<string, unknown>;
+  profileId: string | undefined;
+  capabilities: TtsBackendCapabilities;
+  onCloned: (voice: TtsVoiceRecord) => void;
+}): ReactNode {
+  const { t } = useT();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const formats = capabilities.formats ?? ["wav", "mp3", "flac", "m4a", "ogg"];
+  const maxMb = capabilities.maxSizeMb ?? 10;
+
+  async function handleClone(): Promise<void> {
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed.length > 100) {
+      setError(t("tts_clone_err_name"));
+      setResult(null);
+      return;
+    }
+    if (file === null) {
+      setError(t("tts_clone_err_file"));
+      setResult(null);
+      return;
+    }
+    if (file.size > maxMb * 1024 * 1024) {
+      setError(t("tts_clone_err_size", { size: maxMb }));
+      setResult(null);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const voice = await cloneTtsVoice({ backend, config, profileId, name: trimmed, audio: file });
+      onCloned(voice);
+      setResult(t("tts_clone_success", { name: voice.label }));
+      setName("");
+      setFile(null);
+      // Same-file re-pick must re-fire onChange — clearing the hidden input
+      // is what makes the browser treat it as a fresh selection.
+      if (fileRef.current !== null) fileRef.current.value = "";
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <TtsSectionCard title={t("tts_clone_section_title")} testid="tts-clone-section">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="tts-clone-name" className={lblCls}>
+          {t("tts_clone_name_label")}
+        </label>
+        <input
+          id="tts-clone-name"
+          data-testid="tts-clone-name"
+          type="text"
+          className={inputCls + " px-3 py-2 text-[13px]"}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <span className={lblCls}>{t("tts_clone_file_label")}</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="tts-clone-file-btn"
+            className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+            onClick={() => fileRef.current?.click()}
+          >
+            <Ic.import />
+            {t("tts_clone_choose_file")}
+          </button>
+          <span data-testid="tts-clone-file-name" className="min-w-0 truncate font-ui text-[12px] text-t3">
+            {file === null ? t("tts_clone_no_file") : file.name}
+          </span>
+          <input
+            ref={fileRef}
+            className="hidden"
+            type="file"
+            data-testid="tts-clone-file"
+            accept={formats.map((f) => "." + f).join(",") + ",audio/*"}
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              setError(null);
+              setResult(null);
+            }}
+          />
+        </div>
+        <div data-testid="tts-clone-hint" className="font-ui text-[11px] text-t4">
+          {t("tts_clone_hint", { formats: formats.join(" · "), size: maxMb })}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-testid="tts-clone-submit"
+          disabled={busy}
+          className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
+          onClick={() => void handleClone()}
+        >
+          <Ic.user />
+          {busy ? t("tts_clone_busy") : t("tts_clone_action")}
+        </button>
+        {error !== null && (
+          <span data-testid="tts-clone-error" className="font-ui text-[11px] text-danger">
+            {error}
+          </span>
+        )}
+        {result !== null && (
+          <span data-testid="tts-clone-success" className="font-ui text-[11px] text-t2">
+            {result}
+          </span>
+        )}
+      </div>
+    </TtsSectionCard>
   );
 }
 
@@ -124,6 +257,10 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [tuningOpen, setTuningOpen] = useState(false);
+  // Post-clone refresh (clone field design 2026-08-31): bumping this re-runs
+  // the debounced voices effect so the picker picks up the fresh library —
+  // the ONLY non-config trigger for it.
+  const [voicesRefreshTick, setVoicesRefreshTick] = useState(0);
   const formBackend = tts.form?.backend;
   // TE2-16: the form's typed apiKey is injected into the TRANSIENT draft
   // requests only (formDraft below) — the stored bag never carries it.
@@ -214,7 +351,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [needsRemoteVoices, voicesConfigKey, formBackend, formDraft, formId]);
+  }, [needsRemoteVoices, voicesConfigKey, formBackend, formDraft, formId, voicesRefreshTick]);
 
   // Models (F3): fetched from the server for fetch-mode model fields (the
   // local/openai/gemini variants) via the transient draft endpoint —
@@ -421,6 +558,27 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               )}
             </div>
           </TtsSectionCard>
+
+          {/* Clone section (clone field design 2026-08-31, owner-approved):
+           *  its own card directly under the voice picker, rendered ONLY when
+           *  the backend reported the capability — the empty-library case
+           *  (voices null, supportsCloning true) still gets it, because
+           *  uploading the first voice IS the feature there. */}
+          {cloneCaps?.supportsCloning === true && (
+            <TtsVoiceCloneCard
+              backend={form.backend}
+              config={formDraftConfig(form)}
+              profileId={form.id ?? undefined}
+              capabilities={cloneCaps}
+              onCloned={(voice) => {
+                // Auto-select (design point 2): the new voice lands in the
+                // form's voiceId — dirty-flow, no auto-commit — and the
+                // picker list refreshes to include it.
+                tts.setForm({ voiceId: voice.id });
+                setVoicesRefreshTick((n) => n + 1);
+              }}
+            />
+          )}
 
 
       {/* Local-server helpers now owned by the form (defect 3) — editor copy removed. */}

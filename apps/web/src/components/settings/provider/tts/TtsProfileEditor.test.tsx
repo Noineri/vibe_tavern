@@ -49,10 +49,16 @@ const listTtsDraftModelsMock = mock(async (_body: { backend: string; config: Rec
   { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
   { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
 ]);
+const cloneTtsVoiceMock = mock(async (body: { backend: string; name: string; audio: File }) => ({
+  id: body.name,
+  label: body.name,
+  lang: "en",
+}));
 mock.module("../../../../api/tts-api.js", () => ({
   ...realTtsApi,
   listTtsDraftVoices: listTtsDraftVoicesMock,
   listTtsDraftModels: listTtsDraftModelsMock,
+  cloneTtsVoice: cloneTtsVoiceMock,
   // Docker probe (D8): deterministic "not found" for every editor test —
   // only the local-variant test below cares, and only that the panel renders.
   fetchLocalDockerStatus: async () => ({ available: false, version: null }),
@@ -1569,5 +1575,124 @@ describe("TTS editor — auto key hint + gate (D16)", () => {
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
     cleanup();
+  });
+});
+
+// ── Voice cloning section (TPE-3, clone field design agreed 2026-08-31) ─────
+describe("TtsProfileEditor — voice clone section", () => {
+  const capableEnvelope = { voices: [], capabilities: { supportsCloning: true, formats: ["wav", "mp3", "flac", "m4a", "ogg"], maxSizeMb: 10 } };
+  const openaiForm = {
+    id: "p1",
+    name: "Chatter",
+    backend: TTS_BACKEND.OpenAiCompatible as never,
+    config: { endpoint: "http://localhost:4123/v1", apiKey: "k", model: "chatterbox-tts-1" },
+    voiceId: "",
+  };
+
+  it("gated on capability: absent without cloning, present for a library backend even with an EMPTY voice list", async () => {
+    // Base mock declares no cloning — the section must not render.
+    const view1 = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+    await view1.findByTestId("tts-voice-section");
+    expect(view1.queryByTestId("tts-clone-section")).toBeNull();
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+
+    // Library-capable backend (chatterbox shape): voices EMPTY but the
+    // capability rides the envelope — uploading the first voice IS the
+    // feature, so the section appears under the voice picker.
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
+    const view2 = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+    const section = await view2.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
+    // The hint element renders (raw i18n key without a provider; formats
+    // interpolation is i18n's job, pinned by i18n:check).
+    expect(section.querySelector('[data-testid="tts-clone-hint"]')).toBeTruthy();
+    // Sits directly under the voice section (design point 1).
+    expect(section.previousElementSibling?.getAttribute("data-testid")).toBe("tts-voice-section");
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("clone flow: inline validation, upload body, auto-select + voices refresh on success", async () => {
+    const setForm = mock(() => {});
+    // Mount → capable empty library; post-clone refresh → library holds the clone.
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({
+      voices: [{ id: "my-voice", label: "my-voice", lang: "en" }],
+      capabilities: { supportsCloning: true },
+    }) as never);
+
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never, setForm }) } as never));
+    await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
+
+    // 1) No name → inline error, no upload.
+    fireEvent.click(view.getByTestId("tts-clone-submit"));
+    expect(view.getByTestId("tts-clone-error").textContent).toContain("tts_clone_err_name");
+    expect(cloneTtsVoiceMock).not.toHaveBeenCalled();
+
+    // 2) Name but no file → file error.
+    fireEvent.change(view.getByTestId("tts-clone-name"), { target: { value: "my-voice" } });
+    fireEvent.click(view.getByTestId("tts-clone-submit"));
+    expect(view.getByTestId("tts-clone-error").textContent).toContain("tts_clone_err_file");
+    expect(cloneTtsVoiceMock).not.toHaveBeenCalled();
+
+    // 3) Valid form → upload with the draft config verbatim.
+    const audio = new File([new Uint8Array([1, 2, 3])], "sample.mp3", { type: "audio/mpeg" });
+    fireEvent.change(view.getByTestId("tts-clone-file"), { target: { files: [audio] } });
+    expect(view.getByTestId("tts-clone-file-name").textContent).toContain("sample.mp3");
+    fireEvent.click(view.getByTestId("tts-clone-submit"));
+
+    await waitFor(() => expect(cloneTtsVoiceMock).toHaveBeenCalled(), { timeout: 2500 });
+    const call = cloneTtsVoiceMock.mock.calls[0][0] as { backend: string; name: string; audio: File; config: Record<string, unknown>; profileId?: string };
+    expect(call.name).toBe("my-voice");
+    expect(call.backend).toBe(TTS_BACKEND.OpenAiCompatible);
+    expect(call.config.endpoint).toBe("http://localhost:4123/v1");
+    expect(call.audio.name).toBe("sample.mp3");
+
+    // Success: inline result, name/file cleared…
+    await waitFor(() => expect(view.queryByTestId("tts-clone-success")?.textContent).toContain("my-voice"), { timeout: 2500 });
+    expect((view.getByTestId("tts-clone-name") as HTMLInputElement).value).toBe("");
+    // …auto-select into the form's voiceId (design point 2, dirty-flow)…
+    expect(setForm).toHaveBeenCalledWith({ voiceId: "my-voice" });
+    // …and the picker list refreshed to include the clone (voices re-listed).
+    await waitFor(() => expect(listTtsDraftVoicesMock.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
+
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
+  it("clone failure: upstream error shown inline, no auto-select", async () => {
+    const setForm = mock(() => {});
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
+    // A second queue slot: the models-settle patches `model` → config key
+    // changes → the voices effect re-runs; keep it on the capable EMPTY
+    // library so no roster settle sneaks a voiceId patch into the pins.
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
+    cloneTtsVoiceMock.mockImplementationOnce(async () => {
+      throw new Error("voice name already exists");
+    });
+
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never, setForm }) } as never));
+    await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
+    fireEvent.change(view.getByTestId("tts-clone-name"), { target: { value: "dupe" } });
+    fireEvent.change(view.getByTestId("tts-clone-file"), { target: { files: [new File([new Uint8Array([1])], "s.mp3", { type: "audio/mpeg" })] } });
+    fireEvent.click(view.getByTestId("tts-clone-submit"));
+
+    await waitFor(() => expect(view.queryByTestId("tts-clone-error")?.textContent).toContain("voice name already exists"), { timeout: 2500 });
+    // No voiceId auto-select — the models settle may still patch `model`
+    // (its own effect), so pin the ABSENCE of a voiceId patch specifically.
+    // The failed clone's name must never be auto-selected. (A roster settle
+    // from a stale cross-test listVoices mock call may still patch some OTHER
+    // voiceId — that is F6's pinned behavior, not this test's boundary.)
+    const patches = setForm.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
+    expect(patches.some((p) => p?.voiceId === "dupe")).toBe(false);
+    // The form stays filled so the user can retry after fixing the name.
+    expect((view.getByTestId("tts-clone-name") as HTMLInputElement).value).toBe("dupe");
+
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
   });
 });
