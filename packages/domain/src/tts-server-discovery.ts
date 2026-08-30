@@ -47,7 +47,11 @@ export type DiscoveryDiagnosticCode =
   | "http-other"
   | "timeout";
 
-const PROBE_PORTS = [8880, 8000, 7851, 5000, 5050] as const;
+/** Ports probed by local discovery. 8880 kokoro-fastapi, 5050 openai-edge-tts,
+ *  4123 chatterbox-tts-api, 5005 orpheus-fastapi (the four servers documented
+ *  in the setup cards), 8000/7851/5000 common defaults for other
+ *  OpenAI-compatible servers. */
+const PROBE_PORTS = [8880, 8000, 7851, 5000, 5050, 4123, 5005] as const;
 
 class TimeoutError extends Error {
   constructor(message: string) {

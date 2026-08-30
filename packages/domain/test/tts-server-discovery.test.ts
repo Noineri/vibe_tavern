@@ -144,12 +144,20 @@ describe("server-discovery", () => {
       }
       // 5050: timeout (never resolves) — will be raced with timeoutMs 20
       if (port === 5050) return new Promise<ResponseLike>(() => {});
+      // 4123 (chatterbox-tts-api): models ok, no /v1/audio/voices route →
+      // still found via models (owner field-test regression pin).
+      if (port === 4123) {
+        if (isModels) return response(true, 200, { data: [{ id: "chatterbox-tts-1" }] });
+        if (isVoices) return response(false, 404, {});
+      }
+      // 5005 (orpheus-fastapi): refused.
+      if (port === 5005) throw new TypeError("refused");
       return response(false, 404, {});
     });
 
     const outcomes = await discoverLocalTtsServers(fetchLike, 20);
-    expect(outcomes).toHaveLength(5);
-    // Order preserved: [8880, 8000, 7851, 5000, 5050]
+    expect(outcomes).toHaveLength(7);
+    // Order preserved: [8880, 8000, 7851, 5000, 5050, 4123, 5005]
     expect(outcomes[0]?.port).toBe(8880);
     expect(outcomes[0]?.status).toBe("found");
     expect(outcomes[0]?.server?.kind).toBe("kokoro-fastapi");
@@ -166,6 +174,15 @@ describe("server-discovery", () => {
 
     expect(outcomes[4]?.port).toBe(5050);
     expect(outcomes[4]?.status).toBe("timeout");
+
+    expect(outcomes[5]?.port).toBe(4123);
+    expect(outcomes[5]?.status).toBe("found");
+    expect(outcomes[5]?.server?.kind).toBe("openai-compatible");
+    expect(outcomes[5]?.server?.modelIds).toEqual(["chatterbox-tts-1"]);
+    expect(outcomes[5]?.server?.voiceIds).toEqual([]);
+
+    expect(outcomes[6]?.port).toBe(5005);
+    expect(outcomes[6]?.status).toBe("refused");
   });
 
   test("bare-array voices tolerance", async () => {

@@ -828,7 +828,7 @@ describe("TTS routes — local discovery (server-side, CORS-less servers)", () =
     const res = await app.request("/api/tts/local/discover");
     expect(res.status).toBe(200);
     const outcomes = (await res.json()) as Array<{ status: string }>;
-    expect(outcomes.length).toBe(5);
+    expect(outcomes.length).toBe(7);
     expect(outcomes.every((o) => o.status === "refused")).toBe(true);
     __setDiscoveryFetchForTests(null);
   });
