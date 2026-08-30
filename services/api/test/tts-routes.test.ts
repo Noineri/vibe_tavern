@@ -44,6 +44,7 @@ function stubBackend(overrides: Partial<TtsBackend> = {}): TtsBackend {
     listVoices: async () => [{ id: "v1", label: "V1", lang: "en" }],
     probe: async () => ({ ok: true }),
     dispose: async () => {},
+    capabilities: () => ({ supportsCloning: false }),
     ...overrides,
   };
 }
@@ -325,8 +326,10 @@ describe("TTS routes — draft (transient, unsaved form config)", () => {
       }),
     });
     expect(res.status).toBe(200);
-    const voices = (await res.json()) as Array<{ id: string }>;
-    expect(voices[0].id).toBe("alloy");
+    const body = (await res.json()) as { voices: Array<{ id: string }>; capabilities: { supportsCloning: boolean } };
+    expect(body.voices[0]?.id).toBe("alloy");
+    // Envelope (clone field design): capabilities ride alongside voices.
+    expect(body.capabilities.supportsCloning).toBe(false);
     expect((seenConfig as Record<string, unknown> | null)?.endpoint).toBe("http://localhost:8880/v1");
   });
 
@@ -956,5 +959,104 @@ describe("TTS routes — auto key reuse by endpoint match (D16)", () => {
     });
     const created = (await createdRes.json()) as { autoKeyProviderName: string | null };
     expect(created.autoKeyProviderName).toBeNull();
+  });
+});
+
+// ── Voice cloning route (clone field design 2026-08-31) ────────────────────
+describe("TTS routes — voice clone (multipart draft passthrough)", () => {
+  function cloneForm(overrides: Record<string, string | File> = {}): FormData {
+    const form = new FormData();
+    form.append("backend", "openai-compatible");
+    form.append("config", JSON.stringify({ endpoint: "http://localhost:4123/v1" }));
+    form.append("name", "my-clone");
+    form.append("audio", new File([new Uint8Array([1, 2, 3])], "sample.mp3", { type: "audio/mpeg" }));
+    for (const [k, v] of Object.entries(overrides)) form.set(k, v);
+    return form;
+  }
+
+  test("happy path: multipart reaches cloneVoice verbatim; created voice returned; no DB row", async () => {
+    let seenClone: { name: string; mimeType: string; bytes: number } | null = null;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({
+        capabilities: () => ({ supportsCloning: true }),
+        cloneVoice: async (req) => {
+          seenClone = { name: req.name, mimeType: req.mimeType, bytes: req.referenceAudio.length };
+          return { id: req.name, label: req.name, lang: "en" };
+        },
+      }),
+    );
+    const { app } = await makeApp();
+
+    const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
+
+    expect(res.status).toBe(200);
+    const voice = (await res.json()) as { id: string };
+    expect(voice.id).toBe("my-clone");
+    expect(seenClone).toEqual({ name: "my-clone", mimeType: "audio/mpeg", bytes: 3 });
+  });
+
+  test("capability-gated backend → 400 with the honest message (not a 500)", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () => stubBackend());
+    const { app } = await makeApp();
+
+    const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("does not support voice cloning");
+  });
+
+  test("validation: missing name, non-audio mime, oversize file → 400 each", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({ capabilities: () => ({ supportsCloning: true }), cloneVoice: async (req) => ({ id: req.name, label: req.name, lang: "en" }) }),
+    );
+    const { app } = await makeApp();
+
+    const noName = await app.request("/api/tts/clone", { method: "POST", body: cloneForm({ name: "  " }) });
+    expect(noName.status).toBe(400);
+
+    const badMime = await app.request("/api/tts/clone", {
+      method: "POST",
+      body: cloneForm({ audio: new File([new Uint8Array([1])], "x.txt", { type: "text/plain" }) }),
+    });
+    expect(badMime.status).toBe(400);
+
+    const oversize = await app.request("/api/tts/clone", {
+      method: "POST",
+      body: cloneForm({ audio: new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.mp3", { type: "audio/mpeg" }) }),
+    });
+    expect(oversize.status).toBe(400);
+
+    const unknownBackend = await app.request("/api/tts/clone", { method: "POST", body: cloneForm({ backend: "nope" }) });
+    expect(unknownBackend.status).toBe(400);
+  });
+
+  test("stored-key injection: profileId + empty config apiKey injects the saved key into the clone call", async () => {
+    let injected: unknown = undefined;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, (config) => {
+      const record = config as Record<string, unknown>;
+      injected = record.apiKey;
+      return stubBackend({
+        capabilities: () => ({ supportsCloning: true }),
+        cloneVoice: async (req) => ({ id: req.name, label: req.name, lang: "en" }),
+      });
+    });
+    const { app, store } = await makeApp();
+    // TtsProfile carries the key as a typed column (never inside the config
+    // blob) — create the row the way the CRUD route does.
+    const created = await store.create({
+      name: "P1",
+      backend: "openai-compatible",
+      apiKey: "stored-secret",
+      config: { endpoint: "http://localhost:4123/v1" } as Record<string, unknown>,
+    });
+
+    const form = cloneForm();
+    form.set("profileId", created.id);
+    form.set("config", JSON.stringify({ endpoint: "http://localhost:4123/v1" }));
+    const res = await app.request("/api/tts/clone", { method: "POST", body: form });
+
+    expect(res.status).toBe(200);
+    expect(injected).toBe("stored-secret");
   });
 });

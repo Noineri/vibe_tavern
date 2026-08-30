@@ -283,7 +283,33 @@ export class TtsAdapter implements TtsRuntimeApi {
     // is injected server-side for this request only (write-only key UX).
     const config = await resolveDraftConfig(this.stores, body.backend, body.config, body.profileId);
     const backend = createTtsBackend(body.backend, config);
-    return backend.listVoices();
+    const voices = await backend.listVoices();
+    // Capabilities are read AFTER listVoices: the openai-compat backend
+    // learns clone support from which voices route answered (the /voices
+    // library fallback = chatterbox-style upload endpoint). voices may be
+    // null (empty library / manual floor) while cloning is still available.
+    return { voices, capabilities: backend.capabilities() };
+  };
+
+  cloneTtsVoiceDraft: TtsRuntimeApi["cloneTtsVoiceDraft"] = async (body) => {
+    if (body.backend === TTS_BACKEND.Kokoro) {
+      throw new KokoroClientSideError();
+    }
+    const config = await resolveDraftConfig(this.stores, body.backend, body.config, body.profileId);
+    const backend = createTtsBackend(body.backend, config);
+    // Gate on the capability BEFORE calling the seam (TtsBackend contract).
+    // The openai-compat backend reports cloning only after listVoices saw
+    // the library route — an editor that never loaded voices gets a clean
+    // "not supported" here; the UI flow always loads voices first.
+    if (!backend.capabilities().supportsCloning || backend.cloneVoice === undefined) {
+      throw new TtsCloneUnsupportedError();
+    }
+    // Audio passes through memory — never persisted (plan constraint).
+    return backend.cloneVoice({
+      name: body.name,
+      referenceAudio: body.referenceAudio,
+      mimeType: body.mimeType,
+    });
   };
 
   draftPreviewTts: TtsRuntimeApi["draftPreviewTts"] = async (body) => {
@@ -351,5 +377,14 @@ export class KokoroClientSideError extends Error {
   constructor() {
     super("kokoro runs client-side");
     this.name = "KokoroClientSideError";
+  }
+}
+
+/** The backend declared no clone capability (or the seam is absent) — the
+ *  route maps this to a clean 400, not an upstream-flavored 500. */
+export class TtsCloneUnsupportedError extends Error {
+  constructor() {
+    super("this TTS backend does not support voice cloning");
+    this.name = "TtsCloneUnsupportedError";
   }
 }

@@ -26,7 +26,9 @@ import type { TtsProfileConfig } from "@vibe-tavern/domain";
 import type {
   TtsAudioResult,
   TtsBackend,
+  TtsBackendCapabilities,
   TtsBackendFactory,
+  TtsCloneRequest,
   TtsGenerateRequest,
   TtsProbeResult,
   TtsVoiceInfo,
@@ -39,6 +41,7 @@ import {
 
 const TTS_GENERATE_TIMEOUT_MS = 30_000;
 const TTS_VOICE_LIST_TIMEOUT_MS = 10_000;
+const TTS_CLONE_TIMEOUT_MS = 60_000;
 const PROBE_TIMEOUT_MS = 5_000;
 
 const DEFAULT_MODEL = "kokoro";
@@ -306,6 +309,14 @@ function parseVoicesPayload(parsed: unknown): TtsVoiceInfo[] | null {
 export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
   const cfg = parseConfig(config);
 
+  /** Which voices route last answered — set by listVoices, read by
+   *  capabilities(). "library" = the /voices fallback route exists
+   *  (chatterbox-style voice library with an upload endpoint), which is
+   *  exactly the live fact clone support is detected from (owner-approved
+   *  design point 3, 2026-08-31). "roster" = the kokoro-style
+   *  /audio/voices route; no upload endpoint is known there. */
+  let lastVoicesSource: "library" | "roster" | null = null;
+
   /** Catalog selection (D15/D23/F8), shared by listModels and listVoices:
    *  DOCUMENTED/audio-type hosts ALWAYS win over legacy stamps (the F6
    * field-fix rule — old profiles carry preset-glue `name-heuristic`
@@ -564,6 +575,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
         });
         if (voicesResponse.ok) {
+          lastVoicesSource = "roster";
           const parsed: unknown = await voicesResponse.json().catch(() => null);
           const voices = parseVoicesPayload(parsed);
           if (voices) return voices;
@@ -582,6 +594,11 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
             signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
           });
           if (libraryResponse.ok) {
+            // OK on this route is the capability signal even when the library
+            // is empty (voices null) — the upload endpoint exists (design
+            // point 3: a fresh chatterbox has an empty library and cloning is
+            // still THE feature).
+            lastVoicesSource = "library";
             const parsed: unknown = await libraryResponse.json().catch(() => null);
             const voices = parseVoicesPayload(parsed);
             if (voices) return voices;
@@ -591,6 +608,55 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       } catch {
         return null;
       }
+    },
+
+    capabilities(): TtsBackendCapabilities {
+      return {
+        supportsCloning: lastVoicesSource === "library",
+        // chatterbox-tts-api voice-library limits (upstream README).
+        formats: ["mp3", "wav", "flac", "m4a", "ogg"],
+        maxSizeMb: 10,
+      };
+    },
+
+    async cloneVoice(req: TtsCloneRequest): Promise<TtsVoiceInfo> {
+      // chatterbox-tts-api voice-library upload (upstream README + openapi,
+      // live-verified 2026-08-31): POST {endpoint}/voices, multipart
+      // voice_file + voice_name. buildHeaders() without withBody sets no
+      // Content-Type — the FormData boundary is set by fetch itself.
+      const form = new FormData();
+      form.append("voice_name", req.name);
+      form.append(
+        "voice_file",
+        new Blob([new Uint8Array(req.referenceAudio)], { type: req.mimeType }),
+        `voice-sample.${req.mimeType.includes("mpeg") ? "mp3" : (req.mimeType.split("/")[1] ?? "bin")}`,
+      );
+      let response: Response;
+      try {
+        response = await fetch(`${cfg.endpoint}/voices`, {
+          method: "POST",
+          headers: buildHeaders(cfg.apiKey),
+          body: form,
+          signal: AbortSignal.timeout(TTS_CLONE_TIMEOUT_MS),
+        });
+      } catch (error) {
+        throw new Error(`voice clone request failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(
+          `voice clone failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, 300)}` : ""}`,
+        );
+      }
+      // The library is the source of truth: re-list and resolve the entry by
+      // name (its language metadata comes along); fall back to the name when
+      // the fresh entry is not immediately visible (eventual consistency).
+      const voices = await this.listVoices();
+      if (voices !== null) {
+        const found = voices.find((v) => v.id === req.name);
+        if (found !== undefined) return found;
+      }
+      return { id: req.name, label: req.name, lang: "en" };
     },
 
     async probe(): Promise<TtsProbeResult> {

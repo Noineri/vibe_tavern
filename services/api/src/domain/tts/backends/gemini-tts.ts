@@ -28,6 +28,7 @@ import type { TtsProfileConfig } from "@vibe-tavern/domain";
 import type {
   TtsAudioResult,
   TtsBackend,
+  TtsBackendCapabilities,
   TtsBackendFactory,
   TtsGenerateRequest,
   TtsProbeResult,
@@ -323,6 +324,10 @@ export const geminiTtsFactory: TtsBackendFactory = (config) => {
 
     async dispose(): Promise<void> {
       // Stateless — nothing to release.
+    },
+
+    capabilities(): TtsBackendCapabilities {
+      return { supportsCloning: false };
     },
   };
 

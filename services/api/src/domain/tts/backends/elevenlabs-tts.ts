@@ -19,7 +19,7 @@
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import type { TtsProfileConfig } from "@vibe-tavern/domain";
 
-import type { TtsBackend, TtsAudioResult, TtsBackendFactory, TtsGenerateRequest, TtsProbeResult, TtsVoiceInfo } from "../tts-backend.js";
+import type { TtsBackend, TtsAudioResult, TtsBackendCapabilities, TtsBackendFactory, TtsGenerateRequest, TtsProbeResult, TtsVoiceInfo } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
 
 const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io";
@@ -222,6 +222,10 @@ export class ElevenLabsTtsBackend implements TtsBackend {
 
   // Nothing to tear down — ElevenLabs has no local state.
   async dispose(): Promise<void> {}
+
+  capabilities(): TtsBackendCapabilities {
+    return { supportsCloning: false };
+  }
 }
 
 // ─── Voice-list parsing (unknown at the fetch edge) ──────────────────────────

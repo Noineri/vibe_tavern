@@ -56,16 +56,29 @@ export interface TtsCloneRequest {
 
 export type TtsBackendFactory = (config: TtsProfileConfig) => TtsBackend;
 
+/** What a backend can do, surfaced to the UI for feature-detection.
+ *  `supportsCloning` gates the profile-editor clone section; the optional
+ *  hints (formats / maxSizeMb) drive client-side sample validation. */
+export interface TtsBackendCapabilities {
+  supportsCloning: boolean;
+  /** Accepted sample file extensions (no dot), e.g. ["mp3", "wav"]. */
+  formats?: string[];
+  /** Maximum sample size in megabytes. */
+  maxSizeMb?: number;
+}
+
 export interface TtsBackend {
   generate(req: TtsGenerateRequest): Promise<TtsAudioResult>;
   listVoices(): Promise<TtsVoiceInfo[] | null>;
   listModels?(): Promise<TtsModelInfo[]>;
   probe(): Promise<TtsProbeResult>;
   dispose(): Promise<void>;
-  /**
-   * Reserved seam (deferred owner decision): only a future cloning-capable
-   * backend implements this. v1 ships none — callers must gate on
-   * capabilities.supportsCloning before calling.
-   */
+  /** Declared AFTER the first listVoices call is the meaningful one for the
+   *  openai-compat backend: clone support is learned from which voices
+   *  route answered (the /voices library fallback = chatterbox-style upload
+   *  endpoint). Callers surface capabilities in the voices response. */
+  capabilities(): TtsBackendCapabilities;
+  /** Only cloning-capable backends implement this; callers MUST gate on
+   *  capabilities().supportsCloning before calling. */
   cloneVoice?(req: TtsCloneRequest): Promise<TtsVoiceInfo>;
 }

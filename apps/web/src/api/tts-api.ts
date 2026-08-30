@@ -46,6 +46,21 @@ export interface TtsVoiceRecord {
   lang: string;
 }
 
+/** Backend capability hints for the profile editor (clone field design
+ *  2026-08-31). Mirrors the server's TtsBackendCapabilities. */
+export interface TtsBackendCapabilities {
+  supportsCloning: boolean;
+  formats?: string[];
+  maxSizeMb?: number;
+}
+
+/** Draft-voices response envelope: capabilities ride alongside voices —
+ *  voices may be null (empty library) while cloning is still available. */
+export interface TtsDraftVoicesResponse {
+  voices: TtsVoiceRecord[] | null;
+  capabilities: TtsBackendCapabilities;
+}
+
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
 export async function listAllTtsProfiles(): Promise<TtsProfileRecord[]> {
@@ -188,12 +203,13 @@ export async function listTtsVoices(profileId: string): Promise<TtsVoiceRecord[]
  *  this request); when it is empty and `profileId` names the saved profile
  *  this form belongs to (same backend/endpoint), the server injects the
  *  STORED key for this one request (strip-on-read UX). Kokoro is rejected
- *  by the server (browser-only) — callers gate on the backend first. */
+ *  by the server (browser-only) — callers gate on the backend first.
+ *  Response envelope carries capabilities for the clone section. */
 export async function listTtsDraftVoices(body: {
   backend: string;
   config: Record<string, unknown>;
   profileId?: string;
-}): Promise<TtsVoiceRecord[] | null> {
+}): Promise<TtsDraftVoicesResponse> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/draft/voices`), {
     method: "POST",
@@ -204,9 +220,42 @@ export async function listTtsDraftVoices(body: {
     const text = await response.text().catch(() => "");
     throw new Error(`TTS draft voice list failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, 200)}` : ""}`);
   }
-  const json = (await response.json()) as TtsVoiceRecord[] | null;
-  if (json === null) return null;
-  return json;
+  return (await response.json()) as TtsDraftVoicesResponse;
+}
+
+/** Clone a voice from the profile-editor form (multipart passthrough; the
+ *  audio passes through server memory and is never stored). Same transient
+ *  config semantics as listTtsDraftVoices. */
+export async function cloneTtsVoice(body: {
+  backend: string;
+  config: Record<string, unknown>;
+  profileId?: string;
+  name: string;
+  audio: File;
+}): Promise<TtsVoiceRecord> {
+  const baseUrl = getGatewayBaseUrl();
+  const form = new FormData();
+  form.append("backend", body.backend);
+  form.append("config", JSON.stringify(body.config));
+  if (body.profileId !== undefined) form.append("profileId", body.profileId);
+  form.append("name", body.name);
+  form.append("audio", body.audio);
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/clone`), {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    let message = `TTS voice clone failed: ${response.status} ${response.statusText}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      if (typeof parsed.error === "string" && parsed.error.length > 0) message = parsed.error;
+    } catch {
+      if (text) message += `: ${text.slice(0, 200)}`;
+    }
+    throw new Error(message);
+  }
+  return (await response.json()) as TtsVoiceRecord;
 }
 
 export async function listTtsDraftModels(body: {

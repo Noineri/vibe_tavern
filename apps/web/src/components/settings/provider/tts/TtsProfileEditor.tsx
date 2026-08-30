@@ -9,7 +9,7 @@ import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
-import { listTtsDraftModels, listTtsDraftVoices, type TtsModelListEntry, type TtsVoiceRecord } from "../../../../api/tts-api.js";
+import { listTtsDraftModels, listTtsDraftVoices, type TtsBackendCapabilities, type TtsModelListEntry, type TtsVoiceRecord } from "../../../../api/tts-api.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
@@ -117,6 +117,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   const [voices, setVoices] = useState<TtsVoiceRecord[] | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [voicesError, setVoicesError] = useState<string | null>(null);
+  // Clone capability rides the voices envelope (clone field design
+  // 2026-08-31): null voices (empty library) may still carry supportsCloning.
+  const [cloneCaps, setCloneCaps] = useState<TtsBackendCapabilities | null>(null);
   const [models, setModels] = useState<TtsModelListEntry[] | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -188,8 +191,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     };
     const timer = setTimeout(() => {
       listTtsDraftVoices({ backend, config, profileId })
-        .then((list) => {
+        .then(({ voices: list, capabilities }) => {
           if (cancelled) return;
+          setCloneCaps(capabilities);
           if (list === null) {
             setVoices(null);
             setVoicesError("unavailable");

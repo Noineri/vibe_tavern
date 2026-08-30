@@ -391,8 +391,26 @@ export interface TtsRuntimeApi {
 	generateTtsSpeech: (body: import("@vibe-tavern/api-contracts").GenerateTtsInput) => Promise<{ audio: Buffer; mime: string } | null>;
 	listTtsVoices: (profileId: string) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null>;
 	/** Transient voices lookup from an unsaved form config (no DB row). Throws
-	 *  KokoroClientSideError for the browser-only backend (route → 400). */
-	draftListTtsVoices: (body: import("@vibe-tavern/api-contracts").DraftTtsVoicesInput) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null>;
+	 *  KokoroClientSideError for the browser-only backend (route → 400).
+	 *  Response envelope: capabilities ride alongside voices — voices may be
+	 *  null (empty library / manual floor) while the backend still supports
+	 *  cloning (clone field design, 2026-08-31). */
+	draftListTtsVoices: (body: import("@vibe-tavern/api-contracts").DraftTtsVoicesInput) => Promise<{
+		voices: import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null;
+		capabilities: import("../../domain/tts/tts-backend.js").TtsBackendCapabilities;
+	}>;
+	/** Transient voice clone from an unsaved form config: upload a reference
+	 *  sample, get the created voice back. Audio passes through memory only.
+	 *  Throws KokoroClientSideError (route → 400) and
+	 *  TtsCloneUnsupportedError when the backend lacks the capability (→ 400). */
+	cloneTtsVoiceDraft: (body: {
+		backend: import("@vibe-tavern/api-contracts").DraftTtsVoicesInput["backend"];
+		config: Record<string, unknown>;
+		profileId?: string;
+		name: string;
+		referenceAudio: Buffer;
+		mimeType: string;
+	}) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo>;
 	/** Transient one-shot synthesis from an unsaved form config. Throws
 	 *  KokoroClientSideError for the browser-only backend (route → 400). */
 	draftPreviewTts: (body: import("@vibe-tavern/api-contracts").DraftTtsPreviewInput) => Promise<{ audio: Buffer; mime: string }>;

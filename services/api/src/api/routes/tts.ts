@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import type { TtsRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
-import { KokoroClientSideError } from "../adapters/tts-adapter.js";
+import type { DraftTtsVoicesInput } from "@vibe-tavern/api-contracts";
+import { TTS_BACKEND } from "@vibe-tavern/domain";
+import { KokoroClientSideError, TtsCloneUnsupportedError } from "../adapters/tts-adapter.js";
 
 export function createTtsRoutes(runtime: TtsRuntimeApi) {
   return new Hono()
@@ -121,6 +123,70 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
       } catch (error) {
         if (error instanceof KokoroClientSideError) {
           return c.json({ error: "kokoro runs client-side" }, 400);
+        }
+        throw error;
+      }
+    })
+    // ── Voice cloning (clone field design 2026-08-31) ──────────────────
+    // Multipart: backend/config/profileId/name as fields + `audio` file.
+    // Manual validation (no zod for multipart); the same stored-key
+    // injection as the other draft routes applies server-side.
+    .post("/api/tts/clone", async (c) => {
+      const form = await c.req.parseBody();
+      const name = form["name"];
+      const backend = form["backend"];
+      const configField = form["config"];
+      const profileId = form["profileId"];
+      const audio = form["audio"];
+      if (typeof name !== "string" || name.trim().length === 0 || name.length > 100) {
+        return c.json({ error: "voice name must be 1-100 characters" }, 400);
+      }
+      if (typeof backend !== "string" || !(Object.values(TTS_BACKEND) as string[]).includes(backend)) {
+        return c.json({ error: "unknown TTS backend" }, 400);
+      }
+      if (typeof configField !== "string") {
+        return c.json({ error: "config is required" }, 400);
+      }
+      let config: unknown;
+      try {
+        config = JSON.parse(configField);
+      } catch {
+        return c.json({ error: "config must be a JSON object" }, 400);
+      }
+      if (typeof config !== "object" || config === null) {
+        return c.json({ error: "config must be a JSON object" }, 400);
+      }
+      if (!(audio instanceof File)) {
+        return c.json({ error: "audio sample file is required" }, 400);
+      }
+      // Mirror the backend capability hints (chatterbox voice-library limits).
+      const MAX_CLONE_BYTES = 10 * 1024 * 1024;
+      if (audio.size === 0 || audio.size > MAX_CLONE_BYTES) {
+        return c.json({ error: `audio sample must be 1 B - 10 MB (got ${audio.size} B)` }, 400);
+      }
+      const mimeType = audio.type || "application/octet-stream";
+      const ALLOWED_AUDIO_MIME_PREFIXES = ["audio/"];
+      if (!ALLOWED_AUDIO_MIME_PREFIXES.some((p) => mimeType.startsWith(p))) {
+        return c.json({ error: `unsupported audio type: ${mimeType}` }, 400);
+      }
+      try {
+        const voice = await runtime.cloneTtsVoiceDraft({
+          // Guarded against Object.values(TTS_BACKEND) above — the cast is
+          // the validated boundary from multipart string to the slug union.
+          backend: backend as DraftTtsVoicesInput["backend"],
+          config: config as Record<string, unknown>,
+          profileId: typeof profileId === "string" && profileId.length > 0 ? profileId : undefined,
+          name: name.trim(),
+          referenceAudio: Buffer.from(await audio.arrayBuffer()),
+          mimeType,
+        });
+        return c.json(voice);
+      } catch (error) {
+        if (error instanceof KokoroClientSideError) {
+          return c.json({ error: "kokoro runs client-side" }, 400);
+        }
+        if (error instanceof TtsCloneUnsupportedError) {
+          return c.json({ error: "this TTS backend does not support voice cloning" }, 400);
         }
         throw error;
       }

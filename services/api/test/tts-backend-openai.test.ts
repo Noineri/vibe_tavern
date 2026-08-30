@@ -660,3 +660,77 @@ describe("openai-compat TTS documented + audio-type discovery (F8)", () => {
     expect(captured()!.url).toBe("https://api.siliconflow.cn/v1/audio/voices");
   });
 });
+
+// ── Clone capability + cloneVoice (clone field design 2026-08-31) ─────────
+describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
+  test("library-route voices (chatterbox) → supportsCloning true, even when the library is empty", async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/audio/voices")) return jsonResponse(404, { detail: "nope" });
+      return jsonResponse(200, { voices: [], count: 0 });
+    });
+    const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:4123/v1" });
+    expect(await backend.listVoices()).toBeNull();
+    const caps = backend.capabilities();
+    expect(caps.supportsCloning).toBe(true);
+    expect(caps.formats).toContain("mp3");
+    expect(caps.maxSizeMb).toBe(10);
+  });
+
+  test("roster-route voices (kokoro-style) → supportsCloning false", async () => {
+    captureFetch(() => jsonResponse(200, { voices: [{ id: "af_bella" }] }));
+    const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:8880/v1" });
+    expect(await backend.listVoices()).not.toBeNull();
+    expect(backend.capabilities().supportsCloning).toBe(false);
+  });
+
+  test("cloneVoice posts multipart to /voices and resolves the fresh entry by name", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body });
+      if (url === "http://localhost:4123/v1/voices" && init?.method === "POST") {
+        return jsonResponse(201, { name: "my-clone", ok: true });
+      }
+      // GET /audio/voices misses (chatterbox), GET /voices returns the library.
+      if (url.endsWith("/audio/voices")) return jsonResponse(404, { detail: "nope" });
+      return jsonResponse(200, {
+        voices: [{ name: "my-clone", language: "ru", exists: true }],
+        count: 1,
+      });
+    });
+    const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:4123/v1" });
+
+    const voice = await backend.cloneVoice!({
+      name: "my-clone",
+      referenceAudio: Buffer.from("fake-audio"),
+      mimeType: "audio/mpeg",
+    });
+
+    // Upload went to the library route as multipart FormData…
+    const upload = calls.find((c) => c.method === "POST");
+    expect(upload?.url).toBe("http://localhost:4123/v1/voices");
+    expect(upload?.body).toBeInstanceOf(FormData);
+    expect((upload?.body as FormData).get("voice_name")).toBe("my-clone");
+    // …and the created voice came from the re-listed library (lang carried).
+    expect(voice).toEqual({ id: "my-clone", label: "my-clone", lang: "ru" });
+  });
+
+  test("cloneVoice upstream error → thrown with status text (route → client inline error)", async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST" && url.endsWith("/voices")) {
+        return jsonResponse(413, { detail: { error: { message: "file too large" } } });
+      }
+      if (url.endsWith("/audio/voices")) return jsonResponse(404, {});
+      return jsonResponse(200, { voices: [], count: 0 });
+    });
+    const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:4123/v1" });
+    try {
+      await backend.cloneVoice!({ name: "x", referenceAudio: Buffer.from("y"), mimeType: "audio/wav" });
+      throw new Error("expected cloneVoice to throw");
+    } catch (error) {
+      expect((error as Error).message).toContain("413");
+    }
+  });
+});

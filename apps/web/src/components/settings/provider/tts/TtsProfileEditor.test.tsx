@@ -37,10 +37,14 @@ const { TTS_BACKEND } = await import("@vibe-tavern/domain");
 // Draft voices (F1) + models (F3): safe mock.module pattern — real module
 // captured first, only draft helpers overridden.
 const realTtsApi = await import("../../../../api/tts-api.js");
-const listTtsDraftVoicesMock = mock(async (_body: { backend: string; config: Record<string, unknown> }) => [
-  { id: "alloy", label: "Alloy", lang: "en" },
-  { id: "echo", label: "Echo", lang: "en" },
-]);
+import type { TtsDraftVoicesResponse } from "../../../../api/tts-api.js";
+const listTtsDraftVoicesMock = mock(async (_body: { backend: string; config: Record<string, unknown> }): Promise<TtsDraftVoicesResponse> => ({
+  voices: [
+    { id: "alloy", label: "Alloy", lang: "en" },
+    { id: "echo", label: "Echo", lang: "en" },
+  ],
+  capabilities: { supportsCloning: false },
+}));
 const listTtsDraftModelsMock = mock(async (_body: { backend: string; config: Record<string, unknown> }) => [
   { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
   { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
@@ -640,7 +644,10 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     // Roster for the NEW model (single voice "new-voice"); the form still
     // holds the previous model's pick "old-voice" — not carried by the new
     // roster, so the LLM settle rule lands on list[0].
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => [{ id: "new-voice", label: "New Voice", lang: "en" }]);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({
+      voices: [{ id: "new-voice", label: "New Voice", lang: "en" }],
+      capabilities: { supportsCloning: false },
+    }));
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
@@ -660,10 +667,13 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   });
 
   it("D20/LLM rule: an empty voiceId settles on the first roster entry (real voice, no placeholder stub)", async () => {
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => [
-      { id: "first-voice", label: "First", lang: "en" },
-      { id: "second-voice", label: "Second", lang: "en" },
-    ]);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({
+      voices: [
+        { id: "first-voice", label: "First", lang: "en" },
+        { id: "second-voice", label: "Second", lang: "en" },
+      ],
+      capabilities: { supportsCloning: false },
+    }));
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
@@ -683,10 +693,13 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   });
 
   it("D20/LLM rule: a carried voiceId is KEPT — settle never overwrites a live pick", async () => {
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => [
-      { id: "first-voice", label: "First", lang: "en" },
-      { id: "my-voice", label: "Mine", lang: "en" },
-    ]);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({
+      voices: [
+        { id: "first-voice", label: "First", lang: "en" },
+        { id: "my-voice", label: "Mine", lang: "en" },
+      ],
+      capabilities: { supportsCloning: false },
+    }));
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
@@ -708,7 +721,7 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   });
 
   it("manual fallback input placeholder is the neutral i18n hint — no fake example id (openai)", async () => {
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: [], capabilities: { supportsCloning: false } }));
     const tts = viewTts({
       form: {
         id: null,
@@ -727,7 +740,7 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   });
 
   it("manual fallback input placeholder is the neutral i18n hint (gemini)", async () => {
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: [], capabilities: { supportsCloning: false } }));
     const tts = viewTts({
       form: {
         id: null,
@@ -746,7 +759,7 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   });
 
   it("manual fallback input placeholder is the neutral i18n hint (elevenlabs)", async () => {
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => []);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: [], capabilities: { supportsCloning: false } }));
     const tts = viewTts({
       form: {
         id: null,
@@ -765,7 +778,7 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   });
 
   it("null voices (endpoint unavailable) → manual input + load-error hint, no fake roster (TE2-3)", async () => {
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => null as never);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: null, capabilities: { supportsCloning: false } }));
     const tts = viewTts({
       form: {
         id: null,
@@ -868,7 +881,7 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   });
 
   it("narrator manual input shown when server voices unavailable", async () => {
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => null as never);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: null, capabilities: { supportsCloning: false } }));
     const tts = viewTts({
       form: {
         id: null,
