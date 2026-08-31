@@ -166,3 +166,71 @@ describe("inclusion groups — groupName field drives group resolution", () => {
 		expect(activatedIds(result)).toHaveLength(1);
 	});
 });
+
+describe("inclusion groups — sticky × groups (LG-6 characterization)", () => {
+	// Characterization-first (LG-6): the first four tests were pinned against
+	// the pre-rework engine (sticky ignored by the group stage; losers
+	// persisting activation state), then flipped to ST semantics: sticky-active
+	// members (timed effect persisted from a PREVIOUS scan) dominate their
+	// group — scoring/override/roll are all skipped, non-sticky members are
+	// removed, ALL sticky members survive together — and only pass SURVIVORS
+	// write activation state (ST setTimedEffects runs after the scan).
+	const g = { groupName: "g", useGroupScoring: true, groupWeight: 0 };
+	const stickyState = { activatedAtTurn: 1, lastMatchedAtTurn: 1 };
+
+	it("LG-6: a sticky-active constant dominates its group — the higher scorer is removed (D8)", () => {
+		const sSticky = makeEntry({ id: "s_sticky", ...g, keys: [] as string[], stickyWindow: 5 });
+		const sScorer = makeEntry({ id: "s_scorer", ...g, keys: ["storm", "rain"] });
+		const result = resolveActivatedEntries({
+			...makeInput([sSticky, sScorer], ["storm rain calm"]),
+			activationState: { s_sticky: stickyState },
+		});
+		// Pre-LG6 pin: ["s_scorer"] (the sticky constant scored 0 and lost).
+		expect(activatedIds(result)).toEqual(["s_sticky"]);
+	});
+
+	it("LG-6: a sticky AUTO-activation (no keys this scan) also dominates the group", () => {
+		const autoSticky = makeEntry({
+			id: "auto_sticky", ...g, constant: false, keys: [] as string[], stickyWindow: 5,
+		});
+		const competitor = makeEntry({ id: "competitor", ...g, keys: ["storm"] });
+		const result = resolveActivatedEntries({
+			...makeInput([autoSticky, competitor], ["storm calm"]),
+			activationState: { auto_sticky: stickyState },
+		});
+		// Pre-LG6 pin: ["competitor"] (the sticky auto-activation scored 0).
+		expect(activatedIds(result)).toEqual(["auto_sticky"]);
+	});
+
+	it("LG-6: ALL sticky-active members survive together — no single winner is rolled", () => {
+		const stickyA = makeEntry({ id: "sticky_a", ...g, keys: [] as string[], stickyWindow: 5 });
+		const stickyB = makeEntry({ id: "sticky_b", ...g, keys: [] as string[], stickyWindow: 5 });
+		const scorer = makeEntry({ id: "scorer", ...g, keys: ["storm", "rain"] });
+		const result = resolveActivatedEntries({
+			...makeInput([stickyA, stickyB, scorer], ["storm rain calm"]),
+			activationState: { sticky_a: stickyState, sticky_b: stickyState },
+		});
+		// Pre-LG6 pin: ["scorer"]. ST keeps every sticky member (no resolution).
+		expect(activatedIds(result).sort()).toEqual(["sticky_a", "sticky_b"]);
+	});
+
+	it("LG-6: a group LOSER writes NO state — no sticky resurrection on the next scan (ST setTimedEffects parity)", () => {
+		// Scan 1: loser (stickyWindow 5) activates by key match but loses the
+		// scoring filter; its state was still written at activation time.
+		const loser = makeEntry({ id: "loser", ...g, constant: false, keys: ["storm"], stickyWindow: 5 });
+		const winner = makeEntry({ id: "winner", ...g, constant: false, keys: ["storm", "rain"] });
+		const scan1 = resolveActivatedEntries(makeInput([loser, winner], ["storm rain calm"]));
+		expect(activatedIds(scan1)).toEqual(["winner"]);
+		// Pre-LG6 pin: the loser persisted activatedAtTurn=1 despite losing.
+		expect(scan1.updatedState.loser).toBeUndefined();
+
+		// Scan 2 (next turn, no key matches at all): nothing resurrects the
+		// loser — it never reached the prompt, so it never got sticky state.
+		const scan2 = resolveActivatedEntries({
+			...makeInput([loser], ["nothing relevant"]),
+			activationState: scan1.updatedState,
+			currentTurn: 2,
+		});
+		expect(activatedIds(scan2)).toEqual([]);
+	});
+});

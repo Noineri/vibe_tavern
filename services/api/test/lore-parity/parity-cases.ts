@@ -352,17 +352,17 @@ export const PARITY_CASES: ParityCase[] = [
 	},
 	{
 		// D8: a sticky-active member dominates the group in ST (scoring and
-		// the roll are skipped). VT's group stage ignores sticky entirely —
-		// the sticky constant (score 0) is removed by the scoring filter.
+		// the roll are skipped). CLOSED by LG-6: the sticky constant survives,
+		// the scorer is removed by the timed-effects filter.
 		id: "sticky_dominates_group",
 		text: ["storm rain calm"],
 		entries: [
 			{ id: "S_sticky", keys: [], constant: true, group: "g", useGroupScoring: true, sticky: true },
 			{ id: "S_scorer", keys: ["storm", "rain"], group: "g", useGroupScoring: true },
 		],
-		divergences: ["D8"],
+		divergences: [],
 		stExpect: ["S_sticky"],
-		vtExpect: ["S_scorer"],
+		vtExpect: ["S_sticky"], // CLOSED by LG-6
 	},
 	{
 		// Pin (no divergence): multi-group membership — losing in one group

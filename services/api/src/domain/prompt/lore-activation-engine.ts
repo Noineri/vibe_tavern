@@ -231,6 +231,21 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // the per-pass inclusion-group pipeline below.
   const bookDefaults = new Map(input.lorebooks.map(lb => [lb.id, lb.useGroupScoring ?? false]));
 
+  // LG-6 (ST parity): sticky-active ≙ a timed effect persisted from a PREVIOUS
+  // scan. Snapshot from the INPUT state before any pass writes: an entry that
+  // activates fresh THIS scan never sticky-dominates its group this scan (ST
+  // records timed effects only for scan survivors, after the whole scan).
+  const stickyActiveIds = new Set(
+    allEntries.flatMap(e => {
+      const state = activationState[e.id];
+      if (e.stickyWindow > 0 && state?.activatedAtTurn != null &&
+        currentTurn - state.activatedAtTurn < e.stickyWindow) {
+        return [e.id];
+      }
+      return [];
+    }),
+  );
+
   // ── Normal scan (with min-activations retry loop) ──────────────────────
   let normalScanRetry = true;
   while (normalScanRetry) {
@@ -262,13 +277,14 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       }
     }
 
-    applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults);
+    applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults, stickyActiveIds);
     let normalActivated = 0;
     for (const survivor of passCandidates) {
       normalActivated++;
       activatedIds.add(survivor.id);
       activated.push(survivor);
       const flat = flatById.get(survivor.id);
+      if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
       if (!flat?.preventRecursion) {
         recurseBuffer += survivor.content + "\n";
       }
@@ -323,12 +339,13 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       // LG-5: per-pass group pipeline — losers are removed before their
       // content can seed further recursion, and groups whose winner was
       // locked by an earlier pass reject this pass's new candidates.
-      applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults);
+      applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults, stickyActiveIds);
       for (const survivor of passCandidates) {
         newActivations++;
         activatedIds.add(survivor.id);
         activated.push(survivor);
         const flat = flatById.get(survivor.id);
+        if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
         if (!flat?.preventRecursion) {
           newRecurseText += survivor.content + "\n";
         }
@@ -460,7 +477,8 @@ function tryActivateEntry(ctx: {
       if (turnsSince < entry.cooldownWindow) return reason("cooldown");
     }
     logger.debug("  actv %s: constant | title=%s", entry.id, entry.title);
-    updatedState[entry.id] = { ...state, activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
+    // LG-6: the state write moved to the pass-survivor loop (see
+    // commitActivationState) — group losers must not persist activation state.
     return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" }, groupScore: scoreEntryKeysForGroup(entry, scanText, macroMap) };
   }
 
@@ -470,7 +488,7 @@ function tryActivateEntry(ctx: {
     const turnsSinceActivation = currentTurn - state.activatedAtTurn;
     if (turnsSinceActivation < entry.stickyWindow) {
       logger.debug("  actv %s: sticky | title=%s", entry.id, entry.title);
-      updatedState[entry.id] = { ...state, lastMatchedAtTurn: currentTurn };
+      // LG-6: state write moved to the pass-survivor loop.
       return {
         status: "activated",
         matchCount: 0,
@@ -490,7 +508,7 @@ function tryActivateEntry(ctx: {
   // 7. Delay check
   if (entry.delayWindow > 0 && state?.pendingDelayUntilTurn != null) {
     if (currentTurn < state.pendingDelayUntilTurn) return reason("delay pending");
-    updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
+    // LG-6: state write moved to the pass-survivor loop.
     return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "delay_fulfilled" }, groupScore: 0 };
   }
 
@@ -529,7 +547,7 @@ function tryActivateEntry(ctx: {
 
   // 12. Activate
   logger.debug("  actv %s: key match | title=%s", entry.id, entry.title);
-  updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
+  // LG-6: state write moved to the pass-survivor loop.
   return {
     status: "activated",
     matchCount: matchedKeys.length,
@@ -697,10 +715,54 @@ function toActivatedEntry(
 }
 
 /**
+ * Persist activation state for a pass SURVIVOR (LG-6, ST parity).
+ *
+ * ST records timed effects (sticky/cooldown) only for entries that survived
+ * the whole pass — setTimedEffects runs after the scan, over
+ * allActivatedEntries (world-info.js 5155). Writing state at activation time
+ * let group losers persist "activated" state, so a scoring loser with a
+ * sticky window would auto-activate on every later scan within the window
+ * despite never reaching the prompt. Writes now happen in the survivor loop,
+ * preserving each activation path's original write shape: constant/sticky
+ * merge over the existing state; key-match/decorator/delay-fulfilled replace
+ * it. The delay-pending SETUP write stays inside tryActivateEntry
+ * (delay-pending entries never become group candidates).
+ */
+function commitActivationState(
+  entry: FlatEntry,
+  reasonKind: LoreActivationReason["kind"],
+  currentTurn: number,
+  updatedState: LoreActivationState,
+): void {
+  const state = updatedState[entry.id];
+  switch (reasonKind) {
+    case "constant":
+      updatedState[entry.id] = { ...state, activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
+      break;
+    case "sticky":
+      updatedState[entry.id] = { ...state, lastMatchedAtTurn: currentTurn };
+      break;
+    default: // key_match / decorator / delay_fulfilled — full replace
+      updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
+      break;
+  }
+}
+
+/**
  * Inclusion group pipeline — SillyTavern's filterByInclusionGroups
  * (world-info.js 5269–5363), run PER SCAN PASS over that pass's newly
  * activated candidates (LG-5), with the ST stage order (LG-4):
  *
+ *   0. Timed-effects filter (ST filterGroupsByTimedEffects, BEFORE scoring):
+ *      a group with sticky-active members (a timed effect persisted from a
+ *      previous scan — see the stickyActiveIds snapshot in the caller) keeps
+ *      ONLY its sticky members — every non-sticky member is removed and the
+ *      group is marked sticky. Sticky groups then skip stages 1–4 entirely
+ *      (ST hasStickyMap): no scoring, no override, no roll, and not even the
+ *      earlier-pass lock rejects the new sticky members — ALL sticky members
+ *      survive together (there is no single winner). ST also removes
+ *      cooldown/delay members here as belt-and-braces; in VT those entries
+ *      never activate at all, so they are never candidates.
  *   1. Scoring filter (per group): qualification — any member's book default
  *      ON or any member explicitly flagged (ST: global || any entry flag).
  *      Qualifying groups drop ONLY effectively-flagged STRICT losers
@@ -725,14 +787,14 @@ function toActivatedEntry(
  * reach the prompt, and (in the caller) never seed the recursion buffer.
  * Groups with ≤1 candidate are skipped by the roll stages, like ST — but the
  * LOCK stage still fires for them (ST checks the lock before the length
- * guard). The sticky-dominance branch (ST timed effects) is NOT here yet —
- * see the sticky-dominance unit.
+ * guard) — but never for sticky groups (ST checks hasSticky BEFORE the lock).
  */
 function applyInclusionGroups(
   passCandidates: ActivationResult["activatedEntries"],
   lockedWinners: ActivationResult["activatedEntries"],
   allEntries: FlatEntry[],
   bookDefaults: Map<string, boolean>,
+  stickyActiveIds: ReadonlySet<string>,
 ): void {
   const entryMap = new Map(allEntries.map(e => [e.id, e]));
   logger.debug("Group filter — %d pass candidates with groups", passCandidates.filter(e => entryMap.get(e.id)?.groupName).length);
@@ -755,6 +817,28 @@ function applyInclusionGroups(
   const effectiveFlag = (e: ActivationResult["activatedEntries"][number]) =>
     entryMap.get(e.id)?.useGroupScoring ?? bookDefaultOf(e.lorebookId);
 
+  // ── Pass 0 — timed-effects filter (ST: filterGroupsByTimedEffects, runs
+  // BEFORE scoring). Sticky dominance: non-sticky members of a group with
+  // sticky-active members are removed and the group is marked sticky; every
+  // later stage bails on sticky groups (all sticky members survive).
+  const stickyGroups = new Set<string>();
+  for (const [groupName, groupEntries] of groups) {
+    const stickyMembers = groupEntries.filter(e => stickyActiveIds.has(e.id));
+    if (stickyMembers.length === 0) continue;
+    stickyGroups.add(groupName);
+    logger.debug(
+      "  group '%s': sticky dominates — %d sticky member(s) stay, %d removed",
+      groupName, stickyMembers.length, groupEntries.length - stickyMembers.length,
+    );
+    for (let i = groupEntries.length - 1; i >= 0; i--) {
+      const e = groupEntries[i];
+      if (!stickyActiveIds.has(e.id)) {
+        removeIds.add(e.id);
+        groupEntries.splice(i, 1);
+      }
+    }
+  }
+
   // ── Pass 1 — scoring filter over EVERY group (ST: filterGroupsByScoring).
   // Removal splices ONLY this group's array (ST: `group.splice(i, 1)`): an entry
   // removed here still sits in its OTHER groups' arrays (a "ghost") and keeps
@@ -762,6 +846,7 @@ function applyInclusionGroups(
   // resolution. This is observable ST behavior (multi-group membership), not
   // an implementation detail.
   for (const [groupName, groupEntries] of groups) {
+    if (stickyGroups.has(groupName)) continue; // sticky groups skip scoring (ST hasAnySticky)
     // Qualification mirrors ST's `!global && !group.some(x => x.useGroupScoring)
     // → skip`, generalized to per-book defaults for cross-book groups.
     const qualifies = groupEntries.some(e =>
@@ -786,6 +871,10 @@ function applyInclusionGroups(
   // otherwise skipped — a lone survivor just stays (and an empty group means
   // every member lost scoring elsewhere).
   for (const [groupName, groupEntries] of groups) {
+    // Sticky (ST hasAnySticky, checked BEFORE the lock): no resolution at all
+    // for sticky groups — every sticky member stays, no single winner.
+    if (stickyGroups.has(groupName)) continue;
+
     // Lock (ST: "group was already activated"): raw-string equality on the
     // earlier winner's full group field — a comma-group winner locks only
     // the exact string "g1,g2", never "g1" or "g2" alone.
