@@ -47,6 +47,7 @@ book's entries together.
 | `scanDepth` | How many recent chat messages to scan for keys (N from the bottom) |
 | `tokenBudget` | Fixed token budget for this book's entries (when `tokenBudgetPercent` is null) |
 | `tokenBudgetPercent` | Context-% mode — `round(maxContext × percent / 100)`, capped by `tokenBudget`. ST parity: `null` = fixed mode |
+| `useGroupScoring` | Group Scoring — book-level default for entries whose `useGroupScoring` is `null` (inherit). ST's global `world_info_use_group_scoring` switch maps onto this on directory import (D9) |
 | `recursiveScanning` | Whether Pass 2+ (recursion) runs at all |
 | `maxRecursionSteps` | Hard cap on recursion passes |
 | `minActivations` | Engine widens scan depth if fewer than N entries match — retry loop |
@@ -73,9 +74,9 @@ A single knowledge fragment. Its 40+ fields group naturally:
 - `priority` — tie-breaker for budget overflow (see [Budget & Priority](#budget--priority-the-truth))
 
 **Time windows (VT bonus — ST has these too as of recent versions)**
-- `stickyWindow` — entry stays active for N turns after first activation, no re-roll
-- `cooldownWindow` — entry cannot reactivate for N turns after last activation
-- `delayWindow` — first match sets a pending state; entry activates N turns later
+- `stickyWindow` — entry stays active for N turns after first activation, no re-roll. The window is anchored at first activation and NEVER extended while alive (only-if-absent, LG-12)
+- `cooldownWindow` — entry cannot reactivate for N turns after activation; when sticky+cooldown are both set, the cooldown is re-anchored at the sticky END (handoff) and a live sticky overrides it (entry keeps activating until the window closes)
+- `delayWindow` — first match sets a pending state; entry activates N turns later; never re-arms after fulfillment
 
 **Recursion**
 - `excludeRecursion` — entry never participates in recursion scans
@@ -85,9 +86,9 @@ A single knowledge fragment. Its 40+ fields group naturally:
 
 **Inclusion group (entries compete)**
 - `groupName` — comma-separated list of groups this entry belongs to
-- `groupWeight` — for weighted-random tie-break (default 100)
-- `prioritizeInclusion` — auto-wins its group (ST: `groupOverride`)
-- `useGroupScoring` — winner = highest `matchCount` in group
+- `groupWeight` — weight for the weighted-random pick (rolls happen among scoring survivors, or over the whole group when scoring is off; default 100)
+- `prioritizeInclusion` — auto-wins its group, checked AFTER the scoring filter (ST: `groupOverride`)
+- `useGroupScoring` — tri-state: `true` / `false` explicit, `null` = inherit the book default. When scoring is on for a group, members below the group's max match count are REMOVED — a strict filter, not an arbiter; unflagged members are immune to the removal (see the per-pass pipeline below)
 
 **Filters & odds**
 - `constant` — always active, skip key matching
@@ -102,6 +103,10 @@ Persisted **per chat** in `chats.lore_activation_state_json`. Maps
 `entryId → { activatedAtTurn, lastMatchedAtTurn, pendingDelayUntilTurn }`.
 This is how sticky/cooldown/delay survive across turns — without it, an entry
 marked "stay active for 5 turns" would lose count on every page reload.
+`activatedAtTurn` anchors the sticky window, `lastMatchedAtTurn` anchors the
+cooldown; both are written only-if-absent (live windows never extend — LG-12),
+and an expired sticky anchor is cleared by the engine's expiry sweep, never
+left stale.
 
 ### Activation reasons (`LoreActivationReason`)
 
@@ -136,15 +141,19 @@ the `ActivationInput`, persists the returned `updatedState` back to the chat.
 ```
 resolveActivatedEntries(input)
   │
-  ├─ 1. Flatten entries from all lorebooks
+  ├─ 1. Flatten entries from all lorebooks + book group-scoring defaults
+  ├─ 1b. Sticky-active snapshot (input state) + sticky-expiry sweep
+  │      ← clears expired anchors once, hands cooldown over to the expiry scan
   ├─ 2. Pass 1: Normal scan         ← tryActivateEntry() per entry
   │     └─ min-activations retry loop (widens scan depth if too few matches)
   ├─ 3. Pass 2+: Recursive scans    ← scanText + recurseBuffer
   │     └─ delay-until-recursion level advancement
+  │     (EVERY pass, 2 and 3 alike, then runs the per-pass pipeline:)
+  │       collect candidates → sticky-first sort → inclusion-group pipeline
+  │       → probability gate → survivors commit state + seed recursion buffer
   ├─ 4. Include-names prefix        ← optional [title] prepended
-  ├─ 5. Inclusion groups            ← group members compete, losers removed
-  ├─ 6. Sort by priority desc       ← then by id for stable ordering
-  ├─ 7. Token budget                ← per-book budget filter on sorted list
+  ├─ 5. Sort: sticky-first → priority desc → id (budget consumption order)
+  ├─ 6. Token budget                ← per-book budget filter on sorted list
   │
   ▼
 ActivationResult { activatedEntries, updatedState }
@@ -154,26 +163,28 @@ ActivationResult { activatedEntries, updatedState }
 
 Twelve sequential gates. First gate that rejects returns `{ status: "skipped" }`
 (with a `console.debug` reason); the first gate that accepts returns
-`{ status: "activated", ... }` with a structured `reason`.
+`{ status: "activated", ... }` with a structured `reason`. Timed-window
+ANCHORING (sticky/cooldown writes) is NOT here — it lives in the per-pass
+survivor loop and the expiry sweep (see below), because only pass survivors
+persist activation state. Probability is not a gate here either: it rolls
+AFTER the per-pass group pipeline (LG-11).
 
 | Step | Gate | On reject |
 |------|------|-----------|
-| 0 | `enabled === false` | skip: "disabled" |
+| 0 | `enabled === false` / already activated this resolve | skip |
 | 1 | Character filter | skip: "character filter" |
 | 2 | Recursion context (`excludeRecursion`, `recursionLevel` not reached) | skip: "recursion level not reached" |
-| 3a | Time-based gating — sticky / cooldown / delay-window pending | returns activated (`sticky`), or skips with the relevant reason |
-| 3b | `@@activate` / `@@dont_activate` decorator on first line of content | decorator forces on, or `@@dont_activate` forces skip |
-| 4 | `constant: true` | activated: `constant` reason |
-| 5 | Sticky window check | activated: `sticky` reason (carries turns/window) |
-| 6 | Cooldown | skip: "cooldown" |
+| 3 | `@@activate` / `@@dont_activate` decorator on first line of content | decorator forces on, or `@@dont_activate` forces skip |
+| 4 | `constant: true` — the inline cooldown gate applies UNLESS the sticky window is live (ST `isCooldown && !isSticky`) | activated: `constant` reason / skip: "cooldown" |
+| 5 | Sticky window live | activated: `sticky` reason (carries turns/window) |
+| 6 | Cooldown live | skip: "cooldown" |
 | 7 | Delay window — pending fulfilled | activated: `delay_fulfilled` reason |
 | 8 | Key matching (skipped if `@@activate` decorator) | skip: "no key match" |
 | 9 | Secondary keys + `logic` (AND/NOT) | skip: "secondary keys fail" |
-| 10 | Probability roll | `{ status: "failed_probability" }` (special — entry not retried this turn) |
-| 11 | Delay first-match pending | skip: "delay window set" (deferred to future turn) |
-| 12 | Activate — persist state, return | activated: `decorator` or `key_match` reason |
+| 10 | Delay first-match arm (only when BOTH anchors are absent — never re-arms) | skip: "delay window set" (deferred to future turn) |
+| 11 | Activate — return (state persists later, in the survivor loop) | activated: `decorator` or `key_match` reason |
 
-The reason assigned at step 12 is **either `decorator` (if `@@activate` forced
+The reason assigned at step 11 is **either `decorator` (if `@@activate` forced
 its way through) or `key_match` (normal path)**. The `scanState` field on a
 `key_match` reason distinguishes "matched during Pass 1 normal scan" from
 "matched during Pass 2+ recursion scan".
@@ -194,25 +205,81 @@ least one normal-pass entry contributed content to the recursion buffer:
 Each recursion-pass activation carries `scanState: "recursion"` on its
 `key_match` reason, so the trace can distinguish "matched a primary key in
 chat" from "matched a key that appeared in another lore entry's output".
+Recursion activations run through the SAME per-pass group pipeline as the
+normal scan — and an earlier pass's group winner LOCKS its group, so a new
+recursion candidate for the same group is removed (raw-string group
+equality; a comma-group winner locks only the exact comma string).
 
-### Post-filters: inclusion groups + token budget
+### Per-pass pipeline: inclusion groups + probability
 
-Two filters run on the activated list **after** activation, **before** return.
-Both can remove entries — those removals are **not** reflected in the
-activation `reason` (the entry thought it activated, then lost in
-competition). See [Trace Integration](#trace-integration) for the design
-implication.
+The group pipeline no longer runs once over the final activated list — it
+runs INSIDE every scan pass (normal and recursion alike), right after the
+pass's candidates are collected (LG-5; ST runs `filterByInclusionGroups`
+inside the scan loop). Removals are **not** reflected in the activation
+`reason` (the entry thought it activated, then lost in competition). See
+[Trace Integration](#trace-integration) for the design implication.
 
-**Inclusion groups** (`applyInclusionGroups`): entries sharing a `groupName`
-compete. Three resolution modes, checked in order:
+Per-pass order:
 
-1. Any member with `prioritizeInclusion: true` auto-wins; all other members removed.
-2. Any member with `useGroupScoring: true` → highest `matchCount` wins; others removed.
-3. Otherwise weighted random by `groupWeight`.
+1. **Sticky-first sort** — pass candidates ordered sticky-active first (from
+   the input-state snapshot), stable otherwise. This order governs group
+   resolution order, the probability gate, and budget consumption (ST
+   world-info.js 4881-4886).
+2. **Group pipeline** (`applyInclusionGroups`), per group:
+   - **Sticky dominance** (pass 0): a group with sticky-active members keeps
+     only them; scoring, locking, override and rolls are all skipped and
+     EVERY sticky member survives (no single winner) — LG-6, ST
+     `filterGroupsByTimedEffects`.
+   - **Scoring filter**: if the group qualifies (any member explicitly
+     `useGroupScoring: true`, or its book default is on), members whose
+     `groupScore` (match count) is below the group max are removed. A
+     FILTER, not an arbiter: unflagged members are immune to the removal but
+     still count toward the max. Removal splices only this group's array, so
+     a multi-group member removed in one group keeps competing in its other
+     groups (ST "ghost" membership).
+   - **Lock**: an earlier pass's winner for this group removes ALL new
+     candidates (checked before the ≤1 guard — even a lone new candidate is
+     removed; D7b).
+   - **≤1 rule**: a group left with 0 or 1 candidates is done — a lone
+     survivor just stays.
+   - **Override**: any member with `prioritizeInclusion: true` → the
+     highest-priority one wins, others removed.
+   - **Weighted roll**: otherwise one winner by weighted random over
+     `groupWeight`.
+3. **Probability gate** (per survivor, AFTER the filter — LG-11, ST
+   `verifyProbability`): survivors with `probability < 100` roll;
+   sticky-active auto-passes. A failure is permanent for the whole resolve
+   (never retried in later passes), leaves the survivor's group EMPTY (its
+   competitors were already removed), seeds no recursion, and commits no
+   activation state. Constants roll here like everyone else.
+
+**State writes** happen in the survivor loop after the pipeline: only
+entries that survived the whole pass persist activation state — group losers
+and probability failures never write anchors.
 
 **Token budget** (`applyTokenBudget`): per-lorebook budget (fixed or
-context-%). Iterates the **already-priority-sorted** list; entries that don't
-fit are dropped. `ignoreBudget: true` entries bypass the check entirely.
+context-%). Runs ONCE at the end over the merged, sorted survivor list;
+entries that don't fit are dropped. `ignoreBudget: true` entries bypass the
+check entirely.
+
+### Timed-window anchoring (LG-12)
+
+Anchors are written only-if-absent (ST `#setTimedEffectOfType`): a live
+window is never extended by re-activation.
+
+- A **sticky-expiry sweep** runs once per resolve, BEFORE any pass, over the
+  input state: an expired sticky anchor is cleared exactly once (a cleared
+  anchor cannot re-fire) and the cooldown is handed over to the expiry scan —
+  a fresh full window anchored THERE (ST's `onEnded` callback). The next real
+  activation anchors a fresh sticky window.
+- While a sticky window is live, the entry auto-activates every scan without
+  key matching, and a live sticky OVERRIDES cooldown (ST `isCooldown &&
+  !isSticky`) — constants included.
+- `commitActivationState` anchors per path: constants keep live anchors
+  (anchor fresh otherwise); the sticky path keeps the sticky anchor (alive by
+  construction) and only sets a MISSING cooldown anchor; key-match /
+  decorator / delay-fulfilled activations write a fresh dual anchor (their
+  gates guarantee no live window exists).
 
 ### Budget & Priority (the truth)
 
@@ -221,8 +288,11 @@ This is the most-misunderstood part of the system, so it gets its own section.
 **Priority is NOT only for visual ordering.** Priority is the tie-breaker
 that decides which entries **survive budget overflow**. Mechanism:
 
-1. `activated.sort((a, b) => b.priority - a.priority || ...)` — the activated
-   list is sorted by priority descending before budgeting.
+1. `activated.sort(sticky-first → priority desc → id asc)` — the merged
+   survivor list is sorted before budgeting. The sticky tier (LG-11) makes
+   this the budget CONSUMPTION order: ST consumes the budget in the scan
+   loop's sticky-first candidate order (world-info.js 4881-4893), so a sticky
+   survivor must not lose its queue position to a plain priority sort.
 2. `applyTokenBudget` iterates this sorted list and accumulates used tokens.
 3. Once a lorebook's budget is exhausted, every subsequent entry from that
    book (lower priority) is dropped.
@@ -252,7 +322,10 @@ Full audit: `vibe_tavern_plan/archive/lorebook-st-parity-audit.md`. Summary:
 - At-depth injection
 - Auxiliary lorebook stacking (global / character / chat scopes)
 - Case sensitivity / match whole words
-- Inclusion groups (after the post-fix)
+- Inclusion groups (LG-1–LG-8: strict-loser scoring filter, tier order, per-pass pipeline with earlier-winner locks, book-level default + tri-state entry flag, import mapping)
+- Sticky dominance in groups (LG-6)
+- Probability: post-group roll, permanent failures, sticky auto-pass, constants included (LG-11)
+- Timed windows: only-if-absent anchoring, sticky-end cooldown handoff, sticky-over-cooldown override (LG-12)
 - Order / priority overflow resolution
 - Author's Note positioning (preset-level)
 
@@ -382,10 +455,11 @@ color-coded by reason kind (`LoreReasonBadge` in
   only. Surfacing them would require a second UI block ("Skipped entries")
   because skipped entries have no card in the trace. Tracked as a future
   feature; see `vibe_tavern_plan/reports/lorebook-trace-conditions.md`.
-- **Post-filter losses** — an entry that activated but lost in inclusion
-  groups or budget overflow is **not rendered in the trace at all**: the
-  engine returns only the post-filter winners, so losers never reach
-  `activatedLoreDetail` (they have no layer card and no inject divider).
+- **Pipeline losses** — an entry whose activation was rejected by the
+  per-pass group pipeline, the probability gate, or budget overflow is
+  **not rendered in the trace at all**: the engine returns only the
+  survivors, so losers never reach `activatedLoreDetail` (they have no layer
+  card and no inject divider).
   This is deliberate — the trace is payload-faithful: it shows what actually
   reached the prompt, and a losing entry did not. A separate "why didn't it
   fire" inspector (skip reasons and losses together) remains an optional
@@ -394,9 +468,10 @@ color-coded by reason kind (`LoreReasonBadge` in
 
 ### Architecture note
 
-`reason` is assigned inside `tryActivateEntry` (step 12), which runs **before**
-the two post-filters. This means the reason always reflects *why the entry
-activated*, never *why it survived budget*. If you need the latter, the
+`reason` is assigned inside `tryActivateEntry` (the final gate), which runs
+**before** the per-pass group pipeline, the probability gate, and the budget
+filter. This means the reason always reflects *why the entry activated*,
+never *why it survived the pipeline or the budget*. If you need the latter, the
 cleanest extension is a second optional field on `ActivationResult` populated
 by `applyInclusionGroups` / `applyTokenBudget`, not loosening the existing
 `reason` semantics.
@@ -417,7 +492,7 @@ project's progressive-disclosure pattern (see ADs on progressive disclosure):
   Simple mode shows only keys + content + position; advanced mode reveals
   time windows, recursion flags, inclusion-group fields, character filter,
   probability, and match sources.
-- **`LorebookImportModal`** — SillyTavern V2/V3 + Janitor AI card import. Group-scoring entry flags import as tri-state; the directory import maps ST's global switch onto the book default, single-file imports default `false` (D9).
+- **`LorebookImportModal`** — SillyTavern V2/V3 + Janitor AI card import. Group-scoring entry flags import as tri-state; the directory import maps ST's global switch onto the book default, single-file imports default `false` (D9). Migration caveat (0058/0059): the book-level Group Scoring switch defaults to OFF for pre-existing books, and pre-tri-state explicit-`false` entry flags were migrated to `NULL` (inherit) — they resolve to the same OFF unless the book switch is enabled, so upgraded chats keep their pre-upgrade behavior until the user opts in. New entries default to Inherit (`null`).
 
 The token-budget control in `LorebookAccordion` toggles between fixed mode
 (`tokenBudget`) and context-% mode (`tokenBudgetPercent`). Null percent =
