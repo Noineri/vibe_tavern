@@ -199,6 +199,9 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     }
   }
 
+  // Flat-entry lookup by id (pass loops need flat flags for group survivors).
+  const flatById = new Map(allEntries.map(e => [e.id, e]));
+
   // Collect distinct delay-until-recursion levels for ordered recursion passes
   const recursionDelayLevels = [...new Set(
     allEntries
@@ -224,37 +227,54 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   const depthMax = Math.max(0, ...input.lorebooks.map(lb => lb.minActivationsDepthMax || 0));
   let depthSkew = 0;
 
+  // Book-level group-scoring defaults (per-lorebook, LG-2/LG-4) — consumed by
+  // the per-pass inclusion-group pipeline below.
+  const bookDefaults = new Map(input.lorebooks.map(lb => [lb.id, lb.useGroupScoring ?? false]));
+
   // ── Normal scan (with min-activations retry loop) ──────────────────────
   let normalScanRetry = true;
   while (normalScanRetry) {
     normalScanRetry = false;
 
     logger.debug("Pass: Normal scan — %d entries, skew=%d", allEntries.length, depthSkew);
-    let normalActivated = 0;
+    // LG-5: the pass first COLLECTS its candidates; the inclusion-group
+    // pipeline (scoring filter → lock → override → roll) runs over THIS
+    // pass's candidates, and only survivors are locked in — their ids join
+    // `activatedIds` and their content seeds the recursion buffer. A group
+    // loser never reaches the buffer (ST: filterByInclusionGroups runs inside
+    // the scan loop, before content is appended to the recurse text).
+    const passCandidates: ActivationResult["activatedEntries"] = [];
     for (const entry of allEntries) {
       if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
       const result = tryActivateEntry({
-      entry, macroMap, characterId, characterName, currentTurn,
-      scanText: buildScanText(entry, input.messages, scanDepths, input),
-      scanState: "normal",
-      currentRecursionLevel: 0,
-      updatedState, activatedIds, failedProbabilityIds,
-    });
-    if (result.status === "activated") {
-      normalActivated++;
-      logger.debug("  activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
-      activatedIds.add(entry.id);
-      activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason, result.groupScore));
-      if (!entry.preventRecursion) {
-        recurseBuffer += entry.content + "\n";
+        entry, macroMap, characterId, characterName, currentTurn,
+        scanText: buildScanText(entry, input.messages, scanDepths, input),
+        scanState: "normal",
+        currentRecursionLevel: 0,
+        updatedState, activatedIds, failedProbabilityIds,
+      });
+      if (result.status === "activated") {
+        logger.debug("  activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
+        passCandidates.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason, result.groupScore));
+      } else if (result.status === "failed_probability") {
+        failedProbabilityIds.add(entry.id);
       }
-    } else if (result.status === "failed_probability") {
-      failedProbabilityIds.add(entry.id);
-    }
     }
 
-	logger.debug("Pass done: %d activated, %d total", normalActivated, activated.length);
+    applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults);
+    let normalActivated = 0;
+    for (const survivor of passCandidates) {
+      normalActivated++;
+      activatedIds.add(survivor.id);
+      activated.push(survivor);
+      const flat = flatById.get(survivor.id);
+      if (!flat?.preventRecursion) {
+        recurseBuffer += survivor.content + "\n";
+      }
+    }
+
+    logger.debug("Pass done: %d activated, %d total", normalActivated, activated.length);
 
     // Min activations retry
     if (minActivations > 0 && activated.length < minActivations && depthSkew < depthMax) {
@@ -278,6 +298,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       logger.debug("  Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.length);
       let newActivations = 0;
       let newRecurseText = "";
+      const passCandidates: ActivationResult["activatedEntries"] = [];
 
       for (const entry of allEntries) {
         // Skip already activated or probability-failed entries
@@ -293,14 +314,23 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         });
         if (result.status === "activated") {
           logger.debug("  [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
-          activatedIds.add(entry.id);
-          activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason, result.groupScore));
-          newActivations++;
-          if (!entry.preventRecursion) {
-            newRecurseText += entry.content + "\n";
-          }
+          passCandidates.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason, result.groupScore));
         } else if (result.status === "failed_probability") {
           failedProbabilityIds.add(entry.id);
+        }
+      }
+
+      // LG-5: per-pass group pipeline — losers are removed before their
+      // content can seed further recursion, and groups whose winner was
+      // locked by an earlier pass reject this pass's new candidates.
+      applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults);
+      for (const survivor of passCandidates) {
+        newActivations++;
+        activatedIds.add(survivor.id);
+        activated.push(survivor);
+        const flat = flatById.get(survivor.id);
+        if (!flat?.preventRecursion) {
+          newRecurseText += survivor.content + "\n";
         }
       }
 
@@ -333,11 +363,10 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     }
   }
 
-  // ── Group filter ─────────────────────────────────────────────────────────
-  // Entries in the same group compete: scoring filter → override → weighted
-  // random — exactly one winner per resolved group (ST pipeline, LG-4).
-  const bookDefaults = new Map(input.lorebooks.map(lb => [lb.id, lb.useGroupScoring ?? false]));
-  applyInclusionGroups(activated, allEntries, bookDefaults);
+  // (Group filtering is NOT run here anymore — LG-5 moved the inclusion-group
+  // pipeline into each scan pass, right after the pass's candidates are
+  // collected, matching ST's filterByInclusionGroups placement inside the
+  // scan loop. Earlier-pass winners are locked and never re-resolved.)
 
   // Sort by priority descending, then by id ascending for stable ordering
   activated.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
@@ -668,8 +697,9 @@ function toActivatedEntry(
 }
 
 /**
- * Inclusion group filter — SillyTavern's filterByInclusionGroups pipeline
- * (world-info.js 5173–5363), restructured to the ST stage order (LG-4):
+ * Inclusion group pipeline — SillyTavern's filterByInclusionGroups
+ * (world-info.js 5269–5363), run PER SCAN PASS over that pass's newly
+ * activated candidates (LG-5), with the ST stage order (LG-4):
  *
  *   1. Scoring filter (per group): qualification — any member's book default
  *      ON or any member explicitly flagged (ST: global || any entry flag).
@@ -677,27 +707,39 @@ function toActivatedEntry(
  *      (score < max) — unflagged entries are immune, and max-tied entries
  *      all survive. The score is `groupScore` (ST getScore, LG-3) computed
  *      over every member including constants.
- *   2. Override: among the survivors, entries with prioritizeInclusion (ST:
+ *   2. Lock: a group whose winner was already locked by an EARLIER pass
+ *      silently rejects ALL of this pass's candidates for that group (ST:
+ *      "Skipping inclusion group check, group was already activated" →
+ *      removeAllBut(group, null)). Lock matching is raw-string equality on
+ *      the winner's full group field (ST: `x.group === key`), so a
+ *      comma-group winner ("g1,g2") does NOT lock "g1" or "g2" individually
+ *      — replicated ST quirk.
+ *   3. Override: among the survivors, entries with prioritizeInclusion (ST:
  *      groupOverride) compete; the max priority (≙ ST max order) wins. This
  *      runs AFTER scoring — a flagged override member that already lost the
  *      score filter is gone (D4).
- *   3. Weighted random among the remaining survivors — exactly one final
+ *   4. Weighted random among the remaining survivors — exactly one final
  *      winner per resolved group (max-tied survivors roll, D5).
  *
- * Groups with ≤1 member are skipped entirely, like ST. The sticky-dominance
- * branch (ST timed effects) is NOT here yet — see the sticky-dominance unit.
+ * Losers are spliced out of `passCandidates`: they are not locked in, never
+ * reach the prompt, and (in the caller) never seed the recursion buffer.
+ * Groups with ≤1 candidate are skipped by the roll stages, like ST — but the
+ * LOCK stage still fires for them (ST checks the lock before the length
+ * guard). The sticky-dominance branch (ST timed effects) is NOT here yet —
+ * see the sticky-dominance unit.
  */
 function applyInclusionGroups(
-  activated: ActivationResult["activatedEntries"],
+  passCandidates: ActivationResult["activatedEntries"],
+  lockedWinners: ActivationResult["activatedEntries"],
   allEntries: FlatEntry[],
   bookDefaults: Map<string, boolean>,
 ): void {
   const entryMap = new Map(allEntries.map(e => [e.id, e]));
-  logger.debug("Group filter — %d activated entries with groups", activated.filter(e => entryMap.get(e.id)?.groupName).length);
+  logger.debug("Group filter — %d pass candidates with groups", passCandidates.filter(e => entryMap.get(e.id)?.groupName).length);
 
-  // Group activated entries by group name
+  // Group this pass's candidates by group name
   const groups = new Map<string, ActivationResult["activatedEntries"]>();
-  for (const entry of activated) {
+  for (const entry of passCandidates) {
     const flat = entryMap.get(entry.id);
     if (!flat?.groupName) continue;
     for (const groupName of flat.groupName.split(/,\s*/).filter(Boolean)) {
@@ -738,10 +780,22 @@ function applyInclusionGroups(
   }
 
   // ── Pass 2 — final resolution per group over the post-scoring arrays
-  // (ST: 5284–5362). Groups left with ≤1 member are skipped — a lone
-  // survivor just stays (and an empty group means every member lost
-  // scoring elsewhere).
+  // (ST: 5284–5362). Stage order per group: LOCK → ≤1 skip → override →
+  // roll. The lock fires before the length guard (a single new candidate in
+  // a locked group is still removed); groups left with ≤1 candidate are
+  // otherwise skipped — a lone survivor just stays (and an empty group means
+  // every member lost scoring elsewhere).
   for (const [groupName, groupEntries] of groups) {
+    // Lock (ST: "group was already activated"): raw-string equality on the
+    // earlier winner's full group field — a comma-group winner locks only
+    // the exact string "g1,g2", never "g1" or "g2" alone.
+    const locked = lockedWinners.some(w => entryMap.get(w.id)?.groupName === groupName);
+    if (locked) {
+      logger.debug("  group '%s': locked by an earlier pass — removing %d new candidate(s)", groupName, groupEntries.length);
+      for (const e of groupEntries) removeIds.add(e.id);
+      continue;
+    }
+
     if (groupEntries.length <= 1) continue;
 
     // Override by max priority (ST: prios sorted by order desc; JS sort is
@@ -773,8 +827,8 @@ function applyInclusionGroups(
   }
 
   if (removeIds.size > 0) {
-    const removeIdx = [...removeIds].map(id => activated.findIndex(e => e.id === id)).filter(i => i >= 0);
-    for (const idx of removeIdx.sort((a, b) => b - a)) activated.splice(idx, 1);
+    const removeIdx = [...removeIds].map(id => passCandidates.findIndex(e => e.id === id)).filter(i => i >= 0);
+    for (const idx of removeIdx.sort((a, b) => b - a)) passCandidates.splice(idx, 1);
   }
 }
 

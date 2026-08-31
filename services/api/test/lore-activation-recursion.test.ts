@@ -109,6 +109,100 @@ function expectActivated(result: ReturnType<typeof resolveActivatedEntries>, ids
 
 const RECURSION_LB = { recursiveScanning: true, maxRecursionSteps: 5 };
 
+// ─── LG-5 characterization: recursion × inclusion groups ─────────────────────
+// Characterization-first (LG-5): the first two tests were pinned against the
+// pre-rework engine (loser-seeds-recursion, cross-level re-resolution), then
+// flipped to the ST per-pass semantics; the comma-lock pair pins ST's raw-string
+// lock quirk.
+
+describe("lore activation — recursion × inclusion groups (LG-5 characterization)", () => {
+  it("LG-5: a group-scoring loser is removed BEFORE its content can seed recursion (D7a)", () => {
+    // loud_loser (score 1) loses the scoring filter to quiet_winner (score 2)
+    // in the SAME pass. Its content contains omega_key — under ST's per-pass
+    // filter the loser never reaches the recursion buffer, so recursive_target
+    // must NOT fire. (Characterization pin of the pre-LG5 engine had
+    // recursive_target PRESENT.)
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("loud_loser", {
+            keys: ["alpha"], content: "mention omega_key here",
+            groupName: "g", groupWeight: 100, useGroupScoring: true,
+          }),
+          makeEntry("quiet_winner", {
+            keys: ["alpha", "alphabet"], content: "quiet",
+            groupName: "g", groupWeight: 100, useGroupScoring: true,
+          }),
+          makeEntry("recursive_target", { keys: ["omega_key"] }),
+        ],
+        RECURSION_LB,
+        { messages: [{ role: "user", content: "alpha alphabet" }] },
+      ),
+    );
+    expectActivated(result, ["quiet_winner"]);
+  });
+
+  it("LG-5: an earlier-pass winner locks its group — a later override entry is silently removed (D7b)", () => {
+    // l0 wins group g at level 0 (sole member, no roll — group unresolved but
+    // l0 is locked in). At level 1 the seeder's content activates l1_override
+    // (prioritizeInclusion, higher priority). ST's lock check rejects new
+    // competitors of an already-activated group before the override stage,
+    // so the earlier winner stays. (Characterization pin of the pre-LG5
+    // engine had the latecomer override winning the group.)
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("l0", { keys: ["alpha"], content: "l0 text", groupName: "g", groupWeight: 100 }),
+          makeEntry("seeder", { keys: ["alpha"], content: "golf_delta" }),
+          makeEntry("l1_override", {
+            keys: ["golf_delta"], content: "l1 text",
+            groupName: "g", groupWeight: 100, prioritizeInclusion: true, priority: 200,
+          }),
+        ],
+        RECURSION_LB,
+        { messages: [{ role: "user", content: "alpha" }] },
+      ),
+    );
+    expectActivated(result, ["seeder", "l0"]);
+  });
+
+  it("LG-5: lock matching is raw-string — a comma-group winner does NOT lock its component groups (ST quirk)", () => {
+    // The winner's group field is "g1,g2". ST's lock check compares the RAW
+    // string against each group key (`x.group === key`), so neither "g1" nor
+    // "g2" is considered already-activated: the late "g1" competitor arrives
+    // as a lone candidate, is skipped by the ≤1 guard, and survives.
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("w", { keys: ["alpha"], content: "w text", groupName: "g1,g2", groupWeight: 100 }),
+          makeEntry("seeder", { keys: ["alpha"], content: "golf_delta" }),
+          makeEntry("late", { keys: ["golf_delta"], content: "late text", groupName: "g1", groupWeight: 100 }),
+        ],
+        RECURSION_LB,
+        { messages: [{ role: "user", content: "alpha" }] },
+      ),
+    );
+    expectActivated(result, ["seeder", "w", "late"]);
+  });
+
+  it("LG-5: a single-group winner DOES lock its group — the late competitor is silently removed", () => {
+    // Mirror of the comma quirk: the winner's group field is exactly "g1", so
+    // the lock fires and the late "g1" competitor never survives to roll.
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("w", { keys: ["alpha"], content: "w text", groupName: "g1", groupWeight: 100 }),
+          makeEntry("seeder", { keys: ["alpha"], content: "golf_delta" }),
+          makeEntry("late", { keys: ["golf_delta"], content: "late text", groupName: "g1", groupWeight: 100 }),
+        ],
+        RECURSION_LB,
+        { messages: [{ role: "user", content: "alpha" }] },
+      ),
+    );
+    expectActivated(result, ["seeder", "w"]);
+  });
+});
+
 // ─── tests ──────────────────────────────────────────────────────────────────
 
 describe("lore activation — recursion", () => {
