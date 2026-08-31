@@ -102,15 +102,22 @@ export function reinsertTtsTags(text: string, tags: ExtractedTtsTag[]): string {
 }
 
 /** Synthesis dialects for narration tags. */
-export type TtsTagDialect = "orpheus" | "chatterbox" | "strip";
+export type TtsTagDialect = "orpheus" | "chatterbox" | "inworld" | "strip";
 
 /** Resolve the dialect for a TTS profile. Fact-based: only openai-compatible
  *  hosts can carry a tag engine, and the model names it (`orpheus-*`,
- * `chatterbox-*` — documented model families). Everything else strips. */
+ * `chatterbox-*` — documented model families). Inworld TTS-2 natively
+ * speaks the canonical square-bracket non-verbals ([laugh] [sigh] [cough]
+ * [yawn] — steering docs) — fully supported on inworld-tts-2 only, so the
+ * dialect is gated to that model family. Everything else strips. */
 export function ttsTagDialectForProfile(profile: {
   backend: string;
   config?: Record<string, unknown> | null;
 }): TtsTagDialect {
+  if (profile.backend === "inworld") {
+    const model = typeof profile.config?.modelId === "string" ? profile.config.modelId.toLowerCase() : "";
+    return model.includes("tts-2") ? "inworld" : "strip";
+  }
   if (profile.backend !== "openai-compatible") return "strip";
   const model = typeof profile.config?.model === "string" ? profile.config.model.toLowerCase() : "";
   if (model.includes("orpheus")) return "orpheus";
@@ -119,11 +126,32 @@ export function ttsTagDialectForProfile(profile: {
 }
 
 /** Map canonical tags in text to the dialect's syntax. `strip` removes the
- *  tokens entirely (they must never be spoken as words). Pure. */
+ *  tokens entirely (they must never be spoken as words). Pure.
+ *
+ *  Inworld dialect (TPE-5): the steering docs list the supported
+ *  non-verbals as [laugh] [breathe] [clear throat] [sigh] [cough] [yawn] —
+ *  same square-bracket form as canonical. Our 8-tag set maps: the four
+ *  documented ones pass verbatim, chuckle → laugh (nearest documented
+ *  non-verbal), and sniffle/groan/gasp have no documented equivalent and
+ *  are stripped (an undocumented tag could be read aloud as a word). */
+const INWORLD_TAG_MAP: Partial<Record<TtsAnnotationTag, string>> = {
+  laugh: "[laugh]",
+  sigh: "[sigh]",
+  cough: "[cough]",
+  yawn: "[yawn]",
+  chuckle: "[laugh]",
+};
+
 export function mapTtsTagsForDialect(text: string, dialect: TtsTagDialect): string {
   if (dialect === "chatterbox") return text; // canonical == native form
   if (dialect === "orpheus") {
     return text.replace(TAGS_PATTERN, (token) => `<${token.slice(1, -1)}>`);
+  }
+  if (dialect === "inworld") {
+    return text.replace(TAGS_PATTERN, (token) => {
+      const tag = token.slice(1, -1) as TtsAnnotationTag;
+      return INWORLD_TAG_MAP[tag] ?? "";
+    }).replace(/ {2,}/g, " ").replace(/ +([.,!?;:])/g, "$1").replace(/^ +/, "").replace(/ +$/, "");
   }
   // strip — remove the tokens so they are never spoken as words. The
   // tidy-up passes touch ONLY literal spaces (never `\s`, which would eat

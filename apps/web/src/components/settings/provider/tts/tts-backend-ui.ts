@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -219,6 +219,29 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  inworld: {
+    connection: {
+      apiKey: { placeholder: "Inworld API key" },
+      // Static documented catalog via listModels() — Inworld's only
+      // list-models endpoint serves LLM-router models, not TTS.
+      model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
+    },
+    tuning: [
+      // audioConfig.speakingRate — documented range [0.5, 1.5].
+      { kind: "number", key: "speed", labelKey: "tts_field_speed", min: 0.5, max: 1.5, step: 0.05, fallback: 1 },
+      {
+        kind: "select",
+        key: "deliveryMode",
+        labelKey: "tts_field_delivery_mode",
+        // deliveryMode is inworld-tts-2 only — the backend gates it per
+        // model (never sent on 1.5/1.x where it is "ignored").
+        options: ["STABLE", "BALANCED", "CREATIVE"].map((m) => ({ id: m, label: m })),
+        fallback: "BALANCED",
+        testid: "tts-field-delivery-mode",
+      },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -235,6 +258,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Gemini) return "gemini";
   if (backend === TTS_BACKEND.ElevenLabs) return "elevenlabs";
   if (backend === TTS_BACKEND.Cartesia) return "cartesia";
+  if (backend === TTS_BACKEND.Inworld) return "inworld";
   return "kokoro";
 }
 
@@ -251,7 +275,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld) return "cloud";
   return "custom";
 }
 
@@ -276,5 +300,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.ElevenLabs;
     case "cartesia":
       return TTS_BACKEND.Cartesia;
+    case "inworld":
+      return TTS_BACKEND.Inworld;
   }
 }

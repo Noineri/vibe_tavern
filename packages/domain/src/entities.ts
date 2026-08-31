@@ -526,6 +526,8 @@ export const TTS_BACKEND = {
   ElevenLabs: "elevenlabs",
   /** TPE-4 — native Cartesia (Sonic; first Wave A clone-capable provider). */
   Cartesia: "cartesia",
+  /** TPE-5 — native Inworld (Realtime TTS; IVC cloning, steering tags). */
+  Inworld: "inworld",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -673,6 +675,18 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     openaiCompatible: false,
     // Bytes endpoint streams the HTTP body, but our generate() buffers —
     // the capability flag describes OUR transport, not Cartesia's.
+    supportsStreaming: false,
+    supportsCloning: true,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Inworld]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // generate() buffers the JSON/base64 response — no streaming on our
+    // side (the streaming endpoint exists, but the buffered path is what
+    // the profile editor's preview/synthesis use).
     supportsStreaming: false,
     supportsCloning: true,
     supportsVoiceList: true,

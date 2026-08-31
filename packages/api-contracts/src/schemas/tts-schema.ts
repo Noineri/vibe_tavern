@@ -7,7 +7,7 @@ import { z } from "zod";
  *  native Gemini TTS (Interactions API), native ElevenLabs. Further native
  *  adapters (MiniMax, Azure, proprietary local servers) are additive registry
  *  entries after v1 — extend this enum when they land. */
-export const ttsBackendSchema = z.enum(["kokoro", "openai-compatible", "gemini", "elevenlabs", "cartesia"]);
+export const ttsBackendSchema = z.enum(["kokoro", "openai-compatible", "gemini", "elevenlabs", "cartesia", "inworld"]);
 export type TtsBackendValue = z.infer<typeof ttsBackendSchema>;
 
 /** Voice-map binding targets for a TTS profile (domain `TTS_TARGET_TYPE`) —

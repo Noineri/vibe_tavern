@@ -35,6 +35,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Gemini, {})).toBe("gemini");
     expect(ttsUiVariantOf(TTS_BACKEND.ElevenLabs, {})).toBe("elevenlabs");
     expect(ttsUiVariantOf(TTS_BACKEND.Cartesia, {})).toBe("cartesia");
+    expect(ttsUiVariantOf(TTS_BACKEND.Inworld, {})).toBe("inworld");
   });
 });
 
@@ -46,6 +47,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("gemini")).toBe(TTS_BACKEND.Gemini);
     expect(backendForVariant("elevenlabs")).toBe(TTS_BACKEND.ElevenLabs);
     expect(backendForVariant("cartesia")).toBe(TTS_BACKEND.Cartesia);
+    expect(backendForVariant("inworld")).toBe(TTS_BACKEND.Inworld);
   });
 });
 
@@ -94,6 +96,27 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
+  it("inworld: fetched model list (static catalog) + speed/deliveryMode tuning", () => {
+    const spec = ttsUiSpecFor("inworld");
+    expect(spec.connection.model?.mode).toBe("fetch");
+    expect(spec.connection.model?.key).toBe("modelId");
+    expect(spec.localHelpers).toBe(false);
+    const speed = spec.tuning.find((f) => f.kind === "number" && f.key === "speed");
+    expect(speed).toBeDefined();
+    // audioConfig.speakingRate bounds.
+    if (speed?.kind === "number") {
+      expect(speed.min).toBe(0.5);
+      expect(speed.max).toBe(1.5);
+    }
+    const delivery = spec.tuning.find((f) => f.kind === "select" && f.key === "deliveryMode");
+    expect(delivery).toBeDefined();
+    // Documented enum — the llms.txt "EXPRESSIVE" rewrite is stale.
+    if (delivery?.kind === "select") {
+      expect(delivery.options.map((o) => o.id)).toEqual(["STABLE", "BALANCED", "CREATIVE"]);
+      expect(delivery.fallback).toBe("BALANCED");
+    }
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -101,7 +124,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

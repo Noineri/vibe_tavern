@@ -13,6 +13,7 @@ import "../../domain/tts/backends/openai-tts.js";
 import "../../domain/tts/backends/gemini-tts.js";
 import "../../domain/tts/backends/elevenlabs-tts.js";
 import "../../domain/tts/backends/cartesia-tts.js";
+import "../../domain/tts/backends/inworld-tts.js";
 
 import { createTtsBackend } from "../../domain/tts/tts-registry.js";
 import { probeDockerAvailability } from "../../domain/tts/docker-probe.js";

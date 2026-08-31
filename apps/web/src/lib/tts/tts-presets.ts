@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld";
 /** F8 (owner decision 2026-08-29): `name-heuristic` is REMOVED. Known
  *  presets stamp `documented` (doc-verified static catalog resolved
  *  server-side) or `audio-type` (SiliconFlow ?type=audio); unknown
@@ -119,6 +119,15 @@ export const TTS_PRESETS: TtsPreset[] = [
     // listModels() (no network discovery — mirrors the F8 "documented"
     // philosophy); the model picker's fetch mode resolves through the draft
     // models route.
+    modelFilter: "none",
+  },
+  {
+    id: "inworld",
+    label: "Inworld",
+    group: "cloud",
+    backend: "inworld",
+    // Same as Cartesia: static documented model catalog via listModels()
+    // (Inworld's only list-models endpoint serves LLM-router models).
     modelFilter: "none",
   },
 ];

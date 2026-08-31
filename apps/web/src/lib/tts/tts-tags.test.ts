@@ -86,6 +86,17 @@ describe("tts-tags — dialect mapping", () => {
   test("strip: tokens removed entirely — never spoken as words, punctuation stays attached", () => {
     expect(mapTtsTagsForDialect("Well [laugh] I never [sigh]...", "strip")).toBe("Well I never...");
   });
+
+  test("inworld: documented non-verbals pass verbatim, chuckle→laugh, undocumented tags strip", () => {
+    // [laugh] [sigh] [cough] [yawn] are documented steering non-verbals.
+    expect(mapTtsTagsForDialect("Well [laugh] I never [sigh]", "inworld")).toBe("Well [laugh] I never [sigh]");
+    expect(mapTtsTagsForDialect("[cough] Ahem. [yawn] Tired.", "inworld")).toBe("[cough] Ahem. [yawn] Tired.");
+    // chuckle maps to the nearest documented non-verbal.
+    expect(mapTtsTagsForDialect("He [chuckle] nodded", "inworld")).toBe("He [laugh] nodded");
+    // sniffle/groan/gasp have no documented equivalent — stripped, never spoken.
+    expect(mapTtsTagsForDialect("She [sniffle] [groan] sat [gasp] down", "inworld")).toBe("She sat down");
+    expect(mapTtsTagsForDialect("Ugh [gasp]!", "inworld")).toBe("Ugh!");
+  });
 });
 
 describe("tts-tags — dialect resolution is fact-based", () => {
@@ -110,5 +121,12 @@ describe("tts-tags — dialect resolution is fact-based", () => {
     expect(ttsTagDialectForProfile({ backend: "kokoro", config: {} })).toBe("strip");
     expect(ttsTagDialectForProfile({ backend: "elevenlabs", config: {} })).toBe("strip");
     expect(ttsTagDialectForProfile({ backend: "gemini", config: {} })).toBe("strip");
+  });
+
+  test("inworld: the dialect is gated to the tts-2 model family (steering is fully supported there only)", () => {
+    expect(ttsTagDialectForProfile({ backend: "inworld", config: { modelId: "inworld-tts-2" } })).toBe("inworld");
+    expect(ttsTagDialectForProfile({ backend: "inworld", config: { modelId: "inworld-tts-1.5-max" } })).toBe("strip");
+    expect(ttsTagDialectForProfile({ backend: "inworld", config: { modelId: "inworld-tts-1" } })).toBe("strip");
+    expect(ttsTagDialectForProfile({ backend: "inworld", config: {} })).toBe("strip");
   });
 });

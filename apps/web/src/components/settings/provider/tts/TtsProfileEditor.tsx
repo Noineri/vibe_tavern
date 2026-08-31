@@ -436,7 +436,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           ? TTS_BACKEND.ElevenLabs
           : preset.backend === "cartesia"
             ? TTS_BACKEND.Cartesia
-            : TTS_BACKEND.OpenAiCompatible;
+            : preset.backend === "inworld"
+              ? TTS_BACKEND.Inworld
+              : TTS_BACKEND.OpenAiCompatible;
     const nextConfig: Record<string, unknown> = {};
     if (preset.baseUrl) nextConfig["endpoint"] = preset.baseUrl;
     // D15: the preset's modelFilter must ride the config bag — the server
