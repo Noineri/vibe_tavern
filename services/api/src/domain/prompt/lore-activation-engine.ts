@@ -130,6 +130,9 @@ export interface ActivationResult {
     ignoreBudget: boolean;
     matchCount: number;
     matchedKeys: string[];
+    /** Group-competition score (ST getScore formula — see computeGroupScore). Kept separate
+     *  from matchCount, which stays a trace-only fact of the key-match activation. */
+    groupScore: number;
     /** Structured reason this entry activated — surfaced in the prompt trace. */
     reason: LoreActivationReason;
   }>;
@@ -238,7 +241,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       normalActivated++;
       logger.debug("  activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
       activatedIds.add(entry.id);
-      activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason));
+      activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason, result.groupScore));
       if (!entry.preventRecursion) {
         recurseBuffer += entry.content + "\n";
       }
@@ -287,7 +290,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         if (result.status === "activated") {
           logger.debug("  [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
           activatedIds.add(entry.id);
-          activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason));
+          activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason, result.groupScore));
           newActivations++;
           if (!entry.preventRecursion) {
             newRecurseText += entry.content + "\n";
@@ -350,7 +353,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
  * - "skipped" — entry was skipped for any other reason
  */
 type ActivationOutcome =
-  | { status: "activated"; matchCount: number; matchedKeys: string[]; reason: LoreActivationReason }
+  | { status: "activated"; matchCount: number; matchedKeys: string[]; reason: LoreActivationReason; groupScore: number }
   | { status: "failed_probability" }
   | { status: "skipped" };
 
@@ -423,7 +426,7 @@ function tryActivateEntry(ctx: {
     }
     logger.debug("  actv %s: constant | title=%s", entry.id, entry.title);
     updatedState[entry.id] = { ...state, activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
-    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" } };
+    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" }, groupScore: scoreEntryKeysForGroup(entry, scanText, macroMap) };
   }
 
   // 5. Time windows — sticky check
@@ -438,6 +441,7 @@ function tryActivateEntry(ctx: {
         matchCount: 0,
         matchedKeys: [],
         reason: { kind: "sticky", turnsSinceActivation, window: entry.stickyWindow },
+        groupScore: 0,
       };
     }
   }
@@ -452,11 +456,12 @@ function tryActivateEntry(ctx: {
   if (entry.delayWindow > 0 && state?.pendingDelayUntilTurn != null) {
     if (currentTurn < state.pendingDelayUntilTurn) return reason("delay pending");
     updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
-    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "delay_fulfilled" } };
+    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "delay_fulfilled" }, groupScore: 0 };
   }
 
   // 8. Key matching (skip if @@activate decorator forces activation)
   let matchedKeys: string[] = [];
+  let secondaryMatches: string[] = [];
   if (!decoratorActive) {
     const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
     const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
@@ -466,7 +471,7 @@ function tryActivateEntry(ctx: {
 
     // 9. Secondary key logic
     if (entry.secondaryKeys.length > 0) {
-      const secondaryMatches = matchKeys(resolvedSecondaryKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
+      secondaryMatches = matchKeys(resolvedSecondaryKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
       if (!checkLogic(entry.logic, secondaryMatches.length, entry.secondaryKeys.length)) return reason("secondary keys fail");
     }
   } else {
@@ -497,6 +502,10 @@ function tryActivateEntry(ctx: {
     reason: decoratorActive
       ? { kind: "decorator" }
       : { kind: "key_match", matchedKeys, matchCount: matchedKeys.length, scanState },
+    // Decorator: VT-specific activation, no ST counterpart to score against.
+    groupScore: decoratorActive
+      ? 0
+      : computeGroupScore(entry.keys.length, matchedKeys.length, entry.secondaryKeys.length, secondaryMatches.length, entry.logic),
   };
 }
 
@@ -591,11 +600,49 @@ function checkLogic(logic: string, matchCount: number, totalCount: number): bool
   }
 }
 
+/**
+ * Group-competition score — SillyTavern getScore (world-info.js 428–470).
+ * One point per MATCHED key (occurrences do not stack): primary matches plus
+ * secondary matches per selective logic. NOT_* logic never adds secondary
+ * (secondary keys are prohibitors there); AND_ALL adds them only when ALL
+ * matched; AND_ANY always adds. Entries with no primary keys score 0 —
+ * including constants (they compete at their real key matches, or 0).
+ */
+function computeGroupScore(
+  numberOfPrimaryKeys: number,
+  primaryScore: number,
+  numberOfSecondaryKeys: number,
+  secondaryScore: number,
+  logic: string,
+): number {
+  if (numberOfPrimaryKeys === 0) return 0;
+  if (numberOfSecondaryKeys > 0) {
+    switch (logic) {
+      case "and_any": return primaryScore + secondaryScore;
+      case "and_all": return secondaryScore === numberOfSecondaryKeys ? primaryScore + secondaryScore : primaryScore;
+      default: return primaryScore; // not_any / not_all: ST falls through to primaryScore
+    }
+  }
+  return primaryScore;
+}
+
+/** Score an entry's keys against the scan text WITHOUT any activation gate —
+ *  used for constants (always active, but their group score is their real key
+ *  matches, per ST where scoring runs over every activated entry). */
+function scoreEntryKeysForGroup(entry: FlatEntry, scanText: string, macroMap: Record<string, string>): number {
+  const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
+  const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
+  const primaryMatches = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords).length;
+  const secondaryMatches = matchKeys(resolvedSecondaryKeys, scanText, entry.caseSensitive, entry.matchWholeWords).length;
+  return computeGroupScore(entry.keys.length, primaryMatches, entry.secondaryKeys.length, secondaryMatches, entry.logic);
+}
+
 function toActivatedEntry(
   entry: FlatEntry,
   matchedKeys: string[],
   matchCount: number,
   reason: LoreActivationReason,
+  groupScore = 0,
 ): ActivationResult["activatedEntries"][number] {
   return {
     id: entry.id,
@@ -609,6 +656,7 @@ function toActivatedEntry(
     ignoreBudget: entry.ignoreBudget,
     matchCount,
     matchedKeys,
+    groupScore,
     reason,
   };
 }
@@ -656,17 +704,17 @@ function applyInclusionGroups(
       continue;
     }
 
-    // useGroupScoring — highest matchCount wins (NOT total keys.length;
-    // the previous implementation scored on the entry's total key count,
-    // which let a 10-key entry with zero matches beat a 2-key entry with both
-    // matched. matchCount is carried on the activated entry via toActivatedEntry.)
+    // useGroupScoring — highest group score wins. The score follows ST's getScore
+    // formula (computeGroupScore, carried on the activated entry): primary +
+    // secondary per logic, constants at their real key matches — NOT the bare
+    // primary matchCount and NOT the entry's total key count.
     const anyGroupScoring = groupEntries.some(e => entryMap.get(e.id)?.useGroupScoring);
     if (anyGroupScoring) {
-      const maxScore = Math.max(...groupEntries.map(e => e.matchCount));
+      const maxScore = Math.max(...groupEntries.map(e => e.groupScore));
       logger.debug("  group '%s': score-based, maxScore=%d", groupName, maxScore);
       let foundWinner = false;
       for (const e of groupEntries) {
-        if (!foundWinner && e.matchCount >= maxScore) {
+        if (!foundWinner && e.groupScore >= maxScore) {
           foundWinner = true;
         } else {
           removeIds.add(e.id);

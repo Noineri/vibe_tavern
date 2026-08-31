@@ -54,7 +54,7 @@ function makeEntry(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function makeInput(entries: ReturnType<typeof makeEntry>[]): ActivationInput {
+function makeInput(entries: ReturnType<typeof makeEntry>[], text: string[] = []): ActivationInput {
 	return {
 		lorebooks: [
 			{
@@ -70,7 +70,7 @@ function makeInput(entries: ReturnType<typeof makeEntry>[]): ActivationInput {
 				entries,
 			},
 		],
-		messages: [],
+		messages: text.map((t, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: t })),
 		macroMap: {},
 		characterId: "c_test",
 		characterName: "Test",
@@ -82,6 +82,42 @@ function makeInput(entries: ReturnType<typeof makeEntry>[]): ActivationInput {
 function activatedIds(result: ReturnType<typeof resolveActivatedEntries>): string[] {
 	return result.activatedEntries.map((e) => e.id);
 }
+
+describe("inclusion groups — groupScore follows ST getScore (LG-3)", () => {
+	// The score that decides a scoring group is primary matches plus secondary
+	// matches per logic (ST world-info.js getScore), NOT the bare primary
+	// matchCount. Constants score at their real key matches; no primary keys → 0.
+	const g = { groupName: "weather", useGroupScoring: true, groupWeight: 0 };
+
+	it("and_any sums primary + secondary matches (secondary flips the winner)", () => {
+		// A: 1 primary + 2 secondary (and_any) = 3; B: 2 primary = 2 → A survives.
+		const a = makeEntry({ id: "a", ...g, constant: false, keys: ["storm"], secondaryKeys: ["rain", "thunder"], logic: "and_any" });
+		const b = makeEntry({ id: "b", ...g, constant: false, keys: ["storm", "rain"] });
+		const result = resolveActivatedEntries(makeInput([a, b], ["storm rain thunder calm"]));
+		expect(activatedIds(result)).toEqual(["a"]);
+	});
+
+	it("not_any never adds secondary even when matched — pinned via a constant (the only place the branch is observable)", () => {
+		// A constant (active without the key gate) with not_any logic and MATCHED
+		// secondary keys scores primary-only (1); B's 2 primary keys (2) win.
+		// If secondary were wrongly summed, A would score 3 and win instead.
+		const a = makeEntry({ id: "a", ...g, keys: ["storm"], secondaryKeys: ["rain", "thunder"], logic: "not_any" });
+		const b = makeEntry({ id: "b", ...g, constant: false, keys: ["storm", "rain"] });
+		const result = resolveActivatedEntries(makeInput([a, b], ["storm rain thunder calm"]));
+		expect(activatedIds(result)).toEqual(["b"]);
+	});
+
+	it("constant with matching keys competes at those matches; constant without keys scores 0", () => {
+		// Keyed constant (2 matches) beats a 1-match keyed entry...
+		const c1 = makeEntry({ id: "c1", ...g, keys: ["storm", "rain"] });
+		const k1 = makeEntry({ id: "k1", ...g, constant: false, keys: ["calm"] });
+		expect(activatedIds(resolveActivatedEntries(makeInput([c1, k1], ["storm rain calm"])))).toEqual(["c1"]);
+		// ...but a keyless constant (0) loses to a 1-match keyed entry.
+		const c2 = makeEntry({ id: "c2", ...g, keys: [] });
+		const k2 = makeEntry({ id: "k2", ...g, constant: false, keys: ["calm"] });
+		expect(activatedIds(resolveActivatedEntries(makeInput([c2, k2], ["storm rain calm"])))).toEqual(["k2"]);
+	});
+});
 
 describe("inclusion groups — groupName field drives group resolution", () => {
 	it("entries with no group are all kept (no pruning)", () => {

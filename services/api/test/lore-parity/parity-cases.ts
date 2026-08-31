@@ -194,31 +194,31 @@ export const PARITY_CASES: ParityCase[] = [
 		vtExpect: ["L_heavy"],
 	},
 	{
-		// D3: secondary keys count under AND_ANY. A: 1 primary + 3 secondary
-		// (score 4); B: 2 primary (score 2). ST keeps A; VT's matchCount
-		// (primary-only) sees 1 vs 2 and keeps B.
+		// CLOSED (was D3): secondary keys count under AND_ANY. A: 1 primary + 3
+		// secondary (score 4); B: 2 primary (score 2). ST keeps A; LG-3 made VT's
+		// groupScore follow the same getScore formula, so both keep A.
 		id: "and_any_secondary_flips_winner",
 		text: ["storm rain thunder lightning fog calm"],
 		entries: [
 			{ id: "A_sec", keys: ["storm"], secondaryKeys: ["rain", "thunder", "lightning"], logic: "and_any", group: "g", useGroupScoring: true },
 			{ id: "B_pri", keys: ["storm", "rain"], group: "g", useGroupScoring: true },
 		],
-		divergences: ["D3"],
+		divergences: [],
 		stExpect: ["A_sec"],
-		vtExpect: ["B_pri"],
+		vtExpect: ["A_sec"],
 	},
 	{
-		// D3 (and_all full match): A: 1 primary + both secondary matched → 3;
-		// B: 2 primary → 2. ST keeps A, VT keeps B.
+		// CLOSED (was D3, and_all full match): A: 1 primary + both secondary
+		// matched → 3; B: 2 primary → 2. Both keep A after LG-3.
 		id: "and_all_full_match_sums",
 		text: ["storm rain thunder calm"],
 		entries: [
 			{ id: "A_full", keys: ["storm"], secondaryKeys: ["rain", "thunder"], logic: "and_all", group: "g", useGroupScoring: true },
 			{ id: "B_two", keys: ["storm", "rain"], group: "g", useGroupScoring: true },
 		],
-		divergences: ["D3"],
+		divergences: [],
 		stExpect: ["A_full"],
-		vtExpect: ["B_two"],
+		vtExpect: ["A_full"],
 	},
 	{
 		// Pin (no divergence): and_all with a PARTIAL secondary match scores
@@ -298,18 +298,18 @@ export const PARITY_CASES: ParityCase[] = [
 		vtExpect: ["X_ov_low"],
 	},
 	{
-		// D3 (constants): a constant with matching keys scores by its keys in
-		// ST (2) and beats the keyed entry (1). VT pins constants to
-		// matchCount 0 and removes the constant.
+		// CLOSED (was D3, constants): a constant with matching keys scores by
+		// its keys in ST (2) and beats the keyed entry (1). LG-3 made VT score
+		// constants at their real key matches too, so both keep the constant.
 		id: "constant_with_matching_keys_competes",
 		text: ["storm rain calm"],
 		entries: [
 			{ id: "K_const", keys: ["storm", "rain"], constant: true, group: "g", useGroupScoring: true },
 			{ id: "K_one", keys: ["calm"], group: "g", useGroupScoring: true },
 		],
-		divergences: ["D3"],
+		divergences: [],
 		stExpect: ["K_const"],
-		vtExpect: ["K_one"],
+		vtExpect: ["K_const"],
 	},
 	{
 		// Pin (no divergence): zero-primary constant scores 0 on both sides
