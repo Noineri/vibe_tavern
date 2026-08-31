@@ -106,6 +106,7 @@ async function buildStDir(root: string) {
 	await Bun.write(
 		join(root, "settings.json"),
 		JSON.stringify({
+			world_info_use_group_scoring: true,
 			power_user: {
 				personas: { "default.png": "Test User" },
 				persona_descriptions: { "default.png": { description: "A test persona." } },
@@ -203,6 +204,9 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 
 		// ── gap-1: lorebook row + entries actually landed ──
 		const loreAfter = await env.stores.lorebooks.listAllLorebooks();
+		// LG-8 amendment: ST's GLOBAL group-scoring switch (settings.json
+		// world_info_use_group_scoring: true above) maps onto the imported book.
+		expect(loreAfter[0]?.useGroupScoring).toBe(true);
 		expect(loreAfter.length).toBe(loreBefore + 1);
 		const importedLore = loreAfter.find((lb) => lb.name === "Test World");
 		expect(importedLore).toBeTruthy();

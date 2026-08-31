@@ -77,6 +77,14 @@ export interface ImportLorebookOptions {
   scopeType?: LoreScopeType;
   defaultDepth?: number;
   fallbackName?: string;
+  /**
+   * ST's group-scoring switch (world_info_use_group_scoring) is GLOBAL client
+   * state, not part of any lorebook file — so it cannot ride the book payload.
+   * When the caller knows it (the ST directory import reads settings.json),
+   * it maps onto the imported book's useGroupScoring (owner decision,
+   * 2026-08-31). Absent → false. See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
+   */
+  globalUseGroupScoring?: boolean;
 }
 
 function mapSelectiveLogic(value: unknown): LoreLogic {
@@ -191,10 +199,8 @@ export function importStLorebookJson(
     tokenBudget: normalized.tokenBudget,
     tokenBudgetPercent: normalized.tokenBudgetPercent,
     recursiveScanning: normalized.recursiveScanning,
-    // ST's group-scoring switch is global (client settings), not per-book —
-    // nothing to import; imported books keep the VT default (false).
-    // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
-    useGroupScoring: false,
+    // Maps the ST global switch when the caller knows it; default false.
+    useGroupScoring: options.globalUseGroupScoring ?? false,
     maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
     includeNames: false,
     minActivations: 0,

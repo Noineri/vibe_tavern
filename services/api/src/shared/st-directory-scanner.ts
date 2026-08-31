@@ -568,6 +568,19 @@ export async function importSillyTavernDirectory(
 	const worldsDir = join(resolved, "worlds");
 	const worldsFiles = await scanOptionalGlob(worldsDir, "*.[jJ][sS][oO][nN]");
 
+	// ST's group-scoring switch is global client state (settings.json
+	// world_info_use_group_scoring), not part of any world file — map it onto
+	// every imported book (owner decision, 2026-08-31). Absent/unreadable
+	// settings → undefined → books default false.
+	let globalUseGroupScoring: boolean | undefined;
+	try {
+		const settingsRaw: unknown = JSON.parse(await Bun.file(join(resolved, "settings.json")).text());
+		if (typeof settingsRaw === "object" && settingsRaw !== null) {
+			const flag = (settingsRaw as Record<string, unknown>).world_info_use_group_scoring;
+			if (typeof flag === "boolean") globalUseGroupScoring = flag;
+		}
+	} catch { /* no settings.json next to worlds/ — leave undefined */ }
+
 	for (const relativePath of worldsFiles) {
 		const fileName = basename(relativePath);
 		const filePath = join(worldsDir, relativePath);
@@ -584,6 +597,7 @@ export async function importSillyTavernDirectory(
 				mode: "new",
 				scopeType: "global",
 				fallbackName,
+				globalUseGroupScoring,
 			});
 			result.lorebooks++;
 			await onProgress?.({ type: "progress", phase: "lorebooks", current: result.lorebooks });

@@ -264,13 +264,16 @@ Full audit: `vibe_tavern_plan/archive/lorebook-st-parity-audit.md`. Summary:
   was a real bug class — see parity audit §2.1.
 - **`priority` vs `insertion_order` naming**: Janitor AI's exporter uses a
   different field name; the importer normalises. See parity audit §4.2.
-- **Group scoring is not importable at book level (migration caveat, D9)**:
+- **Group scoring book-level default on import (D9)**:
   ST's group-scoring switch is a GLOBAL client setting, not part of any
-  lorebook file — there is nothing to map on import. Imported books default
-  `useGroupScoring: false`. Per-entry explicit flags (`useGroupScoring`
-  top-level, mirrored to `extensions.use_group_scoring` by ST saves) DO
-  import, preserved as tri-state (`true` / `false` / `null` = inherit the
-  book default). See `LOREBOOK_GROUP_SCORING_PARITY_REPORT` (D9, LG-8).
+  lorebook file. The ST **directory import** reads it from `settings.json`
+  (`world_info_use_group_scoring`) and maps it onto every imported book
+  (owner decision, 2026-08-31); single-file imports have no source for it
+  and default `useGroupScoring: false`. Per-entry explicit flags
+  (`useGroupScoring` top-level, mirrored to `extensions.use_group_scoring`
+  by ST saves) DO import, preserved as tri-state (`true` / `false` /
+  `null` = inherit the book default). See
+  `LOREBOOK_GROUP_SCORING_PARITY_REPORT` (D9, LG-8).
 
 ### VT bonus features (not in ST, or richer than ST)
 - `matchSources` — scan arbitrary text sources beyond chat (character
@@ -414,7 +417,7 @@ project's progressive-disclosure pattern (see ADs on progressive disclosure):
   Simple mode shows only keys + content + position; advanced mode reveals
   time windows, recursion flags, inclusion-group fields, character filter,
   probability, and match sources.
-- **`LorebookImportModal`** — SillyTavern V2/V3 + Janitor AI card import. Group-scoring entry flags import as tri-state; the book-level default stays `false` (D9 — ST's switch is global client state, absent from files).
+- **`LorebookImportModal`** — SillyTavern V2/V3 + Janitor AI card import. Group-scoring entry flags import as tri-state; the directory import maps ST's global switch onto the book default, single-file imports default `false` (D9).
 
 The token-budget control in `LorebookAccordion` toggles between fixed mode
 (`tokenBudget`) and context-% mode (`tokenBudgetPercent`). Null percent =

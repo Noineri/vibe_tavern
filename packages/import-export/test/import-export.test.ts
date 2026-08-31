@@ -483,9 +483,17 @@ describe("importStLorebookJson", () => {
     expect(result.entries.map((e) => e.useGroupScoring)).toEqual([true, false, null]);
   });
 
-  it("imports books with useGroupScoring defaulting to false (D9: ST's switch is global, nothing importable)", () => {
+  it("imports books with useGroupScoring defaulting to false (D9: ST's switch is global, not in files)", () => {
     const result = importStLorebookJson(minimalLorebook);
     expect(result.lorebook.useGroupScoring).toBe(false);
+  });
+
+  it("maps the ST global switch onto the book when the caller knows it (LG-8 amendment)", () => {
+    // The ST directory import reads settings.json's world_info_use_group_scoring
+    // and passes it here — the switch is global client state absent from the
+    // book file itself (owner decision, 2026-08-31).
+    expect(importStLorebookJson(minimalLorebook, { globalUseGroupScoring: true }).lorebook.useGroupScoring).toBe(true);
+    expect(importStLorebookJson(minimalLorebook, { globalUseGroupScoring: false }).lorebook.useGroupScoring).toBe(false);
   });
 
   it("top-level useGroupScoring is authoritative over the extensions mirror (ST load parity)", () => {
