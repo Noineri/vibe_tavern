@@ -251,6 +251,11 @@ export const lorebooks = sqliteTable('lorebooks', {
   // lorebook-st-parity-audit.md §1.4.
   tokenBudgetPercent: integer('token_budget_percent'),
   recursiveScanning: integer('recursive_scanning').notNull().default(0),
+  // Book-level default for entry.useGroupScoring (ST's global
+  // world_info_use_group_scoring switch, scoped to the book). Effective
+  // per-entry flag: entry.useGroupScoring ?? book.useGroupScoring.
+  // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-2).
+  useGroupScoring: integer('use_group_scoring').notNull().default(0),
   maxRecursionSteps: integer('max_recursion_steps').notNull().default(5),
   includeNames: integer('include_names').notNull().default(0),
   minActivations: integer('min_activations').notNull().default(0),

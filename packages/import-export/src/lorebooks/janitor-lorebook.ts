@@ -135,6 +135,10 @@ export function importJanitorLorebookJson(
     tokenBudget: 1000,
     tokenBudgetPercent: null,
     recursiveScanning: false,
+    // ST's group-scoring switch is global (client settings), not per-book —
+    // nothing to import; imported books keep the VT default (false).
+    // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
+    useGroupScoring: false,
     maxRecursionSteps: 5,
     includeNames: false,
     minActivations: 0,

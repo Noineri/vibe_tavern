@@ -191,6 +191,10 @@ export function importStLorebookJson(
     tokenBudget: normalized.tokenBudget,
     tokenBudgetPercent: normalized.tokenBudgetPercent,
     recursiveScanning: normalized.recursiveScanning,
+    // ST's group-scoring switch is global (client settings), not per-book —
+    // nothing to import; imported books keep the VT default (false).
+    // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
+    useGroupScoring: false,
     maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
     includeNames: false,
     minActivations: 0,

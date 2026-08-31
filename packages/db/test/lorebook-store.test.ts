@@ -459,6 +459,25 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     expect(lb!.scanDepth).toBe(10);
     expect(lb!.tokenBudget).toBe(1000);
     expect(lb!.recursiveScanning).toBe(false);
+    expect(lb!.useGroupScoring).toBe(false);
+  });
+
+  // LG-2: the book-level group-scoring default round-trips through create +
+  // update + read (integer column <-> boolean domain). D1 in the parity map.
+  test("LG-2: useGroupScoring round-trips through the store (default false, update flips it)", async () => {
+    const store = await mkStoreWithChar();
+    const bundle = {
+      lorebooks: [
+        { id: "lb_gs", name: "Scoring book", description: "", scopeType: "character" as const, enabled: true, useGroupScoring: true },
+      ],
+      entries: [],
+    };
+    await store.applyCoauthorLoreDraft("char_1", bundle);
+    expect((await store.getLorebook("lb_gs"))!.useGroupScoring).toBe(true);
+
+    // Update path flips it back off.
+    await store.updateLorebook("lb_gs", { useGroupScoring: false });
+    expect((await store.getLorebook("lb_gs"))!.useGroupScoring).toBe(false);
   });
 
   test("CE-A1: a character-scoped lorebook is bound to its character via lorebook_links (no manual binding)", async () => {

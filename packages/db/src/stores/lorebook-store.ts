@@ -44,6 +44,7 @@ export interface CreateLorebookData {
   tokenBudget?: number;
   tokenBudgetPercent?: number | null;
   recursiveScanning?: boolean;
+  useGroupScoring?: boolean;
   maxRecursionSteps?: number;
   includeNames?: boolean;
   minActivations?: number;
@@ -124,6 +125,7 @@ export interface CoauthorLoreDraftBundle {
     scanDepth?: number;
     tokenBudget?: number;
     recursiveScanning?: boolean;
+    useGroupScoring?: boolean;
     /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
     mode?: 'create' | 'edit';
   }>;
@@ -162,6 +164,7 @@ export interface Lorebook {
   tokenBudget: number;
   tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
+  useGroupScoring: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
   minActivations: number;
@@ -507,6 +510,7 @@ export class LorebookStore {
         tokenBudget: data.tokenBudget ?? 1000,
         tokenBudgetPercent: data.tokenBudgetPercent ?? null,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
+        useGroupScoring: (data.useGroupScoring ?? false) ? 1 : 0,
         maxRecursionSteps: data.maxRecursionSteps ?? 5,
         includeNames: data.includeNames ? 1 : 0,
         minActivations: data.minActivations ?? 0,
@@ -542,6 +546,7 @@ export class LorebookStore {
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
     if (data.tokenBudgetPercent !== undefined) values.tokenBudgetPercent = data.tokenBudgetPercent;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
+    if (data.useGroupScoring !== undefined) values.useGroupScoring = data.useGroupScoring ? 1 : 0;
     if (data.maxRecursionSteps !== undefined) values.maxRecursionSteps = data.maxRecursionSteps;
     if (data.includeNames !== undefined) values.includeNames = data.includeNames ? 1 : 0;
     if (data.minActivations !== undefined) values.minActivations = data.minActivations;
@@ -764,6 +769,7 @@ export class LorebookStore {
             tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
             tokenBudgetPercent: null,
             recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
+            useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
             maxRecursionSteps: 5,
             includeNames: 0,
             minActivations: 0,
@@ -789,6 +795,7 @@ export class LorebookStore {
               scanDepth: lb.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
               tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
               recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
+              useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
               enabled: lb.enabled ? 1 : 0,
               characterId: charScoped ? characterId : null,
               updatedAt: now,
@@ -1079,6 +1086,7 @@ export class LorebookStore {
       tokenBudget: source.tokenBudget,
       tokenBudgetPercent: source.tokenBudgetPercent ?? null,
       recursiveScanning: source.recursiveScanning,
+      useGroupScoring: source.useGroupScoring ?? false,
       maxRecursionSteps: source.maxRecursionSteps,
       includeNames: source.includeNames,
       minActivations: source.minActivations,
@@ -1139,6 +1147,7 @@ export class LorebookStore {
       tokenBudget: row.tokenBudget,
       tokenBudgetPercent: row.tokenBudgetPercent,
       recursiveScanning: row.recursiveScanning === 1,
+      useGroupScoring: row.useGroupScoring === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,
@@ -1202,6 +1211,7 @@ export class LorebookStore {
       tokenBudget: row.tokenBudget,
       tokenBudgetPercent: row.tokenBudgetPercent,
       recursiveScanning: row.recursiveScanning === 1,
+      useGroupScoring: row.useGroupScoring === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,

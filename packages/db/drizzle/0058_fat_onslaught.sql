@@ -1,0 +1,1 @@
+ALTER TABLE `lorebooks` ADD `use_group_scoring` integer DEFAULT 0 NOT NULL;

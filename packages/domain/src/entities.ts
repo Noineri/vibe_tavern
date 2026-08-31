@@ -212,6 +212,8 @@ export interface Lorebook {
   /** Null = fixed token-budget mode (use tokenBudget). 0-100 = percent of model context. See lorebook-st-parity-audit.md §1.4. */
   tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
+  /** Book-level default for entry.useGroupScoring (ST's global switch, scoped to the book). Effective flag: entry.useGroupScoring ?? book.useGroupScoring. See LOREBOOK_GROUP_SCORING_PARITY_REPORT. */
+  useGroupScoring: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
   minActivations: number;

@@ -108,6 +108,8 @@ describe("createLorebookSchema", () => {
     expect(data.enabled).toBe(true);
     expect(data.tokenBudget).toBe(2048);
     expect(data.recursiveScanning).toBe(false);
+    // LG-2: book-level group-scoring default mirrors ST's global switch (off).
+    expect(data.useGroupScoring).toBe(false);
   });
 
   it("accepts a full payload overriding the defaults", () => {
@@ -117,6 +119,7 @@ describe("createLorebookSchema", () => {
       scanDepth: 10,
       tokenBudget: 500,
       recursiveScanning: true,
+      useGroupScoring: true,
       maxRecursionSteps: 9,
       includeNames: true,
       minActivations: 2,
@@ -128,6 +131,7 @@ describe("createLorebookSchema", () => {
     const data = expectSuccessData(createLorebookSchema.safeParse(payload)) as Record<string, unknown>;
     expect(data.scanDepth).toBe(10);
     expect(data.enabled).toBe(false);
+    expect(data.useGroupScoring).toBe(true);
   });
 
   it("rejects a non-number scanDepth and a non-boolean enabled", () => {
