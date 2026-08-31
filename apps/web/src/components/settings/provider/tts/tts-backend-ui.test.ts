@@ -34,6 +34,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Kokoro, {})).toBe("kokoro");
     expect(ttsUiVariantOf(TTS_BACKEND.Gemini, {})).toBe("gemini");
     expect(ttsUiVariantOf(TTS_BACKEND.ElevenLabs, {})).toBe("elevenlabs");
+    expect(ttsUiVariantOf(TTS_BACKEND.Cartesia, {})).toBe("cartesia");
   });
 });
 
@@ -44,6 +45,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("kokoro")).toBe(TTS_BACKEND.Kokoro);
     expect(backendForVariant("gemini")).toBe(TTS_BACKEND.Gemini);
     expect(backendForVariant("elevenlabs")).toBe(TTS_BACKEND.ElevenLabs);
+    expect(backendForVariant("cartesia")).toBe(TTS_BACKEND.Cartesia);
   });
 });
 
@@ -71,6 +73,27 @@ describe("ttsUiSpecFor (field configuration)", () => {
     expect(ttsUiSpecFor("elevenlabs").connection.model?.key).toBe("modelId");
   });
 
+  it("cartesia: fetched model list (static catalog via the draft route) + speed/emotion tuning", () => {
+    const spec = ttsUiSpecFor("cartesia");
+    expect(spec.connection.model?.mode).toBe("fetch");
+    expect(spec.connection.model?.key).toBe("modelId");
+    expect(spec.connection.apiKey?.placeholder).toBe("sk_car_...");
+    expect(spec.localHelpers).toBe(false);
+    const speed = spec.tuning.find((f) => f.kind === "number" && f.key === "speed");
+    expect(speed).toBeDefined();
+    // generation_config bounds — sonic-3+ only (the backend gates per model).
+    if (speed?.kind === "number") {
+      expect(speed.min).toBe(0.6);
+      expect(speed.max).toBe(1.5);
+    }
+    const emotion = spec.tuning.find((f) => f.kind === "select" && f.key === "emotion");
+    expect(emotion).toBeDefined();
+    if (emotion?.kind === "select") {
+      expect(emotion.fallback).toBe("neutral");
+      expect(emotion.options.map((o) => o.id)).toContain("flirtatious");
+    }
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -78,7 +101,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

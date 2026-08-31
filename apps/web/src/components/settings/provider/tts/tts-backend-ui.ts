@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -104,6 +104,32 @@ const RESPONSE_FORMAT_OPTIONS = [
   { id: "wav", label: "wav" },
 ];
 
+/** Curated emotion subset for the UI select (the API enum has 50+ values —
+ *  docs list neutral/calm/angry/content/sad/scared as primaries). The
+ *  backend passes emotion through verbatim, so a hand-edited config may
+ *  carry any other documented enum value. */
+const CARTESIA_EMOTION_OPTIONS = [
+  "neutral",
+  "calm",
+  "happy",
+  "excited",
+  "curious",
+  "flirtatious",
+  "affectionate",
+  "content",
+  "angry",
+  "sarcastic",
+  "mysterious",
+  "sad",
+  "anxious",
+  "scared",
+  "bored",
+  "tired",
+  "proud",
+  "confident",
+  "contemplative",
+] as const;
+
 const OPENAI_TUNING: TtsTuningFieldSpec[] = [
   {
     kind: "select",
@@ -169,6 +195,30 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  cartesia: {
+    connection: {
+      apiKey: { placeholder: "sk_car_..." },
+      // Static documented catalog served by the backend's listModels() —
+      // the fetch mode resolves through the draft models route, no
+      // network discovery on Cartesia's side (no /models endpoint exists).
+      model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
+    },
+    tuning: [
+      // generation_config on sonic-3+ only — the backend gates it per
+      // model; sonic-2/turbo silently ignore these two fields.
+      { kind: "number", key: "speed", labelKey: "tts_field_speed", min: 0.6, max: 1.5, step: 0.05, fallback: 1 },
+      {
+        kind: "select",
+        key: "emotion",
+        labelKey: "tts_field_emotion",
+        // API tokens double as labels (same convention as responseFormat).
+        options: CARTESIA_EMOTION_OPTIONS.map((e) => ({ id: e, label: e })),
+        fallback: "neutral",
+        testid: "tts-field-emotion",
+      },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -184,6 +234,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   }
   if (backend === TTS_BACKEND.Gemini) return "gemini";
   if (backend === TTS_BACKEND.ElevenLabs) return "elevenlabs";
+  if (backend === TTS_BACKEND.Cartesia) return "cartesia";
   return "kokoro";
 }
 
@@ -200,7 +251,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia) return "cloud";
   return "custom";
 }
 
@@ -223,5 +274,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.Gemini;
     case "elevenlabs":
       return TTS_BACKEND.ElevenLabs;
+    case "cartesia":
+      return TTS_BACKEND.Cartesia;
   }
 }

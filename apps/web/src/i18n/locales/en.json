@@ -476,6 +476,7 @@
   "tts_field_model": "Model",
   "tts_field_response_format": "Response Format",
   "tts_field_speed": "Speed",
+  "tts_field_emotion": "Emotion",
   "tts_field_voice": "Voice",
   "tts_clone_section_title": "Voice cloning",
   "tts_clone_name_label": "Voice name",

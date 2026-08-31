@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia";
 /** F8 (owner decision 2026-08-29): `name-heuristic` is REMOVED. Known
  *  presets stamp `documented` (doc-verified static catalog resolved
  *  server-side) or `audio-type` (SiliconFlow ?type=audio); unknown
@@ -108,6 +108,17 @@ export const TTS_PRESETS: TtsPreset[] = [
     label: "ElevenLabs",
     group: "cloud",
     backend: "elevenlabs",
+    modelFilter: "none",
+  },
+  {
+    id: "cartesia",
+    label: "Cartesia",
+    group: "cloud",
+    backend: "cartesia",
+    // Native backend with a static documented model catalog served by
+    // listModels() (no network discovery — mirrors the F8 "documented"
+    // philosophy); the model picker's fetch mode resolves through the draft
+    // models route.
     modelFilter: "none",
   },
 ];

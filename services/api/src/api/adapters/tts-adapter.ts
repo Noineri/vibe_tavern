@@ -12,6 +12,7 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import "../../domain/tts/backends/openai-tts.js";
 import "../../domain/tts/backends/gemini-tts.js";
 import "../../domain/tts/backends/elevenlabs-tts.js";
+import "../../domain/tts/backends/cartesia-tts.js";
 
 import { createTtsBackend } from "../../domain/tts/tts-registry.js";
 import { probeDockerAvailability } from "../../domain/tts/docker-probe.js";

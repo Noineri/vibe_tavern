@@ -524,6 +524,8 @@ export const TTS_BACKEND = {
   Gemini: "gemini",
   /** Tier 2 — native ElevenLabs. */
   ElevenLabs: "elevenlabs",
+  /** TPE-4 — native Cartesia (Sonic; first Wave A clone-capable provider). */
+  Cartesia: "cartesia",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -662,6 +664,17 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     openaiCompatible: false,
     supportsStreaming: false,
     supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Cartesia]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // Bytes endpoint streams the HTTP body, but our generate() buffers —
+    // the capability flag describes OUR transport, not Cartesia's.
+    supportsStreaming: false,
+    supportsCloning: true,
     supportsVoiceList: true,
     supportsSpeed: true,
     requiresApiKey: true,

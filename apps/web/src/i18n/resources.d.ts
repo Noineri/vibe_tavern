@@ -2490,6 +2490,7 @@ export default interface Resources {
     "tts_field_api_key_show": "Show API key",
     "tts_field_api_key_status_stored": "A key is saved with this profile. Leave the field empty to keep it; type a new key to replace it.",
     "tts_field_api_key_stored": "API key saved — leave empty to keep it",
+    "tts_field_emotion": "Emotion",
     "tts_field_endpoint": "Endpoint",
     "tts_field_model": "Model",
     "tts_field_model_id": "Model ID",
