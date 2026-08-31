@@ -246,6 +246,30 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     }),
   );
 
+  // LG-12 (ST parity): sticky-expiry sweep — mirrors ST's scan-start
+  // checkTimedEffects (world-info.js 630-655): a stored sticky effect whose
+  // window has passed is removed exactly once, at the FIRST scan that
+  // observes the end, and the onEnded callback hands the cooldown over to
+  // that scan (a fresh full window, protected, direct assignment — 520-536;
+  // cooldown suppresses everything except a live sticky, 4739). Clearing the
+  // anchor makes the observation one-shot: a cleared anchor cannot re-fire,
+  // and the next real activation re-anchors a fresh window (ST
+  // #setTimedEffectOfType is only-if-absent, so re-activation never extends a
+  // LIVE window — see commitActivationState). Runs over the input state
+  // BEFORE any pass, like ST's constructor-time checkTimedEffects, so it
+  // fires for every enabled entry regardless of later activation outcomes.
+  for (const e of allEntries) {
+    const sweepState = activationState[e.id];
+    if (e.stickyWindow > 0 && sweepState?.activatedAtTurn != null &&
+      currentTurn - sweepState.activatedAtTurn >= e.stickyWindow) {
+      updatedState[e.id] = {
+        ...sweepState,
+        activatedAtTurn: undefined,
+        lastMatchedAtTurn: e.cooldownWindow > 0 ? currentTurn : sweepState.lastMatchedAtTurn,
+      };
+    }
+  }
+
   // ── Normal scan (with min-activations retry loop) ──────────────────────
   let normalScanRetry = true;
   while (normalScanRetry) {
@@ -516,7 +540,13 @@ function tryActivateEntry(ctx: {
     const state = updatedState[entry.id];
     if (entry.cooldownWindow > 0 && state?.lastMatchedAtTurn != null) {
       const turnsSince = currentTurn - state.lastMatchedAtTurn;
-      if (turnsSince < entry.cooldownWindow) return reason("cooldown");
+      // LG-12 (ST parity, world-info.js 4739): cooldown suppresses everything
+      // EXCEPT an entry with a live sticky (isCooldown && !isSticky) —
+      // constants included. The sweep above has already cleared expired
+      // sticky anchors, so this alive-check is exact.
+      const stickyAlive = entry.stickyWindow > 0 && state?.activatedAtTurn != null &&
+        currentTurn - state.activatedAtTurn < entry.stickyWindow;
+      if (turnsSince < entry.cooldownWindow && !stickyAlive) return reason("cooldown");
     }
     logger.debug("  actv %s: constant | title=%s", entry.id, entry.title);
     // LG-6: the state write moved to the pass-survivor loop (see
@@ -580,7 +610,11 @@ function tryActivateEntry(ctx: {
   // sticky-active auto-passes. The gate lives in the pass-survivor loops.
 
   // 11. Delay — if delayWindow > 0 and this is first match, set pending
-  if (entry.delayWindow > 0 && state?.activatedAtTurn == null) {
+  // LG-12: "never activated before" must ALSO hold for lastMatchedAtTurn —
+  // the expiry sweep clears activatedAtTurn, and a cleared anchor must not
+  // re-arm a delay that already ran (ST's delay is an absolute threshold,
+  // never re-armed). Both-null = genuinely first-ever match.
+  if (entry.delayWindow > 0 && state?.activatedAtTurn == null && state?.lastMatchedAtTurn == null) {
     updatedState[entry.id] = { pendingDelayUntilTurn: currentTurn + entry.delayWindow };
     return reason("delay window set");
   }
@@ -776,13 +810,36 @@ function commitActivationState(
 ): void {
   const state = updatedState[entry.id];
   switch (reasonKind) {
-    case "constant":
-      updatedState[entry.id] = { ...state, activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
+    case "constant": {
+      // LG-12 (ST parity): only-if-absent anchoring. ST's setTimedEffects
+      // sets a sticky/cooldown effect only when none is stored
+      // (#setTimedEffectOfType, world-info.js 712-730), so re-activation
+      // never extends a live window. An expired sticky anchor was already
+      // cleared by the sweep, and an expired cooldown anchor cannot be live
+      // here (it would have suppressed this activation) — both cases anchor
+      // fresh, matching ST's re-set after an effect was removed.
+      const stickyAlive = entry.stickyWindow > 0 && state?.activatedAtTurn != null &&
+        currentTurn - state.activatedAtTurn < entry.stickyWindow;
+      const cooldownAlive = entry.cooldownWindow > 0 && state?.lastMatchedAtTurn != null &&
+        currentTurn - state.lastMatchedAtTurn < entry.cooldownWindow;
+      updatedState[entry.id] = {
+        ...state,
+        activatedAtTurn: stickyAlive ? state.activatedAtTurn : currentTurn,
+        lastMatchedAtTurn: cooldownAlive ? state.lastMatchedAtTurn : currentTurn,
+      };
       break;
+    }
     case "sticky":
-      updatedState[entry.id] = { ...state, lastMatchedAtTurn: currentTurn };
+      // LG-12: the sticky anchor is alive by construction (this path only
+      // runs inside its window) — keep it. The cooldown anchor is
+      // only-if-absent: ST does not extend the cooldown while the sticky
+      // lives; the sweep's handoff re-anchors it at the sticky end instead.
+      updatedState[entry.id] = { ...state, lastMatchedAtTurn: state?.lastMatchedAtTurn ?? currentTurn };
       break;
     default: // key_match / decorator / delay_fulfilled — full replace
+      // Reachable only when no sticky is alive and no cooldown is alive (the
+      // gates above), so both anchors are genuinely absent or expired — a
+      // fresh dual anchor matches ST's only-if-absent set exactly.
       updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
       break;
   }

@@ -291,3 +291,130 @@ describe("inclusion groups — sticky × groups (LG-6 characterization)", () => 
 		expect(activatedIds(scan2)).toEqual([]);
 	});
 });
+
+describe("timed-effect windows (LG-12 characterization)", () => {
+	// Characterization-first (LG-12, D12): ST anchors timed effects
+	// only-if-absent (world-info.js #setTimedEffectOfType 712-730) — a live
+	// effect is NEVER re-anchored by re-activation — and when a sticky effect
+	// ends, #checkTimedEffectOfType's onEnded callback hands the cooldown over
+	// to the expiry scan (fresh full window, protected, direct assignment,
+	// 520-536). Cooldown suppresses everything except a live sticky
+	// (isCooldown && !isSticky, 4739) — constants included.
+	//
+	// The pre-rework VT engine slid both anchors instead: the constant commit
+	// rewrote activatedAtTurn + lastMatchedAtTurn every surviving scan (a
+	// constant with a sticky window never let it expire), and the sticky
+	// commit slid lastMatchedAtTurn (the cooldown effectively ended one scan
+	// early); the constant step's cooldown gate had no sticky-alive override,
+	// so a sticky constant went dark while its sticky was still alive. These
+	// pins were captured against that engine, then flipped to the ST window
+	// semantics: a sticky-expiry sweep (one-shot, pre-pass) clears the anchor
+	// and hands the cooldown over to the expiry scan; all commits anchor
+	// only-if-absent.
+
+	// One scan of a chat: entries + scan text + the PREVIOUS resolve's
+	// updatedState + the chat's current turn number.
+	function scan(entries: ReturnType<typeof makeEntry>[], text: string[], state: ReturnType<typeof resolveActivatedEntries>["updatedState"] | undefined, turn: number) {
+		return resolveActivatedEntries({ ...makeInput(entries, text), activationState: state ?? {}, currentTurn: turn });
+	}
+
+	it("LG-12: a CONSTANT no longer slides its sticky anchor — the window expires on schedule", () => {
+		const cc = makeEntry({ id: "cc", stickyWindow: 3 });
+		const t1 = scan([cc], ["quiet"], undefined, 1);
+		expect(activatedIds(t1)).toEqual(["cc"]);
+		expect(t1.updatedState.cc).toEqual({ activatedAtTurn: 1, lastMatchedAtTurn: 1 });
+		const t2 = scan([cc], ["quiet"], t1.updatedState, 2);
+		// Pre-LG12 pin: { activatedAtTurn: 2, ... } (the constant commit slid
+		// the anchor every scan — the window never expired). ST: only-if-absent
+		// — the anchor stays 1 while the effect lives; the cooldown anchor is
+		// re-anchored each non-suppressed scan (an alive one would suppress).
+		expect(t2.updatedState.cc).toEqual({ activatedAtTurn: 1, lastMatchedAtTurn: 2 });
+	});
+
+	it("LG-12: a sticky survivor keeps its cooldown anchor — re-activation comes at the handoff turn, not one scan early", () => {
+		const e = makeEntry({ id: "s", constant: false, keys: ["storm"], stickyWindow: 3, cooldownWindow: 2 });
+		const t1 = scan([e], ["storm"], undefined, 1);
+		expect(activatedIds(t1)).toEqual(["s"]);
+		expect(t1.updatedState.s).toEqual({ activatedAtTurn: 1, lastMatchedAtTurn: 1 });
+		const t2 = scan([e], ["quiet"], t1.updatedState, 2);
+		expect(activatedIds(t2)).toEqual(["s"]); // sticky auto-activation
+		// Pre-LG12 pin: lastMatchedTurn slid to 2 (and to 3 at scan 3) — the
+		// cooldown ended one scan early. ST: only-if-absent — the anchor set at
+		// activation stays 1 for the whole sticky life.
+		expect(t2.updatedState.s).toEqual({ activatedAtTurn: 1, lastMatchedAtTurn: 1 });
+		const t3 = scan([e], ["quiet"], t2.updatedState, 3);
+		expect(activatedIds(t3)).toEqual(["s"]); // last sticky scan (3-1 < 3)
+		expect(t3.updatedState.s).toEqual({ activatedAtTurn: 1, lastMatchedAtTurn: 1 });
+		const t4 = scan([e], ["quiet"], t3.updatedState, 4);
+		// The sweep observes the expiry (4-1 >= 3): sticky anchor cleared,
+		// cooldown handed over to THIS scan (anchor 4) → suppressed (0 < 2).
+		expect(activatedIds(t4)).toEqual([]);
+		expect(t4.updatedState.s).toEqual({ lastMatchedAtTurn: 4 });
+		const t5 = scan([e], ["storm"], t4.updatedState, 5);
+		// Handoff cooldown alive (5-4 < 2) → still suppressed.
+		expect(activatedIds(t5)).toEqual([]);
+		const t6 = scan([e], ["storm"], t5.updatedState, 6);
+		// Cooldown over (6-4 >= 2) → free, fresh dual anchor.
+		expect(activatedIds(t6)).toEqual(["s"]);
+		expect(t6.updatedState.s).toEqual({ activatedAtTurn: 6, lastMatchedAtTurn: 6 });
+	});
+
+	it("LG-12: a live sticky overrides the constant's cooldown; the handoff darkens it from the sticky end", () => {
+		const cc = makeEntry({ id: "cc", stickyWindow: 2, cooldownWindow: 3 });
+		const t1 = scan([cc], ["quiet"], undefined, 1);
+		expect(activatedIds(t1)).toEqual(["cc"]);
+		const t2 = scan([cc], ["quiet"], t1.updatedState, 2);
+		// Pre-LG12 pin: [] — the inline cooldown gate had no sticky-alive
+		// override. ST 4739 (isCooldown && !isSticky): the live sticky lets the
+		// constant through.
+		expect(activatedIds(t2)).toEqual(["cc"]);
+		const t3 = scan([cc], ["quiet"], t2.updatedState, 3);
+		// The sweep observes the sticky end (3-1 >= 2): handoff cooldown
+		// anchored at 3 → dark scans 3-5.
+		expect(activatedIds(t3)).toEqual([]);
+		const t5 = scan([cc], ["quiet"], t3.updatedState, 5);
+		expect(activatedIds(t5)).toEqual([]); // handoff cooldown 5-3 < 3
+		const t6 = scan([cc], ["quiet"], t5.updatedState, 6);
+		// Cooldown over (6-3 >= 3) → free, fresh cycle.
+		expect(activatedIds(t6)).toEqual(["cc"]);
+		expect(t6.updatedState.cc).toEqual({ activatedAtTurn: 6, lastMatchedAtTurn: 6 });
+	});
+
+	it("LG-12: group dominance lapses for one scan when the sticky window expires and re-arms on the next activation", () => {
+		const g = { groupName: "weather", useGroupScoring: true, groupWeight: 0 };
+		const cc = makeEntry({ id: "cc", ...g, stickyWindow: 2 });
+		const comp = makeEntry({ id: "comp", ...g, constant: false, keys: ["storm"] });
+		const t1 = scan([cc, comp], ["quiet"], undefined, 1);
+		// Competitor's keys don't match → the constant wins alone and sets its
+		// sticky anchor.
+		expect(activatedIds(t1)).toEqual(["cc"]);
+		const t2 = scan([cc, comp], ["storm"], t1.updatedState, 2);
+		// Sticky alive (2-1 < 2) → dominance → the non-sticky competitor is removed.
+		expect(activatedIds(t2)).toEqual(["cc"]);
+		// Pre-LG12 pin: { activatedAtTurn: 2, ... } — the slid anchor kept the
+		// dominance alive forever. Only-if-absent keeps the anchor at 1.
+		expect(t2.updatedState.cc).toEqual({ activatedAtTurn: 1, lastMatchedAtTurn: 2 });
+		const t3 = scan([cc, comp], ["storm"], t2.updatedState, 3);
+		// ST: the effect ended (3-1 >= 2, never re-anchored) → no dominance →
+		// scoring → the matched competitor wins again. (Pre-LG12 pin: ["cc"].)
+		expect(activatedIds(t3)).toEqual(["comp"]);
+	});
+
+	it("LG-12 (stability): a delay+sticky entry never re-arms its delay after the sticky expires", () => {
+		const d = makeEntry({ id: "d", constant: false, keys: ["storm"], delayWindow: 2, stickyWindow: 3 });
+		const t1 = scan([d], ["storm"], undefined, 1);
+		expect(activatedIds(t1)).toEqual([]); // delay-pending, no activation
+		expect(t1.updatedState.d).toEqual({ pendingDelayUntilTurn: 3 });
+		const t3 = scan([d], ["quiet"], t1.updatedState, 3);
+		expect(activatedIds(t3)).toEqual(["d"]); // delay fulfilled
+		const t4 = scan([d], ["quiet"], t3.updatedState, 4);
+		expect(activatedIds(t4)).toEqual(["d"]); // sticky alive (4-3 < 3)
+		const t6 = scan([d], ["storm"], t4.updatedState, 6);
+		// Sticky dead (6-3 >= 3) and the pendingDelay was consumed by the
+		// delay_fulfilled commit at scan 3 — a fresh key match must NOT re-arm
+		// the delay (ST's delay is an absolute threshold, never re-armed). The
+		// expiry sweep clearing the sticky anchor must not change this.
+		expect(activatedIds(t6)).toEqual(["d"]);
+		expect(t6.updatedState.d).toEqual({ activatedAtTurn: 6, lastMatchedAtTurn: 6 });
+	});
+});
