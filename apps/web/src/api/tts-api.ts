@@ -52,6 +52,8 @@ export interface TtsBackendCapabilities {
   supportsCloning: boolean;
   formats?: string[];
   maxSizeMb?: number;
+  cloneRequiresReferenceText?: boolean;
+  cloneCaveatKey?: "siliconflow";
 }
 
 /** Draft-voices response envelope: capabilities ride alongside voices —
@@ -232,6 +234,8 @@ export async function cloneTtsVoice(body: {
   profileId?: string;
   name: string;
   audio: File;
+  /** Reference-audio transcript (SiliconFlow requires it). */
+  referenceText?: string;
 }): Promise<TtsVoiceRecord> {
   const baseUrl = getGatewayBaseUrl();
   const form = new FormData();
@@ -240,6 +244,9 @@ export async function cloneTtsVoice(body: {
   if (body.profileId !== undefined) form.append("profileId", body.profileId);
   form.append("name", body.name);
   form.append("audio", body.audio);
+  if (body.referenceText !== undefined && body.referenceText.trim().length > 0) {
+    form.append("referenceText", body.referenceText.trim());
+  }
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/clone`), {
     method: "POST",
     body: form,

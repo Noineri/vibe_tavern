@@ -650,14 +650,65 @@ describe("openai-compat TTS documented + audio-type discovery (F8)", () => {
     expect(models.map((m) => m.id)).toEqual(["FunAudioLLM/CosyVoice2-0.5B"]);
   });
 
-  test("audio-type listVoices skips the aggregator refetch: plain /audio/voices attempt, null → manual on SF", async () => {
-    const { captured } = captureFetch(() => new Response("not found", { status: 404 }));
+  test("siliconflow listVoices: 8 static system voices (model:voice wire) + custom list from /audio/voice/list", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.endsWith("/audio/voice/list")) {
+        return jsonResponse(200, {
+          voices: [
+            { uri: "speech:my-voice:cm04:mjt", name: "my-voice" },
+            { name: "unnamed" }, // no uri/id → dropped
+          ],
+        });
+      }
+      return jsonResponse(404, { detail: "nope" });
+    });
     const backend = openAiCompatTtsFactory({
       endpoint: "https://api.siliconflow.cn/v1",
       model: "FunAudioLLM/CosyVoice2-0.5B",
     });
+    const voices = await backend.listVoices();
+    expect(voices).not.toBeNull();
+    expect(voices!.map((v) => v.id)).toEqual([
+      "FunAudioLLM/CosyVoice2-0.5B:alex",
+      "FunAudioLLM/CosyVoice2-0.5B:benjamin",
+      "FunAudioLLM/CosyVoice2-0.5B:charles",
+      "FunAudioLLM/CosyVoice2-0.5B:david",
+      "FunAudioLLM/CosyVoice2-0.5B:anna",
+      "FunAudioLLM/CosyVoice2-0.5B:bella",
+      "FunAudioLLM/CosyVoice2-0.5B:claire",
+      "FunAudioLLM/CosyVoice2-0.5B:diana",
+      "speech:my-voice:cm04:mjt",
+    ]);
+    expect(voices!.at(-1)!.label).toBe("my-voice · mine");
+    // Only the documented custom-list call — no /audio/voices attempt.
+    expect(urls).toEqual(["https://api.siliconflow.cn/v1/audio/voice/list"]);
+  });
+
+  test("siliconflow listVoices degrades to system voices when the custom list fails; null when no model either", async () => {
+    globalThis.fetch = mock(async () => jsonResponse(500, { detail: "boom" }));
+    const backend = openAiCompatTtsFactory({
+      endpoint: "https://api.siliconflow.cn/v1",
+      model: "fishaudio/fish-speech-1.5",
+    });
+    const voices = await backend.listVoices();
+    expect(voices!.length).toBe(8);
+    expect(voices![0]!.id).toBe("fishaudio/fish-speech-1.5:alex");
+
+    const noModel = await openAiCompatTtsFactory({ endpoint: "https://api.siliconflow.cn/v1" }).listVoices();
+    expect(noModel).toBeNull();
+  });
+
+  test("non-SF host with a manual audio-type stamp keeps the legacy /audio/voices attempt", async () => {
+    const { captured } = captureFetch(() => new Response("not found", { status: 404 }));
+    const backend = openAiCompatTtsFactory({
+      endpoint: "http://localhost:9000/v1",
+      modelFilter: "audio-type",
+    });
     expect(await backend.listVoices()).toBeNull();
-    expect(captured()!.url).toBe("https://api.siliconflow.cn/v1/audio/voices");
+    expect(captured()!.url).toBe("http://localhost:9000/v1/audio/voices");
   });
 });
 
@@ -682,6 +733,113 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
     const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:8880/v1" });
     expect(await backend.listVoices()).not.toBeNull();
     expect(backend.capabilities().supportsCloning).toBe(false);
+  });
+
+  // ── SiliconFlow cloning (TPE-8) ─────────────────────────────────────
+  test("siliconflow: cloning is static — capabilities true BEFORE any listVoices, with the transcript hint", async () => {
+    const backend = openAiCompatTtsFactory({ endpoint: "https://api.siliconflow.cn/v1" });
+    const caps = backend.capabilities();
+    expect(caps.supportsCloning).toBe(true);
+    expect(caps.cloneRequiresReferenceText).toBe(true);
+    expect(caps.cloneCaveatKey).toBe("siliconflow");
+    expect(caps.formats).toEqual(["mp3", "wav", "pcm", "opus"]);
+    // Host-based: the .com mirror too.
+    expect(
+      openAiCompatTtsFactory({ endpoint: "https://api.siliconflow.com/v1" }).capabilities()
+        .supportsCloning,
+    ).toBe(true);
+  });
+
+  test("siliconflow cloneVoice: multipart upload with model + customName + text, uri → voice id", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: init?.body });
+      return jsonResponse(200, { uri: "speech:hero:cm02:mtt" });
+    });
+    const backend = openAiCompatTtsFactory({
+      endpoint: "https://api.siliconflow.cn/v1",
+      model: "FunAudioLLM/CosyVoice2-0.5B",
+    });
+    const voice = await backend.cloneVoice({
+      name: "Hero Voice",
+      referenceAudio: Buffer.from([1, 2, 3]),
+      mimeType: "audio/mpeg",
+      referenceText: "  Hello, this is my voice.  ",
+    });
+    expect(calls.length).toBe(1);
+    const call = calls[0]!;
+    expect(call.url).toBe("https://api.siliconflow.cn/v1/uploads/audio/voice");
+    expect(call.method).toBe("POST");
+    expect(call.body).toBeInstanceOf(FormData);
+    const form = call.body as FormData;
+    expect(form.get("model")).toBe("FunAudioLLM/CosyVoice2-0.5B");
+    expect(form.get("customName")).toBe("Hero Voice");
+    expect(form.get("text")).toBe("Hello, this is my voice.");
+    const file = form.get("file");
+    expect(file).toBeInstanceOf(Blob);
+    expect((file as File).name).toBe("voice-sample.mp3");
+    expect(voice).toEqual({ id: "speech:hero:cm02:mtt", label: "Hero Voice · mine", lang: "multi" });
+  });
+
+  test("siliconflow cloneVoice: reference text is required; errors surface; uri missing throws", async () => {
+    const backend = openAiCompatTtsFactory({ endpoint: "https://api.siliconflow.cn/v1" });
+    await expect(
+      backend.cloneVoice({ name: "N", referenceAudio: Buffer.from([1]), mimeType: "audio/mpeg" }),
+    ).rejects.toThrow(/transcript/);
+    await expect(
+      backend.cloneVoice({
+        name: "N",
+        referenceAudio: Buffer.from([1]),
+        mimeType: "audio/mpeg",
+        referenceText: "  ",
+      }),
+    ).rejects.toThrow(/transcript/);
+
+    globalThis.fetch = mock(async () =>
+      jsonResponse(403, { code: 4031, message: "real-name verification required" }),
+    );
+    await expect(
+      backend.cloneVoice({
+        name: "N",
+        referenceAudio: Buffer.from([1]),
+        mimeType: "audio/mpeg",
+        referenceText: "hi",
+      }),
+    ).rejects.toThrow(/HTTP 403.*real-name verification/);
+
+    globalThis.fetch = mock(async () => jsonResponse(200, {}));
+    await expect(
+      backend.cloneVoice({
+        name: "N",
+        referenceAudio: Buffer.from([1]),
+        mimeType: "audio/mpeg",
+        referenceText: "hi",
+      }),
+    ).rejects.toThrow(/missing `uri`/);
+  });
+
+  test("siliconflow cloneVoice maps reference mime types to the documented extensions", async () => {
+    const names: string[] = [];
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      names.push(((init?.body as FormData).get("file") as File).name);
+      return jsonResponse(200, { uri: "speech:x:cm:m" });
+    });
+    const backend = openAiCompatTtsFactory({ endpoint: "https://api.siliconflow.cn/v1" });
+    const cases: Array<[string, string]> = [
+      ["audio/wav", "voice-sample.wav"],
+      ["audio/pcm", "voice-sample.pcm"],
+      ["audio/ogg", "voice-sample.opus"],
+      ["audio/opus", "voice-sample.opus"],
+    ];
+    for (const [mimeType, expected] of cases) {
+      await backend.cloneVoice({
+        name: "N",
+        referenceAudio: Buffer.from([1]),
+        mimeType,
+        referenceText: "hi",
+      });
+    }
+    expect(names).toEqual(cases.map((c) => c[1]));
   });
 
   test("cloneVoice posts multipart to /voices and resolves the fresh entry by name", async () => {

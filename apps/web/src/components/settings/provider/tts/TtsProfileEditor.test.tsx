@@ -1663,6 +1663,84 @@ describe("TtsProfileEditor — voice clone section", () => {
     await act(async () => {});
   });
 
+  // ── SiliconFlow: conditional transcript field + caveat (TPE-8) ───────
+  it("siliconflow: transcript field + caveat hint appear, empty transcript blocks the upload, filled transcript rides the body", async () => {
+    // Phase-based stub (NOT mockImplementationOnce): one editor mount
+    // performs 2+ listVoices calls (mount + models-settle, refresh after a
+    // clone), and Once-slots leak across tests in this file — a queue-based
+    // stub is order-fragile and poisoned the neighbouring clone tests.
+    // The phase flag answers EVERY request of a given mount consistently.
+    const defaultEnvelope: TtsDraftVoicesResponse = {
+      voices: [
+        { id: "alloy", label: "Alloy", lang: "en" },
+        { id: "echo", label: "Echo", lang: "en" },
+      ],
+      capabilities: { supportsCloning: false },
+    };
+    const capableNoHint = { voices: [], capabilities: { supportsCloning: true, formats: ["wav", "mp3"], maxSizeMb: 10 } };
+    const sfHint = {
+      voices: [],
+      capabilities: {
+        supportsCloning: true,
+        formats: ["mp3", "wav", "pcm", "opus"],
+        maxSizeMb: 10,
+        cloneRequiresReferenceText: true,
+        cloneCaveatKey: "siliconflow",
+      },
+    };
+    let sfPhase = false;
+    listTtsDraftVoicesMock.mockImplementation(async () => (sfPhase ? sfHint : capableNoHint) as never);
+    try {
+      // Default phase (no transcript hint) → the field must NOT render.
+      const plain = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      await plain.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
+      expect(plain.queryByTestId("tts-clone-reference-text")).toBeNull();
+      expect(plain.queryByTestId("tts-clone-hint-siliconflow")).toBeNull();
+      cleanup();
+      document.body.innerHTML = "";
+      await act(async () => {});
+
+      // SiliconFlow phase: transcript hint + caveat key ride capabilities —
+      // EVERY voices answer of this mount (mount, settle, refresh) is SF.
+      sfPhase = true;
+      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      await view.findByTestId("tts-clone-reference-text", undefined, { timeout: 2500 });
+      expect(view.getByTestId("tts-clone-hint-siliconflow")).toBeTruthy();
+
+      // Name + file set, transcript EMPTY → inline error, no upload.
+      // (Count delta, not zero — mock.calls persists across tests in this file.)
+      const callsBefore = cloneTtsVoiceMock.mock.calls.length;
+      fireEvent.change(view.getByTestId("tts-clone-name"), { target: { value: "hero" } });
+      const audio = new File([new Uint8Array([1, 2, 3])], "sample.mp3", { type: "audio/mpeg" });
+      fireEvent.change(view.getByTestId("tts-clone-file"), { target: { files: [audio] } });
+      fireEvent.click(view.getByTestId("tts-clone-submit"));
+      expect(view.getByTestId("tts-clone-error").textContent).toContain("tts_clone_err_text");
+      expect(cloneTtsVoiceMock.mock.calls.length).toBe(callsBefore);
+
+      // Transcript filled → rides the clone body verbatim.
+      const textarea = view.getByTestId("tts-clone-reference-text").querySelector("textarea");
+      expect(textarea).not.toBeNull();
+      fireEvent.change(textarea!, { target: { value: "  Hello, this is my voice.  " } });
+      fireEvent.click(view.getByTestId("tts-clone-submit"));
+      await waitFor(
+        () => expect(cloneTtsVoiceMock.mock.calls.length).toBeGreaterThan(callsBefore),
+        { timeout: 2500 },
+      );
+      const call = cloneTtsVoiceMock.mock.calls.at(-1)![0] as { name: string; referenceText?: string };
+      expect(call.name).toBe("hero");
+      expect(call.referenceText).toBe("Hello, this is my voice.");
+
+      cleanup();
+      document.body.innerHTML = "";
+      await act(async () => {});
+    } finally {
+      // Restore the suite default stub — a leaked phase-based impl would
+      // answer every later test with this scenario's envelopes.
+      sfPhase = false;
+      listTtsDraftVoicesMock.mockImplementation(async () => defaultEnvelope);
+    }
+  });
+
   it("clone failure: upstream error shown inline, no auto-select", async () => {
     const setForm = mock(() => {});
     listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);

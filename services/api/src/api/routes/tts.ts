@@ -138,6 +138,13 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
       const configField = form["config"];
       const profileId = form["profileId"];
       const audio = form["audio"];
+      const referenceText = form["referenceText"];
+      if (typeof referenceText !== "undefined" && typeof referenceText !== "string") {
+        return c.json({ error: "referenceText must be a string" }, 400);
+      }
+      if (typeof referenceText === "string" && referenceText.trim().length > 2000) {
+        return c.json({ error: "reference text must be at most 2000 characters" }, 400);
+      }
       if (typeof name !== "string" || name.trim().length === 0 || name.length > 100) {
         return c.json({ error: "voice name must be 1-100 characters" }, 400);
       }
@@ -179,6 +186,9 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
           name: name.trim(),
           referenceAudio: Buffer.from(await audio.arrayBuffer()),
           mimeType,
+          ...(typeof referenceText === "string" && referenceText.trim().length > 0
+            ? { referenceText: referenceText.trim() }
+            : {}),
         });
         return c.json(voice);
       } catch (error) {

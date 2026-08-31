@@ -52,6 +52,10 @@ export interface TtsCloneRequest {
   name: string;
   referenceAudio: Buffer;
   mimeType: string;
+  /** Transcript of the reference audio, for providers whose upload
+   *  endpoint requires it (SiliconFlow `text`; MiniMax documents only a
+   *  name+file flow). Optional — backends that need it enforce it. */
+  referenceText?: string;
 }
 
 export type TtsBackendFactory = (config: TtsProfileConfig) => TtsBackend;
@@ -65,6 +69,13 @@ export interface TtsBackendCapabilities {
   formats?: string[];
   /** Maximum sample size in megabytes. */
   maxSizeMb?: number;
+  /** Set when the clone upload requires the reference audio's transcript
+   *  (SiliconFlow) — drives a conditional field in the shared clone form. */
+  cloneRequiresReferenceText?: boolean;
+  /** Clone-section caveat key for providers without their own backend slug
+   *  (SiliconFlow lives inside openai-compatible): i18n key suffix on the
+   *  client. Slugged backends (minimax) gate their hint on the slug instead. */
+  cloneCaveatKey?: "siliconflow";
 }
 
 export interface TtsBackend {

@@ -63,6 +63,7 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
   const { t } = useT();
   const fileRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
+  const [referenceText, setReferenceText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +83,14 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
       setResult(null);
       return;
     }
+    // SiliconFlow (and any provider whose upload carries the transcript):
+    // the field is required — an empty transcript is a bad clone upstream.
+    const transcript = referenceText.trim();
+    if (capabilities.cloneRequiresReferenceText === true && transcript === "") {
+      setError(t("tts_clone_err_text"));
+      setResult(null);
+      return;
+    }
     if (file.size > maxMb * 1024 * 1024) {
       setError(t("tts_clone_err_size", { size: maxMb }));
       setResult(null);
@@ -91,10 +100,20 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
     setError(null);
     setResult(null);
     try {
-      const voice = await cloneTtsVoice({ backend, config, profileId, name: trimmed, audio: file });
+      const voice = await cloneTtsVoice({
+        backend,
+        config,
+        profileId,
+        name: trimmed,
+        audio: file,
+        ...(capabilities.cloneRequiresReferenceText === true || transcript !== ""
+          ? { referenceText: transcript }
+          : {}),
+      });
       onCloned(voice);
       setResult(t("tts_clone_success", { name: voice.label }));
       setName("");
+      setReferenceText("");
       setFile(null);
       // Same-file re-pick must re-fire onChange — clearing the hidden input
       // is what makes the browser treat it as a fresh selection.
@@ -121,6 +140,22 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
           onChange={(event) => setName(event.target.value)}
         />
       </div>
+      {capabilities.cloneRequiresReferenceText === true && (
+        <div className="flex flex-col gap-1.5" data-testid="tts-clone-reference-text">
+          <label htmlFor="tts-clone-reference-text" className={lblCls}>
+            {t("tts_clone_reference_text_label")}
+          </label>
+          <AutoTextarea
+            id="tts-clone-reference-text"
+            value={referenceText}
+            onChange={(event) => setReferenceText(event.target.value)}
+            minRows={2}
+            maxRows={4}
+            className={inputCls + " px-3 py-2 text-[13px]"}
+            placeholder={t("tts_clone_reference_text_placeholder")}
+          />
+        </div>
+      )}
       <div className="flex flex-col gap-1.5">
         <span className={lblCls}>{t("tts_clone_file_label")}</span>
         <div className="flex items-center gap-2">
@@ -155,6 +190,11 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
         {backend === "minimax" ? (
           <div data-testid="tts-clone-hint-minimax" className="font-ui text-[11px] text-t4">
             {t("tts_clone_hint_minimax")}
+          </div>
+        ) : null}
+        {capabilities.cloneCaveatKey === "siliconflow" ? (
+          <div data-testid="tts-clone-hint-siliconflow" className="font-ui text-[11px] text-t4">
+            {t("tts_clone_hint_siliconflow")}
           </div>
         ) : null}
       </div>

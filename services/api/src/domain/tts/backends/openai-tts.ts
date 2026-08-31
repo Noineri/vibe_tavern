@@ -104,6 +104,61 @@ const DOCUMENTED_HOSTS = new Set(["api.openai.com", "api.groq.com", "api.electro
  *  text/image/audio/video; `sub_type` has no text-to-speech option). */
 const AUDIO_TYPE_HOSTS = new Set(["api.siliconflow.cn", "api.siliconflow.com"]);
 
+/** SiliconFlow clone + voice facts (re-read 2026-08-31, TPE-8, live page
+ *  docs.siliconflow.cn/capabilities/text-to-speech — the endpoint reference
+ *  wins over the context7 snapshot's `GET /v1/audio/voices` mention):
+ *  - 8 system preset voices shared by the TTS models; wire id is the FULL
+ *    "model:voice" string (e.g. "FunAudioLLM/CosyVoice2-0.5B:alex").
+ *  - Custom ("user preset") voices: POST /v1/uploads/audio/voice, multipart
+ *    file + model + customName + text (the reference audio's transcript —
+ *    REQUIRED) → { uri }; the uri rides as `voice` in /audio/speech.
+    Real-name verification is a platform prerequisite for custom voices.
+ *  - Custom voice list: GET /v1/audio/voice/list → { voices: [{ uri, name }] }
+ *    (items keyed by uri; a stale `id` field is tolerated).
+ *  - Reference formats: mp3, wav, pcm, opus (192 kbps+ mp3 recommended). */
+const SILICONFLOW_SYSTEM_VOICES = [
+  { id: "alex", en: "calm male" },
+  { id: "benjamin", en: "deep male" },
+  { id: "charles", en: "magnetic male" },
+  { id: "david", en: "cheerful male" },
+  { id: "anna", en: "calm female" },
+  { id: "bella", en: "passionate female" },
+  { id: "claire", en: "gentle female" },
+  { id: "diana", en: "cheerful female" },
+] as const;
+
+/** Reference-audio extension for a SiliconFlow upload from the sample mime
+ *  type (documented formats: mp3, wav, pcm, opus). */
+function siliconflowSampleExt(mimeType: string): string {
+  if (mimeType.includes("mpeg")) return "mp3";
+  const sub = mimeType.split("/")[1] ?? "";
+  if (sub === "wav" || sub === "pcm" || sub === "opus") return sub;
+  if (sub === "ogg") return "opus"; // ogg containers usually carry opus
+  return sub !== "" ? sub : "bin";
+}
+
+/** Parse GET /v1/audio/voice/list: { voices: [{ uri, name? }] }. Items key
+ *  on `uri`; an `id` field from stale docs is tolerated as the fallback id. */
+function parseSiliconflowCustomVoices(parsed: unknown): TtsVoiceInfo[] {
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const raw = (parsed as Record<string, unknown>).voices;
+  if (!Array.isArray(raw)) return [];
+  const voices: TtsVoiceInfo[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const id = typeof record.uri === "string" && record.uri.length > 0
+      ? record.uri
+      : typeof record.id === "string" && record.id.length > 0
+        ? record.id
+        : null;
+    if (id === null) continue;
+    const name = typeof record.name === "string" && record.name.length > 0 ? record.name : id;
+    voices.push({ id, label: `${name} · mine`, lang: "multi" });
+  }
+  return voices;
+}
+
 /** One documented catalog entry: model id, its label, optional per-model
  *  voice roster (`undefined` → the picker degrades to manual voice input),
  *  and the roster language for voice labels. */
@@ -308,6 +363,8 @@ function parseVoicesPayload(parsed: unknown): TtsVoiceInfo[] | null {
 
 export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
   const cfg = parseConfig(config);
+  const siliconflow =
+    hostnameOf(cfg.endpoint) !== null && AUDIO_TYPE_HOSTS.has(hostnameOf(cfg.endpoint)!);
 
   /** Which voices route last answered — set by listVoices, read by
    *  capabilities(). "library" = the /voices fallback route exists
@@ -569,6 +626,36 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           return null;
         }
       }
+      // SiliconFlow (TPE-8): custom voices from the documented
+      // GET /audio/voice/list + the 8 static system voices for the selected
+      // model (wire ids are full "model:voice" strings). A custom-list
+      // failure degrades to the system voices alone — never null, never a
+      // network wall on documented facts. Host-gated (not kind-gated):
+      // audio-type kind without the SF host keeps the legacy
+      // /audio/voices attempt below.
+      if (siliconflow) {
+        const model = readString(config, "model");
+        const custom: TtsVoiceInfo[] = [];
+        try {
+          const response = await fetch(`${cfg.endpoint}/audio/voice/list`, {
+            headers: buildHeaders(cfg.apiKey),
+            signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+          });
+          if (response.ok) {
+            const parsed: unknown = await response.json().catch(() => null);
+            custom.push(...parseSiliconflowCustomVoices(parsed));
+          }
+        } catch {
+          // Custom list is account state, not a capability probe — degrade.
+        }
+        if (model === undefined) return custom.length > 0 ? custom : null;
+        const system = SILICONFLOW_SYSTEM_VOICES.map((voice) => ({
+          id: `${model}:${voice.id}`,
+          label: `${voice.id} · ${voice.en}`,
+          lang: "multi",
+        }));
+        return [...system, ...custom];
+      }
       try {
         const voicesResponse = await fetch(`${cfg.endpoint}/audio/voices`, {
           headers: buildHeaders(cfg.apiKey),
@@ -611,6 +698,18 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
     },
 
     capabilities(): TtsBackendCapabilities {
+      // SiliconFlow cloning is documented (TPE-8) — static, host-based,
+      // independent of which voices route last answered.
+      if (siliconflow) {
+        return {
+          supportsCloning: true,
+          // Documented reference formats (the live page recommends 192 kbps+ mp3).
+          formats: ["mp3", "wav", "pcm", "opus"],
+          maxSizeMb: 10,
+          cloneRequiresReferenceText: true,
+          cloneCaveatKey: "siliconflow",
+        };
+      }
       return {
         supportsCloning: lastVoicesSource === "library",
         // chatterbox-tts-api voice-library limits (upstream README).
@@ -620,6 +719,61 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
     },
 
     async cloneVoice(req: TtsCloneRequest): Promise<TtsVoiceInfo> {
+      // SiliconFlow (TPE-8): documented upload — POST /v1/uploads/audio/voice,
+      // multipart file + model + customName + text (the reference audio's
+      // transcript — REQUIRED by the live page; an empty transcript is
+      // rejected client-side with a clear message instead of a bad clone).
+      // The response { uri } IS the voice id for /audio/speech — returned
+      // directly, no re-list round-trip.
+      if (siliconflow) {
+        const transcript = req.referenceText?.trim() ?? "";
+        if (transcript === "") {
+          throw new OpenAiCompatTtsConfigError(
+            "SiliconFlow voice cloning requires the reference audio's transcript (text)",
+          );
+        }
+        const form = new FormData();
+        form.append(
+          "file",
+          new Blob([new Uint8Array(req.referenceAudio)], { type: req.mimeType }),
+          `voice-sample.${siliconflowSampleExt(req.mimeType)}`,
+        );
+        form.append("model", cfg.model);
+        form.append("customName", req.name);
+        form.append("text", transcript);
+        let response: Response;
+        try {
+          response = await fetch(`${cfg.endpoint}/uploads/audio/voice`, {
+            method: "POST",
+            headers: buildHeaders(cfg.apiKey),
+            body: form,
+            signal: AbortSignal.timeout(TTS_CLONE_TIMEOUT_MS),
+          });
+        } catch (error) {
+          throw new OpenAiCompatTtsError(
+            `SiliconFlow voice upload network error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            { cause: error },
+          );
+        }
+        if (!response.ok) {
+          const excerpt = await readErrorExcerpt(response);
+          throw new OpenAiCompatTtsError(
+            `SiliconFlow voice upload failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+            { status: response.status },
+          );
+        }
+        const parsed: unknown = await response.json().catch(() => null);
+        const uri =
+          typeof parsed === "object" && parsed !== null
+            ? (parsed as Record<string, unknown>).uri
+            : undefined;
+        if (typeof uri !== "string" || uri.length === 0) {
+          throw new OpenAiCompatTtsError("SiliconFlow voice upload response is missing `uri`");
+        }
+        return { id: uri, label: `${req.name} · mine`, lang: "multi" };
+      }
       // chatterbox-tts-api voice-library upload (upstream README + openapi,
       // live-verified 2026-08-31): POST {endpoint}/voices, multipart
       // voice_file + voice_name. buildHeaders() without withBody sets no

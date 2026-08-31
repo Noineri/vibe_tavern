@@ -411,6 +411,9 @@ export interface TtsRuntimeApi {
 		name: string;
 		referenceAudio: Buffer;
 		mimeType: string;
+		/** Reference-audio transcript for providers that require it
+		 *  (SiliconFlow `text`); optional otherwise. */
+		referenceText?: string;
 	}) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo>;
 	/** Transient one-shot synthesis from an unsaved form config. Throws
 	 *  KokoroClientSideError for the browser-only backend (route → 400). */
