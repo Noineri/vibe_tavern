@@ -36,6 +36,8 @@ type ScanState = "normal" | "recursion";
 export interface ActivationInput {
   lorebooks: Array<{
     id: string;
+    /** Book-level group-scoring default for entries whose own flag is null (ST's global world_info_use_group_scoring, scoped to the book). See LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-4). */
+    useGroupScoring?: boolean;
     scanDepth: number;
     tokenBudget: number;
     /** When non-null (0-100), override the fixed `tokenBudget` with a cap of
@@ -67,7 +69,8 @@ export interface ActivationInput {
       groupName: string;
       groupWeight: number;
       prioritizeInclusion: boolean;
-      useGroupScoring: boolean;
+      /** Tri-state (ST parity): null = inherit the book-level `useGroupScoring` default (below), true/false = explicit. */
+      useGroupScoring: boolean | null;
       /** If true, this entry is skipped during recursion scan passes. */
       excludeRecursion: boolean;
       /** If true, this entry's content is NOT added to the recursion buffer. */
@@ -176,7 +179,8 @@ interface FlatEntry {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  useGroupScoring: boolean;
+  /** Tri-state (ST parity): null = inherit the book default, true/false = explicit. */
+  useGroupScoring: boolean | null;
 }
 
 // ─── Main function ───────────────────────────────────────────────────────────
@@ -330,8 +334,10 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   }
 
   // ── Group filter ─────────────────────────────────────────────────────────
-  // Entries in the same group compete: only the highest-priority (or weighted random) winner stays.
-  applyInclusionGroups(activated, allEntries);
+  // Entries in the same group compete: scoring filter → override → weighted
+  // random — exactly one winner per resolved group (ST pipeline, LG-4).
+  const bookDefaults = new Map(input.lorebooks.map(lb => [lb.id, lb.useGroupScoring ?? false]));
+  applyInclusionGroups(activated, allEntries, bookDefaults);
 
   // Sort by priority descending, then by id ascending for stable ordering
   activated.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
@@ -662,16 +668,29 @@ function toActivatedEntry(
 }
 
 /**
- * Inclusion group filter (SillyTavern-compatible).
+ * Inclusion group filter — SillyTavern's filterByInclusionGroups pipeline
+ * (world-info.js 5173–5363), restructured to the ST stage order (LG-4):
  *
- * Entries sharing the same `group` compete against each other:
- * 1. If a group has an entry with `prioritizeInclusion`, it wins automatically.
- * 2. Otherwise, weighted random selection based on `groupWeight`.
- * 3. Entries without a group are unaffected.
+ *   1. Scoring filter (per group): qualification — any member's book default
+ *      ON or any member explicitly flagged (ST: global || any entry flag).
+ *      Qualifying groups drop ONLY effectively-flagged STRICT losers
+ *      (score < max) — unflagged entries are immune, and max-tied entries
+ *      all survive. The score is `groupScore` (ST getScore, LG-3) computed
+ *      over every member including constants.
+ *   2. Override: among the survivors, entries with prioritizeInclusion (ST:
+ *      groupOverride) compete; the max priority (≙ ST max order) wins. This
+ *      runs AFTER scoring — a flagged override member that already lost the
+ *      score filter is gone (D4).
+ *   3. Weighted random among the remaining survivors — exactly one final
+ *      winner per resolved group (max-tied survivors roll, D5).
+ *
+ * Groups with ≤1 member are skipped entirely, like ST. The sticky-dominance
+ * branch (ST timed effects) is NOT here yet — see the sticky-dominance unit.
  */
 function applyInclusionGroups(
   activated: ActivationResult["activatedEntries"],
   allEntries: FlatEntry[],
+  bookDefaults: Map<string, boolean>,
 ): void {
   const entryMap = new Map(allEntries.map(e => [e.id, e]));
   logger.debug("Group filter — %d activated entries with groups", activated.filter(e => entryMap.get(e.id)?.groupName).length);
@@ -690,40 +709,55 @@ function applyInclusionGroups(
   if (groups.size === 0) return;
 
   const removeIds = new Set<string>();
+  const bookDefaultOf = (lorebookId: string) => bookDefaults.get(lorebookId) ?? false;
+  const effectiveFlag = (e: ActivationResult["activatedEntries"][number]) =>
+    entryMap.get(e.id)?.useGroupScoring ?? bookDefaultOf(e.lorebookId);
 
+  // ── Pass 1 — scoring filter over EVERY group (ST: filterGroupsByScoring).
+  // Removal splices ONLY this group's array (ST: `group.splice(i, 1)`): an entry
+  // removed here still sits in its OTHER groups' arrays (a "ghost") and keeps
+  // competing there — scoring into their maxScore and rolling in their
+  // resolution. This is observable ST behavior (multi-group membership), not
+  // an implementation detail.
+  for (const [groupName, groupEntries] of groups) {
+    // Qualification mirrors ST's `!global && !group.some(x => x.useGroupScoring)
+    // → skip`, generalized to per-book defaults for cross-book groups.
+    const qualifies = groupEntries.some(e =>
+      entryMap.get(e.id)?.useGroupScoring === true || bookDefaultOf(e.lorebookId));
+    if (!qualifies) continue;
+
+    const maxScore = Math.max(...groupEntries.map(e => e.groupScore));
+    logger.debug("  group '%s': scoring filter, maxScore=%d", groupName, maxScore);
+    for (let i = groupEntries.length - 1; i >= 0; i--) {
+      const e = groupEntries[i];
+      if (effectiveFlag(e) && e.groupScore < maxScore) {
+        removeIds.add(e.id);
+        groupEntries.splice(i, 1);
+      }
+    }
+  }
+
+  // ── Pass 2 — final resolution per group over the post-scoring arrays
+  // (ST: 5284–5362). Groups left with ≤1 member are skipped — a lone
+  // survivor just stays (and an empty group means every member lost
+  // scoring elsewhere).
   for (const [groupName, groupEntries] of groups) {
     if (groupEntries.length <= 1) continue;
 
-    // prioritizeInclusion (ST: groupOverride) → auto-wins
-    const prioWinner = groupEntries.find(e => entryMap.get(e.id)?.prioritizeInclusion);
-    if (prioWinner) {
-      logger.debug("  group '%s': prio winner=%s, removing %d others", groupName, entryMap.get(prioWinner.id)?.title, groupEntries.length - 1);
+    // Override by max priority (ST: prios sorted by order desc; JS sort is
+    // stable so ties keep activation order).
+    const prios = groupEntries
+      .filter(e => entryMap.get(e.id)?.prioritizeInclusion)
+      .sort((a, b) => b.priority - a.priority);
+    if (prios.length > 0) {
+      logger.debug("  group '%s': override winner=%s", groupName, entryMap.get(prios[0].id)?.title);
       for (const e of groupEntries) {
-        if (e.id !== prioWinner.id) removeIds.add(e.id);
+        if (e !== prios[0]) removeIds.add(e.id);
       }
       continue;
     }
 
-    // useGroupScoring — highest group score wins. The score follows ST's getScore
-    // formula (computeGroupScore, carried on the activated entry): primary +
-    // secondary per logic, constants at their real key matches — NOT the bare
-    // primary matchCount and NOT the entry's total key count.
-    const anyGroupScoring = groupEntries.some(e => entryMap.get(e.id)?.useGroupScoring);
-    if (anyGroupScoring) {
-      const maxScore = Math.max(...groupEntries.map(e => e.groupScore));
-      logger.debug("  group '%s': score-based, maxScore=%d", groupName, maxScore);
-      let foundWinner = false;
-      for (const e of groupEntries) {
-        if (!foundWinner && e.groupScore >= maxScore) {
-          foundWinner = true;
-        } else {
-          removeIds.add(e.id);
-        }
-      }
-      continue;
-    }
-
-    // Weighted random by groupWeight
+    // Weighted random by groupWeight among the group's members.
     const weights = groupEntries.map(e => entryMap.get(e.id)?.groupWeight ?? 100);
     const totalWeight = weights.reduce((a, b) => a + b, 0);
     const roll = Math.random() * totalWeight;

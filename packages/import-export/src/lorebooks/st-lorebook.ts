@@ -251,7 +251,11 @@ export function importStLorebookJson(
       groupName: asString(entry.group),
       groupWeight: 0,
       prioritizeInclusion: false,
-      useGroupScoring: asBoolean(entry.useGroupScoring, false),
+      // Tri-state preserve (ST parity): ST stores null (inherit the global
+      // switch) / true / false — collapsing null to false would permanently
+      // pin imported entries against the book default. See
+      // LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-4).
+      useGroupScoring: entry.useGroupScoring === true ? true : entry.useGroupScoring === false ? false : null,
       excludeRecursion: asBoolean(entry.excludeRecursion, false),
       preventRecursion: asBoolean(entry.preventRecursion, false),
       delayUntilRecursion: asBoolean(entry.delayUntilRecursion, false),

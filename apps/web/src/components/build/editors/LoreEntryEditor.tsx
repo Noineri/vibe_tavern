@@ -566,7 +566,7 @@ export function LoreEntryEditor({
                 <CustomTooltip content={t("group_scoring_hint")} align="start">
                   <ControlledField name="useGroupScoring">
                     {(field) => (
-                      <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_use_group_scoring")} />
+                      <Checkbox checked={field.value ?? false} onChange={field.onChange} label={t("lore_use_group_scoring")} />
                     )}
                   </ControlledField>
                 </CustomTooltip>

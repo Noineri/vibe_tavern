@@ -82,7 +82,8 @@ const EMPTY_ENTRY_DRAFT: LoreEntryDraft = {
   groupName: "",
   groupWeight: 100,
   prioritizeInclusion: false,
-  useGroupScoring: false,
+  // Tri-state: new entries inherit the book-level default (ST parity).
+  useGroupScoring: null,
   excludeRecursion: false,
   preventRecursion: false,
   delayUntilRecursion: false,

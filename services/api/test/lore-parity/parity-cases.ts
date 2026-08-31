@@ -72,6 +72,9 @@ function toVtInput(c: ParityCase): ActivationInput {
 		lorebooks: [
 			{
 				id: "lb_parity",
+				// ST's global switch ≙ VT's book-level default (threaded through
+				// ActivationInput.lorebooks[].useGroupScoring).
+				useGroupScoring: c.stGlobalUseGroupScoring ?? false,
 				scanDepth: c.text.length, // scan the whole case text
 				tokenBudget: 1_000_000,
 				tokenBudgetPercent: null,
@@ -100,7 +103,8 @@ function toVtInput(c: ParityCase): ActivationInput {
 					groupName: e.group ?? "",
 					groupWeight: e.groupWeight ?? 100,
 					prioritizeInclusion: e.override ?? false,
-					useGroupScoring: e.useGroupScoring ?? false,
+					// undefined → null (inherit the book default), matching the ST adapter's tri-state.
+					useGroupScoring: e.useGroupScoring ?? null,
 					excludeRecursion: false,
 					preventRecursion: false,
 					delayUntilRecursion: false,
@@ -234,6 +238,7 @@ export const PARITY_CASES: ParityCase[] = [
 		vtExpect: ["B_two"],
 	},
 	{
+		// CLOSED by LG-4 (pipeline restructure: scoring filter → override → roll).
 		// D5 (clean, no D2 involved): a score TIE. A's not_any secondary
 		// ("zebra", absent from the text) must not count into the score, so A
 		// and B both score 1. ST keeps BOTH max-tied members alive through the
@@ -250,11 +255,12 @@ export const PARITY_CASES: ParityCase[] = [
 			{ id: "A_not", keys: ["storm"], secondaryKeys: ["zebra"], logic: "not_any", group: "g", useGroupScoring: true, groupWeight: 0 },
 			{ id: "B_one", keys: ["calm"], group: "g", useGroupScoring: true, groupWeight: 100 },
 		],
-		divergences: ["D5"],
+		divergences: [],
 		stExpect: ["B_one"],
-		vtExpect: ["A_not"],
+		vtExpect: ["B_one"],
 	},
 	{
+		// CLOSED by LG-4 (pipeline restructure: scoring filter → override → roll).
 		// D2+D5: unflagged low scorer survives the ST scoring filter and then
 		// WINS the final roll (weights 100/0). VT hard-removes it at the
 		// scoring stage (no immunity, scoring terminates the group).
@@ -264,11 +270,12 @@ export const PARITY_CASES: ParityCase[] = [
 			{ id: "A_flag", keys: ["storm", "rain"], group: "g", useGroupScoring: true, groupWeight: 0 },
 			{ id: "B_unflag", keys: ["storm"], group: "g", useGroupScoring: false, groupWeight: 100 },
 		],
-		divergences: ["D2", "D5"],
+		divergences: [],
 		stExpect: ["B_unflag"],
-		vtExpect: ["A_flag"],
+		vtExpect: ["B_unflag"],
 	},
 	{
+		// CLOSED by LG-4 (pipeline restructure: scoring filter → override → roll).
 		// D4: scoring runs BEFORE override in ST — a flagged override entry
 		// with a losing score is filtered first, so the other override member
 		// wins. VT's priority tier short-circuits before scoring ever runs and
@@ -280,11 +287,12 @@ export const PARITY_CASES: ParityCase[] = [
 			{ id: "B_flag", keys: ["storm", "rain"], group: "g", useGroupScoring: true },
 			{ id: "C_ov", keys: ["calm"], group: "g", override: true, useGroupScoring: false },
 		],
-		divergences: ["D4", "D2"],
+		divergences: [],
 		stExpect: ["C_ov"],
-		vtExpect: ["A_ov_flag"],
+		vtExpect: ["C_ov"],
 	},
 	{
+		// CLOSED by LG-4 (pipeline restructure: scoring filter → override → roll).
 		// D6: two override members — ST resolves by max order, VT by
 		// first-in-activation-order.
 		id: "override_tie_break_max_order",
@@ -293,9 +301,9 @@ export const PARITY_CASES: ParityCase[] = [
 			{ id: "X_ov_low", keys: ["storm"], group: "g", override: true, order: 5 },
 			{ id: "Y_ov_high", keys: ["calm"], group: "g", override: true, order: 10 },
 		],
-		divergences: ["D6"],
+		divergences: [],
 		stExpect: ["Y_ov_high"],
-		vtExpect: ["X_ov_low"],
+		vtExpect: ["Y_ov_high"],
 	},
 	{
 		// CLOSED (was D3, constants): a constant with matching keys scores by
@@ -326,6 +334,7 @@ export const PARITY_CASES: ParityCase[] = [
 		vtExpect: ["Z_one"],
 	},
 	{
+		// CLOSED by LG-4 (pipeline restructure: scoring filter → override → roll).
 		// D1: book-level default. ST global on → every entry competes (the
 		// low scorer is removed). VT has no default; with no per-entry flags
 		// the group falls through to the weighted roll (weights 100/0 → the
@@ -337,9 +346,9 @@ export const PARITY_CASES: ParityCase[] = [
 			{ id: "G_hi", keys: ["storm", "rain"], group: "g", useGroupScoring: null, groupWeight: 0 },
 			{ id: "G_lo", keys: ["storm"], group: "g", useGroupScoring: null, groupWeight: 100 },
 		],
-		divergences: ["D1"],
+		divergences: [],
 		stExpect: ["G_hi"],
-		vtExpect: ["G_lo"],
+		vtExpect: ["G_hi"],
 	},
 	{
 		// D8: a sticky-active member dominates the group in ST (scoring and

@@ -284,7 +284,8 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(read.constant).toBe(false);
     expect(read.ignoreBudget).toBe(false);
     expect(read.prioritizeInclusion).toBe(false);
-    expect(read.useGroupScoring).toBe(false);
+    // Tri-state (LG-4): default is null = inherit the book default, not false.
+    expect(read.useGroupScoring).toBe(null);
     expect(read.excludeRecursion).toBe(false);
     expect(read.preventRecursion).toBe(false);
     expect(read.delayUntilRecursion).toBe(false);
@@ -302,6 +303,21 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     // default is 'after_char'. Pinned so the field-map refactor keeps the
     // normalization as a mapEntryRow post-process.
     expect(read.position).toBe("after_char");
+  });
+
+  // LG-4: the entry flag is tri-state — null (inherit the book default) and
+  // false (explicitly exempt from scoring) must survive the store separately.
+  test("LG-4: entry useGroupScoring tri-state round-trips (null vs false are distinct)", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    const e = await store.createEntry(lb.id, { title: "inherit" });
+    expect((await store.getEntry(e.id))!.useGroupScoring).toBe(null);
+    await store.updateEntry(e.id, { useGroupScoring: false });
+    expect((await store.getEntry(e.id))!.useGroupScoring).toBe(false);
+    await store.updateEntry(e.id, { useGroupScoring: null });
+    expect((await store.getEntry(e.id))!.useGroupScoring).toBe(null);
+    await store.updateEntry(e.id, { useGroupScoring: true });
+    expect((await store.getEntry(e.id))!.useGroupScoring).toBe(true);
   });
 
   test("duplicateLorebook preserves every entry field (LoreEntry→CreateLoreEntryData projection)", async () => {

@@ -503,7 +503,8 @@ export interface LoreEntryRecord {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  useGroupScoring: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level default, true/false = explicit. */
+  useGroupScoring: boolean | null;
   excludeRecursion: boolean;
   preventRecursion: boolean;
   delayUntilRecursion: boolean;

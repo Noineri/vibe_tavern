@@ -302,7 +302,10 @@ export const loreEntries = sqliteTable('lore_entries', {
   groupName: text('group_name').notNull().default(''),
   groupWeight: integer('group_weight').notNull().default(100),
   prioritizeInclusion: integer('prioritize_inclusion').notNull().default(0),
-  useGroupScoring: integer('use_group_scoring').notNull().default(0),
+  // Tri-state (ST parity): null = inherit the book-level useGroupScoring
+  // default, true/false = explicit per-entry override. See
+  // LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-4).
+  useGroupScoring: integer('use_group_scoring'),
   excludeRecursion: integer('exclude_recursion').notNull().default(0),
   preventRecursion: integer('prevent_recursion').notNull().default(0),
   delayUntilRecursion: integer('delay_until_recursion').notNull().default(0),

@@ -144,6 +144,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				tokenBudget: lb.lorebook.tokenBudget,
 				tokenBudgetPercent: lb.lorebook.tokenBudgetPercent,
 				recursiveScanning: lb.lorebook.recursiveScanning,
+				useGroupScoring: lb.lorebook.useGroupScoring,
 				maxRecursionSteps: lb.lorebook.maxRecursionSteps,
 				includeNames: lb.lorebook.includeNames,
 				minActivations: lb.lorebook.minActivations,

@@ -277,7 +277,8 @@ export interface LoreEntry {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  useGroupScoring: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level useGroupScoring default, true/false = explicit per-entry override. See LOREBOOK_GROUP_SCORING_PARITY_REPORT. */
+  useGroupScoring: boolean | null;
   // Recursion
   excludeRecursion: boolean;
   preventRecursion: boolean;

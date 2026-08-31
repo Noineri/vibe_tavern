@@ -218,7 +218,8 @@ export function importJanitorLorebookJson(
       groupName,
       groupWeight: asNumber(entry.groupWeight, 100),
       prioritizeInclusion: asBoolean(entry.prioritizeInclusion, false),
-      useGroupScoring: false,
+      // Janitor cards carry no group-scoring flag → inherit the book default.
+      useGroupScoring: null,
       excludeRecursion: false,
       preventRecursion: false,
       delayUntilRecursion: false,

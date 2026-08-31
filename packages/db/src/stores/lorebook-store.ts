@@ -80,7 +80,8 @@ export interface CreateLoreEntryData {
   groupName?: string;
   groupWeight?: number;
   prioritizeInclusion?: boolean;
-  useGroupScoring?: boolean;
+  /** Tri-state (ST parity): null = inherit the book default, true/false = explicit. */
+  useGroupScoring?: boolean | null;
   excludeRecursion?: boolean;
   preventRecursion?: boolean;
   delayUntilRecursion?: boolean;
@@ -205,7 +206,8 @@ export interface LoreEntry {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  useGroupScoring: boolean;
+  /** Tri-state (ST parity): null = inherit the book default, true/false = explicit. */
+  useGroupScoring: boolean | null;
   excludeRecursion: boolean;
   preventRecursion: boolean;
   delayUntilRecursion: boolean;
@@ -248,7 +250,7 @@ export interface LorebookLink {
 // transforms (it is LoreEntry→CreateLoreEntryData, same domain types) so it is
 // a structural destructure, not a spec loop — type-safe and auto-exhaustive.
 
-type EntryCoerce = 'bool' | 'json' | 'raw';
+type EntryCoerce = 'bool' | 'bool3' | 'json' | 'raw';
 
 interface EntryFieldSpec {
   /** Drizzle column on `loreEntries`. */
@@ -278,7 +280,7 @@ const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldS
   groupName:              { column: 'groupName',              coerce: 'raw',  insertDefault: '' },
   groupWeight:            { column: 'groupWeight',            coerce: 'raw',  insertDefault: 100 },
   prioritizeInclusion:    { column: 'prioritizeInclusion',    coerce: 'bool', insertDefault: false },
-  useGroupScoring:        { column: 'useGroupScoring',        coerce: 'bool', insertDefault: false },
+  useGroupScoring:        { column: 'useGroupScoring',        coerce: 'bool3', insertDefault: null },
   excludeRecursion:       { column: 'excludeRecursion',       coerce: 'bool', insertDefault: false },
   preventRecursion:       { column: 'preventRecursion',       coerce: 'bool', insertDefault: false },
   delayUntilRecursion:    { column: 'delayUntilRecursion',    coerce: 'bool', insertDefault: false },
@@ -299,6 +301,7 @@ const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldS
 function encodeEntryField(coerce: EntryCoerce, value: unknown): number | string | null {
   switch (coerce) {
     case 'bool': return value ? 1 : 0;
+    case 'bool3': return value === null || value === undefined ? null : value ? 1 : 0;
     case 'json': return JSON.stringify(value);
     case 'raw':  return value as number | string | null;
   }
@@ -308,6 +311,7 @@ function encodeEntryField(coerce: EntryCoerce, value: unknown): number | string 
 function decodeEntryField(coerce: EntryCoerce, value: unknown): unknown {
   switch (coerce) {
     case 'bool': return value === 1;
+    case 'bool3': return value === null || value === undefined ? null : value === 1;
     case 'json': return JSON.parse(value as string);
     case 'raw':  return value;
   }

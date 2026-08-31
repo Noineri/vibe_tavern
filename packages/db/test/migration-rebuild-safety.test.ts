@@ -102,8 +102,12 @@ describe("createDb rebuild-migration safety", () => {
     let db = await createDb(dbPath, folder);
     const store = new LorebookStore(db, { clock: testClock, idGenerator: testIdGen, content: null });
     const lb = await store.createLorebook({ name: "Sentinel lorebook", scopeType: "global" });
-    await store.createEntry(lb.id, { title: "e1", content: "content", keys: ["k1"] });
-    await store.createEntry(lb.id, { title: "e2", content: "content", keys: ["k2"] });
+    // Explicit tri-state values, not the null default: the synthetic folder's
+    // frozen baseline still has the pre-LG-4 NOT NULL column, and this test
+    // guards rebuild safety, not schema currency. The explicit 1/0 values are
+    // additionally pinned post-rebuild below.
+    await store.createEntry(lb.id, { title: "e1", content: "content", keys: ["k1"], useGroupScoring: true });
+    await store.createEntry(lb.id, { title: "e2", content: "content", keys: ["k2"], useGroupScoring: false });
 
     expect(countLorebooks(dbPath)).toBe(1);
     expect((await store.listEntries(lb.id)).length).toBe(2);
@@ -136,6 +140,10 @@ describe("createDb rebuild-migration safety", () => {
     const survivingEntries = await afterStore.listEntries(lb.id);
     (db as unknown as { $client: Database }).$client.close();
     expect(survivingEntries.length).toBe(2);
+    // The explicit tri-state values survive the rebuild byte-for-byte.
+    const byTitle = new Map(survivingEntries.map(e => [e.title, e.useGroupScoring]));
+    expect(byTitle.get("e1")).toBe(true);
+    expect(byTitle.get("e2")).toBe(false);
 
     if (threw) console.log("[rebuild-safety] createDb fail-stopped (acceptable); data preserved.");
   });

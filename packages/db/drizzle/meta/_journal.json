@@ -414,6 +414,13 @@
       "when": 1788151055207,
       "tag": "0058_fat_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1788153935920,
+      "tag": "0059_redundant_war_machine",
+      "breakpoints": true
     }
   ]
 }
