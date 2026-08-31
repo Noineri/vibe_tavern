@@ -462,6 +462,45 @@ describe("importStLorebookJson", () => {
     expect(result.warnings.some((w) => w.includes("no primary keys"))).toBe(false);
   });
 
+  // ── LG-8: group-scoring import regression pins ──
+  // ST standalone WI files store runtime field names top-level; ST ALSO
+  // mirrors spec names into `extensions.*` (setWIOriginalDataValue) for V2
+  // card round-trips. The loader reads top-level, so the mirror is irrelevant
+  // on import — pinned below. See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
+
+  it("preserves per-entry useGroupScoring tri-state on import (LG-8)", () => {
+    const lorebook = {
+      name: "Group Scoring Tri-state",
+      entries: [
+        // Realistic ST export entry: top-level runtime flag + extensions mirror.
+        { key: ["on"], content: "Explicit on", useGroupScoring: true, extensions: { use_group_scoring: true } },
+        { key: ["off"], content: "Explicit off", useGroupScoring: false, extensions: { use_group_scoring: false } },
+        // Flag absent → null (inherit the book default), never collapsed to false.
+        { key: ["inherit"], content: "Inherits", extensions: { position: 0 } },
+      ],
+    };
+    const result = importStLorebookJson(lorebook);
+    expect(result.entries.map((e) => e.useGroupScoring)).toEqual([true, false, null]);
+  });
+
+  it("imports books with useGroupScoring defaulting to false (D9: ST's switch is global, nothing importable)", () => {
+    const result = importStLorebookJson(minimalLorebook);
+    expect(result.lorebook.useGroupScoring).toBe(false);
+  });
+
+  it("top-level useGroupScoring is authoritative over the extensions mirror (ST load parity)", () => {
+    // ST saves maintain BOTH spellings in sync; on load the runtime (top-level)
+    // field is read. If they disagree (hand-edited file), ST's shape wins.
+    const lorebook = {
+      name: "Disagree",
+      entries: [
+        { key: ["a"], content: "Test", useGroupScoring: false, extensions: { use_group_scoring: true } },
+      ],
+    };
+    const result = importStLorebookJson(lorebook);
+    expect(result.entries[0].useGroupScoring).toBe(false);
+  });
+
   it("generates deterministic IDs", () => {
     const result1 = importStLorebookJson(minimalLorebook);
     const result2 = importStLorebookJson(minimalLorebook);
