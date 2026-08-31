@@ -214,6 +214,7 @@ function makeLorebook(over: Partial<LorebookRecord> = {}): LorebookRecord {
     tokenBudget: 2048,
     tokenBudgetPercent: null,
     recursiveScanning: false,
+    useGroupScoring: false,
     enabled: true,
     ...over,
   };

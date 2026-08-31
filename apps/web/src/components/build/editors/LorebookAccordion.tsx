@@ -88,6 +88,7 @@ interface LorebookAccordionProps {
     tokenBudget?: number;
     tokenBudgetPercent?: number | null;
     recursiveScanning?: boolean;
+    useGroupScoring?: boolean;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
   onToggleEntryEnabled: (entryId: string, enabled: boolean) => Promise<LoreEntryRecord>;
@@ -524,13 +525,22 @@ export function LorebookAccordion({
                 </div>
               </CustomTooltip>
             </div>
-            <div className="pb-0.5">
+            <div className="flex flex-col gap-2 pb-0.5">
               <CustomTooltip content={t("lore_recursive_scanning_hint")}>
                 <div>
                   <Checkbox
                     checked={lorebook.recursiveScanning}
                     onChange={(v) => onUpdateMeta({ recursiveScanning: v })}
                     label={t("lore_recursive_scanning")}
+                  />
+                </div>
+              </CustomTooltip>
+              <CustomTooltip content={t("lore_book_group_scoring_hint")}>
+                <div>
+                  <Checkbox
+                    checked={lorebook.useGroupScoring}
+                    onChange={(v) => onUpdateMeta({ useGroupScoring: v })}
+                    label={t("lore_book_group_scoring")}
                   />
                 </div>
               </CustomTooltip>

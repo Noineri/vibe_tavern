@@ -564,11 +564,23 @@ export function LoreEntryEditor({
                   </ControlledField>
                 </CustomTooltip>
                 <CustomTooltip content={t("group_scoring_hint")} align="start">
-                  <ControlledField name="useGroupScoring">
-                    {(field) => (
-                      <Checkbox checked={field.value ?? false} onChange={field.onChange} label={t("lore_use_group_scoring")} />
-                    )}
-                  </ControlledField>
+                  <div>
+                    <FieldLabel>{t("lore_use_group_scoring")}</FieldLabel>
+                    <ControlledField name="useGroupScoring">
+                      {(field) => (
+                        <SegmentedControl
+                          compact
+                          value={field.value == null ? "inherit" : field.value ? "on" : "off"}
+                          options={[
+                            { value: "inherit", label: t("lore_group_scoring_inherit") },
+                            { value: "on", label: t("lore_group_scoring_on") },
+                            { value: "off", label: t("lore_group_scoring_off") },
+                          ]}
+                          onChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
+                        />
+                      )}
+                    </ControlledField>
+                  </div>
                 </CustomTooltip>
               </div>
               {existingGroups && existingGroups.filter((g) => g !== groupName).length > 0 && (

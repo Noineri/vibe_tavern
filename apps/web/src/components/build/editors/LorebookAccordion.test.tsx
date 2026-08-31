@@ -111,6 +111,7 @@ const LOREBOOK: LorebookRecord = {
   tokenBudget: 2048,
   tokenBudgetPercent: null,
   recursiveScanning: false,
+  useGroupScoring: false,
   enabled: true,
 };
 
@@ -162,10 +163,12 @@ const ENTRIES: LoreEntryRecord[] = [
   makeEntry({ id: "e3", title: "Fire Sprite", content: "ember", keys: ["fire"], secondaryKeys: ["lair"] }),
 ];
 
-function renderAccordion() {
+function renderAccordion(
+  overrides: Partial<{ lorebook: LorebookRecord; onUpdateMeta: (body: Parameters<NonNullable<Parameters<typeof LorebookAccordion>[0]["onUpdateMeta"]>>[0]) => void }> = {},
+) {
   return render(
     <LorebookAccordion
-      lorebook={LOREBOOK}
+      lorebook={overrides.lorebook ?? LOREBOOK}
       links={[]}
       expanded={true}
       editing={false}
@@ -186,7 +189,7 @@ function renderAccordion() {
       onAddEntry={() => {}}
       onEntryClick={() => {}}
       onToggleEnabled={() => {}}
-      onUpdateMeta={() => {}}
+      onUpdateMeta={overrides.onUpdateMeta ?? (() => {})}
       onReorderEntries={async () => []}
       onToggleEntryEnabled={async () => ENTRIES[0]}
       onSetLinks={() => {}}
@@ -280,5 +283,47 @@ describe("LorebookAccordion search", () => {
     const tagInput = getByPlaceholderText("lore_search_keys_placeholder");
     await user.type(tagInput, "stone{Enter}");
     expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
+  });
+});
+
+// ── LG-7: book-level group scoring checkbox ─────────────────────────────
+
+describe("LorebookAccordion book-level group scoring (LG-7)", () => {
+  beforeEach(() => {
+    listLoreEntries.mockClear();
+    listLoreEntries.mockResolvedValue(ENTRIES);
+  });
+
+  it("renders the checkbox unchecked/checked from the book record", async () => {
+    const off = renderAccordion({ lorebook: { ...LOREBOOK, useGroupScoring: false } });
+    // t is identity → the label text is the i18n key; the Checkbox owns its
+    // <input>. Assert via the meta payload instead of DOM shape (below), here
+    // just pin the control renders.
+    expect(await off.findByText("lore_book_group_scoring")).toBeTruthy();
+    off.unmount();
+
+    const on = renderAccordion({ lorebook: { ...LOREBOOK, useGroupScoring: true } });
+    expect(await on.findByText("lore_book_group_scoring")).toBeTruthy();
+  });
+
+  it("toggling reports onUpdateMeta({ useGroupScoring }) in both directions", async () => {
+    // Two independent renders (unmount between): the disclosure's mount
+    // animation doesn't like two live accordions in one document.
+    const onUpdateMeta = mock();
+    const r1 = renderAccordion({
+      lorebook: { ...LOREBOOK, useGroupScoring: false },
+      onUpdateMeta,
+    });
+    fireEvent.click(await r1.findByText("lore_book_group_scoring"));
+    expect(onUpdateMeta).toHaveBeenCalledWith({ useGroupScoring: true });
+    r1.unmount();
+
+    const on = mock();
+    const r2 = renderAccordion({
+      lorebook: { ...LOREBOOK, useGroupScoring: true },
+      onUpdateMeta: on,
+    });
+    fireEvent.click(await r2.findByText("lore_book_group_scoring"));
+    expect(on).toHaveBeenCalledWith({ useGroupScoring: false });
   });
 });

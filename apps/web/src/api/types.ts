@@ -530,6 +530,8 @@ export interface LorebookRecord {
   tokenBudget: number;
   tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
+  /** Book-level default for entry.useGroupScoring (ST's global switch, scoped to the book). Effective flag: entry.useGroupScoring ?? book.useGroupScoring. */
+  useGroupScoring: boolean;
   enabled: boolean;
 }
 
