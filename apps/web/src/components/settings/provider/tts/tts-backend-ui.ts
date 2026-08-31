@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -242,6 +242,23 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  lmnt: {
+    connection: {
+      apiKey: { placeholder: "LMNT API key" },
+      // Static documented catalog via listModels() — the live speech
+      // page's model enum is the source (exactly `blizzard`).
+      model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
+    },
+    tuning: [
+      // LMNT has no speed knob — its tuning surface is top_p (stability,
+      // documented range [0,1], default 0.8) and temperature
+      // (expressiveness, docs bound it only below at 0, default 1; the
+      // max 2 here is a UI handrail over the docs' own 0.3–1.0 examples).
+      { kind: "number", key: "topP", labelKey: "tts_field_top_p", min: 0, max: 1, step: 0.05, fallback: 0.8 },
+      { kind: "number", key: "temperature", labelKey: "tts_field_temperature", min: 0, max: 2, step: 0.05, fallback: 1 },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -259,6 +276,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.ElevenLabs) return "elevenlabs";
   if (backend === TTS_BACKEND.Cartesia) return "cartesia";
   if (backend === TTS_BACKEND.Inworld) return "inworld";
+  if (backend === TTS_BACKEND.Lmnt) return "lmnt";
   return "kokoro";
 }
 
@@ -275,7 +293,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt) return "cloud";
   return "custom";
 }
 
@@ -302,5 +320,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.Cartesia;
     case "inworld":
       return TTS_BACKEND.Inworld;
+    case "lmnt":
+      return TTS_BACKEND.Lmnt;
   }
 }

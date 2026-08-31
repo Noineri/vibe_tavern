@@ -478,6 +478,8 @@
   "tts_field_speed": "Speed",
   "tts_field_emotion": "Emotion",
   "tts_field_delivery_mode": "Delivery style",
+  "tts_field_top_p": "Stability (top_p)",
+  "tts_field_temperature": "Expressiveness (temperature)",
   "tts_field_voice": "Voice",
   "tts_clone_section_title": "Voice cloning",
   "tts_clone_name_label": "Voice name",

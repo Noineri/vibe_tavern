@@ -480,6 +480,8 @@
   "tts_field_speed": "Скорость",
   "tts_field_emotion": "Эмоция",
   "tts_field_delivery_mode": "Стиль подачи",
+  "tts_field_top_p": "Стабильность (top_p)",
+  "tts_field_temperature": "Выразительность (temperature)",
   "tts_field_voice": "Голос",
   "tts_clone_section_title": "Клонирование голоса",
   "tts_clone_name_label": "Имя голоса",

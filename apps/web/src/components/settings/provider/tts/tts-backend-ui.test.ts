@@ -36,6 +36,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.ElevenLabs, {})).toBe("elevenlabs");
     expect(ttsUiVariantOf(TTS_BACKEND.Cartesia, {})).toBe("cartesia");
     expect(ttsUiVariantOf(TTS_BACKEND.Inworld, {})).toBe("inworld");
+    expect(ttsUiVariantOf(TTS_BACKEND.Lmnt, {})).toBe("lmnt");
   });
 });
 
@@ -48,6 +49,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("elevenlabs")).toBe(TTS_BACKEND.ElevenLabs);
     expect(backendForVariant("cartesia")).toBe(TTS_BACKEND.Cartesia);
     expect(backendForVariant("inworld")).toBe(TTS_BACKEND.Inworld);
+    expect(backendForVariant("lmnt")).toBe(TTS_BACKEND.Lmnt);
   });
 });
 
@@ -117,6 +119,28 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
+  it("lmnt: fetched model list (static catalog) + topP/temperature tuning, NO speed field", () => {
+    const spec = ttsUiSpecFor("lmnt");
+    expect(spec.connection.model?.mode).toBe("fetch");
+    expect(spec.connection.model?.key).toBe("modelId");
+    expect(spec.localHelpers).toBe(false);
+    // LMNT has no speed parameter — its tuning surface is top_p + temperature.
+    expect(spec.tuning.find((f) => f.key === "speed")).toBeUndefined();
+    const topP = spec.tuning.find((f) => f.kind === "number" && f.key === "topP");
+    expect(topP).toBeDefined();
+    if (topP?.kind === "number") {
+      expect(topP.min).toBe(0);
+      expect(topP.max).toBe(1);
+      expect(topP.fallback).toBe(0.8);
+    }
+    const temperature = spec.tuning.find((f) => f.kind === "number" && f.key === "temperature");
+    expect(temperature).toBeDefined();
+    if (temperature?.kind === "number") {
+      expect(temperature.min).toBe(0);
+      expect(temperature.fallback).toBe(1);
+    }
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -124,7 +148,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

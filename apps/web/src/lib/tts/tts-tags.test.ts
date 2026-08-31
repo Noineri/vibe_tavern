@@ -129,4 +129,9 @@ describe("tts-tags — dialect resolution is fact-based", () => {
     expect(ttsTagDialectForProfile({ backend: "inworld", config: { modelId: "inworld-tts-1" } })).toBe("strip");
     expect(ttsTagDialectForProfile({ backend: "inworld", config: {} })).toBe("strip");
   });
+
+  test("lmnt / cartesia strip too (no documented non-verbal tag syntax — the default branch covers them)", () => {
+    expect(ttsTagDialectForProfile({ backend: "lmnt", config: { modelId: "blizzard" } })).toBe("strip");
+    expect(ttsTagDialectForProfile({ backend: "cartesia", config: { modelId: "sonic-3.5" } })).toBe("strip");
+  });
 });

@@ -528,6 +528,8 @@ export const TTS_BACKEND = {
   Cartesia: "cartesia",
   /** TPE-5 — native Inworld (Realtime TTS; IVC cloning, steering tags). */
   Inworld: "inworld",
+  /** TPE-6 — native LMNT (Blizzard; instant cloning, top_p/temperature tuning). */
+  Lmnt: "lmnt",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -691,6 +693,18 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     supportsCloning: true,
     supportsVoiceList: true,
     supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Lmnt]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The bytes endpoint streams, but generate() buffers it whole.
+    supportsStreaming: false,
+    supportsCloning: true,
+    supportsVoiceList: true,
+    // LMNT has NO speed parameter — its tuning surface is top_p
+    // (stability) + temperature (expressiveness) instead.
+    supportsSpeed: false,
     requiresApiKey: true,
   },
 };

@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt";
 /** F8 (owner decision 2026-08-29): `name-heuristic` is REMOVED. Known
  *  presets stamp `documented` (doc-verified static catalog resolved
  *  server-side) or `audio-type` (SiliconFlow ?type=audio); unknown
@@ -128,6 +128,16 @@ export const TTS_PRESETS: TtsPreset[] = [
     backend: "inworld",
     // Same as Cartesia: static documented model catalog via listModels()
     // (Inworld's only list-models endpoint serves LLM-router models).
+    modelFilter: "none",
+  },
+  {
+    id: "lmnt",
+    label: "LMNT",
+    group: "cloud",
+    backend: "lmnt",
+    // Static documented catalog via listModels() — the live speech page's
+    // model enum is the source (exactly `blizzard`; aurora is a retired
+    // server-side alias, not offered).
     modelFilter: "none",
   },
 ];

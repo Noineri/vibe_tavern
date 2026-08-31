@@ -2506,6 +2506,8 @@ export default interface Resources {
     "tts_field_style": "Style",
     "tts_field_style_instructions": "Style Instructions",
     "tts_field_style_instructions_placeholder": "e.g. Speak warmly and slowly...",
+    "tts_field_temperature": "Expressiveness (temperature)",
+    "tts_field_top_p": "Stability (top_p)",
     "tts_field_voice": "Voice",
     "tts_field_voice_manual_placeholder": "voice id from the provider’s catalog",
     "tts_help_choose_chatterbox": "Voice cloning from your own audio sample (Chatterbox, GPU-friendly)",
