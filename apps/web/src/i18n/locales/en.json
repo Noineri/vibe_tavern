@@ -480,6 +480,7 @@
   "tts_field_delivery_mode": "Delivery style",
   "tts_field_top_p": "Stability (top_p)",
   "tts_field_temperature": "Expressiveness (temperature)",
+  "tts_clone_hint_minimax": "MiniMax deletes a cloned voice if you do not use it within 7 days — synthesize with it soon after cloning.",
   "tts_field_voice": "Voice",
   "tts_clone_section_title": "Voice cloning",
   "tts_clone_name_label": "Voice name",

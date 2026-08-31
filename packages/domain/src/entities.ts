@@ -530,6 +530,8 @@ export const TTS_BACKEND = {
   Inworld: "inworld",
   /** TPE-6 — native LMNT (Blizzard; instant cloning, top_p/temperature tuning). */
   Lmnt: "lmnt",
+  /** TPE-7 — native MiniMax (speech-2.8; two-step clone, interjection tags). */
+  MiniMax: "minimax",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -705,6 +707,16 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     // LMNT has NO speed parameter — its tuning surface is top_p
     // (stability) + temperature (expressiveness) instead.
     supportsSpeed: false,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.MiniMax]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // stream:false on the t2a endpoint; generate() buffers the hex audio.
+    supportsStreaming: false,
+    supportsCloning: true,
+    supportsVoiceList: true,
+    supportsSpeed: true,
     requiresApiKey: true,
   },
 };

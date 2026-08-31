@@ -2463,6 +2463,7 @@ export default interface Resources {
     "tts_clone_err_size": "File is larger than {size} MB",
     "tts_clone_file_label": "Reference audio",
     "tts_clone_hint": "{formats} · up to {size} MB · 10–30 seconds of clean speech works best",
+    "tts_clone_hint_minimax": "MiniMax deletes a cloned voice if you do not use it within 7 days — synthesize with it soon after cloning.",
     "tts_clone_name_label": "Voice name",
     "tts_clone_no_file": "no file selected",
     "tts_clone_section_title": "Voice cloning",

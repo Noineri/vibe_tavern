@@ -482,6 +482,7 @@
   "tts_field_delivery_mode": "Стиль подачи",
   "tts_field_top_p": "Стабильность (top_p)",
   "tts_field_temperature": "Выразительность (temperature)",
+  "tts_clone_hint_minimax": "MiniMax удаляет клон-голос, если не использовать его 7 дней — после клонирования скоро озвучь что-нибудь этим голосом.",
   "tts_field_voice": "Голос",
   "tts_clone_section_title": "Клонирование голоса",
   "tts_clone_name_label": "Имя голоса",

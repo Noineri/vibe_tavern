@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax";
 /** F8 (owner decision 2026-08-29): `name-heuristic` is REMOVED. Known
  *  presets stamp `documented` (doc-verified static catalog resolved
  *  server-side) or `audio-type` (SiliconFlow ?type=audio); unknown
@@ -138,6 +138,15 @@ export const TTS_PRESETS: TtsPreset[] = [
     // Static documented catalog via listModels() — the live speech page's
     // model enum is the source (exactly `blizzard`; aurora is a retired
     // server-side alias, not offered).
+    modelFilter: "none",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    group: "cloud",
+    backend: "minimax",
+    // Static documented catalog via listModels() — the t2a page's model
+    // enum (speech-2.8/2.6/02/01, hd + turbo).
     modelFilter: "none",
   },
 ];

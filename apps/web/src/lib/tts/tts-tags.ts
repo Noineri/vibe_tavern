@@ -102,7 +102,7 @@ export function reinsertTtsTags(text: string, tags: ExtractedTtsTag[]): string {
 }
 
 /** Synthesis dialects for narration tags. */
-export type TtsTagDialect = "orpheus" | "chatterbox" | "inworld" | "strip";
+export type TtsTagDialect = "orpheus" | "chatterbox" | "inworld" | "minimax" | "strip";
 
 /** Resolve the dialect for a TTS profile. Fact-based: only openai-compatible
  *  hosts can carry a tag engine, and the model names it (`orpheus-*`,
@@ -117,6 +117,11 @@ export function ttsTagDialectForProfile(profile: {
   if (profile.backend === "inworld") {
     const model = typeof profile.config?.modelId === "string" ? profile.config.modelId.toLowerCase() : "";
     return model.includes("tts-2") ? "inworld" : "strip";
+  }
+  if (profile.backend === "minimax") {
+    // Interjection tags are documented for speech-2.8-hd/turbo only.
+    const model = typeof profile.config?.modelId === "string" ? profile.config.modelId.toLowerCase() : "";
+    return model.includes("speech-2.8") ? "minimax" : "strip";
   }
   if (profile.backend !== "openai-compatible") return "strip";
   const model = typeof profile.config?.model === "string" ? profile.config.model.toLowerCase() : "";
@@ -142,6 +147,22 @@ const INWORLD_TAG_MAP: Partial<Record<TtsAnnotationTag, string>> = {
   chuckle: "[laugh]",
 };
 
+/** MiniMax dialect (TPE-7): the t2a/voice_clone pages document
+ *  parenthesized interjection tags on speech-2.8 models only — (laughs),
+ *  (sighs), (chuckle) (singular in their list!), (coughs), (sniffs),
+ *  (groans), (gasps). That covers 7 of our 8 canonical tags; yawn has no
+ *  documented equivalent and is stripped (an undocumented tag could be
+ *  read aloud as a word). */
+const MINIMAX_TAG_MAP: Partial<Record<TtsAnnotationTag, string>> = {
+  laugh: "(laughs)",
+  sigh: "(sighs)",
+  chuckle: "(chuckle)",
+  cough: "(coughs)",
+  sniffle: "(sniffs)",
+  groan: "(groans)",
+  gasp: "(gasps)",
+};
+
 export function mapTtsTagsForDialect(text: string, dialect: TtsTagDialect): string {
   if (dialect === "chatterbox") return text; // canonical == native form
   if (dialect === "orpheus") {
@@ -151,6 +172,12 @@ export function mapTtsTagsForDialect(text: string, dialect: TtsTagDialect): stri
     return text.replace(TAGS_PATTERN, (token) => {
       const tag = token.slice(1, -1) as TtsAnnotationTag;
       return INWORLD_TAG_MAP[tag] ?? "";
+    }).replace(/ {2,}/g, " ").replace(/ +([.,!?;:])/g, "$1").replace(/^ +/, "").replace(/ +$/, "");
+  }
+  if (dialect === "minimax") {
+    return text.replace(TAGS_PATTERN, (token) => {
+      const tag = token.slice(1, -1) as TtsAnnotationTag;
+      return MINIMAX_TAG_MAP[tag] ?? "";
     }).replace(/ {2,}/g, " ").replace(/ +([.,!?;:])/g, "$1").replace(/^ +/, "").replace(/ +$/, "");
   }
   // strip — remove the tokens so they are never spoken as words. The

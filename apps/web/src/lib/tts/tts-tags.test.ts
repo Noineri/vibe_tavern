@@ -83,6 +83,15 @@ describe("tts-tags — dialect mapping", () => {
     expect(mapTtsTagsForDialect("Well [laugh] I never", "chatterbox")).toBe("Well [laugh] I never");
   });
 
+  test("minimax: documented interjections map 7 of 8 canonical tags; yawn strips", () => {
+    expect(mapTtsTagsForDialect("Well [laugh] I never [sigh]", "minimax")).toBe("Well (laughs) I never (sighs)");
+    // (chuckle) is singular in MiniMax's own list.
+    expect(mapTtsTagsForDialect("He [chuckle] nodded", "minimax")).toBe("He (chuckle) nodded");
+    expect(mapTtsTagsForDialect("[cough] [sniffle] [groan] [gasp]!", "minimax")).toBe("(coughs) (sniffs) (groans) (gasps)!");
+    // yawn has no documented equivalent — stripped, never spoken.
+    expect(mapTtsTagsForDialect("So [yawn] tired", "minimax")).toBe("So tired");
+  });
+
   test("strip: tokens removed entirely — never spoken as words, punctuation stays attached", () => {
     expect(mapTtsTagsForDialect("Well [laugh] I never [sigh]...", "strip")).toBe("Well I never...");
   });
@@ -128,6 +137,14 @@ describe("tts-tags — dialect resolution is fact-based", () => {
     expect(ttsTagDialectForProfile({ backend: "inworld", config: { modelId: "inworld-tts-1.5-max" } })).toBe("strip");
     expect(ttsTagDialectForProfile({ backend: "inworld", config: { modelId: "inworld-tts-1" } })).toBe("strip");
     expect(ttsTagDialectForProfile({ backend: "inworld", config: {} })).toBe("strip");
+  });
+
+  test("minimax: the dialect is gated to the speech-2.8 model family (interjections documented there only)", () => {
+    expect(ttsTagDialectForProfile({ backend: "minimax", config: { modelId: "speech-2.8-hd" } })).toBe("minimax");
+    expect(ttsTagDialectForProfile({ backend: "minimax", config: { modelId: "speech-2.8-turbo" } })).toBe("minimax");
+    expect(ttsTagDialectForProfile({ backend: "minimax", config: { modelId: "speech-2.6-hd" } })).toBe("strip");
+    expect(ttsTagDialectForProfile({ backend: "minimax", config: { modelId: "speech-02-hd" } })).toBe("strip");
+    expect(ttsTagDialectForProfile({ backend: "minimax", config: {} })).toBe("strip");
   });
 
   test("lmnt / cartesia strip too (no documented non-verbal tag syntax — the default branch covers them)", () => {

@@ -152,6 +152,11 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
         <div data-testid="tts-clone-hint" className="font-ui text-[11px] text-t4">
           {t("tts_clone_hint", { formats: formats.join(" · "), size: maxMb })}
         </div>
+        {backend === "minimax" ? (
+          <div data-testid="tts-clone-hint-minimax" className="font-ui text-[11px] text-t4">
+            {t("tts_clone_hint_minimax")}
+          </div>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -440,7 +445,9 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               ? TTS_BACKEND.Inworld
               : preset.backend === "lmnt"
                 ? TTS_BACKEND.Lmnt
-                : TTS_BACKEND.OpenAiCompatible;
+                : preset.backend === "minimax"
+                  ? TTS_BACKEND.MiniMax
+                  : TTS_BACKEND.OpenAiCompatible;
     const nextConfig: Record<string, unknown> = {};
     if (preset.baseUrl) nextConfig["endpoint"] = preset.baseUrl;
     // D15: the preset's modelFilter must ride the config bag — the server

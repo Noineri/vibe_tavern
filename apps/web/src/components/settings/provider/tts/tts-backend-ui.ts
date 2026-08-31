@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -259,6 +259,20 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  minimax: {
+    connection: {
+      apiKey: { placeholder: "MiniMax API key" },
+      // Static documented catalog via listModels() — the t2a page's model
+      // enum (speech-2.8/2.6/02/01, hd + turbo).
+      model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
+    },
+    tuning: [
+      // voice_setting.speed — documented range [0.5, 2]. vol/pitch exist
+      // too but stay unexposed in v1 (logged simplification).
+      { kind: "number", key: "speed", labelKey: "tts_field_speed", min: 0.5, max: 2, step: 0.05, fallback: 1 },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -277,6 +291,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Cartesia) return "cartesia";
   if (backend === TTS_BACKEND.Inworld) return "inworld";
   if (backend === TTS_BACKEND.Lmnt) return "lmnt";
+  if (backend === TTS_BACKEND.MiniMax) return "minimax";
   return "kokoro";
 }
 
@@ -293,7 +308,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax) return "cloud";
   return "custom";
 }
 
@@ -322,5 +337,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.Inworld;
     case "lmnt":
       return TTS_BACKEND.Lmnt;
+    case "minimax":
+      return TTS_BACKEND.MiniMax;
   }
 }

@@ -37,6 +37,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Cartesia, {})).toBe("cartesia");
     expect(ttsUiVariantOf(TTS_BACKEND.Inworld, {})).toBe("inworld");
     expect(ttsUiVariantOf(TTS_BACKEND.Lmnt, {})).toBe("lmnt");
+    expect(ttsUiVariantOf(TTS_BACKEND.MiniMax, {})).toBe("minimax");
   });
 });
 
@@ -50,6 +51,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("cartesia")).toBe(TTS_BACKEND.Cartesia);
     expect(backendForVariant("inworld")).toBe(TTS_BACKEND.Inworld);
     expect(backendForVariant("lmnt")).toBe(TTS_BACKEND.Lmnt);
+    expect(backendForVariant("minimax")).toBe(TTS_BACKEND.MiniMax);
   });
 });
 
@@ -141,6 +143,20 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
+  it("minimax: fetched model list (static catalog) + speed tuning", () => {
+    const spec = ttsUiSpecFor("minimax");
+    expect(spec.connection.model?.mode).toBe("fetch");
+    expect(spec.connection.model?.key).toBe("modelId");
+    expect(spec.localHelpers).toBe(false);
+    const speed = spec.tuning.find((f) => f.kind === "number" && f.key === "speed");
+    expect(speed).toBeDefined();
+    if (speed?.kind === "number") {
+      expect(speed.min).toBe(0.5);
+      expect(speed.max).toBe(2);
+      expect(speed.fallback).toBe(1);
+    }
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -148,7 +164,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");
