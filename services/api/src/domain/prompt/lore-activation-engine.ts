@@ -267,19 +267,40 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         scanText: buildScanText(entry, input.messages, scanDepths, input),
         scanState: "normal",
         currentRecursionLevel: 0,
-        updatedState, activatedIds, failedProbabilityIds,
+        updatedState, activatedIds,
       });
       if (result.status === "activated") {
         logger.debug("  activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
         passCandidates.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason, result.groupScore));
-      } else if (result.status === "failed_probability") {
-        failedProbabilityIds.add(entry.id);
       }
     }
 
+    // LG-11 (ST parity, world-info.js 4881-4886): sticky-first candidate
+    // ordering — governs the group pipeline's multi-group resolution order,
+    // the probability gate, and the budget consumption order. Array#sort is
+    // stable per spec, so the scan order survives within each tier (ST's
+    // sortedEntries.indexOf tie-break).
+    passCandidates.sort((a, b) => Number(stickyActiveIds.has(b.id)) - Number(stickyActiveIds.has(a.id)));
     applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults, stickyActiveIds);
     let normalActivated = 0;
     for (const survivor of passCandidates) {
+      // LG-11 (ST parity, verifyProbability 4909-4931): probability rolls
+      // AFTER the group pipeline. Group losers never rolled. Sticky-active
+      // (an effect persisted from a PREVIOUS scan — the same snapshot basis
+      // ST's isEffectActive reads at roll time) auto-passes. A failure is
+      // permanent for the whole resolve (ST failedProbabilityChecks) and
+      // leaves the survivor's group EMPTY this pass — its competitors were
+      // already removed by the filter. A prob-failed survivor seeds no
+      // recursion and commits no activation state (ST records timed effects
+      // for scan survivors only).
+      const survivorFlat = flatById.get(survivor.id);
+      if (survivorFlat && survivorFlat.probability < 100 && !stickyActiveIds.has(survivor.id)) {
+        if (Math.random() * 100 >= survivorFlat.probability) {
+          logger.debug("  fail %s: probability %d%% (post-group) | title=%s", survivor.id, survivorFlat.probability, survivor.title);
+          failedProbabilityIds.add(survivor.id);
+          continue;
+        }
+      }
       normalActivated++;
       activatedIds.add(survivor.id);
       activated.push(survivor);
@@ -326,21 +347,30 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
           scanText: buildScanText(entry, input.messages, scanDepths, input) + "\n" + recurseBuffer,
           scanState: "recursion",
           currentRecursionLevel,
-          updatedState, activatedIds, failedProbabilityIds,
+          updatedState, activatedIds,
         });
         if (result.status === "activated") {
           logger.debug("  [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
           passCandidates.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason, result.groupScore));
-        } else if (result.status === "failed_probability") {
-          failedProbabilityIds.add(entry.id);
         }
       }
 
       // LG-5: per-pass group pipeline — losers are removed before their
       // content can seed further recursion, and groups whose winner was
       // locked by an earlier pass reject this pass's new candidates.
+      // LG-11: sticky-first ordering (see the normal-scan loop above).
+      passCandidates.sort((a, b) => Number(stickyActiveIds.has(b.id)) - Number(stickyActiveIds.has(a.id)));
       applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults, stickyActiveIds);
       for (const survivor of passCandidates) {
+        // LG-11: post-group probability gate (see the normal-scan loop above).
+        const survivorFlat = flatById.get(survivor.id);
+        if (survivorFlat && survivorFlat.probability < 100 && !stickyActiveIds.has(survivor.id)) {
+          if (Math.random() * 100 >= survivorFlat.probability) {
+            logger.debug("  fail %s: probability %d%% (post-group, recursion) | title=%s", survivor.id, survivorFlat.probability, survivor.title);
+            failedProbabilityIds.add(survivor.id);
+            continue;
+          }
+        }
         newActivations++;
         activatedIds.add(survivor.id);
         activated.push(survivor);
@@ -385,8 +415,20 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // collected, matching ST's filterByInclusionGroups placement inside the
   // scan loop. Earlier-pass winners are locked and never re-resolved.)
 
-  // Sort by priority descending, then by id ascending for stable ordering
-  activated.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+  // Sort by sticky-first, then priority descending, then by id ascending for
+  // stable ordering. The sticky tier (LG-11) makes this the BUDGET consumption
+  // order: ST consumes the budget in the scan loop's sticky-first candidate
+  // order (world-info.js 4881-4893 — newEntries sorted sticky-first, tie =
+  // scan order which is already order-descending), so sticky survivors must
+  // not lose their queue position to a plain priority sort before
+  // applyTokenBudget runs. The pass-local sorts above already carry this; the
+  // tier here survives the cross-pass merge (an earlier pass's non-sticky
+  // winner must not consume budget ahead of a later pass's sticky survivor).
+  activated.sort((a, b) =>
+    Number(stickyActiveIds.has(b.id)) - Number(stickyActiveIds.has(a.id)) ||
+    b.priority - a.priority ||
+    a.id.localeCompare(b.id)
+  );
 
   // Token budget per lorebook
   const budgeted = applyTokenBudget(activated, input.lorebooks, input.estimateTokenCount, input.maxContextTokens);
@@ -401,12 +443,12 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 /**
  * Try to activate a single entry. Returns:
  * - "activated" — entry was activated
- * - "failed_probability" — probability check failed (don't retry)
+
  * - "skipped" — entry was skipped for any other reason
  */
 type ActivationOutcome =
   | { status: "activated"; matchCount: number; matchedKeys: string[]; reason: LoreActivationReason; groupScore: number }
-  | { status: "failed_probability" }
+ 
   | { status: "skipped" };
 
 function tryActivateEntry(ctx: {
@@ -420,7 +462,7 @@ function tryActivateEntry(ctx: {
   currentRecursionLevel: number;
   updatedState: LoreActivationState;
   activatedIds: Set<string>;
-  failedProbabilityIds: Set<string>;
+
 }): ActivationOutcome {
   const { entry, macroMap, characterId, characterName, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
   const reason = (msg: string): ActivationOutcome => { logger.debug("  skip %s: %s | title=%s", entry.id, msg, entry.title); return { status: "skipped" }; };
@@ -531,13 +573,11 @@ function tryActivateEntry(ctx: {
     logger.debug("  actv %s: @@activate decorator | title=%s", entry.id, entry.title);
   }
 
-  // 10. Probability check
-  if (entry.probability < 100) {
-    if (Math.random() * 100 >= entry.probability) {
-      logger.debug("  fail %s: probability %d%% | title=%s", entry.id, entry.probability, entry.title);
-      return { status: "failed_probability" };
-    }
-  }
+  // 10. [LG-11] Probability — REMOVED from activation. ST rolls probability
+  // in the scan loop AFTER the group pipeline (verifyProbability,
+  // world-info.js 4909-4931): group losers never roll, a prob-failed WINNER
+  // leaves its group empty, constants roll like everyone else, and
+  // sticky-active auto-passes. The gate lives in the pass-survivor loops.
 
   // 11. Delay — if delayWindow > 0 and this is first match, set pending
   if (entry.delayWindow > 0 && state?.activatedAtTurn == null) {

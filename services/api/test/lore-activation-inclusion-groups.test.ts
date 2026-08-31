@@ -83,6 +83,63 @@ function activatedIds(result: ReturnType<typeof resolveActivatedEntries>): strin
 	return result.activatedEntries.map((e) => e.id);
 }
 
+describe("probability ordering (LG-11 characterization)", () => {
+	// Characterization-first (LG-11): the first four tests were pinned against
+	// the pre-rework engine (probability rolled inside tryActivateEntry, BEFORE
+	// the group pipeline, and only on the key-match path — constants and the
+	// sticky auto-pass early-returned above the roll), then flipped to ST
+	// semantics (verifyProbability, world-info.js 4909-4931): the roll runs in
+	// the pass-survivor loop, AFTER the group filter, for EVERY survivor except
+	// sticky-active (auto-pass). Group losers never roll; a prob-failed WINNER
+	// leaves its group empty; the sticky-first candidate order becomes the
+	// budget consumption order.
+	const g = { groupName: "weather", useGroupScoring: true, groupWeight: 0 };
+
+	it("LG-11: a probability-0 group WINNER fails AFTER the filter — the group is left EMPTY", () => {
+		const winner = makeEntry({ id: "w", ...g, constant: false, keys: ["storm", "rain"], probability: 0 });
+		const runner = makeEntry({ id: "r", ...g, constant: false, keys: ["storm"], probability: 100 });
+		const result = resolveActivatedEntries(makeInput([winner, runner], ["storm rain"]));
+		// Pre-LG11 pin: ["r"] (the winner failed inside activation, so the
+		// runner-up became the sole candidate). ST: the runner-up was already
+		// REMOVED by the scoring filter when the winner fails probability.
+		expect(activatedIds(result)).toEqual([]);
+	});
+
+	it("LG-11: a probability-0 CONSTANT fails the post-group roll like any survivor", () => {
+		const c = makeEntry({ id: "c", probability: 0 });
+		const result = resolveActivatedEntries(makeInput([c]));
+		// Pre-LG11 pin: ["c"] (the constant step early-returned above the roll,
+		// so constants never rolled at all). ST rolls constants in the same
+		// verifyProbability loop; the failure is permanent for the resolve.
+		expect(activatedIds(result)).toEqual([]);
+	});
+
+	it("LG-11: delay setup happens at match time — a prob-0 entry still becomes delay-pending", () => {
+		const d = makeEntry({ id: "d", constant: false, keys: ["storm"], delayWindow: 2, probability: 0 });
+		const result = resolveActivatedEntries(makeInput([d], ["storm"]));
+		expect(activatedIds(result)).toEqual([]);
+		// Pre-LG11 pin: undefined (the roll preceded the delay setup). ST
+		// writes delay state at match time; probability rolls after the groups.
+		expect(result.updatedState.d).toEqual({ pendingDelayUntilTurn: 3 });
+	});
+
+	it("LG-11: sticky-first candidate order is the BUDGET consumption order — a sticky survivor beats an earlier plain entry", () => {
+		const plain = makeEntry({ id: "p", constant: false, keys: ["storm"], content: "P".repeat(400), ignoreBudget: false });
+		const sticky = makeEntry({ id: "s", stickyWindow: 5, content: "S".repeat(400), ignoreBudget: false });
+		const input = {
+			...makeInput([plain, sticky], ["storm"]),
+			activationState: { s: { activatedAtTurn: 1, lastMatchedAtTurn: 1 } },
+		};
+		input.lorebooks[0].tokenBudget = 100; // fits exactly ONE ~100-token entry
+		const result = resolveActivatedEntries(input);
+		// Pre-LG11 pin: ["p"] (the final priority/id sort decided the budget
+		// queue). ST sorts candidates sticky-first (world-info.js 4881-4886)
+		// before the probability/budget loop, so the sticky survivor consumes
+		// the budget first.
+		expect(activatedIds(result)).toEqual(["s"]);
+	});
+});
+
 describe("inclusion groups — groupScore follows ST getScore (LG-3)", () => {
 	// The score that decides a scoring group is primary matches plus secondary
 	// matches per logic (ST world-info.js getScore), NOT the bare primary
