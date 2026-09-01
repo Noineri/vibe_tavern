@@ -31,6 +31,10 @@ import { TtsSection } from "../settings/provider/tts/TtsSection.js";
 import { TtsProfileEditor } from "../settings/provider/tts/TtsProfileEditor.js";
 import { TtsAudioFooter } from "../settings/provider/tts/TtsAudioFooter.js";
 import { useTtsProfiles } from "../settings/provider/tts/use-tts-profiles.js";
+import { SttSection } from "../settings/provider/stt/SttSection.js";
+import { SttProfileEditor } from "../settings/provider/stt/SttProfileEditor.js";
+import { SttFooter } from "../settings/provider/stt/SttFooter.js";
+import { useSttProfiles } from "../settings/provider/stt/use-stt-profiles.js";
 
 export interface FormState {
   id: string;
@@ -97,7 +101,7 @@ interface ModelOption {
 
 type HeaderMode = "edit" | "view";
 
-export type ProviderCategoryTab = "llm" | "audio";
+export type ProviderCategoryTab = "llm" | "audio" | "stt";
 
 interface ProviderModalProps {
   providerProfiles: ProviderProfileRecord[];
@@ -227,6 +231,7 @@ export function ProviderModal({
   const isMobile = useIsMobile();
   const [activeCategory, setActiveCategory] = useState<ProviderCategoryTab>("llm");
   const tts = useTtsProfiles();
+  const stt = useSttProfiles();
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -451,7 +456,11 @@ export function ProviderModal({
   };
   const requestClose = (target: "close" | "return") => {
     flushLazyAutoSave();
-    if ((dirty && activeCategory === "llm") || (tts.dirty && activeCategory === "audio")) {
+    if (
+      (dirty && activeCategory === "llm") ||
+      (tts.dirty && activeCategory === "audio") ||
+      (stt.dirty && activeCategory === "stt")
+    ) {
       setCloseTarget(target);
       setConfirmClose(true);
     } else completeClose(target);
@@ -653,12 +662,25 @@ export function ProviderModal({
         onClose={handleClose}
         title={t("provider_settings_title")}
         subtitle={t("provider_settings_desc")}
-        detailTitle={activeCategory === "audio" ? (tts.form ? (tts.form.name || t("tts_profile_new_title")) : t("tts_section_title")) : (form?.name ?? t("provider_settings_title"))}
-        dirty={activeCategory === "audio" ? tts.dirty : dirty}
+        detailTitle={
+          activeCategory === "audio"
+            ? tts.form
+              ? tts.form.name || t("tts_profile_new_title")
+              : t("tts_section_title")
+            : activeCategory === "stt"
+              ? stt.form
+                ? stt.form.name || t("stt_profile_new_title")
+                : t("stt_section_title")
+              : form?.name ?? t("provider_settings_title")
+        }
+        dirty={
+          activeCategory === "audio" ? tts.dirty : activeCategory === "stt" ? stt.dirty : dirty
+        }
         tabs={{
           items: [
             { value: "llm", label: t("providers_category_llm") },
             { value: "audio", label: t("providers_category_audio") },
+            { value: "stt", label: t("providers_category_stt") },
           ],
           active: activeCategory,
           onChange: (v) => setActiveCategory(v),
@@ -669,7 +691,9 @@ export function ProviderModal({
         headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
         headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
         masterContent={() =>
-          activeCategory === "audio" ? (
+          activeCategory === "stt" ? (
+            <SttSection stt={stt} />
+          ) : activeCategory === "audio" ? (
             <TtsSection tts={tts} />
           ) : (
             <ProviderProfileList
@@ -690,7 +714,15 @@ export function ProviderModal({
           )
         }
         detailContent={
-          activeCategory === "audio" ? (
+          activeCategory === "stt" ? (
+            stt.form ? (
+              <SttProfileEditor stt={stt} />
+            ) : (
+              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+                {t("stt_section_placeholder")}
+              </div>
+            )
+          ) : activeCategory === "audio" ? (
             tts.form ? (
               <TtsProfileEditor tts={tts} />
             ) : (
@@ -807,7 +839,9 @@ export function ProviderModal({
           )
         }
         footer={
-          activeCategory === "audio" ? (
+          activeCategory === "stt" ? (
+            <SttFooter stt={stt} />
+          ) : activeCategory === "audio" ? (
             <TtsAudioFooter tts={tts} />
           ) : (
             <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}>

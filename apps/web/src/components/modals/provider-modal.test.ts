@@ -182,10 +182,25 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     // Tabs
     expect(within(view.baseElement).getByText("providers_category_llm")).toBeTruthy();
     expect(within(view.baseElement).getByText("providers_category_audio")).toBeTruthy();
+    expect(within(view.baseElement).getByText("providers_category_stt")).toBeTruthy();
     // LLM master list visible (profile name)
     expect(within(view.baseElement).getByText("Alpha")).toBeTruthy();
     // TTS placeholder not visible on LLM tab
     expect(within(view.baseElement).queryByText("tts_section_placeholder")).toBeNull();
+  });
+
+  it("clicking STT switches to SttSection (placeholder state) and hides the provider list", async () => {
+    useModalStore.setState({ isProviderModalOpen: true, providerModalOrigin: null });
+    const view = renderModal(baseProps());
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    const sttRadio = within(view.baseElement).getByRole("radio", { name: "providers_category_stt" });
+    await user.click(sttRadio);
+    await waitFor(() => {
+      expect(within(view.baseElement).getByTestId("stt-section")).toBeTruthy();
+    });
+    // Provider list hidden on STT tab
+    expect(within(view.baseElement).queryByText("Alpha")).toBeNull();
   });
 
   it("clicking Audio switches to TtsSection placeholder and hides provider list; clicking LLM restores it", async () => {
