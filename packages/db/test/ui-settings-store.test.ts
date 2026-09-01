@@ -117,3 +117,57 @@ describe("UiSettingsStore — coauthor binding fields", () => {
 		expect(seeded.coauthorContextBudget).toBeNull();
 	});
 });
+
+describe("UiSettingsStore — STT scenario pointers (ST-1)", () => {
+	test("defaults are null for both activeDictationProfileId and activeVoiceMessageProfileId", async () => {
+		const { settings } = await mkSettingsStore();
+		const got = await settings.get();
+		expect(got.activeDictationProfileId).toBeNull();
+		expect(got.activeVoiceMessageProfileId).toBeNull();
+	});
+
+	test("persists both pointers independently and round-trips a fresh read", async () => {
+		const { settings } = await mkSettingsStore();
+		const updated = await settings.update({
+			activeDictationProfileId: "stt_profile_fast",
+			activeVoiceMessageProfileId: "stt_profile_emotive",
+		});
+		expect(updated.activeDictationProfileId).toBe("stt_profile_fast");
+		expect(updated.activeVoiceMessageProfileId).toBe("stt_profile_emotive");
+
+		const reread = await settings.get();
+		expect(reread.activeDictationProfileId).toBe("stt_profile_fast");
+		expect(reread.activeVoiceMessageProfileId).toBe("stt_profile_emotive");
+
+		// Same profile may back both scenarios.
+		const same = await settings.update({
+			activeDictationProfileId: "stt_profile_shared",
+			activeVoiceMessageProfileId: "stt_profile_shared",
+		});
+		expect(same.activeDictationProfileId).toBe(same.activeVoiceMessageProfileId);
+	});
+
+	test("partial pointer update preserves the other pointer and legacy fields", async () => {
+		const { settings } = await mkSettingsStore();
+		await settings.update({ activeDictationProfileId: "stt_profile_a" });
+		const updated = await settings.update({ activeVoiceMessageProfileId: "stt_profile_b" });
+		expect(updated.activeDictationProfileId).toBe("stt_profile_a");
+		expect(updated.activeVoiceMessageProfileId).toBe("stt_profile_b");
+		expect(updated.theme).toBe("dark"); // untouched legacy field survived
+	});
+
+	test("clearing a pointer back to null round-trips", async () => {
+		const { settings } = await mkSettingsStore();
+		await settings.update({ activeDictationProfileId: "stt_profile_a" });
+		const cleared = await settings.update({ activeDictationProfileId: null });
+		expect(cleared.activeDictationProfileId).toBeNull();
+		expect(await settings.get()).toMatchObject({ activeDictationProfileId: null });
+	});
+
+	test("ensureDefaults seeds both STT pointers as null", async () => {
+		const { settings } = await mkSettingsStore();
+		const seeded = await settings.ensureDefaults();
+		expect(seeded.activeDictationProfileId).toBeNull();
+		expect(seeded.activeVoiceMessageProfileId).toBeNull();
+	});
+});

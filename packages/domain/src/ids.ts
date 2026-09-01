@@ -33,6 +33,8 @@ export type DiceRollId = Brand<"DiceRollId">;
 export type DicePendingLaneId = Brand<"DicePendingLaneId">;
 // TTS voice profiles (TTS_PLAN TS-1).
 export type TtsProfileId = Brand<"TtsProfileId">;
+// STT (speech-to-text) profiles (STT_PLAN ST-1).
+export type SttProfileId = Brand<"SttProfileId">;
 
 // ─── Interactive Runtime (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 1) ─────────
 export type ExperienceVisualId = Brand<"ExperienceVisualId">;

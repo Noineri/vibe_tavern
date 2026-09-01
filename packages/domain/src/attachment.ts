@@ -7,7 +7,13 @@
 import { log } from "./logger.js";
 
 /** Determines how the prompt pipeline processes this attachment. */
-export type AttachmentType = "image" | "file" | "video";
+export type AttachmentType = "image" | "file" | "video" | "audio";
+
+/** Intent of an audio attachment (STT_PLAN ST-1): `voice` notes are
+ *  transcribed and prompt-visible; `music`/`ambient` clips are playback-only
+ *  and never transcribed or injected into the prompt. Absent purpose means
+ *  "voice" — the default (the executor transcribes only `purpose === "voice"`). */
+export type AudioPurpose = "voice" | "music" | "ambient";
 
 /** A single file attached to a chat message. */
 export interface Attachment {
@@ -15,7 +21,7 @@ export interface Attachment {
   id: string;
   /** Reference to the stored asset file in AssetService. */
   assetId: string;
-  /** Kind of attachment — determines pipeline handling (image → ImagePart, file → TextPart, video → frame extraction). */
+  /** Kind of attachment — determines pipeline handling (image → ImagePart, file → TextPart, video → frame extraction, audio → voice transcript). */
   type: AttachmentType;
   /** Original filename as provided by the client. */
   name: string;
@@ -27,8 +33,14 @@ export interface Attachment {
    * Text description of the attachment, populated by the vision model
    * when the primary model lacks vision but a vision fallback model is configured.
    * Null = not yet described or not applicable.
+   * For audio attachments this field carries the STT transcript (STT_PLAN ST-6).
    */
   description?: string | null;
+  /** Audio-only: intent discriminator (`voice` | `music` | `ambient`).
+   *  Absent = "voice" (the default — see {@link AudioPurpose}). */
+  purpose?: AudioPurpose;
+  /** Audio-only: clip length in milliseconds (voice-message bubble UI). */
+  durationMs?: number;
 }
 
 // ─── MIME classification ────────────────────────────────────────────────────
@@ -44,6 +56,19 @@ const IMAGE_MIMES = new Set([
 const VIDEO_MIMES = new Set([
   "video/webm",
   "video/mp4",
+]);
+
+// STT_PLAN ST-1: audio attachments (voice notes, music, ambient loops). Only
+// `purpose === "voice"` clips are transcribed (ST-6); music/ambient stay
+// playback-only. `audio/x-m4a` and `audio/m4a` both listed — iOS/FFmpeg
+// exporters disagree on the canonical m4a type (STT_DESIGN AUDIO_MIMES).
+const AUDIO_MIMES = new Set([
+  "audio/webm",
+  "audio/mp3",
+  "audio/wav",
+  "audio/ogg",
+  "audio/x-m4a",
+  "audio/m4a",
 ]);
 
 const TEXT_MIMES = new Set([
@@ -63,6 +88,7 @@ const TEXT_MIMES = new Set([
 export function classifyAttachment(mimeType: string): AttachmentType {
   if (IMAGE_MIMES.has(mimeType)) return "image";
   if (VIDEO_MIMES.has(mimeType)) return "video";
+  if (AUDIO_MIMES.has(mimeType)) return "audio";
   return "file";
 }
 

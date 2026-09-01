@@ -612,6 +612,43 @@ export const ttsProfileLinks = sqliteTable('tts_profile_links', {
   profileIdx: index('idx_tts_profile_links_profile').on(table.ttsProfileId),
 }));
 
+// ─── sttProfiles ──────────────────────────────────────────────────────
+//
+// Named speech-to-text profiles (STT_PLAN ST-1; design STT_DESIGN).
+// Standalone entity — NOT providerProfiles (LLM-generation-specific), the
+// same rule as ttsProfiles. Columns map 1:1 onto the `SttProfile` domain
+// interface: the backend-specific config (endpoint/model/language — the
+// NON-SECRET union) persists as JSON (`configJson`), validated per-backend by
+// the STT backend registry contracts (ST-2+), not by the DB. `isDefault` is
+// the fallback profile pointer (mirrors tts_profiles.isDefault — at most one
+// row, store-maintained); the two scenario pointers
+// (`ui_settings.active_dictation_profile_id` /
+// `ui_settings.active_voice_message_profile_id`) are the per-scenario
+// selection (may point at the same profile).
+//
+// ST-1 secret rule (the TE2-16 key rule applied to STT): the API key lives in
+// the typed `api_key` column — keys are NEVER stored inside JSON blobs.
+// `configJson` carries everything else; writes strip it defensively.
+export const sttProfiles = sqliteTable('stt_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  backend: text('backend').notNull(),  // STT_BACKENDS slug
+  configJson: text('config_json').notNull().default('{}'),
+  // ST-1 typed key column — the secret never enters config_json: api_key is
+  // write-only across the API (hasStoredApiKey on the wire). Nullable:
+  // in-browser Whisper needs no key at all.
+  apiKey: text('api_key'),
+  // ST-7 capability seam — v1 pure-ASR backends force it off; audio-
+  // understanding backends annotate tone/emotion into the transcript.
+  emotionAnnotation: integer('emotion_annotation', { mode: 'boolean' }).notNull().default(false),
+  isDefault: integer('is_default').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  defaultIdx: index('idx_stt_profiles_default').on(table.isDefault),
+  backendIdx: index('idx_stt_profiles_backend').on(table.backend),
+}));
+
 // ─── chatBranches ──────────────────────────────────────────────────────────────
 
 export const chatBranches = sqliteTable('chat_branches', {
@@ -1011,6 +1048,14 @@ export const uiSettings = sqliteTable('ui_settings', {
   // to true) and on pre-SP-7 upgrades (migration snapshots preset overrides
   // into named profiles). Written once by the startup hook, never reset.
   servicePromptPresetMigrated: integer('service_prompt_preset_migrated', { mode: 'boolean' }).notNull().default(false),
+  // STT scenario pointers (STT_PLAN ST-1): the profile used by dictation
+  // (mic → transcript) and by voice-message transcription respectively; may
+  // point at the same profile. Null → the isDefault fallback profile / no
+  // transcription. No DB-level FK — mirrors coauthor/copilot/service-prompt
+  // bindings (a dangling id resolves back to the fallback rather than
+  // blocking the profile delete).
+  activeDictationProfileId: text('active_dictation_profile_id'),
+  activeVoiceMessageProfileId: text('active_voice_message_profile_id'),
 
   updatedAt: text('updated_at').notNull(),
 });

@@ -80,6 +80,9 @@ export type {
 export { TtsStore } from './tts-store.js';
 export type { CreateTtsProfileData, UpdateTtsProfileData } from './tts-store.js';
 
+export { SttStore } from './stt-store.js';
+export type { CreateSttProfileData, UpdateSttProfileData } from './stt-store.js';
+
 export { CoauthorModuleStore } from './coauthor-module-store.js';
 export type {
   CoauthorModuleRow,

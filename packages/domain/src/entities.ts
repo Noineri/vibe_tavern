@@ -22,6 +22,7 @@ import type {
   RegexProfileId,
   RetrievedMemoryHitId,
   ScriptId,
+  SttProfileId,
   SummaryMemorySnapshotId,
   ToolProfileId,
   TtsProfileId,
@@ -831,6 +832,73 @@ export function classifyOpenAiCompatTransport(endpoint: string): TtsTransport {
   } catch {
     return TTS_TRANSPORT.Cloud;
   }
+}
+
+// ─── STT profiles (STT_PLAN ST-1) ────────────────────────────────────────────
+//
+// Named speech-to-text profiles ("Whisper — small", "Local faster-whisper"),
+// each pairing a backend with its config. STT config deliberately lives here,
+// NOT on provider profiles — the same rule as TTS config (TTS_DESIGN
+// Resolution, locked; STT_DESIGN Conclusion 1). `config` is a per-backend
+// discriminated union owned by the v1 roster; `apiKey` is a typed optional
+// top-level field and NEVER travels inside `config` (the TE2-16 key rule
+// applied to STT — see the stt_profiles table comment).
+
+/** Backend discriminators for the v1 STT roster (STT_DESIGN tiers — the
+ *  zero-setup in-browser default and the single OpenAI-compatible adapter;
+ *  native vendors are a separate post-base decision). */
+export const STT_BACKENDS = {
+  /** Tier 0 — in-browser Whisper via transformers.js (Web Worker, no server). */
+  WhisperBrowser: "whisper-browser",
+  /** Tier 3/2 — any OpenAI-compatible `/v1/audio/transcriptions` endpoint (cloud or local server). */
+  OpenAiCompat: "openai-compat",
+} as const;
+export type SttBackendType = (typeof STT_BACKENDS)[keyof typeof STT_BACKENDS];
+
+/** Backend-specific STT config — a per-backend discriminated union (the
+ *  profile's `backend` field discriminates). Only NON-SECRET fields live
+ *  here; the apiKey is the typed top-level `SttProfile.apiKey` and never
+ *  rides inside config (ST-1, TE2-16 rule). */
+export type SttProfileConfig =
+  | {
+      /** OpenAI-compatible `/v1/audio/transcriptions` endpoint config. */
+      endpoint: string;
+      /** Model slug ("whisper-1", "gpt-4o-transcribe", ...). */
+      model: string;
+      /** Optional language hint (BCP-47-ish). */
+      language?: string;
+    }
+  | {
+      /** transformers.js model id ("Xenova/whisper-small", ...). */
+      model: string;
+      /** Optional language hint (BCP-47-ish). */
+      language?: string;
+    };
+
+/** One named STT profile (transcription backend + config + switches). */
+export interface SttProfile {
+  id: SttProfileId;
+  /** Human-readable profile name ("Whisper — small"). */
+  name: string;
+  /** Backend discriminator (see {@link STT_BACKENDS}). */
+  backend: SttBackendType;
+  /** Backend-specific config — carries NO secret (the key lives in the typed
+   *  {@link SttProfile.apiKey} column; ST-1). */
+  config: SttProfileConfig;
+  /** Write-only API key for the backend — typed column (ST-1), never
+   *  serialized to the client (the wire record reports `hasStoredApiKey`
+   *  instead). Absent = no own key (in-browser Whisper uses none; server
+   *  profiles may resolve their key via auto-key reuse at the adapter). */
+  apiKey?: string;
+  /** When true, the backend annotates tone/emotion into the transcript
+   *  (ST-7 capability seam — v1 pure-ASR backends force it off). */
+  emotionAnnotation: boolean;
+  /** The fallback pointer (mirrors tts_profiles.isDefault) — at most one
+   *  profile at a time (store-maintained; used when neither scenario
+   *  pointer is set). */
+  isDefault: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 // ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────────

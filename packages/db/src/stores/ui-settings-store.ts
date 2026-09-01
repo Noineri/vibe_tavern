@@ -39,6 +39,11 @@ export interface UiSettings {
   activeServicePromptProfileId: string | null;
   /** One-time preset→profile migration marker (SP-7) — see db-schema comment. */
   servicePromptPresetMigrated: boolean;
+  /** STT scenario pointers (STT_PLAN ST-1): dictation + voice-message
+   *  transcription profile ids; may point at the same profile. Null → the
+   *  isDefault fallback / no transcription. */
+  activeDictationProfileId: string | null;
+  activeVoiceMessageProfileId: string | null;
   updatedAt: string;
 }
 
@@ -65,6 +70,8 @@ export interface UiSettingsUpdate {
   copilotModelName?: string | null;
   activeServicePromptProfileId?: string | null;
   servicePromptPresetMigrated?: boolean;
+  activeDictationProfileId?: string | null;
+  activeVoiceMessageProfileId?: string | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -91,6 +98,8 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   copilotModelName: null,
   activeServicePromptProfileId: null,
   servicePromptPresetMigrated: false,
+  activeDictationProfileId: null,
+  activeVoiceMessageProfileId: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -148,6 +157,8 @@ export class UiSettingsStore {
       copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
       activeServicePromptProfileId: partial.activeServicePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
       servicePromptPresetMigrated: partial.servicePromptPresetMigrated ?? UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
+      activeDictationProfileId: partial.activeDictationProfileId ?? UI_SETTINGS_DEFAULTS.activeDictationProfileId,
+      activeVoiceMessageProfileId: partial.activeVoiceMessageProfileId ?? UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -181,6 +192,8 @@ export class UiSettingsStore {
       copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
       activeServicePromptProfileId: UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
       servicePromptPresetMigrated: UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
+      activeDictationProfileId: UI_SETTINGS_DEFAULTS.activeDictationProfileId,
+      activeVoiceMessageProfileId: UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
     }).returning();
 
@@ -212,6 +225,8 @@ export class UiSettingsStore {
       copilotModelName: row.copilotModelName ?? null,
       activeServicePromptProfileId: row.activeServicePromptProfileId ?? null,
       servicePromptPresetMigrated: row.servicePromptPresetMigrated,
+      activeDictationProfileId: row.activeDictationProfileId ?? null,
+      activeVoiceMessageProfileId: row.activeVoiceMessageProfileId ?? null,
       updatedAt: row.updatedAt,
     };
   }
