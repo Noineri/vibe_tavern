@@ -42,6 +42,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Deepgram, {})).toBe("deepgram");
     expect(ttsUiVariantOf(TTS_BACKEND.Azure, {})).toBe("azure");
     expect(ttsUiVariantOf(TTS_BACKEND.Polly, {})).toBe("polly");
+    expect(ttsUiVariantOf(TTS_BACKEND.GoogleCloud, {})).toBe("google-cloud");
   });
 });
 
@@ -60,6 +61,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("deepgram")).toBe(TTS_BACKEND.Deepgram);
     expect(backendForVariant("azure")).toBe(TTS_BACKEND.Azure);
     expect(backendForVariant("polly")).toBe(TTS_BACKEND.Polly);
+    expect(backendForVariant("google-cloud")).toBe(TTS_BACKEND.GoogleCloud);
   });
 });
 
@@ -288,6 +290,46 @@ describe("ttsUiSpecFor (field configuration)", () => {
     expect(spec.tuning.some((f) => f.key === "pitchSt" || f.key === "pitch")).toBe(false);
   });
 
+  it("google-cloud: MULTILINE key (SA JSON paste) with docs link; rate/pitch/volume tuning, NO model field", () => {
+    const spec = ttsUiSpecFor("google-cloud");
+    // The secret IS the service-account JSON file — pasted whole into the
+    // typed apiKey column (owner decision 2026-09-02); multiline marks the
+    // AutoTextarea paste target instead of the one-line masked input.
+    expect(spec.connection.apiKey?.multiline).toBe(true);
+    // Credential how-to under the field (manual-input docs-link pattern).
+    expect(spec.connection.apiKey?.docsUrl).toBe("https://cloud.google.com/iam/docs/keys-create-delete");
+    // The voice id IS the voice name (engine family included) — no model,
+    // no region, no engine select: the live voice picker is the single
+    // selector.
+    expect(spec.connection.model).toBeUndefined();
+    expect(spec.connection.region).toBeUndefined();
+    expect(spec.connection.accessKeyId).toBeUndefined();
+    expect(spec.localHelpers).toBe(false);
+    expect(spec.tuning.some((f) => f.kind === "select")).toBe(false);
+
+    const rate = spec.tuning.find((f) => f.kind === "number" && f.key === "speakingRate");
+    if (rate?.kind === "number") {
+      // Documented multiplier range [0.25, 2.0] (1.0 = native → omitted).
+      expect(rate.min).toBe(0.25);
+      expect(rate.max).toBe(2);
+      expect(rate.fallback).toBe(1);
+    } else expect.unreachable();
+    const pitch = spec.tuning.find((f) => f.kind === "number" && f.key === "pitchSt");
+    if (pitch?.kind === "number") {
+      expect(pitch.min).toBe(-20);
+      expect(pitch.max).toBe(20);
+      expect(pitch.fallback).toBe(0);
+    } else expect.unreachable();
+    const volume = spec.tuning.find((f) => f.kind === "number" && f.key === "volumeGainDb");
+    if (volume?.kind === "number") {
+      // UI window ±16 inside the documented [−96, 16] (docs advise ≤ +10;
+      // backend clamps still cover the full range).
+      expect(volume.min).toBe(-16);
+      expect(volume.max).toBe(16);
+      expect(volume.fallback).toBe(0);
+    } else expect.unreachable();
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -295,7 +337,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

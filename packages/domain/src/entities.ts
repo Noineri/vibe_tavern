@@ -540,6 +540,8 @@ export const TTS_BACKEND = {
   Azure: "azure",
   /** TPE-13 — native Amazon Polly (SigV4 REST, live DescribeVoices roster). */
   Polly: "polly",
+  /** TPE-14 — native Google Cloud TTS (service-account JWT-bearer, live voices.list). */
+  GoogleCloud: "google-cloud",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -787,6 +789,23 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     // per-region roster (no hardcoded voice list — owner rule).
     supportsVoiceList: true,
     // SSML prosody `rate` (absolute % — documented range 20–200).
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.GoogleCloud]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // Synchronous synthesize returns the full clip as base64
+    // audioContent — same buffered contract as every native backend.
+    supportsStreaming: false,
+    // Custom Voice is an AutoML enterprise program (gated) — no cloning
+    // surface for a self-hoster; keeps the editor's clone section hidden.
+    supportsCloning: false,
+    // Live catalog: GET /v1/voices returns the full roster in ONE
+    // response (no pagination documented; no hardcoded voice list —
+    // owner rule).
+    supportsVoiceList: true,
+    // audioConfig.speakingRate (documented multiplier range 0.25–2.0).
     supportsSpeed: true,
     requiresApiKey: true,
   },

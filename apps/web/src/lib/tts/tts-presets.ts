@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud";
 /** TPE-9a (owner rule 2026-09-01): static catalogs are gone — the
  *  retired `documented`/`name-heuristic` stamps no longer exist. Stamps
  *  that remain describe a LIVE server-side filter: `modality`
@@ -189,6 +189,16 @@ export const TTS_PRESETS: TtsPreset[] = [
     // Live discovery (TPE-13): listVoices() pages through DescribeVoices
     // — the voice id IS the VoiceId, no model field; the engine select
     // (tuning) is the documented 4-value enum, not a model.
+    modelFilter: "none",
+  },
+  {
+    id: "google-cloud",
+    label: "Google Cloud TTS",
+    group: "cloud",
+    backend: "google-cloud",
+    // Live discovery (TPE-14): listVoices() fetches the v1 voices.list
+    // roster — the voice id IS the voice name (engine family included),
+    // no model field.
     modelFilter: "none",
   },
 ];

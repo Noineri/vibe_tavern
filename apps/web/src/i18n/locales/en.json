@@ -507,6 +507,7 @@
   "tts_field_model_id": "Model ID",
   "tts_model_docs_link": "Model ids live in the provider docs",
   "tts_region_docs_link": "Region ids live in the provider docs",
+  "tts_key_docs_link": "How to create this key — provider docs",
   "tts_field_stability": "Stability",
   "tts_field_similarity": "Similarity",
   "tts_field_style": "Style",

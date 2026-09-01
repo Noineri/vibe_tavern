@@ -509,6 +509,7 @@
   "tts_field_model_id": "ID модели",
   "tts_model_docs_link": "Имена моделей — в документации провайдера",
   "tts_region_docs_link": "Идентификаторы регионов — в документации провайдера",
+  "tts_key_docs_link": "Как создать такой ключ — в документации провайдера",
   "tts_field_stability": "Стабильность",
   "tts_field_similarity": "Схожесть",
   "tts_field_style": "Стиль",

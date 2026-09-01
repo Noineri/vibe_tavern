@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -91,8 +91,13 @@ export interface TtsConnectionSpec {
   endpoint?: { placeholder: string };
   /** Masked key field — absent for kokoro (browser-local, no credentials).
    *  The value lands in the typed apiKey column (access key / bearer —
-   *  whatever the provider's single secret is). */
-  apiKey?: { placeholder: string };
+   *  whatever the provider's single secret is). `multiline` (TPE-14
+   *  Google Cloud): the "key" is the pasted service-account JSON file —
+   *  rendered as an AutoTextarea paste target instead of the one-line
+   *  masked input (owner decision 2026-09-02; the stored value is still
+   *  never rendered back — F2b stored-key semantics apply). `docsUrl`:
+   *  credential how-to link shown under the field. */
+  apiKey?: { placeholder: string; multiline?: boolean; docsUrl?: string };
   /** Extra NON-secret credential input rendered above the key field
    *  (Volcengine's X-Api-App-Id — a console id, not a secret; config-bag
    *  owned). */
@@ -424,6 +429,35 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  "google-cloud": {
+    connection: {
+      // The secret IS the service-account JSON file (client_email +
+      // private_key) — pasted whole into the typed apiKey column (owner
+      // decision 2026-09-02: SQL column, never a JSON-blob config slot).
+      apiKey: {
+        placeholder: "{ \"type\": \"service_account\", \"client_email\": … } — paste the whole JSON file",
+        multiline: true,
+        // The credential how-to under the field (house manual-input
+        // pattern): creating a service-account key.
+        docsUrl: "https://cloud.google.com/iam/docs/keys-create-delete",
+      },
+      // NO model/region/engine field: the voice id IS the voice name
+      // (engine family included, e.g. en-US-Neural2-F) — the live voice
+      // picker is the single selector.
+    },
+    tuning: [
+      // audioConfig.speakingRate — documented multiplier range 0.25–2.0
+      // (1.0 = native speed → omitted at the fallback).
+      { kind: "number", key: "speakingRate", labelKey: "tts_field_speed", min: 0.25, max: 2, step: 0.05, fallback: 1 },
+      // audioConfig.pitch — semitones within the documented ±20.
+      { kind: "number", key: "pitchSt", labelKey: "tts_field_pitch", min: -20, max: 20, step: 1, fallback: 0 },
+      // audioConfig.volumeGainDb — dB within the documented [−96, 16]
+      // (UI window ±16: the docs themselves advise not exceeding +10;
+      // server-side clamps still cover the full range).
+      { kind: "number", key: "volumeGainDb", labelKey: "tts_field_volume", min: -16, max: 16, step: 1, fallback: 0 },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -447,6 +481,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Deepgram) return "deepgram";
   if (backend === TTS_BACKEND.Azure) return "azure";
   if (backend === TTS_BACKEND.Polly) return "polly";
+  if (backend === TTS_BACKEND.GoogleCloud) return "google-cloud";
   return "kokoro";
 }
 
@@ -463,7 +498,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine || backend === TTS_BACKEND.Deepgram || backend === TTS_BACKEND.Azure || backend === TTS_BACKEND.Polly) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine || backend === TTS_BACKEND.Deepgram || backend === TTS_BACKEND.Azure || backend === TTS_BACKEND.Polly || backend === TTS_BACKEND.GoogleCloud) return "cloud";
   return "custom";
 }
 
@@ -502,5 +537,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.Azure;
     case "polly":
       return TTS_BACKEND.Polly;
+    case "google-cloud":
+      return TTS_BACKEND.GoogleCloud;
   }
 }

@@ -12,6 +12,7 @@ import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { labelCls, inputCls } from "../form-field-classes.js";
 import { monoUICls } from "../../../build/fields/field-styles.js";
 import { TtsApiKeyField } from "./TtsApiKeyField.js";
+import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { ttsProviderSegmentOf, ttsPresetIdOf, ttsUiSpecFor, ttsUiVariantOf, type TtsProviderSegment } from "./tts-backend-ui.js";
 import { configString, formDraftConfig } from "./tts-form-helpers.js";
 // D21: effective auto-key name — the server decorates saved records only, the
@@ -329,12 +330,57 @@ export function TtsProviderForm({
       {showKeyInput && (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
-          <TtsApiKeyField
-            value={apiKey}
-            onChange={(v) => updateForm("apiKey", v)}
-            placeholder={segment === "local" ? t("tts_field_api_key_local_placeholder") : t("api_key_placeholder")}
-            stored={form.hasStoredApiKey}
-          />
+          {spec.connection.apiKey?.multiline === true ? (
+            // TPE-14 Google Cloud: the secret IS the service-account JSON
+            // file — a paste target, not a one-line masked input (owner
+            // decision 2026-09-02). The value lands in the same typed
+            // apiKey column; nothing is ever rendered back — the field is
+            // only populated while the user pastes a NEW key, so the
+            // stored-status line below carries the F2b semantics.
+            <div data-testid="tts-field-api-key-multiline">
+              <AutoTextarea
+                className={monoUICls + " w-full px-3 py-2 text-[12px]"}
+                value={apiKey}
+                onChange={(e) => updateForm("apiKey", e.target.value)}
+                placeholder={
+                  apiKey === "" && form.hasStoredApiKey
+                    ? t("tts_field_api_key_stored")
+                    : spec.connection.apiKey.placeholder
+                }
+                minRows={3}
+                maxRows={8}
+                macroAutocomplete={false}
+                spellCheck={false}
+              />
+              {apiKey === "" && form.hasStoredApiKey && (
+                <div data-testid="tts-field-api-key-status" className="mt-1 font-ui text-[11px] text-t4">
+                  {t("tts_field_api_key_status_stored")}
+                </div>
+              )}
+            </div>
+          ) : (
+            <TtsApiKeyField
+              value={apiKey}
+              onChange={(v) => updateForm("apiKey", v)}
+              placeholder={segment === "local" ? t("tts_field_api_key_local_placeholder") : t("api_key_placeholder")}
+              stored={form.hasStoredApiKey}
+            />
+          )}
+          {/* Credential how-to link (TPE-14): the manual-input docs-link
+              pattern, applied to the key field itself — where to create
+              the pasted credential. */}
+          {spec.connection.apiKey?.docsUrl !== undefined && (
+            <a
+              data-testid="tts-key-docs-link"
+              href={spec.connection.apiKey.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 font-ui text-[12px] text-t3 transition-colors hover:text-accent"
+            >
+              <Icons.Book className="h-3.5 w-3.5" />
+              {t("tts_key_docs_link")}
+            </a>
+          )}
           {/* Default-on key reuse (owner decision): when an LLM provider
               profile's endpoint auto-matches, say WHERE the key comes from —
               typing an own key above overrides it. */}
