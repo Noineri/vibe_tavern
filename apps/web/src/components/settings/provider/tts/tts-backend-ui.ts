@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -347,6 +347,20 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  deepgram: {
+    connection: {
+      apiKey: { placeholder: "Deepgram API key" },
+      // NO model field on purpose: the aura model id IS the voice id
+      // (`[family]-[voicename]-[lang]`), so the live voice picker (fed by
+      // /v1/models) is the single selector — a second field would
+      // duplicate it.
+    },
+    tuning: [
+      // REST `speed` query param — documented range 0.7..1.5, default 1.
+      { kind: "number", key: "speed", labelKey: "tts_field_speed", min: 0.7, max: 1.5, step: 0.05, fallback: 1 },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -367,6 +381,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Lmnt) return "lmnt";
   if (backend === TTS_BACKEND.MiniMax) return "minimax";
   if (backend === TTS_BACKEND.Volcengine) return "volcengine";
+  if (backend === TTS_BACKEND.Deepgram) return "deepgram";
   return "kokoro";
 }
 
@@ -383,7 +398,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine || backend === TTS_BACKEND.Deepgram) return "cloud";
   return "custom";
 }
 
@@ -416,5 +431,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.MiniMax;
     case "volcengine":
       return TTS_BACKEND.Volcengine;
+    case "deepgram":
+      return TTS_BACKEND.Deepgram;
   }
 }

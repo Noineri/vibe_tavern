@@ -11,11 +11,11 @@ import {
 } from "./tts-presets.js";
 
 describe("tts-presets", () => {
-  test("has exactly 13 entries with unique ids", () => {
-    expect(TTS_PRESETS.length).toBe(13);
+  test("has exactly 14 entries with unique ids", () => {
+    expect(TTS_PRESETS.length).toBe(14);
     const ids = TTS_PRESETS.map((p) => p.id);
-    expect(new Set(ids).size).toBe(13);
-    expect(ids).toEqual(["openai", "openrouter", "groq", "siliconflow", "nanogpt", "electronhub", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine"]);
+    expect(new Set(ids).size).toBe(14);
+    expect(ids).toEqual(["openai", "openrouter", "groq", "siliconflow", "nanogpt", "electronhub", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram"]);
   });
 
   test("every openai-compat entry has a baseUrl", () => {
@@ -58,12 +58,12 @@ describe("tts-presets", () => {
     expect(getPresetGroup("unknown")).toBeNull();
 
     const visible = getVisibleTtsPresets();
-    expect(visible.length).toBe(13);
+    expect(visible.length).toBe(14);
     expect(visible.every((p) => p.group === "cloud")).toBe(true);
 
     const visibleWithFlag = getVisibleTtsPresets(true);
-    expect(visibleWithFlag.length).toBe(13);
-    expect(getVisibleProviderPresets(false).length).toBe(12);
+    expect(visibleWithFlag.length).toBe(14);
+    expect(getVisibleProviderPresets(false).length).toBe(14);
 
     const groups = getVisibleTtsPresetGroups();
     expect(groups.length).toBe(1);

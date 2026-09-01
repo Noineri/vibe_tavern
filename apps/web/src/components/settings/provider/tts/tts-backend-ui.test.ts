@@ -39,6 +39,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Lmnt, {})).toBe("lmnt");
     expect(ttsUiVariantOf(TTS_BACKEND.MiniMax, {})).toBe("minimax");
     expect(ttsUiVariantOf(TTS_BACKEND.Volcengine, {})).toBe("volcengine");
+    expect(ttsUiVariantOf(TTS_BACKEND.Deepgram, {})).toBe("deepgram");
   });
 });
 
@@ -54,6 +55,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("lmnt")).toBe(TTS_BACKEND.Lmnt);
     expect(backendForVariant("minimax")).toBe(TTS_BACKEND.MiniMax);
     expect(backendForVariant("volcengine")).toBe(TTS_BACKEND.Volcengine);
+    expect(backendForVariant("deepgram")).toBe(TTS_BACKEND.Deepgram);
   });
 });
 
@@ -195,6 +197,23 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
+  it("deepgram: key-only connection, NO model field (model==voice — the live voice picker is the single selector) + speed tuning", () => {
+    const spec = ttsUiSpecFor("deepgram");
+    expect(spec.connection.apiKey).toBeDefined();
+    // First native backend without a model field: the aura model id IS
+    // the voice id, so exposing both would duplicate the selector.
+    expect(spec.connection.model).toBeUndefined();
+    expect(spec.localHelpers).toBe(false);
+
+    const speed = spec.tuning.find((f) => f.kind === "number" && f.key === "speed");
+    expect(speed).toBeDefined();
+    if (speed?.kind === "number") {
+      expect(speed.min).toBe(0.7);
+      expect(speed.max).toBe(1.5);
+      expect(speed.fallback).toBe(1);
+    }
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -202,7 +221,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

@@ -534,6 +534,8 @@ export const TTS_BACKEND = {
   MiniMax: "minimax",
   /** TPE-9 — native Volcengine/Doubao (seed-tts; async seed-icl cloning). */
   Volcengine: "volcengine",
+  /** TPE-10 — native Deepgram Aura (model==voice, live /v1/models catalog). */
+  Deepgram: "deepgram",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -733,6 +735,22 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     // — the editor's manual floor applies (TPE-9a owner rule).
     supportsVoiceList: false,
     // audio_params.speech_rate [-50,100].
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Deepgram]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The speak endpoint streams audio bytes, but generate() buffers the
+    // whole clip (same contract as every native backend here).
+    supportsStreaming: false,
+    // No cloning in Deepgram's TTS product (docs re-verified 2026-09-02)
+    // — the profile editor's clone section stays hidden (wave-B pin).
+    supportsCloning: false,
+    // Live catalog: GET /v1/models carries the tts array (aura voices) —
+    // the strong form of the TPE-9a owner rule (no hardcoded roster).
+    supportsVoiceList: true,
+    // REST `speed` query param, documented range 0.7–1.5.
     supportsSpeed: true,
     requiresApiKey: true,
   },

@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram";
 /** TPE-9a (owner rule 2026-09-01): static catalogs are gone — the
  *  retired `documented`/`name-heuristic` stamps no longer exist. Stamps
  *  that remain describe a LIVE server-side filter: `modality`
@@ -160,6 +160,16 @@ export const TTS_PRESETS: TtsPreset[] = [
     // / seed-icl-*) doubles as the model; no list endpoint exists for the
     // synthesis credentials — the docs link under the field is the
     // discovery path.
+    modelFilter: "none",
+  },
+  {
+    id: "deepgram",
+    label: "Deepgram",
+    group: "cloud",
+    backend: "deepgram",
+    // Live discovery (TPE-10): listVoices() fetches GET /v1/models and
+    // maps the tts array (aura voices) — model == voice, so there is no
+    // model field at all; the voice picker is the single selector.
     modelFilter: "none",
   },
 ];
