@@ -14,6 +14,8 @@ import { logSendDebug } from "../shared/send-debug-log.js";
 import { createApiRouter, type RuntimeApi } from "../api/routes/index.js";
 import { createKokoroMirrorRoutes } from "../api/routes/kokoro-mirror.js";
 import { KokoroMirrorService } from "../domain/tts/kokoro-mirror.js";
+import { createSttWhisperMirrorRoutes } from "../api/routes/stt-whisper-mirror.js";
+import { WhisperMirrorService } from "../domain/stt/whisper-mirror.js";
 import { createMobileAuthMiddleware, type MobileAccessTokenSource } from "../domain/mobile-access/mobile-auth.js";
 import {
 	createOriginGuardMiddleware,
@@ -55,6 +57,10 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 		apiRouter.route(
 			"/",
 			createKokoroMirrorRoutes(new KokoroMirrorService(deps.dataDir)),
+		);
+		apiRouter.route(
+			"/",
+			createSttWhisperMirrorRoutes(new WhisperMirrorService(deps.dataDir)),
 		);
 	}
 

@@ -31,3 +31,4 @@ export * from "./scene-tracker-constants.js";
 export * from "./service-prompts.js";
 export * from "./text-exact-edit.js";
 export * from "./tts-server-discovery.js";
+export * from "./whisper-models.js";
