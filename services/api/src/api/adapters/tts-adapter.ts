@@ -21,6 +21,10 @@ import "../../domain/tts/backends/deepgram-tts.js";
 import "../../domain/tts/backends/azure-tts.js";
 import "../../domain/tts/backends/polly-tts.js";
 import "../../domain/tts/backends/google-cloud-tts.js";
+// The STT openai-compat adapter self-registers at import time (ST-5a), same
+// protocol-registry pattern as the TTS backends above; the STT adapter that
+// consumes it lands in ST-6+.
+import "../../domain/stt/backends/openai-stt.js";
 
 import { createTtsBackend } from "../../domain/tts/tts-registry.js";
 import { probeDockerAvailability } from "../../domain/tts/docker-probe.js";
