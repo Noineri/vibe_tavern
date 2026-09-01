@@ -532,6 +532,8 @@ export const TTS_BACKEND = {
   Lmnt: "lmnt",
   /** TPE-7 — native MiniMax (speech-2.8; two-step clone, interjection tags). */
   MiniMax: "minimax",
+  /** TPE-9 — native Volcengine/Doubao (seed-tts; async seed-icl cloning). */
+  Volcengine: "volcengine",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -716,6 +718,21 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     supportsStreaming: false,
     supportsCloning: true,
     supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Volcengine]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The unidirectional endpoint streams chunked JSON, but generate()
+    // buffers the base64 chunks into one clip (same contract as minimax).
+    supportsStreaming: false,
+    supportsCloning: true,
+    // No list-voices endpoint exists for the synthesis credentials
+    // (get_voice = single-speaker status; ListSpeakers = IAM console API)
+    // — the editor's manual floor applies (TPE-9a owner rule).
+    supportsVoiceList: false,
+    // audio_params.speech_rate [-50,100].
     supportsSpeed: true,
     requiresApiKey: true,
   },

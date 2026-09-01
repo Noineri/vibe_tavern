@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine";
 /** TPE-9a (owner rule 2026-09-01): static catalogs are gone — the
  *  retired `documented`/`name-heuristic` stamps no longer exist. Stamps
  *  that remain describe a LIVE server-side filter: `modality`
@@ -119,10 +119,8 @@ export const TTS_PRESETS: TtsPreset[] = [
     label: "Cartesia",
     group: "cloud",
     backend: "cartesia",
-    // Native backend with a static documented model catalog served by
-    // listModels() (no network discovery — mirrors the F8 "documented"
-    // philosophy); the model picker's fetch mode resolves through the draft
-    // models route.
+    // Manual model input (TPE-9a owner rule): no public models endpoint —
+    // the docs link under the input field is the discovery path.
     modelFilter: "none",
   },
   {
@@ -130,8 +128,8 @@ export const TTS_PRESETS: TtsPreset[] = [
     label: "Inworld",
     group: "cloud",
     backend: "inworld",
-    // Same as Cartesia: static documented model catalog via listModels()
-    // (Inworld's only list-models endpoint serves LLM-router models).
+    // Live discovery (TPE-9a): listModels() fetches the documented
+    // GET /llm/v1alpha/models and keeps the audio-output entries.
     modelFilter: "none",
   },
   {
@@ -139,9 +137,9 @@ export const TTS_PRESETS: TtsPreset[] = [
     label: "LMNT",
     group: "cloud",
     backend: "lmnt",
-    // Static documented catalog via listModels() — the live speech page's
-    // model enum is the source (exactly `blizzard`; aurora is a retired
-    // server-side alias, not offered).
+    // Manual model input (TPE-9a owner rule): no models endpoint — the
+    // docs link under the input field is the discovery path (blizzard
+    // preset value stays the field default).
     modelFilter: "none",
   },
   {
@@ -149,8 +147,19 @@ export const TTS_PRESETS: TtsPreset[] = [
     label: "MiniMax",
     group: "cloud",
     backend: "minimax",
-    // Static documented catalog via listModels() — the t2a page's model
-    // enum (speech-2.8/2.6/02/01, hd + turbo).
+    // Live discovery (TPE-9a): listModels() fetches the documented
+    // OpenAI-compatible GET /v1/models and keeps the speech-* family.
+    modelFilter: "none",
+  },
+  {
+    id: "volcengine",
+    label: "Volcengine",
+    group: "cloud",
+    backend: "volcengine",
+    // Manual model input (TPE-9a owner rule): the resource id (seed-tts-*
+    // / seed-icl-*) doubles as the model; no list endpoint exists for the
+    // synthesis credentials — the docs link under the field is the
+    // discovery path.
     modelFilter: "none",
   },
 ];

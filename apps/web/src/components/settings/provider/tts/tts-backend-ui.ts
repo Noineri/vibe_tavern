@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -68,17 +68,35 @@ export interface TtsSelectFieldSpec {
   testid: string;
 }
 
+export interface TtsTextFieldSpec {
+  kind: "text";
+  key: string;
+  labelKey: TtsI18nKey;
+  /** Free-form string knob whose legal values are provider-side data
+   *  (e.g. Volcengine emotion — a per-voice enum that lives in the
+   *  provider's voice-roster page, so a select would be a hardcoded
+   *  catalog — owner rule 2026-09-01). */
+  placeholderKey?: TtsI18nKey;
+}
+
 export type TtsTuningFieldSpec =
   | TtsNumberFieldSpec
   | TtsToggleFieldSpec
   | TtsTextareaFieldSpec
-  | TtsSelectFieldSpec;
+  | TtsSelectFieldSpec
+  | TtsTextFieldSpec;
 
 export interface TtsConnectionSpec {
   /** Endpoint input (OpenAI-compatible variants only). */
   endpoint?: { placeholder: string };
-  /** Masked key field — absent for kokoro (browser-local, no credentials). */
+  /** Masked key field — absent for kokoro (browser-local, no credentials).
+   *  The value lands in the typed apiKey column (access key / bearer —
+   *  whatever the provider's single secret is). */
   apiKey?: { placeholder: string };
+  /** Extra NON-secret credential input rendered above the key field
+   *  (Volcengine's X-Api-App-Id — a console id, not a secret; config-bag
+   *  owned). */
+  appId?: { placeholder: string };
   /** Model field: "fetch" = draft-fetched list + manual fallback (F3);
    *  "input" = plain typeable input for vendors without a models endpoint
    *  (ElevenLabs, Cartesia, LMNT). `docsUrl` (input mode, owner decision
@@ -296,6 +314,39 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  volcengine: {
+    connection: {
+      // Non-secret console id (X-Api-App-Id) — config-bag owned; the
+      // SECRET half (X-Api-Access-Key) is the regular masked key field.
+      appId: { placeholder: "1234567890" },
+      apiKey: { placeholder: "Access Key (X-Api-Access-Key)" },
+      // Manual input (TPE-9a owner rule): the resource id doubles as the
+      // model — seed-tts-2.0 / seed-tts-1.0(-concurr) for stock voices,
+      // seed-icl-1.0/2.0 for cloned ones. No list endpoint exists (the
+      // console ListSpeakers APIs are IAM-signed, not synthesis creds),
+      // so the docs link (the resource-id table on the API page) is the
+      // discovery path — never a static catalog.
+      model: {
+        mode: "input",
+        key: "modelId",
+        labelKey: "tts_field_resource_id",
+        docsUrl: "https://www.volcengine.com/docs/6561/1598757",
+      },
+    },
+    tuning: [
+      // audio_params.speech_rate — documented range [-50, 100] (100 = 2x).
+      { kind: "number", key: "speechRate", labelKey: "tts_field_speech_rate", min: -50, max: 100, step: 5, fallback: 0 },
+      // additions.post_process.pitch — documented range [-12, 12].
+      { kind: "number", key: "pitch", labelKey: "tts_field_pitch", min: -12, max: 12, step: 1, fallback: 0 },
+      // audio_params.emotion — a PER-VOICE enum (the docs voice-roster
+      // page owns the values), so it is free text, not a select: an
+      // option list here would be a hardcoded catalog (owner rule).
+      { kind: "text", key: "emotion", labelKey: "tts_field_emotion", placeholderKey: "tts_field_emotion_volcengine_placeholder" },
+      // audio_params.emotion_scale — documented range [1, 5], default 4.
+      { kind: "number", key: "emotionScale", labelKey: "tts_field_emotion_scale", min: 1, max: 5, step: 1, fallback: 4 },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -315,6 +366,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Inworld) return "inworld";
   if (backend === TTS_BACKEND.Lmnt) return "lmnt";
   if (backend === TTS_BACKEND.MiniMax) return "minimax";
+  if (backend === TTS_BACKEND.Volcengine) return "volcengine";
   return "kokoro";
 }
 
@@ -331,7 +383,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine) return "cloud";
   return "custom";
 }
 
@@ -362,5 +414,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.Lmnt;
     case "minimax":
       return TTS_BACKEND.MiniMax;
+    case "volcengine":
+      return TTS_BACKEND.Volcengine;
   }
 }

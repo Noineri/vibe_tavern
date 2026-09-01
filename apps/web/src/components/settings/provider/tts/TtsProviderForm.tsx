@@ -241,6 +241,29 @@ export function TtsProviderForm({
         </div>
       )}
 
+      {/* Extra non-secret credential (Volcengine X-Api-App-Id) — renders
+          above the masked key: a console id, not a secret, so it lives in
+          the config bag rather than the typed key column. */}
+      {spec.connection.appId !== undefined && (
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("tts_field_app_id")}</label>
+          <input
+            type="text"
+            value={configString(form.config, "appId")}
+            onChange={(e) => {
+              const v = e.target.value;
+              const next = { ...form.config };
+              if (v === "") delete next["appId"];
+              else next["appId"] = v;
+              updateForm("config", next);
+            }}
+            placeholder={spec.connection.appId.placeholder}
+            className={inputCls}
+            data-testid="tts-field-app-id"
+          />
+        </div>
+      )}
+
       {/* API key */}
       {showKeyInput && (
         <div className="mb-3">

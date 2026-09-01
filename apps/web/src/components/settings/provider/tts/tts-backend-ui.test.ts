@@ -38,6 +38,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Inworld, {})).toBe("inworld");
     expect(ttsUiVariantOf(TTS_BACKEND.Lmnt, {})).toBe("lmnt");
     expect(ttsUiVariantOf(TTS_BACKEND.MiniMax, {})).toBe("minimax");
+    expect(ttsUiVariantOf(TTS_BACKEND.Volcengine, {})).toBe("volcengine");
   });
 });
 
@@ -52,6 +53,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("inworld")).toBe(TTS_BACKEND.Inworld);
     expect(backendForVariant("lmnt")).toBe(TTS_BACKEND.Lmnt);
     expect(backendForVariant("minimax")).toBe(TTS_BACKEND.MiniMax);
+    expect(backendForVariant("volcengine")).toBe(TTS_BACKEND.Volcengine);
   });
 });
 
@@ -145,7 +147,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
-  it("minimax: fetched model list (static catalog) + speed tuning", () => {
+  it("minimax: fetched model list (live /v1/models) + speed tuning", () => {
     const spec = ttsUiSpecFor("minimax");
     expect(spec.connection.model?.mode).toBe("fetch");
     expect(spec.connection.model?.key).toBe("modelId");
@@ -159,6 +161,40 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
+  it("volcengine: appId + access key + MANUAL model input with docs link (TPE-9a owner rule) + speech/pitch/emotion tuning", () => {
+    const spec = ttsUiSpecFor("volcengine");
+    expect(spec.connection.appId).toBeDefined();
+    expect(spec.connection.apiKey?.placeholder).toContain("Access Key");
+    expect(spec.connection.model?.mode).toBe("input");
+    expect(spec.connection.model?.key).toBe("modelId");
+    expect(spec.connection.model?.docsUrl).toBe("https://www.volcengine.com/docs/6561/1598757");
+    expect(spec.localHelpers).toBe(false);
+
+    const speechRate = spec.tuning.find((f) => f.kind === "number" && f.key === "speechRate");
+    if (speechRate?.kind === "number") {
+      expect(speechRate.min).toBe(-50);
+      expect(speechRate.max).toBe(100);
+      expect(speechRate.fallback).toBe(0);
+    }
+    const pitch = spec.tuning.find((f) => f.kind === "number" && f.key === "pitch");
+    if (pitch?.kind === "number") {
+      expect(pitch.min).toBe(-12);
+      expect(pitch.max).toBe(12);
+      expect(pitch.fallback).toBe(0);
+    }
+    // Emotion is a PER-VOICE enum living in the provider's voice-roster
+    // page — free text, never a select (a select would be a hardcoded
+    // catalog; owner rule 2026-09-01).
+    const emotion = spec.tuning.find((f) => f.kind === "text" && f.key === "emotion");
+    expect(emotion).toBeDefined();
+    const emotionScale = spec.tuning.find((f) => f.kind === "number" && f.key === "emotionScale");
+    if (emotionScale?.kind === "number") {
+      expect(emotionScale.min).toBe(1);
+      expect(emotionScale.max).toBe(5);
+      expect(emotionScale.fallback).toBe(4);
+    }
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -166,7 +202,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

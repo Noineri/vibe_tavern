@@ -469,7 +469,7 @@
   "tts_profile_delete_confirm_body": "Delete \"{name}\"? This cannot be undone.",
   "tts_profiles_load_failed": "Failed to load TTS profiles",
   "tts_field_api_key_local_placeholder": "Optional — some local servers (e.g. edge-tts) require one",
-    "tts_field_api_key_hide": "Hide API key",
+  "tts_field_api_key_hide": "Hide API key",
   "tts_field_api_key_show": "Show API key",
   "tts_field_endpoint": "Endpoint",
   "tts_field_api_key": "API Key",
@@ -2691,5 +2691,12 @@
   "tts_help_cwd_note": "Run these inside the cloned repository folder",
   "tts_help_terminal_hint": "How to run: every command goes into a terminal opened in the folder where you are setting the server up. On Windows — open that folder in Explorer, type cmd in the address bar, press Enter; run commands one at a time: copy → Enter.",
   "tts_help_step_run": "Run the server",
-  "tts_help_step_endpoint": "Endpoint to paste"
+  "tts_help_step_endpoint": "Endpoint to paste",
+  "tts_field_app_id": "App ID (X-Api-App-Id)",
+  "tts_field_resource_id": "Resource ID (model)",
+  "tts_field_speech_rate": "Speech rate",
+  "tts_field_pitch": "Pitch",
+  "tts_field_emotion_scale": "Emotion intensity",
+  "tts_field_emotion_volcengine_placeholder": "e.g. happy — per-voice, see the voice roster",
+  "tts_clone_hint_volcengine": "Cloning trains asynchronously — the voice synthesizes once its status is Ready. Synthesizing a cloned voice needs Resource ID seed-icl-2.0; the voice slot is billed at the first synthesis, and an unused clone is deleted after 7 days."
 }

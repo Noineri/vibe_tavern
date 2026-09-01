@@ -192,6 +192,11 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
             {t("tts_clone_hint_minimax")}
           </div>
         ) : null}
+        {backend === "volcengine" ? (
+          <div data-testid="tts-clone-hint-volcengine" className="font-ui text-[11px] text-t4">
+            {t("tts_clone_hint_volcengine")}
+          </div>
+        ) : null}
         {capabilities.cloneCaveatKey === "siliconflow" ? (
           <div data-testid="tts-clone-hint-siliconflow" className="font-ui text-[11px] text-t4">
             {t("tts_clone_hint_siliconflow")}
@@ -270,6 +275,28 @@ function TtsTuningField({ tts, form, field }: { tts: TtsHook; form: NonNullable<
           minRows={2}
           maxRows={6}
           data-testid="tts-field-style-instructions"
+        />
+      </div>
+    );
+  }
+  if (field.kind === "text") {
+    // Free-form string knob whose legal values are provider-side data
+    // (Volcengine emotion — a per-voice enum living in the provider's
+    // voice-roster page; a select here would be a hardcoded catalog,
+    // owner rule 2026-09-01).
+    return (
+      <div>
+        <label className={lblCls}>{t(field.labelKey)}</label>
+        <input
+          type="text"
+          value={configString(form.config, field.key)}
+          onChange={(e) => {
+            const v = e.target.value;
+            updateConfigField(tts, form, field.key, v.length > 0 ? v : undefined);
+          }}
+          placeholder={field.placeholderKey !== undefined ? t(field.placeholderKey) : undefined}
+          className={inputCls + " mt-1"}
+          data-testid={`tts-field-${field.key}`}
         />
       </div>
     );

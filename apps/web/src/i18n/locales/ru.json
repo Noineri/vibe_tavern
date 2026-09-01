@@ -471,7 +471,7 @@
   "tts_profile_delete_confirm_body": "Удалить \"{name}\"? Это действие нельзя отменить.",
   "tts_profiles_load_failed": "Не удалось загрузить профили TTS",
   "tts_field_api_key_local_placeholder": "Необязательно — некоторые локальные сервера (например, edge-tts) требуют ключ",
-    "tts_field_api_key_hide": "Скрыть API-ключ",
+  "tts_field_api_key_hide": "Скрыть API-ключ",
   "tts_field_api_key_show": "Показать API-ключ",
   "tts_field_endpoint": "Эндпоинт",
   "tts_field_api_key": "API ключ",
@@ -2723,5 +2723,12 @@
   "tts_help_cwd_note": "Выполняйте в папке склонированного репозитория",
   "tts_help_terminal_hint": "Как запускать: команды выполняются в терминале, открытом в папке, куда ставите сервер. В Windows — откройте нужную папку в проводнике, впишите cmd в адресную строку и нажмите Enter; команды вводите по одной: скопировали → Enter.",
   "tts_help_step_run": "Запуск сервера",
-  "tts_help_step_endpoint": "Эндпоинт для вставки"
+  "tts_help_step_endpoint": "Эндпоинт для вставки",
+  "tts_field_app_id": "App ID (X-Api-App-Id)",
+  "tts_field_resource_id": "Resource ID (модель)",
+  "tts_field_speech_rate": "Скорость речи",
+  "tts_field_pitch": "Высота тона",
+  "tts_field_emotion_scale": "Интенсивность эмоции",
+  "tts_field_emotion_volcengine_placeholder": "напр. happy — зависит от голоса, см. список голосов",
+  "tts_clone_hint_volcengine": "Клон обучается асинхронно — голос заработает, когда статус станет готовым. Для синтеза клон-голосом нужен Resource ID seed-icl-2.0; слот голоса оплачивается при первом синтезе, а неиспользованный клон удаляется через 7 дней."
 }

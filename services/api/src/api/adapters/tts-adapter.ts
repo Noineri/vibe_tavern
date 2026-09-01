@@ -16,6 +16,7 @@ import "../../domain/tts/backends/cartesia-tts.js";
 import "../../domain/tts/backends/inworld-tts.js";
 import "../../domain/tts/backends/lmnt-tts.js";
 import "../../domain/tts/backends/minimax-tts.js";
+import "../../domain/tts/backends/volcengine-tts.js";
 
 import { createTtsBackend } from "../../domain/tts/tts-registry.js";
 import { probeDockerAvailability } from "../../domain/tts/docker-probe.js";
