@@ -508,6 +508,7 @@
   "tts_field_style_instructions_placeholder": "напр. Говори тепло и медленно...",
   "tts_field_model_id": "ID модели",
   "tts_model_docs_link": "Имена моделей — в документации провайдера",
+  "tts_region_docs_link": "Идентификаторы регионов — в документации провайдера",
   "tts_field_stability": "Стабильность",
   "tts_field_similarity": "Схожесть",
   "tts_field_style": "Стиль",
@@ -2728,6 +2729,9 @@
   "tts_field_resource_id": "Resource ID (модель)",
   "tts_field_speech_rate": "Скорость речи",
   "tts_field_pitch": "Высота тона",
+  "tts_field_rate": "Темп",
+  "tts_field_volume": "Громкость",
+  "tts_field_region": "Регион",
   "tts_field_emotion_scale": "Интенсивность эмоции",
   "tts_field_emotion_volcengine_placeholder": "напр. happy — зависит от голоса, см. список голосов",
   "tts_clone_hint_volcengine": "Клон обучается асинхронно — голос заработает, когда статус станет готовым. Для синтеза клон-голосом нужен Resource ID seed-icl-2.0; слот голоса оплачивается при первом синтезе, а неиспользованный клон удаляется через 7 дней."

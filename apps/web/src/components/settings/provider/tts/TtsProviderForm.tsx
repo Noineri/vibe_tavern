@@ -264,6 +264,44 @@ export function TtsProviderForm({
         </div>
       )}
 
+      {/* Azure region (TPE-12) — non-secret, REQUIRED by the backend's
+          pre-fetch guard; rendered above the key like appId. Empty value
+          removes the key so the guard sees a clean missing region. */}
+      {spec.connection.region !== undefined && (
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("tts_field_region")}</label>
+          <input
+            type="text"
+            value={configString(form.config, "region")}
+            onChange={(e) => {
+              const v = e.target.value;
+              const next = { ...form.config };
+              if (v === "") delete next["region"];
+              else next["region"] = v;
+              updateForm("config", next);
+            }}
+            placeholder={spec.connection.region.placeholder}
+            className={inputCls}
+            data-testid="tts-field-region"
+          />
+          {/* Docs link under the field — the house pattern from the manual
+              model input (TPE-9a): the region table in the REST reference
+              is the discovery path for this value. */}
+          {spec.connection.region.docsUrl !== undefined && (
+            <a
+              data-testid="tts-region-docs-link"
+              href={spec.connection.region.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 font-ui text-[12px] text-t3 transition-colors hover:text-accent"
+            >
+              <Icons.Book className="h-3.5 w-3.5" />
+              {t("tts_region_docs_link")}
+            </a>
+          )}
+        </div>
+      )}
+
       {/* API key */}
       {showKeyInput && (
         <div className="mb-3">

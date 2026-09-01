@@ -536,6 +536,8 @@ export const TTS_BACKEND = {
   Volcengine: "volcengine",
   /** TPE-10 — native Deepgram Aura (model==voice, live /v1/models catalog). */
   Deepgram: "deepgram",
+  /** TPE-12 — native Azure Speech (region+key REST, live voices/list, SSML). */
+  Azure: "azure",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -751,6 +753,22 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     // the strong form of the TPE-9a owner rule (no hardcoded roster).
     supportsVoiceList: true,
     // REST `speed` query param, documented range 0.7–1.5.
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Azure]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The REST endpoint answers the synthesized audio file; generate()
+    // buffers the whole clip (same contract as every native backend).
+    supportsStreaming: false,
+    // Custom Neural Voice is an application-gated program, not self-serve
+    // cloning — supportsCloning false keeps the clone section hidden.
+    supportsCloning: false,
+    // Live catalog: GET …/cognitiveservices/voices/list returns the full
+    // per-region roster (no hardcoded voice list — owner rule).
+    supportsVoiceList: true,
+    // SSML prosody `rate` (documented relative percentage form).
     supportsSpeed: true,
     requiresApiKey: true,
   },

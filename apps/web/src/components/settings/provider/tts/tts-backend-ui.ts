@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -97,6 +97,9 @@ export interface TtsConnectionSpec {
    *  (Volcengine's X-Api-App-Id — a console id, not a secret; config-bag
    *  owned). */
   appId?: { placeholder: string };
+  /** Azure region (TPE-12) — non-secret, REQUIRED, rendered above the
+   *  masked key (same slot as volcengine appId). */
+  region?: { placeholder: string; docsUrl?: string };
   /** Model field: "fetch" = draft-fetched list + manual fallback (F3);
    *  "input" = plain typeable input for vendors without a models endpoint
    *  (ElevenLabs, Cartesia, LMNT). `docsUrl` (input mode, owner decision
@@ -361,6 +364,27 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  azure: {
+    connection: {
+      apiKey: { placeholder: "Azure Speech resource key" },
+      region: {
+        placeholder: "westus",
+        // The docs' region table (which endpoint serves which region) —
+        // the discovery path for the region value.
+        docsUrl: "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-text-to-speech",
+      },
+      // NO model field: the voice id IS the model id (ShortName like
+      // en-US-JennyNeural) — the live voice picker is the single selector.
+    },
+    tuning: [
+      // SSML prosody trio (documented relative forms); each is omitted
+      // from the SSML entirely when unset.
+      { kind: "number", key: "ratePercent", labelKey: "tts_field_rate", min: -50, max: 100, step: 5, fallback: 0 },
+      { kind: "number", key: "pitchSt", labelKey: "tts_field_pitch", min: -12, max: 12, step: 1, fallback: 0 },
+      { kind: "number", key: "volumePercent", labelKey: "tts_field_volume", min: -100, max: 100, step: 5, fallback: 0 },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -382,6 +406,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.MiniMax) return "minimax";
   if (backend === TTS_BACKEND.Volcengine) return "volcengine";
   if (backend === TTS_BACKEND.Deepgram) return "deepgram";
+  if (backend === TTS_BACKEND.Azure) return "azure";
   return "kokoro";
 }
 
@@ -398,7 +423,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine || backend === TTS_BACKEND.Deepgram) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine || backend === TTS_BACKEND.Deepgram || backend === TTS_BACKEND.Azure) return "cloud";
   return "custom";
 }
 
@@ -433,5 +458,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.Volcengine;
     case "deepgram":
       return TTS_BACKEND.Deepgram;
+    case "azure":
+      return TTS_BACKEND.Azure;
   }
 }

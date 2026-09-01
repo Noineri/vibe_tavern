@@ -40,6 +40,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.MiniMax, {})).toBe("minimax");
     expect(ttsUiVariantOf(TTS_BACKEND.Volcengine, {})).toBe("volcengine");
     expect(ttsUiVariantOf(TTS_BACKEND.Deepgram, {})).toBe("deepgram");
+    expect(ttsUiVariantOf(TTS_BACKEND.Azure, {})).toBe("azure");
   });
 });
 
@@ -56,6 +57,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("minimax")).toBe(TTS_BACKEND.MiniMax);
     expect(backendForVariant("volcengine")).toBe(TTS_BACKEND.Volcengine);
     expect(backendForVariant("deepgram")).toBe(TTS_BACKEND.Deepgram);
+    expect(backendForVariant("azure")).toBe(TTS_BACKEND.Azure);
   });
 });
 
@@ -214,6 +216,37 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
+  it("azure: REQUIRED region field (with docs link) + key + prosody trio tuning, NO model field", () => {
+    const spec = ttsUiSpecFor("azure");
+    expect(spec.connection.apiKey).toBeDefined();
+    // Region is the acceptance-relevant connection field: non-secret,
+    // rendered above the key, with the docs' region table as the
+    // discovery link under the input.
+    expect(spec.connection.region).toEqual({
+      placeholder: "westus",
+      docsUrl: "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-text-to-speech",
+    });
+    expect(spec.connection.model).toBeUndefined();
+    expect(spec.localHelpers).toBe(false);
+
+    const rate = spec.tuning.find((f) => f.kind === "number" && f.key === "ratePercent");
+    if (rate?.kind === "number") {
+      expect(rate.min).toBe(-50);
+      expect(rate.max).toBe(100);
+      expect(rate.fallback).toBe(0);
+    } else expect.unreachable();
+    const pitch = spec.tuning.find((f) => f.kind === "number" && f.key === "pitchSt");
+    if (pitch?.kind === "number") {
+      expect(pitch.min).toBe(-12);
+      expect(pitch.max).toBe(12);
+    } else expect.unreachable();
+    const volume = spec.tuning.find((f) => f.kind === "number" && f.key === "volumePercent");
+    if (volume?.kind === "number") {
+      expect(volume.min).toBe(-100);
+      expect(volume.max).toBe(100);
+    } else expect.unreachable();
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -221,7 +254,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

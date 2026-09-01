@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure";
 /** TPE-9a (owner rule 2026-09-01): static catalogs are gone — the
  *  retired `documented`/`name-heuristic` stamps no longer exist. Stamps
  *  that remain describe a LIVE server-side filter: `modality`
@@ -170,6 +170,15 @@ export const TTS_PRESETS: TtsPreset[] = [
     // Live discovery (TPE-10): listVoices() fetches GET /v1/models and
     // maps the tts array (aura voices) — model == voice, so there is no
     // model field at all; the voice picker is the single selector.
+    modelFilter: "none",
+  },
+  {
+    id: "azure",
+    label: "Azure",
+    group: "cloud",
+    backend: "azure",
+    // Live discovery (TPE-12): listVoices() fetches the region's
+    // voices/list roster — the voice id IS the ShortName, no model field.
     modelFilter: "none",
   },
 ];
