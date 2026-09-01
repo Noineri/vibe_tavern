@@ -538,6 +538,8 @@ export const TTS_BACKEND = {
   Deepgram: "deepgram",
   /** TPE-12 — native Azure Speech (region+key REST, live voices/list, SSML). */
   Azure: "azure",
+  /** TPE-13 — native Amazon Polly (SigV4 REST, live DescribeVoices roster). */
+  Polly: "polly",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -769,6 +771,22 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     // per-region roster (no hardcoded voice list — owner rule).
     supportsVoiceList: true,
     // SSML prosody `rate` (documented relative percentage form).
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Polly]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The REST endpoint answers the synthesized audio stream; generate()
+    // buffers the whole clip (same contract as every native backend).
+    supportsStreaming: false,
+    // The Polly REST API exposes no cloning surface — supportsCloning
+    // false keeps the editor's clone section hidden.
+    supportsCloning: false,
+    // Live catalog: GET /v1/voices (DescribeVoices) paginates the full
+    // per-region roster (no hardcoded voice list — owner rule).
+    supportsVoiceList: true,
+    // SSML prosody `rate` (absolute % — documented range 20–200).
     supportsSpeed: true,
     requiresApiKey: true,
   },

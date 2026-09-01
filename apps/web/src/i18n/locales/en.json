@@ -2700,6 +2700,8 @@
   "tts_field_rate": "Rate",
   "tts_field_volume": "Volume",
   "tts_field_region": "Region",
+  "tts_field_access_key_id": "Access Key ID",
+  "tts_field_engine": "Engine",
   "tts_field_emotion_scale": "Emotion intensity",
   "tts_field_emotion_volcengine_placeholder": "e.g. happy — per-voice, see the voice roster",
   "tts_clone_hint_volcengine": "Cloning trains asynchronously — the voice synthesizes once its status is Ready. Synthesizing a cloned voice needs Resource ID seed-icl-2.0; the voice slot is billed at the first synthesis, and an unused clone is deleted after 7 days."

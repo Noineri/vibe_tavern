@@ -33,7 +33,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -100,6 +100,10 @@ export interface TtsConnectionSpec {
   /** Azure region (TPE-12) — non-secret, REQUIRED, rendered above the
    *  masked key (same slot as volcengine appId). */
   region?: { placeholder: string; docsUrl?: string };
+  /** AWS AccessKeyId (TPE-13 Polly) — non-secret console identifier,
+   *  config-bag owned; the SECRET half (Secret Access Key) is the regular
+   *  masked key field. Rendered in the appId/region slot above the key. */
+  accessKeyId?: { placeholder: string };
   /** Model field: "fetch" = draft-fetched list + manual fallback (F3);
    *  "input" = plain typeable input for vendors without a models endpoint
    *  (ElevenLabs, Cartesia, LMNT). `docsUrl` (input mode, owner decision
@@ -385,6 +389,41 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  polly: {
+    connection: {
+      apiKey: { placeholder: "Secret Access Key" },
+      accessKeyId: { placeholder: "AKIA..." },
+      region: {
+        placeholder: "us-east-1",
+        // The AWS endpoints table (which regions serve Polly) — the
+        // discovery path for the region value.
+        docsUrl: "https://docs.aws.amazon.com/general/latest/gr/pol.html",
+      },
+      // NO model field: the voice id IS the VoiceId (Joanna etc.) — the
+      // live voice picker (DescribeVoices) is the voice selector; the
+      // engine select below is the documented 4-value enum, not a model.
+    },
+    tuning: [
+      {
+        kind: "select",
+        key: "engine",
+        labelKey: "tts_field_engine",
+        // The documented Engine enum; default standard is the server
+        // default (SynthesizeSpeech) — neural-only voices carry an engines
+        // marker in their label so mismatches are visible before probing.
+        options: ["standard", "neural", "long-form", "generative"].map((e) => ({ id: e, label: e })),
+        fallback: "standard",
+        testid: "tts-field-engine",
+      },
+      // SSML prosody rate — ABSOLUTE % with the documented range 20–200
+      // (100 = no change → attribute omitted at the fallback). Pitch is
+      // NOT offered: neural/long-form/generative voices reject it.
+      { kind: "number", key: "ratePercent", labelKey: "tts_field_rate", min: 20, max: 200, step: 5, fallback: 100 },
+      // SSML prosody volume — relative ±ndB (0 = omitted).
+      { kind: "number", key: "volumeDb", labelKey: "tts_field_volume", min: -12, max: 12, step: 1, fallback: 0 },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -407,6 +446,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Volcengine) return "volcengine";
   if (backend === TTS_BACKEND.Deepgram) return "deepgram";
   if (backend === TTS_BACKEND.Azure) return "azure";
+  if (backend === TTS_BACKEND.Polly) return "polly";
   return "kokoro";
 }
 
@@ -423,7 +463,7 @@ export function ttsProviderSegmentOf(
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
   if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
     return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine || backend === TTS_BACKEND.Deepgram || backend === TTS_BACKEND.Azure) return "cloud";
+  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine || backend === TTS_BACKEND.Deepgram || backend === TTS_BACKEND.Azure || backend === TTS_BACKEND.Polly) return "cloud";
   return "custom";
 }
 
@@ -460,5 +500,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.Deepgram;
     case "azure":
       return TTS_BACKEND.Azure;
+    case "polly":
+      return TTS_BACKEND.Polly;
   }
 }

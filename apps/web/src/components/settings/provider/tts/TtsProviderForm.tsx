@@ -264,6 +264,29 @@ export function TtsProviderForm({
         </div>
       )}
 
+      {/* Polly AccessKeyId (TPE-13) — non-secret console identifier, config-bag
+          owned (same slot as appId/region); the SECRET half (Secret Access
+          Key) is the masked key field below. Empty value removes the key. */}
+      {spec.connection.accessKeyId !== undefined && (
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("tts_field_access_key_id")}</label>
+          <input
+            type="text"
+            value={configString(form.config, "accessKeyId")}
+            onChange={(e) => {
+              const v = e.target.value;
+              const next = { ...form.config };
+              if (v === "") delete next["accessKeyId"];
+              else next["accessKeyId"] = v;
+              updateForm("config", next);
+            }}
+            placeholder={spec.connection.accessKeyId.placeholder}
+            className={inputCls}
+            data-testid="tts-field-access-key-id"
+          />
+        </div>
+      )}
+
       {/* Azure region (TPE-12) — non-secret, REQUIRED by the backend's
           pre-fetch guard; rendered above the key like appId. Empty value
           removes the key so the guard sees a clean missing region. */}

@@ -2732,6 +2732,8 @@
   "tts_field_rate": "Темп",
   "tts_field_volume": "Громкость",
   "tts_field_region": "Регион",
+  "tts_field_access_key_id": "Access Key ID",
+  "tts_field_engine": "Движок",
   "tts_field_emotion_scale": "Интенсивность эмоции",
   "tts_field_emotion_volcengine_placeholder": "напр. happy — зависит от голоса, см. список голосов",
   "tts_clone_hint_volcengine": "Клон обучается асинхронно — голос заработает, когда статус станет готовым. Для синтеза клон-голосом нужен Resource ID seed-icl-2.0; слот голоса оплачивается при первом синтезе, а неиспользованный клон удаляется через 7 дней."

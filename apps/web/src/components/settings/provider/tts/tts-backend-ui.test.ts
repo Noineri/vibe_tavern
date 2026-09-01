@@ -41,6 +41,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Volcengine, {})).toBe("volcengine");
     expect(ttsUiVariantOf(TTS_BACKEND.Deepgram, {})).toBe("deepgram");
     expect(ttsUiVariantOf(TTS_BACKEND.Azure, {})).toBe("azure");
+    expect(ttsUiVariantOf(TTS_BACKEND.Polly, {})).toBe("polly");
   });
 });
 
@@ -58,6 +59,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("volcengine")).toBe(TTS_BACKEND.Volcengine);
     expect(backendForVariant("deepgram")).toBe(TTS_BACKEND.Deepgram);
     expect(backendForVariant("azure")).toBe(TTS_BACKEND.Azure);
+    expect(backendForVariant("polly")).toBe(TTS_BACKEND.Polly);
   });
 });
 
@@ -247,6 +249,45 @@ describe("ttsUiSpecFor (field configuration)", () => {
     } else expect.unreachable();
   });
 
+  it("polly: accessKeyId + REQUIRED region (docs link) + key; engine select + rate/volume tuning, NO model field", () => {
+    const spec = ttsUiSpecFor("polly");
+    expect(spec.connection.apiKey).toBeDefined();
+    // AWS AccessKeyId — non-secret console id above the key (the SECRET
+    // half is the masked key field).
+    expect(spec.connection.accessKeyId).toEqual({ placeholder: "AKIA..." });
+    // Region carries the AWS endpoints table as the discovery link.
+    expect(spec.connection.region).toEqual({
+      placeholder: "us-east-1",
+      docsUrl: "https://docs.aws.amazon.com/general/latest/gr/pol.html",
+    });
+    // The voice id IS the VoiceId — no model field; the engine select is
+    // the documented 4-value enum, not a model.
+    expect(spec.connection.model).toBeUndefined();
+    expect(spec.localHelpers).toBe(false);
+
+    const engine = spec.tuning.find((f) => f.kind === "select" && f.key === "engine");
+    if (engine?.kind === "select") {
+      expect(engine.options.map((o) => o.id)).toEqual(["standard", "neural", "long-form", "generative"]);
+      expect(engine.fallback).toBe("standard");
+    } else expect.unreachable();
+    const rate = spec.tuning.find((f) => f.kind === "number" && f.key === "ratePercent");
+    if (rate?.kind === "number") {
+      // ABSOLUTE percent, documented range 20–200, 100 = no change.
+      expect(rate.min).toBe(20);
+      expect(rate.max).toBe(200);
+      expect(rate.fallback).toBe(100);
+    } else expect.unreachable();
+    const volume = spec.tuning.find((f) => f.kind === "number" && f.key === "volumeDb");
+    if (volume?.kind === "number") {
+      // Relative ±ndB, 0 = no change.
+      expect(volume.min).toBe(-12);
+      expect(volume.max).toBe(12);
+      expect(volume.fallback).toBe(0);
+    } else expect.unreachable();
+    // pitch is NOT offered: neural/long-form/generative reject it.
+    expect(spec.tuning.some((f) => f.key === "pitchSt" || f.key === "pitch")).toBe(false);
+  });
+
   it("both openai-compatible variants share the same tuning fields", () => {
     expect(ttsUiSpecFor("local").tuning).toEqual(ttsUiSpecFor("openai").tuning);
   });
@@ -254,7 +295,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

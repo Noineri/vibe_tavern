@@ -19,6 +19,7 @@ import "../../domain/tts/backends/minimax-tts.js";
 import "../../domain/tts/backends/volcengine-tts.js";
 import "../../domain/tts/backends/deepgram-tts.js";
 import "../../domain/tts/backends/azure-tts.js";
+import "../../domain/tts/backends/polly-tts.js";
 
 import { createTtsBackend } from "../../domain/tts/tts-registry.js";
 import { probeDockerAvailability } from "../../domain/tts/docker-probe.js";
