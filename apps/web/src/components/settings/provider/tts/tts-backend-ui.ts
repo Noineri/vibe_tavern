@@ -80,12 +80,17 @@ export interface TtsConnectionSpec {
   /** Masked key field — absent for kokoro (browser-local, no credentials). */
   apiKey?: { placeholder: string };
   /** Model field: "fetch" = draft-fetched list + manual fallback (F3);
-   *  "input" = plain typeable input (ElevenLabs has no list endpoint). */
+   *  "input" = plain typeable input for vendors without a models endpoint
+   *  (ElevenLabs, Cartesia, LMNT). `docsUrl` (input mode, owner decision
+   *  2026-09-01): link to the provider's model docs shown under the input —
+   *  the user copies the current model id from the provider's own page; no
+   *  static catalogs in code (TPE-9a owner rule). */
   model?: {
     mode: "fetch" | "input";
-    /** Config key: "model" everywhere except ElevenLabs ("modelId"). */
+    /** Config key: "model" everywhere except the native vendors ("modelId"). */
     key: "model" | "modelId";
     labelKey: TtsI18nKey;
+    docsUrl?: string;
   };
 }
 
@@ -184,7 +189,12 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
   elevenlabs: {
     connection: {
       apiKey: { placeholder: "sk_..." },
-      model: { mode: "input", key: "modelId", labelKey: "tts_field_model_id" },
+      model: {
+        mode: "input",
+        key: "modelId",
+        labelKey: "tts_field_model_id",
+        docsUrl: "https://elevenlabs.io/docs/models",
+      },
     },
     tuning: [
       { kind: "number", key: "stability", labelKey: "tts_field_stability", min: 0, max: 1, step: 0.05, fallback: 0.5 },
@@ -198,10 +208,16 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
   cartesia: {
     connection: {
       apiKey: { placeholder: "sk_car_..." },
-      // Static documented catalog served by the backend's listModels() —
-      // the fetch mode resolves through the draft models route, no
-      // network discovery on Cartesia's side (no /models endpoint exists).
-      model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
+      // Manual input (TPE-9a owner rule): Cartesia serves no public models
+      // endpoint (its llms.txt API index has no /models route; the docs'
+      // models page sits behind auth) — no static catalog, the docs link
+      // under the input is the discovery path; preset value is the default.
+      model: {
+        mode: "input",
+        key: "modelId",
+        labelKey: "tts_field_model_id",
+        docsUrl: "https://docs.cartesia.ai/build-with-cartesia/tts-models",
+      },
     },
     tuning: [
       // generation_config on sonic-3+ only — the backend gates it per
@@ -222,8 +238,8 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
   inworld: {
     connection: {
       apiKey: { placeholder: "Inworld API key" },
-      // Static documented catalog via listModels() — Inworld's only
-      // list-models endpoint serves LLM-router models, not TTS.
+      // Live discovery (TPE-9a): listModels() fetches GET /llm/v1alpha/models
+      // and keeps entries whose spec.outputModalities include "audio".
       model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
     },
     tuning: [
@@ -245,9 +261,16 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
   lmnt: {
     connection: {
       apiKey: { placeholder: "LMNT API key" },
-      // Static documented catalog via listModels() — the live speech
-      // page's model enum is the source (exactly `blizzard`).
-      model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
+      // Manual input (TPE-9a owner rule): LMNT documents no models endpoint
+      // (its llms.txt index: speech/sessions/voices/accounts only) — no
+      // static catalog, the docs link under the input is the discovery
+      // path; preset value (blizzard) is the default.
+      model: {
+        mode: "input",
+        key: "modelId",
+        labelKey: "tts_field_model_id",
+        docsUrl: "https://docs.lmnt.com/models/overview",
+      },
     },
     tuning: [
       // LMNT has no speed knob — its tuning surface is top_p (stability,
@@ -262,8 +285,8 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
   minimax: {
     connection: {
       apiKey: { placeholder: "MiniMax API key" },
-      // Static documented catalog via listModels() — the t2a page's model
-      // enum (speech-2.8/2.6/02/01, hd + turbo).
+      // Live discovery (TPE-9a): listModels() fetches the documented
+      // GET /v1/models and keeps the speech-* family.
       model: { mode: "fetch", key: "modelId", labelKey: "tts_field_model" },
     },
     tuning: [

@@ -72,17 +72,6 @@ const DEFAULT_MODEL_ID = "speech-2.8-hd";
 
 /** Static documented model catalog — the t2a page's model enum (no
  *  list-models endpoint exists). */
-const DOCUMENTED_MODELS: TtsModelInfo[] = [
-  { id: "speech-2.8-hd", label: "speech-2.8-hd · latest flagship" },
-  { id: "speech-2.8-turbo", label: "speech-2.8-turbo · latest fast" },
-  { id: "speech-2.6-hd", label: "speech-2.6-hd" },
-  { id: "speech-2.6-turbo", label: "speech-2.6-turbo" },
-  { id: "speech-02-hd", label: "speech-02-hd" },
-  { id: "speech-02-turbo", label: "speech-02-turbo" },
-  { id: "speech-01-hd", label: "speech-01-hd · legacy" },
-  { id: "speech-01-turbo", label: "speech-01-turbo · legacy" },
-];
-
 /** voice_setting.speed — documented range [0.5, 2]. */
 const MIN_SPEED = 0.5;
 const MAX_SPEED = 2;
@@ -253,8 +242,30 @@ export class MinimaxTtsBackend implements TtsBackend {
   }
 
   async listModels(): Promise<TtsModelInfo[]> {
-    // Static documented catalog — no network call, no key needed.
-    return [...DOCUMENTED_MODELS];
+    // Live discovery (owner audit 2026-09-01: static catalogs out): MiniMax
+    // documents an OpenAI-compatible GET /v1/models ("Returns a list of all
+    // available models", platform.minimax.io/docs/api-reference/models/
+    // openai/list-models). The TTS models are the `speech-*` family named by
+    // the T2A page's own model enum — a filter criterion, not a list: new
+    // speech releases appear here without a code change. A catalog without
+    // speech entries returns [] (the picker degrades to manual input).
+    const apiKey = this.requireApiKey();
+    const response = await fetch(`${MINIMAX_BASE_URL}/v1/models`, {
+      headers: authHeaders(apiKey),
+    });
+    await expectOk(response, "model list");
+    const root = (await response.json().catch(() => null)) as unknown;
+    const data =
+      typeof root === "object" && root !== null ? (root as Record<string, unknown>).data : undefined;
+    if (!Array.isArray(data)) return [];
+    const out: TtsModelInfo[] = [];
+    for (const entry of data) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const id = (entry as Record<string, unknown>).id;
+      if (typeof id !== "string" || !id.startsWith("speech-")) continue;
+      out.push({ id, label: id });
+    }
+    return out;
   }
 
   async probe(): Promise<TtsProbeResult> {

@@ -240,19 +240,47 @@ describe("parseVoicesPage", () => {
   });
 });
 
-// ─── listModels (static documented catalog — no network) ─────────────────────
+// ─── listModels (live GET /llm/v1alpha/models + audio-output criterion) ───
 
 describe("InworldTtsBackend.listModels", () => {
-  test("serves the static documented catalog without touching the network", async () => {
+  test("fetches the live /llm/v1alpha/models catalog and keeps audio-output entries", async () => {
     installFetchMock();
+    nextResponse = Response.json({
+      models: [
+        { model: "gemini-2.5-flash", spec: { outputModalities: ["text"] } },
+        { model: "inworld-tts-2", spec: { outputModalities: ["text", "audio"] } },
+        { model: "inworld-tts-1.5-mini", spec: { outputModalities: ["audio"] } },
+      ],
+    });
+
     const models = await backend().listModels();
-    expect(models.map((m) => m.id)).toEqual([
-      "inworld-tts-2",
-      "inworld-tts-1.5-max",
-      "inworld-tts-1.5-mini",
-      "inworld-tts-1-max",
-      "inworld-tts-1",
-    ]);
+
+    expect(models.map((m) => m.id)).toEqual(["inworld-tts-2", "inworld-tts-1.5-mini"]);
+    expect(recordedRequests.length).toBe(1);
+    expect(recordedRequests[0].url).toBe("https://api.inworld.ai/llm/v1alpha/models");
+    expect(recordedRequests[0].headers.get("Authorization")).toContain("Basic ");
+  });
+
+  test("degrades to an empty list when no entry outputs audio", async () => {
+    installFetchMock();
+    nextResponse = Response.json({ models: [{ model: "gemini-2.5-flash", spec: { outputModalities: ["text"] } }] });
+
+    const models = await backend().listModels();
+
+    expect(models).toEqual([]);
+  });
+
+  test("throws with the HTTP status on a failed catalog fetch", async () => {
+    installFetchMock();
+    nextResponse = new Response("boom", { status: 500 });
+
+    await expect(backend().listModels()).rejects.toThrow(/Inworld model list failed with HTTP 500/);
+  });
+
+  test("requires an api key", async () => {
+    installFetchMock();
+
+    await expect(backend({ apiKey: "" }).listModels()).rejects.toThrow(/non-empty apiKey/);
     expect(recordedRequests.length).toBe(0);
   });
 });

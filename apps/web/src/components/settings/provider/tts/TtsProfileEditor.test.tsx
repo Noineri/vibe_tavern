@@ -277,6 +277,11 @@ describe("TtsProfileEditor", () => {
     // View mode: modelId/sliders/toggle/voices; apiKey is the edit screen.
     expect(view.queryByTestId("tts-field-api-key")).toBeNull();
     expect(view.getByTestId("tts-field-model")).toBeTruthy();
+    // TPE-9a (owner decision): input-mode model fields carry a link to the
+    // provider's model docs under the input — the discovery path instead
+    // of a static catalog.
+    const docsLink = view.getByTestId("tts-model-docs-link") as HTMLAnchorElement;
+    expect(docsLink.getAttribute("href")).toBe("https://elevenlabs.io/docs/models");
     expect(view.queryByText("tts_field_stability")).toBeTruthy();
     const editTts = makeTts({
       form: {

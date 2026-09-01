@@ -15,9 +15,11 @@
  *   is included only for that model family.
  * - Voices: kokoro-fastapi exposes GET /v1/audio/voices → { voices: [{ id, name? }] };
  *   Honest (TE2-3): listVoices hits ONLY /audio/voices and returns null on
- *   any failure — no fallback to /models. Documented hosts (F8) resolve
- *   their per-model rosters from the static DOCUMENTED_MODELS table below
- *   instead (no network); aggregator catalogs carry the roster per entry.
+ *   any failure — no fallback to /models. Known hosts (TPE-9a) discover
+ *   models LIVE from /models through a per-host criterion (no static
+ *   lists — owner rule 2026-09-01); they document no voices endpoint, so
+ *   the manual voice input floor applies; aggregator catalogs carry the
+ *   roster per entry.
  */
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
@@ -87,17 +89,28 @@ function isNanoGptStyleEndpoint(endpoint: string): boolean {
 
 // ─── Documented catalogs (F8, owner decision 2026-08-29) ─────────────────────
 
-/** Hosts whose TTS model catalog is fully documented — discovery is a
- *  static table, no network fetch. The name-heuristic that used to filter
- *  these hosts' mixed /models lists is REMOVED (owner decision 2026-08-29,
- *  F8: known providers do not need a heuristic — their documented model
- *  and voice discovery is known from primary docs; see the F8 handoff in
- *  the plan repo for the verbatim decision).
- *  The host ALWAYS wins over legacy stamps: every pre-F8 profile on these
- *  hosts carries the preset glue `modelFilter: "name-heuristic"`, which is
- *  not a user choice (no UI edits modelFilter) — same healing rule as the
- *  nano-gpt field fix. */
-const DOCUMENTED_HOSTS = new Set(["api.openai.com", "api.groq.com", "api.electronhub.ai"]);
+/** Known hosts whose live OpenAI-compatible /models catalog mixes TTS with
+ *  chat models. TPE-9a (owner rule 2026-09-01): no static model lists in
+ *  code — discovery fetches the LIVE catalog and keeps only the entries
+ *  matching a CRITERION over the provider's own documented TTS naming
+ *  (new releases of the family appear without a code change):
+ *  - api.openai.com: the TTS guide names gpt-4o-mini-tts / tts-1 / tts-1-hd
+ *    — every id of that family contains "tts".
+ *  - api.groq.com: the TTS page names the orpheus family (playai retired)
+ *    — every id of that family contains "orpheus".
+ *  ElectronHub is deliberately absent: its TTS roster mixes unrelated
+ *  families (elevenlabs/playai/kokoro/dia/melotts/…) with no unifying
+ *  criterion — its plain /models catalog serves as-is. The host ALWAYS
+ *  wins over legacy stamps (pre-F8 profiles carry preset glue stamps
+ *  that are not a user choice — same healing rule as the nano-gpt fix). */
+const HOST_MODEL_FILTERS: Record<string, (modelId: string) => boolean> = {
+  "api.openai.com": (id) => id.includes("tts"),
+  "api.groq.com": (id) => id.includes("orpheus"),
+};
+
+function hostModelFilterFor(host: string | null): ((modelId: string) => boolean) | null {
+  return host === null ? null : (HOST_MODEL_FILTERS[host] ?? null);
+}
 
 /** SiliconFlow documents a server-side catalog filter: GET /v1/models?type=audio
  *  (docs.siliconflow.cn/en/api-reference/models/get-model-list — `type`:
@@ -107,25 +120,16 @@ const AUDIO_TYPE_HOSTS = new Set(["api.siliconflow.cn", "api.siliconflow.com"]);
 /** SiliconFlow clone + voice facts (re-read 2026-08-31, TPE-8, live page
  *  docs.siliconflow.cn/capabilities/text-to-speech — the endpoint reference
  *  wins over the context7 snapshot's `GET /v1/audio/voices` mention):
- *  - 8 system preset voices shared by the TTS models; wire id is the FULL
- *    "model:voice" string (e.g. "FunAudioLLM/CosyVoice2-0.5B:alex").
+ *  - System preset voices exist only as a docs table with no endpoint —
+ *    NOT hardcoded (TPE-9a owner rule: no static voice lists); the voice
+ *    wire id is the FULL "model:voice" string, entered manually.
  *  - Custom ("user preset") voices: POST /v1/uploads/audio/voice, multipart
  *    file + model + customName + text (the reference audio's transcript —
  *    REQUIRED) → { uri }; the uri rides as `voice` in /audio/speech.
-    Real-name verification is a platform prerequisite for custom voices.
+ *    Real-name verification is a platform prerequisite for custom voices.
  *  - Custom voice list: GET /v1/audio/voice/list → { voices: [{ uri, name }] }
  *    (items keyed by uri; a stale `id` field is tolerated).
  *  - Reference formats: mp3, wav, pcm, opus (192 kbps+ mp3 recommended). */
-const SILICONFLOW_SYSTEM_VOICES = [
-  { id: "alex", en: "calm male" },
-  { id: "benjamin", en: "deep male" },
-  { id: "charles", en: "magnetic male" },
-  { id: "david", en: "cheerful male" },
-  { id: "anna", en: "calm female" },
-  { id: "bella", en: "passionate female" },
-  { id: "claire", en: "gentle female" },
-  { id: "diana", en: "cheerful female" },
-] as const;
 
 /** Reference-audio extension for a SiliconFlow upload from the sample mime
  *  type (documented formats: mp3, wav, pcm, opus). */
@@ -159,66 +163,7 @@ function parseSiliconflowCustomVoices(parsed: unknown): TtsVoiceInfo[] {
   return voices;
 }
 
-/** One documented catalog entry: model id, its label, optional per-model
- *  voice roster (`undefined` → the picker degrades to manual voice input),
- *  and the roster language for voice labels. */
-interface DocumentedModel {
-  id: string;
-  label: string;
-  voices?: string[];
-  lang?: string;
-}
-
-const OPENAI_MINI_TTS_VOICES = [
-  "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova",
-  "sage", "shimmer", "verse", "marin", "cedar",
-];
-const OPENAI_TTS1_VOICES = [
-  "alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
-];
-const GROQ_EN_VOICES = ["autumn", "diana", "hannah", "austin", "daniel", "troy"];
-const GROQ_AR_VOICES = ["abdullah", "fahad", "sultan", "lulwa", "noura", "aisha"];
-const ELECTRONHUB_OPENAI_VOICES = [
-  "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova",
-  "sage", "shimmer", "verse",
-];
-
-/** Doc-verified rosters (all read 2026-08-29, F8 handoff matrix):
- *  - OpenAI: developers.openai.com/api/docs/guides/text-to-speech — mini-tts
- *    13 voices (marin/cedar were absent from the old preset), tts-1 family 9.
- *  - Groq: console.groq.com/docs/text-to-speech — orpheus EN/AR 6+6 (playai
- *    retired; their speech reference still showing playai-tts is THEIR docs
- *    inconsistency — do not copy it).
- *  - ElectronHub: docs.electronhub.ai/api-reference/audio/speech — the three
- *    openai-family models share an 11-voice roster; elevenlabs/playai/kokoro/
- *    microsoft document partial rosters only → manual input floor. */
-const DOCUMENTED_MODELS: Record<string, DocumentedModel[]> = {
-  "api.openai.com": [
-    { id: "gpt-4o-mini-tts", label: "gpt-4o-mini-tts", voices: OPENAI_MINI_TTS_VOICES, lang: "en" },
-    { id: "tts-1", label: "tts-1", voices: OPENAI_TTS1_VOICES, lang: "en" },
-    { id: "tts-1-hd", label: "tts-1-hd", voices: OPENAI_TTS1_VOICES, lang: "en" },
-  ],
-  "api.groq.com": [
-    { id: "canopylabs/orpheus-v1-english", label: "canopylabs/orpheus-v1-english", voices: GROQ_EN_VOICES, lang: "en" },
-    { id: "canopylabs/orpheus-arabic-saudi", label: "canopylabs/orpheus-arabic-saudi", voices: GROQ_AR_VOICES, lang: "ar" },
-  ],
-  "api.electronhub.ai": [
-    { id: "gpt-4o-mini-tts", label: "gpt-4o-mini-tts", voices: ELECTRONHUB_OPENAI_VOICES, lang: "en" },
-    { id: "tts-1", label: "tts-1", voices: ELECTRONHUB_OPENAI_VOICES, lang: "en" },
-    { id: "tts-1-hd", label: "tts-1-hd", voices: ELECTRONHUB_OPENAI_VOICES, lang: "en" },
-    { id: "elevenlabs", label: "elevenlabs" },
-    { id: "playai-tts", label: "playai-tts" },
-    { id: "playai-tts-arabic", label: "playai-tts-arabic" },
-    { id: "kokoro-82m", label: "kokoro-82m" },
-    { id: "dia-1.6b", label: "dia-1.6b" },
-    { id: "melotts", label: "melotts" },
-    { id: "microsoft-tts", label: "microsoft-tts" },
-  ],
-};
-
-function documentedTableFor(host: string | null): DocumentedModel[] | undefined {
-  return host === null ? undefined : DOCUMENTED_MODELS[host];
-}
+/** Reference-audio extension for a SiliconFlow upload from the sample mime
 
 /** Error body excerpt length included in HTTP-failure messages. */
 const ERROR_BODY_EXCERPT_LENGTH = 200;
@@ -374,28 +319,28 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
    *  /audio/voices route; no upload endpoint is known there. */
   let lastVoicesSource: "library" | "roster" | null = null;
 
-  /** Catalog selection (D15/D23/F8), shared by listModels and listVoices:
-   *  DOCUMENTED/audio-type hosts ALWAYS win over legacy stamps (the F6
-   * field-fix rule — old profiles carry preset-glue `name-heuristic`
-   * stamps that must heal); `plain` = the ordinary OpenAI-compatible
-   * /models catalog. */
+  /** Catalog selection (D15/D23/TPE-9a), shared by listModels and
+   *  listVoices: known-host criteria and audio-type hosts ALWAYS win over
+   *  legacy stamps (the F6 field-fix rule — old profiles carry preset-glue
+   *  stamps that must heal); `plain` = the ordinary OpenAI-compatible
+   *  /models catalog. */
   const catalogRequest = (): {
-    kind: "audio-models" | "modality" | "audio-type" | "documented" | "plain";
+    kind: "audio-models" | "modality" | "audio-type" | "filtered" | "plain";
     url: string;
   } => {
     const modelFilter = readString(config, "modelFilter");
     const host = hostnameOf(cfg.endpoint);
-    // Documented hosts: the static table below is the only legitimate
-    // catalog — there is no valid stamp or fetch case past it.
-    if (documentedTableFor(host) !== undefined) {
-      return { kind: "documented", url: "" };
+    // Known hosts (TPE-9a): the live /models catalog filtered by the
+    // per-host criterion — no static lists (owner rule 2026-09-01). The
+    // host also wins over the retired "documented" preset stamp; on a
+    // host that lost its criterion (ElectronHub) the stamp no longer
+    // matches anything and falls through to plain.
+    if (hostModelFilterFor(host) !== null) {
+      return { kind: "filtered", url: `${cfg.endpoint}/models` };
     }
     // SiliconFlow: documented server-side filter beats every stamp.
     if ((host !== null && AUDIO_TYPE_HOSTS.has(host)) || modelFilter === "audio-type") {
       return { kind: "audio-type", url: `${cfg.endpoint}/models?type=audio` };
-    }
-    if (modelFilter === "documented" && documentedTableFor(host) !== undefined) {
-      return { kind: "documented", url: "" };
     }
     // NanoGPT: the HOST ALWAYS wins (field fix 2026-08-29). Every pre-F6
     // nanogpt profile carries the OLD preset stamp `modelFilter:
@@ -462,17 +407,10 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
 
     async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
       const { kind, url } = catalogRequest();
-      if (kind === "documented") {
-        // Static table — no network, no filtering, exactly what the
-        // provider documents (F8: the heuristic is gone; the picker shows
-        // the documented TTS models, zero chat models).
-        const table = documentedTableFor(hostnameOf(cfg.endpoint)) ?? [];
-        return table.map((entry) => ({
-          id: entry.id,
-          label: entry.label,
-          ...(entry.voices !== undefined ? { voices: entry.voices } : {}),
-        }));
-      }
+      // Known-host criterion (TPE-9a): drop everything outside the
+      // provider's documented TTS family — live catalog + criterion, no
+      // static list.
+      const hostFilter = kind === "filtered" ? hostModelFilterFor(hostnameOf(cfg.endpoint)) : null;
       const useModalityParam = kind === "modality";
       const useAudioModelsCatalog = kind === "audio-models";
       const response = await fetchOrWrap(
@@ -501,6 +439,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
         const record = entry as Record<string, unknown>;
         const id = record.id;
         if (typeof id !== "string" || id.length === 0) continue;
+        if (hostFilter !== null && !hostFilter(id)) continue;
         // NanoGPT audio-models entries (D23): `type=tts` still returns music
         // models — only entries with capabilities.text_to_speech === true
         // synthesize via POST /audio/speech. Docs say to rely on the
@@ -572,18 +511,9 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
 
     async listVoices(): Promise<TtsVoiceInfo[] | null> {
       const { kind, url } = catalogRequest();
-      // Documented hosts: the roster is part of the static table — resolve
-      // the selected model in it. No model / model left the table / entry
-      // documents no roster → null (manual voice input floor).
-      if (kind === "documented") {
-        const table = documentedTableFor(hostnameOf(cfg.endpoint)) ?? [];
-        const model = readString(config, "model");
-        if (model === undefined) return null;
-        const entry = table.find((m) => m.id === model);
-        if (entry === undefined || entry.voices === undefined) return null;
-        const lang = entry.lang ?? "en";
-        return entry.voices.map((id) => ({ id, label: id, lang }));
-      }
+      // Known hosts (TPE-9a): no hardcoded voice rosters — these hosts
+      // document no voices endpoint, so the /audio/voices attempt below
+      // answers 404 → null → manual voice input floor.
       // D22: aggregators (audio-models/modality) have NO /audio/voices
       // endpoint (404 live-verified on openrouter.ai and nano-gpt.com) —
       // the roster is PER-MODEL data riding the catalog. Resolve it by
@@ -626,16 +556,14 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           return null;
         }
       }
-      // SiliconFlow (TPE-8): custom voices from the documented
-      // GET /audio/voice/list + the 8 static system voices for the selected
-      // model (wire ids are full "model:voice" strings). A custom-list
-      // failure degrades to the system voices alone — never null, never a
-      // network wall on documented facts. Host-gated (not kind-gated):
-      // audio-type kind without the SF host keeps the legacy
+      // SiliconFlow (TPE-9a): custom voices from the LIVE
+      // GET /audio/voice/list — the only voice source the API serves. The
+      // 8 system preset voices are a docs table with no endpoint (owner
+      // rule: no static voice lists in code) → manual voice input; the
+      // wire id is the full "model:voice" string. Host-gated (not
+      // kind-gated): audio-type kind without the SF host keeps the legacy
       // /audio/voices attempt below.
       if (siliconflow) {
-        const model = readString(config, "model");
-        const custom: TtsVoiceInfo[] = [];
         try {
           const response = await fetch(`${cfg.endpoint}/audio/voice/list`, {
             headers: buildHeaders(cfg.apiKey),
@@ -643,18 +571,13 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           });
           if (response.ok) {
             const parsed: unknown = await response.json().catch(() => null);
-            custom.push(...parseSiliconflowCustomVoices(parsed));
+            const custom = parseSiliconflowCustomVoices(parsed);
+            if (custom.length > 0) return custom;
           }
         } catch {
           // Custom list is account state, not a capability probe — degrade.
         }
-        if (model === undefined) return custom.length > 0 ? custom : null;
-        const system = SILICONFLOW_SYSTEM_VOICES.map((voice) => ({
-          id: `${model}:${voice.id}`,
-          label: `${voice.id} · ${voice.en}`,
-          lang: "multi",
-        }));
-        return [...system, ...custom];
+        return null;
       }
       try {
         const voicesResponse = await fetch(`${cfg.endpoint}/audio/voices`, {

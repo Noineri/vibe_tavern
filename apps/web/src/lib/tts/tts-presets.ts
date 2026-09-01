@@ -8,18 +8,21 @@
  */
 
 export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax";
-/** F8 (owner decision 2026-08-29): `name-heuristic` is REMOVED. Known
- *  presets stamp `documented` (doc-verified static catalog resolved
- *  server-side) or `audio-type` (SiliconFlow ?type=audio); unknown
- *  custom servers stay `none` → plain /models. */
-export type TtsModelFilter = "modality" | "audio-models" | "audio-type" | "documented" | "none";
+/** TPE-9a (owner rule 2026-09-01): static catalogs are gone — the
+ *  retired `documented`/`name-heuristic` stamps no longer exist. Stamps
+ *  that remain describe a LIVE server-side filter: `modality`
+ *  (OpenRouter ?output_modalities=speech), `audio-models` (NanoGPT
+ *  /audio-models + capability flag), `audio-type` (SiliconFlow
+ *  ?type=audio); known-host criteria (openai/groq) and unknown custom
+ *  servers resolve server-side — preset glue optional. */
+export type TtsModelFilter = "modality" | "audio-models" | "audio-type" | "none";
 export interface TtsPreset {
   id: string;
   label: string;
   group: "cloud";
   backend: TtsBackend;
   baseUrl?: string;
-  modelFilter: TtsModelFilter;
+  modelFilter?: TtsModelFilter;
   models?: string[];
   defaultModel?: string;
 }
@@ -35,9 +38,9 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "cloud",
     backend: "openai-compat",
     baseUrl: "https://api.openai.com/v1",
-    // F8: documented catalog — server-side static table (models + 13/13/9
-    // voice rosters incl. marin/cedar), no network discovery needed.
-    modelFilter: "documented",
+    // Live discovery (TPE-9a owner rule): the live /models catalog,
+    // server-side filtered to the TTS family (their TTS guide naming —
+    // every id of the family carries "tts"); no static list in code.
     defaultModel: "gpt-4o-mini-tts",
   },
   {
@@ -55,9 +58,10 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "cloud",
     backend: "openai-compat",
     baseUrl: "https://api.groq.com/openai/v1",
-    // F8: documented catalog — orpheus EN/AR models + 6+6 voice rosters
-    // resolved server-side; playai is retired.
-    modelFilter: "documented",
+    // Live discovery (TPE-9a owner rule): the live /models catalog,
+    // server-side filtered to the orpheus family (their TTS page naming;
+    // playai retired). The models array below is quickstart glue only,
+    // not a discovery source.
     models: ["canopylabs/orpheus-v1-english", "canopylabs/orpheus-arabic-saudi"],
     // input hard limit 200 characters (chunking implication for TE2-6); response_format supports wav only
   },
@@ -91,10 +95,10 @@ export const TTS_PRESETS: TtsPreset[] = [
     group: "cloud",
     backend: "openai-compat",
     baseUrl: "https://api.electronhub.ai/v1",
-    // F8: documented catalog — 10 TTS models; voice rosters only for the
-    // openai-family trio, manual input otherwise (docs publish partial
-    // rosters for the rest).
-    modelFilter: "documented",
+    // Live discovery (TPE-9a owner rule): the plain live /models catalog
+    // as-is — EH's TTS roster mixes unrelated families with no unifying
+    // criterion, so nothing is filtered; voice ids are manual input
+    // (EH documents partial rosters only, no voices endpoint).
   },
   {
     id: "gemini",

@@ -63,16 +63,6 @@ function supportsDeliveryMode(modelId: string): boolean {
 const DELIVERY_MODES = ["STABLE", "BALANCED", "CREATIVE"] as const;
 type DeliveryMode = (typeof DELIVERY_MODES)[number];
 
-/** Static documented model catalog (the TTS catalog lives in docs, not an
- *  endpoint — labels carry the doc caveats). */
-const DOCUMENTED_MODELS: TtsModelInfo[] = [
-  { id: "inworld-tts-2", label: "inworld-tts-2 · steering, 100+ languages" },
-  { id: "inworld-tts-1.5-max", label: "inworld-tts-1.5-max · flagship, 15 languages" },
-  { id: "inworld-tts-1.5-mini", label: "inworld-tts-1.5-mini · fastest, 15 languages" },
-  { id: "inworld-tts-1-max", label: "inworld-tts-1-max · deprecated" },
-  { id: "inworld-tts-1", label: "inworld-tts-1 · deprecated" },
-];
-
 /** audioConfig.speakingRate — documented range [0.5, 1.5], "above 0.8
  *  recommended"; a hand-edited profile must never send outside it. */
 const MIN_SPEAKING_RATE = 0.5;
@@ -275,9 +265,41 @@ export class InworldTtsBackend implements TtsBackend {
   }
 
   async listModels(): Promise<TtsModelInfo[]> {
-    // Static documented catalog — no network call, no key needed (the only
-    // list-models endpoint is LLM-router models, not TTS).
-    return [...DOCUMENTED_MODELS];
+    // Live discovery (owner audit 2026-09-01: static catalogs out): Inworld
+    // documents GET /llm/v1alpha/models — "List all available models" across
+    // the Router AND Inworld first-party TTS/STT/Realtime endpoints
+    // (docs.inworld.ai/api-reference/modelsAPI/modelservice/list-models).
+    // The TTS entries are the models whose documented `spec.outputModalities`
+    // include "audio" (the page example shows the field on an LLM entry) —
+    // a criterion, not a list: new TTS releases appear without a code change.
+    const apiKey = this.requireApiKey();
+    const response = await fetch(`${INWORLD_BASE_URL}/llm/v1alpha/models`, {
+      headers: authHeaders(apiKey),
+    });
+    if (!response.ok) {
+      const excerpt = await readErrorExcerpt(response);
+      throw new InworldTtsError(
+        `Inworld model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+      );
+    }
+    const root = (await response.json().catch(() => null)) as unknown;
+    const models =
+      typeof root === "object" && root !== null ? (root as Record<string, unknown>).models : undefined;
+    if (!Array.isArray(models)) return [];
+    const out: TtsModelInfo[] = [];
+    for (const entry of models) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const record = entry as Record<string, unknown>;
+      const id = record.model;
+      if (typeof id !== "string" || id.length === 0) continue;
+      const spec =
+        typeof record.spec === "object" && record.spec !== null
+          ? (record.spec as Record<string, unknown>).outputModalities
+          : undefined;
+      if (!Array.isArray(spec) || !spec.includes("audio")) continue;
+      out.push({ id, label: id });
+    }
+    return out;
   }
 
   async probe(): Promise<TtsProbeResult> {

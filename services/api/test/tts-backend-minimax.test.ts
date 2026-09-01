@@ -219,22 +219,48 @@ describe("parseGetVoiceResponse", () => {
   });
 });
 
-// ─── listModels (static documented catalog — no network) ─────────────────────
+// ─── listModels (live GET /v1/models + speech-family criterion) ────────────
 
 describe("MinimaxTtsBackend.listModels", () => {
-  test("serves the static documented catalog without touching the network", async () => {
+  test("fetches the live /v1/models catalog and keeps the speech-* family", async () => {
     installFetchMock();
+    nextResponse = Response.json({
+      data: [
+        { id: "MiniMax-M3" },
+        { id: "speech-2.8-hd" },
+        { id: "abab-6.5s-chat" },
+        { id: "speech-02-turbo" },
+      ],
+    });
+
     const models = await backend().listModels();
-    expect(models.map((m) => m.id)).toEqual([
-      "speech-2.8-hd",
-      "speech-2.8-turbo",
-      "speech-2.6-hd",
-      "speech-2.6-turbo",
-      "speech-02-hd",
-      "speech-02-turbo",
-      "speech-01-hd",
-      "speech-01-turbo",
-    ]);
+
+    expect(models.map((m) => m.id)).toEqual(["speech-2.8-hd", "speech-02-turbo"]);
+    expect(recordedRequests.length).toBe(1);
+    expect(recordedRequests[0].url).toBe("https://api.minimax.io/v1/models");
+    expect(recordedRequests[0].headers.get("Authorization")).toBe("Bearer mm_key");
+  });
+
+  test("degrades to an empty list when the catalog carries no speech models", async () => {
+    installFetchMock();
+    nextResponse = Response.json({ data: [{ id: "MiniMax-M3" }] });
+
+    const models = await backend().listModels();
+
+    expect(models).toEqual([]);
+  });
+
+  test("throws with the HTTP status on a failed catalog fetch", async () => {
+    installFetchMock();
+    nextResponse = new Response("boom", { status: 500 });
+
+    await expect(backend().listModels()).rejects.toThrow(/model list failed with HTTP 500/);
+  });
+
+  test("requires an api key", async () => {
+    installFetchMock();
+
+    await expect(backend({ apiKey: "" }).listModels()).rejects.toThrow(/non-empty apiKey/);
     expect(recordedRequests.length).toBe(0);
   });
 });

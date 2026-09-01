@@ -57,13 +57,6 @@ const LMNT_BASE_URL = "https://api.lmnt.com";
 
 const DEFAULT_MODEL_ID = "blizzard";
 
-/** Static documented model catalog — the live speech page's model enum has
- *  exactly one entry (`blizzard`); aurora is a retired server-side alias
- *  and is deliberately NOT offered. */
-const DOCUMENTED_MODELS: TtsModelInfo[] = [
-  { id: "blizzard", label: "blizzard · default, latest" },
-];
-
 /** top_p — documented required range `0 <= x <= 1`, default 0.8. */
 const MIN_TOP_P = 0;
 const MAX_TOP_P = 1;
@@ -213,12 +206,6 @@ export class LmntTtsBackend implements TtsBackend {
     await expectOk(response, "voice list");
     const parsed: unknown = await response.json();
     return parseVoicesList(parsed);
-  }
-
-  async listModels(): Promise<TtsModelInfo[]> {
-    // Static documented catalog — no network call, no key needed (there is
-    // no list-models endpoint; the speech page's model enum is the source).
-    return [...DOCUMENTED_MODELS];
   }
 
   async probe(): Promise<TtsProbeResult> {

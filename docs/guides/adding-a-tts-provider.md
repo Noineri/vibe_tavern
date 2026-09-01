@@ -28,7 +28,7 @@ Plus, when the editor needs new labels: `apps/web/src/i18n/locales/{en,ru}.json`
 Add the slug to `TTS_BACKEND` and an entry to `TTS_BACKEND_CAPABILITIES` in `packages/domain/src/entities.ts`. The Record is exhaustive, so adding the slug without flags fails typecheck — the same lock-step prevention as the providers registry. Flags worth thinking about:
 
 - `supportsCloning` — gates the profile-editor clone section (TPE-3 infra). Static for native vendors: either their clone endpoint exists or it doesn't.
-- `supportsVoiceList` / `listModels` — most vendors have a voices endpoint; a models *endpoint* is rarer (Cartesia has none — serve a static documented catalog from `listModels()` instead, the F8 "documented" philosophy).
+- `supportsVoiceList` / `listModels` — most vendors have a voices endpoint. **Owner rule (2026-09-01): a static model/voice catalog is FORBIDDEN whenever the provider has a list endpoint — wire that endpoint live (a filter criterion over the provider's documented family naming is fine; a hardcoded list is not). Only when no list endpoint exists: manual model input (SPECS mode "input") with a preset default, never a catalog in code.** Check the provider's API index/llms.txt for a models route BEFORE concluding none exists — TPE-5/TPE-7 both wrongly claimed "no endpoint" (Inworld /llm/v1alpha/models and MiniMax /v1/models both exist).
 - `requiresApiKey`, `transport`, `supportsStreaming` (describe **our** transport — if `generate()` buffers the response, it's `false`), `supportsSpeed`.
 
 The adapter's own `capabilities()` (runtime object) is separate: it carries the clone hints (`formats`, `maxSizeMb`) that drive client-side sample validation, and for openai-compat servers is *learned* rather than static. Native vendors return a static object.
@@ -58,7 +58,7 @@ Import the adapter in `services/api/src/api/adapters/tts-adapter.ts` (side-effec
 
 ## Step 6 — UI variant
 
-`apps/web/src/components/settings/provider/tts/tts-backend-ui.ts`: add the variant to `TtsUiVariant`, a `SPECS` entry (connection fields — apiKey placeholder, model mode; tuning fields), and the three mappers (`ttsUiVariantOf`, `backendForVariant`, `ttsProviderSegmentOf` — native backends are always `"cloud"`). The editor renders the whole form from the spec; the clone section appears automatically from capabilities. Then `TtsProfileEditor.tsx`'s `handleApplyPreset` needs a branch mapping the preset's backend string to the domain slug. The model picker's `fetch` mode resolves through the draft models route → your `listModels()`; `input` mode is a plain text field for vendors with free-form model ids (ElevenLabs).
+`apps/web/src/components/settings/provider/tts/tts-backend-ui.ts`: add the variant to `TtsUiVariant`, a `SPECS` entry (connection fields — apiKey placeholder, model mode; tuning fields), and the three mappers (`ttsUiVariantOf`, `backendForVariant`, `ttsProviderSegmentOf` — native backends are always `"cloud"`). The editor renders the whole form from the spec; the clone section appears automatically from capabilities. Then `TtsProfileEditor.tsx`'s `handleApplyPreset` needs a branch mapping the preset's backend string to the domain slug. The model picker's `fetch` mode resolves through the draft models route → your `listModels()`; `input` mode is a plain text field for vendors with free-form model ids — set `docsUrl` when the provider has no models endpoint: the editor renders a link to the provider's model docs under the input (the discovery path instead of any catalog).
 
 ## Tests
 

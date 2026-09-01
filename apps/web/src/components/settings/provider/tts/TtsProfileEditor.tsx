@@ -553,9 +553,13 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                 label={t(modelSpec.labelKey)}
               />
             ) : (
-              /* Input-mode model id (ElevenLabs): a plain field, NO example
-               * placeholder (owner directive 2026-08-29 — a fake example id
-               * must never stand in for data). */
+              /* Input-mode model id (ElevenLabs/Cartesia/LMNT): a plain
+               * field, NO example placeholder (owner directive
+               * 2026-08-29 — a fake example id must never stand in for
+               * data). When the spec carries docsUrl (owner decision
+               * 2026-09-01, TPE-9a), a link to the provider's model docs
+               * sits under the input — the discovery path instead of a
+               * static catalog. */
               <div className="my-4">
                 <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">{t(modelSpec.labelKey)}</div>
                 <input
@@ -565,6 +569,18 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                   onChange={(event) => updateConfigField(tts, form, modelSpec.key, event.target.value)}
                   className="h-[38px] w-full rounded-[6px] border border-border bg-s2 px-[13px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent"
                 />
+                {modelSpec.docsUrl !== undefined && (
+                  <a
+                    data-testid="tts-model-docs-link"
+                    href={modelSpec.docsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex items-center gap-1.5 font-ui text-[12px] text-t3 transition-colors hover:text-accent"
+                  >
+                    <Icons.Book className="h-3.5 w-3.5" />
+                    {t("tts_model_docs_link")}
+                  </a>
+                )}
               </div>
             ))}
           <TtsSectionCard title={t("tts_field_voice")} testid="tts-voice-section">

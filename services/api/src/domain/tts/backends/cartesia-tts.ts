@@ -74,16 +74,6 @@ function supportsGenerationConfig(modelId: string): boolean {
  *  list); this adapter passes emotion through verbatim, so any documented
  *  enum value a hand-edited config carries is forwarded as-is. */
 
-/** Static documented model catalog (no /models endpoint exists). Labels note
- *  the generation_config nuance so the picker itself carries the caveat. */
-const DOCUMENTED_MODELS: TtsModelInfo[] = [
-  { id: "sonic-3.5", label: "sonic-3.5 · flagship, 42 languages" },
-  { id: "sonic-3", label: "sonic-3 · speed/emotion + [laughter]" },
-  { id: "sonic-latest", label: "sonic-latest · beta" },
-  { id: "sonic-turbo", label: "sonic-turbo · lowest latency" },
-  { id: "sonic-2", label: "sonic-2 · legacy, 8 languages" },
-];
-
 const MIN_SPEED = 0.6;
 const MAX_SPEED = 1.5;
 
@@ -260,12 +250,6 @@ export class CartesiaTtsBackend implements TtsBackend {
       startingAfter = pageVoices.voices[pageVoices.voices.length - 1].id;
     }
     return out;
-  }
-
-  async listModels(): Promise<TtsModelInfo[]> {
-    // Static documented catalog — no network call, no key needed (matches
-    // the F8 "documented" server-side filter philosophy).
-    return [...DOCUMENTED_MODELS];
   }
 
   async probe(): Promise<TtsProbeResult> {

@@ -222,19 +222,6 @@ describe("parseVoicesList", () => {
   });
 });
 
-// ─── listModels (static documented catalog — no network) ─────────────────────
-
-describe("LmntTtsBackend.listModels", () => {
-  test("serves the static documented catalog without touching the network", async () => {
-    installFetchMock();
-    const models = await backend().listModels();
-    // The live speech page's model enum contains exactly `blizzard`; the
-    // retired `aurora` alias is deliberately not offered.
-    expect(models.map((m) => m.id)).toEqual(["blizzard"]);
-    expect(recordedRequests.length).toBe(0);
-  });
-});
-
 // ─── probe (GET /v1/ai/voice/list?owner=me) ─────────────────────────────────
 
 describe("LmntTtsBackend.probe", () => {

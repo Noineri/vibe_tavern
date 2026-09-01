@@ -239,17 +239,6 @@ describe("parseVoicesPage", () => {
   });
 });
 
-// ─── listModels (static documented catalog — no network) ─────────────────────
-
-describe("CartesiaTtsBackend.listModels", () => {
-  test("serves the static documented catalog without touching the network", async () => {
-    installFetchMock();
-    const models = await backend().listModels();
-    expect(models.map((m) => m.id)).toEqual(["sonic-3.5", "sonic-3", "sonic-latest", "sonic-turbo", "sonic-2"]);
-    expect(recordedRequests.length).toBe(0);
-  });
-});
-
 // ─── probe (GET /voices?limit=1) ──────────────────────────────────────────────
 
 describe("CartesiaTtsBackend.probe", () => {

@@ -2556,6 +2556,7 @@ export default interface Resources {
     "tts_kokoro_variant_size": "~{mb} MB",
     "tts_links_error": "Failed to save the voice map",
     "tts_make_default": "Make default",
+    "tts_model_docs_link": "Model ids live in the provider docs",
     "tts_models_load_error": "Failed to load models",
     "tts_models_loading": "Loading models...",
     "tts_models_refresh": "Refresh models",

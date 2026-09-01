@@ -73,21 +73,24 @@ describe("tts-presets", () => {
   });
 
   test("modelFilter values are within the declared union", () => {
-    // F8: name-heuristic REMOVED; known presets stamp documented/audio-type.
-    const allowedFilters = new Set(["modality", "audio-models", "audio-type", "documented", "none"]);
+    // TPE-9a: name-heuristic and documented are both retired; the allowed
+    // set is optional (known hosts/custom servers need no stamp at all).
+    const allowedFilters = new Set(["modality", "audio-models", "audio-type", "none", undefined]);
     for (const p of TTS_PRESETS) {
       expect(allowedFilters.has(p.modelFilter)).toBe(true);
       expect(p.modelFilter).not.toBe("name-heuristic");
+      expect(p.modelFilter).not.toBe("documented");
     }
     expect(TTS_PRESETS.find((p) => p.id === "openrouter")?.modelFilter).toBe("modality");
     // D23: NanoGPT discovery comes from /audio-models, not the chat catalog.
     expect(TTS_PRESETS.find((p) => p.id === "nanogpt")?.modelFilter).toBe("audio-models");
     expect(TTS_PRESETS.find((p) => p.id === "gemini")?.modelFilter).toBe("none");
-    // F8 documented static catalogs (server-side table, no network discovery):
-    // openai (+marin/cedar rosters), groq (orpheus 6+6), electronhub (10 models).
-    expect(TTS_PRESETS.find((p) => p.id === "openai")?.modelFilter).toBe("documented");
-    expect(TTS_PRESETS.find((p) => p.id === "groq")?.modelFilter).toBe("documented");
-    expect(TTS_PRESETS.find((p) => p.id === "electronhub")?.modelFilter).toBe("documented");
+    // TPE-9a: the retired "documented" stamp is gone — openai/groq discover
+    // live via the per-host criteria (server-side), electronhub serves its
+    // plain live catalog; no preset carries a static catalog stamp anymore.
+    expect(TTS_PRESETS.find((p) => p.id === "openai")?.modelFilter).toBeUndefined();
+    expect(TTS_PRESETS.find((p) => p.id === "groq")?.modelFilter).toBeUndefined();
+    expect(TTS_PRESETS.find((p) => p.id === "electronhub")?.modelFilter).toBeUndefined();
     // F8 audio-type: SiliconFlow's documented server-side ?type=audio filter.
     expect(TTS_PRESETS.find((p) => p.id === "siliconflow")?.modelFilter).toBe("audio-type");
   });

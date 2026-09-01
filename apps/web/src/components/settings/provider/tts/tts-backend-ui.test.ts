@@ -79,10 +79,11 @@ describe("ttsUiSpecFor (field configuration)", () => {
     expect(ttsUiSpecFor("elevenlabs").connection.model?.key).toBe("modelId");
   });
 
-  it("cartesia: fetched model list (static catalog via the draft route) + speed/emotion tuning", () => {
+  it("cartesia: manual model input + docs link (TPE-9a) + speed/emotion tuning", () => {
     const spec = ttsUiSpecFor("cartesia");
-    expect(spec.connection.model?.mode).toBe("fetch");
+    expect(spec.connection.model?.mode).toBe("input");
     expect(spec.connection.model?.key).toBe("modelId");
+    expect(spec.connection.model?.docsUrl).toBe("https://docs.cartesia.ai/build-with-cartesia/tts-models");
     expect(spec.connection.apiKey?.placeholder).toBe("sk_car_...");
     expect(spec.localHelpers).toBe(false);
     const speed = spec.tuning.find((f) => f.kind === "number" && f.key === "speed");
@@ -100,7 +101,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
-  it("inworld: fetched model list (static catalog) + speed/deliveryMode tuning", () => {
+  it("inworld: live-fetched model list (/llm/v1alpha/models) + speed/deliveryMode tuning", () => {
     const spec = ttsUiSpecFor("inworld");
     expect(spec.connection.model?.mode).toBe("fetch");
     expect(spec.connection.model?.key).toBe("modelId");
@@ -121,10 +122,11 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
-  it("lmnt: fetched model list (static catalog) + topP/temperature tuning, NO speed field", () => {
+  it("lmnt: manual model input + docs link (TPE-9a) + topP/temperature tuning, NO speed field", () => {
     const spec = ttsUiSpecFor("lmnt");
-    expect(spec.connection.model?.mode).toBe("fetch");
+    expect(spec.connection.model?.mode).toBe("input");
     expect(spec.connection.model?.key).toBe("modelId");
+    expect(spec.connection.model?.docsUrl).toBe("https://docs.lmnt.com/models/overview");
     expect(spec.localHelpers).toBe(false);
     // LMNT has no speed parameter — its tuning surface is top_p + temperature.
     expect(spec.tuning.find((f) => f.key === "speed")).toBeUndefined();
