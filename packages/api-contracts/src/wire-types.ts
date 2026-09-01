@@ -226,6 +226,32 @@ export interface ClientTtsProfileRecord {
 	updatedAt: string;
 }
 
+// ─── Speech-to-text ───────────────────────────────────────────────────
+
+/** Client-facing STT profile record (STT_PLAN ST-5b) — the TE2-16 wire
+ *  projection of the stored SttProfile: the secret lives in the typed
+ *  `api_key` column and is reported as `hasStoredApiKey`; `config` comes
+ *  back exactly as stored (never carried a key; ST-1). The endpoint-matching
+ *  hint mirrors ClientTtsProfileRecord.autoKeyProviderName. */
+export interface ClientSttProfileRecord {
+	id: string;
+	name: string;
+	backend: import("@vibe-tavern/domain").SttBackendType;
+	/** Backend-specific config — carries NO secret (see {@link hasStoredApiKey}). */
+	config: Record<string, unknown>;
+	/** True when the typed api_key column holds a non-empty key. */
+	hasStoredApiKey: boolean;
+	/** Provider profile name whose endpoint auto-matches (default-on key
+	 *  reuse) — UI hint only; the key itself never crosses the boundary. */
+	autoKeyProviderName: string | null;
+	/** ST-7 capability seam — never true for the v1 pure-ASR backends. */
+	emotionAnnotation: boolean;
+	/** The fallback pointer (store-maintained invariant, at most one). */
+	isDefault: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
+
 // ─── Chat ──────────────────────────────────────────────────────────────
 
 /** Sidebar chat-list entry. `characterId` is branded on the wire. */

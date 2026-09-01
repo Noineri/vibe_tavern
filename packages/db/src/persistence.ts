@@ -1,7 +1,7 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CopilotProfileStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore } from './stores/index.js';
+import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CopilotProfileStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
@@ -22,6 +22,7 @@ export interface StoreContainer {
   scripts: ScriptStore;
   regex: RegexStore;
   tts: TtsStore;
+  stt: SttStore;
   characterAssets: CharacterAssetStore;
   coauthorModules: CoauthorModuleStore;
   copilotProfiles: CopilotProfileStore;
@@ -81,6 +82,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     scripts: new ScriptStore(db, { content }),
     regex: new RegexStore(db),
     tts: new TtsStore(db),
+    stt: new SttStore(db),
     characterAssets: new CharacterAssetStore(db),
     coauthorModules: new CoauthorModuleStore(db),
     copilotProfiles: new CopilotProfileStore(db),

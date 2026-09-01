@@ -978,6 +978,26 @@ export interface CopilotProfileRuntimeApi {
 	deleteCopilotProfile: (id: string) => Promise<void>;
 }
 
+export interface SttRuntimeApi {
+	listSttProfiles: () => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord[]>;
+	getSttProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
+	createSttProfile: (body: import("@vibe-tavern/api-contracts").CreateSttProfileInput) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord>;
+	updateSttProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateSttProfileInput) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
+	deleteSttProfile: (id: string) => Promise<void>;
+	setSttDefault: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
+	getDefaultSttProfile: () => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
+	/** Transcribe one audio payload with a saved profile. Returns null for an
+	 *  unknown profile; throws SttClientSideError for the in-browser backend
+	 *  (route → 400). The transcription config (own key, then endpoint
+	 *  auto-match over provider AND TTS profiles) resolves server-side — the
+	 *  secret never crosses the boundary. */
+	transcribeSttAudio: (
+		profileId: string,
+		audio: { buffer: Buffer; mimeType: string; fileName: string },
+		language?: string,
+	) => Promise<{ text: string; language?: string } | null>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	servicePrompts: ServicePromptRuntimeApi;
@@ -988,6 +1008,7 @@ export interface RuntimeApi {
 	script: ScriptRuntimeApi;
 	regex: RegexRuntimeApi;
 	tts: TtsRuntimeApi;
+	stt: SttRuntimeApi;
 	provider: ProviderRuntimeApi;
 	proxy: ProxyRuntimeApi;
 	preset: PresetRuntimeApi;

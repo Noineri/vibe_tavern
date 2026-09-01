@@ -8,6 +8,7 @@ import { createLorebookRoutes } from "./lorebook.js";
 import { createScriptRoutes } from "./script.js";
 import { createRegexRoutes } from "./regex.js";
 import { createTtsRoutes } from "./tts.js";
+import { createSttRoutes } from "./stt.js";
 import { createServicePromptRoutes } from "./service-prompts.js";
 import { createProviderRoutes } from "./provider.js";
 import { createProxyRoutes } from "./proxy.js";
@@ -39,6 +40,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createServicePromptRoutes(runtime.servicePrompts))
     .route("/", createRegexRoutes(runtime.regex))
     .route("/", createTtsRoutes(runtime.tts))
+    .route("/", createSttRoutes(runtime.stt))
     .route("/", createProviderRoutes(runtime.provider))
     .route("/", createProxyRoutes(runtime.proxy))
     .route("/", createPresetRoutes(runtime.preset))
