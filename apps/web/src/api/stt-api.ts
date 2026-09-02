@@ -126,3 +126,18 @@ export async function transcribeSttAudio(
   }
   return (await response.json()) as SttTranscribeResult;
 }
+
+// ─── Local server discovery (raw fetch, ST-8) ──────────────────────────────
+
+/** Local STT server discovery, routed through the API server (ST-8): local
+ *  servers may ship no CORS headers, so the browser cannot probe them
+ *  directly — the server-side fetch can (mirror of discoverLocalTtsServers
+ *  in tts-api.ts). */
+export async function discoverLocalSttServers(): Promise<import("@vibe-tavern/domain").ProbeOutcome[]> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/stt/discover`));
+  if (!response.ok) {
+    throw new Error(`Local STT discovery failed: ${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as import("@vibe-tavern/domain").ProbeOutcome[];
+}

@@ -255,6 +255,97 @@ export async function discoverLocalTtsServers(
   return outcomes;
 }
 
+// ─── STT discovery (STT_PLAN ST-8 — reuse of this module) ────────────────
+
+/** Probe the STT side of a local server. STT capability is signalled by the
+ *  OpenAI-compatible `/v1/audio/transcriptions` ROUTE EXISTING: the route is
+ *  a POST-only endpoint, so a GET answers 405 Method Not Allowed on servers
+ *  that have it (faster-whisper-server, LocalAI) and 404 on servers that do
+ *  not. A port is STT-"found" when BOTH the models endpoint returns a usable
+ *  catalog AND the transcriptions route exists (non-404). Same non-found
+ *  precedence as probeServerPort (timeout > bad-shape > http-error > refused).
+ *  Never throws. */
+export async function probeSttPort(
+  port: number,
+  fetchLike: FetchLike,
+  timeoutMs = 1500,
+): Promise<ProbeOutcome> {
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const [modelsResult, transcriptionsResult] = await Promise.all([
+    probeModels(baseUrl, fetchLike, timeoutMs),
+    probeTranscriptionsEndpoint(baseUrl, fetchLike, timeoutMs),
+  ]);
+
+  const modelsFound =
+    modelsResult.status === "found" && modelsResult.modelIds !== undefined;
+  const sttCapable = transcriptionsResult.status === "found";
+
+  if (modelsFound && sttCapable) {
+    const server: DiscoveredServer = {
+      port,
+      baseUrl,
+      kind: "openai-compatible",
+      voiceIds: [],
+      modelIds: modelsResult.modelIds ?? [],
+    };
+    return { port, status: "found", server };
+  }
+
+  // Not found — mirror probeServerPort's precedence.
+  if (modelsResult.status === "timeout" || transcriptionsResult.status === "timeout") {
+    return { port, status: "timeout" };
+  }
+  if (modelsResult.status === "bad-shape") {
+    return { port, status: "bad-shape" };
+  }
+  const httpStatus =
+    modelsResult.status === "http-error"
+      ? modelsResult.httpStatus
+      : transcriptionsResult.status === "http-error"
+        ? transcriptionsResult.httpStatus
+        : undefined;
+  if (httpStatus !== undefined) {
+    return { port, status: "http-error", httpStatus };
+  }
+  return { port, status: "refused" };
+}
+
+/** The STT twin of probeTranscriptionsEndpoint logic inlined below: a single
+ *  GET against the POST-only transcriptions route to test existence.
+ *  Returns "found" for every non-404 status (405 = route present), http-error
+ *  for a literal 404 (route absent), and the usual refused/timeout. */
+async function probeTranscriptionsEndpoint(
+  baseUrl: string,
+  fetchLike: FetchLike,
+  timeoutMs: number,
+): Promise<EndpointResult> {
+  let response: ResponseLike;
+  try {
+    response = await fetchWithTimeout(fetchLike, `${baseUrl}/v1/audio/transcriptions`, timeoutMs);
+  } catch (error) {
+    if (error instanceof TimeoutError) return { status: "timeout" };
+    return { status: "refused" };
+  }
+  // GET on a POST route: 405 Method Not Allowed means the route exists;
+  // 404 means the server does not expose it. Any other status is equally
+  // "the route exists" for STT-capability purposes.
+  if (response.status === 404) return { status: "http-error", httpStatus: 404 };
+  return { status: "found" };
+}
+
+/** Probe the full ordered port list for STT-capable servers in parallel;
+ *  resolves when all settle. Same PROBE_PORTS list as the TTS discovery. */
+export async function discoverLocalSttServers(
+  fetchLike: FetchLike,
+  timeoutMs = 1500,
+): Promise<ProbeOutcome[]> {
+  const outcomes = await Promise.all(
+    PROBE_PORTS.map((port) => probeSttPort(port, fetchLike, timeoutMs)),
+  );
+  return outcomes;
+}
+
 /** Map a ProbeOutcome to a machine-readable diagnostic CODE (11b turns these
  *  into i18n strings): found / server-not-running (refused) / wrong-shape
  *  (bad-shape) / auth-or-http (http-error 401/403) / http-other / timeout. */

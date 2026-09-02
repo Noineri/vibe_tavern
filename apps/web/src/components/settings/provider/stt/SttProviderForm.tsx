@@ -11,6 +11,7 @@ import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { labelCls, inputCls } from "../form-field-classes.js";
 import { SttConfigFields } from "./SttConfigFields.js";
 import { SttApiKeyField } from "./SttApiKeyField.js";
+import { SttLocalServerPanel } from "./SttLocalServerPanel.js";
 import { configString, updateConfigField } from "./stt-form-helpers.js";
 import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
@@ -187,6 +188,10 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
           )}
         </div>
       )}
+
+      {/* Local-server discovery + setup help (openai-compat only — the
+          whisper-browser tier is in-browser). ST-8. */}
+      {!isBrowser && <SttLocalServerPanel form={form} stt={stt} />}
 
       {/* Test connection card (openai-compat only — the browser backend has
           nothing remote to test; its "status" is the roster badge above). */}

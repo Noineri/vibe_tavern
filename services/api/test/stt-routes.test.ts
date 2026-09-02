@@ -12,7 +12,7 @@ import { createDb } from "@vibe-tavern/db";
 import { ProviderStore, SttStore, TtsStore } from "@vibe-tavern/db";
 
 import { createSttRoutes } from "../src/api/routes/stt.js";
-import { SttAdapter } from "../src/api/adapters/stt-adapter.js";
+import { SttAdapter, __setSttDiscoveryFetchForTests } from "../src/api/adapters/stt-adapter.js";
 
 const fixedClock = { now: () => "2026-09-03T00:00:00.000Z" };
 
@@ -71,6 +71,54 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+describe("STT routes — local discovery (server-side, ST-8)", () => {
+  test("GET /api/stt/discover → probe outcomes; whisper server recognized", async () => {
+    __setSttDiscoveryFetchForTests(async (input: string) => {
+      if (input.endsWith("/v1/models")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ data: [{ id: "Systran/faster-whisper-base" }] }),
+        };
+      }
+      // GET on the POST-only transcriptions route → 405 (route exists).
+      if (input.endsWith("/v1/audio/transcriptions")) {
+        return { ok: false, status: 405, json: async () => ({}) };
+      }
+      throw new TypeError("refused");
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/stt/discover");
+    expect(res.status).toBe(200);
+    const outcomes = (await res.json()) as Array<{
+      port: number;
+      status: string;
+      server?: { kind: string; baseUrl: string; modelIds: string[]; voiceIds: string[] };
+    }>;
+    const found = outcomes.find((o) => o.status === "found");
+    // 8880 is the first port in the shared probe list, so it matches first.
+    expect(found?.port).toBe(8880);
+    expect(found?.server?.kind).toBe("openai-compatible");
+    expect(found?.server?.baseUrl).toBe("http://127.0.0.1:8880");
+    expect(found?.server?.modelIds).toEqual(["Systran/faster-whisper-base"]);
+    expect(found?.server?.voiceIds).toEqual([]);
+    __setSttDiscoveryFetchForTests(null);
+  });
+
+  test("all ports refused → 200 with refused outcomes (no 500, no throw)", async () => {
+    __setSttDiscoveryFetchForTests(async () => {
+      throw new TypeError("refused");
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/stt/discover");
+    expect(res.status).toBe(200);
+    const outcomes = (await res.json()) as Array<{ status: string }>;
+    expect(outcomes.length).toBe(7);
+    expect(outcomes.every((o) => o.status === "refused")).toBe(true);
+    __setSttDiscoveryFetchForTests(null);
+  });
 });
 
 describe("STT routes — CRUD", () => {

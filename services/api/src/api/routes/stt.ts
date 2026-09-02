@@ -110,5 +110,12 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
         }
         throw error;
       }
+    })
+    // ── Local-server discovery (ST-8) ───────────────────────────────────
+    .get("/api/stt/discover", async (c) => {
+      // Server-side port probing: local servers without CORS headers are
+      // unreachable from the browser. Never throws — each port's failure
+      // mode is part of the ProbeOutcome data.
+      return c.json(await runtime.discoverLocalStt());
     });
 }

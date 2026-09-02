@@ -29,7 +29,7 @@ import type {
   UpdateSttProfileInput,
 } from "@vibe-tavern/api-contracts";
 import type { CreateSttProfileData, UpdateSttProfileData, StoreContainer } from "@vibe-tavern/db";
-import { STT_BACKENDS } from "@vibe-tavern/domain";
+import { STT_BACKENDS, discoverLocalSttServers, type FetchLike } from "@vibe-tavern/domain";
 import type { SttProfile, SttProfileConfig } from "@vibe-tavern/domain";
 
 import type { SttRuntimeApi } from "../contract/runtime-api.js";
@@ -245,4 +245,24 @@ export class SttAdapter implements SttRuntimeApi {
     });
     return { text: result.text, ...(result.language !== undefined ? { language: result.language } : {}) };
   };
+
+  /** Local STT server discovery routed through the API process (ST-8): some
+   *  local servers ship no CORS headers, so the browser cannot probe them
+   *  directly — the server-side fetch can. Mirror of the TTS discovery path. */
+  discoverLocalStt = () => {
+    // Server-side fetch satisfies the pure prober's FetchLike seam (the
+    // method/headers/signal subset of RequestInit); discovery runs in the API
+    // process so CORS-less local servers stay reachable.
+    const serverFetch: FetchLike = sttDiscoveryFetchOverride ?? ((input, init) => fetch(input, init));
+    return discoverLocalSttServers(serverFetch);
+  };
+}
+
+/** Test seam for the STT discovery route — swaps the network fetch the pure
+ *  prober runs against (mirror of __setDiscoveryFetchForTests in
+ *  tts-adapter.ts). Null restores the real server-side fetch. */
+let sttDiscoveryFetchOverride: FetchLike | null = null;
+
+export function __setSttDiscoveryFetchForTests(fetch: FetchLike | null): void {
+  sttDiscoveryFetchOverride = fetch;
 }
