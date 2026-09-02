@@ -844,21 +844,46 @@ export function classifyOpenAiCompatTransport(endpoint: string): TtsTransport {
 // top-level field and NEVER travels inside `config` (the TE2-16 key rule
 // applied to STT — see the stt_profiles table comment).
 
-/** Backend discriminators for the v1 STT roster (STT_DESIGN tiers — the
- *  zero-setup in-browser default and the single OpenAI-compatible adapter;
- *  native vendors are a separate post-base decision). */
+/** Backend discriminators for the STT roster (STT_DESIGN tiers + the
+ *  ST-7 Gemini audio-understanding backend; native vendors beyond it are a
+ *  separate post-base decision). */
 export const STT_BACKENDS = {
   /** Tier 0 — in-browser Whisper via transformers.js (Web Worker, no server). */
   WhisperBrowser: "whisper-browser",
   /** Tier 3/2 — any OpenAI-compatible `/v1/audio/transcriptions` endpoint (cloud or local server). */
   OpenAiCompat: "openai-compat",
+  /** ST-7 — Google Gemini batch audio understanding: transcript + optional
+   *  tone/emotion annotation in ONE pass over the clip (Interactions REST,
+   *  inline base64 audio — NOT the Live websocket). */
+  Gemini: "gemini",
 } as const;
 export type SttBackendType = (typeof STT_BACKENDS)[keyof typeof STT_BACKENDS];
 
+/** Which backends can annotate tone/emotion alongside the transcript
+ *  (ST-7 capability seam). PURE DATA, shared by the server registry
+ *  (STT_BACKEND_CAPABILITIES) and the web editor (the toggle renders only
+ *  for capable backends; non-capable backends force the flag off — the
+ *  adapter enforces that server-side too). Single source: no divergent
+ *  client/server copies. */
+export const STT_BACKEND_EMOTION_CAPABILITY: Record<SttBackendType, boolean> = {
+  [STT_BACKENDS.WhisperBrowser]: false,
+  [STT_BACKENDS.OpenAiCompat]: false,
+  [STT_BACKENDS.Gemini]: true,
+};
+
+/** Default Gemini STT model (ST-7) — the current docs' flash example; the
+ *  model field stays free text (no hardcoded catalog), this is only the
+ *  switch-into-backend prefill and the empty-field fallback. */
+export const DEFAULT_GEMINI_STT_MODEL = "gemini-3.8-flash";
+
 /** Backend-specific STT config — a per-backend discriminated union (the
- *  profile's `backend` field discriminates). Only NON-SECRET fields live
- *  here; the apiKey is the typed top-level `SttProfile.apiKey` and never
- *  rides inside config (ST-1, TE2-16 rule). */
+ *  profile's `backend` field discriminates). The Gemini arm (ST-7) is
+ *  structurally identical to the whisper-browser arm (`{ model, language? }` —
+ *  the endpoint is a fixed Gemini API constant, so no endpoint field), so it
+ *  has no separate member here or in the Zod union: the whisper shape IS its
+ *  validation. Only NON-SECRET fields live here; the apiKey is the typed
+ *  top-level `SttProfile.apiKey` and never rides inside config (ST-1, TE2-16
+ *  rule). */
 export type SttProfileConfig =
   | {
       /** OpenAI-compatible `/v1/audio/transcriptions` endpoint config. */

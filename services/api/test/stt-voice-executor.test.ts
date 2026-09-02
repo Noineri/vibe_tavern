@@ -121,7 +121,7 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
         } as unknown as ProviderExecutionInput["prompt"],
         voiceTranscriber: async (audio) => {
           transcribed.push(audio.fileName);
-          return "hello from the clip";
+          return { transcript: "hello from the clip" };
         },
         assetLoader: (assetId) => Promise.resolve(assetId.startsWith("asset_") ? AUDIO_BYTES : null),
         onAttachmentDescriptions: async (descriptions) => {
@@ -141,6 +141,37 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
     expect(body).toContain("Transcript: hello from the clip");
   });
 
+  test("ST-7: tone annotation rides the persisted description and the prompt text part", async () => {
+    const persisted: Array<{ attachmentId: string; description: string }> = [];
+
+    await nonstreamingProviderExecute(
+      makeInput({
+        prompt: {
+          finalPayload: {
+            messages: [
+              { role: "user", content: "listen", attachments: [voiceNote("v1")] },
+            ],
+          },
+        } as unknown as ProviderExecutionInput["prompt"],
+        voiceTranscriber: async () => ({ transcript: "я не могу больше", annotation: "дрожит, сбивчиво" }),
+        assetLoader: (assetId) => Promise.resolve(assetId.startsWith("asset_") ? AUDIO_BYTES : null),
+        onAttachmentDescriptions: async (descriptions) => {
+          persisted.push(...descriptions);
+        },
+      }),
+    );
+
+    // The composed description (transcript + bracketed tone line) persists…
+    expect(persisted).toEqual([
+      { attachmentId: "v1", description: "я не могу больше\n[Voice tone: дрожит, сбивчиво]" },
+    ]);
+    // …and the prompt text part carries it verbatim — the character reacts to
+    // HOW it was said, not only WHAT was said.
+    const body = capturedBodies.join("");
+    expect(body).toContain("Transcript: я не могу больше");
+    expect(body).toContain("[Voice tone: дрожит, сбивчиво]");
+  });
+
   test("music clip rides the same message but is never transcribed nor prompt-visible", async () => {
     const transcribed: string[] = [];
     const persisted: Array<{ attachmentId: string; description: string }> = [];
@@ -156,7 +187,7 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
         } as unknown as ProviderExecutionInput["prompt"],
         voiceTranscriber: async (audio) => {
           transcribed.push(audio.fileName);
-          return "words";
+          return { transcript: "words" };
         },
         assetLoader: (assetId) => Promise.resolve(assetId.startsWith("asset_") ? AUDIO_BYTES : null),
         onAttachmentDescriptions: async (descriptions) => {
@@ -205,7 +236,7 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
               ],
             },
           } as unknown as ProviderExecutionInput["prompt"],
-          voiceTranscriber: async () => "   ",
+          voiceTranscriber: async () => ({ transcript: "   " }),
           assetLoader: (assetId) => Promise.resolve(assetId.startsWith("asset_") ? AUDIO_BYTES : null),
         }),
       );

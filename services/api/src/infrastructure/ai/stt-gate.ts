@@ -20,7 +20,7 @@
  * — the honest configuration error, the mirror of `VisionNotSupportedError`.
  */
 
-import type { Attachment } from "@vibe-tavern/domain";
+import { composeVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -54,15 +54,16 @@ export class VoiceTranscribeUnavailableError extends Error {
  * The transcription call the executor makes per voice-note attachment.
  *
  * Bound upstream (chat-adapter) to the resolved voice-message STT profile:
- * the full `transcribeSttAudio` path (own key → endpoint auto-match →
- * openai-compat backend / whisper pointer errors). Receives the loaded audio
- * bytes; returns the transcript text.
+ * the full `transcribeSttAudio` path (own key → endpoint/vendor auto-match →
+ * backend). Receives the loaded audio bytes; returns the transcript and —
+ * when the profile is an emotion-capable backend with the toggle on (ST-7) —
+ * the tone annotation phrase produced in the same pass.
  */
 export type VoiceTranscriber = (audio: {
   buffer: Buffer;
   mimeType: string;
   fileName: string;
-}) => Promise<string>;
+}) => Promise<{ transcript: string; annotation?: string }>;
 
 /** `purpose` discriminator with the domain default applied: absent = voice. */
 function isVoiceNote(attachment: Attachment): boolean {
@@ -71,9 +72,13 @@ function isVoiceNote(attachment: Attachment): boolean {
 
 /**
  * Transcribe voice-note audio attachments via the configured STT profile.
- * Returns a map of attachmentId → transcript text (stripped of surrounding
- * whitespace; empty transcripts are kept as empty strings so the caller can
- * distinguish "transcribed to nothing" from "not transcribed").
+ * Returns a map of attachmentId → persisted description: the transcript
+ * (stripped of surrounding whitespace), plus — when the transcriber produced
+ * a tone annotation (ST-7: emotion-capable backend + profile toggle on) — a
+ * trailing `[Voice tone: …]` line the prompt audio branch emits verbatim
+ * (see `composeVoiceTranscript`). Empty transcripts are kept as empty
+ * strings so the caller can distinguish "transcribed to nothing" from
+ * "not transcribed".
  *
  * Mirrors `describeAttachments` (vision-gate): called by the executor when
  * voice-note attachments are present and a profile-backed transcriber is
@@ -98,12 +103,12 @@ export async function transcribeAttachments(
     const loaded = await assetLoader(att.assetId);
     if (!loaded) throw new Error(`Asset not found: ${att.name}`);
 
-    const transcript = await transcriber({
+    const { transcript, annotation } = await transcriber({
       buffer: loaded,
       mimeType: att.mimeType,
       fileName: att.name,
     });
-    results.set(att.id, transcript.trim());
+    results.set(att.id, composeVoiceTranscript(transcript, annotation));
   }
 
   return results;

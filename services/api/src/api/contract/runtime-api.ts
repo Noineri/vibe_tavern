@@ -995,7 +995,7 @@ export interface SttRuntimeApi {
 		profileId: string,
 		audio: { buffer: Buffer; mimeType: string; fileName: string },
 		language?: string,
-	) => Promise<{ text: string; language?: string } | null>;
+	) => Promise<{ text: string; language?: string; annotation?: string } | null>;
 	/** Local STT server discovery routed through the API process (ST-8) —
 	 *  never throws; each port's failure mode is a ProbeOutcome. */
 	discoverLocalStt: () => Promise<import("@vibe-tavern/domain").ProbeOutcome[]>;

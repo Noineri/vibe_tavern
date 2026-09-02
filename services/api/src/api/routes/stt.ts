@@ -20,6 +20,10 @@ import {
   OpenAiCompatSttConfigError,
   OpenAiCompatSttError,
 } from "../../domain/stt/backends/openai-stt.js";
+import {
+  GeminiSttConfigError,
+  GeminiSttError,
+} from "../../domain/stt/backends/gemini-stt.js";
 import { SttBackendNotRegisteredError, SttUnknownBackendError } from "../../domain/stt/stt-registry.js";
 
 /** Multipart transcriptions may carry sizable clips — a sane ceiling before
@@ -92,7 +96,9 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           typeof language === "string" && language.length > 0 ? language : undefined,
         );
         if (!result) return c.json({ error: "STT profile not found" }, 404);
-        return c.json(result);
+        // Dictation wire: the transcript only — the tone annotation (ST-7) is
+        // a voice-message concern and never lands in the input textarea.
+        return c.json({ text: result.text, ...(result.language !== undefined ? { language: result.language } : {}) });
       } catch (error) {
         if (error instanceof SttClientSideError) {
           return c.json({ error: "whisper-browser runs client-side" }, 400);
@@ -100,13 +106,15 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
         if (error instanceof SttUnknownBackendError || error instanceof SttBackendNotRegisteredError) {
           return c.json({ error: error.message }, 400);
         }
-        if (error instanceof OpenAiCompatSttConfigError) {
+        if (error instanceof OpenAiCompatSttConfigError || error instanceof GeminiSttConfigError) {
           return c.json({ error: error.message }, 400);
         }
         // Normalized upstream failure (transport or non-2xx) → the caller
         // should see it as a gateway problem, not a 500 with no body.
-        if (error instanceof OpenAiCompatSttError) {
-          return c.json({ error: error.message }, error.status && error.status >= 400 && error.status < 500 ? 400 : 502);
+        if (error instanceof OpenAiCompatSttError || error instanceof GeminiSttError) {
+          const status =
+            error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;
+          return c.json({ error: error.message }, status);
         }
         throw error;
       }

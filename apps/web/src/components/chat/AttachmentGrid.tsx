@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from "react";
+import { splitVoiceTranscript } from "@vibe-tavern/domain";
 import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
@@ -64,9 +65,19 @@ function VoiceBubble({ att }: { att: Attachment }) {
             {t("voice_message_transcript")}
           </button>
           {showTranscript && (
-            <p data-testid="voice-transcript-text" className="rounded-md bg-s3/60 px-2 py-1.5 font-body text-[calc(var(--ui-fs)-2px)] leading-snug text-t2 whitespace-pre-wrap">
-              {att.description}
-            </p>
+            <div className="flex flex-col gap-1">
+              <p data-testid="voice-transcript-text" className="rounded-md bg-s3/60 px-2 py-1.5 font-body text-[calc(var(--ui-fs)-2px)] leading-snug text-t2 whitespace-pre-wrap">
+                {splitVoiceTranscript(att.description).transcript}
+              </p>
+              {/* ST-7: the tone line the understanding backend appended — the
+                  prompt rides it verbatim; here it renders as its own subtle
+                  row so the transcript block stays the clean transcript. */}
+              {splitVoiceTranscript(att.description).tone !== null && (
+                <p data-testid="voice-tone-text" className="px-2 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">
+                  {t("voice_message_tone", { tone: splitVoiceTranscript(att.description).tone ?? "" })}
+                </p>
+              )}
+            </div>
           )}
         </>
       )}

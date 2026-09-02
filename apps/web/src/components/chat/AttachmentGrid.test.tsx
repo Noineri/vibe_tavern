@@ -18,7 +18,12 @@ const realI18n = await import("../../i18n/context.js");
 mock.module("../../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({
-    t: (key: string) => key,
+    // Interpolates single-brace params (the ST-7 tone row passes {tone}) —
+    // otherwise the raw-key passthrough loses the split value under test.
+    t: (key: string, params?: Record<string, unknown>) =>
+      params && typeof params === "object" && "tone" in params
+        ? `${key}:${String(params.tone)}`
+        : key,
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
@@ -69,6 +74,34 @@ describe("AttachmentGrid voice bubble (ST-6)", () => {
     });
     expect(view.getByTestId("voice-transcript-text").textContent).toContain("привет, как дела");
     expect(view.getByTestId("voice-transcript-toggle").getAttribute("aria-expanded")).toBe("true");
+  });
+
+
+  test("ST-7: tone line splits out of the transcript and renders as its own row", async () => {
+    const user = userEvent.setup();
+    const view = render(
+      <AttachmentGrid
+        attachments={[voiceAttachment({ description: "я не могу больше\n[Voice tone: дрожит, сбивчиво]" })]}
+      />,
+    );
+    await act(async () => {
+      await user.click(view.getByTestId("voice-transcript-toggle"));
+    });
+    // The transcript block is the CLEAN transcript — the marker line is gone.
+    expect(view.getByTestId("voice-transcript-text").textContent).toBe("я не могу больше");
+    // The tone rides its own row underneath — interpolation mock pins the
+    // split value reached the row.
+    expect(view.getByTestId("voice-tone-text").textContent).toBe("voice_message_tone:дрожит, сбивчиво");
+  });
+
+  test("ST-7: a description without a tone line renders no tone row", async () => {
+    const user = userEvent.setup();
+    const view = render(<AttachmentGrid attachments={[voiceAttachment()]} />);
+    await act(async () => {
+      await user.click(view.getByTestId("voice-transcript-toggle"));
+    });
+    expect(view.getByTestId("voice-transcript-text").textContent).toContain("привет, как дела");
+    expect(view.queryByTestId("voice-tone-text")).toBeNull();
   });
 
   test("music clip is playback-only: audio player, no transcript toggle", () => {

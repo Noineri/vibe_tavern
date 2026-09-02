@@ -49,7 +49,7 @@ describe("stt-gate: transcribeAttachments", () => {
       [voiceNote("v1"), musicClip("m1"), { ...voiceNote("a1"), purpose: "ambient" }],
       async (audio) => {
         seen.push(audio.fileName);
-        return `heard ${audio.fileName}`;
+        return { transcript: `heard ${audio.fileName}` };
       },
       assetLoader,
     );
@@ -64,7 +64,7 @@ describe("stt-gate: transcribeAttachments", () => {
     delete (note as { purpose?: Attachment["purpose"] }).purpose;
     const transcripts = await transcribeAttachments(
       [note],
-      async () => "text",
+      async () => ({ transcript: "text" }),
       assetLoader,
     );
     expect(transcripts.get("nopurpose")).toBe("text");
@@ -73,11 +73,25 @@ describe("stt-gate: transcribeAttachments", () => {
   test("transcript is trimmed; empty transcripts are kept as empty strings", async () => {
     const transcripts = await transcribeAttachments(
       [voiceNote("v1"), voiceNote("v2")],
-      async (audio) => (audio.fileName === "v1.webm" ? "  hello  " : "   "),
+      async (audio) => ({ transcript: audio.fileName === "v1.webm" ? "  hello  " : "   " }),
       assetLoader,
     );
     expect(transcripts.get("v1")).toBe("hello");
     expect(transcripts.get("v2")).toBe("");
+  });
+
+  test("ST-7: annotation appends the [Voice tone: …] line to the persisted description", async () => {
+    const transcripts = await transcribeAttachments(
+      [voiceNote("v1"), voiceNote("v2")],
+      async (audio) =>
+        audio.fileName === "v1.webm"
+          ? { transcript: "  hello  ", annotation: "дрожит, сбивчиво" }
+          : { transcript: "plain", annotation: "   " },
+      assetLoader,
+    );
+    expect(transcripts.get("v1")).toBe("hello\n[Voice tone: дрожит, сбивчиво]");
+    // Whitespace-only annotation is absent — no bare marker line.
+    expect(transcripts.get("v2")).toBe("plain");
   });
 
   test("abort signal stops the loop between clips", async () => {
@@ -89,7 +103,7 @@ describe("stt-gate: transcribeAttachments", () => {
         [voiceNote("v1"), voiceNote("v2")],
         async (audio) => {
           seen.push(audio.fileName);
-          return "text";
+          return { transcript: "text" };
         },
         assetLoader,
         controller.signal,
@@ -102,7 +116,7 @@ describe("stt-gate: transcribeAttachments", () => {
     await expect(
       transcribeAttachments(
         [{ ...voiceNote("gone"), assetId: "missing" }],
-        async () => "text",
+        async () => ({ transcript: "text" }),
         assetLoader,
       ),
     ).rejects.toThrow("gone.webm");

@@ -57,6 +57,7 @@ function multipartTranscribe(profileId: string, extra?: { language?: string }): 
 // re-register their stubs).
 
 import { openAiCompatSttFactory } from "../src/domain/stt/backends/openai-stt.js";
+import { geminiSttFactory } from "../src/domain/stt/backends/gemini-stt.js";
 import {
   __resetSttRegistryForTests,
   registerSttBackend,
@@ -66,6 +67,7 @@ import { STT_BACKENDS } from "@vibe-tavern/domain";
 beforeEach(() => {
   __resetSttRegistryForTests();
   registerSttBackend(STT_BACKENDS.OpenAiCompat, openAiCompatSttFactory);
+  registerSttBackend(STT_BACKENDS.Gemini, geminiSttFactory);
   globalThis.fetch = originalFetch;
 });
 
@@ -431,5 +433,164 @@ describe("STT routes — auto-key resolution", () => {
     });
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
     expect(res.status).toBe(200);
+  });
+});
+
+describe("STT routes — Gemini backend (ST-7)", () => {
+  /** Interactions reply the backend parses (steps → model_output → text). */
+  function interactionsJsonReply(payload: string): Response {
+    return new Response(
+      JSON.stringify({ steps: [{ type: "model_output", content: [{ type: "text", text: payload }] }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  test("vendor auto-key: a Gemini-API-host LLM provider key rides x-goog-api-key; hint names it", async () => {
+    const { app, providers } = await makeApp();
+    await providers.create({
+      name: "Google LLM",
+      providerPreset: "google",
+      endpoint: "https://generativelanguage.googleapis.com/v1beta",
+      apiKey: "g-llm-key",
+      isDefault: true,
+    } as never);
+
+    const profileRes = await app.request("/api/stt/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Gemini STT", backend: "gemini", config: { model: "gemini-test" } }),
+    });
+    expect(profileRes.status).toBe(201);
+    const profile = (await profileRes.json()) as { id: string; autoKeyProviderName: string | null };
+    expect(profile.autoKeyProviderName).toBe("Google LLM");
+
+    globalThis.fetch = mock(async (_input, init) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      expect(headers["x-goog-api-key"]).toBe("g-llm-key");
+      expect(headers.Authorization).toBeUndefined();
+      return interactionsJsonReply("hello from gemini");
+    });
+    const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { text: string; annotation?: string };
+    expect(body.text).toBe("hello from gemini");
+  });
+
+  test("no provider: a gemini TTS profile key is reused (Google TTS credential → Google STT ready)", async () => {
+    const { app, tts } = await makeApp();
+    await tts.create({
+      name: "Gemini TTS",
+      backend: "gemini" as never,
+      config: {},
+      apiKey: "g-tts-key",
+    } as never);
+
+    const profileRes = await app.request("/api/stt/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Gemini STT", backend: "gemini", config: { model: "gemini-test" } }),
+    });
+    const profile = (await profileRes.json()) as { id: string; autoKeyProviderName: string | null };
+    expect(profile.autoKeyProviderName).toBe("Gemini TTS");
+
+    globalThis.fetch = mock(async (_input, init) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      expect(headers["x-goog-api-key"]).toBe("g-tts-key");
+      return interactionsJsonReply("hi");
+    });
+    const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
+    expect(res.status).toBe(200);
+  });
+
+  test("emotion toggle: forced OFF for pure-ASR backends, kept for gemini; annotation stays off the dictation wire", async () => {
+    const { app } = await makeApp();
+
+    // Pure-ASR backend with a rogue true → forced false.
+    const compatRes = await app.request("/api/stt/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Compat",
+        backend: "openai-compat",
+        config: OPENAI_COMPAT_CONFIG,
+        emotionAnnotation: true,
+      }),
+    });
+    const compat = (await compatRes.json()) as { emotionAnnotation: boolean };
+    expect(compat.emotionAnnotation).toBe(false);
+
+    // Gemini keeps the flag…
+    const geminiRes = await app.request("/api/stt/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Gemini",
+        backend: "gemini",
+        config: { model: "gemini-test" },
+        apiKey: "g-key",
+        emotionAnnotation: true,
+      }),
+    });
+    const gemini = (await geminiRes.json()) as { id: string; emotionAnnotation: boolean };
+    expect(gemini.emotionAnnotation).toBe(true);
+
+    // …and a backend flip on update re-forces it off.
+    const flipped = await app.request(`/api/stt/profiles/${gemini.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "openai-compat", config: OPENAI_COMPAT_CONFIG }),
+    });
+    const flippedBody = (await flipped.json()) as { emotionAnnotation: boolean };
+    expect(flippedBody.emotionAnnotation).toBe(false);
+
+    // Dictation wire carries the transcript only — the tone annotation is a
+    // voice-message concern (the chat path reads it off the ADAPTER, not the
+    // route). A SEPARATE gemini profile: the one above was just flipped.
+    const wireRes = await app.request("/api/stt/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Gemini 2",
+        backend: "gemini",
+        config: { model: "gemini-test" },
+        apiKey: "g-key",
+        emotionAnnotation: true,
+      }),
+    });
+    const wireProfile = (await wireRes.json()) as { id: string };
+    globalThis.fetch = mock(async () =>
+      interactionsJsonReply(JSON.stringify({ transcript: "words", tone: "calm" })),
+    );
+    const res = await app.request("/api/stt/transcribe", multipartTranscribe(wireProfile.id));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { text: string; annotation?: string };
+    expect(body.text).toBe("words");
+    expect(body.annotation).toBeUndefined();
+  });
+
+  test("adapter returns the annotation for the chat path (route-independent seam)", async () => {
+    const db = await createDb(":memory:");
+    const stt = new SttStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
+    const providers = new ProviderStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
+    const tts = new TtsStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
+    const adapter = new SttAdapter({ stt, providers, tts });
+    const created = await stt.create({
+      name: "Gemini",
+      backend: "gemini" as never,
+      config: { model: "gemini-test" },
+      apiKey: "g-key",
+      emotionAnnotation: true,
+      isDefault: false,
+    } as never);
+
+    globalThis.fetch = mock(async () =>
+      interactionsJsonReply(JSON.stringify({ transcript: "слова", tone: "дрожит" })),
+    );
+    const result = await adapter.transcribeSttAudio(created.id, {
+      buffer: Buffer.from([1, 2, 3]),
+      mimeType: "audio/webm",
+      fileName: "note.webm",
+    });
+    expect(result).toMatchObject({ text: "слова", annotation: "дрожит" });
   });
 });

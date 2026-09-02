@@ -130,7 +130,10 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return async (audio) => {
 			const result = await transcribe(profileId, audio);
 			if (result === null) throw new Error(`STT profile not found: ${profileId}`);
-			return result.text;
+			return {
+				transcript: result.text,
+				...(result.annotation !== undefined ? { annotation: result.annotation } : {}),
+			};
 		};
 	}
 

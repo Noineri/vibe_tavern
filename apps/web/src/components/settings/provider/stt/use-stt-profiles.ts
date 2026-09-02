@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { DEFAULT_WHISPER_MODEL_ID, STT_BACKENDS, type SttBackendType } from "@vibe-tavern/domain";
+import {
+  DEFAULT_GEMINI_STT_MODEL,
+  DEFAULT_WHISPER_MODEL_ID,
+  STT_BACKENDS,
+  STT_BACKEND_EMOTION_CAPABILITY,
+  type SttBackendType,
+} from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import {
   createSttProfile,
@@ -31,6 +37,10 @@ export interface SttProfileForm {
    *  profile whose typed api_key column holds a key. Drives the key field's
    *  "saved" placeholder. */
   hasStoredApiKey: boolean;
+  /** ST-7 emotion toggle — only capable backends (gemini) render it; the
+   *  form value is forced false on every backend switch to a non-capable
+   *  slug, and the server force-offs again on save (belt and braces). */
+  emotionAnnotation: boolean;
 }
 
 /** Wire-boundary normalizer: the client stays defensive against unknown
@@ -115,6 +125,7 @@ export function useSttProfiles(): {
       apiKey: "",
       autoKeyProviderName: record.autoKeyProviderName ?? null,
       hasStoredApiKey: record.hasStoredApiKey,
+      emotionAnnotation: record.emotionAnnotation,
     };
   }
 
@@ -144,6 +155,7 @@ export function useSttProfiles(): {
       apiKey: "",
       autoKeyProviderName: null,
       hasStoredApiKey: false,
+      emotionAnnotation: false,
     });
     setDirty(false);
     setHeaderMode("edit");
@@ -171,13 +183,17 @@ export function useSttProfiles(): {
         const nextBackend = patch.backend;
         // Backend switch resets config + key — stale fields must never leak
         // across backends (a stored key from the OLD backend must not
-        // survive into the new one: hasStoredApiKey resets with it).
+        // survive into the new one: hasStoredApiKey resets with it). ST-7:
+        // the emotion toggle resets too — it is a per-backend capability,
+        // not a cross-backend preference.
         const nextConfig =
           nextBackend === STT_BACKENDS.WhisperBrowser
             ? defaultWhisperConfig()
-            : patch.config !== undefined
-              ? { ...patch.config }
-              : {};
+            : nextBackend === STT_BACKENDS.Gemini
+              ? { model: DEFAULT_GEMINI_STT_MODEL }
+              : patch.config !== undefined
+                ? { ...patch.config }
+                : {};
         return {
           ...prev,
           ...patch,
@@ -186,6 +202,7 @@ export function useSttProfiles(): {
           apiKey: "",
           autoKeyProviderName: null,
           hasStoredApiKey: false,
+          emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[nextBackend] ? prev.emotionAnnotation : false,
         };
       }
       return { ...prev, ...patch };
@@ -218,14 +235,18 @@ export function useSttProfiles(): {
       let saved: SttProfileRecord;
       // ST-1: the typed form key rides the top-level write-only field.
       // Update with a BLANK key sends undefined = keep the stored one;
-      // create treats blank as absent. `config` is sent bag-only.
+      // create treats blank as absent. `config` is sent bag-only. ST-7: the
+      // emotion toggle rides create/update — forced false for non-capable
+      // backends (the server force-offs again; belt and braces).
       const apiKeyPayload = form.apiKey.trim() === "" ? undefined : form.apiKey.trim();
+      const emotionPayload = STT_BACKEND_EMOTION_CAPABILITY[form.backend] && form.emotionAnnotation;
       if (form.id === null) {
         saved = await createSttProfile({
           name: trimmedName,
           backend: form.backend,
           config: form.config,
           apiKey: apiKeyPayload,
+          emotionAnnotation: emotionPayload,
         });
       } else {
         saved = await updateSttProfile(form.id, {
@@ -233,6 +254,7 @@ export function useSttProfiles(): {
           backend: form.backend,
           config: form.config,
           apiKey: apiKeyPayload,
+          emotionAnnotation: emotionPayload,
         });
       }
       const list = await listAllSttProfiles();

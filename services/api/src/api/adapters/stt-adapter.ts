@@ -29,8 +29,14 @@ import type {
   UpdateSttProfileInput,
 } from "@vibe-tavern/api-contracts";
 import type { CreateSttProfileData, UpdateSttProfileData, StoreContainer } from "@vibe-tavern/db";
-import { STT_BACKENDS, discoverLocalSttServers, type FetchLike } from "@vibe-tavern/domain";
-import type { SttProfile, SttProfileConfig } from "@vibe-tavern/domain";
+import {
+  STT_BACKENDS,
+  STT_BACKEND_EMOTION_CAPABILITY,
+  TTS_BACKEND,
+  discoverLocalSttServers,
+  type FetchLike,
+} from "@vibe-tavern/domain";
+import type { SttBackendType, SttProfile, SttProfileConfig } from "@vibe-tavern/domain";
 
 import type { SttRuntimeApi } from "../contract/runtime-api.js";
 
@@ -40,12 +46,17 @@ import type { SttRuntimeApi } from "../contract/runtime-api.js";
 // the STT openai-compat adapter originally landed here in a temporary spot
 // (ST-5a) and now owns this file.
 import "../../domain/stt/backends/openai-stt.js";
+import "../../domain/stt/backends/gemini-stt.js";
 
 import { createSttBackend } from "../../domain/stt/stt-registry.js";
 import {
   OpenAiCompatSttConfigError,
   OpenAiCompatSttError,
 } from "../../domain/stt/backends/openai-stt.js";
+import {
+  GeminiSttConfigError,
+  GeminiSttError,
+} from "../../domain/stt/backends/gemini-stt.js";
 
 // ─── Wire projections ────────────────────────────────────────────────────────
 
@@ -80,23 +91,50 @@ function normalizeEndpoint(raw: string): string {
 
 // ─── Auto-key resolution ─────────────────────────────────────────────────────
 
-/** Auto-match the transcription key by endpoint. Precedence over the LLM
- *  provider profiles AND openai-compat TTS profiles (ST-5b) —
- *  deterministic: first in list (sort) order wins. Own-key/provided-key
- *  configs short-circuit before this runs. */
+/** Vendor host of the fixed Gemini API endpoint — the auto-key match key for
+ *  the gemini backend (its config carries NO endpoint field, ST-7). */
+const GEMINI_API_HOST = "https://generativelanguage.googleapis.com";
+
+/** Auto-match the transcription key. Two match strategies (ST-7):
+ *  - openai-compat: by endpoint — first LLM provider profiles (the TTS
+ *    default-on reuse), then openai-compat TTS profiles whose typed key is
+ *    non-empty. Deterministic: first in list (sort) order wins.
+ *  - gemini: by VENDOR — any LLM provider profile whose endpoint lives on the
+ *    Gemini API host, then any gemini TTS profile with a stored key ("a saved
+ *    Google TTS credential makes Google STT ready", ST-5b/ST-7 rule).
+ * Own-key/provided-key configs short-circuit before this runs. */
 async function autoMatchSttKey(
   stores: Pick<StoreContainer, "providers" | "tts">,
+  backend: SttBackendType,
   config: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
+): Promise<{ config: Record<string, unknown>; matchedName: string | null }> {
+  if (backend === STT_BACKENDS.Gemini) {
+    const providers = await stores.providers.listAll();
+    for (const provider of providers) {
+      if (!provider.apiKey) continue;
+      if (normalizeEndpoint(provider.endpoint).startsWith(GEMINI_API_HOST)) {
+        return { config: { ...config, apiKey: provider.apiKey }, matchedName: provider.name };
+      }
+    }
+    const ttsProfiles = await stores.tts.listAll();
+    for (const profile of ttsProfiles) {
+      if (profile.backend !== TTS_BACKEND.Gemini) continue;
+      const key = profile.apiKey ?? "";
+      if (key === "") continue;
+      return { config: { ...config, apiKey: key }, matchedName: profile.name };
+    }
+    return { config, matchedName: null };
+  }
+
   const endpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
-  if (endpoint === "") return config;
+  if (endpoint === "") return { config, matchedName: null };
 
   // LLM provider profiles (the TTS default-on reuse).
   const providers = await stores.providers.listAll();
   for (const provider of providers) {
     if (!provider.apiKey) continue;
     if (normalizeEndpoint(provider.endpoint) === normalizeEndpoint(endpoint)) {
-      return { ...config, apiKey: provider.apiKey };
+      return { config: { ...config, apiKey: provider.apiKey }, matchedName: provider.name };
     }
   }
 
@@ -109,17 +147,17 @@ async function autoMatchSttKey(
     const ttsEndpoint = typeof profile.config.endpoint === "string" ? profile.config.endpoint.trim() : "";
     if (ttsEndpoint === "") continue;
     if (normalizeEndpoint(ttsEndpoint) === normalizeEndpoint(endpoint)) {
-      return { ...config, apiKey: key };
+      return { config: { ...config, apiKey: key }, matchedName: profile.name };
     }
   }
 
-  return config;
+  return { config, matchedName: null };
 }
 
 /** Resolve the TRANSCRIPTION config for a saved profile: the typed `apiKey`
- *  column is injected SERVER-SIDE (own key wins), then the endpoint
- *  auto-match (providers and TTS profiles) — the secret never crosses the
- *  API boundary. A profile with no key and no match degrades to the plain
+ *  column is injected SERVER-SIDE (own key wins), then the auto-match
+ *  (endpoint for openai-compat, vendor for gemini) — the secret never crosses
+ *  the API boundary. A profile with no key and no match degrades to the plain
  *  config and lets the backend factory surface the auth error. */
 async function resolveTranscriptionConfig(
   stores: Pick<StoreContainer, "providers" | "tts">,
@@ -131,7 +169,7 @@ async function resolveTranscriptionConfig(
     config.apiKey = ownKey;
     return config;
   }
-  return await autoMatchSttKey(stores, config);
+  return (await autoMatchSttKey(stores, profile.backend, config)).config;
 }
 
 // ─── Errors (route → status mapping) ─────────────────────────────────────────
@@ -155,16 +193,40 @@ type SttAdapterStores = Pick<StoreContainer, "stt" | "providers" | "tts">;
 export class SttAdapter implements SttRuntimeApi {
   constructor(private readonly stores: SttAdapterStores) {}
 
-  /** Auto-key HINT (UI display only): which provider profile's key
-   *  auto-matches the profile's endpoint — same rule as decorateAutoKey in
-   *  tts-adapter. */
+  /** Auto-key HINT (UI display only): which provider/TTS profile's key
+   *  auto-matches — same rule as decorateAutoKey in tts-adapter. Two
+   *  strategies (ST-7): endpoint match for openai-compat, vendor match for
+   *  gemini (Gemini-API-host provider profile, then a gemini TTS profile). */
   private async decorateAutoKey(records: ClientSttProfileRecord[]): Promise<ClientSttProfileRecord[]> {
     const providers = await this.stores.providers.listAll();
     const keyful = providers.filter((p) => p.apiKey);
-    if (keyful.length === 0) return records;
+    if (keyful.length === 0) {
+      // A gemini TTS key can still match without any keyful provider.
+      const ttsGemini = (await this.stores.tts.listAll()).find(
+        (p) => p.backend === TTS_BACKEND.Gemini && (p.apiKey ?? "") !== "",
+      );
+      if (!ttsGemini) return records;
+      for (const record of records) {
+        if (record.hasStoredApiKey || record.backend !== STT_BACKENDS.Gemini) continue;
+        record.autoKeyProviderName = ttsGemini.name;
+      }
+      return records;
+    }
     const byEndpoint = new Map(keyful.map((p) => [normalizeEndpoint(p.endpoint), p.name]));
+    const geminiProvider = keyful.find((p) =>
+      normalizeEndpoint(p.endpoint).startsWith(GEMINI_API_HOST),
+    );
+    const ttsGemini = (await this.stores.tts.listAll()).find(
+      (p) => p.backend === TTS_BACKEND.Gemini && (p.apiKey ?? "") !== "",
+    );
     for (const record of records) {
       if (record.hasStoredApiKey) continue;
+      if (record.backend === STT_BACKENDS.Gemini) {
+        // Vendor match: provider wins over TTS (the auto-match precedence).
+        const name = geminiProvider?.name ?? ttsGemini?.name ?? null;
+        record.autoKeyProviderName = name;
+        continue;
+      }
       if (record.backend !== STT_BACKENDS.OpenAiCompat) continue;
       const endpoint = typeof record.config.endpoint === "string" ? record.config.endpoint.trim() : "";
       if (endpoint === "") continue;
@@ -186,12 +248,16 @@ export class SttAdapter implements SttRuntimeApi {
     // Zod-inferred input and the store input are structurally the same shape;
     // fields are mapped explicitly (no casts — house rule). The secret rides
     // the top-level write-only field (ST-1), never the config bag.
+    // ST-7: the emotion toggle is forced OFF for pure-ASR backends — the
+    // registry flag is the single source, so a stale/rogue client cannot
+    // store a capability the backend does not have.
+    const emotionCapable = STT_BACKEND_EMOTION_CAPABILITY[body.backend];
     const input: CreateSttProfileData = {
       name: body.name,
       backend: body.backend,
       config: body.config,
       apiKey: body.apiKey && body.apiKey !== "" ? body.apiKey : undefined,
-      emotionAnnotation: body.emotionAnnotation ?? false,
+      emotionAnnotation: emotionCapable && (body.emotionAnnotation ?? false),
       isDefault: body.isDefault ?? false,
     };
     const created = await this.stores.stt.create(input);
@@ -201,8 +267,21 @@ export class SttAdapter implements SttRuntimeApi {
   updateSttProfile: SttRuntimeApi["updateSttProfile"] = async (id, body) => {
     // ST-1 tri-state: apiKey is `undefined` = untouched, `""` = cleared,
     // non-empty = set — the store maps it onto the typed column; the
-    // backend-flip key clearing is the store's job too.
-    const updated = await this.stores.stt.update(id, { ...body });
+    // backend-flip key clearing is the store's job too. ST-7: the force-off
+    // rule uses the EFFECTIVE backend (patch or stored) — a backend flip to a
+    // pure-ASR slug clears the flag even when the patch does not carry it,
+    // and only a capable backend may ever store true.
+    const existing = await this.stores.stt.getById(id);
+    const effectiveBackend = body.backend ?? existing?.backend;
+    const emotionCapable =
+      effectiveBackend !== undefined ? STT_BACKEND_EMOTION_CAPABILITY[effectiveBackend] : false;
+    const patched: typeof body = { ...body };
+    if (body.emotionAnnotation !== undefined) {
+      patched.emotionAnnotation = emotionCapable && body.emotionAnnotation;
+    } else if (!emotionCapable) {
+      patched.emotionAnnotation = false;
+    }
+    const updated = await this.stores.stt.update(id, patched);
     return updated ? (await this.decorateAutoKey([toClientSttProfile(updated)]))[0] : null;
   };
 
@@ -233,17 +312,25 @@ export class SttAdapter implements SttRuntimeApi {
     // the factory's parseConfig reads it off `SttProfileConfig` via its own
     // type-erased view). The stored union never carries it (ST-1). A
     // per-request language OVERRIDES the profile's config hint (the factory
-    // reads language from the bag).
+    // reads language from the bag). ST-7: the emotion toggle rides the bag
+    // too — only when the backend actually has the capability (stored
+    // force-off keeps this belt-and-braces).
     const resolved = await resolveTranscriptionConfig(this.stores, profile);
     if (language !== undefined && language !== "") {
       resolved.language = language;
     }
+    resolved.emotionAnnotation =
+      STT_BACKEND_EMOTION_CAPABILITY[profile.backend] && profile.emotionAnnotation;
     const resolvedConfig = resolved as SttProfileConfig;
     const backend = createSttBackend(profile.backend, resolvedConfig);
     const result = await backend.transcribe(audio.buffer, {
       mime: audio.mimeType,
     });
-    return { text: result.text, ...(result.language !== undefined ? { language: result.language } : {}) };
+    return {
+      text: result.text,
+      ...(result.language !== undefined ? { language: result.language } : {}),
+      ...(result.annotation !== undefined ? { annotation: result.annotation } : {}),
+    };
   };
 
   /** Local STT server discovery routed through the API process (ST-8): some

@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyAttachment, parseStoredAttachments } from '../src/attachment.js';
+import {
+  classifyAttachment,
+  composeVoiceTranscript,
+  parseStoredAttachments,
+  splitVoiceTranscript,
+} from '../src/attachment.js';
 
 // STT_PLAN ST-1: audio attachments. `classifyAttachment` is the MIME → type
 // gate the pipeline consumes; `parseStoredAttachments` is the stored-JSON
@@ -58,5 +63,37 @@ describe('audio attachment purpose / durationMs (STT_PLAN ST-1)', () => {
     const parsed = parseStoredAttachments(raw);
     expect(parsed?.[0]?.purpose).toBeUndefined();
     expect(parsed?.[0]?.durationMs).toBeUndefined();
+  });
+});
+describe('voice transcript + tone line (STT_PLAN ST-7)', () => {
+  test('compose: transcript only when no annotation', () => {
+    expect(composeVoiceTranscript('  hello  ')).toBe('hello');
+  });
+
+  test('compose: annotation appends the bracketed tone line', () => {
+    expect(composeVoiceTranscript(' hello ', 'дрожит, сбивчиво ')).toBe(
+      'hello\n[Voice tone: дрожит, сбивчиво]',
+    );
+  });
+
+  test('compose: empty transcript stays empty even with an annotation', () => {
+    expect(composeVoiceTranscript('   ', 'trembling')).toBe('');
+  });
+
+  test('compose: whitespace-only annotation is dropped', () => {
+    expect(composeVoiceTranscript('hello', '   ')).toBe('hello');
+  });
+
+  test('split: inverse of compose', () => {
+    const composed = composeVoiceTranscript('hello', 'calm');
+    expect(splitVoiceTranscript(composed)).toEqual({ transcript: 'hello', tone: 'calm' });
+  });
+
+  test('split: description without a tone line', () => {
+    expect(splitVoiceTranscript('just words')).toEqual({ transcript: 'just words', tone: null });
+  });
+
+  test('split: an empty tone payload degrades to null', () => {
+    expect(splitVoiceTranscript('words\n[Voice tone: ]')).toEqual({ transcript: 'words', tone: null });
   });
 });

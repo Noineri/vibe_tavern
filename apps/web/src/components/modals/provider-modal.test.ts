@@ -104,6 +104,7 @@ function makeProfile(overrides: Record<string, unknown> = {}): unknown {
     providerPreset: "openai",
     endpoint: "https://api.test/v1",
     hasStoredApiKey: false,
+      emotionAnnotation: false,
     defaultModel: "gpt-4o",
     visionModel: null,
     temperature: 0.8,

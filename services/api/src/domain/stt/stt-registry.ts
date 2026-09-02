@@ -15,7 +15,7 @@
  * surfaces from it without a server round-trip.
  */
 
-import { STT_BACKENDS } from "@vibe-tavern/domain";
+import { STT_BACKENDS, STT_BACKEND_EMOTION_CAPABILITY } from "@vibe-tavern/domain";
 import type { SttBackendType, SttProfileConfig } from "@vibe-tavern/domain";
 
 import { STT_TRANSPORT } from "./stt-backend.js";
@@ -35,13 +35,15 @@ export type { SttBackendType } from "@vibe-tavern/domain";
 // ---------------------------------------------------------------------------
 
 /**
- * Static capability flags for the FULL v1 STT roster — pure data, no I/O.
+ * Static capability flags for the FULL STT roster — pure data, no I/O.
  * Exported so UI code can render capability surfaces (transport badge,
  * API-key field, emotion toggle) without a server round-trip; the
  * server-side STT twin of `TTS_BACKEND_CAPABILITIES` (which lives in
  * `@vibe-tavern/domain` for TTS — ST-1 landed only the slug/profile types in
- * domain, so STT keeps the flags here where this unit owns the backend
- * surface).
+ * domain, so STT keeps them here where this unit owns the backend surface —
+ * EXCEPT the emotion flag, which lives in the domain map
+ * STT_BACKEND_EMOTION_CAPABILITY so the web editor and this registry share
+ * one source, ST-7).
  */
 export const STT_BACKEND_CAPABILITIES: Record<SttBackendType, SttBackendCapabilities> = {
   [STT_BACKENDS.WhisperBrowser]: {
@@ -50,7 +52,7 @@ export const STT_BACKEND_CAPABILITIES: Record<SttBackendType, SttBackendCapabili
     // Our transcribeBlob() path is single-shot — the transcript arrives
     // whole; the flag describes OUR transport, not transformers.js.
     supportsStreaming: false,
-    emotionAnnotation: false,
+    emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.WhisperBrowser],
     requiresApiKey: false,
   },
   [STT_BACKENDS.OpenAiCompat]: {
@@ -59,7 +61,20 @@ export const STT_BACKEND_CAPABILITIES: Record<SttBackendType, SttBackendCapabili
     // /v1/audio/transcriptions is one multipart request/response — no
     // incremental partials on our adapter.
     supportsStreaming: false,
-    emotionAnnotation: false,
+    emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.OpenAiCompat],
+    requiresApiKey: true,
+  },
+  [STT_BACKENDS.Gemini]: {
+    transport: STT_TRANSPORT.Server,
+    // Native Interactions REST audio understanding — NOT the OpenAI
+    // transcription protocol (ST-7).
+    openaiCompatible: false,
+    // One Interactions request → one reply with the full transcript — no
+    // incremental partials.
+    supportsStreaming: false,
+    // The first (and so far only) roster backend that annotates tone/
+    // emotion alongside the transcript (ST-7).
+    emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.Gemini],
     requiresApiKey: true,
   },
 };

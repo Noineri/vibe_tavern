@@ -155,3 +155,61 @@ describe("SttProfileEditor — view mode", () => {
     await waitFor(() => expect(view.getByTestId("stt-quickstart-select")).toBeTruthy());
   });
 });
+
+describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7)", () => {
+  function geminiStt(emotion = false) {
+    const form = makeForm({
+      backend: "gemini",
+      config: { model: "gemini-3.8-flash" },
+      emotionAnnotation: emotion,
+    });
+    return makeStt({
+      form,
+      headerMode: "edit",
+      profiles: [makeRecord({ backend: "gemini", config: { model: "gemini-3.8-flash" }, emotionAnnotation: emotion })],
+    });
+  }
+
+  it("gemini edit form: no endpoint/quickstart, free-text model, key field — and the emotion toggle renders", async () => {
+    const stt = geminiStt();
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId("stt-emotion-toggle-block")).toBeTruthy());
+    // Fixed endpoint: no endpoint input, no quickstart select.
+    expect(view.queryByTestId("stt-field-endpoint")).toBeNull();
+    expect(view.queryByTestId("stt-quickstart-select")).toBeNull();
+    // Free-text model + language field render.
+    expect(view.getByTestId("stt-field-model")).toBeTruthy();
+    expect(view.getByTestId("stt-field-language")).toBeTruthy();
+    // Server backend → the key field renders.
+    expect(view.getByTestId("stt-field-api-key")).toBeTruthy();
+  });
+
+  it("emotion toggle is hidden for whisper-browser and openai-compat (pure-ASR backends)", async () => {
+    for (const backend of ["whisper-browser", "openai-compat"] as const) {
+      const config =
+        backend === "whisper-browser"
+          ? { model: DEFAULT_WHISPER_MODEL_ID }
+          : { endpoint: "https://api.openai.com/v1", model: "whisper-1" };
+      const stt = makeStt({
+        headerMode: "edit",
+        form: makeForm({ backend, config, emotionAnnotation: false }),
+        profiles: [makeRecord({ backend, config })],
+      });
+      const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+      await waitFor(() => expect(view.getByTestId("stt-profile-editor")).toBeTruthy());
+      expect(view.queryByTestId("stt-emotion-toggle-block")).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("clicking the toggle flips the form flag through setForm", async () => {
+    const stt = geminiStt();
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId("stt-emotion-toggle")).toBeTruthy());
+    expect(view.getByTestId("stt-emotion-toggle").getAttribute("aria-checked")).toBe("false");
+    await act(async () => {
+      view.getByTestId("stt-emotion-toggle").click();
+    });
+    expect(stt.setForm).toHaveBeenCalledWith({ emotionAnnotation: true });
+  });
+});

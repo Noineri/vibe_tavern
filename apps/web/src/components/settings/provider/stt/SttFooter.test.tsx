@@ -20,6 +20,7 @@ function makeStt(overrides: Partial<SttHook> = {}): SttHook {
     backend: STT_BACKENDS.OpenAiCompat,
     config: { endpoint: "https://api.openai.com/v1", model: "whisper-1" },
     hasStoredApiKey: false,
+      emotionAnnotation: false,
     autoKeyProviderName: null,
     apiKey: "",
   };

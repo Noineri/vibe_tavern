@@ -34,6 +34,7 @@ function openaiForm(): SttProfileForm {
     apiKey: "",
     autoKeyProviderName: null,
     hasStoredApiKey: false,
+      emotionAnnotation: false,
   };
 }
 
@@ -46,6 +47,7 @@ function whisperForm(): SttProfileForm {
     apiKey: "",
     autoKeyProviderName: null,
     hasStoredApiKey: false,
+      emotionAnnotation: false,
   };
 }
 

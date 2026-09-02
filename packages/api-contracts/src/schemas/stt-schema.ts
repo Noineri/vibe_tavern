@@ -7,7 +7,7 @@ import { z } from 'zod';
  *  OpenAI-compatible `/v1/audio/transcriptions` adapter (cloud or local
  *  server). Further native adapters (Deepgram, Mistral, xAI, ...) are a
  *  separate post-base decision — extend this enum when they land. */
-export const sttBackendSchema = z.enum(['openai-compat', 'whisper-browser']);
+export const sttBackendSchema = z.enum(['openai-compat', 'whisper-browser', 'gemini']);
 export type SttBackendValue = z.infer<typeof sttBackendSchema>;
 
 // ─── Profile shape ────────────────────────────────────────────────────────────
@@ -41,6 +41,11 @@ export type SttWhisperBrowserConfigValue = z.infer<typeof sttWhisperBrowserConfi
 
 export const sttProfileConfigSchema = z.union([sttOpenAiCompatConfigSchema, sttWhisperBrowserConfigSchema]);
 export type SttProfileConfigValue = z.infer<typeof sttProfileConfigSchema>;
+
+// NOTE (ST-7): the Gemini config arm is structurally identical to the
+// whisper-browser arm above (`{ model, language? }` — the endpoint is a fixed
+// Gemini API constant), so it has no separate schema member: the whisper
+// shape IS its validation, exactly as in the domain union.
 
 /** Full STT profile as served by the API — SECURITY PROJECTION of the
  *  stored domain row: the secret lives in the typed `api_key` column (ST-1),

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DEFAULT_WHISPER_MODEL_ID, STT_BACKENDS } from "@vibe-tavern/domain";
+import { DEFAULT_WHISPER_MODEL_ID, STT_BACKENDS, STT_BACKEND_EMOTION_CAPABILITY } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { STT_QUICKSTARTS, getSttQuickstart } from "../../../../lib/stt/stt-quickstarts.js";
 import { transcribeSttAudio } from "../../../../api/stt-api.js";
@@ -24,7 +24,10 @@ type SttHook = ReturnType<typeof useSttProfiles>;
  *  the form). The clip is a silent WAV built client-side (test-audio.ts) —
  *  a successful round-trip proves endpoint+key+model without a mic. */
 function canTestConnection(form: SttProfileForm, dirty: boolean): boolean {
-  return form.id !== null && !dirty && form.backend === STT_BACKENDS.OpenAiCompat;
+  // Any SERVER backend can round-trip the silent WAV — openai-compat and
+  // gemini (ST-7); the browser tier transcribes client-side and has nothing
+  // remote to test.
+  return form.id !== null && !dirty && form.backend !== STT_BACKENDS.WhisperBrowser;
 }
 
 interface SttProviderFormProps {
@@ -40,6 +43,8 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
   const [testOk, setTestOk] = useState<boolean | null>(null);
   const [testing, setTesting] = useState(false);
   const isBrowser = form.backend === STT_BACKENDS.WhisperBrowser;
+  const isCompat = form.backend === STT_BACKENDS.OpenAiCompat;
+  const showsEmotionToggle = STT_BACKEND_EMOTION_CAPABILITY[form.backend];
   const apiKey = form.apiKey;
   const autoKeyName = form.autoKeyProviderName;
 
@@ -50,6 +55,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
   const segmentOptions: Array<{ value: string; label: string }> = [
     { value: STT_BACKENDS.OpenAiCompat, label: t("stt_segment_openai") },
     { value: STT_BACKENDS.WhisperBrowser, label: t("stt_segment_whisper") },
+    { value: STT_BACKENDS.Gemini, label: t("stt_segment_gemini") },
   ];
 
   function handleSegmentChange(next: string) {
@@ -131,8 +137,9 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
       </div>
 
       {/* Quickstart + applied-endpoint readout (openai-compat only — recipes,
-          not a catalog; live discovery is ST-8). */}
-      {!isBrowser && (
+          not a catalog; live discovery is ST-8; gemini has a fixed endpoint,
+          ST-7). */}
+      {isCompat && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="mb-3">
             <label className={labelCls + " mb-[6px]"}>{t("stt_quickstart_label")}</label>
@@ -165,7 +172,42 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         onUpdate={(key, value) => updateConfigField(stt, form, key, value)}
       />
 
-      {/* API key (openai-compat only — browser whisper needs none) */}
+      {/* ST-7: the tone-annotation toggle — rendered ONLY for capable
+          backends (gemini); pure-ASR backends never see it and the server
+          forces the stored flag off. */}
+      {showsEmotionToggle && (
+        <div className="mb-3" data-testid="stt-emotion-toggle-block">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={form.emotionAnnotation}
+            onClick={() => updateForm("emotionAnnotation", !form.emotionAnnotation)}
+            className="flex cursor-pointer items-start gap-2.5 text-left"
+            data-testid="stt-emotion-toggle"
+          >
+            <span
+              className={cn(
+                "mt-0.5 flex h-[18px] w-[32px] shrink-0 items-center rounded-full border px-[2px] transition-colors",
+                form.emotionAnnotation ? "border-accent bg-accent/20 justify-end" : "border-border bg-s3 justify-start",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-[12px] w-[12px] rounded-full transition-colors",
+                  form.emotionAnnotation ? "bg-accent" : "bg-t4",
+                )}
+              />
+            </span>
+            <span className="flex flex-col gap-0.5">
+              <span className="font-ui text-[13px] text-t1">{t("stt_emotion_label")}</span>
+              <span className="font-ui text-[11px] text-t3">{t("stt_emotion_hint")}</span>
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* API key (openai-compat + gemini — both are server backends; the
+          browser tier needs none) */}
       {!isBrowser && (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
@@ -190,11 +232,13 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
       )}
 
       {/* Local-server discovery + setup help (openai-compat only — the
-          whisper-browser tier is in-browser). ST-8. */}
-      {!isBrowser && <SttLocalServerPanel form={form} stt={stt} />}
+          whisper-browser tier is in-browser; gemini has a fixed endpoint).
+          ST-8. */}
+      {isCompat && <SttLocalServerPanel form={form} stt={stt} />}
 
-      {/* Test connection card (openai-compat only — the browser backend has
-          nothing remote to test; its "status" is the roster badge above). */}
+      {/* Test connection card (server backends — openai-compat and gemini;
+          the browser backend has nothing remote to test; its "status" is the
+          roster badge above). */}
       {!isBrowser ? (
         <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="stt-test-card">
           {canTestConnection(form, stt.dirty) ? (

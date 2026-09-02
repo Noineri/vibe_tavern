@@ -58,10 +58,14 @@ export interface SttTranscribeOptions {
 }
 
 /** A transcription result. `text` is the transcript; `language` is present
- *  when the backend reports it back (OpenAI-compatible responses carry it). */
+ *  when the backend reports it back (OpenAI-compatible responses carry it);
+ *  `annotation` carries the tone/emotion phrase a Gemini-class understanding
+ *  backend produced in the SAME pass (ST-7) — present only when the profile
+ *  toggle was on and the backend actually annotated. */
 export interface SttTranscribeResult {
   text: string;
   language?: string;
+  annotation?: string;
 }
 
 /** Probe outcome — normalized so callers never catch an "unreachable"

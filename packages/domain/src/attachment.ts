@@ -43,6 +43,41 @@ export interface Attachment {
   durationMs?: number;
 }
 
+// ─── Voice transcript + tone line (STT_PLAN ST-7) ─────────────────────────────
+
+/** Marker prefix of the tone line a Gemini-class understanding backend
+ *  appends to the persisted transcript (ST-7). Literal ENGLISH — stored data
+ *  is literal English (house rule); the tone VALUE itself is model-generated
+ *  text in the speech's language. */
+export const VOICE_TONE_MARKER = "[Voice tone: ";
+
+/** Compose the persisted `Attachment.description` for a transcribed voice
+ *  note: the verbatim transcript, plus — when the backend produced a tone
+ *  annotation and the profile toggle was on — a trailing bracketed line the
+ *  prompt audio branch emits verbatim ("rides the prompt as a bracketed
+ *  context line", ST-7). */
+export function composeVoiceTranscript(transcript: string, tone?: string): string {
+  const text = transcript.trim();
+  const annotation = tone?.trim();
+  if (text === "") return "";
+  if (annotation === undefined || annotation === "") return text;
+  return `${text}\n${VOICE_TONE_MARKER}${annotation}]`;
+}
+
+/** Split a persisted voice-note description back into transcript + tone.
+ *  The inverse of {@link composeVoiceTranscript} — the chat bubble uses it to
+ *  render the transcript block and the tone line separately. Tolerates
+ *  descriptions without a tone line (pure-ASR backends) and a tone line in
+ *  the middle of the text (treats everything after the marker as tone). */
+export function splitVoiceTranscript(description: string): { transcript: string; tone: string | null } {
+  const idx = description.indexOf(VOICE_TONE_MARKER);
+  if (idx === -1) return { transcript: description, tone: null };
+  const transcript = description.slice(0, idx).trim();
+  let tone = description.slice(idx + VOICE_TONE_MARKER.length);
+  if (tone.endsWith("]")) tone = tone.slice(0, -1);
+  return { transcript, tone: tone.trim() === "" ? null : tone.trim() };
+}
+
 // ─── MIME classification ────────────────────────────────────────────────────
 
 const IMAGE_MIMES = new Set([
