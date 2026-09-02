@@ -7,6 +7,8 @@ import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star
 // weight (lucide's strokeWidth lives in its 24-space; values chosen so the
 // effective px weight ≈ the former hand-rolled stroke).
 export const Ic = {
+  // Dictation mic (STT_PLAN ST-4b): capsule + stand arc, self-drawn.
+  mic: () => <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5.75" y="1.5" width="4.5" height="8" rx="2.25"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0"/><line x1="8" y1="12" x2="8" y2="14.5"/></svg>,
   sun:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="8" cy="8" r="3.2"/><line x1="8" y1="1" x2="8" y2="2.8"/><line x1="8" y1="13.2" x2="8" y2="15"/><line x1="1" y1="8" x2="2.8" y2="8"/><line x1="13.2" y1="8" x2="15" y2="8"/><line x1="3.2" y1="3.2" x2="4.3" y2="4.3"/><line x1="11.7" y1="11.7" x2="12.8" y2="12.8"/><line x1="11.7" y1="3.2" x2="12.8" y2="4.3"/><line x1="3.2" y1="11.7" x2="4.3" y2="12.8"/></svg>,
   moon:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M13 10.5A6.5 6.5 0 0 1 5.5 3a6.5 6.5 0 1 0 7.5 7.5z"/></svg>,
   // Coffee cup with handle + three steam wisps. SELF-DRAWN (intentionally not
@@ -112,6 +114,8 @@ export const Ic = {
   undo:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9.33 2.67 6 6 2.67"/><path d="M2.67 6h7a3.67 3.67 0 0 1 0 7.33H7.33"/></svg>,
   // Lucide `Volume2` — speaker for TTS narration; stroke 2 for toolbar legibility.
   speaker: (props?: { className?: string }) => <Volume2 size={13} strokeWidth={2} {...props} />,
+  // Lucide `Square` — recording-stop for the dictation mic (ST-4b).
+  square: (props?: { className?: string }) => <Square size={11} strokeWidth={2.4} {...props} />,
   // Lucide `Square` filled — stop button for active narration; filled block
   // signals "stop current playback" and pulses in the accent color when active.
   stopSquare: (props?: { className?: string }) => <Square size={11} fill="currentColor" stroke="none" strokeWidth={0} {...props} />,

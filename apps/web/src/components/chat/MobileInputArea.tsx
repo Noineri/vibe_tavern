@@ -15,6 +15,7 @@ import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
+import { DictationButton } from "./DictationButton.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useInputArea, type InputAreaData } from "./use-input-area.js";
 
@@ -81,6 +82,13 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
           >
             <Icons.paperclip />
           </button>
+
+          <DictationButton
+            draft={draft}
+            setDraft={setDraft}
+            send={() => void chat.handleSend()}
+            canSend={canSend}
+          />
 
           <button type="button" onClick={() => setPresetDropOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-accent-t active:bg-s2 disabled:opacity-45" disabled={promptPresets.length === 0}>
             <Icons.FileText />

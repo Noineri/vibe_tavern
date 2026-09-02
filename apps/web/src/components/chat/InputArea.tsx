@@ -9,6 +9,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
+import { DictationButton } from "./DictationButton.js";
 import { MobileInputArea } from "./MobileInputArea.js";
 import { QuotaIndicator } from "./QuotaIndicator.js";
 import { useInputArea } from "./use-input-area.js";
@@ -143,6 +144,13 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                 <Icons.paperclip />
               </button>
             </CustomTooltip>
+
+            <DictationButton
+              draft={draft}
+              setDraft={setDraft}
+              send={() => void chat.handleSend()}
+              canSend={canSend}
+            />
 
             <TokenCounterPopover
               permanent={permanent}

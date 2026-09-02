@@ -436,6 +436,10 @@ export interface UiSettingsRecord {
   userMessageCount?: number;
   nextStarPromptAt?: number;
   starPromptDeferrals?: number;
+  /** STT dictation pointer (ST-1 ui_settings column): the profile the chat
+   *  mic transcribes with. Optional for bootstrap-snapshot compat (a client
+   *  can be newer than its server). Null → fall back to the default profile. */
+  activeDictationProfileId?: string | null;
   /** Optional for compatibility with bootstrap snapshots predating the
    *  copilot binding. Null → the copilot shell defaults to the first profile. */
   copilotProviderId?: string | null;

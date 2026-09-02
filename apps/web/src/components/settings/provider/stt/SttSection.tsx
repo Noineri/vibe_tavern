@@ -1,5 +1,6 @@
 import { useT } from "../../../../i18n/context.js";
 import { SttProfileList } from "./SttProfileList.js";
+import { SttDictationPanel } from "./SttDictationPanel.js";
 import type { useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
@@ -31,6 +32,7 @@ export function SttSection({ stt }: { stt: SttHook }) {
         onSelectProfile={stt.select}
         onAddProfile={stt.startCreate}
       />
+      <SttDictationPanel profiles={stt.profiles} />
     </div>
   );
 }
