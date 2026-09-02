@@ -57,27 +57,46 @@ const AI_REPLY_TEXT = "<think>quiet planning</think>Some **bold** text.";
 // ── Safe mock.module: capture real executor exports BEFORE registering ──────
 const realNonstreaming = await import("../src/infrastructure/ai/nonstreaming-provider-executor.js");
 const realStream = await import("../src/infrastructure/ai/stream-provider-executor.js");
+// Capture the FUNCTIONS, not the module objects: bun's mock.module MUTATES the
+// real module's export slots at registration, so `realNonstreaming.<fn>` read
+// later resolves to our own stub (sync infinite recursion). The dice file
+// already uses this pattern.
+const realNonstreamingExecute = realNonstreaming.nonstreamingProviderExecute;
+const realStreamExecute = realStream.streamProviderExecutor;
+
+// Leak guard: mock.module is PROCESS-GLOBAL and LAST registration wins — without
+// this flag, every test file sorted after this one that imports the executors
+// would receive this stub instead of the real implementation (observed with
+// ST-6's stt-voice-executor tests). Once this file's tests finish, delegate
+// calls through to the captured REAL functions so later files exercise real code.
+let delegateExecutorsToReal = false;
 
 mock.module("../src/infrastructure/ai/nonstreaming-provider-executor.js", () => ({
   ...realNonstreaming,
-  nonstreamingProviderExecute: async () => ({
-    text: AI_REPLY_TEXT,
-    providerResponse: { mode: "nonstream" as const, steps: [] },
-  }),
+  nonstreamingProviderExecute: (input: Parameters<typeof realNonstreamingExecute>[0]) => {
+    if (delegateExecutorsToReal) return realNonstreamingExecute(input);
+    return Promise.resolve({
+      text: AI_REPLY_TEXT,
+      providerResponse: { mode: "nonstream" as const, steps: [] },
+    });
+  },
 }));
 
 mock.module("../src/infrastructure/ai/stream-provider-executor.js", () => ({
   ...realStream,
-  streamProviderExecutor: async () => ({
-    stream: (async function* () {
-      yield { type: "text-delta" as const, delta: AI_REPLY_TEXT };
-    })(),
-    finished: Promise.resolve({ finishReason: "stop" as const }),
-    text: Promise.resolve(AI_REPLY_TEXT),
-    reasoning: Promise.resolve(undefined),
-    hasRedactedReasoning: false,
-    providerResponse: { mode: "stream" as const, steps: [] },
-  }),
+  streamProviderExecutor: (input: Parameters<typeof realStreamExecute>[0]) => {
+    if (delegateExecutorsToReal) return realStreamExecute(input);
+    return Promise.resolve({
+      stream: (async function* () {
+        yield { type: "text-delta" as const, delta: AI_REPLY_TEXT };
+      })(),
+      finished: Promise.resolve({ finishReason: "stop" as const }),
+      text: Promise.resolve(AI_REPLY_TEXT),
+      reasoning: Promise.resolve(undefined),
+      hasRedactedReasoning: false,
+      providerResponse: { mode: "stream" as const, steps: [] },
+    });
+  },
 }));
 
 // Dynamic import AFTER mock registration so the orchestrator resolves mocks.
@@ -124,6 +143,9 @@ async function setup(characterName = "RegexProbe"): Promise<TestChat> {
 }
 
 afterAll(async () => {
+  // Arm the leak guard for every test file that runs after this one in the
+  // same process (see comment at delegateExecutorsToReal).
+  delegateExecutorsToReal = true;
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
 });
 

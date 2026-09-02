@@ -71,6 +71,8 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
+    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"];
     /** DICE-B11: optional commit intent threaded into `prepareLiveTurn` so the
      *  user-message insert and pending-lane bind share one atomic transaction.
      *  Absent ⇒ no-Dice send behavior (byte-for-byte current path). */
@@ -120,6 +122,7 @@ export class LiveChatOrchestrator {
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
         visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
+        voiceTranscriber: input.voiceTranscriber,
         onAttachmentDescriptions: (prepared.userMessage && input.attachments?.length)
           ? async (descriptions) => {
               await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
@@ -345,6 +348,8 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
+    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"];
     /** DICE-B11: optional commit intent threaded into `prepareLiveTurn`. See sendMessage. */
     diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
     /** IR-51: optional experience attachment commit intent. See sendMessage. */
@@ -579,7 +584,9 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; transport?: CoauthorTransport; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; transport?: CoauthorTransport; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
+    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"]; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -597,6 +604,7 @@ export class LiveChatOrchestrator {
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
         visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
+        voiceTranscriber: input.voiceTranscriber,
         onAttachmentDescriptions: input.onAttachmentDescriptions,
       });
       return { streamResult, startedAt };

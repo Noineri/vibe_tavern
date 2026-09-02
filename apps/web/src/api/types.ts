@@ -440,6 +440,10 @@ export interface UiSettingsRecord {
    *  mic transcribes with. Optional for bootstrap-snapshot compat (a client
    *  can be newer than its server). Null → fall back to the default profile. */
   activeDictationProfileId?: string | null;
+  /** STT voice-message pointer (ST-1 ui_settings column): the profile that
+   *  transcribes attached voice notes at send time. Same optional-for-compat
+   *  shape as the dictation pointer; null → default profile. */
+  activeVoiceMessageProfileId?: string | null;
   /** Optional for compatibility with bootstrap snapshots predating the
    *  copilot binding. Null → the copilot shell defaults to the first profile. */
   copilotProviderId?: string | null;

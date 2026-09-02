@@ -270,6 +270,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
           return c.json({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }, 422);
         }
+        if (err instanceof (await import("../../infrastructure/ai/stt-gate.js")).VoiceTranscribeUnavailableError) {
+          return c.json({ type: "voice_transcribe_unavailable", message: err.message, attachments: err.attachmentNames }, 422);
+        }
         throw err;
       }
     })

@@ -16,6 +16,7 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
+import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useInputArea, type InputAreaData } from "./use-input-area.js";
 
@@ -90,6 +91,8 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
             canSend={canSend}
           />
 
+          <VoiceMessageButton onRecorded={data.handleVoiceRecorded} />
+
           <button type="button" onClick={() => setPresetDropOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-accent-t active:bg-s2 disabled:opacity-45" disabled={promptPresets.length === 0}>
             <Icons.FileText />
           </button>
@@ -101,7 +104,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
         {draftAttachments.length > 0 && <AttachmentPreview />}
         {/* Input row */}
         <div className="flex items-end gap-2">
-          <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onFileInputChange} />
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif,audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/mp3,audio/wav,audio/flac" onChange={onFileInputChange} />
           <textarea
             ref={mobileTextareaRef}
             className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto"

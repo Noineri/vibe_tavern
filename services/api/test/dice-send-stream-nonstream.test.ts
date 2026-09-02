@@ -51,31 +51,44 @@ const realStreamProviderExecutor = realStream.streamProviderExecutor;
 let providerShouldThrow = false;
 const PROVIDER_FAILURE = new Error("provider-failure-after-commit");
 
+// Leak guard: mock.module is PROCESS-GLOBAL — without this flag, every test
+// file sorted after this one that imports the executors would receive these
+// stubs instead of the real implementations (observed with ST-6's
+// stt-voice-executor tests). Once this file's tests finish, delegate calls
+// through to the captured REAL functions so later files exercise real code.
+let delegateExecutorsToReal = false;
+
 mock.module("../src/infrastructure/ai/nonstreaming-provider-executor.js", () => ({
   ...realNonstreaming,
-  nonstreamingProviderExecute: async () => {
-    if (providerShouldThrow) throw PROVIDER_FAILURE;
-    return {
-      text: "Assistant reply.",
-      providerResponse: { mode: "nonstream" as const, steps: [] },
-    };
+  nonstreamingProviderExecute: (input: Parameters<typeof realNonstreamingProviderExecute>[0]) => {
+    if (delegateExecutorsToReal) return realNonstreamingProviderExecute(input);
+    return (async () => {
+      if (providerShouldThrow) throw PROVIDER_FAILURE;
+      return {
+        text: "Assistant reply.",
+        providerResponse: { mode: "nonstream" as const, steps: [] },
+      };
+    })();
   },
 }));
 
 mock.module("../src/infrastructure/ai/stream-provider-executor.js", () => ({
   ...realStream,
-  streamProviderExecutor: async () => {
-    if (providerShouldThrow) throw PROVIDER_FAILURE;
-    return {
-      stream: (async function* () {
-        yield { type: "text-delta" as const, delta: "Assistant reply." };
-      })(),
-      finished: Promise.resolve({ finishReason: "stop" as const }),
-      text: Promise.resolve("Assistant reply."),
-      reasoning: Promise.resolve(undefined),
-      hasRedactedReasoning: false,
-      providerResponse: { mode: "stream" as const, steps: [] },
-    };
+  streamProviderExecutor: (input: Parameters<typeof realStreamProviderExecutor>[0]) => {
+    if (delegateExecutorsToReal) return realStreamProviderExecutor(input);
+    return (async () => {
+      if (providerShouldThrow) throw PROVIDER_FAILURE;
+      return {
+        stream: (async function* () {
+          yield { type: "text-delta" as const, delta: "Assistant reply." };
+        })(),
+        finished: Promise.resolve({ finishReason: "stop" as const }),
+        text: Promise.resolve("Assistant reply."),
+        reasoning: Promise.resolve(undefined),
+        hasRedactedReasoning: false,
+        providerResponse: { mode: "stream" as const, steps: [] },
+      };
+    })();
   },
 }));
 
@@ -120,6 +133,9 @@ async function setup(): Promise<{
 
 afterAll(async () => {
   providerShouldThrow = false;
+  // Arm the leak guard for every test file that runs after this one in the
+  // same process (see comment at delegateExecutorsToReal).
+  delegateExecutorsToReal = true;
   resetProviderFetchFactory();
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
 });

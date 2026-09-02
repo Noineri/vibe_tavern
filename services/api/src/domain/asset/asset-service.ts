@@ -9,18 +9,47 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/webp": "webp",
 };
 
+/** Audio uploads for chat voice notes (STT_PLAN ST-6). MediaRecorder
+ *  containers first (webm/opus, ogg/opus, Safari mp4), then common files a
+ *  user may attach by hand. `;codecs=` parameters are stripped by the
+ *  mime normalization in upload() — keys here are the bare base types. */
+const AUDIO_MIME_TO_EXT: Record<string, string> = {
+  "audio/webm": "webm",
+  "audio/ogg": "ogg",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/flac": "flac",
+};
+
 const EXT_TO_MIME: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
   gif: "image/gif",
   webp: "image/webp",
+  webm: "audio/webm",
+  ogg: "audio/ogg",
+  m4a: "audio/mp4",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  flac: "audio/flac",
 };
 
-const ALLOWED_MIMES = new Set(Object.keys(MIME_TO_EXT));
+const ALLOWED_MIMES = new Set([...Object.keys(MIME_TO_EXT), ...Object.keys(AUDIO_MIME_TO_EXT)]);
 
-/** Maximum upload size for images (20 MB — most providers cap at this). */
+/** Maximum upload size for chat attachments (20 MB — most providers cap
+ *  images at this; a dictation-length voice clip is far below it). */
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
+
+/** Strip MediaRecorder codec parameters (`audio/webm;codecs=opus` →
+ *  `audio/webm`) so the lookup tables only carry base types. */
+function normalizeMime(mime: string): string {
+  return mime.split(";", 1)[0].trim().toLowerCase();
+}
 
 /** Resolve a stored image extension to its MIME type. Used when re-importing an
  *  existing image buffer (avatar salvage) as a gallery row — the buffer's type
@@ -58,17 +87,17 @@ export class AssetService {
   }
 
   async upload(file: File): Promise<{ assetId: string; url: string }> {
-    const mime = file.type;
+    const mime = normalizeMime(file.type);
     if (!ALLOWED_MIMES.has(mime)) {
-      throw new Error(`Unsupported image type: ${mime}. Allowed: jpeg, png, gif, webp.`);
+      throw new Error(`Unsupported attachment type: ${file.type}. Allowed: jpeg, png, gif, webp, webm, ogg, m4a, mp3, wav, flac audio.`);
     }
-    const ext = MIME_TO_EXT[mime];
+    const ext = MIME_TO_EXT[mime] ?? AUDIO_MIME_TO_EXT[mime];
     const assetId = `asset_${crypto.randomUUID().replace(/-/g, "")}`;
     const fileName = `${assetId}.${ext}`;
     const filePath = resolve(this.assetsDir, fileName);
     const buffer = new Uint8Array(await file.arrayBuffer());
     if (buffer.length > MAX_IMAGE_SIZE) {
-      throw new Error(`Image too large: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB. Maximum: 20 MB.`);
+      throw new Error(`Attachment too large: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB. Maximum: 20 MB.`);
     }
     await Bun.write(filePath, buffer);
     return { assetId, url: `/api/assets/${assetId}` };

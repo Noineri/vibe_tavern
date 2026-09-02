@@ -13,10 +13,16 @@ export const attachmentSchema = z.object({
   /** Stable attachment id — correlates vision descriptions back to specific attachments. */
   id: z.string().min(1),
   assetId: z.string().min(1),
-  type: z.enum(["image", "file", "video"]),
+  type: z.enum(["image", "file", "video", "audio"]),
   name: z.string().max(255),
   mimeType: z.string().max(100),
   sizeBytes: z.number().int().positive().max(50_000_000),
+  /** Audio-only (STT_PLAN ST-6): intent discriminator. Absent = "voice"
+  *  (the domain contract — only `voice` notes are transcribed and
+  *  prompt-visible; music/ambient are playback-only). */
+  purpose: z.enum(["voice", "music", "ambient"]).optional(),
+  /** Audio-only (STT_PLAN ST-6): clip length in ms for the bubble UI. */
+  durationMs: z.number().int().nonnegative().optional(),
 });
 
 export const sendMessageSchema = z.object({

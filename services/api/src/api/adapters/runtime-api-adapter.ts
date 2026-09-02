@@ -101,9 +101,15 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
+		// STT first (ST-6): ChatAdapter receives the SttAdapter's bound
+		// transcription path for voice-message attachments — the adapter graph
+		// stays acyclic (no cross-imports, constructor injection only).
+		const sttAdapter = new SttAdapter(stores);
+		this.stt = sttAdapter;
 		this.chat = new ChatAdapter(
 			stores, sessionRuntime, liveChatOrchestrator,
 			chatSummaryService, providerProfileService, assetService,
+			sttAdapter.transcribeSttAudio,
 		);
 		this.character = new CharacterAdapter(sessionRuntime, stores, assetService, providerProfileService);
 		this.persona = new PersonaAdapter(sessionRuntime, stores, assetService, providerProfileService);
@@ -112,7 +118,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.servicePrompts = new ServicePromptAdapter(stores);
 		this.regex = new RegexAdapter(stores);
 		this.tts = new TtsAdapter(stores);
-		this.stt = new SttAdapter(stores);
 		this.provider = new ProviderAdapter(stores, providerProfileService);
 		this.proxy = new ProxyAdapter(proxyService);
 		this.preset = new PresetAdapter(promptPresetService);

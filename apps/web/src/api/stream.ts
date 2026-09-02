@@ -51,6 +51,15 @@ export async function streamChatEndpoint(
     if (error && typeof error === "object" && error.code === "VISION_NOT_SUPPORTED") {
       throw new Error("VISION_NOT_SUPPORTED");
     }
+    // Typed 422 bodies from the chat message routes carry the discriminator in
+    // a top-level `type` field — mirror unwrap.ts's sentinel mapping.
+    const typed = (errBody as { type?: unknown } | null)?.type;
+    if (typed === "vision_not_supported") {
+      throw new Error("VISION_NOT_SUPPORTED");
+    }
+    if (typed === "voice_transcribe_unavailable") {
+      throw new Error("VOICE_TRANSCRIBE_UNAVAILABLE");
+    }
     const errorObj = typeof error === "object" ? error : undefined;
     const message =
       errorObj?.message

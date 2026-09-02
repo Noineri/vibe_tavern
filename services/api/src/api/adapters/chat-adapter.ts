@@ -1,4 +1,4 @@
-import type { ChatRuntimeApi } from "../contract/runtime-api.js";
+import type { ChatRuntimeApi, SttRuntimeApi } from "../contract/runtime-api.js";
 import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, COAUTHOR_TRANSPORT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type CoauthorTransport, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -24,6 +24,11 @@ export class ChatAdapter implements ChatRuntimeApi {
 		private readonly chatSummaryService: ChatSummaryService,
 		private readonly providerProfileService: ProviderProfileService,
 		private readonly assetService: AssetService,
+		/** STT_PLAN ST-6: the SttAdapter's profile-bound transcription path —
+		 *  injected here (not reached via imports) so the adapter graph stays
+		 *  acyclic; the voice-message profile pointer resolves from ui_settings
+		 *  with the isDefault fallback. */
+		private readonly transcribeSttAudio: SttRuntimeApi["transcribeSttAudio"],
 	) {}
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
@@ -113,6 +118,22 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	// ─── Messages (AI) ──────────────────────────────────────────────────
 
+	/** STT_PLAN ST-6: resolve the voice-message transcription seam. Pointer in
+	 *  ui_settings wins; the isDefault STT profile is the fallback (the ST-1
+	 *  pointer contract). Absent profile → undefined → an undescribed voice
+	 *  note fails at assembly with the honest configuration error. */
+	private async resolveVoiceTranscriber(): Promise<import("../../infrastructure/ai/stt-gate.js").VoiceTranscriber | undefined> {
+		const settings = await this.stores.uiSettings.get();
+		const profileId = settings.activeVoiceMessageProfileId ?? (await this.stores.stt.getDefault())?.id ?? null;
+		if (profileId === null) return undefined;
+		const transcribe = this.transcribeSttAudio;
+		return async (audio) => {
+			const result = await transcribe(profileId, audio);
+			if (result === null) throw new Error(`STT profile not found: ${profileId}`);
+			return result.text;
+		};
+	}
+
 	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
@@ -140,6 +161,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
 				visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
 			},
+			voiceTranscriber: await this.resolveVoiceTranscriber(),
 		});
 		logSendDebug("api.runtime.send.success", {
 			chatId,
@@ -169,10 +191,15 @@ export class ChatAdapter implements ChatRuntimeApi {
 					assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
 					visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
 				},
+				voiceTranscriber: await this.resolveVoiceTranscriber(),
 			});
 		} catch (err) {
 			if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
 				yield { event: "error", data: JSON.stringify({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }) };
+				return;
+			}
+			if (err instanceof (await import("../../infrastructure/ai/stt-gate.js")).VoiceTranscribeUnavailableError) {
+				yield { event: "error", data: JSON.stringify({ type: "voice_transcribe_unavailable", message: err.message, attachments: err.attachmentNames }) };
 				return;
 			}
 			throw err;

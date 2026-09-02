@@ -96,6 +96,18 @@ function experienceConflictCode(error: unknown): string | undefined {
   return code !== undefined && EXPERIENCE_CONFLICT_CODES.has(code) ? code : undefined;
 }
 
+/** Typed attachment-gate failures (vision / voice transcribe). Non-stream
+ *  throws a sentinel-message Error (unwrap.ts maps the 422 `type` body);
+ *  stream throws {@link ProviderStreamError} with the SSE `type` in `code`
+ *  (sse-parser). Returns "vision_not_supported" |
+ *  "voice_transcribe_unavailable" | undefined. */
+function gateErrorCode(error: unknown): "vision_not_supported" | "voice_transcribe_unavailable" | undefined {
+  if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") return "vision_not_supported";
+  if (error instanceof Error && error.message === "VOICE_TRANSCRIBE_UNAVAILABLE") return "voice_transcribe_unavailable";
+  const code = error instanceof ProviderStreamError ? error.code : undefined;
+  return code === "vision_not_supported" || code === "voice_transcribe_unavailable" ? code : undefined;
+}
+
 /** Pure send-gate: the reason the active pending lane blocks a send, or null.
  *  Mirrors the backend bind gate (`bindActiveAndResetInTx`), which rejects an
  *  unresolved `choose` only among INCLUDED unbound rolls (the store already
@@ -544,9 +556,18 @@ export function useChatController(): ChatControllerActions {
         chatId,
         message: error instanceof Error ? error.message : String(error),
       });
-      if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
+      if (gateErrorCode(error) === "vision_not_supported") {
         toast.error(getT()("vision_not_supported"), {
           description: getT()("vision_not_supported_desc"),
+          action: {
+            label: getT()("open_provider_settings"),
+            onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
+          },
+        });
+        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+      } else if (gateErrorCode(error) === "voice_transcribe_unavailable") {
+        toast.error(getT()("voice_transcribe_unavailable"), {
+          description: getT()("voice_transcribe_unavailable_desc"),
           action: {
             label: getT()("open_provider_settings"),
             onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
@@ -650,10 +671,11 @@ export function useChatController(): ChatControllerActions {
     const attachments = csStore.draftAttachments.map((a) => ({
       id: a.id,
       name: a.name,
-      type: a.type as "image" | "file" | "video",
+      type: a.type,
       assetId: a.assetId,
       mimeType: a.mimeType,
       sizeBytes: a.sizeBytes,
+      ...(a.type === "audio" ? { purpose: a.purpose ?? ("voice" as const), durationMs: a.durationMs } : {}),
     }));
 
     void logClientSendDebug("web.hook.handleSend.enter", {
@@ -738,9 +760,18 @@ export function useChatController(): ChatControllerActions {
             // provider failure. The authoritative attachment refresh is
             // handled by the post-settlement refresh below.
             if (tryHandleExperienceSendConflict(error, draft, currentAttachments)) return;
-            if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
+            if (gateErrorCode(error) === "vision_not_supported") {
               toast.error(getT()("vision_not_supported"), {
                 description: getT()("vision_not_supported_desc"),
+                action: {
+                  label: getT()("open_provider_settings"),
+                  onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
+                },
+              });
+              restoreDraftAfterSendError(draft, currentAttachments);
+            } else if (gateErrorCode(error) === "voice_transcribe_unavailable") {
+              toast.error(getT()("voice_transcribe_unavailable"), {
+                description: getT()("voice_transcribe_unavailable_desc"),
                 action: {
                   label: getT()("open_provider_settings"),
                   onClick: () => useModalStore.getState().setIsProviderModalOpen(true),

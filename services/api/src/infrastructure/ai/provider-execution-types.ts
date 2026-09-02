@@ -12,6 +12,7 @@ import type { ProviderType } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
 import type { ProviderMetadata, ToolSet } from "ai";
+import type { VoiceTranscriber } from "./stt-gate.js";
 
 // ---------------------------------------------------------------------------
 // Provider profile reference (subset needed for generation)
@@ -135,7 +136,7 @@ export interface SentConfigSnapshot {
   visionDescriptions?: Array<{
     attachmentId: string;
     name: string;
-    type: "image" | "video";
+    type: "image" | "video" | "audio";
     description: string;
   }>;
 }
@@ -207,6 +208,12 @@ export interface ProviderExecutionInput {
   onAttachmentDescriptions?: (descriptions: Array<{ attachmentId: string; description: string }>) => Promise<void>;
   /** System prompt for the vision describe model. Resolved from preset or default MD. */
   visionDescribePrompt?: string;
+  /** STT transcriber bound to the voice-message profile (STT_PLAN ST-6):
+  *  transcribes voice-note audio attachments into `description` transcripts
+  *  before prompt assembly. Absent = no STT profile configured — an
+  *  undescribed voice note then fails with VoiceTranscribeUnavailableError
+  *  at assembly (the honest configuration error). */
+  voiceTranscriber?: VoiceTranscriber;
 }
 
 /** Streaming executor function signature. */
@@ -223,6 +230,11 @@ export type ProviderExecutor = (input: ProviderExecutionInput) => Promise<Provid
  * RPC boundary (SSE `error` event + JSON error body).
  */
 export type { ProviderErrorCategory };
+
+// The STT transcription seam type lives in stt-gate (infrastructure/ai);
+// re-exported here so ProviderExecutionInput consumers import it from the
+// same boundary module as the rest of the input types.
+export type { VoiceTranscriber } from "./stt-gate.js";
 
 /** Normalized error thrown by the execution boundary. */
 export class ProviderExecutionError extends Error {

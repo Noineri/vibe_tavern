@@ -2778,5 +2778,14 @@
   "tts_field_engine": "Engine",
   "tts_field_emotion_scale": "Emotion intensity",
   "tts_field_emotion_volcengine_placeholder": "e.g. happy — per-voice, see the voice roster",
-  "tts_clone_hint_volcengine": "Cloning trains asynchronously — the voice synthesizes once its status is Ready. Synthesizing a cloned voice needs Resource ID seed-icl-2.0; the voice slot is billed at the first synthesis, and an unused clone is deleted after 7 days."
+  "tts_clone_hint_volcengine": "Cloning trains asynchronously — the voice synthesizes once its status is Ready. Synthesizing a cloned voice needs Resource ID seed-icl-2.0; the voice slot is billed at the first synthesis, and an unused clone is deleted after 7 days.",
+  "voice_transcribe_unavailable": "Voice messages need speech recognition",
+  "voice_transcribe_unavailable_desc": "No speech-to-text profile is available to transcribe voice messages. Create one in provider settings (Speech Recognition tab).",
+  "voice_message_record_tooltip": "Record a voice message",
+  "voice_message_stop_tooltip": "Stop recording and attach",
+  "voice_message_uploading": "Uploading voice message…",
+  "voice_message_name": "Voice message",
+  "voice_message_transcript": "Transcript",
+  "voice_message_audio": "Audio",
+  "unsupported_audio_format": "Unsupported audio format."
 }

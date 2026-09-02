@@ -21,10 +21,14 @@ import { normalizeProviderType } from "@vibe-tavern/domain";
 import { ProviderExecutionError } from "./provider-execution-types.js";
 import { classifyProviderError, extractProviderErrorStatusCode } from "./provider-error-classifier.js";
 import { extractProviderErrorMessage } from "./provider-error-message.js";
+import { VisionNotSupportedError } from "./vision-gate.js";
+import { VoiceTranscribeUnavailableError } from "./stt-gate.js";
 
 /**
  * Normalize an error raised inside a provider executor into a
- * {@link ProviderExecutionError}, preserving the original as `cause`.
+ * {@link ProviderExecutionError}, preserving the original as `cause` — EXCEPT
+ * the typed attachment-gate errors (vision / voice transcribe), which pass
+ * through unchanged so their route-level `instanceof` surfacing keeps working.
  *
  * Does NOT handle the abort short-circuit — callers check `input.signal?.aborted`
  * (and, for streaming, the `vercel.ai.error` NoOutputGenerated case) before
@@ -33,7 +37,16 @@ import { extractProviderErrorMessage } from "./provider-error-message.js";
 export function wrapProviderExecutionError(
   error: unknown,
   providerPreset: string,
-): ProviderExecutionError {
+): Error {
+  // Typed attachment-gate errors (vision / voice transcribe) already carry
+  // their own route-level surfacing (422 `type` body / SSE `type` event,
+  // matched by `instanceof` in routes/chat.ts and chat-adapter). Wrapping them
+  // here would orphan that contract — the route checks would never fire and
+  // a missing vision/STT profile would read as a generic 502 provider
+  // failure. Pass them through untouched, like the abort short-circuit.
+  if (error instanceof VisionNotSupportedError || error instanceof VoiceTranscribeUnavailableError) {
+    return error;
+  }
   return new ProviderExecutionError(
     extractProviderErrorMessage(error),
     classifyProviderError(error),

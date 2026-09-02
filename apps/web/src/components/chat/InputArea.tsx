@@ -10,6 +10,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
+import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { MobileInputArea } from "./MobileInputArea.js";
 import { QuotaIndicator } from "./QuotaIndicator.js";
 import { useInputArea } from "./use-input-area.js";
@@ -48,7 +49,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith("image/")) {
+    if (file && (file.type.startsWith("image/") || file.type.startsWith("audio/"))) {
       void data.handleFileSelected(file);
     }
   };
@@ -97,7 +98,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               </span>
             </div>
           )}
-          <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onFileInputChange} />
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif,audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/mp3,audio/wav,audio/flac" onChange={onFileInputChange} />
 
           <AutoTextarea
             className="w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
@@ -151,6 +152,8 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               send={() => void chat.handleSend()}
               canSend={canSend}
             />
+
+            <VoiceMessageButton onRecorded={data.handleVoiceRecorded} />
 
             <TokenCounterPopover
               permanent={permanent}

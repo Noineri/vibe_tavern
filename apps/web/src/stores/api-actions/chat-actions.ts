@@ -1,7 +1,7 @@
 import type { ChatBranchId, ChatId, ChatMode, MessageId, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
-import { createMessageVariant, setVariantTtsAnnotation, updateChatDynamicPrompt, type CreateMessageVariantInput } from "../../api/chat-api.js";
+import { createMessageVariant, setVariantTtsAnnotation, updateChatDynamicPrompt, type CreateMessageVariantInput, type WireAttachment } from "../../api/chat-api.js";
 import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../../api/types.js";
 import {
   activateBranch,
@@ -224,7 +224,7 @@ export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string |
   syncSnapshot(snapshot);
 }
 
-export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal, experienceCommit?: ExperienceSendCommitIntent): Promise<void> {
+export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: WireAttachment[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal, experienceCommit?: ExperienceSendCommitIntent): Promise<void> {
   useCoauthorTurnStore.getState().clearTurn(chatId);
   // Spread the optional commit intents into the wire body; absent ⇒ a plain
   // send, byte-identical to before. DICE-F3 (dice) + IR-51 (experience).

@@ -6,6 +6,13 @@ import { unwrapRpc, unwrapError, type RpcResponse } from "./unwrap.js";
 import { DiceApiError } from "./dice-api.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
 import { sendStream, regenerateStream, generateReplyStream, type StreamOpts } from "./stream.js";
+import type { attachmentSchema } from "@vibe-tavern/api-contracts";
+import type { z } from "zod";
+
+/** Wire attachment shape — the SAME contract the stream path uses
+ *  (z.infer of the shared attachmentSchema: audio + purpose + durationMs
+ *  included, ST-6). */
+export type WireAttachment = z.infer<typeof attachmentSchema>;
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 
@@ -125,7 +132,7 @@ export async function setChatPromptPreset(chatId: ChatId, promptPresetId: string
 
 export async function sendChatMessage(
   chatId: ChatId,
-  input: { content: string; attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number }[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
+  input: { content: string; attachments?: WireAttachment[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
   logClientSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });

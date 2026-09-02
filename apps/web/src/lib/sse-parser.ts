@@ -118,7 +118,10 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
         // A dice commit conflict rides the same error event with a structured
         // `code` (stale_revision / unresolved_choose) — surface it so the send
         // path can refresh pending + keep the draft instead of erroring out.
-        const code = typeof parsed.code === "string" ? parsed.code : undefined;
+        // Typed gate failures (vision_not_supported / voice_transcribe_unavailable)
+        // carry their discriminator in `type` — fold it into the same slot so
+        // the controller can branch on it.
+        const code = typeof parsed.code === "string" ? parsed.code : typeof parsed.type === "string" ? parsed.type : undefined;
         throw new ProviderStreamError(message, category, code);
       } else if (ev.event === "reasoning-delta") {
         if (parsed.delta !== undefined && opts.onReasoningChunk) {

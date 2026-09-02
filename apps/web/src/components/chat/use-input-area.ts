@@ -9,7 +9,7 @@
 // hover, the mobile textarea auto-grow ref) is co-located with the branch
 // that owns it; this hook holds only data + behaviour shared by both.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChangeEvent, ClipboardEvent } from "react";
 import { toast } from "sonner";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
@@ -79,9 +79,18 @@ export function useInputArea() {
   const addDraftAttachment = useChatStore((s) => s.addDraftAttachment);
   const draftAttachments = useChatStore((s) => s.draftAttachments);
 
+  // Image pickers stay image-typed; audio accepts the full ST-6 upload set
+  // (the asset service normalizes `;codecs=` parameters away).
+  const VALID_AUDIO_TYPES = [
+    "audio/webm", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/m4a",
+    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/flac",
+  ];
+
   const handleFileSelected = async (file: File) => {
+    const mime = file.type.split(";", 1)[0].trim().toLowerCase();
     const validTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-    if (!validTypes.includes(file.type)) {
+    const isAudio = VALID_AUDIO_TYPES.includes(mime);
+    if (!validTypes.includes(mime) && !isAudio) {
       toast.error(t("unsupported_image_format"));
       return;
     }
@@ -99,15 +108,56 @@ export function useInputArea() {
       addDraftAttachment({
         id: randomUUID(),
         assetId,
-        type: "image",
+        type: isAudio ? "audio" : "image",
+        // Hand-picked audio files keep the picker's purpose default (voice)
+        // — the record button is the only music/ambient producer in v1 UI.
+        ...(isAudio ? { purpose: "voice" as const } : {}),
         name: file.name,
-        mimeType: file.type,
+        mimeType: mime,
         sizeBytes: file.size,
       });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     }
   };
+
+  /** Voice-record button landing (STT_PLAN ST-6): upload the recorded clip
+   *  and add it as a voice-purpose audio draft attachment. Returns false on a
+   *  rejection so the caller can surface the recorder/upload error. */
+  const handleVoiceRecorded = useCallback(async (blob: Blob, durationMs: number): Promise<boolean> => {
+    if (draftAttachments.length >= 5) {
+      toast.error(t("max_attachments"));
+      return false;
+    }
+    const mime = blob.type.split(";", 1)[0].trim().toLowerCase();
+    if (!VALID_AUDIO_TYPES.includes(mime)) {
+      toast.error(t("unsupported_audio_format"));
+      return false;
+    }
+    const ext = mime === "audio/mpeg" || mime === "audio/mp3" ? "mp3"
+      : mime === "audio/ogg" ? "ogg"
+      : mime === "audio/mp4" || mime === "audio/x-m4a" || mime === "audio/m4a" ? "m4a"
+      : mime === "audio/wav" || mime === "audio/x-wav" ? "wav"
+      : mime === "audio/flac" ? "flac"
+      : "webm";
+    try {
+      const { assetId } = await uploadAsset(new File([blob], `voice-message.${ext}`, { type: mime }));
+      addDraftAttachment({
+        id: randomUUID(),
+        assetId,
+        type: "audio",
+        purpose: "voice",
+        durationMs,
+        name: t("voice_message_name"),
+        mimeType: mime,
+        sizeBytes: blob.size,
+      });
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+      return false;
+    }
+  }, [draftAttachments.length, addDraftAttachment, t]);
 
   const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -185,7 +235,7 @@ export function useInputArea() {
     draft, setDraft, isSending, activeChatId, chatMeta, canUseLiveApi,
     personas, activePersonaId, promptPresets, activePromptPresetId,
     contextSize, maxTokens, favoriteModels, activeModelId,
-    fileInputRef, draftAttachments, handleFileSelected, onFileInputChange, handlePaste,
+    fileInputRef, draftAttachments, handleFileSelected, handleVoiceRecorded, onFileInputChange, handlePaste,
     canSend, buckets, inputTokens,
     showGenerateMore, handleGenerateMore,
   };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star, Volume2, Square } from 'lucide-react';
+import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star, Volume2, Square, AudioLines } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -119,6 +119,9 @@ export const Ic = {
   // Lucide `Square` filled — stop button for active narration; filled block
   // signals "stop current playback" and pulses in the accent color when active.
   stopSquare: (props?: { className?: string }) => <Square size={11} fill="currentColor" stroke="none" strokeWidth={0} {...props} />,
+  // Lucide `AudioLines` — voice-message record button (ST-6): waveform mic
+  // input, distinct from the dictation capsule mic (which transcribes to text).
+  audioLines: (props?: { className?: string }) => <AudioLines size={13} strokeWidth={2} {...props} />,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

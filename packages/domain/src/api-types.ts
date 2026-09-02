@@ -61,7 +61,7 @@ export interface AssemblePromptResponse {
     visionDescriptions?: Array<{
       attachmentId: string;
       name: string;
-      type: "image" | "video";
+      type: "image" | "video" | "audio";
       description: string;
     }>;
   };

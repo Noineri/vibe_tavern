@@ -136,13 +136,13 @@ describe("attachmentSchema", () => {
 
   // type enum.
   it("accepts every documented type enum member", () => {
-    for (const type of ["image", "file", "video"]) {
+    for (const type of ["image", "file", "video", "audio"]) {
       expect(attachmentSchema.safeParse({ ...validAttachment(), type }).success).toBe(true);
     }
   });
 
   it("rejects an unknown type enum member", () => {
-    expectReject(attachmentSchema.safeParse({ ...validAttachment(), type: "audio" }));
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), type: "sticker" }));
   });
 
   it("rejects a missing type", () => {
@@ -205,6 +205,34 @@ describe("attachmentSchema", () => {
   it("rejects a missing sizeBytes", () => {
     const { sizeBytes: _omit, ...rest } = validAttachment();
     expectReject(attachmentSchema.safeParse(rest));
+  });
+
+  // STT_PLAN ST-6 — audio-only optional fields: purpose + durationMs.
+  it("accepts an audio attachment with purpose and durationMs", () => {
+    const parsed = attachmentSchema.safeParse({
+      ...validAttachment(),
+      type: "audio",
+      purpose: "voice",
+      durationMs: 4200,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepts every purpose enum member (voice|music|ambient)", () => {
+    for (const purpose of ["voice", "music", "ambient"] as const) {
+      expect(attachmentSchema.safeParse({ ...validAttachment(), type: "audio", purpose }).success).toBe(true);
+    }
+  });
+
+  it("rejects an unknown purpose", () => {
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), type: "audio", purpose: "podcast" }));
+  });
+
+  it("durationMs is optional, non-negative int; rejects negative / fractional / string", () => {
+    expect(attachmentSchema.safeParse({ ...validAttachment(), type: "audio", durationMs: 0 }).success).toBe(true);
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), type: "audio", durationMs: -1 }));
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), type: "audio", durationMs: 1.5 }));
+    expectReject(attachmentSchema.safeParse({ ...validAttachment(), type: "audio", durationMs: "4200" }));
   });
 });
 

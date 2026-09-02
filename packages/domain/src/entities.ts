@@ -1684,7 +1684,7 @@ export interface PromptTrace {
     visionDescriptions?: Array<{
       attachmentId: string;
       name: string;
-      type: "image" | "video";
+      type: "image" | "video" | "audio";
       description: string;
     }>;
   } | null;
