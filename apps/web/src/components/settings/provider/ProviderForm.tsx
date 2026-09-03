@@ -30,6 +30,11 @@ interface ProviderFormProps {
   isArmServer: boolean;
 }
 
+/** GOVERNING RULE (owner 2026-09-04): provider settings are TWO-LEVEL
+ *  everywhere — see the comment on ProviderEditHeader for the full rule.
+ *  This wizard form VIOLATES it: the test card below gates on form.model
+ *  (a model-dependent test chat inside the connection form). Conformance
+ *  is queued (STT_POST_PLAN_AUDIT_REPORT P11). */
 export function ProviderForm({
   form,
   editingId,

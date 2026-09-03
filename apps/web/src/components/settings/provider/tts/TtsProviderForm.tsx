@@ -24,6 +24,17 @@ import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 
+/** GOVERNING RULE (owner 2026-09-04): provider settings are TWO-LEVEL
+ *  everywhere. Level 1 = connection card — a shared component (or clone
+ *  family) whose ONLY allowed elements: provider preset, endpoint OR
+ *  browser-model download, API key (+ auto-key hint), key-validity check
+ *  (probe), local-backend setup reference. The MODEL element is FORBIDDEN
+ *  here — model and tuning live in the level-2 outer profile settings.
+ *  This is the TTS member of the connection-card clone family
+ *  (ProviderEditHeader · TtsProviderForm · SttProviderForm); it CONFORMS:
+ *  TtsModelPicker renders in the editor (level 2), and KokoroModelPanel
+ *  here is the allowed browser-model download element. Extraction →
+ *  shared primitive is queued (STT_POST_PLAN_AUDIT_REPORT P11). */
 interface TtsProviderFormProps {
   form: TtsProfileForm;
   editingId: string | null;

@@ -10,6 +10,17 @@ import { SaveButton } from '../../shared/SaveBar.js';
 import { labelCls, inputCls, pwCls } from './form-field-classes.js';
 import { DIRECT_PROXY_SELECTION, INHERIT_PROXY_SELECTION, proxyPolicyFromSelection, resolvedGlobalProxyLabel, selectionFromProxyPolicy } from '../../../lib/provider-proxy-policy.js';
 
+/** GOVERNING RULE (owner 2026-09-04): provider settings are TWO-LEVEL
+ *  everywhere. Level 1 = connection card — a shared component (or clone
+ *  family) whose ONLY allowed elements: provider preset, endpoint OR
+ *  browser-model download, API key (+ auto-key hint), key-validity check
+ *  (probe), local-backend setup reference. The MODEL element is FORBIDDEN
+ *  here — model and tuning live in the level-2 outer profile settings.
+ *  This is the LLM member of the connection-card clone family
+ *  (ProviderEditHeader · TtsProviderForm · SttProviderForm); it CONFORMS:
+ *  the model selector renders only in the post-save config section
+ *  (showConfig in ProviderModal). Extraction → shared primitive is queued
+ *  (STT_POST_PLAN_AUDIT_REPORT P11). */
 interface ProviderEditHeaderProps {
   form: FormState;
   editingId: string | null;
