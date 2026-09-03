@@ -25,6 +25,7 @@ import { cn } from "../../lib/cn.js";
 import type { TextDiffLine, TextDiffSummary } from "../shared/TextDiffPreview.js";
 import { groupHunks, type DiffHunk } from "../../lib/coauthor-hunk-merge.js";
 import { annotateHunkLines, type LineSegment } from "../../lib/intra-line-diff.js";
+import { Checkbox } from "../shared/Checkbox.js";
 
 interface HunkSelectionDiffLabels {
   /** Header title for the diff area. */
@@ -196,17 +197,16 @@ export function HunkSelectionDiff({
             >
               {/* Hunk header: toggle + label + counts + (skipped marker). */}
               <div className="flex items-center justify-between gap-2 border-b border-border/50 bg-bg/60 px-2 py-1">
-                <label className="flex min-w-0 cursor-pointer select-none items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    className="accent-[var(--accent)]"
-                    checked={selected}
-                    onChange={() => onToggleHunk(hunk.id)}
-                  />
-                  <span className="font-ui text-[10px] font-medium text-t2">
-                    {labels.hunkN.replace("{n}", String(hunk.id + 1))}
-                  </span>
-                </label>
+                <Checkbox
+                  className="min-w-0"
+                  checked={selected}
+                  onChange={() => onToggleHunk(hunk.id)}
+                  label={
+                    <span className="font-ui text-[10px] font-medium text-t2">
+                      {labels.hunkN.replace("{n}", String(hunk.id + 1))}
+                    </span>
+                  }
+                />
                 <div className="flex items-center gap-2">
                   {!selected && (
                     <span className="font-ui text-[10px] italic text-t4">{labels.skipped}</span>

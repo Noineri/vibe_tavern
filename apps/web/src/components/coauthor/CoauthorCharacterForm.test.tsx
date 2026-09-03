@@ -40,6 +40,9 @@ const realScriptApi = await import("../../api/script-api.js");
 const realAppClient = await import("../../app-client.js");
 const realChatStore = await import("../../stores/chat-store.js");
 
+/** Shared Checkbox exposes its state via aria-checked (role="checkbox"), not input.checked. */
+const ariaChecked = (el: Element) => el.getAttribute("aria-checked") === "true";
+
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
@@ -610,10 +613,10 @@ describe("CoauthorCharacterForm", () => {
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
 		const { container } = render(<CoauthorCharacterForm />);
-		const boxes = container.querySelectorAll('input[type="checkbox"]');
+		const boxes = container.querySelectorAll('[role="checkbox"]');
 		// Two hunks (personality + scenario); greetings untouched → no greeting hunk.
 		expect(boxes.length).toBe(2);
-		expect([...boxes].every((b) => (b as HTMLInputElement).checked)).toBe(true); // all on (wholesale default)
+		expect([...boxes].every((b) => ariaChecked(b))).toBe(true); // all on (wholesale default)
 	});
 
 	it("CA-12: toggling a hunk off + Apply sends a PARTIAL request (rejected hunk reverts to canonical)", async () => {
@@ -633,12 +636,12 @@ describe("CoauthorCharacterForm", () => {
 		globalThis.fetch = fetchMock as never;
 
 		const { container, getByText } = render(<CoauthorCharacterForm />);
-		const boxes = container.querySelectorAll('input[type="checkbox"]');
+		const boxes = container.querySelectorAll('[role="checkbox"]');
 		expect(boxes.length).toBe(2);
 		// Deselect the FIRST hunk (personality) — keep the scenario hunk accepted.
 		fireEvent.click(boxes[0]!);
-		expect((boxes[0]! as HTMLInputElement).checked).toBe(false);
-		expect((boxes[1]! as HTMLInputElement).checked).toBe(true);
+		expect(ariaChecked(boxes[0]!)).toBe(false);
+		expect(ariaChecked(boxes[1]!)).toBe(true);
 
 		fireEvent.click(getByText("coauthor.review.apply"));
 
@@ -713,7 +716,7 @@ describe("CoauthorCharacterForm", () => {
 		const { container, getByText } = render(<CoauthorCharacterForm />);
 		// Reviewing entered; exactly one hunk (personality changed; scenario/examples match canonical).
 		expect(getByText("coauthor.review.state")).toBeTruthy();
-		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[role="checkbox"]')).toHaveLength(1);
 
 		fireEvent.click(getByText("coauthor.review.apply"));
 		await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(1); });
@@ -743,8 +746,8 @@ describe("CoauthorCharacterForm", () => {
 		const { container, getByText } = render(<CoauthorCharacterForm />);
 		// Click the "None" button (coauthor.review.select_none label).
 		fireEvent.click(getByText("coauthor.review.select_none"));
-		const boxes = container.querySelectorAll('input[type="checkbox"]');
-		expect([...boxes].every((b) => (b as HTMLInputElement).checked)).toBe(false);
+		const boxes = container.querySelectorAll('[role="checkbox"]');
+		expect([...boxes].every((b) => ariaChecked(b))).toBe(false);
 
 		fireEvent.click(getByText("coauthor.review.apply"));
 
@@ -818,7 +821,7 @@ describe("CoauthorCharacterForm", () => {
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "NEW personality."));
 		const { container, rerender } = render(<CoauthorCharacterForm />);
 		// v1 (OLD) vs proposed (NEW) → exactly 1 hunk (personality changed).
-		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[role="checkbox"]')).toHaveLength(1);
 
 		// Simulate a version folder-swap: SAME character id, NEW canonical content
 		// (description now equals the proposal). key={character.id} is unchanged →
@@ -830,6 +833,6 @@ describe("CoauthorCharacterForm", () => {
 
 		// v2 (NEW) vs proposed (NEW) → 0 hunks (no visible changes).
 		// BUG: the form/diff are stale → the old 1-hunk diff persists.
-		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+		expect(container.querySelectorAll('[role="checkbox"]')).toHaveLength(0);
 	});
 });
