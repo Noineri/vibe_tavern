@@ -136,7 +136,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
           )}
         </div>
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("stt_backend_label")}</label>
+          <label className={labelCls + " mb-[6px]"}>{t("provider_preset_label")}</label>
           {/* P7 (audit 2026-09-04): dropdown instead of the wrapping segment
            *  row — same replacement as the TTS preset segment. */}
           <DropdownSelect
@@ -155,7 +155,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
       {isCompat && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="mb-3">
-            <label className={labelCls + " mb-[6px]"}>{t("stt_quickstart_label")}</label>
+            <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
             <DropdownSelect
               value={quickstartId}
               options={STT_QUICKSTARTS.map((q) => ({ id: q.id, label: q.label }))}
