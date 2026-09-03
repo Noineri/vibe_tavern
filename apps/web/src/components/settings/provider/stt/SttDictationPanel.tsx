@@ -18,6 +18,7 @@ import { DICTATION_MODES, DICTATION_MODE_LABEL_KEYS, type DictationMode } from "
 import type { SttProfileRecord } from "../../../../api/stt-api.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
+import { Toggle } from "../../../shared/Toggle.js";
 
 const NONE_VALUE = "__default__";
 
@@ -37,16 +38,14 @@ export function SttDictationPanel({ profiles }: { profiles: SttProfileRecord[] }
         <span className="font-ui text-[12px] font-semibold uppercase tracking-wide text-t3">
           {t("dictation_panel_title")}
         </span>
-        <label className="flex cursor-pointer items-center gap-2 font-ui text-[12px] text-t2">
-          <input
-            type="checkbox"
-            data-testid="dictation-enable"
+        <div className="flex items-center gap-2" data-testid="dictation-enable">
+          <Toggle
             checked={enabled}
-            onChange={(event) => setEnabled(event.target.checked)}
-            className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+            onChange={setEnabled}
+            aria-label={t("dictation_enable")}
           />
-          {t("dictation_enable")}
-        </label>
+          <span className="font-ui text-[12px] text-t2">{t("dictation_enable")}</span>
+        </div>
       </div>
 
       <div className={"mt-2.5 flex flex-col gap-2 " + (enabled ? "" : "opacity-50")}>

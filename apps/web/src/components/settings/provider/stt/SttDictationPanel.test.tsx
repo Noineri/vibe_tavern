@@ -87,7 +87,7 @@ describe("SttDictationPanel", () => {
     );
     expect(useDictationStore.getState().enabled).toBe(false);
     const user = userEvent.setup();
-    await user.click(view.getByTestId("dictation-enable"));
+    await user.click(view.getByRole("switch"));
     expect(useDictationStore.getState().enabled).toBe(true);
   });
 
