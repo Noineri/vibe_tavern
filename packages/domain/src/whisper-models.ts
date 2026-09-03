@@ -19,8 +19,13 @@ export interface WhisperModelInfo {
   id: string;
   /** Human label for the picker ("Whisper Base (multilingual)"). */
   label: string;
-  /** Approximate q8 onnx-weights download size in MB, rounded. */
+  /** Approximate q8 onnx-weights download size in MB, rounded (CPU lane:
+   *  wasm + q8 — the universal fallback). */
   approxMb: number;
+  /** Approximate fp16 weights download size in MB, rounded (GPU lane:
+   *  WebGPU runs fp16 — owner decision 2026-09-05; real fp16 sums of
+   *  encoder+decoder plus the tokenizer/config overhead). */
+  approxMbGpu: number;
   /** True for English-only (.en) models — the language hint is not accepted. */
   englishOnly: boolean;
   /** One-line hint under the picker row. */
@@ -32,6 +37,7 @@ export const WHISPER_MODELS: readonly WhisperModelInfo[] = [
     id: "onnx-community/whisper-tiny.en",
     label: "Whisper Tiny (English)",
     approxMb: 42,
+    approxMbGpu: 76,
     englishOnly: true,
     hint: "Smallest download, fastest, English only.",
   },
@@ -39,6 +45,7 @@ export const WHISPER_MODELS: readonly WhisperModelInfo[] = [
     id: "onnx-community/whisper-base",
     label: "Whisper Base (multilingual)",
     approxMb: 80,
+    approxMbGpu: 146,
     englishOnly: false,
     hint: "The default — auto-detects the language.",
   },
@@ -46,6 +53,7 @@ export const WHISPER_MODELS: readonly WhisperModelInfo[] = [
     id: "onnx-community/whisper-small",
     label: "Whisper Small (multilingual)",
     approxMb: 250,
+    approxMbGpu: 475,
     englishOnly: false,
     hint: "Most accurate of the three, largest download.",
   },

@@ -469,7 +469,6 @@
   "dictation_mode_append_desc": "Transcript is added after the draft text",
   "dictation_mode_replace_desc": "Transcript replaces the draft",
   "dictation_mode_auto_send_desc": "Transcript replaces the draft and sends immediately",
-  "dictation_profile_default_fallback": "Default profile",
   "dictation_mic_tooltip": "Dictate ({mode})",
   "dictation_stop_tooltip": "Stop and transcribe · Esc cancels",
   "dictation_transcribing": "Transcribing…",
@@ -2800,5 +2799,7 @@
   "voice_message_tone": "Tone: {tone}",
   "voice_message_transcript": "Transcript",
   "voice_message_audio": "Audio",
-  "unsupported_audio_format": "Unsupported audio format."
+  "unsupported_audio_format": "Unsupported audio format.",
+  "stt_whisper_lane_gpu": "GPU",
+  "stt_whisper_lane_cpu": "CPU"
 }

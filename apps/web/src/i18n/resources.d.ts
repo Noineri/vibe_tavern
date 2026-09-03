@@ -2435,6 +2435,8 @@ export default interface Resources {
     "stt_segment_whisper": "Whisper (in browser)",
     "stt_test_browser_note": "This profile transcribes locally in the browser — no remote connection to test.",
     "stt_test_save_first": "Save the profile before testing the connection",
+    "stt_whisper_lane_cpu": "CPU",
+    "stt_whisper_lane_gpu": "GPU",
     "stt_whisper_model_active": "Active: {name}",
     "stt_whisper_model_default": "Default",
     "stt_whisper_model_download": "Download model",

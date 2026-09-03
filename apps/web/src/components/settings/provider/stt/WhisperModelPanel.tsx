@@ -32,6 +32,7 @@ import { useT } from "../../../../i18n/context.js";
 import { Ic } from "../../../shared/icons.js";
 import { configString, updateConfigField } from "./stt-form-helpers.js";
 import { useWhisperModel } from "./use-whisper-model.js";
+import { currentWhisperLane } from "../../../../lib/stt/whisper-client-instance.js";
 import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
@@ -52,6 +53,7 @@ function ModelCards({
   onSelect: (modelId: string) => void;
 }): ReactNode {
   const { t } = useT();
+  const lane = currentWhisperLane();
   return (
     <div className="flex flex-col gap-1.5" data-testid="stt-whisper-model-list">
       {WHISPER_MODELS.map((info) => {
@@ -80,9 +82,19 @@ function ModelCards({
                   {t("stt_whisper_model_english_only")}
                 </span>
               )}
+              <span
+                data-testid="stt-whisper-model-lane"
+                className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[10px] text-t3"
+              >
+                {t(lane === "webgpu" ? "stt_whisper_lane_gpu" : "stt_whisper_lane_cpu")}
+              </span>
             </span>
             <span className="font-ui text-[11px] text-t3">
-              {info.hint} · {t("stt_whisper_model_size", { mb: info.approxMb })}
+              {/* GPU lane (WebGPU → fp16) downloads a different, larger file
+               *  set — the size hint must describe what will ACTUALLY land
+               *  (owner 2026-09-05), and the lane badge says which one. */}
+              {info.hint} ·{" "}
+              {t("stt_whisper_model_size", { mb: lane === "webgpu" ? info.approxMbGpu : info.approxMb })}
             </span>
           </button>
         );

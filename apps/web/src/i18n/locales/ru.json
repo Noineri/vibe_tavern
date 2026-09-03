@@ -471,7 +471,6 @@
   "dictation_mode_append_desc": "Расшифровка добавляется после текста черновика",
   "dictation_mode_replace_desc": "Расшифровка заменяет черновик",
   "dictation_mode_auto_send_desc": "Расшифровка заменяет черновик и сразу отправляет",
-  "dictation_profile_default_fallback": "Профиль по умолчанию",
   "dictation_mic_tooltip": "Диктовка ({mode})",
   "dictation_stop_tooltip": "Остановить и расшифровать · Esc — отмена",
   "dictation_transcribing": "Расшифровка…",
@@ -2832,5 +2831,7 @@
   "voice_message_tone": "Тон: {tone}",
   "voice_message_transcript": "Расшифровка",
   "voice_message_audio": "Аудио",
-  "unsupported_audio_format": "Неподдерживаемый формат аудио."
+  "unsupported_audio_format": "Неподдерживаемый формат аудио.",
+  "stt_whisper_lane_gpu": "GPU",
+  "stt_whisper_lane_cpu": "CPU"
 }

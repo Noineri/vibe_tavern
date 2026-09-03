@@ -41,6 +41,7 @@ import {
   type WhisperModelClient,
   type WhisperModelDeps,
 } from "./use-whisper-model.js";
+import { __setWhisperLaneProbeForTests } from "../../../../lib/stt/whisper-client-instance.js";
 import { DEFAULT_WHISPER_MODEL_ID, STT_BACKENDS } from "@vibe-tavern/domain";
 import type { SttProfileForm } from "./use-stt-profiles.js";
 
@@ -286,5 +287,33 @@ describe("useWhisperModel + WhisperModelPanel", () => {
       fake.resolveLoad(SMALL);
     });
     await waitFor(() => expect(view.getByTestId("stt-whisper-model-ready")).toBeTruthy());
+  });
+});
+
+describe("WhisperModelPanel GPU lane display (owner 2026-09-05)", () => {
+  afterEach(() => {
+    __setWhisperLaneProbeForTests(null);
+  });
+
+  it("default (no WebGPU): CPU badge + q8 size on the cards", () => {
+    const { view } = renderPanel(BASE);
+    // One lane badge per roster card (3 cards).
+    const badges = view.getAllByTestId("stt-whisper-model-lane");
+    expect(badges.length).toBe(3);
+    for (const badge of badges) expect(badge.textContent).toBe("stt_whisper_lane_cpu");
+    expect(view.getByTestId("stt-whisper-model-onnx-community-whisper-base").textContent).toContain(
+      "stt_whisper_model_size:80",
+    );
+  });
+
+  it("WebGPU lane: GPU badge + the fp16 size (the set that will actually download)", () => {
+    __setWhisperLaneProbeForTests(() => "webgpu");
+    const { view } = renderPanel(BASE);
+    for (const badge of view.getAllByTestId("stt-whisper-model-lane")) {
+      expect(badge.textContent).toBe("stt_whisper_lane_gpu");
+    }
+    expect(view.getByTestId("stt-whisper-model-onnx-community-whisper-base").textContent).toContain(
+      "stt_whisper_model_size:146",
+    );
   });
 });

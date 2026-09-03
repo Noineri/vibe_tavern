@@ -35,6 +35,17 @@ describe("WHISPER_MODELS roster", () => {
     }
   });
 
+  test("GPU-lane fp16 sizes are present and larger than the q8 sizes", () => {
+    // Owner decision 2026-09-05: WebGPU runs fp16 — the roster carries both
+    // download sizes; fp16 files are strictly larger than their q8 twins.
+    // Measured upstream sums (encoder+decoder fp16): 73 / 139 / 462 MB +
+    // tokenizer/config overhead.
+    expect(WHISPER_MODELS.map((m) => m.approxMbGpu)).toEqual([76, 146, 475]);
+    for (const model of WHISPER_MODELS) {
+      expect(model.approxMbGpu).toBeGreaterThan(model.approxMb);
+    }
+  });
+
   test("the default model is in the roster and multilingual", () => {
     const entry = findWhisperModel(DEFAULT_WHISPER_MODEL_ID);
     expect(entry).not.toBeNull();
