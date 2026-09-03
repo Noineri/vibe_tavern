@@ -11,6 +11,7 @@ import { labelCls, inputCls } from "../form-field-classes.js";
 import { monoUICls } from "../../../build/fields/field-styles.js";
 import { SttApiKeyField } from "./SttApiKeyField.js";
 import { SttLocalServerPanel } from "./SttLocalServerPanel.js";
+import { WhisperModelPanel } from "./WhisperModelPanel.js";
 import { configString, updateConfigField } from "./stt-form-helpers.js";
 import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
@@ -223,6 +224,16 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
           whisper-browser tier is in-browser; gemini has a fixed endpoint).
           ST-8. */}
       {isCompat && <SttLocalServerPanel form={form} stt={stt} />}
+
+      {/* Browser-model download panel (audit P5) — the level-1 whisper
+          surface, mirroring the kokoro branch of TtsProviderForm: the
+          roster PICK lives in level 2 (SttRecognitionSection), this panel
+          is the DOWNLOAD. */}
+      {isBrowser && (
+        <div className="mb-3">
+          <WhisperModelPanel form={form} stt={stt} />
+        </div>
+      )}
 
       {/* Test connection card (server backends — openai-compat and gemini;
           the browser backend has nothing remote to test; its "status" is the
