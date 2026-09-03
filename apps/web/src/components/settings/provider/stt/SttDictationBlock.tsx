@@ -28,6 +28,7 @@ import {
   type DictationMode,
 } from "../../../../lib/stt/dictation-settings.js";
 import type { SttProfileRecord } from "../../../../api/stt-api.js";
+import { cn } from "../../../../lib/cn.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { Toggle } from "../../../shared/Toggle.js";
 
@@ -48,13 +49,25 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
   const setMode = useDictationStore((s) => s.setMode);
   const pointer = useBootstrapStore((s) => s.data?.uiSettings.activeDictationProfileId ?? null);
   const pointed = pointer !== null ? (profiles.find((p) => p.id === pointer) ?? null) : null;
+  // No profiles → nothing to dictate with: the whole setting goes GRAY
+  // (owner 2026-09-05) — the toggle can no longer be flipped on without an
+  // engine behind it (a mic in chat with no STT profile is a dead control).
+  const noProfiles = profiles.length === 0;
 
   return (
     <div data-testid="stt-dictation-block" className="flex min-w-0 flex-1 items-center gap-2">
-      <label className="shrink-0 font-ui text-[12px] text-t3">{t("dictation_panel_title")}</label>
+      <label
+        className={cn(
+          "shrink-0 font-ui text-[12px] text-t3 transition-opacity",
+          noProfiles && "opacity-40",
+        )}
+      >
+        {t("dictation_panel_title")}
+      </label>
       <Toggle
         checked={enabled}
         onChange={setEnabled}
+        disabled={noProfiles}
         aria-label={t("dictation_enable")}
       />
       <DropdownSelect
@@ -85,7 +98,7 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
           detail: t(MODE_DESC_KEYS[m]),
         }))}
         onChange={(value) => setMode(value as DictationMode)}
-        disabled={!enabled}
+        disabled={!enabled || noProfiles}
         className="min-w-0"
       />
     </div>

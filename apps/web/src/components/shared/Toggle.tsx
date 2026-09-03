@@ -53,6 +53,7 @@ export function Toggle({
       aria-label={ariaLabel}
       className={cn(
         "group relative w-[36px] h-[20px] cursor-pointer shrink-0 inline-flex rounded-full",
+        "disabled:pointer-events-none disabled:opacity-40 disabled:cursor-default",
         className,
       )}
     >

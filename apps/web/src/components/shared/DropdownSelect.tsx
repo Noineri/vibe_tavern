@@ -175,6 +175,7 @@ export function DropdownSelect({
         <button
           type="button"
           data-testid={triggerTestId}
+          disabled={disabled}
           className={cn(
             "flex items-center justify-between gap-2 font-ui transition-colors duration-150",
             triggerClassName ??

@@ -81,10 +81,10 @@ beforeEach(() => {
   patch.mockReset();
 });
 
-function mount() {
+function mount(profiles: typeof PROFILES = PROFILES) {
   return render(
     <TooltipProvider>
-      <SttDictationBlock profiles={PROFILES} />
+      <SttDictationBlock profiles={profiles} />
     </TooltipProvider>,
   );
 }
@@ -128,6 +128,10 @@ describe("SttDictationBlock (P6, footer-inline)", () => {
   test("profile dropdown selection writes the server pointer", async () => {
     const view = mount();
     const user = userEvent.setup();
+    // The dropdown is gated on enabled — flip the dictation switch first
+    // (a disabled trigger has a real `disabled` attribute now; the old test
+    // clicked through the grayed control via the no-Tailwind hole).
+    await user.click(view.getByRole("switch"));
     await user.click(view.getByTestId("dictation-profile-select"));
     await user.click(await view.findByText("OpenAI"));
     await act(async () => {});
@@ -137,6 +141,8 @@ describe("SttDictationBlock (P6, footer-inline)", () => {
   test("the fallback row clears the pointer", async () => {
     const view = mount();
     const user = userEvent.setup();
+    // Enable first — same gate as above.
+    await user.click(view.getByRole("switch"));
     await user.click(view.getByTestId("dictation-profile-select"));
     // The trigger ALSO shows the fallback label — click the popup row (the
     // last match in DOM order), not the trigger.
@@ -144,5 +150,28 @@ describe("SttDictationBlock (P6, footer-inline)", () => {
     await user.click(rows[rows.length - 1]);
     await act(async () => {});
     expect(patch).toHaveBeenCalledWith({ activeDictationProfileId: null });
+  });
+
+  test("NO-PROFILES PIN (owner 2026-09-05): the whole setting goes gray — the switch is disabled and cannot be flipped on", async () => {
+    const view = mount([]);
+    const user = userEvent.setup();
+    const sw = view.getByRole("switch") as HTMLButtonElement;
+    expect(sw.disabled).toBe(true);
+    // Graying: the toggle dims (shared-primitive disabled classes) and the
+    // label follows at reduced opacity.
+    expect(sw.className).toContain("opacity-40");
+    expect(view.getByTestId("stt-dictation-block").textContent).toContain("dictation_panel_title");
+    // Clicking the disabled switch does NOT open the mic gate.
+    await user.click(sw);
+    expect(useDictationStore.getState().enabled).toBe(false);
+    // Both dropdowns are disabled as well (mode included — nothing to
+    // dictate with zero profiles).
+    for (const id of ["dictation-profile-select", "dictation-mode-select"]) {
+      const trigger = view.getByTestId(id);
+      expect(trigger.className).toContain("opacity-40");
+      await user.click(trigger);
+      await act(async () => {});
+      expect(view.baseElement.querySelector("[cmdk-list]")).toBeNull();
+    }
   });
 });
