@@ -6,7 +6,6 @@ import { transcribeSttAudio } from "../../../../api/stt-api.js";
 import { buildSilentTestWav } from "../../../../lib/stt/test-audio.js";
 import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
-import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { labelCls, inputCls } from "../form-field-classes.js";
 import { SttConfigFields } from "./SttConfigFields.js";
@@ -140,13 +139,14 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("stt_backend_label")}</label>
-          <SegmentedControl
+          {/* P7 (audit 2026-09-04): dropdown instead of the wrapping segment
+           *  row — same replacement as the TTS preset segment. */}
+          <DropdownSelect
             value={form.backend}
-            options={segmentOptions}
+            options={segmentOptions.map((o) => ({ id: o.value, label: o.label }))}
             onChange={handleSegmentChange}
-            wrap
-            mobileFill
-            mobileSelect
+            searchable={false}
+            triggerTestId="stt-backend-select"
           />
         </div>
       </div>

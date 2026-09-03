@@ -914,8 +914,11 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
 });
 
 describe("TtsProfileEditor — TE2-8 provider form fork", () => {
+  /** P7: the preset segment is a DropdownSelect — the checked state rides
+   *  the trigger (data-testid="tts-segment-select") instead of a Radix
+   *  radio's data-state. Same boundary: which segment is active. */
   function checkedSegment(view: ReturnType<typeof render>): string {
-    const el = view.container.querySelector('[data-state="checked"]');
+    const el = view.container.querySelector('[data-testid="tts-segment-select"]');
     return el?.textContent?.trim() ?? "";
   }
 
@@ -1074,10 +1077,19 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     await act(async () => {
       view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     });
-    // Click Custom segment
-    const customRadio = view.getAllByRole("radio").find((el) => el.textContent?.toLowerCase().includes("custom"));
-    expect(customRadio).toBeTruthy();
-    fireEvent.click(customRadio as HTMLElement);
+    // Pick the Custom segment in the dropdown (P7: cmdk pick replaces the
+    // old radio click — same boundary: segment switch resets config).
+    const trigger = view.container.querySelector('[data-testid="tts-segment-select"]');
+    if (!(trigger instanceof HTMLButtonElement)) throw new Error("segment select trigger missing");
+    await act(async () => {
+      fireEvent.click(trigger);
+    });
+    await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeTruthy());
+    const customItem = [...view.baseElement.querySelectorAll("[cmdk-item]")].find((el) =>
+      (el.textContent ?? "").toLowerCase().includes("custom"),
+    );
+    if (!customItem) throw new Error("no cmdk item containing custom");
+    fireEvent.click(customItem);
     await waitFor(() => expect(setForm).toHaveBeenCalled(), { timeout: 1000 });
     const calls = (setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
     // At least one call resets config to {}

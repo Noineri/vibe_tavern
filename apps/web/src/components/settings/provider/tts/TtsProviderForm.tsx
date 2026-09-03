@@ -201,13 +201,15 @@ export function TtsProviderForm({
         </div>
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("provider_preset_label")}</label>
-          <SegmentedControl
+          {/* P7 (audit 2026-09-04): dropdown instead of the wrapping segment
+           *  row — the option tooltips ride as `detail` (shown in the open
+           *  list and next to the trigger label). */}
+          <DropdownSelect
             value={segment}
-            options={segmentOptions.map((o) => ({ value: o.value, label: o.label, tooltip: o.tooltip }))}
+            options={segmentOptions.map((o) => ({ id: o.value, label: o.label, detail: o.tooltip }))}
             onChange={handleSegmentChange}
-            wrap
-            mobileFill
-            mobileSelect
+            searchable={false}
+            triggerTestId="tts-segment-select"
           />
         </div>
       </div>
