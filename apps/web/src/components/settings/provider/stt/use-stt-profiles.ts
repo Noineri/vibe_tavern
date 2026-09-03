@@ -15,6 +15,13 @@ import {
   updateSttProfile,
   type SttProfileRecord,
 } from "../../../../api/stt-api.js";
+import { listProviderProfiles } from "../../../../api/provider-api.js";
+import { listAllTtsProfiles } from "../../../../api/tts-api.js";
+import {
+  matchSttAutoKeyProviderName,
+  type SttAutoKeyProviderCandidate,
+  type SttAutoKeyTtsCandidate,
+} from "./stt-form-helpers.js";
 
 export interface SttProfileForm {
   id: string | null;
@@ -27,11 +34,11 @@ export interface SttProfileForm {
    *  server's tri-state: undefined=keep, ""=clear, non-empty=set). */
   apiKey: string;
   /** Server-computed hint: provider profile name whose endpoint auto-matches
-   *  (default-on key reuse — providers then TTS profiles) — drives the
-   *  "key from «X»" hint. Null when nothing matches. Server-decorated only:
-   *  the client-side draft mirror exists for TTS (D21) but is deliberately
-   *  skipped here — the STT tab is a mechanical fork and the hint on the
-   *  saved record covers the real cases. */
+   *  (default-on key reuse) — drives the "key from «X»" hint on SAVED
+   *  records. For the live draft the hook exposes
+   *  `draftAutoKeyProviderName` (P2 — the STT port of the TTS F4/D21
+   *  pattern): a server-decorated name wins, otherwise the client-side
+   *  mirror resolves it pre-save. */
   autoKeyProviderName: string | null;
   /** Mirror of the record's write-only flag (ST-1): true while editing a
    *  profile whose typed api_key column holds a key. Drives the key field's
@@ -75,6 +82,12 @@ export function useSttProfiles(): {
   saving: boolean;
   /** Current editor screen (TTS headerMode analog). */
   headerMode: SttHeaderMode;
+  /** P2 — the STT port of the TTS D21/F4 draft hint: auto-key resolution
+   *  for the LIVE form (drafts included — the server decorates only saved
+   *  records). A server-decorated name wins; otherwise the client-side
+   *  mirror of the server hint rule (vendor match for gemini, endpoint
+   *  match for openai-compat). Null when nothing matches. */
+  draftAutoKeyProviderName: string | null;
   /** Open the connection form screen (Edit settings / New profile). */
   startEdit(): void;
   /** Mark a saved profile as the default transcription profile. */
@@ -95,6 +108,11 @@ export function useSttProfiles(): {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [headerMode, setHeaderMode] = useState<SttHeaderMode>("view");
+  // P2: wire projections for the client-side auto-key hint — LLM providers
+  //  (both branches) and TTS profiles (the gemini fallback). Hint-only
+  //  data: a failed fetch degrades to "no hint" and never blocks the editor.
+  const [autoKeyProviders, setAutoKeyProviders] = useState<SttAutoKeyProviderCandidate[]>([]);
+  const [autoKeyTtsProfiles, setAutoKeyTtsProfiles] = useState<SttAutoKeyTtsCandidate[]>([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -113,6 +131,25 @@ export function useSttProfiles(): {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [providers, ttsProfiles] = await Promise.all([listProviderProfiles(), listAllTtsProfiles()]);
+        if (cancelled) return;
+        setAutoKeyProviders(providers.map((p) => ({ endpoint: p.endpoint, hasStoredApiKey: p.hasStoredApiKey, name: p.name })));
+        setAutoKeyTtsProfiles(
+          ttsProfiles.map((p) => ({ backend: p.backend, hasStoredApiKey: p.hasStoredApiKey, name: p.name })),
+        );
+      } catch (cause) {
+        console.debug("[stt] auto-key hint: provider/tts list unavailable", cause);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function hydrate(record: SttProfileRecord): SttProfileForm {
     return {
@@ -295,6 +332,21 @@ export function useSttProfiles(): {
     }
   }, [form]);
 
+  // P2: resolve the auto-key hint for the LIVE form. A server-decorated
+  //  name (saved record) wins; drafts fall through to the client-side
+  //  mirror of the server hint rule (see matchSttAutoKeyProviderName).
+  const draftAutoKeyProviderName =
+    form?.autoKeyProviderName !== null && form?.autoKeyProviderName !== undefined
+      ? form.autoKeyProviderName
+      : form === null || (form.backend !== STT_BACKENDS.Gemini && form.backend !== STT_BACKENDS.OpenAiCompat)
+        ? null
+        : matchSttAutoKeyProviderName(
+            form.backend,
+            typeof form.config.endpoint === "string" ? form.config.endpoint : "",
+            autoKeyProviders,
+            autoKeyTtsProfiles,
+          );
+
   return {
     profiles,
     loading,
@@ -304,6 +356,7 @@ export function useSttProfiles(): {
     error,
     saving,
     headerMode,
+    draftAutoKeyProviderName,
     startEdit,
     setDefault,
     select,

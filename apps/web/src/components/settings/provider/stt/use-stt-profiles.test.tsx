@@ -5,6 +5,8 @@ import { useDomEnv } from "../../../../../test/dom-env.js";
 useDomEnv();
 
 const realSttApi = await import("../../../../api/stt-api.js");
+const realProviderApi = await import("../../../../api/provider-api.js");
+const realTtsApi = await import("../../../../api/tts-api.js");
 const realI18n = await import("../../../../i18n/context.js");
 
 mock.module("../../../../i18n/context.js", () => ({
@@ -46,6 +48,22 @@ function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
 let store: SttRecord[] = [];
 let failUpdate = false;
 let failMessage = "save boom";
+
+// P2: the hook fetches the provider + TTS wire lists once for the
+// client-side auto-key hint. Safe pattern — real module first, spread,
+// override only the functions the hook touches.
+let providerStore: Array<{ endpoint: string; hasStoredApiKey: boolean; name: string }> = [];
+let ttsStore: Array<{ backend: string; hasStoredApiKey: boolean; name: string }> = [];
+const listProvidersMock = mock(async () => [...providerStore]);
+const listTtsMock = mock(async () => [...ttsStore]);
+mock.module("../../../../api/provider-api.js", () => ({
+  ...realProviderApi,
+  listProviderProfiles: listProvidersMock,
+}));
+mock.module("../../../../api/tts-api.js", () => ({
+  ...realTtsApi,
+  listAllTtsProfiles: listTtsMock,
+}));
 
 const listAllMock = mock(async () => [...store]);
 const createMock = mock(
@@ -110,11 +128,81 @@ afterEach(async () => {
   cleanup();
   store = [];
   failUpdate = false;
+  providerStore = [];
+  ttsStore = [];
   listAllMock.mockClear();
   createMock.mockClear();
   updateMock.mockClear();
   deleteMock.mockClear();
   setDefaultMock.mockClear();
+  listProvidersMock.mockClear();
+  listTtsMock.mockClear();
+});
+
+describe("useSttProfiles — P2 draft auto-key hint", () => {
+  it("gemini draft: vendor match resolves the provider name pre-save (the owner repro)", async () => {
+    providerStore = [
+      { endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OpenRouter" },
+      { endpoint: "https://generativelanguage.googleapis.com", hasStoredApiKey: true, name: "Gemini" },
+    ];
+    let hook: any = null;
+    function Probe() {
+      hook = useSttProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    await waitFor(() => expect(listProvidersMock).toHaveBeenCalled());
+    // Fresh create flow on the gemini backend — NO save anywhere — the hint
+    // must resolve from the client-side vendor match (first keyful provider
+    // on the Gemini API host; the active-flag never participates).
+    act(() => hook!.startCreate());
+    act(() => hook!.setForm({ backend: "gemini" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Gemini"));
+    // A server-decorated saved record still wins over the live computation.
+    act(() => hook!.setForm({ autoKeyProviderName: "Decorated" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Decorated"));
+  });
+
+  it("gemini draft: falls back to a stored-key gemini TTS profile when no provider matches", async () => {
+    providerStore = [{ endpoint: "https://generativelanguage.googleapis.com", hasStoredApiKey: false, name: "GeminiNoKey" }];
+    ttsStore = [{ backend: "gemini", hasStoredApiKey: true, name: "My Google TTS" }];
+    let hook: any = null;
+    function Probe() {
+      hook = useSttProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    act(() => hook!.startCreate());
+    act(() => hook!.setForm({ backend: "gemini" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("My Google TTS"));
+  });
+
+  it("openai-compat draft: endpoint match with normalization; no match → null; whisper → null", async () => {
+    providerStore = [
+      { endpoint: "NanoGPT", hasStoredApiKey: false, name: "NoKey" },
+      { endpoint: "https://nano-gpt.com/api/v1/", hasStoredApiKey: true, name: "NanoLLM" },
+    ];
+    let hook: any = null;
+    function Probe() {
+      hook = useSttProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    act(() => hook!.startCreate());
+    act(() => hook!.setForm({ backend: "openai-compat" as never }));
+    // Trim + scheme + trailing slashes + case all normalize (the server rule).
+    act(() => hook!.setForm({ config: { endpoint: "https://NANO-GPT.com/api/v1//" } as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("NanoLLM"));
+    // No match → null (no fake hint).
+    act(() => hook!.setForm({ config: { endpoint: "https://nowhere.example/v1" } as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
+    // The browser tier never carries an auto-key hint.
+    act(() => hook!.setForm({ backend: "whisper-browser" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
+  });
 });
 
 describe("useSttProfiles — CRUD", () => {

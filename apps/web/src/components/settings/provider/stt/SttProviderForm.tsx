@@ -46,7 +46,10 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
   const isCompat = form.backend === STT_BACKENDS.OpenAiCompat;
   const showsEmotionToggle = STT_BACKEND_EMOTION_CAPABILITY[form.backend];
   const apiKey = form.apiKey;
-  const autoKeyName = form.autoKeyProviderName;
+  // P2 — the pre-save draft hint (TTS F4/D21 pattern): server-decorated
+  //  value for saved profiles, client-side mirror for drafts — the hint
+  //  appears the moment a backend/endpoint qualifies, not after a save.
+  const autoKeyName = stt.draftAutoKeyProviderName;
 
   const duplicateNameWarning =
     form.name &&

@@ -33,6 +33,7 @@ function makeStt(overrides: Partial<SttHook> = {}): SttHook {
     error: null,
     saving: false,
     headerMode: "view",
+    draftAutoKeyProviderName: null,
     startEdit: () => {},
     setDefault: async () => {},
     select: () => {},
