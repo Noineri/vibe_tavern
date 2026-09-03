@@ -2378,7 +2378,6 @@ export default interface Resources {
     "stop_seqs_placeholder": "Type and press Enter…",
     "stream_response": "Stream Response",
     "stream_response_hint": "On: character-by-character generation. Off: full response appears at once.",
-    "stt_backend_browser_badge": "runs in browser",
     "stt_emotion_hint": "Adds a [Voice tone: …] line describing HOW the message was said to the voice-message prompt (Gemini).",
     "stt_emotion_label": "Tone annotation",
     "stt_field_api_key_hide": "Hide API key",

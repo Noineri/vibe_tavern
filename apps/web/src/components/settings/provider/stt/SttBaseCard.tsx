@@ -37,9 +37,12 @@ export function SttBaseCard({ form, isDefault, onEdit, onSetDefault }: SttBaseCa
   const isBrowser = form.backend === STT_BACKENDS.WhisperBrowser;
   const hasKey =
     isBrowser || form.hasStoredApiKey || form.autoKeyProviderName !== null || Boolean(configString(form.config, "apiKey"));
-  // Keep the same status rendering pattern as TtsBaseCard. The browser
-  // backend needs no key - show "runs in browser" instead.
-  const statusKey = isBrowser ? "stt_backend_browser_badge" : hasKey ? "api_key_saved" : "no_api_key";
+  // Same status rendering pattern as TtsBaseCard (its Kokoro twin shows
+  // "Model ready" — tts_kokoro_model_ready); the browser backend needs no
+  // key, so it shows the same model-centric status, not a place badge
+  // (owner 2026-09-05: the "runs in browser" badge is an anti-pattern the
+  // TTS side never had — removed).
+  const statusKey = isBrowser ? "stt_whisper_model_ready" : hasKey ? "api_key_saved" : "no_api_key";
 
   return (
     <div className="mb-6" data-testid="stt-base-card">

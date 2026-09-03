@@ -485,7 +485,6 @@
   "stt_segment_openai": "OpenAI-compatible",
   "stt_segment_gemini": "Gemini",
   "stt_segment_whisper": "Whisper (in browser)",
-  "stt_backend_browser_badge": "runs in browser",
   "stt_field_endpoint": "Endpoint",
   "stt_field_model": "Model",
   "stt_field_language": "Language (optional)",

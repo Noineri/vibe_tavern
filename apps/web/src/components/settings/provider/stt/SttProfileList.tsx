@@ -36,9 +36,6 @@ function SttProfileRow({
           <div className="truncate text-[13px] font-medium">{profile.name}</div>
           <div className={cn("mt-0.5 text-[11px]", isEditing ? "text-accent-t" : "text-t4")}>
             {profile.backend}
-            {profile.backend === "whisper-browser" && (
-              <span className="ml-1.5 rounded bg-s3 px-1 py-px text-[10px]">{t("stt_backend_browser_badge")}</span>
-            )}
           </div>
         </div>
         <MasterDetailMobileDrillDown onSelect={() => onSelectProfile(profile.id)} className="py-3" />

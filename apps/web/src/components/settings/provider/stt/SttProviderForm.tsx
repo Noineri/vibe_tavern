@@ -287,10 +287,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
       ) : (
         <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="stt-browser-test-note">
           <div className="flex items-center gap-2 font-ui text-[13px] text-t3">
-            <span className="flex items-center gap-1.5">
-              <Icons.Check className="h-3.5 w-3.5 text-success" />
-              {t("stt_backend_browser_badge")}
-            </span>
+            <Icons.Check className="h-3.5 w-3.5 shrink-0 text-success" />
             <span className="font-ui text-[12px] text-t4">{t("stt_test_browser_note")}</span>
           </div>
         </div>

@@ -487,7 +487,6 @@
   "stt_segment_openai": "OpenAI-совместимый",
   "stt_segment_gemini": "Gemini",
   "stt_segment_whisper": "Whisper (в браузере)",
-  "stt_backend_browser_badge": "работает в браузере",
   "stt_field_endpoint": "Эндпоинт",
   "stt_field_model": "Модель",
   "stt_field_language": "Язык (необязательно)",

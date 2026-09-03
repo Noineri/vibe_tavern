@@ -154,6 +154,8 @@ describe("SttSection", () => {
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-profile-row")).toBeTruthy());
-    expect(view.getByText("stt_backend_browser_badge")).toBeTruthy();
+    // Owner 2026-09-05: the "runs in browser" badge is an anti-pattern the
+    // TTS list never had — the row shows the bare backend like the twin.
+    expect(view.queryByText("stt_backend_browser_badge")).toBeNull();
   });
 });
