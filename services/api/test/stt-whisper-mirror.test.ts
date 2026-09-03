@@ -16,6 +16,8 @@ import {
   isMirroredWhisperRepo,
   validateWhisperFilePath,
 } from "../src/domain/stt/whisper-mirror.js";
+import { Hono } from "hono";
+import { createSttWhisperMirrorRoutes } from "../src/api/routes/stt-whisper-mirror.js";
 
 const REPO = "onnx-community/whisper-base";
 
@@ -196,5 +198,63 @@ describe("WhisperMirrorService", () => {
     const service = makeService();
     const result = await service.handle(REPO, "onnx/model.onnx");
     expect(result.status).toBe(502);
+  });
+});
+
+// ── Route-level parse (regression pin, owner bug report 2026-09-05) ────────
+// The worker's URL rewriter maps
+//   https://huggingface.co/onnx-community/whisper-base/resolve/main/<file>
+// onto
+//   /api/stt/whisper/model/onnx-community/whisper-base/<file>
+// — repo ids are NAMESPACED ("owner/name"), so the route must match the
+// roster repo as a PREFIX, not split at the first slash (the first slash
+// sits INSIDE the repo id; splitting there produced
+// repo="onnx-community" → 400 "Unknown model repository" for every real
+// download — the model never loaded, first live click found it).
+describe("stt-whisper-mirror route parse", () => {
+  let dataDir: string;
+  let fetchLog: { url: string }[];
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "whisper-mirror-route-"));
+    fetchLog = [];
+  });
+
+  function makeApp(): Hono {
+    const service = new WhisperMirrorService(dataDir, {
+      resolveFetch: async () => {
+        return (input: RequestInfo | URL) => {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+          fetchLog.push({ url });
+          return Promise.resolve(new Response('{"ok":true}', { headers: { "content-type": "application/json" } }));
+        };
+      },
+    });
+    return new Hono().route("/", createSttWhisperMirrorRoutes(service));
+  }
+
+  test("namespaced repo id + repo file reach upstream with the right repo and path", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/stt/whisper/model/onnx-community/whisper-base/tokenizer.json");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('{"ok":true}');
+    expect(fetchLog.length).toBe(1);
+    expect(fetchLog[0]?.url).toBe("https://huggingface.co/onnx-community/whisper-base/resolve/main/tokenizer.json");
+  });
+
+  test("deep repo path (onnx/ subfolder weights) keeps the full repo id", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/stt/whisper/model/onnx-community/whisper-base/onnx/encoder_model_quantized.onnx");
+    expect(res.status).toBe(200);
+    expect(fetchLog[0]?.url).toBe(
+      "https://huggingface.co/onnx-community/whisper-base/resolve/main/onnx/encoder_model_quantized.onnx",
+    );
+  });
+
+  test("non-roster prefix is rejected with 400 and no upstream request", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/stt/whisper/model/onnx-community/tokenizer.json");
+    expect(res.status).toBe(400);
+    expect(fetchLog.length).toBe(0);
   });
 });

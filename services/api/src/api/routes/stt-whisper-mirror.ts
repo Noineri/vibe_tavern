@@ -11,21 +11,30 @@
 
 import { Hono } from "hono";
 
-import { WhisperMirrorService, type WhisperMirrorResult } from "../../domain/stt/whisper-mirror.js";
+import {
+  WhisperMirrorService,
+  whisperMirrorAllowlist,
+  type WhisperMirrorResult,
+} from "../../domain/stt/whisper-mirror.js";
 
 const ROUTE_PREFIX = "/api/stt/whisper/model/";
 
 export function createSttWhisperMirrorRoutes(service: WhisperMirrorService): Hono {
   return new Hono().get("/api/stt/whisper/model/*", async (c) => {
-    // Hono's wildcard param includes the leading slash; the service's
-    // repo allowlist + path validator is the security boundary either way.
+    // Hono's wildcard param includes the leading slash. Repo ids are
+    // NAMESPACED ("onnx-community/whisper-base") — the first slash sits
+    // INSIDE the repo id, so parsing must match the roster repo as a
+    // PREFIX, not split at the first boundary (owner bug report 2026-09-05:
+    // the first-slash split produced repo="onnx-community" → 400 "Unknown
+    // model repository" for EVERY real download; the first live click
+    // through WhisperModelPanel found it). The roster prefix IS the security
+    // boundary: a non-roster path can match nothing.
     const raw = c.req.path.slice(ROUTE_PREFIX.length);
-    const slash = raw.indexOf("/");
-    if (slash <= 0) {
+    const repo = whisperMirrorAllowlist().find((r) => raw.startsWith(r + "/"));
+    if (!repo) {
       return c.json({ error: "Unknown model repository." }, 400);
     }
-    const repo = raw.slice(0, slash);
-    const rawPath = raw.slice(slash + 1);
+    const rawPath = raw.slice(repo.length + 1);
     const result: WhisperMirrorResult = await service.handle(repo, rawPath);
     if (result.status !== 200) {
       return c.json({ error: result.error }, result.status);
