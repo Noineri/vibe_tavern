@@ -32,9 +32,9 @@ interface ProviderFormProps {
 
 /** GOVERNING RULE (owner 2026-09-04): provider settings are TWO-LEVEL
  *  everywhere — see the comment on ProviderEditHeader for the full rule.
- *  This wizard form VIOLATES it: the test card below gates on form.model
- *  (a model-dependent test chat inside the connection form). Conformance
- *  is queued (STT_POST_PLAN_AUDIT_REPORT P11). */
+ *  This wizard form is INTENTIONALLY exempt (owner 2026-09-04): the
+ *  first-run flow deliberately keeps the model step and the model-gated
+ *  test chat inside the form. Do NOT "fix" it. */
 export function ProviderForm({
   form,
   editingId,
