@@ -1,7 +1,11 @@
 /**
- * SttDictationPanel DOM tests (STT_PLAN ST-4b): the enable switch drives the
- * local store, and picking a profile writes the server pointer via
- * patchUiSettingsAction (mocked — no network).
+ * SttDictationBlock DOM tests (P6): the footer-inline dictation controls —
+ * the enable switch drives the local store, picking a profile writes the
+ * server pointer via patchUiSettingsAction (mocked — no network), and the
+ * mode dropdown persists the choice. Same boundaries the deleted
+ * SttDictationPanel.test pinned; the mode control moved from a segmented
+ * control to a DropdownSelect (cmdk pick pattern from
+ * TtsNarrationModeBlock.test.tsx).
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -14,11 +18,10 @@ useDomEnv();
 // user-event binds `document` at setup() — import AFTER the DOM env exists
 // (house pattern; the static import binds before GlobalRegistrator runs).
 const { default: userEvent } = await import("@testing-library/user-event");
-
-useDomEnv();
+const { waitFor } = await import("@testing-library/react");
 
 // SAFE mock.module (gotcha pattern): keep the real store module, override
-// only the patch action the panel calls.
+// only the patch action the block calls.
 const realBootstrap = await import("../../../../stores/api-actions/bootstrap-actions.js");
 const patch = mock(async () => {
   throw new Error("not configured");
@@ -44,7 +47,7 @@ mock.module("../../../../i18n/context.js", () => ({
 }));
 
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
-const { SttDictationPanel } = await import("./SttDictationPanel.js");
+const { SttDictationBlock } = await import("./SttDictationBlock.js");
 
 const PROFILES = [
   {
@@ -78,37 +81,52 @@ beforeEach(() => {
   patch.mockReset();
 });
 
-describe("SttDictationPanel", () => {
-  test("enable checkbox flips the dictation store (mic gate opens)", async () => {
-      const view = render(
-      <TooltipProvider>
-        <SttDictationPanel profiles={PROFILES} />
-      </TooltipProvider>,
-    );
+function mount() {
+  return render(
+    <TooltipProvider>
+      <SttDictationBlock profiles={PROFILES} />
+    </TooltipProvider>,
+  );
+}
+
+/** Open the mode dropdown and pick the item whose text contains
+ * `optionText` — the cmdk-portal pattern from TtsNarrationModeBlock.test.tsx
+ * (raw i18n keys render as the option texts). */
+async function pickMode(view: { container: HTMLElement; baseElement: HTMLElement }, optionText: string): Promise<void> {
+  const trigger = view.container.querySelector('[data-testid="dictation-mode-select"]');
+  if (!(trigger instanceof HTMLButtonElement)) throw new Error("mode select trigger missing");
+  await act(async () => {
+    userEvent.click(trigger);
+  });
+  await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeTruthy());
+  const items = [...view.baseElement.querySelectorAll("[cmdk-item]")];
+  if (items.length !== 3) throw new Error(`expected 3 mode items, got ${items.length}`);
+  const item = items.find((i) => (i.textContent ?? "").includes(optionText));
+  if (!item) throw new Error(`no cmdk item containing "${optionText}"`);
+  await act(async () => {
+    userEvent.click(item);
+  });
+  await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeNull());
+}
+
+describe("SttDictationBlock (P6, footer-inline)", () => {
+  test("enable switch flips the dictation store (mic gate opens)", async () => {
+    const view = mount();
     expect(useDictationStore.getState().enabled).toBe(false);
     const user = userEvent.setup();
     await user.click(view.getByRole("switch"));
     expect(useDictationStore.getState().enabled).toBe(true);
   });
 
-  test("mode segmented control persists the choice", async () => {
-      const view = render(
-      <TooltipProvider>
-        <SttDictationPanel profiles={PROFILES} />
-      </TooltipProvider>,
-    );
-    const user = userEvent.setup();
+  test("mode dropdown persists the choice", async () => {
+    const view = mount();
     useDictationStore.setState({ enabled: true });
-    await user.click(view.getByText("dictation_mode_auto_send"));
+    await pickMode(view, "dictation_mode_auto_send");
     expect(useDictationStore.getState().mode).toBe("auto-send");
   });
 
   test("profile dropdown selection writes the server pointer", async () => {
-      const view = render(
-      <TooltipProvider>
-        <SttDictationPanel profiles={PROFILES} />
-      </TooltipProvider>,
-    );
+    const view = mount();
     const user = userEvent.setup();
     await user.click(view.getByTestId("dictation-profile-select"));
     await user.click(await view.findByText("OpenAI"));
@@ -117,11 +135,7 @@ describe("SttDictationPanel", () => {
   });
 
   test("the fallback row clears the pointer", async () => {
-      const view = render(
-      <TooltipProvider>
-        <SttDictationPanel profiles={PROFILES} />
-      </TooltipProvider>,
-    );
+    const view = mount();
     const user = userEvent.setup();
     await user.click(view.getByTestId("dictation-profile-select"));
     // The trigger ALSO shows the fallback label — click the popup row (the

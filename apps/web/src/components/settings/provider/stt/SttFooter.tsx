@@ -1,9 +1,11 @@
 /**
  * STT-tab footer for ProviderModal — MasterDetailFooter with Save/Cancel on
  * the right and the Delete action on the left, plus the delete confirm modal.
- * Fork of TtsAudioFooter stripped to the STT actions (no narration-mode
- * selector — that is TTS-only machinery). Lives as its own unit so the
- * controls↔hook wiring is testable without mounting the whole ProviderModal.
+ * Fork of TtsAudioFooter: the dictation controls live HERE in the footer row
+ * (P6, audit 2026-09-04) — the same slot pattern as the TTS footer's
+ * narration-mode block and the LLM footer's default-proxy control. Lives as
+ * its own unit so the controls↔hook wiring is testable without mounting the
+ * whole ProviderModal.
  */
 
 import { useState } from "react";
@@ -13,6 +15,7 @@ import { MasterDetailFooter } from "../../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../../shared/SaveBar.js";
 import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
 import { Icons } from "../../../shared/icons.js";
+import { SttDictationBlock } from "./SttDictationBlock.js";
 import type { useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
@@ -38,6 +41,10 @@ export function SttFooter({ stt }: { stt: SttHook }) {
         }
         right={
           <div className="flex items-center gap-2">
+            {/* Dictation controls live HERE in the footer row — the same
+             * slot pattern as the TTS footer's narration-mode block (owner
+             * reference) and the LLM footer's default-proxy control. */}
+            <SttDictationBlock profiles={stt.profiles} />
             {/* Cancel is ALWAYS available while a form is open (owner
              * 2026-08-29 decision, ported from the TTS footer): gating it on
              * `dirty` left the editor with no exit — Save disabled by the
