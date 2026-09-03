@@ -211,6 +211,42 @@ function countModels(parsed: unknown): number {
   return models.length;
 }
 
+/** Parse the `/v1beta/models` catalogue into STT pickable entries (P8,
+ *  owner 2026-09-04: a fetched picker for EVERY listable backend). The same
+ *  family exclusion the chat-side google-adapter applies
+ *  (NON_CHAT_MODEL_PATTERNS): everything left IS the audio-understanding
+ *  roster this backend transcribes with — TTS/image/video/embedding
+ *  families cannot. Kept local like the gemini-tts twin (each surface
+ *  filters for its own family); the catalog shape `{ models: [{ name }] }`
+ *  is shared with the tts parser. */
+function parseSttModels(parsed: unknown): Array<import("../stt-backend.js").SttModelInfo> {
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const models = (parsed as Record<string, unknown>).models;
+  if (!Array.isArray(models)) return [];
+  const NON_CHAT_FAMILIES = [
+    /image/i,
+    /imagen/i,
+    /nano[-\s]?banana/i,
+    /lyria/i,
+    /veo/i,
+    /tts/i,
+    /native[-\s]?audio/i,
+    /embedding/i,
+    /aqa$/i,
+  ];
+  const out: Array<import("../stt-backend.js").SttModelInfo> = [];
+  for (const entry of models) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const raw = (entry as Record<string, unknown>).name;
+    if (typeof raw !== "string" || raw.length === 0) continue;
+    const id = raw.replace(/^models\//, "").trim();
+    if (id.length === 0) continue;
+    if (NON_CHAT_FAMILIES.some((pattern) => pattern.test(id))) continue;
+    out.push({ id, label: id });
+  }
+  return out;
+}
+
 // ─── Prompt + response_format (ST-7: transcript + tone in one pass) ─────────
 
 /** response_format for the emotion-annotated pass — the docs' transcription
@@ -307,6 +343,24 @@ export const geminiSttFactory: SttBackendFactory = (config) => {
       const text = extractInteractionText(payload).trim();
       if (cfg.emotionAnnotation) return parseTranscriptWithTone(text);
       return { text };
+    },
+
+    async listModels(): Promise<Array<import("../stt-backend.js").SttModelInfo>> {
+      // Same catalogue the probe counts; the STT picker filter (chat/
+      // audio-understanding families only) lives in parseSttModels.
+      const response = await fetch(MODELS_URL, {
+        headers: { "x-goog-api-key": cfg.apiKey },
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        const excerpt = await readErrorExcerpt(response);
+        throw new GeminiSttError(
+          `Gemini STT model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
+      const payload: unknown = await response.json().catch(() => null);
+      return parseSttModels(payload);
     },
 
     async probe(): Promise<SttProbeResult> {

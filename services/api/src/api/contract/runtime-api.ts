@@ -999,6 +999,12 @@ export interface SttRuntimeApi {
 	/** Local STT server discovery routed through the API process (ST-8) —
 	 *  never throws; each port's failure mode is a ProbeOutcome. */
 	discoverLocalStt: () => Promise<import("@vibe-tavern/domain").ProbeOutcome[]>;
+	/** Live STT model discovery over the TRANSIENT draft config (P8 — the
+	 *  twin of `draftListTtsModels`): the form's current config plus optional
+	 *  `profileId` for stored-key resolution. Null = the backend exposes no
+	 *  model list (whisper-browser is a fixed local roster — the route maps
+	 *  null to a clean 400). */
+	draftListSttModels: (body: import("@vibe-tavern/api-contracts").DraftSttModelsInput) => Promise<import("@vibe-tavern/api-contracts").SttModelInfoValue[] | null>;
 }
 
 export interface RuntimeApi {

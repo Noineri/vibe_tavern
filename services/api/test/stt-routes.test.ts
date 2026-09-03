@@ -594,3 +594,133 @@ describe("STT routes — Gemini backend (ST-7)", () => {
     expect(result).toMatchObject({ text: "слова", annotation: "дрожит" });
   });
 });
+
+describe("STT routes — draft model discovery (P8)", () => {
+  test("openai-compat draft: list passthrough with enrichment; Bearer + modality filter URL", async () => {
+    const { app } = await makeApp();
+
+    let capturedUrl = "";
+    let capturedInit: RequestInit | undefined;
+    globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+      capturedUrl = String(input);
+      capturedInit = init;
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: "whisper-1", name: "Whisper" },
+            { id: "or-free", description: "free tier", pricing: { prompt: "0", completion: "0" } },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const res = await app.request("/api/stt/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: "openai-compat",
+        config: { endpoint: "http://localhost:8000/v1", apiKey: "sk-own" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as Array<{ id: string; isFree?: boolean }>;
+    expect(list.length).toBe(2);
+    expect(list[0]).toEqual({ id: "whisper-1", label: "Whisper" });
+    expect(list[1].isFree).toBe(true);
+
+    // The STT twin of the TTS modality discovery URL.
+    expect(capturedUrl).toBe("http://localhost:8000/v1/models?output_modalities=transcription");
+    const auth = (capturedInit?.headers as Record<string, string> | undefined)?.["Authorization"];
+    expect(auth).toBe("Bearer sk-own");
+  });
+
+  test("whisper-browser → 400 model listing not supported (fixed local roster)", async () => {
+    const { app } = await makeApp();
+    const res = await app.request("/api/stt/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "whisper-browser", config: { model: "onnx-community/whisper-base" } }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("model listing not supported");
+  });
+
+  test("profileId resolves the stored key (endpoint-guarded); gemini vendor filter", async () => {
+    const { app } = await makeApp();
+
+    const profileRes = await app.request("/api/stt/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Cloud",
+        backend: "openai-compat",
+        config: OPENAI_COMPAT_CONFIG,
+        apiKey: "sk-stored",
+      }),
+    });
+    const profile = (await profileRes.json()) as { id: string };
+
+    let auth: string | undefined;
+    globalThis.fetch = mock(async (_input: FetchArgs[0], init?: FetchArgs[1]) => {
+      auth = (init?.headers as Record<string, string> | undefined)?.["Authorization"];
+      return new Response(JSON.stringify({ data: [{ id: "whisper-1" }] }), { status: 200 });
+    });
+
+    // Draft config carries NO key; profileId + matching endpoint reuses the
+    // stored one (the TTS draft-endpoint semantics).
+    const res = await app.request("/api/stt/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: "openai-compat",
+        config: { endpoint: OPENAI_COMPAT_CONFIG.endpoint },
+        profileId: profile.id,
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(auth).toBe("Bearer sk-stored");
+
+    // Gemini: catalogue fetch filtered to chat/audio families, key in the
+    // x-goog-api-key header (the STT picker rides the SAME catalogue).
+    let geminiKey: string | undefined;
+    globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+      geminiKey = (init?.headers as Record<string, string> | undefined)?.["x-goog-api-key"];
+      expect(String(input)).toContain("generativelanguage.googleapis.com");
+      return new Response(
+        JSON.stringify({
+          models: [
+            { name: "models/gemini-3.8-flash" },
+            { name: "models/gemini-2.5-flash-preview-tts" },
+            { name: "models/veo-3.0" },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const geminiRes = await app.request("/api/stt/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: "gemini",
+        config: { apiKey: "g-key" },
+      }),
+    });
+    expect(geminiRes.status).toBe(200);
+    const geminiList = (await geminiRes.json()) as Array<{ id: string }>;
+    expect(geminiList).toEqual([{ id: "gemini-3.8-flash", label: "gemini-3.8-flash" }]);
+    expect(geminiKey).toBe("g-key");
+  });
+
+  test("upstream HTTP failure maps to 502 (4xx upstream → 400)", async () => {
+    const { app } = await makeApp();
+    globalThis.fetch = mock(async () => new Response("boom", { status: 503 }));
+    const res = await app.request("/api/stt/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "openai-compat", config: { endpoint: "http://localhost:8000/v1", apiKey: "k" } }),
+    });
+    expect(res.status).toBe(502);
+  });
+});

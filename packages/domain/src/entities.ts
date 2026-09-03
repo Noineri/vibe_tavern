@@ -888,14 +888,19 @@ export type SttProfileConfig =
   | {
       /** OpenAI-compatible `/v1/audio/transcriptions` endpoint config. */
       endpoint: string;
-      /** Model slug ("whisper-1", "gpt-4o-transcribe", ...). */
-      model: string;
+      /** Model slug ("whisper-1", "gpt-4o-transcribe", ...). P8: optional —
+       *  the model is a LEVEL-2 outer setting (fetched picker), so a fresh
+       *  connection saves without one; the backend factory defaults it
+       *  ("whisper-1" / DEFAULT_GEMINI_STT_MODEL) until a pick lands. */
+      model?: string;
       /** Optional language hint (BCP-47-ish). */
       language?: string;
     }
   | {
-      /** transformers.js model id ("Xenova/whisper-small", ...). */
-      model: string;
+      /** transformers.js model id ("Xenova/whisper-small", ...). Always
+       *  stamped by the form (roster default on every backend switch); the
+       *  optional mirrors the contract arm after P8. */
+      model?: string;
       /** Optional language hint (BCP-47-ish). */
       language?: string;
     };

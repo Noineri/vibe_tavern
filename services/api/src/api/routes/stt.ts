@@ -119,6 +119,31 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
         throw error;
       }
     })
+    // ── Live model discovery (P8) ─────────────────────────────────────
+    .post("/api/stt/draft/models", zValidator("json", schemas.draftSttModelsSchema), async (c) => {
+      const body = c.req.valid("json");
+      try {
+        const models = await runtime.draftListSttModels(body);
+        if (models === null) return c.json({ error: "model listing not supported" }, 400);
+        return c.json(models);
+      } catch (error) {
+        // Same error ladder as the transcribe route: client-side tier and
+        // config problems are the caller's (400), upstream failures are
+        // gateway-class (502, or 400 for a 4xx upstream).
+        if (error instanceof SttClientSideError) {
+          return c.json({ error: "whisper-browser runs client-side" }, 400);
+        }
+        if (error instanceof OpenAiCompatSttConfigError || error instanceof GeminiSttConfigError) {
+          return c.json({ error: error.message }, 400);
+        }
+        if (error instanceof OpenAiCompatSttError || error instanceof GeminiSttError) {
+          const status =
+            error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;
+          return c.json({ error: error.message }, status);
+        }
+        throw error;
+      }
+    })
     // ── Local-server discovery (ST-8) ───────────────────────────────────
     .get("/api/stt/discover", async (c) => {
       // Server-side port probing: local servers without CORS headers are

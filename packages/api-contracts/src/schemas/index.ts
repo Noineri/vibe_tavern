@@ -158,8 +158,8 @@ export { regexPlacementSchema, regexSubstituteSchema, regexApplyTargetSchema, re
 export type { RegexPlacementCode, RegexSubstituteCode, RegexApplyTargetValue, RegexTargetTypeValue, CreateRegexPresetInput, UpdateRegexPresetInput, SetRegexLinksInput, ResolveActiveRegexQuery, CreateRegexProfileInput, UpdateRegexProfileInput, DeleteRegexProfileQuery, AttachRegexRuleInput, SetRegexProfileLinksInput } from "./regex-schema.js";
 export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfileSchema, createTtsProfileSchema, updateTtsProfileSchema, setTtsLinksSchema, generateTtsSchema, draftTtsVoicesSchema, draftTtsPreviewSchema, draftTtsModelsSchema, localDockerStatusSchema } from "./tts-schema.js";
 export type { TtsBackendValue, TtsTargetTypeValue, TtsProfileValue, CreateTtsProfileInput, UpdateTtsProfileInput, SetTtsLinksInput, GenerateTtsInput, DraftTtsVoicesInput, DraftTtsPreviewInput, DraftTtsModelsInput, LocalDockerStatus } from "./tts-schema.js";
-export { sttBackendSchema, sttProfileConfigSchema, sttProfileSchema, createSttProfileSchema, updateSttProfileSchema } from "./stt-schema.js";
-export type { SttBackendValue, SttProfileConfigValue, SttProfileValue, CreateSttProfileInput, UpdateSttProfileInput } from "./stt-schema.js";
+export { sttBackendSchema, sttProfileConfigSchema, sttProfileSchema, createSttProfileSchema, updateSttProfileSchema, sttModelInfoSchema, draftSttModelsSchema } from "./stt-schema.js";
+export type { SttBackendValue, SttProfileConfigValue, SttProfileValue, CreateSttProfileInput, UpdateSttProfileInput, SttModelInfoValue, DraftSttModelsInput } from "./stt-schema.js";
 
 export {
   coauthorModuleSchema,

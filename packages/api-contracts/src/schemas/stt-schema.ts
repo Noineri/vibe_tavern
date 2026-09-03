@@ -24,16 +24,22 @@ export type SttBackendValue = z.infer<typeof sttBackendSchema>;
 export const sttOpenAiCompatConfigSchema = z.object({
   /** Base URL of an OpenAI-compatible `/v1/audio/transcriptions` endpoint. */
   endpoint: z.string().min(1),
-  /** Model slug ("whisper-1", "gpt-4o-transcribe", ...). */
-  model: z.string().min(1),
+  /** Model slug ("whisper-1", "gpt-4o-transcribe", ...). P8 (2026-09-04):
+   *  optional — the model lives in the LEVEL-2 outer settings (fetched
+   *  picker), so a fresh connection card saves without one and the backend
+   *  factory defaults it ("whisper-1") until the picker settles a pick. */
+  model: z.string().min(1).optional(),
   /** Optional language hint (BCP-47-ish). */
   language: z.string().optional(),
 });
 export type SttOpenAiCompatConfigValue = z.infer<typeof sttOpenAiCompatConfigSchema>;
 
 export const sttWhisperBrowserConfigSchema = z.object({
-  /** transformers.js model id ("Xenova/whisper-small", ...). */
-  model: z.string().min(1),
+  /** transformers.js model id ("Xenova/whisper-small", ...). The browser
+   *  tier always carries one — the form stamps the roster default on every
+   *  backend switch — so it stays required in practice; optional here only
+   *  to mirror the domain union after P8. */
+  model: z.string().min(1).optional(),
   /** Optional language hint (BCP-47-ish). */
   language: z.string().optional(),
 });
@@ -46,6 +52,34 @@ export type SttProfileConfigValue = z.infer<typeof sttProfileConfigSchema>;
 // whisper-browser arm above (`{ model, language? }` — the endpoint is a fixed
 // Gemini API constant), so it has no separate schema member: the whisper
 // shape IS its validation, exactly as in the domain union.
+
+/** One entry of the live STT model catalog (P8) — the wire twin of the
+ *  backend `SttModelInfo`: OpenAI-compatible `/models` payloads carry
+ *  aggregator enrichment (`isFree`, `description`); the Gemini catalogue
+ *  maps `models/<id>` names to bare ids. */
+export const sttModelInfoSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  isFree: z.boolean().optional(),
+  description: z.string().optional(),
+});
+export type SttModelInfoValue = z.infer<typeof sttModelInfoSchema>;
+
+/** Body of `POST /api/stt/draft/models` (P8) — the STT twin of
+ *  `draftTtsModelsSchema`: a TRANSIENT draft request over the CURRENT form
+ *  config (saved or not); `profileId` lets the server inject the stored
+ *  typed-column key when the form's own key is empty and the identity
+ *  matches (same semantics as the TTS draft endpoints). */
+export const draftSttModelsSchema = z.object({
+  backend: sttBackendSchema,
+  /** Loose record (the TTS draft twin): the transient request feeds the
+   *  backend factory's loose bag directly, and the form's just-typed key
+   *  rides INSIDE it (formDraftConfig) — a strict parse would strip the
+   *  secret before the factory ever sees it. */
+  config: z.record(z.string(), z.unknown()),
+  profileId: z.string().optional(),
+});
+export type DraftSttModelsInput = z.infer<typeof draftSttModelsSchema>;
 
 /** Full STT profile as served by the API — SECURITY PROJECTION of the
  *  stored domain row: the secret lives in the typed `api_key` column (ST-1),

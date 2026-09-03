@@ -343,6 +343,50 @@ export class SttAdapter implements SttRuntimeApi {
     const serverFetch: FetchLike = sttDiscoveryFetchOverride ?? ((input, init) => fetch(input, init));
     return discoverLocalSttServers(serverFetch);
   };
+
+  /** Live model discovery over the transient draft config (P8) — mirror of
+   *  `draftListTtsModels` in tts-adapter: the whisper-browser tier is a
+   *  fixed LOCAL roster (null → the route's clean 400); server backends
+   *  resolve their key EXACTLY like a transcription would (own form key →
+   *  profileId stored key, endpoint-guarded for openai-compat → auto-match)
+   *  so the catalog reflects the credential the profile would use. */
+  draftListSttModels: SttRuntimeApi["draftListSttModels"] = async (body) => {
+    if (body.backend === STT_BACKENDS.WhisperBrowser) return null;
+    let config: Record<string, unknown> = { ...body.config };
+    const formKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
+    if (formKey === "") {
+      delete config.apiKey;
+      if (body.profileId !== undefined) {
+        const profile = await this.stores.stt.getById(body.profileId);
+        if (profile !== null && profile.backend === body.backend) {
+          // Stored-key reuse is endpoint-guarded for openai-compat (the TTS
+          // draft rule): a saved key may only serve the endpoint it was
+          // saved with; gemini is vendor-keyed (no endpoint to guard).
+          const storedKey = profile.apiKey ?? "";
+          if (storedKey !== "") {
+            if (body.backend === STT_BACKENDS.OpenAiCompat) {
+              // Loose-bag read (house style — the union's endpoint lives on
+              // the compat arm only; the typeof guard narrows).
+              const bag = profile.config as Record<string, unknown>;
+              const incomingEndpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
+              const storedEndpoint = typeof bag.endpoint === "string" ? bag.endpoint.trim() : "";
+              if (incomingEndpoint !== "" && incomingEndpoint === storedEndpoint) config.apiKey = storedKey;
+            } else {
+              config.apiKey = storedKey;
+            }
+          }
+        }
+      }
+      if (typeof config.apiKey !== "string" || config.apiKey === "") {
+        // Draft auto-match (same cascade transcription uses): endpoint for
+        // openai-compat, vendor for gemini.
+        config = (await autoMatchSttKey(this.stores, body.backend, config)).config;
+      }
+    }
+    const backend = createSttBackend(body.backend, config as SttProfileConfig);
+    if (typeof backend.listModels !== "function") return null;
+    return backend.listModels();
+  };
 }
 
 /** Test seam for the STT discovery route — swaps the network fetch the pure

@@ -220,6 +220,51 @@ describe("gemini-stt: probe", () => {
   });
 });
 
+describe("gemini-stt: listModels (P8 — fetched picker for every listable backend)", () => {
+  test("catalog maps to bare ids, stripping the models/ prefix", async () => {
+    captureFetch(() =>
+      jsonResponse(200, { models: [{ name: "models/gemini-3.8-flash" }, { name: "models/gemini-3.8-pro" }] }),
+    );
+    const backend = makeBackend({ apiKey: "k" });
+    const list = await backend.listModels!();
+    expect(list).toEqual([
+      { id: "gemini-3.8-flash", label: "gemini-3.8-flash" },
+      { id: "gemini-3.8-pro", label: "gemini-3.8-pro" },
+    ]);
+  });
+
+  test("non-chat families are filtered out of the picker list", async () => {
+    captureFetch(() =>
+      jsonResponse(200, {
+        models: [
+          { name: "models/gemini-3.8-flash" },
+          { name: "models/gemini-2.5-flash-preview-tts" },
+          { name: "models/imagen-4.0-generate" },
+          { name: "models/veo-3.0" },
+          { name: "models/text-embedding-005" },
+          { name: "models/gemini-2.5-flash-native-audio" },
+          { name: "models/aqa" },
+        ],
+      }),
+    );
+    const backend = makeBackend({ apiKey: "k" });
+    const list = await backend.listModels!();
+    expect(list).toEqual([{ id: "gemini-3.8-flash", label: "gemini-3.8-flash" }]);
+  });
+
+  test("HTTP failure → GeminiSttError with status", async () => {
+    captureFetch(() => jsonResponse(403, { error: { message: "denied" } }));
+    const backend = makeBackend({ apiKey: "bad" });
+    try {
+      await backend.listModels!();
+      expect.unreachable();
+    } catch (error) {
+      expect(error.constructor.name).toBe("GeminiSttError");
+      expect((error as { status?: number }).status).toBe(403);
+    }
+  });
+});
+
 describe("gemini-stt: extractInteractionText (defensive containers)", () => {
   test("steps → candidates → output precedence", () => {
     expect(extractInteractionText(interactionsTextReply("from steps"))).toBe("from steps");
