@@ -141,3 +141,36 @@ export async function discoverLocalSttServers(): Promise<import("@vibe-tavern/do
   }
   return (await response.json()) as import("@vibe-tavern/domain").ProbeOutcome[];
 }
+// ─── Live model discovery (P8 — fetched picker for every listable backend) ──
+
+/** One entry of the live STT model catalog — the wire twin of the backend
+ *  SttModelInfo: OpenAI-compatible aggregators enrich entries (isFree /
+ *  description); the Gemini catalogue maps names to bare ids. */
+export interface SttModelListEntry {
+  id: string;
+  label: string;
+  isFree?: boolean;
+  description?: string;
+}
+
+/** Transient draft request over the CURRENT form config (P8) — mirror of
+ *  listTtsDraftModels in tts-api.ts: the form's just-typed key rides INSIDE
+ *  the config (formDraftConfig), profileId lets the server inject the stored
+ *  typed-column key for a matching endpoint. */
+export async function listSttDraftModels(body: {
+  backend: string;
+  config: Record<string, unknown>;
+  profileId?: string;
+}): Promise<SttModelListEntry[]> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/stt/draft/models`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`STT draft model list failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, 200)}` : ""}`);
+  }
+  return (await response.json()) as SttModelListEntry[];
+}

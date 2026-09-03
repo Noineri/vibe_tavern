@@ -8,7 +8,7 @@ import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { labelCls, inputCls } from "../form-field-classes.js";
-import { SttConfigFields } from "./SttConfigFields.js";
+import { monoUICls } from "../../../build/fields/field-styles.js";
 import { SttApiKeyField } from "./SttApiKeyField.js";
 import { SttLocalServerPanel } from "./SttLocalServerPanel.js";
 import { configString, updateConfigField } from "./stt-form-helpers.js";
@@ -42,20 +42,17 @@ interface SttProviderFormProps {
  *  family) whose ONLY allowed elements: provider preset, endpoint OR
  *  browser-model download, API key (+ auto-key hint), key-validity check
  *  (probe), local-backend setup reference. The MODEL element is FORBIDDEN
- *  here — model and tuning live in the level-2 outer profile settings.
- *  This is the STT member of the connection-card clone family
- *  (ProviderEditHeader · TtsProviderForm · SttProviderForm) — it VIOLATES
- *  today: SttConfigFields (model/language) and the emotion toggle render
- *  inside this form. The P8 restructure moves them to the level-2 outer
- *  profile settings; extraction → shared primitive is queued
- *  (STT_POST_PLAN_AUDIT_REPORT P11). */
+ *  here — model and tuning live in the level-2 outer profile settings
+ *  (SttRecognitionSection, P8). This is the STT member of the
+ *  connection-card clone family (ProviderEditHeader · TtsProviderForm ·
+ *  SttProviderForm) — COMPLIANT since P8; extraction → shared primitive
+ *  is queued (STT_POST_PLAN_AUDIT_REPORT P11). */
 export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt }: SttProviderFormProps) {
   const { t } = useT();
   const [testOk, setTestOk] = useState<boolean | null>(null);
   const [testing, setTesting] = useState(false);
   const isBrowser = form.backend === STT_BACKENDS.WhisperBrowser;
   const isCompat = form.backend === STT_BACKENDS.OpenAiCompat;
-  const showsEmotionToggle = STT_BACKEND_EMOTION_CAPABILITY[form.backend];
   const apiKey = form.apiKey;
   // P2 — the pre-save draft hint (TTS F4/D21 pattern): server-decorated
   //  value for saved profiles, client-side mirror for drafts — the hint
@@ -180,44 +177,20 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       )}
 
-      {/* Shared per-backend config fields (endpoint/model/language). */}
-      <SttConfigFields
-        backend={form.backend}
-        config={form.config}
-        onUpdate={(key, value) => updateConfigField(stt, form, key, value)}
-      />
-
-      {/* ST-7: the tone-annotation toggle — rendered ONLY for capable
-          backends (gemini); pure-ASR backends never see it and the server
-          forces the stored flag off. */}
-      {showsEmotionToggle && (
-        <div className="mb-3" data-testid="stt-emotion-toggle-block">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={form.emotionAnnotation}
-            onClick={() => updateForm("emotionAnnotation", !form.emotionAnnotation)}
-            className="flex cursor-pointer items-start gap-2.5 text-left"
-            data-testid="stt-emotion-toggle"
-          >
-            <span
-              className={cn(
-                "mt-0.5 flex h-[18px] w-[32px] shrink-0 items-center rounded-full border px-[2px] transition-colors",
-                form.emotionAnnotation ? "border-accent bg-accent/20 justify-end" : "border-border bg-s3 justify-start",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-[12px] w-[12px] rounded-full transition-colors",
-                  form.emotionAnnotation ? "bg-accent" : "bg-t4",
-                )}
-              />
-            </span>
-            <span className="flex flex-col gap-0.5">
-              <span className="font-ui text-[13px] text-t1">{t("stt_emotion_label")}</span>
-              <span className="font-ui text-[11px] text-t3">{t("stt_emotion_hint")}</span>
-            </span>
-          </button>
+      {/* Endpoint (openai-compat only — the connection-level address;
+   *          gemini talks to the fixed Gemini API endpoint, ST-7; the model
+   *          and language moved to the level-2 recognition section, P8). */}
+      {isCompat && (
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("stt_field_endpoint")}</label>
+          <input
+            type="text"
+            value={configString(form.config, "endpoint")}
+            onChange={(e) => updateConfigField(stt, form, "endpoint", e.target.value)}
+            placeholder="https://api.openai.com/v1"
+            className={monoUICls}
+            data-testid="stt-field-endpoint"
+          />
         </div>
       )}
 

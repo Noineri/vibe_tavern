@@ -26,6 +26,20 @@ export function updateConfigField(
   hook.setForm({ config: next });
 }
 
+/** TRANSIENT draft config for the model-catalog request (P8) — the STT twin
+ *  of the TTS formDraftConfig: the form's just-typed key rides INSIDE the
+ *  loose config for the /api/stt/draft/models call only (never stored, never
+ *  saved — the create/update payload keeps the key on the write-only top
+ *  level field). */
+export function formDraftConfig(form: {
+  config: Record<string, unknown>;
+  apiKey: string;
+}): Record<string, unknown> {
+  const trimmed = form.apiKey.trim();
+  if (trimmed === "") return form.config;
+  return { ...form.config, apiKey: trimmed };
+}
+
 /** Reads an optional string/number config key with a display fallback. The
  *  `typeof` guard narrows `unknown` — no casts needed. */
 export function configString(config: Record<string, unknown>, key: string, fallback = ""): string {
