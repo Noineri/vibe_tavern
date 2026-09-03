@@ -57,6 +57,14 @@ interface DropdownSelectProps {
  *  wide popup when the options need more room (long model ids + trailing
  *  star + context length). Default: follow the trigger width. */
   contentWidth?: number;
+  /** Whether the selected option's `detail` renders inside the COLLAPSED
+ *  trigger. Default true (historical behavior — form-field dropdowns like
+ *  the TTS narration picker show it inline). Inline/footer controls pass
+ *  false: an arbitrary-length description inside a nowrap trigger
+ *  guarantees an oversized control (inline-row gotcha, AGENTS.md — the
+ *  STT dictation footer shipped exactly that defect). The detail always
+ *  renders IN FULL inside the opened list, wrapping, never truncated. */
+  triggerDetail?: boolean;
 }
 
 // Built on cmdk (Command) + Radix Popover: a real searchable combobox.
@@ -78,6 +86,7 @@ export function DropdownSelect({
   disabled,
   searchable = true,
   triggerClassName,
+  triggerDetail = true,
   triggerTestId,
   triggerLeading,
   side = "bottom",
@@ -145,14 +154,20 @@ export function DropdownSelect({
             : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
         )}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate">{o.label}</span>
+        {/* Popup rows grow DOWN, never sideways (the STT footer incident,
+         * 2026-09-05): both the label and the description wrap in full —
+         * authored setting text is never ellipsized (owner rule), and
+         * user-data labels don't truncate here either because this list IS
+         * the place the full value lives. Vertical scroll handles length;
+         * horizontal scroll must never appear. */}
+        <div className="flex min-w-0 flex-col gap-[1px]">
+          <span className="min-w-0 break-words">{o.label}</span>
           {o.detail && (
-            <span className="shrink-0 text-[11px] text-t2">
+            <span className="min-w-0 break-words text-[11px] text-t2">
               {o.detail}
             </span>
           )}
-        </span>
+        </div>
         {o.trailing && (
           // Stop pointer events so clicking a trailing action (rename /
           // delete) does NOT fire the cmdk item's onSelect.
@@ -189,11 +204,11 @@ export function DropdownSelect({
             {triggerLeading}
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
               {display}
-              {selected?.detail && (
+              {triggerDetail && selected?.detail ? (
                 <span className="ml-2 text-[11px] font-medium text-t2">
                   {selected.detail}
                 </span>
-              )}
+              ) : null}
             </span>
           </span>
           <span className="ml-2 shrink-0 text-t3">{Ic.caret("d")}</span>

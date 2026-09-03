@@ -70,6 +70,16 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
         disabled={noProfiles}
         aria-label={t("dictation_enable")}
       />
+      {/* Inline-footer dropdowns (AGENTS.md inline-row gotcha, 2026-09-05):
+       *  the default trigger chrome is w-full — a FORM-FIELD shape that
+       *  stretched both selects across the whole footer and pushed Save
+       *  off-window. Inline slot ⇒ content-sized auto width with a cap;
+       *  the profile value (user data) may ellipsize under the cap — the
+       *  full name lives in the opened list; the mode value is short
+       *  authored text. The mode detail NEVER renders in the collapsed
+       *  trigger (triggerDetail={false}) — it shows IN FULL, wrapping, only
+       *  in the opened list (bounded contentWidth ⇒ wrap down, no
+       *  horizontal scroll). */}
       <DropdownSelect
         contentWidth={220}
         searchable={false}
@@ -86,10 +96,12 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
           void patchUiSettingsAction({ activeDictationProfileId: id === NONE_VALUE ? null : id });
         }}
         disabled={!enabled || profiles.length === 0}
-        className="min-w-0"
+        triggerClassName="w-auto min-w-0 max-w-[240px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[12px] text-t1 hover:border-accent"
       />
       <DropdownSelect
         searchable={false}
+        triggerDetail={false}
+        contentWidth={320}
         triggerTestId="dictation-mode-select"
         value={mode}
         options={DICTATION_MODES.map((m) => ({
@@ -99,7 +111,7 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
         }))}
         onChange={(value) => setMode(value as DictationMode)}
         disabled={!enabled || noProfiles}
-        className="min-w-0"
+        triggerClassName="w-auto min-w-0 max-w-[200px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[12px] text-t1 hover:border-accent"
       />
     </div>
   );

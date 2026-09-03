@@ -175,3 +175,32 @@ describe("SttDictationBlock (P6, footer-inline)", () => {
     }
   });
 });
+
+describe("SttDictationBlock footer-row layout (inline-row gotcha pin, 2026-09-05)", () => {
+  /** Row-budget pins: inline-footer triggers must be content-sized with a
+   *  cap (the default w-full chrome stretched both selects across the whole
+   *  footer and pushed Save off-window), and the mode description must not
+   *  bloat the collapsed trigger — it renders IN FULL, wrapping, only in the
+   *  opened list (bounded popup ⇒ grows down, never sideways). */
+  test("mode trigger carries no description; the opened list shows it in full, wrapped", async () => {
+    const view = mount();
+    const user = userEvent.setup();
+    await user.click(view.getByRole("switch")); // enable first — gated controls
+    const modeTrigger = view.getByTestId("dictation-mode-select");
+    // Raw i18n keys render as-is (house test pattern) — the description key
+    // must be absent from the collapsed trigger but present in the list.
+    expect(modeTrigger.textContent).not.toContain("dictation_mode_append_desc");
+    expect(modeTrigger.textContent).toContain("dictation_mode_append");
+    expect(modeTrigger.className).toContain("max-w-[200px]");
+    expect(view.getByTestId("dictation-profile-select").className).toContain("max-w-[240px]");
+    await user.click(modeTrigger);
+    await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeTruthy());
+    const desc = [...view.baseElement.querySelectorAll("[cmdk-item] span.break-words")].find((s) => s.className.includes("text-t2"));
+    expect(desc?.textContent).toContain("dictation_mode_append_desc");
+    // Wrapped, not truncated: the description span must not carry the
+    // truncate/ellipsis contract (owner rule: setting text is never cut).
+    expect(desc?.className).not.toContain("truncate");
+    expect(desc?.className).not.toContain("text-ellipsis");
+    expect(desc?.className).toContain("break-words");
+  });
+});
