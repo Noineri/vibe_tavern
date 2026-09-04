@@ -508,7 +508,6 @@
   "stt_key_from_provider_hint": "Key is taken from the \"{name}\" provider profile — type your own key here to override.",
   "stt_is_default": "Default",
   "stt_make_default": "Make default",
-  "stt_test_save_first": "Save the profile before testing the connection",
   "stt_test_browser_note": "This profile transcribes locally in the browser — no remote connection to test.",
   "stt_local_desc_faster_whisper": "OpenAI-compatible Whisper server (CPU)",
   "stt_local_desc_localai": "LocalAI — OpenAI-compatible STT (and TTS) on your machine",

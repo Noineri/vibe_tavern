@@ -2,8 +2,7 @@ import { useState } from "react";
 import { DEFAULT_WHISPER_MODEL_ID, STT_BACKENDS, STT_BACKEND_EMOTION_CAPABILITY } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { STT_QUICKSTARTS, getSttQuickstart } from "../../../../lib/stt/stt-quickstarts.js";
-import { transcribeSttAudio } from "../../../../api/stt-api.js";
-import { buildSilentTestWav } from "../../../../lib/stt/test-audio.js";
+import { listSttDraftModels } from "../../../../api/stt-api.js";
 import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
@@ -12,22 +11,21 @@ import { monoUICls } from "../../../build/fields/field-styles.js";
 import { SttApiKeyField } from "./SttApiKeyField.js";
 import { SttLocalServerPanel } from "./SttLocalServerPanel.js";
 import { WhisperModelPanel } from "./WhisperModelPanel.js";
-import { configString, updateConfigField } from "./stt-form-helpers.js";
+import { configString, formDraftConfig, updateConfigField } from "./stt-form-helpers.js";
 import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 
-/** Test connection semantics for the STT tab (ST-5b scope deviation, noted):
- *  there is NO draft-transcribe route — the test button transcribes with a
- *  SAVED profile only, so it is enabled when the form belongs to a saved
- *  profile AND is clean (dirty would mean the profile on disk differs from
- *  the form). The clip is a silent WAV built client-side (test-audio.ts) —
- *  a successful round-trip proves endpoint+key+model without a mic. */
-function canTestConnection(form: SttProfileForm, dirty: boolean): boolean {
-  // Any SERVER backend can round-trip the silent WAV — openai-compat and
-  // gemini (ST-7); the browser tier transcribes client-side and has nothing
-  // remote to test.
-  return form.id !== null && !dirty && form.backend !== STT_BACKENDS.WhisperBrowser;
+/** Test-connection semantics — PROBE (audit P10, the TTS card pattern):
+ *  the button validates key + endpoint + catalog via the draft-models
+ *  route (P8), NOT by transcribing. The form's just-typed key rides inside
+ *  the draft config (formDraftConfig), and a saved profile's stored key is
+ *  injected server-side — so an UNSAVED/dirty draft is testable exactly
+ *  like TTS (no save-first constraint; transcription had one only because
+ *  it required a saved profile id). The browser tier transcribes
+ *  client-side and has nothing remote to test. */
+function canTestConnection(form: SttProfileForm): boolean {
+  return form.backend !== STT_BACKENDS.WhisperBrowser;
 }
 
 interface SttProviderFormProps {
@@ -94,11 +92,17 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
   }
 
   async function handleTest(): Promise<void> {
-    if (testing || !canTestConnection(form, stt.dirty) || form.id === null) return;
+    if (testing || !canTestConnection(form)) return;
     setTesting(true);
     setTestOk(null);
     try {
-      await transcribeSttAudio(form.id, buildSilentTestWav());
+      // Single probe (TTS fans out models+voices; STT has one catalog —
+      // the model list IS the reachability proof).
+      await listSttDraftModels({
+        backend: form.backend,
+        config: formDraftConfig(form),
+        profileId: form.id ?? undefined,
+      });
       setTestOk(true);
     } catch {
       setTestOk(false);
@@ -235,54 +239,49 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       )}
 
-      {/* Test connection card (server backends — openai-compat and gemini;
-          the browser backend has nothing remote to test; its "status" is the
-          roster badge above). */}
+      {/* Test connection card — PROBE semantics (P10): key+endpoint+catalog
+          via the draft-models route; works on unsaved drafts like TTS.
+          Server backends only (openai-compat and gemini); the browser
+          backend has nothing remote to test — its "status" is the roster
+          badge above. */}
       {!isBrowser ? (
         <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="stt-test-card">
-          {canTestConnection(form, stt.dirty) ? (
-            <div>
-              <div className="flex">
-                <button
-                  type="button"
-                  data-testid="stt-test-connection-btn"
-                  className={cn(
-                    "min-h-11 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0 sm:py-1.5",
-                    testOk === true
-                      ? "border-success/30 bg-success/10 text-success"
-                      : testOk === false
-                        ? "border-danger/30 bg-danger/10 text-danger"
-                        : "border-border bg-s2 text-t2 hover:border-border2 hover:text-t1",
-                  )}
-                  onClick={() => void handleTest()}
-                  disabled={testing}
-                >
-                  {testing ? t("testing") : t("test_connection")}
-                </button>
+          <div>
+            <div className="flex">
+              <button
+                type="button"
+                data-testid="stt-test-connection-btn"
+                className={cn(
+                  "min-h-11 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0 sm:py-1.5",
+                  testOk === true
+                    ? "border-success/30 bg-success/10 text-success"
+                    : testOk === false
+                      ? "border-danger/30 bg-danger/10 text-danger"
+                      : "border-border bg-s2 text-t2 hover:border-border2 hover:text-t1",
+                )}
+                onClick={() => void handleTest()}
+                disabled={testing}
+              >
+                {testing ? t("testing") : t("test_connection")}
+              </button>
+            </div>
+            {testOk === true && (
+              <div className="mt-3" data-testid="stt-test-success">
+                <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success">
+                  <Icons.Check />
+                  {t("connection_successful")}
+                </span>
               </div>
-              {testOk === true && (
-                <div className="mt-3" data-testid="stt-test-success">
-                  <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success">
-                    <Icons.Check />
-                    {t("connection_successful")}
-                  </span>
-                </div>
-              )}
-              {testOk === false && (
-                <div className="mt-3" data-testid="stt-test-failure">
-                  <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
-                    <Icons.Close />
-                    {t("connection_failed")}
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : form.id === null || stt.dirty ? (
-            <div className="flex items-center gap-2 font-ui text-[13px] text-t3" data-testid="stt-test-dot-save-first">
-              <span className="h-2 w-2 rounded-full bg-t4" />
-              {t("stt_test_save_first")}
-            </div>
-          ) : null}
+            )}
+            {testOk === false && (
+              <div className="mt-3" data-testid="stt-test-failure">
+                <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
+                  <Icons.Close />
+                  {t("connection_failed")}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="my-3 rounded-lg border border-border bg-surface p-3.5" data-testid="stt-browser-test-note">

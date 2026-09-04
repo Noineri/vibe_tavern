@@ -216,12 +216,40 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
     expect(listSttDraftModelsMock).not.toHaveBeenCalled();
   });
 
-  it("edit mode on an unsaved/dirty form disables the test (save-first hint)", async () => {
-    const stt = makeStt({ headerMode: "edit", dirty: true });
+  it("P10 PIN: a dirty/unsaved draft gets the probe button (TTS parity — no save-first)", async () => {
+    const stt = makeStt({ headerMode: "edit", dirty: true, form: makeForm({ id: null }) });
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(view.getByTestId("stt-profile-name-input")).toBeTruthy());
-    expect(view.getByTestId("stt-test-dot-save-first")).toBeTruthy();
-    expect(view.queryByTestId("stt-test-connection-btn")).toBeNull();
+    expect(view.queryByTestId("stt-test-dot-save-first")).toBeNull();
+    expect(view.getByTestId("stt-test-connection-btn")).toBeTruthy();
+  });
+
+  it("P10: the test button probes the catalog via the draft-models route (key rides inside the draft config)", async () => {
+    const stt = makeStt({
+      headerMode: "edit",
+      form: makeForm({ apiKey: "sk-live", config: { endpoint: "https://api.openai.com/v1", model: "whisper-1" } }),
+    });
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId("stt-test-connection-btn")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("stt-test-connection-btn").click();
+    });
+    await waitFor(() => expect(view.getByTestId("stt-test-success")).toBeTruthy());
+    const call = listSttDraftModelsMock.mock.calls.at(-1)?.[0];
+    expect(call?.backend).toBe("openai-compat");
+    expect(call?.profileId).toBe("p1");
+    expect(call?.config["apiKey"]).toBe("sk-live");
+  });
+
+  it("P10: a rejected probe shows the failure badge (probe semantics, no transcription)", async () => {
+    const stt = makeStt({ headerMode: "edit" });
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId("stt-test-connection-btn")).toBeTruthy());
+    listSttDraftModelsMock.mockImplementationOnce(() => Promise.reject(new Error("probe failed: 502")));
+    await act(async () => {
+      view.getByTestId("stt-test-connection-btn").click();
+    });
+    await waitFor(() => expect(view.getByTestId("stt-test-failure")).toBeTruthy());
   });
 
   it("quickstart selection is only offered for openai-compat", async () => {
