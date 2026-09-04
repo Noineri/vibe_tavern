@@ -99,7 +99,11 @@ export interface WhisperMirrorFile {
   status: 200;
   contentType: string;
   contentLength: string;
-  body: ReadableStream<Uint8Array>;
+  /** Cache-hit marker: when set, `body` is undefined and the route serves
+   *  `new Response(Bun.file(filePath))` — Bun.serve then answers with a
+   *  REAL Content-Length on the wire (sendfile), no chunked re-encode. */
+  filePath?: string;
+  body?: ReadableStream<Uint8Array>;
 }
 
 export interface WhisperMirrorError {
@@ -204,7 +208,9 @@ export class WhisperMirrorService {
         status: 200,
         contentType: guessContentType(repoPath),
         contentLength: String(file.size),
-        body: file.stream() as ReadableStream<Uint8Array>,
+        // Bun.file response, not a stream: sendfile carries a true
+        // Content-Length past Bun.serve's chunked re-encoding (P14).
+        filePath: cachePath,
       };
     }
 

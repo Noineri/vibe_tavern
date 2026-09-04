@@ -107,7 +107,7 @@ describe("WhisperMirrorService", () => {
     const service = makeService();
     const result = await service.handle(REPO, "config.json");
     if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
-    const text = await new Response(result.body).text();
+    const text = await new Response(result.body ?? null).text();
     expect(text).toBe('{"model_type":"whisper"}');
     expect(fileFetchLog().length).toBe(1);
     expect(fileFetchLog()[0]?.url).toBe(buildWhisperHuggingFaceUrl(REPO, "config.json"));
@@ -207,7 +207,7 @@ describe("WhisperMirrorService", () => {
     const service = makeService();
     const result = await service.handle(REPO, "onnx/model.onnx");
     if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
-    const text = await new Response(result.body).text();
+    const text = await new Response(result.body ?? null).text();
     expect(text).toBe("redirected-weights");
     // File hops only — the CDN hop carries no Content-Length, so a tree
     // lookup (P14) also fires; its count is pinned separately.

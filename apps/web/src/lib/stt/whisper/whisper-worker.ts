@@ -19,6 +19,7 @@ import type { AutomaticSpeechRecognitionPipeline } from "@huggingface/transforme
 
 import { buildWhisperAsrOptions } from "./whisper-asr-options.js";
 import { rewriteWhisperHfUrl } from "./whisper-mirror.js";
+import { restoreMirrorContentLength } from "../../model-mirror/mirror-content-length.js";
 import type {
   WhisperDevice,
   WhisperDtype,
@@ -33,7 +34,11 @@ const mirroredFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Re
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const mirrored = rewriteWhisperHfUrl(url);
   if (mirrored !== null) {
-    return directFetch(mirrored, init);
+    // P14 wire fix: Bun.serve strips Content-Length from streaming mirror
+    // responses (chunked) — the mirror carries the true size in the custom
+    // header and transformers.js needs a real content-length for its
+    // download total, so rebuild it before the pipeline sees the Response.
+    return directFetch(mirrored, init).then(restoreMirrorContentLength);
   }
   return directFetch(input, init);
 };

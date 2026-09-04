@@ -100,7 +100,7 @@ describe("KokoroMirrorService", () => {
 		expect(result.status).toBe(200);
 		if (result.status !== 200) throw new Error("unreachable");
 		expect(calls).toEqual([buildHuggingFaceUrl("onnx/model_q4f16.onnx")]);
-		const text = await new Response(result.body).text();
+		const text = await new Response(result.body ?? null).text();
 		expect(text).toBe("MODEL-BYTES");
 		// The disk branch writes concurrently — wait until it lands AND pin the
 		// bytes (guards the BunFile.write streaming path against silent
@@ -123,7 +123,12 @@ describe("KokoroMirrorService", () => {
 		await pollUntilFileExists(join(tmpRoot, "kokoro-model-cache", "from-cache.onnx"));
 		const second = await service.handle("from-cache.onnx");
 		if (second.status !== 200) throw new Error("expected 200");
-		expect(await new Response(second.body).text()).toBe("CACHED-ONCE");
+		// P14: cache hits hand the route a Bun.file path (sendfile → real
+		// Content-Length on the wire), not a stream — the body now lives on
+		// disk at that path.
+		expect(second.filePath).toBe(join(tmpRoot, "kokoro-model-cache", "from-cache.onnx"));
+		expect(await Bun.file(second.filePath ?? "").text()).toBe("CACHED-ONCE");
+		expect(second.contentLength).toBe(String("CACHED-ONCE".length));
 		expect(second.status).toBe(200);
 		expect(fetched).toBe(1);
 	});

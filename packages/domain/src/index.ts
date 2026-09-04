@@ -19,6 +19,7 @@ export * from "./experience-random.js";
 export * from "./experience-round-limits.js";
 export * from "./ids.js";
 export * from "./logger.js";
+export * from "./model-mirror.js";
 export * from "./platform-constants.js";
 export * from "./prompt-canvas.js";
 export * from "./prompt-slot.js";

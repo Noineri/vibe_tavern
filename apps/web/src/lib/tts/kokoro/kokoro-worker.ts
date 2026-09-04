@@ -19,6 +19,7 @@ import { KokoroTTS } from "kokoro-js";
 import type { GenerateOptions } from "kokoro-js";
 
 import { tryResolveKokoroVoice } from "../kokoro-voices.js";
+import { restoreMirrorContentLength } from "../../model-mirror/mirror-content-length.js";
 import { KokoroGenerateError, KokoroModelNotLoadedError } from "./kokoro-errors.js";
 import { rewriteHfUrl } from "./kokoro-mirror.js";
 import type {
@@ -40,7 +41,12 @@ const mirroredFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Re
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const mirrored = rewriteHfUrl(url);
   if (mirrored !== null) {
-    return directFetch(mirrored, init);
+    // P14 wire fix: Bun.serve strips Content-Length from streaming mirror
+    // responses (chunked) — the mirror carries the true size in the custom
+    // header and kokoro-js/transformers.js need a real content-length for
+    // their download total, so rebuild it before the pipeline sees the
+    // Response.
+    return directFetch(mirrored, init).then(restoreMirrorContentLength);
   }
   return directFetch(input, init);
 };
