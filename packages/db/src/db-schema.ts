@@ -1001,6 +1001,34 @@ export const promptTraces = sqliteTable('prompt_traces', {
   chatBranchIdx: index('idx_prompt_traces_chat_branch').on(table.chatId, table.branchId, table.createdAt),
 }));
 
+// ─── promptTraceChunks / promptTraceChunkRefs ──────────────────────────────
+
+/**
+ * Content-addressed store for the large payload strings of prompt traces
+ * (see trace-chunking.ts). One row per unique string (sha256 id); many traces
+ * reference the same chunk — the chat history shared by every later trace in
+ * a chat is stored once. No FK: chunks may be shared by traces across chats;
+ * orphaned chunks are reclaimed by sweepOrphanChunks after trace deletions.
+ */
+export const promptTraceChunks = sqliteTable('prompt_trace_chunks', {
+  id: text('id').primaryKey(),
+  byteSize: integer('byte_size').notNull(),
+  content: text('content').notNull(),
+});
+
+/**
+ * Inverted index trace→chunk, written in the same transaction as the trace
+ * row. Powers orphan-chunk sweeps without parsing skeleton JSON. Derived
+ * data — deliberately no FK to prompt_traces (deletions cascade in SQL before
+ * the sweep runs).
+ */
+export const promptTraceChunkRefs = sqliteTable('prompt_trace_chunk_refs', {
+  traceId: text('trace_id').notNull(),
+  chunkId: text('chunk_id').notNull(),
+}, (table) => ({
+  refPk: primaryKey({ columns: [table.traceId, table.chunkId] }),
+}));
+
 // ─── uiSettings ────────────────────────────────────────────────────────────────
 
 export const uiSettings = sqliteTable('ui_settings', {

@@ -447,6 +447,8 @@ export class ChatRuntime {
 
   async deleteMessage(chatId: ChatId, messageId: string): Promise<MessageResponse> {
     await this.deps.chatApp.deleteMessage(messageId);
+    // Traces died with the message (FK cascade) — reclaim chunks they alone referenced.
+    await this.deps.traces.sweepOrphanedChunks();
     return await this.deps.buildMessageResponse(chatId, { summaries: true });
   }
 
@@ -483,6 +485,7 @@ export class ChatRuntime {
     const typedChatId = brandId<ChatId>(chatId);
     const typedBranchId = brandId<ChatBranchId>(branchId);
     await this.deps.chatApp.deleteBranch(typedChatId, typedBranchId);
+    await this.deps.traces.sweepOrphanedChunks();
     this.pendingPromptTraceByChat.delete(typedChatId);
     return await this.deps.buildBranchResponse(typedChatId);
   }
@@ -506,6 +509,7 @@ export class ChatRuntime {
     this.deps.chatOrder.remove(typedChatId);
     this.pendingPromptTraceByChat.delete(typedChatId);
     await this.deps.chats.delete(typedChatId);
+    await this.deps.traces.sweepOrphanedChunks();
     // Return the refreshed chats list so the sidebar deterministically drops
     // the deleted chat. Previously the route returned 204 with no body, so the
     // frontend relied on a racy fire-and-forget bootstrap to refresh the list

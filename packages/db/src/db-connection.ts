@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as schema from './db-schema.js';
+import { dedupePromptTracePayloads } from './trace-chunk-migration.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -1038,6 +1039,16 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
     // rebuild whose target table is still in legacy shape (the watermark has
     // moved past it, so migrate() will never retry it on its own).
     await repairSkippedRebuilds(sqlite, migrationsFolder);
+
+    // One-time trace payload dedup (see trace-chunk-migration.ts). Runs after
+    // all schema passes so the chunk tables exist; batched + idempotent, so a
+    // crash mid-pass just re-runs it on the next boot. On large legacy DBs
+    // this rewrites every prompt_traces row once and then VACUUMs — expect a
+    // one-time slower boot with a smaller DB file afterwards.
+    const dedupeStats = dedupePromptTracePayloads(sqlite);
+    if (dedupeStats && dedupeStats.rewritten > 0) {
+      console.log(`[db] Trace chunk dedup: ${dedupeStats.rewritten}/${dedupeStats.traces} traces rewritten, ${dedupeStats.chunksStored} unique chunks stored (~${(dedupeStats.freedBytesEstimate / 1048576).toFixed(0)} MB of payload moved off rows)${dedupeStats.vacuumed ? ', VACUUM complete' : ''}.`);
+    }
   } finally {
     // Restore FK enforcement for normal app queries (the OFF above was scoped
     // to the migration phase only). See the #5782 note above for why this is
