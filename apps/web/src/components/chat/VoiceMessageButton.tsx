@@ -28,7 +28,7 @@ import { Icons } from "../shared/icons.js";
 export interface VoiceMessageButtonProps {
   /** Upload + add the finished clip as a voice draft attachment. */
   onRecorded(blob: Blob, durationMs: number): Promise<boolean>;
-  /** Test seam — fake recorder factory (happy-dom has no MediaRecorder). */
+  /** Test seam — fake recorder factory (happy-dom has no WebAudio capture). */
   recorderFactory?: () => VoiceRecorder;
 }
 

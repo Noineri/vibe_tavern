@@ -1,11 +1,13 @@
 /**
- * Pure Float32 → 16-bit PCM WAV encoder for the Kokoro in-browser path.
+ * Pure Float32 → 16-bit PCM WAV encoder (shared audio util).
  *
- * kokoro-js emits `RawAudio` (Float32 samples at 24 kHz); playback surfaces
- * (the `<audio>` preview, the serial narration queue) consume WAV Blobs, so
- * the client encodes once per generated paragraph. Pure and total: samples are
- * clamped to [-1, 1]; NaN/Infinity map to 0 (defensive against a malformed
- * waveform); no DOM.
+ * Two in-browser producers share it: kokoro-js emits `RawAudio` (Float32
+ * samples at 24 kHz) for TTS playback, and the voice recorder captures
+ * microphone PCM (resampled to 16 kHz) for dictation + voice notes.
+ * Playback surfaces (`<audio>`, the serial narration queue) and the
+ * upload/STT pipeline consume WAV Blobs, so each producer encodes once.
+ * Pure and total: samples are clamped to [-1, 1]; NaN/Infinity map to 0
+ * (defensive against a malformed waveform); no DOM.
  */
 
 /** Bytes per sample (16-bit signed little-endian). */

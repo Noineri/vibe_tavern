@@ -5,7 +5,7 @@ import {
   KokoroModelNotLoadedError,
   KokoroVoiceNotFoundError,
 } from "./kokoro-errors.js";
-import { float32ToWavBytes } from "./float32-to-wav.js";
+import { float32ToWavBytes } from "../../audio/float32-to-wav.js";
 import { KokoroTtsClient, type WorkerFactory, type WorkerLike } from "./kokoro-client.js";
 import type { KokoroWorkerRequest, KokoroWorkerResponse } from "./kokoro-protocol.js";
 

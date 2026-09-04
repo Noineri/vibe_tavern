@@ -18,7 +18,7 @@ import {
   KokoroModelNotLoadedError,
   KokoroVoiceNotFoundError,
 } from "./kokoro-errors.js";
-import { float32ToWavBytes } from "./float32-to-wav.js";
+import { float32ToWavBytes } from "../../audio/float32-to-wav.js";
 import { resolveKokoroVoice } from "../kokoro-voices.js";
 import type {
   KokoroDevice,

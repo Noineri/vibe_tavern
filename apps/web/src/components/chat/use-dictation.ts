@@ -6,7 +6,7 @@
  * caller's mode decision (`applyDictationTranscript`).
  *
  * The transcriber and recorder are injectable seams — tests run without a
- * microphone, MediaRecorder, or the whisper worker. The default transcriber
+ * microphone, WebAudio capture, or the whisper worker. The default transcriber
  * branches on the active profile's backend: whisper-browser goes through the
  * shared in-browser engine (one worker, one model, app lifetime), openai-compat
  * posts the clip to `/api/stt/transcribe` (server-side key resolution).
