@@ -9,6 +9,8 @@ import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { labelCls, inputCls } from "../form-field-classes.js";
 import { monoUICls } from "../../../build/fields/field-styles.js";
 import { SttApiKeyField } from "./SttApiKeyField.js";
+import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.js";
+import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
 import { SttLocalServerPanel } from "./SttLocalServerPanel.js";
 import { WhisperModelPanel } from "./WhisperModelPanel.js";
 import { configString, formDraftConfig, updateConfigField } from "./stt-form-helpers.js";
@@ -43,9 +45,11 @@ interface SttProviderFormProps {
  *  (probe), local-backend setup reference. The MODEL element is FORBIDDEN
  *  here — model and tuning live in the level-2 outer profile settings
  *  (SttRecognitionSection, P8). This is the STT member of the
- *  connection-card clone family (ProviderEditHeader · TtsProviderForm ·
- *  SttProviderForm) — COMPLIANT since P8; extraction → shared primitive
- *  is queued (STT_POST_PLAN_AUDIT_REPORT P11). */
+ *  connection-card family (ProviderEditHeader · TtsProviderForm ·
+ *  SttProviderForm) — COMPLIANT since P8; P11 shares the mechanically
+ *  identical leaves (masked key field, auto-key hint, probe badges). This
+ *  form keeps its own preset/endpoint/panel composition because those
+ *  elements differ. */
 export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt }: SttProviderFormProps) {
   const { t } = useT();
   const [testOk, setTestOk] = useState<boolean | null>(null);
@@ -214,12 +218,10 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
               provider profile (or openai-compat TTS profile) whose endpoint
               auto-matches — typing an own key above overrides it. */}
           {!apiKey && !form.hasStoredApiKey && autoKeyName !== null && (
-            <div className="mt-1.5 flex items-center gap-1.5 font-ui text-[11px] text-t3" data-testid="stt-key-source-hint">
-              <span className="[&_svg]:h-[12px] [&_svg]:w-[12px] shrink-0">
-                <Icons.lock />
-              </span>
-              {t("stt_key_from_provider_hint", { name: autoKeyName })}
-            </div>
+            <ConnectionAutoKeyHint
+              testId="stt-key-source-hint"
+              message={t("stt_key_from_provider_hint", { name: autoKeyName })}
+            />
           )}
         </div>
       )}
@@ -265,21 +267,14 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
                 {testing ? t("testing") : t("test_connection")}
               </button>
             </div>
-            {testOk === true && (
-              <div className="mt-3" data-testid="stt-test-success">
-                <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success">
-                  <Icons.Check />
-                  {t("connection_successful")}
-                </span>
-              </div>
-            )}
-            {testOk === false && (
-              <div className="mt-3" data-testid="stt-test-failure">
-                <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
-                  <Icons.Close />
-                  {t("connection_failed")}
-                </span>
-              </div>
+            {testOk !== null && (
+              <ConnectionProbeStatus
+                ok={testOk}
+                successTestId="stt-test-success"
+                failureTestId="stt-test-failure"
+                successText={t("connection_successful")}
+                failureText={t("connection_failed")}
+              />
             )}
           </div>
         </div>

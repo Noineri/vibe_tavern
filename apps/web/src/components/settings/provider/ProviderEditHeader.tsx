@@ -16,11 +16,12 @@ import { DIRECT_PROXY_SELECTION, INHERIT_PROXY_SELECTION, proxyPolicyFromSelecti
  *  browser-model download, API key (+ auto-key hint), key-validity check
  *  (probe), local-backend setup reference. The MODEL element is FORBIDDEN
  *  here — model and tuning live in the level-2 outer profile settings.
- *  This is the LLM member of the connection-card clone family
+ *  This is the LLM member of the connection-card family
  *  (ProviderEditHeader · TtsProviderForm · SttProviderForm); it CONFORMS:
  *  the model selector renders only in the post-save config section
- *  (showConfig in ProviderModal). Extraction → shared primitive is queued
- *  (STT_POST_PLAN_AUDIT_REPORT P11). */
+ *  (showConfig in ProviderModal). P11 shares the mechanically identical
+ *  STT/TTS leaves; this header keeps its LLM-specific composition (preset,
+ *  proxy routing, and save controls) because those elements differ. */
 interface ProviderEditHeaderProps {
   form: FormState;
   editingId: string | null;

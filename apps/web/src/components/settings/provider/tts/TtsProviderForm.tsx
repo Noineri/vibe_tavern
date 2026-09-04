@@ -12,6 +12,8 @@ import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { labelCls, inputCls } from "../form-field-classes.js";
 import { monoUICls } from "../../../build/fields/field-styles.js";
 import { TtsApiKeyField } from "./TtsApiKeyField.js";
+import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.js";
+import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { ttsProviderSegmentOf, ttsPresetIdOf, ttsUiSpecFor, ttsUiVariantOf, type TtsProviderSegment } from "./tts-backend-ui.js";
 import { configString, formDraftConfig } from "./tts-form-helpers.js";
@@ -30,11 +32,12 @@ type TtsHook = ReturnType<typeof useTtsProfiles>;
  *  browser-model download, API key (+ auto-key hint), key-validity check
  *  (probe), local-backend setup reference. The MODEL element is FORBIDDEN
  *  here — model and tuning live in the level-2 outer profile settings.
- *  This is the TTS member of the connection-card clone family
- *  (ProviderEditHeader · TtsProviderForm · SttProviderForm); it CONFORMS:
- *  TtsModelPicker renders in the editor (level 2), and KokoroModelPanel
- *  here is the allowed browser-model download element. Extraction →
- *  shared primitive is queued (STT_POST_PLAN_AUDIT_REPORT P11). */
+ *  This is the TTS member of the connection-card family (ProviderEditHeader ·
+ *  TtsProviderForm · SttProviderForm); it CONFORMS: TtsModelPicker renders in
+ *  the editor (level 2), and KokoroModelPanel here is the allowed
+ *  browser-model download element. P11 shares the mechanically identical
+ *  leaves (masked key field, auto-key hint, probe badges); this form keeps
+ *  its own preset/endpoint/panel composition because those elements differ. */
 interface TtsProviderFormProps {
   form: TtsProfileForm;
   editingId: string | null;
@@ -398,12 +401,10 @@ export function TtsProviderForm({
               profile's endpoint auto-matches, say WHERE the key comes from —
               typing an own key above overrides it. */}
           {!apiKey && !form.hasStoredApiKey && autoKeyName !== null && (
-            <div className="mt-1.5 flex items-center gap-1.5 font-ui text-[11px] text-t3" data-testid="tts-key-source-hint">
-              <span className="[&_svg]:h-[12px] [&_svg]:w-[12px] shrink-0">
-                <Icons.lock />
-              </span>
-              {t("tts_key_from_provider_hint", { name: autoKeyName })}
-            </div>
+            <ConnectionAutoKeyHint
+              testId="tts-key-source-hint"
+              message={t("tts_key_from_provider_hint", { name: autoKeyName })}
+            />
           )}
         </div>
       )}
@@ -468,21 +469,14 @@ export function TtsProviderForm({
                 </button>
               )}
             </div>
-            {testOkEff === true && (
-              <div className="mt-3" data-testid="tts-test-success">
-                <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success">
-                  <Icons.Check />
-                  {t("connection_successful")}
-                </span>
-              </div>
-            )}
-            {testOkEff === false && (
-              <div className="mt-3" data-testid="tts-test-failure">
-                <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
-                  <Icons.Close />
-                  {t("connection_failed")}
-                </span>
-              </div>
+            {testOkEff !== null && (
+              <ConnectionProbeStatus
+                ok={testOkEff}
+                successTestId="tts-test-success"
+                failureTestId="tts-test-failure"
+                successText={t("connection_successful")}
+                failureText={t("connection_failed")}
+              />
             )}
             {!hideTestChat && chatResultEff && (
               <div className="mt-3">
