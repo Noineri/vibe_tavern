@@ -2770,6 +2770,8 @@ export default interface Resources {
     "vmd_editor_hint": "Headings are locked. Edit the prose freely; PERSONALITY is always present.",
     "vmd_editor_label": "Character Document",
     "vmd_examples_in_body_hint": "Example messages live in the # EXAMPLES section above. This controls how they inject into context.",
+    "voice_draft_pause": "Pause",
+    "voice_draft_play": "Play",
     "voice_message_audio": "Audio",
     "voice_message_name": "Voice message",
     "voice_message_record_tooltip": "Record a voice message",

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star, Volume2, Square, AudioLines } from 'lucide-react';
+import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star, Volume2, Square, AudioLines, Play, Pause } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -122,6 +122,11 @@ export const Ic = {
   // Lucide `AudioLines` — voice-message record button (ST-6): waveform mic
   // input, distinct from the dictation capsule mic (which transcribes to text).
   audioLines: (props?: { className?: string }) => <AudioLines size={13} strokeWidth={2} {...props} />,
+  // Lucide `Play` — audio draft-chip playback (listen to a recorded voice
+  // note / attached audio file BEFORE sending it).
+  play: (props?: { className?: string }) => <Play size={13} strokeWidth={2} {...props} />,
+  // Lucide `Pause` — the playing twin of `play`.
+  pause: (props?: { className?: string }) => <Pause size={13} strokeWidth={2} {...props} />,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

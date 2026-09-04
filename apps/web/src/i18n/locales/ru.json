@@ -2829,6 +2829,8 @@
   "voice_message_tone": "Тон: {tone}",
   "voice_message_transcript": "Расшифровка",
   "voice_message_audio": "Аудио",
+  "voice_draft_play": "Прослушать",
+  "voice_draft_pause": "Пауза",
   "unsupported_audio_format": "Неподдерживаемый формат аудио.",
   "stt_whisper_lane_gpu": "GPU",
   "stt_whisper_lane_cpu": "CPU"

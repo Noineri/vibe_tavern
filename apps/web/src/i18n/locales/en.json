@@ -2797,6 +2797,8 @@
   "voice_message_tone": "Tone: {tone}",
   "voice_message_transcript": "Transcript",
   "voice_message_audio": "Audio",
+  "voice_draft_play": "Play",
+  "voice_draft_pause": "Pause",
   "unsupported_audio_format": "Unsupported audio format.",
   "stt_whisper_lane_gpu": "GPU",
   "stt_whisper_lane_cpu": "CPU"
