@@ -180,6 +180,14 @@ describe("useWhisperModel + WhisperModelPanel", () => {
       fake.emit({ status: "initiate" });
       fake.emit(null);
     });
+    // P14 hardening: a fully-received aggregate still shows 99 — 100 belongs
+    // to the terminal "ready" flip, so a length-less source (total ≡ loaded
+    // per chunk) can never pin the bar at 100 from the first chunk.
+    act(() => {
+      fake.emit({ status: "progress", file: "model.onnx", loaded: 90 * 1048576, total: 90 * 1048576 });
+      fake.emit({ status: "progress", file: "ort.bin", loaded: 25 * 1048576, total: 25 * 1048576 });
+    });
+    await waitFor(() => expect(view.getByTestId("stt-whisper-model-downloading").textContent).toContain("99%"));
     act(() => {
       fake.resolveLoad(BASE);
     });

@@ -63,23 +63,40 @@ describe("WhisperMirrorService", () => {
   let dataDir: string;
   let fetchLog: { url: string; init?: RequestInit }[];
   let nextResponse: () => Response | Promise<Response>;
+  /** P14: the tree-listing fixture — answered for any
+   *  `/api/models/<repo>/tree/main` URL; default = empty listing (no
+   *  injectable sizes, mirrors the pre-P14 fail-soft shape). */
+  let nextTreeResponse: () => Response | Promise<Response>;
 
   beforeEach(async () => {
     dataDir = await mkdtemp(join(tmpdir(), "whisper-mirror-"));
     fetchLog = [];
     nextResponse = () => new Response("ok");
+    nextTreeResponse = () => jsonResponse([]);
   });
+
+  /** URL-dispatching fake (P14 shape): file requests go to nextResponse,
+   *  tree-listing requests to nextTreeResponse — the size oracle rides the
+   *  SAME injectable fetch seam, so tests dispatch by URL. */
+  function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    fetchLog.push({ url, init });
+    const isTree = url.startsWith("https://huggingface.co/api/models/") && url.includes("/tree/main");
+    const response = isTree ? nextTreeResponse() : nextResponse();
+    return response instanceof Promise ? response : Promise.resolve(response);
+  }
+
+  function fileFetchLog(): { url: string }[] {
+    return fetchLog.filter((e) => !(e.url.startsWith("https://huggingface.co/api/models/") && e.url.includes("/tree/main")));
+  }
+
+  function treeFetchLog(): { url: string }[] {
+    return fetchLog.filter((e) => e.url.startsWith("https://huggingface.co/api/models/") && e.url.includes("/tree/main"));
+  }
 
   function makeService(): WhisperMirrorService {
     return new WhisperMirrorService(dataDir, {
-      resolveFetch: async () => {
-        return (input: RequestInfo | URL, init?: RequestInit) => {
-          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-          fetchLog.push({ url, init });
-          const response = nextResponse();
-          return response instanceof Promise ? response : Promise.resolve(response);
-        };
-      },
+      resolveFetch: async () => fakeFetch,
     });
   }
 
@@ -92,8 +109,8 @@ describe("WhisperMirrorService", () => {
     if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
     const text = await new Response(result.body).text();
     expect(text).toBe('{"model_type":"whisper"}');
-    expect(fetchLog.length).toBe(1);
-    expect(fetchLog[0]?.url).toBe(buildWhisperHuggingFaceUrl(REPO, "config.json"));
+    expect(fileFetchLog().length).toBe(1);
+    expect(fileFetchLog()[0]?.url).toBe(buildWhisperHuggingFaceUrl(REPO, "config.json"));
     // Cache write is async — poll briefly for the rename to land.
     for (let i = 0; i < 50; i += 1) {
       try {
@@ -121,7 +138,10 @@ describe("WhisperMirrorService", () => {
     }
     const result = await service.handle(REPO, "onnx/model_quantized.onnx");
     if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
-    expect(fetchLog.length).toBe(1);
+    expect(fileFetchLog().length).toBe(1);
+    // Cache hits carry the size from disk (Bun.file.size) — the bar stays
+    // honest even when the cached file was length-less upstream.
+    expect(result.contentLength).toBe(String("weights-bin".length));
   });
 
   test("non-allowlisted repo → 400 without any upstream request", async () => {
@@ -165,7 +185,10 @@ describe("WhisperMirrorService", () => {
     ]);
     expect(a.status).toBe(200);
     expect(b.status).toBe(200);
-    expect(fetchLog.length).toBe(1);
+    // One FILE fetch (single-flight) + at most one tree lookup (P14 oracle
+    // is single-flight per repo too).
+    expect(fileFetchLog().length).toBe(1);
+    expect(treeFetchLog().length).toBeLessThanOrEqual(1);
     expect(releases).toBe(1);
   });
 
@@ -186,7 +209,9 @@ describe("WhisperMirrorService", () => {
     if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
     const text = await new Response(result.body).text();
     expect(text).toBe("redirected-weights");
-    expect(fetchLog.map((e) => e.url)).toEqual([
+    // File hops only — the CDN hop carries no Content-Length, so a tree
+    // lookup (P14) also fires; its count is pinned separately.
+    expect(fileFetchLog().map((e) => e.url)).toEqual([
       buildWhisperHuggingFaceUrl(REPO, "onnx/model.onnx"),
       "https://cdn-lfs.hf.co/repos/abc",
     ]);
@@ -198,6 +223,70 @@ describe("WhisperMirrorService", () => {
     const service = makeService();
     const result = await service.handle(REPO, "onnx/model.onnx");
     expect(result.status).toBe(502);
+  });
+
+  // ── P14: Content-Length injection for length-less upstream responses ──
+  // The HF→CDN hop delivers without Content-Length; transformers.js then
+  // stretches `total` per chunk and the download bar pins at 100%. The
+  // mirror must resolve the true size from the tree listing and set it.
+  test("length-less upstream gets Content-Length injected from the tree listing", async () => {
+    nextResponse = () => new Response("weights-bin");
+    nextTreeResponse = () =>
+      jsonResponse([
+        { type: "file", path: "onnx/model_quantized.onnx", size: 92361116, lfs: { size: 92361116 } },
+        { type: "file", path: "config.json", size: 44 },
+        { type: "directory", path: "onnx", size: 0 },
+      ]);
+    const service = makeService();
+    const result = await service.handle(REPO, "onnx/model_quantized.onnx");
+    if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+    expect(result.contentLength).toBe("92361116");
+    expect(treeFetchLog().length).toBe(1);
+    expect(treeFetchLog()[0]?.url).toBe(
+      "https://huggingface.co/api/models/onnx-community/whisper-base/tree/main?recursive=true",
+    );
+  });
+
+  test("upstream-provided Content-Length wins — no tree lookup", async () => {
+    nextResponse = () =>
+      new Response("tiny", {
+        headers: { "content-type": "text/plain", "content-length": "5" },
+      });
+    nextTreeResponse = () => {
+      throw new Error("tree must not be called when upstream carries a length");
+    };
+    const service = makeService();
+    const result = await service.handle(REPO, "config.json");
+    if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+    expect(result.contentLength).toBe("5");
+    expect(treeFetchLog().length).toBe(0);
+  });
+
+  test("tree listing failure is fail-soft: file serves without a length", async () => {
+    nextResponse = () => new Response("weights-bin");
+    nextTreeResponse = () => Promise.reject(new Error("api down"));
+    const service = makeService();
+    const result = await service.handle(REPO, "onnx/model.onnx");
+    if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+    expect(result.contentLength).toBe("");
+  });
+
+  test("tree listing is cached per repo across files", async () => {
+    nextResponse = () => new Response("data");
+    nextTreeResponse = () =>
+      jsonResponse([
+        { type: "file", path: "config.json", size: 44 },
+        { type: "file", path: "tokenizer.json", size: 2100000 },
+      ]);
+    const service = makeService();
+    const first = await service.handle(REPO, "config.json");
+    const second = await service.handle(REPO, "tokenizer.json");
+    if (first.status !== 200 || second.status !== 200) throw new Error("expected 200s");
+    expect(first.contentLength).toBe("44");
+    expect(second.contentLength).toBe("2100000");
+    // Two file fetches, ONE tree listing for the whole repo.
+    expect(fileFetchLog().length).toBe(2);
+    expect(treeFetchLog().length).toBe(1);
   });
 });
 
@@ -222,12 +311,16 @@ describe("stt-whisper-mirror route parse", () => {
 
   function makeApp(): Hono {
     const service = new WhisperMirrorService(dataDir, {
-      resolveFetch: async () => {
-        return (input: RequestInfo | URL) => {
-          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-          fetchLog.push({ url });
-          return Promise.resolve(new Response('{"ok":true}', { headers: { "content-type": "application/json" } }));
-        };
+      resolveFetch: async () => (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        fetchLog.push({ url });
+        // P14: tree-listing URLs (size oracle) get an empty listing; file
+        // URLs get the fixture body WITHOUT a Content-Length — the CDN-hop
+        // shape the oracle exists for.
+        if (url.startsWith("https://huggingface.co/api/models/") && url.includes("/tree/main")) {
+          return Promise.resolve(jsonResponse([]));
+        }
+        return Promise.resolve(new Response('{"ok":true}', { headers: { "content-type": "application/json" } }));
       },
     });
     return new Hono().route("/", createSttWhisperMirrorRoutes(service));
@@ -238,15 +331,17 @@ describe("stt-whisper-mirror route parse", () => {
     const res = await app.request("/api/stt/whisper/model/onnx-community/whisper-base/tokenizer.json");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('{"ok":true}');
-    expect(fetchLog.length).toBe(1);
-    expect(fetchLog[0]?.url).toBe("https://huggingface.co/onnx-community/whisper-base/resolve/main/tokenizer.json");
+    const fileFetches = fetchLog.filter((e) => !e.url.includes("/tree/main"));
+    expect(fileFetches.length).toBe(1);
+    expect(fileFetches[0]?.url).toBe("https://huggingface.co/onnx-community/whisper-base/resolve/main/tokenizer.json");
   });
 
   test("deep repo path (onnx/ subfolder weights) keeps the full repo id", async () => {
     const app = makeApp();
     const res = await app.request("/api/stt/whisper/model/onnx-community/whisper-base/onnx/encoder_model_quantized.onnx");
     expect(res.status).toBe(200);
-    expect(fetchLog[0]?.url).toBe(
+    const fileFetches = fetchLog.filter((e) => !e.url.includes("/tree/main"));
+    expect(fileFetches[0]?.url).toBe(
       "https://huggingface.co/onnx-community/whisper-base/resolve/main/onnx/encoder_model_quantized.onnx",
     );
   });

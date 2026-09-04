@@ -140,7 +140,11 @@ export function useWhisperModel(): {
       if (total > 0) {
         setLoadedMb(Math.round(loaded / 1048576));
         setTotalMb(Math.round(total / 1048576));
-        setPct(Math.min(100, Math.floor((loaded / total) * 100)));
+        // P14 hardening: cap the bar at 99 until the load promise flips the
+        // state to "ready" — a length-less source (the pre-P14 mirror hop)
+        // reports total ≡ loaded per chunk, which would otherwise pin the
+        // bar at 100% from the first chunk.
+        setPct(Math.min(99, Math.floor((loaded / total) * 100)));
       }
     });
     return unsubscribe;

@@ -27,6 +27,12 @@
  * Later requests are served straight from disk. HF redirects LFS files
  * (302 → CDN); redirects are followed HERE (HTTPS-only, bounded) because
  * the SOCKS5-bridge transport forces `redirect: "manual"`.
+ *
+ * Progress contract (P14): the CDN hop after the LFS redirect delivers
+ * WITHOUT Content-Length, which pins transformers.js progress at 100%
+ * from the first chunk. Length-less upstream responses get the true size
+ * injected from the HF tree listing (`model-mirror/hf-repo-sizes.ts`,
+ * cached per repo). An upstream-provided length always wins as-is.
  */
 
 import { createWriteStream } from "node:fs";
@@ -36,6 +42,7 @@ import { Readable } from "node:stream";
 
 import { PROXY_MODE, whisperMirrorRepos } from "@vibe-tavern/domain";
 
+import { HfRepoSizeCache } from "../model-mirror/hf-repo-sizes.js";
 import { getProviderFetchFactory, type ProviderFetch } from "../providers/provider-fetch-factory.js";
 
 /** Fixed upstream base — `<HF>/<repo>/resolve/main/`. */
@@ -123,10 +130,18 @@ export class WhisperMirrorService {
    *  upstream fetch instead of hammering the proxy with duplicate
    *  multi-hundred-MB downloads. */
   private readonly inFlight = new Map<string, Promise<WhisperMirrorResult>>();
+  /** P14 size oracle — created lazily so it inherits this service's
+   *  injectable fetch seam (tests dispatch by URL through the same seam). */
+  private hfSizes: HfRepoSizeCache | null = null;
 
   constructor(dataDir: string, deps?: WhisperMirrorDeps) {
     this.cacheRoot = join(dataDir, CACHE_SUBDIR);
     this.deps = deps ?? {};
+  }
+
+  private sizeCache(): HfRepoSizeCache {
+    this.hfSizes ??= new HfRepoSizeCache({ resolveFetch: () => this.resolveFetch() });
+    return this.hfSizes;
   }
 
   private async resolveFetch(): Promise<ProviderFetch> {
@@ -209,7 +224,15 @@ export class WhisperMirrorService {
     // the other lands in the disk cache atomically (tmp + rename).
     const [toClient, toDisk] = upstream.body.tee();
     const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
-    const contentLength = upstream.headers.get("content-length") ?? "";
+    // P14: the HF→CDN hop routinely delivers without Content-Length, which
+    // pins the download bar at 100% (transformers.js stretches `total` per
+    // chunk). Inject the true size from the tree listing; an upstream length
+    // always wins as-is.
+    let contentLength = upstream.headers.get("content-length") ?? "";
+    if (contentLength.length === 0) {
+      const size = await this.sizeCache().fileSize(repo, repoPath);
+      if (size !== null) contentLength = String(size);
+    }
 
     void this.persistToCache(cachePath, toDisk).catch(() => {
       // Cache write failures are non-fatal — next request retries upstream.

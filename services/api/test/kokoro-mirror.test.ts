@@ -195,6 +195,78 @@ describe("KokoroMirrorService", () => {
 		expect(result.status).toBe(400);
 		expect(calls).toEqual([]);
 	});
+
+	// ── P14: Content-Length injection for length-less upstream responses ─
+	// Twin of the Whisper mirror pin set. The CDN hop after the LFS redirect
+	// delivers without Content-Length; kokoro-js then stretches `total` per
+	// chunk and the download bar pins at 100%.
+	const lengthLess = (body: string) =>
+		new Response(body, {
+			status: 200,
+		headers: { "content-type": "application/octet-stream" },
+		});
+
+	const treeUrl = () =>
+		"https://huggingface.co/api/models/onnx-community/Kokoro-82M-v1.0-ONNX/tree/main?recursive=true";
+
+	test("length-less upstream gets Content-Length injected from the tree listing", async () => {
+		const { service, calls } = makeService(async (url) => {
+			if (url.includes("/tree/main")) {
+				return Response.json([
+					{ type: "file", path: "onnx/model_fp16.onnx", size: 163234740, lfs: { size: 163234740 } },
+					{ type: "file", path: "config.json", size: 44 },
+				]);
+			}
+			return lengthLess("Q4F16-BYTES");
+		});
+		// Distinct path: the suite shares one tmpRoot disk cache — an earlier
+		// test's cached file would answer from disk and bypass upstream.
+		const result = await service.handle("onnx/model_fp16.onnx");
+		if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+		expect(result.contentLength).toBe("163234740");
+		expect(calls).toEqual([buildHuggingFaceUrl("onnx/model_fp16.onnx"), treeUrl()]);
+	});
+
+	test("upstream-provided Content-Length wins — no tree lookup", async () => {
+		const { service, calls } = makeService(async (url) => {
+			if (url.includes("/tree/main")) throw new Error("tree must not be called");
+			return okResponse("SMALL");
+		});
+		const result = await service.handle("README.md");
+		if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+		expect(result.contentLength).toBe(String("SMALL".length));
+		expect(calls).toEqual([buildHuggingFaceUrl("README.md")]);
+	});
+
+	test("tree listing failure is fail-soft: file serves without a length", async () => {
+		const { service } = makeService(async (url) => {
+			if (url.includes("/tree/main")) throw new Error("api down");
+			return lengthLess("ANYWAY");
+		});
+		const result = await service.handle("fallback.onnx");
+		if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+		expect(result.contentLength).toBe("");
+	});
+
+	test("tree listing is cached per repo across files", async () => {
+		let treeCalls = 0;
+		const { service } = makeService(async (url) => {
+			if (url.includes("/tree/main")) {
+				treeCalls += 1;
+				return Response.json([
+					{ type: "file", path: "config.json", size: 44 },
+					{ type: "file", path: "onnx/tokenizer.json", size: 2100000 },
+				]);
+			}
+			return lengthLess("data");
+		});
+		const first = await service.handle("config.json");
+		const second = await service.handle("onnx/tokenizer.json");
+		if (first.status !== 200 || second.status !== 200) throw new Error("expected 200s");
+		expect(first.contentLength).toBe("44");
+		expect(second.contentLength).toBe("2100000");
+		expect(treeCalls).toBe(1);
+	});
 });
 
 describe("kokoro mirror route (HTTP layer)", () => {
@@ -208,6 +280,25 @@ describe("kokoro mirror route (HTTP layer)", () => {
 		expect(res.headers.get("cache-control")).toBe("no-store");
 		expect(res.headers.get("content-type")).toBe("application/octet-stream");
 		expect(await res.text()).toBe("ROUTE-BYTES");
+	});
+
+	test("P14: injected size reaches the wire as the Content-Length header", async () => {
+		const { service } = makeService(async (url) => {
+			if (url.includes("/tree/main")) {
+				return Response.json([{ type: "file", path: "route-length/model.onnx", size: 123456 }]);
+			}
+			return new Response("WIRE-BYTES", {
+				status: 200,
+			headers: { "content-type": "application/octet-stream" },
+			});
+		});
+		const app = createKokoroMirrorRoutes(service);
+		const res = await app.request("/api/tts/kokoro/model/route-length/model.onnx");
+		expect(res.status).toBe(200);
+		// The route must forward the oracle-provided length onto the HTTP
+		// response — this is the header the browser download bar reads.
+		expect(res.headers.get("content-length")).toBe("123456");
+		expect(await res.text()).toBe("WIRE-BYTES");
 	});
 
 	test("traversal in the URL wildcard → 400", async () => {
