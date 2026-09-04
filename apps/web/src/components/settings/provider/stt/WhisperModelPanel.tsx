@@ -90,9 +90,10 @@ function ModelCards({
               </span>
             </span>
             <span className="font-ui text-[11px] text-t3">
-              {/* GPU lane (WebGPU → fp16) downloads a different, larger file
-               *  set — the size hint must describe what will ACTUALLY land
-               *  (owner 2026-09-05), and the lane badge says which one. */}
+              {/* GPU lane (WebGPU → fp32 encoder + q4 decoder) downloads a
+               *  different, larger file set — the size hint must describe
+               *  what will ACTUALLY land (owner 2026-09-05), and the lane
+               *  badge says which one. */}
               {info.hint} ·{" "}
               {t("stt_whisper_model_size", { mb: lane === "webgpu" ? info.approxMbGpu : info.approxMb })}
             </span>

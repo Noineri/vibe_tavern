@@ -357,7 +357,7 @@ describe("SttProfileEditor — P12 language dropdown", () => {
     expect(view.getByTestId("stt-field-language").textContent).toContain("Russian (ru)");
   });
 
-  it("level-2 model detail follows the lane (cpu q8, gpu fp16)", async () => {
+  it("level-2 model detail follows the lane (cpu q8, gpu fp32+q4)", async () => {
     const stt = whisperView({ model: "onnx-community/whisper-small" });
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(view.getByTestId("stt-whisper-model-select")).toBeTruthy());
@@ -366,6 +366,6 @@ describe("SttProfileEditor — P12 language dropdown", () => {
     __setWhisperLaneProbeForTests(() => "webgpu");
     const gpu = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(gpu.getByTestId("stt-whisper-model-select")).toBeTruthy());
-    expect(gpu.getByTestId("stt-whisper-model-select").textContent).toContain("475 MB");
+    expect(gpu.getByTestId("stt-whisper-model-select").textContent).toContain("570 MB");
   });
 });

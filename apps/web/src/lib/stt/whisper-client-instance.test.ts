@@ -1,8 +1,9 @@
 /**
  * whisper-client-instance tests — the GPU lane (owner decision 2026-09-05):
- * lane selection (WebGPU available → webgpu/fp16; absent → wasm/q8 direct),
- * the gpu→cpu fallback (a failed fp16 load retries as wasm/q8, once per
- * ensure), same-model join (concurrent callers share ONE load chain, the
+ * lane selection (WebGPU available → webgpu with the fp32-encoder +
+ * q4-decoder dtype pair; absent → wasm/q8 direct), the gpu→cpu fallback
+ * (a failed GPU load retries as wasm/q8, once per ensure), same-model join
+ * (concurrent callers share ONE load chain, the
  * fallback runs once), and the failed-ensure memo reset (a retry after both
  * lanes died re-issues a load instead of re-rejecting). Mirrors the fake-
  * worker pattern of kokoro-client-instance.test.ts; no DOM beyond
@@ -21,6 +22,7 @@ import {
   __setWhisperWorkerFactoryForTests,
   currentWhisperLane,
   ensureSharedWhisperModel,
+  WEBGPU_WHISPER_DTYPES,
 } from "./whisper-client-instance.js";
 
 /** Scriptable fake worker: records every load request; per-request policy
@@ -84,13 +86,16 @@ describe("whisper GPU lane (ensureSharedWhisperModel)", () => {
     expect(currentWhisperLane()).toBe("webgpu");
   });
 
-  test("WebGPU available: loads fp16 on webgpu — no wasm request", async () => {
+  test("WebGPU available: loads the GPU dtype pair on webgpu — no wasm request", async () => {
     const fake = makeFakeWorker(() => "ok");
     __setWhisperWorkerFactoryForTests(fake.factory);
     __setWhisperLaneProbeForTests(() => "webgpu");
     await ensureSharedWhisperModel(BASE);
     expect(fake.requests.length).toBe(1);
-    expect(fake.requests[0]).toMatchObject({ modelId: BASE, device: "webgpu", dtype: "fp16" });
+    // fp32 encoder + q4 decoder — whole-model fp16 garbles whisper output
+    // (owner-observed 2026-09-06); the combo is the contract.
+    expect(fake.requests[0]).toMatchObject({ modelId: BASE, device: "webgpu", dtype: WEBGPU_WHISPER_DTYPES });
+    expect(fake.requests[0].dtype).toEqual({ encoder_model: "fp32", decoder_model_merged: "q4" });
   });
 
   test("GPU lane fails → falls back to wasm/q8 exactly once", async () => {

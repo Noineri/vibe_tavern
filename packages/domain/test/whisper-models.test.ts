@@ -35,12 +35,13 @@ describe("WHISPER_MODELS roster", () => {
     }
   });
 
-  test("GPU-lane fp16 sizes are present and larger than the q8 sizes", () => {
-    // Owner decision 2026-09-05: WebGPU runs fp16 — the roster carries both
-    // download sizes; fp16 files are strictly larger than their q8 twins.
-    // Measured upstream sums (encoder+decoder fp16): 73 / 139 / 462 MB +
-    // tokenizer/config overhead.
-    expect(WHISPER_MODELS.map((m) => m.approxMbGpu)).toEqual([76, 146, 475]);
+  test("GPU-lane sizes are present and larger than the q8 sizes", () => {
+    // Owner decisions 2026-09-05/06: the WebGPU lane runs the fp32 encoder +
+    // q4 decoder pair — the roster carries both download sizes; that set is
+    // strictly larger than the q8 twins. Measured upstream sums
+    // (encoder fp32 + decoder q4): 114 / 197 / 558 MB + tokenizer/config
+    // overhead.
+    expect(WHISPER_MODELS.map((m) => m.approxMbGpu)).toEqual([117, 205, 570]);
     for (const model of WHISPER_MODELS) {
       expect(model.approxMbGpu).toBeGreaterThan(model.approxMb);
     }

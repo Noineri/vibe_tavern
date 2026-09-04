@@ -314,14 +314,14 @@ describe("WhisperModelPanel GPU lane display (owner 2026-09-05)", () => {
     );
   });
 
-  it("WebGPU lane: GPU badge + the fp16 size (the set that will actually download)", () => {
+  it("WebGPU lane: GPU badge + the GPU-lane size (the set that will actually download)", () => {
     __setWhisperLaneProbeForTests(() => "webgpu");
     const { view } = renderPanel(BASE);
     for (const badge of view.getAllByTestId("stt-whisper-model-lane")) {
       expect(badge.textContent).toBe("stt_whisper_lane_gpu");
     }
     expect(view.getByTestId("stt-whisper-model-onnx-community-whisper-base").textContent).toContain(
-      "stt_whisper_model_size:146",
+      "stt_whisper_model_size:205",
     );
   });
 });

@@ -17,6 +17,7 @@ import { WhisperModelNotLoadedError, WhisperTranscribeError } from "./whisper-er
 import type {
   WhisperDevice,
   WhisperDtype,
+  WhisperLaneDtypes,
   WhisperWorkerRequest,
   WhisperWorkerResponse,
 } from "./whisper-protocol.js";
@@ -139,7 +140,11 @@ export class WhisperSttClient {
    *  model while one is in flight CHAINS after it (the worker swaps models
    *  sequentially) — a concurrent caller must never receive a promise that
    *  resolves with the wrong model. */
-  load(modelId: string, device: WhisperDevice = "wasm", dtype: WhisperDtype = "q8"): Promise<void> {
+  load(
+    modelId: string,
+    device: WhisperDevice = "wasm",
+    dtype: WhisperDtype | WhisperLaneDtypes = "q8",
+  ): Promise<void> {
     if (this.loadedModelId === modelId && this.loadPromise === null) return Promise.resolve();
     if (this.loadPromise !== null) {
       const current = this.loadPromise;
@@ -148,7 +153,11 @@ export class WhisperSttClient {
     return this.startLoad(modelId, device, dtype);
   }
 
-  private startLoad(modelId: string, device: WhisperDevice, dtype: WhisperDtype): Promise<void> {
+  private startLoad(
+    modelId: string,
+    device: WhisperDevice,
+    dtype: WhisperDtype | WhisperLaneDtypes,
+  ): Promise<void> {
     this.loadPromise = new Promise<void>((resolve, reject) => {
       this.loadResolve = () => {
         this.clearStallWatchdog();

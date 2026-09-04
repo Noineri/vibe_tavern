@@ -19,7 +19,13 @@ import type { AutomaticSpeechRecognitionPipeline } from "@huggingface/transforme
 
 import { buildWhisperAsrOptions } from "./whisper-asr-options.js";
 import { rewriteWhisperHfUrl } from "./whisper-mirror.js";
-import type { WhisperWorkerRequest, WhisperWorkerResponse } from "./whisper-protocol.js";
+import type {
+  WhisperDevice,
+  WhisperDtype,
+  WhisperLaneDtypes,
+  WhisperWorkerRequest,
+  WhisperWorkerResponse,
+} from "./whisper-protocol.js";
 
 // Mirror reroute (F4 pattern — see whisper-mirror.ts module doc).
 const directFetch = globalThis.fetch.bind(globalThis);
@@ -46,8 +52,8 @@ let loading: Promise<LoadedModel> | null = null;
 
 async function ensureModel(
   modelId: string,
-  dtype: "fp32" | "fp16" | "q8" | "q4" | "q4f16",
-  device: "wasm" | "webgpu",
+  dtype: WhisperDtype | WhisperLaneDtypes,
+  device: WhisperDevice,
   onProgress: (data: unknown) => void,
 ): Promise<LoadedModel> {
   if (loaded && loaded.modelId === modelId) return loaded;

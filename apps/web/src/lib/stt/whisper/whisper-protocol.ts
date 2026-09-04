@@ -11,11 +11,19 @@ export type WhisperDevice = "wasm" | "webgpu";
 /** transformers.js dtype for the ONNX weights (q8 = small download). */
 export type WhisperDtype = "fp32" | "fp16" | "q8" | "q4" | "q4f16";
 
+/** Per-file dtype map (transformers.js v3 API): whisper's two sessions are
+ *  `encoder_model` and `decoder_model_merged`, and the optimal pair differs
+ *  per device — see `WEBGPU_WHISPER_DTYPES`. */
+export type WhisperLaneDtypes = {
+  encoder_model: WhisperDtype;
+  decoder_model_merged: WhisperDtype;
+};
+
 export interface WhisperLoadRequest {
   type: "load";
   /** Full model id from the whisper roster ("onnx-community/whisper-base"). */
   modelId: string;
-  dtype: WhisperDtype;
+  dtype: WhisperDtype | WhisperLaneDtypes;
   device: WhisperDevice;
 }
 

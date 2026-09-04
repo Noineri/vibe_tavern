@@ -56,8 +56,8 @@ export function SttRecognitionSection({
   const whisperModelId = configString(form.config, "model");
   const showLanguageField = !isBrowser || whisperAcceptsLanguage(whisperModelId);
   // Lane-aware size (P12 — same rule as WhisperModelPanel): the GPU lane
-  // downloads the fp16 file set, so the roster detail must describe what
-  // will ACTUALLY land on this machine.
+  // downloads the fp32-encoder + q4-decoder file set, so the roster detail
+  // must describe what will ACTUALLY land on this machine.
 
   return (
     <>
