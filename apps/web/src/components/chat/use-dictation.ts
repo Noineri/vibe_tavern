@@ -17,6 +17,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { SttProfileRecord } from "../../api/stt-api.js";
 import { transcribeSttAudio } from "../../api/stt-api.js";
 import { ensureSharedWhisperModel } from "../../lib/stt/whisper-client-instance.js";
+import { whisperLanguageForLocale } from "../../lib/stt/whisper-languages.js";
+import { getLocale } from "../../i18n/locale-helpers.js";
 import {
   createVoiceRecorder,
   VoiceRecorderError,
@@ -36,16 +38,27 @@ export type DictationErrorKey =
 
 export type DictationTranscriber = (profile: SttProfileRecord, blob: Blob) => Promise<string>;
 
+/** Language hint for the whisper-browser path (P12): a concrete stored
+ *  code passes through; an empty config language resolves to the UI locale
+ *  (the dropdown stores it as "" via its "interface language" entry).
+ *  Unknown locales resolve to undefined (no hint) — never a guess. */
+export function resolveWhisperHintLanguage(configLanguage: unknown): string | undefined {
+  if (typeof configLanguage === "string" && configLanguage !== "") return configLanguage;
+  return whisperLanguageForLocale(getLocale());
+}
+
 /** The default transcriber: backend branch per the active profile. */
 async function defaultTranscriber(profile: SttProfileRecord, blob: Blob): Promise<string> {
   if (profile.backend === "whisper-browser") {
     const modelId = typeof profile.config.model === "string" ? profile.config.model : "";
     if (modelId === "") throw new Error("The profile has no whisper model selected.");
     const client = await ensureSharedWhisperModel(modelId);
-    const language =
-      typeof profile.config.language === "string" && profile.config.language !== ""
-        ? profile.config.language
-        : undefined;
+    // Interface-language default (P12): an empty config language resolves
+    // to the UI locale HERE, on the main thread where i18n lives — the
+    // worker stays dumb. Server backends intentionally keep "not sent"
+    // (provider-side auto-detection works there; the greedy-decode trap is
+    // client-side transformers.js only).
+    const language = resolveWhisperHintLanguage(profile.config.language);
     const result = await client.transcribeBlob(blob, { language });
     return result;
   }

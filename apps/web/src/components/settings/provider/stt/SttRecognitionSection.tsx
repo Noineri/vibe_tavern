@@ -5,10 +5,12 @@ import {
 } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { whisperAcceptsLanguage } from "../../../../lib/stt/whisper-language.js";
+import { WHISPER_LANGUAGES, whisperLanguageLabel } from "../../../../lib/stt/whisper-languages.js";
+import { currentWhisperLane } from "../../../../lib/stt/whisper-client-instance.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
-import { labelCls, inputCls } from "../form-field-classes.js";
+import { labelCls } from "../form-field-classes.js";
 import { configString } from "./stt-form-helpers.js";
 import { SttModelPicker } from "./SttModelPicker.js";
 import type { SttModelOption } from "./SttModelPicker.js";
@@ -53,6 +55,9 @@ export function SttRecognitionSection({
   const showsEmotionToggle = STT_BACKEND_EMOTION_CAPABILITY[form.backend];
   const whisperModelId = configString(form.config, "model");
   const showLanguageField = !isBrowser || whisperAcceptsLanguage(whisperModelId);
+  // Lane-aware size (P12 — same rule as WhisperModelPanel): the GPU lane
+  // downloads the fp16 file set, so the roster detail must describe what
+  // will ACTUALLY land on this machine.
 
   return (
     <>
@@ -66,7 +71,7 @@ export function SttRecognitionSection({
             options={WHISPER_MODELS.map((m) => ({
               id: m.id,
               label: m.label,
-              detail: `${m.approxMb} MB`,
+              detail: `${currentWhisperLane() === "webgpu" ? m.approxMbGpu : m.approxMb} MB`,
             }))}
             placeholder={t("stt_field_model")}
             onChange={(id) => onUpdate("model", id)}
@@ -89,17 +94,26 @@ export function SttRecognitionSection({
         />
       )}
 
-      {/* Optional language — hidden for English-only whisper models. */}
+      {/* Language (P12) — a searchable dropdown over the whisper catalog,
+       *  NOT free text: transformers.js accepts only a two-letter code or
+       *  an English name and throws on anything else, and an empty language
+       *  does NOT auto-detect. The pinned top entry ("interface language",
+       *  stored as "") sends the UI locale on the whisper-browser path;
+       *  hidden for English-only whisper models. */}
       {showLanguageField && (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("stt_field_language")}</label>
-          <input
-            type="text"
+          <DropdownSelect
             value={configString(form.config, "language")}
-            onChange={(e) => onUpdate("language", e.target.value)}
-            placeholder={t("stt_field_language_placeholder")}
-            className={inputCls}
-            data-testid="stt-field-language"
+            options={WHISPER_LANGUAGES.map((l) => ({
+              id: l.code,
+              label: whisperLanguageLabel(l),
+            }))}
+            placeholder={t("stt_field_language_interface")}
+            defaultOption={t("stt_field_language_interface")}
+            onChange={(id) => onUpdate("language", id)}
+            searchable={true}
+            triggerTestId="stt-field-language"
           />
         </div>
       )}

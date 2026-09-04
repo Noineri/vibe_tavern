@@ -2386,7 +2386,7 @@ export default interface Resources {
     "stt_field_api_key_stored": "API key saved — leave empty to keep it",
     "stt_field_endpoint": "Endpoint",
     "stt_field_language": "Language (optional)",
-    "stt_field_language_placeholder": "auto-detect",
+    "stt_field_language_interface": "Interface language",
     "stt_field_model": "Model",
     "stt_field_whisper_hint": "English-only models do not accept a language hint",
     "stt_is_default": "Default",

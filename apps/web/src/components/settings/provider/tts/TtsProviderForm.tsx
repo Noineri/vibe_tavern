@@ -177,8 +177,6 @@ export function TtsProviderForm({
   const testingChatEff = testingChatProp || preview.state !== "idle";
   const chatResultEff = chatResultProp;
 
-  const modelSpec = spec.connection.model;
-
   return (
     <>
       {/* Row 1: profile name + segment */}

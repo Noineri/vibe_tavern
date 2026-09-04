@@ -490,7 +490,7 @@
   "stt_field_endpoint": "Эндпоинт",
   "stt_field_model": "Модель",
   "stt_field_language": "Язык (необязательно)",
-  "stt_field_language_placeholder": "автоопределение",
+  "stt_field_language_interface": "Как язык интерфейса",
   "stt_field_whisper_hint": "Англоязычные модели не принимают подсказку языка",
   "stt_whisper_model_download": "Скачать модель",
   "stt_whisper_model_downloading": "Загрузка модели…",

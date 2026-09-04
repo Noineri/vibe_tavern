@@ -14,7 +14,7 @@ useDomEnv();
 import type { SttProfileRecord } from "../../api/stt-api.js";
 import type { VoiceRecorder } from "../../lib/stt/voice-recorder.js";
 import { VoiceRecorderError } from "../../lib/stt/voice-recorder.js";
-import { applyDictationTranscript, useDictation, type DictationTranscriber } from "./use-dictation.js";
+import { applyDictationTranscript, resolveWhisperHintLanguage, useDictation, type DictationTranscriber } from "./use-dictation.js";
 
 function makeProfile(overrides: Partial<SttProfileRecord> = {}): SttProfileRecord {
   return {
@@ -180,5 +180,17 @@ describe("useDictation state machine", () => {
       expect(hook.result.current.status).toBe("idle");
     });
     expect(transcripts).toEqual([]);
+  });
+});
+
+describe("resolveWhisperHintLanguage (P12 interface-language default)", () => {
+  test("a stored code passes through untouched", () => {
+    expect(resolveWhisperHintLanguage("ru")).toBe("ru");
+    expect(resolveWhisperHintLanguage("en")).toBe("en");
+  });
+
+  test("empty resolves to the active UI locale (en in the test env)", () => {
+    expect(resolveWhisperHintLanguage("")).toBe("en");
+    expect(resolveWhisperHintLanguage(undefined)).toBe("en");
   });
 });

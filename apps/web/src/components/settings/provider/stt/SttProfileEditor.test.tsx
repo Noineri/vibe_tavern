@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { __setWhisperLaneProbeForTests } from "../../../../lib/stt/whisper-client-instance.js";
 
 useDomEnv();
 
@@ -326,5 +327,45 @@ describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7, level-2 si
       view.getByTestId("stt-emotion-toggle").click();
     });
     expect(stt.setForm).toHaveBeenCalledWith({ emotionAnnotation: true });
+  });
+});
+
+describe("SttProfileEditor — P12 language dropdown", () => {
+  function whisperView(config: Record<string, unknown>) {
+    return makeStt({
+      form: makeForm({ backend: "whisper-browser", config, apiKey: "" }),
+      profiles: [makeRecord({ backend: "whisper-browser", config })],
+    });
+  }
+
+  afterEach(() => {
+    __setWhisperLaneProbeForTests(null);
+  });
+
+  it("empty language shows the pinned interface entry in the trigger", async () => {
+    const stt = whisperView({ model: "onnx-community/whisper-small" });
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId("stt-field-language")).toBeTruthy());
+    // The mocked t() returns the key — the trigger shows the entry label.
+    expect(view.getByTestId("stt-field-language").textContent).toContain("stt_field_language_interface");
+  });
+
+  it("a stored code renders the matching human label", async () => {
+    const stt = whisperView({ model: "onnx-community/whisper-small", language: "ru" });
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId("stt-field-language")).toBeTruthy());
+    expect(view.getByTestId("stt-field-language").textContent).toContain("Russian (ru)");
+  });
+
+  it("level-2 model detail follows the lane (cpu q8, gpu fp16)", async () => {
+    const stt = whisperView({ model: "onnx-community/whisper-small" });
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId("stt-whisper-model-select")).toBeTruthy());
+    expect(view.getByTestId("stt-whisper-model-select").textContent).toContain("250 MB");
+    cleanup();
+    __setWhisperLaneProbeForTests(() => "webgpu");
+    const gpu = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(gpu.getByTestId("stt-whisper-model-select")).toBeTruthy());
+    expect(gpu.getByTestId("stt-whisper-model-select").textContent).toContain("475 MB");
   });
 });
