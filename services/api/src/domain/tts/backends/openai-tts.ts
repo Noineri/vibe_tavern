@@ -41,7 +41,6 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
 } from "../../providers/provider-transport.js";
 
-const TTS_GENERATE_TIMEOUT_MS = 30_000;
 const TTS_VOICE_LIST_TIMEOUT_MS = 10_000;
 const TTS_CLONE_TIMEOUT_MS = 60_000;
 const PROBE_TIMEOUT_MS = 5_000;
@@ -407,7 +406,9 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           method: "POST",
           headers: buildHeaders(cfg.apiKey, true),
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(TTS_GENERATE_TIMEOUT_MS),
+          // TPE-17: deliberately NO timeout signal here — heavy local
+          // models may legally take minutes; the generate call is
+          // unbounded (clone/probe/list keep their own ceilings).
         },
         "generate",
       );

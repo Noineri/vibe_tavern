@@ -939,3 +939,17 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
     }
   });
 });
+
+describe("OpenAI-compatible TTS generate has no timeout ceiling (TPE-17)", () => {
+  test("generate fetch carries NO abort signal — heavy local models may legally take minutes", async () => {
+    let observedSignal: unknown = "not-called";
+    globalThis.fetch = mock(async (_input: FetchArgs[0], init?: FetchArgs[1]) => {
+      observedSignal = init?.signal ?? null;
+      return audioResponse();
+    });
+    const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:4123/v1" });
+    const result = await backend.generate({ text: "Slow heavy model take", voiceId: "Jordas" });
+    expect(result.mime).toBe("audio/mpeg");
+    expect(observedSignal).toBeNull();
+  });
+});
