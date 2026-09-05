@@ -5,6 +5,7 @@ import * as schemas from "@vibe-tavern/api-contracts";
 import type { DraftTtsVoicesInput } from "@vibe-tavern/api-contracts";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { KokoroClientSideError, TtsCloneUnsupportedError } from "../adapters/tts-adapter.js";
+import { OpenAiCompatTtsError } from "../../domain/tts/backends/openai-tts.js";
 
 export function createTtsRoutes(runtime: TtsRuntimeApi) {
   return new Hono()
@@ -197,6 +198,18 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
         }
         if (error instanceof TtsCloneUnsupportedError) {
           return c.json({ error: "this TTS backend does not support voice cloning" }, 400);
+        }
+        // Upstream clone rejection: a user-fixable upstream 4xx (bad
+        // format/name) passes through WITH its detail; transport failures
+        // and upstream 5xx surface as 502 Bad Gateway, never an opaque
+        // Internal 500 (live lesson 2026-09-05: the owner saw a bare
+        // "500 Internal Server Error" with the server's answer lost).
+        if (error instanceof OpenAiCompatTtsError) {
+          const upstream = error.status;
+          const passable = upstream !== undefined && upstream >= 400 && upstream < 500;
+          // Hono's typed json() wants a literal status union — the upstream
+          // status is validated 4xx (or 502), cast at this boundary only.
+          return c.json({ error: error.message }, (passable ? upstream : 502) as 400 | 502);
         }
         throw error;
       }

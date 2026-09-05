@@ -141,6 +141,22 @@ function siliconflowSampleExt(mimeType: string): string {
   return sub !== "" ? sub : "bin";
 }
 
+/** Filename extension for a voice-library upload on chatterbox-style
+ *  servers (they whitelist by FILE EXTENSION: .mp3/.flac/.wav/.m4a/.ogg).
+ *  The naive `mime.split("/")[1]` produced `.x-wav` for the legacy
+ *  `audio/x-wav` subtype (live repro 2026-09-05: the upload 400'd
+ *  "Unsupported audio format: .x-wav") — mime→extension must be a MAP,
+ *  not a split, so every wav-ish/spelled alias lands on a real extension. */
+function librarySampleExt(mimeType: string): string {
+  if (mimeType.includes("mpeg")) return "mp3";
+  const sub = mimeType.split("/")[1]?.toLowerCase() ?? "";
+  if (sub === "wav" || sub === "x-wav" || sub === "wave" || sub === "vnd.wave") return "wav";
+  if (sub === "flac" || sub === "x-flac") return "flac";
+  if (sub === "m4a" || sub === "x-m4a" || sub === "mp4") return "m4a";
+  if (sub === "ogg" || sub === "x-ogg") return "ogg";
+  return sub !== "" ? sub : "bin";
+}
+
 /** Parse GET /v1/audio/voice/list: { voices: [{ uri, name? }] }. Items key
  *  on `uri`; an `id` field from stale docs is tolerated as the fallback id. */
 function parseSiliconflowCustomVoices(parsed: unknown): TtsVoiceInfo[] {
@@ -706,7 +722,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       form.append(
         "voice_file",
         new Blob([new Uint8Array(req.referenceAudio)], { type: req.mimeType }),
-        `voice-sample.${req.mimeType.includes("mpeg") ? "mp3" : (req.mimeType.split("/")[1] ?? "bin")}`,
+        `voice-sample.${librarySampleExt(req.mimeType)}`,
       );
       let response: Response;
       try {
@@ -721,8 +737,13 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       }
       if (!response.ok) {
         const text = await response.text().catch(() => "");
-        throw new Error(
+        // Typed with the upstream status so the route can surface a
+        // user-fixable 4xx as-is instead of an opaque Internal 500
+        // (live repro 2026-09-05: the owner saw a bare "500 Internal
+        // Server Error" with the upstream detail lost on the way).
+        throw new OpenAiCompatTtsError(
           `voice clone failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, 300)}` : ""}`,
+          { status: response.status },
         );
       }
       // The library is the source of truth: re-list and resolve the entry by

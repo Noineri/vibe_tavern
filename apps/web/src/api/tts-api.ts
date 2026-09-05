@@ -255,8 +255,21 @@ export async function cloneTtsVoice(body: {
     const text = await response.text().catch(() => "");
     let message = `TTS voice clone failed: ${response.status} ${response.statusText}`;
     try {
-      const parsed = JSON.parse(text) as { error?: string };
-      if (typeof parsed.error === "string" && parsed.error.length > 0) message = parsed.error;
+      const parsed = JSON.parse(text) as { error?: unknown };
+      // Two wire shapes live here: route-mapped errors are {error: string};
+      // anything that fell through to the app-level handler is
+      // {error: {kind, message}} (object) — read BOTH or the owner sees a
+      // bare "500 Internal Server Error" with the detail lost (2026-09-05).
+      if (typeof parsed.error === "string" && parsed.error.length > 0) {
+        message = parsed.error;
+      } else if (
+        typeof parsed.error === "object" &&
+        parsed.error !== null &&
+        typeof (parsed.error as { message?: unknown }).message === "string" &&
+        ((parsed.error as { message?: unknown }).message as string).length > 0
+      ) {
+        message = (parsed.error as { message: string }).message;
+      }
     } catch {
       if (text) message += `: ${text.slice(0, 200)}`;
     }

@@ -884,11 +884,46 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
     expect(voice).toEqual({ id: "my-clone", label: "my-clone", lang: "ru" });
   });
 
-  test("cloneVoice upstream error → thrown with status text (route → client inline error)", async () => {
+  // ── TPE-10b (live repro 2026-09-05): mime→extension must be a MAP — a
+  // naive split produced voice-sample.x-wav for the legacy audio/x-wav
+  // subtype and the server 400'd "Unsupported audio format: .x-wav".
+  test("cloneVoice library upload maps every wav-ish/m4a/flac mime alias to a REAL file extension", async () => {
+    const cases: Array<[string, string]> = [
+      ["audio/x-wav", "voice-sample.wav"],
+      ["audio/wav", "voice-sample.wav"],
+      ["audio/wave", "voice-sample.wav"],
+      ["audio/vnd.wave", "voice-sample.wav"],
+      ["audio/mpeg", "voice-sample.mp3"],
+      ["audio/x-flac", "voice-sample.flac"],
+      ["audio/x-m4a", "voice-sample.m4a"],
+      ["audio/mp4", "voice-sample.m4a"],
+      ["audio/ogg", "voice-sample.ogg"],
+    ];
+    for (const [mimeType, expectedName] of cases) {
+      let uploadForm: FormData | null = null;
+      globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "http://localhost:4123/v1/voices" && init?.method === "POST") {
+          uploadForm = init.body as FormData;
+          return jsonResponse(201, { name: "N" });
+        }
+        if (url.endsWith("/audio/voices")) return jsonResponse(404, {});
+        return jsonResponse(200, { voices: [{ name: "N", exists: true }], count: 1 });
+      });
+      const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:4123/v1" });
+      await backend.cloneVoice!({ name: "N", referenceAudio: Buffer.from([1]), mimeType });
+      expect(uploadForm).not.toBeNull();
+      const file = uploadForm!.get("voice_file") as File;
+      // The upload filename carries a REAL extension the server accepts.
+      expect(file.name).toBe(expectedName);
+    }
+  });
+
+  test("cloneVoice upstream error → OpenAiCompatTtsError carrying the upstream status (route passthrough)", async () => {
     globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (init?.method === "POST" && url.endsWith("/voices")) {
-        return jsonResponse(413, { detail: { error: { message: "file too large" } } });
+        return jsonResponse(400, { error: { message: "Unsupported audio format: .bin", type: "invalid_request_error" } });
       }
       if (url.endsWith("/audio/voices")) return jsonResponse(404, {});
       return jsonResponse(200, { voices: [], count: 0 });
@@ -898,7 +933,9 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
       await backend.cloneVoice!({ name: "x", referenceAudio: Buffer.from("y"), mimeType: "audio/wav" });
       throw new Error("expected cloneVoice to throw");
     } catch (error) {
-      expect((error as Error).message).toContain("413");
+      expect(error instanceof OpenAiCompatTtsError).toBe(true);
+      expect((error as OpenAiCompatTtsError).status).toBe(400);
+      expect((error as Error).message).toContain("Unsupported audio format");
     }
   });
 });

@@ -1060,6 +1060,38 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
     }
   });
 
+  // TPE-10b: an upstream clone rejection must reach the client WITH its
+  // detail and a user-fixable status — never an opaque Internal 500.
+  test("upstream 400 on the library upload → VT passes the 400 through with the upstream detail", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);
+    const { app } = await makeApp();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/audio/voices")) {
+        return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+      }
+      if (method === "POST" && url.endsWith("/voices")) {
+        return new Response(
+          JSON.stringify({ error: { message: "Unsupported audio format: .bin", type: "invalid_request_error" } }),
+          { status: 400 },
+        );
+      }
+      return new Response(JSON.stringify({ voices: [], count: 0 }), { status: 200 });
+    });
+    try {
+      const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("voice clone failed: 400");
+      expect(body.error).toContain("Unsupported audio format");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("validation: missing name, non-audio mime, oversize file → 400 each", async () => {
     registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
       stubBackend({ capabilities: () => ({ supportsCloning: true }), cloneVoice: async (req) => ({ id: req.name, label: req.name, lang: "en" }) }),
