@@ -864,6 +864,12 @@ export const STT_BACKENDS = {
    *  /v1/speech-to-text` multipart, `xi-api-key` — NOT the OpenAI-compat
    *  surface; wire contract in STT_PROVIDER_EXPANSION_REPORT). */
   ElevenLabs: "elevenlabs",
+  /** SPE-6 — NVIDIA hosted omni chat-audio transcription (`POST
+   *  /v1/chat/completions` with an `audio_url` data-URI content part,
+   *  `Bearer nvapi-…`). EN-ONLY per the model card — built for roster
+   *  completeness (owner decision 2026-09-05); the RU path is OpenRouter
+   * or the local Riva preset. */
+  Nvidia: "nvidia",
 } as const;
 export type SttBackendType = (typeof STT_BACKENDS)[keyof typeof STT_BACKENDS];
 
@@ -884,6 +890,9 @@ export const STT_BACKEND_EMOTION_CAPABILITY: Record<SttBackendType, boolean> = {
   // Pure ASR (SPE-5) — Scribe's diarize/tag_audio_events are not the ST-7
   // tone-phrase seam.
   [STT_BACKENDS.ElevenLabs]: false,
+  // Chat-audio transcription (SPE-6) — a bare transcript model, no tone
+  // seam; EN-only per the model card.
+  [STT_BACKENDS.Nvidia]: false,
 };
 
 /** Default Gemini STT model (ST-7) — the current docs' flash example; the
@@ -903,6 +912,12 @@ export const DEFAULT_DEEPGRAM_STT_MODEL = "nova-3";
  *  discovery endpoint exists for the Scribe roster, so the static preset
  *  list (SPE-7) is the picker and this is the prefill/fallback. */
 export const DEFAULT_ELEVENLABS_STT_MODEL = "scribe_v2";
+
+/** Default NVIDIA STT model (SPE-6) — the hosted omni model of the verified
+ *  reference example (EN-only). Same role as {@link DEFAULT_GEMINI_STT_MODEL}:
+ *  the hosted /v1/models catalog does not mark audio capability, so the
+ *  static omni list (SPE-7) is the picker and this is the prefill/fallback. */
+export const DEFAULT_NVIDIA_STT_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
 
 /** Backend-specific STT config — a per-backend discriminated union (the
  *  profile's `backend` field discriminates). The Gemini arm (ST-7) is

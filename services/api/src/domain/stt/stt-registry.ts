@@ -98,6 +98,16 @@ export const STT_BACKEND_CAPABILITIES: Record<SttBackendType, SttBackendCapabili
     emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.ElevenLabs],
     requiresApiKey: true,
   },
+  [STT_BACKENDS.Nvidia]: {
+    transport: STT_TRANSPORT.Server,
+    // Chat-completions audio understanding — NOT the OpenAI transcription
+    // protocol (SPE-6; the gemini-stt pattern applied to NIM).
+    openaiCompatible: false,
+    // One chat request → one reply with the full transcript.
+    supportsStreaming: false,
+    emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.Nvidia],
+    requiresApiKey: true,
+  },
 };
 
 const KNOWN_SLUGS = new Set<string>(Object.values(STT_BACKENDS));

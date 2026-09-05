@@ -32,6 +32,10 @@ import {
   ElevenLabsSttConfigError,
   ElevenLabsSttError,
 } from "../../domain/stt/backends/elevenlabs-stt.js";
+import {
+  NvidiaSttConfigError,
+  NvidiaSttError,
+} from "../../domain/stt/backends/nvidia-stt.js";
 import { SttBackendNotRegisteredError, SttUnknownBackendError } from "../../domain/stt/stt-registry.js";
 
 /** Multipart transcriptions may carry sizable clips — a sane ceiling before
@@ -118,7 +122,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof OpenAiCompatSttConfigError ||
           error instanceof GeminiSttConfigError ||
           error instanceof DeepgramSttConfigError ||
-          error instanceof ElevenLabsSttConfigError
+          error instanceof ElevenLabsSttConfigError ||
+          error instanceof NvidiaSttConfigError
         ) {
           return c.json({ error: error.message }, 400);
         }
@@ -128,7 +133,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof OpenAiCompatSttError ||
           error instanceof GeminiSttError ||
           error instanceof DeepgramSttError ||
-          error instanceof ElevenLabsSttError
+          error instanceof ElevenLabsSttError ||
+          error instanceof NvidiaSttError
         ) {
           const status =
             error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;
@@ -155,7 +161,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof OpenAiCompatSttConfigError ||
           error instanceof GeminiSttConfigError ||
           error instanceof DeepgramSttConfigError ||
-          error instanceof ElevenLabsSttConfigError
+          error instanceof ElevenLabsSttConfigError ||
+          error instanceof NvidiaSttConfigError
         ) {
           return c.json({ error: error.message }, 400);
         }
@@ -163,7 +170,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof OpenAiCompatSttError ||
           error instanceof GeminiSttError ||
           error instanceof DeepgramSttError ||
-          error instanceof ElevenLabsSttError
+          error instanceof ElevenLabsSttError ||
+          error instanceof NvidiaSttError
         ) {
           const status =
             error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;

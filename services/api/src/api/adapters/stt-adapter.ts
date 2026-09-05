@@ -49,6 +49,7 @@ import "../../domain/stt/backends/openai-stt.js";
 import "../../domain/stt/backends/gemini-stt.js";
 import "../../domain/stt/backends/deepgram-stt.js";
 import "../../domain/stt/backends/elevenlabs-stt.js";
+import "../../domain/stt/backends/nvidia-stt.js";
 
 import { createSttBackend } from "../../domain/stt/stt-registry.js";
 import {
@@ -67,6 +68,10 @@ import {
   ElevenLabsSttConfigError,
   ElevenLabsSttError,
 } from "../../domain/stt/backends/elevenlabs-stt.js";
+import {
+  NvidiaSttConfigError,
+  NvidiaSttError,
+} from "../../domain/stt/backends/nvidia-stt.js";
 
 // ─── Wire projections ────────────────────────────────────────────────────────
 
@@ -106,19 +111,21 @@ function normalizeEndpoint(raw: string): string {
 const GEMINI_API_HOST = "https://generativelanguage.googleapis.com";
 
 /** Fixed-endpoint native vendors (ST-7 gemini; SPE-4 deepgram; SPE-5
- *  elevenlabs): backend slug → vendor API host + the same-vendor TTS
- *  backend slug for key reuse. The auto-key rule (ST-5b): an LLM provider
+ *  elevenlabs; SPE-6 nvidia): backend slug → vendor API host + the
+ *  same-vendor TTS backend slug for key reuse (nvidia has no TTS backend —
+ *  undefined skips the TTS arm). The auto-key rule (ST-5b): an LLM provider
  *  profile on the vendor's host wins, then a same-vendor TTS profile with a
  *  stored key ("a saved vendor TTS credential makes the vendor's STT
- *  ready"). SPE-6 (nvidia) extends this table, not the branches. */
+ *  ready"). */
 const VENDOR_HOST_BACKENDS: ReadonlyArray<{
   sttBackend: SttBackendType;
   host: string;
-  ttsBackend: (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
+  ttsBackend?: (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 }> = [
   { sttBackend: STT_BACKENDS.Gemini, host: GEMINI_API_HOST, ttsBackend: TTS_BACKEND.Gemini },
   { sttBackend: STT_BACKENDS.Deepgram, host: "https://api.deepgram.com", ttsBackend: TTS_BACKEND.Deepgram },
   { sttBackend: STT_BACKENDS.ElevenLabs, host: "https://api.elevenlabs.io", ttsBackend: TTS_BACKEND.ElevenLabs },
+  { sttBackend: STT_BACKENDS.Nvidia, host: "https://integrate.api.nvidia.com" },
 ];
 
 function findVendorEntry(backend: SttBackendType) {
@@ -146,12 +153,14 @@ async function autoMatchSttKey(
         return { config: { ...config, apiKey: provider.apiKey }, matchedName: provider.name };
       }
     }
-    const ttsProfiles = await stores.tts.listAll();
-    for (const profile of ttsProfiles) {
-      if (profile.backend !== vendor.ttsBackend) continue;
-      const key = profile.apiKey ?? "";
-      if (key === "") continue;
-      return { config: { ...config, apiKey: key }, matchedName: profile.name };
+    if (vendor.ttsBackend !== undefined) {
+      const ttsProfiles = await stores.tts.listAll();
+      for (const profile of ttsProfiles) {
+        if (profile.backend !== vendor.ttsBackend) continue;
+        const key = profile.apiKey ?? "";
+        if (key === "") continue;
+        return { config: { ...config, apiKey: key }, matchedName: profile.name };
+      }
     }
     return { config, matchedName: null };
   }
@@ -243,9 +252,11 @@ export class SttAdapter implements SttRuntimeApi {
           providerName:
             keyful.find((p) => normalizeEndpoint(p.endpoint).startsWith(entry.host))?.name ?? null,
           ttsName:
-            ttsProfiles.find(
-              (p) => p.backend === entry.ttsBackend && (p.apiKey ?? "") !== "",
-            )?.name ?? null,
+            entry.ttsBackend === undefined
+              ? null
+              : (ttsProfiles.find(
+                  (p) => p.backend === entry.ttsBackend && (p.apiKey ?? "") !== "",
+                )?.name ?? null),
         },
       ]),
     );
