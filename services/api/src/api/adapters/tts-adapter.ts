@@ -310,8 +310,14 @@ export class TtsAdapter implements TtsRuntimeApi {
     const backend = createTtsBackend(body.backend, config);
     // Gate on the capability BEFORE calling the seam (TtsBackend contract).
     // The openai-compat backend reports cloning only after listVoices saw
-    // the library route — an editor that never loaded voices gets a clean
-    // "not supported" here; the UI flow always loads voices first.
+    // the library route — per-INSTANCE closure state. This request's instance
+    // is fresh (built above), so "the UI loaded voices first" does not help:
+    // that ran on a DIFFERENT instance in an earlier HTTP request (TPE-10
+    // regression — chatterbox clones 400'd unconditionally). Re-derive the
+    // fact on THIS instance: one cheap voices round-trip per clone attempt
+    // re-runs the /audio/voices → /voices fallback detection; static
+    // backends ignore it (their capability is stateless) and still 400 here.
+    await backend.listVoices();
     if (!backend.capabilities().supportsCloning || backend.cloneVoice === undefined) {
       throw new TtsCloneUnsupportedError();
     }

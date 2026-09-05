@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { createDb } from "@vibe-tavern/db";
 import { ProviderStore, TtsStore } from "@vibe-tavern/db";
 
 import { createTtsRoutes } from "../src/api/routes/tts.js";
+import { openAiCompatTtsFactory } from "../src/domain/tts/backends/openai-tts.js";
 import { __setDockerProbeRunnerForTests } from "../src/domain/tts/docker-probe.js";
 import { __setDiscoveryFetchForTests } from "../src/api/adapters/tts-adapter.js";
 import { TtsAdapter } from "../src/api/adapters/tts-adapter.js";
@@ -1004,6 +1005,59 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain("does not support voice cloning");
+  });
+
+  // TPE-10 regression pin: the clone route builds a FRESH backend instance
+  // per request, so the openai-compat clone capability (per-instance closure
+  // state set only by listVoices) MUST be re-derived inside this request —
+  // the UI's earlier draftListTtsVoices ran on a different instance in a
+  // different HTTP request and its detection dies at the request boundary.
+  // Chatterbox-shaped server: /audio/voices 404 → /voices library 200 →
+  // POST /voices 200. Without the in-route re-derivation this 400s
+  // "does not support voice cloning" even though the UI showed the form.
+  test("TPE-10: fresh instance re-detects the library route — chatterbox clone passes end-to-end", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);
+    const { app } = await makeApp();
+    const calls: { method: string; url: string }[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ method, url });
+      if (url.endsWith("/audio/voices")) {
+        return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+      }
+      if (method === "POST" && url.endsWith("/voices")) {
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      // GET /voices — the library (gate's listVoices AND the post-clone re-list)
+      return new Response(
+        JSON.stringify({
+          voices: [{ name: "my-clone", path: "/x/my-clone.wav", language: "ru", aliases: [], exists: true }],
+          count: 1,
+        }),
+        { status: 200 },
+      );
+    });
+    try {
+      const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
+
+      expect(res.status).toBe(200);
+      const voice = (await res.json()) as { id: string; lang: string };
+      expect(voice.id).toBe("my-clone");
+      // The created entry resolves through the re-listed library (language metadata comes along).
+      expect(voice.lang).toBe("ru");
+      expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+        "GET http://localhost:4123/v1/audio/voices",
+        "GET http://localhost:4123/v1/voices",
+        "POST http://localhost:4123/v1/voices",
+        "GET http://localhost:4123/v1/audio/voices",
+        "GET http://localhost:4123/v1/voices",
+      ]);
+    } finally {
+      // Process-global seam — restore or the mock poisons every later test file.
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test("validation: missing name, non-audio mime, oversize file → 400 each", async () => {
