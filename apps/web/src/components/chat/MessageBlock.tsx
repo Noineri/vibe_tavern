@@ -278,6 +278,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
   const canSwitchVariant = isLast && !isCoauthorMode;
   const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
+  // TPE-14: the inverse gate — "prepare for narration" is offered on
+  // greetings only (the editor opens directly in annotate mode).
+  const canAiAnnotate = isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
 
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
@@ -507,6 +510,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     });
   };
 
+  // TPE-14: greeting-only entry into annotate mode. No variant is captured
+  // — the modal resolves the live selected variant as its single source.
+  const handleAiAnnotateClick = () => {
+    if (isBusy) return;
+    useMessageAiEditorStore.getState().openEditor({
+      requestedMode: "message_tts_annotate",
+      targetChatId: brandId<ChatId>(authorInfo.activeChatId),
+      targetMessageId: msg.id,
+    });
+  };
+
   // ── Message metadata context (variant-scoped provenance) ──
   const metaCtx: MessageMetaContext = {
     chatId: authorInfo.activeChatId,
@@ -554,6 +568,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canRegenerate={canRegenerate}
       canResend={canResend}
       canAiEdit={canAiEdit}
+      canAiAnnotate={canAiAnnotate}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={isCoauthorMode ? 1 : variantCount}
       canSwitchVariant={canSwitchVariant}
@@ -576,6 +591,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         },
         onEdit: () => void handleEditClick(),
         onAiEdit: () => handleAiEditClick(),
+        onAiAnnotate: () => handleAiAnnotateClick(),
         onDelete: () => setDeleteConfirmOpen(true),
         onBranch: () => void chat.handleFork(msg.id),
         onRegenerate: () => void chat.handleRegenerateMessage(msg.id),

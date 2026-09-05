@@ -64,6 +64,9 @@ export interface MessageShellActions {
   onRegenerate: () => void;
   onResend: () => void;
   onAiEdit: () => void;
+  /** TPE-14: greeting-only entry into annotate mode. Optional — sibling
+   *  shells (pending/coauthor) don't offer it. */
+  onAiAnnotate?: () => void;
   onNarrate?: () => void;
 }
 
@@ -98,6 +101,9 @@ export interface MessageShellProps {
   canResend: boolean;
   /** Whether the message AI editor (Sparkles) affordance is shown. MAE-52. */
   canAiEdit: boolean;
+  /** TPE-14: whether the greeting-only "prepare for narration" affordance
+   *  is shown. Optional — sibling shells don't offer it. */
+  canAiAnnotate?: boolean;
   /** Currently selected variant index. */
   selectedVariantIndex: number;
   /** Total number of variants. */
@@ -147,6 +153,7 @@ export function MessageShell(props: MessageShellProps) {
     canRegenerate,
     canResend,
     canAiEdit,
+    canAiAnnotate,
     selectedVariantIndex,
     variantCount,
     canSwitchVariant,
@@ -359,6 +366,8 @@ export function MessageShell(props: MessageShellProps) {
           {!isEditing && !isGenerating && !isMobile && (
             <DesktopMessageActions
               aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
+              aiAnnotateTooltip={tDynamic("message_ai_editor_mode_annotate")}
+              canAiAnnotate={canAiAnnotate}
               branchLabel={branchLabel}
               canAiEdit={canAiEdit}
               canBranch={canBranch}
@@ -380,6 +389,7 @@ export function MessageShell(props: MessageShellProps) {
               variantControlsRef={variantControlsRef}
               variantCount={variantCount}
               onAiEdit={actions.onAiEdit}
+              onAiAnnotate={actions.onAiAnnotate}
               onBranch={actions.onBranch}
               onCopy={actions.onCopy}
               onDelete={actions.onDelete}
@@ -399,6 +409,8 @@ export function MessageShell(props: MessageShellProps) {
             <MobileMessageActions
               aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
               canAiEdit={canAiEdit}
+              aiAnnotateTooltip={tDynamic("message_ai_editor_mode_annotate")}
+              canAiAnnotate={canAiAnnotate}
               branchLabel={branchLabel}
               canBranch={canBranch}
               canRegenerate={canRegenerate}
@@ -413,6 +425,7 @@ export function MessageShell(props: MessageShellProps) {
               selectedVariantIndex={selectedVariantIndex}
               variantCount={variantCount}
               onAiEdit={actions.onAiEdit}
+              onAiAnnotate={actions.onAiAnnotate}
               onBranch={actions.onBranch}
               onNarrate={actions.onNarrate}
               narrating={narrating}
@@ -486,6 +499,8 @@ const desktopActionClass = "flex cursor-pointer items-center gap-1 rounded px-[7
 function DesktopMessageActions(props: {
   aiEditTooltip: string;
   canAiEdit: boolean;
+  aiAnnotateTooltip?: string;
+  canAiAnnotate?: boolean;
   branchLabel: string;
   canBranch: boolean;
   canRegenerate: boolean;
@@ -507,6 +522,7 @@ function DesktopMessageActions(props: {
   variantCount: number;
   variantControls?: ReactNode;
   onAiEdit: () => void;
+  onAiAnnotate?: () => void;
   onBranch: () => void;
   onCopy: () => void;
   onDelete: () => void;
@@ -519,13 +535,13 @@ function DesktopMessageActions(props: {
   onResend: () => void;
 }) {
   const {
-    aiEditTooltip, canAiEdit,
+    aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
     copied, copiedLabel, copyLabel, editLabel, hiddenVariantControls,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControlsRef, variantCount,
     variantControls,
-    onAiEdit, onBranch, onCopy, onDelete, onEdit, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
+    onAiEdit, onAiAnnotate, onBranch, onCopy, onDelete, onEdit, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
   } = props;
 
   return (
@@ -573,6 +589,23 @@ function DesktopMessageActions(props: {
         </CustomTooltip>
       )}
 
+      {/* TPE-14: greeting-only "prepare for narration" entry. Same row
+          affordance as the AI-edit button; shown only on greetings, where
+          the edit button is absent by design. */}
+      {canAiAnnotate && onAiAnnotate && (
+        <CustomTooltip content={aiAnnotateTooltip ?? ""}>
+          <button
+            type="button"
+            aria-label={aiAnnotateTooltip}
+            aria-disabled={isBusy}
+            disabled={isBusy}
+            data-testid="desktop-annotate-btn"
+            className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
+            onClick={() => { if (!isBusy) onAiAnnotate(); }}
+          ><Icons.Sparkles /></button>
+        </CustomTooltip>
+      )}
+
       {canResend && <span className={desktopActionClass} onClick={() => { if (!isBusy) onResend(); }}><Icons.Regen />{resendLabel}</span>}
       {canBranch && <span className={desktopActionClass} aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }}>{isBranching ? <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" /> : <Icons.Branch />}{branchLabel}</span>}
       {canRegenerate && <span className={desktopActionClass} onClick={() => { if (!isBusy) onRegenerate(); }}><Icons.Regen />{regenLabel}</span>}
@@ -596,6 +629,8 @@ function DesktopMessageActions(props: {
 function MobileMessageActions(props: {
   aiEditTooltip: string;
   canAiEdit: boolean;
+  aiAnnotateTooltip?: string;
+  canAiAnnotate?: boolean;
   branchLabel: string;
   canBranch: boolean;
   canRegenerate: boolean;
@@ -611,6 +646,7 @@ function MobileMessageActions(props: {
   variantCount: number;
   variantControls?: ReactNode;
   onAiEdit: () => void;
+  onAiAnnotate?: () => void;
   onBranch: () => void;
   onNarrate?: () => void;
   narrating?: boolean;
@@ -620,11 +656,11 @@ function MobileMessageActions(props: {
   onResend: () => void;
 }) {
   const {
-    aiEditTooltip, canAiEdit,
+    aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
-    onAiEdit, onBranch, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
+    onAiEdit, onAiAnnotate, onBranch, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
   } = props;
 
   return (
@@ -647,6 +683,12 @@ function MobileMessageActions(props: {
         )}
         {canAiEdit && (
           <button type="button" aria-label={aiEditTooltip} disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiEdit(); }} title={aiEditTooltip}>
+            <Icons.Sparkles />
+          </button>
+        )}
+        {/* TPE-14: greeting-only "prepare for narration" entry (mobile row). */}
+        {canAiAnnotate && onAiAnnotate && (
+          <button type="button" aria-label={aiAnnotateTooltip} data-testid="mobile-annotate-btn" disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiAnnotate(); }} title={aiAnnotateTooltip}>
             <Icons.Sparkles />
           </button>
         )}

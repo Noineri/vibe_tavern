@@ -252,7 +252,10 @@ export function MessageAiEditorModal() {
     isOpen && targetChatId && targetMessageId && runner.providerId && previewSourceVariantIds.length > 0
       ? {
           mode: activeMode,
-          instruction,
+          // TPE-14: mirror the generate wire so the token estimate matches
+          // what will actually be sent (annotate: "" + variant text).
+          instruction: activeMode === "message_tts_annotate" ? "" : instruction,
+          existingContent: activeMode === "message_tts_annotate" ? (editBaselineText ?? undefined) : undefined,
           providerProfileId: runner.providerId,
           model: runner.modelName || undefined,
           enabledLayers: [],
@@ -268,12 +271,17 @@ export function MessageAiEditorModal() {
 
   // ─── Request construction ──────────────────────────────────────────
 
+  // TPE-14: annotate carries no user instruction — the static prompt asset
+  // plus the variant text (existingContent) are the whole request, so the
+  // non-empty-instruction requirement applies to edit/merge only.
+  const instructionOk = activeMode === "message_tts_annotate" || instruction.trim().length > 0;
+
   const canGenerate =
     !staleTarget
     && !staleEditSource
     && !mergeBelowMinimum
     && runner.providerId !== ""
-    && instruction.trim().length > 0
+    && instructionOk
     && !runner.streaming
     && !applying;
 
@@ -290,6 +298,11 @@ export function MessageAiEditorModal() {
     if (activeMode === "message_merge" && sourceVariantIds.length < 2) return;
     if (activeMode === "message_edit" && sourceVariantIds.length !== 1) return;
     if (activeMode === "message_tts_annotate" && sourceVariantIds.length !== 1) return;
+    // TPE-14: the variant text rides as existingContent; the instruction
+    // slot stays empty (the static annotate prompt asset is the instruction).
+    // editBaselineText is non-null here (staleEditSource gates canGenerate),
+    // the fallback only satisfies the type checker.
+    const annotateText = activeMode === "message_tts_annotate" ? (editBaselineText ?? "") : undefined;
 
     // Reset prior apply/conflict state on a fresh generation.
     setConflict(false);
@@ -297,7 +310,8 @@ export function MessageAiEditorModal() {
 
     void runner.runStream({
       mode: activeMode,
-      instruction,
+      instruction: activeMode === "message_tts_annotate" ? "" : instruction,
+      existingContent: annotateText,
       providerProfileId: runner.providerId,
       model: runner.modelName || undefined,
       enabledLayers: [],
@@ -310,7 +324,7 @@ export function MessageAiEditorModal() {
     });
   }, [
     canGenerate, target, targetMessageId, targetChatId, activeMode,
-    editSourceVariantId, annotateSourceVariantId, starredByMessage, instruction, runner,
+    editSourceVariantId, annotateSourceVariantId, editBaselineText, starredByMessage, instruction, runner,
   ]);
 
   // ─── Apply (edit): guarded PATCH with expectedVariantId ────────────
@@ -691,31 +705,37 @@ export function MessageAiEditorModal() {
                 recentMessages={{ value: recentMessageCount, onChange: setRecentMessageCount }}
               />
 
-              {/* Instruction */}
-              <div className="mb-4">
-                <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-                  {tDynamic("message_ai_editor_instruction_label")}
-                </label>
-                <MobileExpandTextarea
-                  value={instruction}
-                  onChange={setInstruction}
-                  label={tDynamic("message_ai_editor_instruction_label")}
-                >
-                  <AutoTextarea
-                    className="w-full resize-none rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent"
-                    maxRows={12}
-                    minRows={4}
-                    placeholder={tDynamic("message_ai_editor_instruction_placeholder")}
-                    value={instruction}
-                    onChange={(e) => setInstruction(e.target.value)}
-                  />
-                </MobileExpandTextarea>
-                <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
-                  {activeMode === "message_tts_annotate"
-                    ? tDynamic("message_ai_editor_annotate_hint")
-                    : tDynamic("message_ai_editor_instruction_hint")}
+              {/* Instruction — TPE-14: annotate carries no user instruction
+                  (the static prompt asset is the instruction), so the field
+                  is hidden and only the annotate hint line remains. */}
+              {activeMode === "message_tts_annotate" ? (
+                <div className="mb-4 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
+                  {tDynamic("message_ai_editor_annotate_hint")}
                 </div>
-              </div>
+              ) : (
+                <div className="mb-4">
+                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
+                    {tDynamic("message_ai_editor_instruction_label")}
+                  </label>
+                  <MobileExpandTextarea
+                    value={instruction}
+                    onChange={setInstruction}
+                    label={tDynamic("message_ai_editor_instruction_label")}
+                  >
+                    <AutoTextarea
+                      className="w-full resize-none rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent"
+                      maxRows={12}
+                      minRows={4}
+                      placeholder={tDynamic("message_ai_editor_instruction_placeholder")}
+                      value={instruction}
+                      onChange={(e) => setInstruction(e.target.value)}
+                    />
+                  </MobileExpandTextarea>
+                  <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
+                    {tDynamic("message_ai_editor_instruction_hint")}
+                  </div>
+                </div>
+              )}
 
               {/* Reasoning */}
               {runner.streamedReasoning && (

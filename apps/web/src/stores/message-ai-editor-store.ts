@@ -33,12 +33,11 @@ export interface MessageAiEditorTarget {
   targetMessageId: MessageId;
   requestedMode: MessageAiEditorMode;
   /** Edit mode only: the immutable variant that was selected when the editor
-   *  opened — the diff base for the guarded Apply. Always null for merge,
-   *  whose sources are the current stars read at request time. The annotate
-   *  mode (TPE-2) has no external entry point — it is selected in-modal via
-   * the SegmentedControl, so its source is resolved live in the modal
-   * (this captured ID when opened via Edit, otherwise the currently
-   * selected variant). */
+   *  opened — the diff base for the guarded Apply. Always null for merge
+   *  (sources are the current stars read at request time) and for annotate
+   *  (TPE-14: the modal resolves the source live — the currently selected
+   *  variant, or this captured ID when the editor was opened via Edit and
+   *  the variant is still present). */
   selectedSourceVariantId: MessageVariantId | null;
 }
 
@@ -52,6 +51,14 @@ export type OpenMessageAiEditorArgs =
     }
   | {
       requestedMode: "message_merge";
+      targetChatId: ChatId;
+      targetMessageId: MessageId;
+    }
+  | {
+      /** TPE-14: greeting-row entry — opens the modal directly in annotate
+       *  mode. No source variant is captured; the modal resolves the live
+       *  selected variant as the single source. */
+      requestedMode: "message_tts_annotate";
       targetChatId: ChatId;
       targetMessageId: MessageId;
     };

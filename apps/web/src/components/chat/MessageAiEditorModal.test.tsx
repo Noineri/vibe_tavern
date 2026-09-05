@@ -846,6 +846,22 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     await act(async () => { fireEvent.click(segment); });
   }
 
+  /** TPE-14: annotate carries no instruction input — Generate is driven
+   *  directly (it must be enabled with an empty instruction). */
+  async function generateAnnotate() {
+    const generateBtn = await screen.findByText("message_ai_editor_generate");
+    expect((generateBtn as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { fireEvent.click(generateBtn); });
+  }
+
+  function openEditorForAnnotate() {
+    useMessageAiEditorStore.getState().openEditor({
+      requestedMode: "message_tts_annotate",
+      targetChatId: CID,
+      targetMessageId: MID,
+    });
+  }
+
   it("switching to annotate: the currently selected variant becomes the single source", async () => {
     seedTwoVariantMessage();
     openEditorForEdit(VA);
@@ -884,12 +900,51 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     renderModal();
 
     await switchToAnnotate();
-    await generateWithPrompt("add sound tags");
+    await generateAnnotate();
 
     expect(mockState.requests).toHaveLength(1);
     expect(mockState.requests[0].mode).toBe("message_tts_annotate");
     expect(mockState.requests[0].sourceVariantIds).toEqual([VA]);
     expect(mockState.requests[0].targetMessageId).toBe(MID);
+    // TPE-14: no user instruction on the wire — the variant text rides as
+    // existingContent, the static prompt asset is the instruction.
+    expect(mockState.requests[0].instruction).toBe("");
+    expect(mockState.requests[0].existingContent).toBe('She laughed and said "wait for me".');
+  });
+
+  it("annotate hides the instruction field; edit keeps it (TPE-14)", async () => {
+    seedTwoVariantMessage();
+    openEditorForEdit(VA);
+    renderModal();
+
+    // Edit entry: the instruction field is present and required.
+    expect(document.querySelector("textarea")).not.toBeNull();
+    expect(screen.getByText("message_ai_editor_instruction_label")).toBeTruthy();
+
+    await switchToAnnotate();
+
+    // Annotate: no textarea, no instruction label — only the hint line.
+    expect(document.querySelector("textarea")).toBeNull();
+    expect(screen.queryByText("message_ai_editor_instruction_label")).toBeNull();
+    expect(screen.getByText("message_ai_editor_annotate_hint")).toBeTruthy();
+  });
+
+  it("external annotate entry opens the modal directly in annotate mode (TPE-14)", async () => {
+    seedTwoVariantMessage();
+    openEditorForAnnotate();
+    renderModal();
+
+    // Lands in annotate: hint line present, no instruction field, and the
+    // live selected variant resolved as the single source row.
+    expect(await screen.findByText("message_ai_editor_annotate_hint")).toBeTruthy();
+    expect(document.querySelector("textarea")).toBeNull();
+    expect(screen.getByText(/#1/)).toBeTruthy();
+
+    await generateAnnotate();
+    expect(mockState.requests).toHaveLength(1);
+    expect(mockState.requests[0].mode).toBe("message_tts_annotate");
+    expect(mockState.requests[0].instruction).toBe("");
+    expect(mockState.requests[0].existingContent).toBe('She laughed and said "wait for me".');
   });
 
   it("Save writes the annotation to the variant's side field and never touches content actions", async () => {
@@ -902,7 +957,7 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     renderModal();
 
     await switchToAnnotate();
-    await generateWithPrompt("add sound tags");
+    await generateAnnotate();
 
     const saveBtn = await screen.findByText("message_ai_editor_save_annotation");
     await act(async () => { fireEvent.click(saveBtn); });
@@ -928,7 +983,7 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     renderModal();
 
     await switchToAnnotate();
-    await generateWithPrompt("add sound tags");
+    await generateAnnotate();
 
     await waitFor(() => expect(screen.getByText("message_ai_editor_changes")).toBeTruthy());
   });
