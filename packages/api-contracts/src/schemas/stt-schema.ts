@@ -3,11 +3,12 @@ import { z } from 'zod';
 // ─── Closed vocabularies ──────────────────────────────────────────────────────
 
 /** Backend discriminators for the v1 STT roster (domain `STT_BACKENDS`) —
- *  in-browser Whisper (transformers.js, the zero-setup default) and one
+ *  in-browser Whisper (transformers.js, the zero-setup default), one
  *  OpenAI-compatible `/v1/audio/transcriptions` adapter (cloud or local
- *  server). Further native adapters (Deepgram, Mistral, xAI, ...) are a
- *  separate post-base decision — extend this enum when they land. */
-export const sttBackendSchema = z.enum(['openai-compat', 'whisper-browser', 'gemini']);
+ *  server), the Gemini audio-understanding backend (ST-7), and the native
+ *  Deepgram adapter (SPE-4). Further native adapters (ElevenLabs, NVIDIA)
+ *  extend this enum when they land. */
+export const sttBackendSchema = z.enum(['openai-compat', 'whisper-browser', 'gemini', 'deepgram']);
 export type SttBackendValue = z.infer<typeof sttBackendSchema>;
 
 // ─── Profile shape ────────────────────────────────────────────────────────────

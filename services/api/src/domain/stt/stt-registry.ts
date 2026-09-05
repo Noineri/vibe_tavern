@@ -77,6 +77,17 @@ export const STT_BACKEND_CAPABILITIES: Record<SttBackendType, SttBackendCapabili
     emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.Gemini],
     requiresApiKey: true,
   },
+  [STT_BACKENDS.Deepgram]: {
+    transport: STT_TRANSPORT.Server,
+    // Native `POST /v1/listen` raw-binary surface — NOT the OpenAI
+    // transcription protocol (SPE-4).
+    openaiCompatible: false,
+    // One batch request → one full transcript; Deepgram's streaming
+    // websocket is out of scope for single-shot dictation.
+    supportsStreaming: false,
+    emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.Deepgram],
+    requiresApiKey: true,
+  },
 };
 
 const KNOWN_SLUGS = new Set<string>(Object.values(STT_BACKENDS));

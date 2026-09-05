@@ -24,6 +24,10 @@ import {
   GeminiSttConfigError,
   GeminiSttError,
 } from "../../domain/stt/backends/gemini-stt.js";
+import {
+  DeepgramSttConfigError,
+  DeepgramSttError,
+} from "../../domain/stt/backends/deepgram-stt.js";
 import { SttBackendNotRegisteredError, SttUnknownBackendError } from "../../domain/stt/stt-registry.js";
 
 /** Multipart transcriptions may carry sizable clips — a sane ceiling before
@@ -106,12 +110,20 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
         if (error instanceof SttUnknownBackendError || error instanceof SttBackendNotRegisteredError) {
           return c.json({ error: error.message }, 400);
         }
-        if (error instanceof OpenAiCompatSttConfigError || error instanceof GeminiSttConfigError) {
+        if (
+          error instanceof OpenAiCompatSttConfigError ||
+          error instanceof GeminiSttConfigError ||
+          error instanceof DeepgramSttConfigError
+        ) {
           return c.json({ error: error.message }, 400);
         }
         // Normalized upstream failure (transport or non-2xx) → the caller
         // should see it as a gateway problem, not a 500 with no body.
-        if (error instanceof OpenAiCompatSttError || error instanceof GeminiSttError) {
+        if (
+          error instanceof OpenAiCompatSttError ||
+          error instanceof GeminiSttError ||
+          error instanceof DeepgramSttError
+        ) {
           const status =
             error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;
           return c.json({ error: error.message }, status);
@@ -133,10 +145,18 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
         if (error instanceof SttClientSideError) {
           return c.json({ error: "whisper-browser runs client-side" }, 400);
         }
-        if (error instanceof OpenAiCompatSttConfigError || error instanceof GeminiSttConfigError) {
+        if (
+          error instanceof OpenAiCompatSttConfigError ||
+          error instanceof GeminiSttConfigError ||
+          error instanceof DeepgramSttConfigError
+        ) {
           return c.json({ error: error.message }, 400);
         }
-        if (error instanceof OpenAiCompatSttError || error instanceof GeminiSttError) {
+        if (
+          error instanceof OpenAiCompatSttError ||
+          error instanceof GeminiSttError ||
+          error instanceof DeepgramSttError
+        ) {
           const status =
             error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;
           return c.json({ error: error.message }, status);

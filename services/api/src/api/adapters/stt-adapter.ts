@@ -47,6 +47,7 @@ import type { SttRuntimeApi } from "../contract/runtime-api.js";
 // (ST-5a) and now owns this file.
 import "../../domain/stt/backends/openai-stt.js";
 import "../../domain/stt/backends/gemini-stt.js";
+import "../../domain/stt/backends/deepgram-stt.js";
 
 import { createSttBackend } from "../../domain/stt/stt-registry.js";
 import {
@@ -57,6 +58,10 @@ import {
   GeminiSttConfigError,
   GeminiSttError,
 } from "../../domain/stt/backends/gemini-stt.js";
+import {
+  DeepgramSttConfigError,
+  DeepgramSttError,
+} from "../../domain/stt/backends/deepgram-stt.js";
 
 // ─── Wire projections ────────────────────────────────────────────────────────
 
@@ -95,13 +100,19 @@ function normalizeEndpoint(raw: string): string {
  *  the gemini backend (its config carries NO endpoint field, ST-7). */
 const GEMINI_API_HOST = "https://generativelanguage.googleapis.com";
 
+/** Vendor host of the fixed Deepgram API endpoint — the auto-key match key
+ *  for the deepgram backend (fixed endpoint too, SPE-4; same rule as
+ *  GEMINI_API_HOST). */
+const DEEPGRAM_API_HOST = "https://api.deepgram.com";
+
 /** Auto-match the transcription key. Two match strategies (ST-7):
  *  - openai-compat: by endpoint — first LLM provider profiles (the TTS
  *    default-on reuse), then openai-compat TTS profiles whose typed key is
  *    non-empty. Deterministic: first in list (sort) order wins.
- *  - gemini: by VENDOR — any LLM provider profile whose endpoint lives on the
- *    Gemini API host, then any gemini TTS profile with a stored key ("a saved
- *    Google TTS credential makes Google STT ready", ST-5b/ST-7 rule).
+ *  - gemini / deepgram: by VENDOR — any LLM provider profile whose endpoint
+ *    lives on the vendor's API host, then a same-vendor TTS profile with a
+ *    stored key ("a saved Google/Deepgram TTS credential makes the same
+ *    vendor's STT ready", ST-5b/ST-7 rule; deepgram joined in SPE-4).
  * Own-key/provided-key configs short-circuit before this runs. */
 async function autoMatchSttKey(
   stores: Pick<StoreContainer, "providers" | "tts">,
@@ -119,6 +130,24 @@ async function autoMatchSttKey(
     const ttsProfiles = await stores.tts.listAll();
     for (const profile of ttsProfiles) {
       if (profile.backend !== TTS_BACKEND.Gemini) continue;
+      const key = profile.apiKey ?? "";
+      if (key === "") continue;
+      return { config: { ...config, apiKey: key }, matchedName: profile.name };
+    }
+    return { config, matchedName: null };
+  }
+
+  if (backend === STT_BACKENDS.Deepgram) {
+    const providers = await stores.providers.listAll();
+    for (const provider of providers) {
+      if (!provider.apiKey) continue;
+      if (normalizeEndpoint(provider.endpoint).startsWith(DEEPGRAM_API_HOST)) {
+        return { config: { ...config, apiKey: provider.apiKey }, matchedName: provider.name };
+      }
+    }
+    const ttsProfiles = await stores.tts.listAll();
+    for (const profile of ttsProfiles) {
+      if (profile.backend !== TTS_BACKEND.Deepgram) continue;
       const key = profile.apiKey ?? "";
       if (key === "") continue;
       return { config: { ...config, apiKey: key }, matchedName: profile.name };
@@ -195,35 +224,43 @@ export class SttAdapter implements SttRuntimeApi {
 
   /** Auto-key HINT (UI display only): which provider/TTS profile's key
    *  auto-matches — same rule as decorateAutoKey in tts-adapter. Two
-   *  strategies (ST-7): endpoint match for openai-compat, vendor match for
-   *  gemini (Gemini-API-host provider profile, then a gemini TTS profile). */
+   *  strategies (ST-7/SPE-4): endpoint match for openai-compat, vendor
+   *  match for the fixed-endpoint natives (gemini, deepgram — provider on
+   *  the vendor's API host wins over a same-vendor TTS profile key). */
   private async decorateAutoKey(records: ClientSttProfileRecord[]): Promise<ClientSttProfileRecord[]> {
     const providers = await this.stores.providers.listAll();
     const keyful = providers.filter((p) => p.apiKey);
-    if (keyful.length === 0) {
-      // A gemini TTS key can still match without any keyful provider.
-      const ttsGemini = (await this.stores.tts.listAll()).find(
-        (p) => p.backend === TTS_BACKEND.Gemini && (p.apiKey ?? "") !== "",
-      );
-      if (!ttsGemini) return records;
-      for (const record of records) {
-        if (record.hasStoredApiKey || record.backend !== STT_BACKENDS.Gemini) continue;
-        record.autoKeyProviderName = ttsGemini.name;
-      }
-      return records;
-    }
-    const byEndpoint = new Map(keyful.map((p) => [normalizeEndpoint(p.endpoint), p.name]));
+    const ttsProfiles = await this.stores.tts.listAll();
+
+    // Vendor matches for the fixed-endpoint backends (provider-on-vendor-
+    // host wins over a same-vendor TTS key — the auto-match precedence).
     const geminiProvider = keyful.find((p) =>
       normalizeEndpoint(p.endpoint).startsWith(GEMINI_API_HOST),
     );
-    const ttsGemini = (await this.stores.tts.listAll()).find(
+    const deepgramProvider = keyful.find((p) =>
+      normalizeEndpoint(p.endpoint).startsWith(DEEPGRAM_API_HOST),
+    );
+    const ttsGemini = ttsProfiles.find(
       (p) => p.backend === TTS_BACKEND.Gemini && (p.apiKey ?? "") !== "",
     );
+    const ttsDeepgram = ttsProfiles.find(
+      (p) => p.backend === TTS_BACKEND.Deepgram && (p.apiKey ?? "") !== "",
+    );
+    // Nothing can match without any keyful provider or vendor TTS key.
+    if (keyful.length === 0 && !ttsGemini && !ttsDeepgram) return records;
+
+    const byEndpoint = new Map(keyful.map((p) => [normalizeEndpoint(p.endpoint), p.name]));
     for (const record of records) {
       if (record.hasStoredApiKey) continue;
       if (record.backend === STT_BACKENDS.Gemini) {
         // Vendor match: provider wins over TTS (the auto-match precedence).
         const name = geminiProvider?.name ?? ttsGemini?.name ?? null;
+        record.autoKeyProviderName = name;
+        continue;
+      }
+      if (record.backend === STT_BACKENDS.Deepgram) {
+        // Vendor match, the deepgram twin of the gemini branch (SPE-4).
+        const name = deepgramProvider?.name ?? ttsDeepgram?.name ?? null;
         record.autoKeyProviderName = name;
         continue;
       }

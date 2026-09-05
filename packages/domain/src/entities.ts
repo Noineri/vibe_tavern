@@ -856,6 +856,10 @@ export const STT_BACKENDS = {
    *  tone/emotion annotation in ONE pass over the clip (Interactions REST,
    *  inline base64 audio — NOT the Live websocket). */
   Gemini: "gemini",
+  /** SPE-4 — native Deepgram batch transcription (`POST /v1/listen`,
+   *  raw-binary body, `Authorization: Token` — NOT the OpenAI-compat
+   *  multipart surface; wire contract in STT_PROVIDER_EXPANSION_REPORT). */
+  Deepgram: "deepgram",
 } as const;
 export type SttBackendType = (typeof STT_BACKENDS)[keyof typeof STT_BACKENDS];
 
@@ -869,12 +873,23 @@ export const STT_BACKEND_EMOTION_CAPABILITY: Record<SttBackendType, boolean> = {
   [STT_BACKENDS.WhisperBrowser]: false,
   [STT_BACKENDS.OpenAiCompat]: false,
   [STT_BACKENDS.Gemini]: true,
+  // Pure ASR — Deepgram's sentiment feature is per-segment polarity
+  // labels, not a tone phrase in the ST-7 seam's shape, so the seam stays
+  // off (SPE-4).
+  [STT_BACKENDS.Deepgram]: false,
 };
 
 /** Default Gemini STT model (ST-7) — the current docs' flash example; the
  *  model field stays free text (no hardcoded catalog), this is only the
  *  switch-into-backend prefill and the empty-field fallback. */
 export const DEFAULT_GEMINI_STT_MODEL = "gemini-3.8-flash";
+
+/** Default Deepgram STT model (SPE-4) — nova-3, the current docs' primary
+ *  transcribe model (RU-capable since the 2025-11 monolingual wave). Same
+ *  role as {@link DEFAULT_GEMINI_STT_MODEL}: switch-into-backend prefill and
+ *  empty-field fallback; the live picker (`GET /v1/models` → `stt[]`) is the
+ *  real roster. */
+export const DEFAULT_DEEPGRAM_STT_MODEL = "nova-3";
 
 /** Backend-specific STT config — a per-backend discriminated union (the
  *  profile's `backend` field discriminates). The Gemini arm (ST-7) is
