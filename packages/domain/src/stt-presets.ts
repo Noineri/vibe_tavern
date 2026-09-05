@@ -11,9 +11,15 @@
  * verified transcription vendors speak the SAME OpenAI-compatible multipart
  * `/audio/transcriptions` surface, so they are PRESETS — pure data rows on the
  * one existing transport — not twelve new backends. Native-wire vendors
- * (Deepgram, ElevenLabs, NVIDIA chat-audio) join as their own backend types
- * with their own preset rows (SPE-4..6, landed). Whisper-browser and gemini
- * stay named backends in the picker without preset rows.
+ * (Gemini, Deepgram, ElevenLabs, NVIDIA chat-audio) join as their own
+ * backend types with their own preset rows (SPE-4..6, landed; gemini joined
+ * its row in SPE-8). Only whisper-browser stays a named backend without a
+ * preset row — it is the browser tier, not a provider.
+ *
+ * SPE-8 (owner directive 2026-09-05): the roster carries the LLM-tab group
+ * taxonomy — every row has a `group` (cloud / native / local) and the
+ * picker renders level-1 segments from it, exactly like the LLM provider
+ * presets. The old SPE-1 line "gemini is not a preset" is superseded.
  *
  * The aggregator rule (owner, standing): an aggregator (OpenRouter) is ONE row
  * among named providers, never a substitute for them — every vendor with a
@@ -29,6 +35,7 @@
 import {
 	DEFAULT_DEEPGRAM_STT_MODEL,
 	DEFAULT_ELEVENLABS_STT_MODEL,
+	DEFAULT_GEMINI_STT_MODEL,
 	DEFAULT_NVIDIA_STT_MODEL,
 	STT_BACKENDS,
 } from "./entities.js";
@@ -73,11 +80,25 @@ export type SttPresetModelSource =
 			defaultModel: string;
 	  };
 
+/** Provider group — the LLM-tab taxonomy (SPE-8, owner directive
+ *  2026-09-05): `cloud` = OpenAI-compatible transport rows,
+ *  `native` = own-wire backend rows, `local` = the local-server row.
+ *  The picker renders level-1 segments from this field. */
+export const STT_PRESET_GROUP = {
+	Cloud: "cloud",
+	Native: "native",
+	Local: "local",
+} as const;
+export type SttPresetGroup = (typeof STT_PRESET_GROUP)[keyof typeof STT_PRESET_GROUP];
+
 /** One named provider row on the STT picker. */
 export interface SttProviderPreset {
 	/** Row slug — unique across the roster; doubles as the i18n key suffix
 	 *  (`stt_preset_<id>`). */
 	id: string;
+	/** Group for the level-1 segment taxonomy (SPE-8 — mirrors the LLM
+	 *  provider-presets `group` field). */
+	group: SttPresetGroup;
 	/** The transport backend that executes this preset (must exist in
 	 *  {@link STT_BACKENDS} — see the module note on native adapters). */
 	backend: SttBackendType;
@@ -106,14 +127,16 @@ export interface SttProviderPreset {
 	englishOnly?: boolean;
 }
 
-/** The named-provider roster on the OpenAI-compatible transport. Every row is
- *  doc-verified (STT_PROVIDER_EXPANSION_REPORT, "Verdict" table); the two
- *  non-transport backends (whisper-browser, gemini) are NOT presets — they
- *  stay named backends in the picker — and native-adapter vendors
- *  (deepgram/elevenlabs/nvidia) land with their adapters (SPE-4..6). */
+/** The named-provider roster. Every row is doc-verified
+ *  (STT_PROVIDER_EXPANSION_REPORT, "Verdict" table): compat rows ride the
+ *  one OpenAI-compatible transport, native-adapter vendors
+ *  (gemini/deepgram/elevenlabs/nvidia) ride their own slugs (SPE-4..6,
+ *  SPE-8), and the local row marks the local-server arm. Only
+ *  whisper-browser is a named backend without a preset row (browser tier). */
 export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	{
 		id: "openai",
+		group: STT_PRESET_GROUP.Cloud,
 		backend: STT_BACKENDS.OpenAiCompat,
 		baseUrl: "https://api.openai.com/v1",
 		authHeader: STT_PRESET_AUTH_HEADER.Bearer,
@@ -127,6 +150,7 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	},
 	{
 		id: "openrouter",
+		group: STT_PRESET_GROUP.Cloud,
 		backend: STT_BACKENDS.OpenAiCompat,
 		baseUrl: "https://openrouter.ai/api/v1",
 		authHeader: STT_PRESET_AUTH_HEADER.Bearer,
@@ -142,6 +166,7 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	},
 	{
 		id: "groq",
+		group: STT_PRESET_GROUP.Cloud,
 		backend: STT_BACKENDS.OpenAiCompat,
 		baseUrl: "https://api.groq.com/openai/v1",
 		authHeader: STT_PRESET_AUTH_HEADER.Bearer,
@@ -155,6 +180,7 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	},
 	{
 		id: "mistral",
+		group: STT_PRESET_GROUP.Cloud,
 		backend: STT_BACKENDS.OpenAiCompat,
 		baseUrl: "https://api.mistral.ai/v1",
 		authHeader: STT_PRESET_AUTH_HEADER.Bearer,
@@ -174,6 +200,7 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	},
 	{
 		id: "cartesia",
+		group: STT_PRESET_GROUP.Cloud,
 		backend: STT_BACKENDS.OpenAiCompat,
 		// Their OpenAI-compatible drop-in lives at
 		// https://api.cartesia.ai/audio/transcriptions (no /v1 segment) —
@@ -203,6 +230,7 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 		// the TTS tab's Local Server entry instead of hiding locals in the
 		// old catch-all row.
 		id: "local",
+		group: STT_PRESET_GROUP.Local,
 		backend: STT_BACKENDS.OpenAiCompat,
 		baseUrl: "",
 		authHeader: STT_PRESET_AUTH_HEADER.Bearer,
@@ -219,8 +247,25 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	// field — the gemini-stt precedent) and `authHeader` is omitted. They
 	// exist so the picker, model roster, auto-key hints and the EN-only flag
 	// stay pure data over ONE roster instead of adapter-code constants.
+	// SPE-8: gemini joins the native group — it moves from a segment option
+	// to a preset row (the LLM-tab pattern: natives are rows, not segments).
+	// Fetch roster via the gemini-stt listModels (fixed Gemini API endpoint,
+	// no endpoint field — the ST-7 precedent all natives share).
+	{
+		id: "gemini",
+		group: STT_PRESET_GROUP.Native,
+		backend: STT_BACKENDS.Gemini,
+		baseUrl: "",
+		vendor: "gemini",
+		modelSource: {
+			kind: "fetch",
+			defaultModel: DEFAULT_GEMINI_STT_MODEL,
+		},
+		keyOptional: false,
+	},
 	{
 		id: "deepgram",
+		group: STT_PRESET_GROUP.Native,
 		backend: STT_BACKENDS.Deepgram,
 		baseUrl: "",
 		vendor: "deepgram",
@@ -234,6 +279,7 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	},
 	{
 		id: "elevenlabs",
+		group: STT_PRESET_GROUP.Native,
 		backend: STT_BACKENDS.ElevenLabs,
 		baseUrl: "",
 		vendor: "elevenlabs",
@@ -248,6 +294,7 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	},
 	{
 		id: "nvidia",
+		group: STT_PRESET_GROUP.Native,
 		backend: STT_BACKENDS.Nvidia,
 		baseUrl: "",
 		vendor: "nvidia",
@@ -268,17 +315,21 @@ export function getSttProviderPreset(id: string): SttProviderPreset | undefined 
 	return STT_PROVIDER_PRESETS.find((preset) => preset.id === id);
 }
 
-/** The preset row backing a NATIVE backend slug (deepgram / elevenlabs /
- *  nvidia), `undefined` for every non-native slug (compat presets are many
- *  per backend, whisper/gemini are named backends without preset rows).
- *  The web recognition section and provider form use this for the static
- *  model roster and the EN-only flag — pure data, no adapter imports. */
+/** Group of a preset row by slug (`null` for unknown ids) — mirrors the
+ *  TTS `getTtsPresetGroup` helper so the picker filters rows by the
+ *  level-1 segment. */
+export function getSttPresetGroup(id: string): SttPresetGroup | null {
+	return STT_PROVIDER_PRESETS.find((preset) => preset.id === id)?.group ?? null;
+}
+
+/** The preset row backing a NATIVE backend slug (gemini / deepgram /
+ *  elevenlabs / nvidia), `undefined` for every non-native slug (compat
+ *  presets are many per backend, whisper-browser is the browser tier
+ *  without a row). The web recognition section and provider form use this
+ *  for the static model roster and the EN-only flag — pure data, no
+ *  adapter imports. */
 export function getSttNativePreset(backend: SttBackendType): SttProviderPreset | undefined {
-	if (
-		backend === STT_BACKENDS.OpenAiCompat ||
-		backend === STT_BACKENDS.WhisperBrowser ||
-		backend === STT_BACKENDS.Gemini
-	) {
+	if (backend === STT_BACKENDS.OpenAiCompat || backend === STT_BACKENDS.WhisperBrowser) {
 		return undefined;
 	}
 	return STT_PROVIDER_PRESETS.find((preset) => preset.backend === backend);

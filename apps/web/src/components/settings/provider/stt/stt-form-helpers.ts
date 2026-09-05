@@ -6,8 +6,47 @@
  * routes; the test button works on saved profiles only, per ST-5b scope).
  */
 
-import { STT_BACKENDS, TTS_BACKEND, type SttBackendType } from "@vibe-tavern/domain";
+import { STT_BACKENDS, STT_PROVIDER_PRESETS, TTS_BACKEND, type SttBackendType } from "@vibe-tavern/domain";
 import type { useSttProfiles } from "./use-stt-profiles.js";
+
+/** Config-bag marker distinguishing the Local segment from cloud
+ *  OpenAI-compatible rows (SPE-8 — the TTS `localServer` twin: the backend
+ *  enum and the DB never change; the flag survives save/reopen). */
+export const STT_LOCAL_SERVER_FLAG = "localServer";
+
+/** The local-server endpoint suggestion (the old quickstart's faster-whisper
+ *  default port, kept verbatim — the Local segment prefills it for editing). */
+export const STT_LOCAL_PRESET_ENDPOINT = "http://127.0.0.1:8000/v1";
+
+/** Top-level segments (SPE-8, owner directive 2026-09-05): the LLM-tab group
+ *  taxonomy — Cloud (openai-compat transport rows), Native (own-wire backend
+ *  rows), Local (localServer flag), Custom (bare openai-compatible),
+ *  Browser (whisper tier). */
+export type SttProviderSegment = "browser" | "cloud" | "native" | "local" | "custom";
+
+/** Derive the segment from the wire state: browser tier → browser;
+ *  localServer flag → local (authoritative, exactly like the TTS preset
+ *  rule — a legacy localhost endpoint WITHOUT the flag stays custom until
+ *  re-applied); non-compat backend → native; compat + endpoint-matched
+ *  preset row → that row's group (cloud — the local row has an empty
+ *  baseUrl and never matches); otherwise custom. */
+export function sttProviderSegmentOf(
+  backend: SttBackendType,
+  config: Record<string, unknown>,
+): SttProviderSegment {
+  if (backend === STT_BACKENDS.WhisperBrowser) return "browser";
+  if (config[STT_LOCAL_SERVER_FLAG] === true) return "local";
+  if (backend !== STT_BACKENDS.OpenAiCompat) return "native";
+  const endpoint = normalizeSttEndpoint(configString(config, "endpoint"));
+  const match = STT_PROVIDER_PRESETS.find(
+    (p) => p.backend === STT_BACKENDS.OpenAiCompat && p.baseUrl !== "" && normalizeSttEndpoint(p.baseUrl) === endpoint,
+  );
+  // The group rides the matched row (SttPresetGroup is a subset of
+  // SttProviderSegment, so this typechecks directly): today only cloud
+  // rows carry a fixed baseUrl, the local row never matches.
+  if (match) return match.group;
+  return "custom";
+}
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 

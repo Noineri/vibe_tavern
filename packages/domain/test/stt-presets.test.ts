@@ -15,11 +15,14 @@ import { describe, expect, test } from "bun:test";
 import {
 	DEFAULT_DEEPGRAM_STT_MODEL,
 	DEFAULT_ELEVENLABS_STT_MODEL,
+	DEFAULT_GEMINI_STT_MODEL,
 	DEFAULT_NVIDIA_STT_MODEL,
 	STT_BACKENDS,
 	STT_PRESET_AUTH_HEADER,
+	STT_PRESET_GROUP,
 	STT_PROVIDER_PRESETS,
 	getSttNativePreset,
+	getSttPresetGroup,
 	getSttProviderPreset,
 } from "../src/index.js";
 
@@ -37,11 +40,22 @@ describe("STT provider presets — roster shape", () => {
 		}
 	});
 
+	test("group taxonomy mirrors the LLM-tab pattern (SPE-8)", () => {
+		const byId = new Map(STT_PROVIDER_PRESETS.map((p) => [p.id, p.group]));
+		for (const id of ["openai", "openrouter", "groq", "mistral", "cartesia"]) {
+			expect(byId.get(id)).toBe(STT_PRESET_GROUP.Cloud);
+		}
+		for (const id of ["gemini", "deepgram", "elevenlabs", "nvidia"]) {
+			expect(byId.get(id)).toBe(STT_PRESET_GROUP.Native);
+		}
+		expect(byId.get("local")).toBe(STT_PRESET_GROUP.Local);
+	});
+
 	test("compat rows ride the openai-compat transport; native rows ride their own slugs", () => {
-		// SPE-4..6: the deepgram/elevenlabs/nvidia rows ride their OWN native
-		// backend adapters (baseUrl empty, authHeader omitted — the adapter owns
-		// the wire). Every other row must stay executable by the one
-		// OpenAI-compatible server transport.
+		// SPE-4..6 + SPE-8: the gemini/deepgram/elevenlabs/nvidia rows ride
+		// their OWN native backend adapters (baseUrl empty, authHeader
+		// omitted — the adapter owns the wire). Every other row must stay
+		// executable by the one OpenAI-compatible server transport.
 		const compatIds = ["openai", "openrouter", "groq", "mistral", "cartesia", "local"];
 		for (const preset of STT_PROVIDER_PRESETS) {
 			if (compatIds.includes(preset.id)) {
@@ -185,7 +199,22 @@ describe("getSttProviderPreset", () => {
 	});
 });
 
-describe("native preset rows (SPE-4..6)", () => {
+describe("native preset rows (SPE-4..6, SPE-8)", () => {
+	test("gemini — own slug, live catalog fetch, ST-7 default (SPE-8: preset row, not a segment option)", () => {
+		const preset = getSttProviderPreset("gemini");
+		expect(preset?.group).toBe(STT_PRESET_GROUP.Native);
+		expect(preset?.backend).toBe(STT_BACKENDS.Gemini);
+		expect(preset?.baseUrl).toBe("");
+		expect(preset?.vendor).toBe("gemini");
+		expect(preset?.authHeader).toBeUndefined();
+		expect(preset?.modelSource).toEqual({
+			kind: "fetch",
+			defaultModel: DEFAULT_GEMINI_STT_MODEL,
+		});
+		expect(preset?.keyOptional).toBe(false);
+		expect(preset?.englishOnly ?? false).toBe(false);
+	});
+
 	test("deepgram — own slug, live catalog fetch, nova-3 default", () => {
 		const preset = getSttProviderPreset("deepgram");
 		expect(preset?.backend).toBe(STT_BACKENDS.Deepgram);
@@ -220,16 +249,25 @@ describe("native preset rows (SPE-4..6)", () => {
 	});
 });
 
+describe("getSttPresetGroup", () => {
+	test("resolves the group by slug, null for unknown ids", () => {
+		expect(getSttPresetGroup("openai")).toBe(STT_PRESET_GROUP.Cloud);
+		expect(getSttPresetGroup("gemini")).toBe(STT_PRESET_GROUP.Native);
+		expect(getSttPresetGroup("local")).toBe(STT_PRESET_GROUP.Local);
+		expect(getSttPresetGroup("nope")).toBeNull();
+	});
+});
+
 describe("getSttNativePreset", () => {
-	test("resolves the row for each native slug", () => {
+	test("resolves the row for each native slug (SPE-8: gemini included)", () => {
+		expect(getSttNativePreset(STT_BACKENDS.Gemini)?.id).toBe("gemini");
 		expect(getSttNativePreset(STT_BACKENDS.Deepgram)?.id).toBe("deepgram");
 		expect(getSttNativePreset(STT_BACKENDS.ElevenLabs)?.id).toBe("elevenlabs");
 		expect(getSttNativePreset(STT_BACKENDS.Nvidia)?.id).toBe("nvidia");
 	});
 
-	test("undefined for compat (many rows per backend), whisper and gemini (named backends, no rows)", () => {
+	test("undefined for compat (many rows per backend) and whisper-browser (browser tier, no row)", () => {
 		expect(getSttNativePreset(STT_BACKENDS.OpenAiCompat)).toBeUndefined();
 		expect(getSttNativePreset(STT_BACKENDS.WhisperBrowser)).toBeUndefined();
-		expect(getSttNativePreset(STT_BACKENDS.Gemini)).toBeUndefined();
 	});
 });

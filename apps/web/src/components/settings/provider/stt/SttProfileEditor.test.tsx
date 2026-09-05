@@ -253,10 +253,66 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
     await waitFor(() => expect(view.getByTestId("stt-test-failure")).toBeTruthy());
   });
 
-  it("quickstart selection is only offered for openai-compat", async () => {
+  it("SPE-8 gating: the preset dropdown renders for cloud + native, never for custom/local/browser", async () => {
+    // Cloud (endpoint-matched openai row) → offered.
+    const cloud = makeStt({ headerMode: "edit" });
+    const cloudView = render(React.createElement(SttProfileEditor, { stt: cloud as never }));
+    await waitFor(() => expect(cloudView.getByTestId("stt-backend-select").textContent).toContain("Cloud"));
+    expect(cloudView.getByTestId("stt-quickstart-select")).toBeTruthy();
+    // The cloud arm never shows the local panel (TTS localHelpers twin).
+    expect(cloudView.queryByTestId("stt-local-server-panel")).toBeNull();
+    cleanup();
+    // Custom (bare endpoint, no row match) → hidden, endpoint editable.
+    const custom = makeStt({
+      headerMode: "edit",
+      form: makeForm({ config: { endpoint: "https://custom.example/v1", model: "whisper-1" } }),
+    });
+    const customView = render(React.createElement(SttProfileEditor, { stt: custom as never }));
+    await waitFor(() => expect(customView.getByTestId("stt-backend-select").textContent).toContain("custom"));
+    expect(customView.queryByTestId("stt-quickstart-select")).toBeNull();
+    expect(customView.getByTestId("stt-field-endpoint")).toBeTruthy();
+    cleanup();
+    // Local (localServer flag) → hidden, endpoint editable, panel shown.
+    const local = makeStt({
+      headerMode: "edit",
+      form: makeForm({ config: { localServer: true, endpoint: "http://127.0.0.1:8000/v1", model: "whisper-1" } }),
+    });
+    const localView = render(React.createElement(SttProfileEditor, { stt: local as never }));
+    await waitFor(() =>
+      expect(localView.getByTestId("stt-backend-select").textContent).toContain("stt_segment_local"),
+    );
+    expect(localView.queryByTestId("stt-quickstart-select")).toBeNull();
+    expect(localView.getByTestId("stt-field-endpoint")).toBeTruthy();
+    expect(localView.getByTestId("stt-local-server-panel")).toBeTruthy();
+    cleanup();
+  });
+
+  it("cloud preset apply fills endpoint + default model (openrouter)", async () => {
     const stt = makeStt({ headerMode: "edit" });
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(view.getByTestId("stt-quickstart-select")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("stt-quickstart-select").click();
+    });
+    const option = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[cmdk-item]")).find(
+        (n) => n.textContent?.trim() === "stt_preset_openrouter",
+      );
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    await act(async () => {
+      (option as HTMLElement).click();
+    });
+    const calls = (stt.setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
+    const applied = calls.find(
+      (patch) =>
+        typeof patch["config"] === "object" &&
+        patch["config"] !== null &&
+        (patch["config"] as Record<string, unknown>)["endpoint"] === "https://openrouter.ai/api/v1",
+    );
+    expect(applied).toBeTruthy();
+    expect((applied!["config"] as Record<string, unknown>)["model"]).toBe("openai/whisper-large-v3");
   });
 });
 
@@ -288,15 +344,18 @@ describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7, level-2 si
     expect(listSttDraftModelsMock.mock.calls[0][0].backend).toBe("gemini");
   });
 
-  it("gemini edit form: connection only — no endpoint/quickstart/model/language/emotion", async () => {
+  it("gemini edit form: Native segment — connection only, preset dropdown offers the native rows", async () => {
     const stt = geminiStt(false, "edit");
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(view.getByTestId("stt-profile-editor")).toBeTruthy());
+    // SPE-8: gemini is a native preset row — the segment reads Native.
+    expect(view.getByTestId("stt-backend-select").textContent).toContain("Native");
     expect(view.queryByTestId("stt-field-endpoint")).toBeNull();
-    expect(view.queryByTestId("stt-quickstart-select")).toBeNull();
     expect(view.queryByTestId("stt-field-model")).toBeNull();
     expect(view.queryByTestId("stt-field-language")).toBeNull();
     expect(view.queryByTestId("stt-emotion-toggle-block")).toBeNull();
+    // The native preset dropdown shows the backing row selected.
+    expect(view.getByTestId("stt-quickstart-select").textContent).toContain("stt_preset_gemini");
     // Server backend → the key field renders.
     expect(view.getByTestId("stt-field-api-key")).toBeTruthy();
   });
@@ -381,28 +440,106 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
     });
   }
 
-  it('edit form: the segment dropdown offers the natives; nvidia renders the EN-only warning, deepgram the RU note', async () => {
+  it('edit form: SPE-8 group taxonomy — segment offers browser/Cloud/Native/Local/Custom; the native preset dropdown offers the native rows', async () => {
     const stt = nativeStt('nvidia', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', 'edit');
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(view.getByTestId('stt-backend-select')).toBeTruthy());
-    // The closed trigger shows the SELECTED option (the mocked t() echoes
-    // the key) — open the list to pin the full native offering (the cmdk
-    // items render into the body portal).
-    expect(view.getByTestId('stt-backend-select').textContent).toContain('stt_segment_nvidia');
+    // The closed segment trigger shows the SELECTED segment (literal).
+    expect(view.getByTestId('stt-backend-select').textContent).toContain('Native');
     await act(async () => {
       view.getByTestId('stt-backend-select').click();
     });
+    // Open the segment list to pin the taxonomy (cmdk items render into
+    // the body portal) — backends are NOT segment options anymore.
     await waitFor(() => {
       const body = document.body.textContent ?? '';
-      expect(body).toContain('stt_segment_deepgram');
-      expect(body).toContain('stt_segment_elevenlabs');
-      expect(body).toContain('stt_segment_nvidia');
+      expect(body).toContain('stt_segment_whisper');
+      expect(body).toContain('Cloud');
+      expect(body).toContain('Native');
+      expect(body).toContain('stt_segment_local');
+      expect(body).not.toContain('stt_segment_nvidia');
+    });
+    // The native preset dropdown shows the backing row selected; open it
+    // to pin the native offering (gemini joined the rows in SPE-8).
+    expect(view.getByTestId('stt-quickstart-select').textContent).toContain('stt_preset_nvidia');
+    await act(async () => {
+      view.getByTestId('stt-quickstart-select').click();
+    });
+    await waitFor(() => {
+      const body = document.body.textContent ?? '';
+      expect(body).toContain('stt_preset_gemini');
+      expect(body).toContain('stt_preset_deepgram');
+      expect(body).toContain('stt_preset_elevenlabs');
+      expect(body).toContain('stt_preset_nvidia');
+      expect(body).not.toContain('stt_preset_openai');
     });
     // The mocked t() echoes the key — the EN-only warning is data-driven
     // (englishOnly flag on the nvidia preset row).
     expect(view.getByTestId('stt-nvidia-en-only-hint').textContent).toContain('stt_nvidia_en_only');
     expect(view.queryByTestId('stt-deepgram-ru-note')).toBeNull();
-    expect(view.queryByTestId('stt-quickstart-select')).toBeNull();
+    // Fixed-endpoint natives show no endpoint field.
+    expect(view.queryByTestId('stt-field-endpoint')).toBeNull();
+  });
+
+  it('edit form: native preset apply switches the backend slug (nvidia → gemini)', async () => {
+    const stt = nativeStt('nvidia', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', 'edit');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-quickstart-select')).toBeTruthy());
+    await act(async () => {
+      view.getByTestId('stt-quickstart-select').click();
+    });
+    const option = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll('[cmdk-item]')).find(
+        (n) => n.textContent?.trim() === 'stt_preset_gemini',
+      );
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    await act(async () => {
+      (option as HTMLElement).click();
+    });
+    // The hook's backend-switch branch owns the reset + default prefill.
+    const calls = (stt.setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
+    expect(calls.some((patch) => patch['backend'] === 'gemini')).toBe(true);
+  });
+
+  it('edit form: segment switch to Local stamps the flag + port suggestion; to Custom wipes the config', async () => {
+    const stt = makeStt({ headerMode: 'edit' });
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-backend-select')).toBeTruthy());
+    async function pickSegment(label: string) {
+      await act(async () => {
+        view.getByTestId('stt-backend-select').click();
+      });
+      const option = await waitFor(() => {
+        const el = Array.from(document.body.querySelectorAll('[cmdk-item]')).find((n) =>
+          (n.textContent ?? '').includes(label),
+        );
+        expect(el).toBeTruthy();
+        return el!;
+      });
+      await act(async () => {
+        (option as HTMLElement).click();
+      });
+    }
+    await pickSegment('stt_segment_local');
+    const calls = (stt.setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
+    const localed = calls.find(
+      (patch) =>
+        typeof patch['config'] === 'object' &&
+        patch['config'] !== null &&
+        (patch['config'] as Record<string, unknown>)['localServer'] === true,
+    );
+    expect(localed).toBeTruthy();
+    expect((localed!['config'] as Record<string, unknown>)['endpoint']).toBe('http://127.0.0.1:8000/v1');
+    await pickSegment('custom');
+    const wiped = (stt.setForm.mock.calls as unknown[][])
+      .map((c) => c[0] as Record<string, unknown>)
+      .some((patch) => {
+        const cfg = patch['config'] as Record<string, unknown> | undefined;
+        return cfg !== undefined && Object.keys(cfg).length === 0;
+      });
+    expect(wiped).toBe(true);
   });
 
   // RTL binds queries to document.body (baseElement), so a second render in
@@ -414,13 +551,14 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
     expect(view.queryByTestId('stt-nvidia-en-only-hint')).toBeNull();
   });
 
-  it('edit form: natives get the key field + probe button, no endpoint field, no preset dropdown', async () => {
+  it('edit form: natives get the key field + probe button + native preset dropdown, no endpoint field', async () => {
     const stt = nativeStt('elevenlabs', 'scribe_v2', 'edit');
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(view.getByTestId('stt-test-connection-btn')).toBeTruthy());
     expect(view.getByTestId('stt-field-api-key')).toBeTruthy();
     expect(view.queryByTestId('stt-field-endpoint')).toBeNull();
-    expect(view.queryByTestId('stt-quickstart-select')).toBeNull();
+    // SPE-8: natives are preset rows — the dropdown offers them.
+    expect(view.getByTestId('stt-quickstart-select').textContent).toContain('stt_preset_elevenlabs');
   });
 
   it('elevenlabs view: the STATIC Scribe roster feeds the picker, refresh hidden, language kept', async () => {

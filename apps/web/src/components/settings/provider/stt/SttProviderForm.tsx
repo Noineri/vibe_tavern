@@ -5,6 +5,7 @@ import {
   STT_PROVIDER_PRESETS,
   getSttNativePreset,
   getSttProviderPreset,
+  type SttProviderPreset,
 } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { listSttDraftModels } from "../../../../api/stt-api.js";
@@ -18,15 +19,24 @@ import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
 import { SttLocalServerPanel } from "./SttLocalServerPanel.js";
 import { WhisperModelPanel } from "./WhisperModelPanel.js";
-import { configString, formDraftConfig, normalizeSttEndpoint, updateConfigField } from "./stt-form-helpers.js";
+import {
+  STT_LOCAL_PRESET_ENDPOINT,
+  STT_LOCAL_SERVER_FLAG,
+  configString,
+  formDraftConfig,
+  normalizeSttEndpoint,
+  sttProviderSegmentOf,
+  updateConfigField,
+  type SttProviderSegment,
+} from "./stt-form-helpers.js";
 import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 
 /** Preset id → i18n label key (SPE-7). A template literal would not
  *  typecheck against the i18n key union, so this explicit record is the
- *  one place that must grow with every new compat preset row — an unmapped
- *  id falls back to its raw slug (a visible signal, never a wrong label). */
+ *  one place that must grow with every new preset row — an unmapped id
+ *  falls back to its raw slug (a visible signal, never a wrong label). */
 const STT_PRESET_LABEL_KEYS = {
   openai: "stt_preset_openai",
   openrouter: "stt_preset_openrouter",
@@ -34,6 +44,10 @@ const STT_PRESET_LABEL_KEYS = {
   mistral: "stt_preset_mistral",
   cartesia: "stt_preset_cartesia",
   local: "stt_preset_local",
+  gemini: "stt_preset_gemini",
+  deepgram: "stt_preset_deepgram",
+  elevenlabs: "stt_preset_elevenlabs",
+  nvidia: "stt_preset_nvidia",
 } as const;
 
 /** Test-connection semantics — PROBE (audit P10, the TTS card pattern):
@@ -84,15 +98,17 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
     form.name &&
     sttProfiles.some((p) => p.id !== editingId && p.name.trim().toLowerCase() === form.name.trim().toLowerCase());
 
-  const segmentOptions: Array<{ value: string; label: string }> = [
-    { value: STT_BACKENDS.OpenAiCompat, label: t("stt_segment_openai") },
-    { value: STT_BACKENDS.WhisperBrowser, label: t("stt_segment_whisper") },
-    { value: STT_BACKENDS.Gemini, label: t("stt_segment_gemini") },
-    // SPE-4..6 natives — named backends with a FIXED endpoint (no endpoint
-    // field; the adapter owns the wire), exactly like gemini (ST-7).
-    { value: STT_BACKENDS.Deepgram, label: t("stt_segment_deepgram") },
-    { value: STT_BACKENDS.ElevenLabs, label: t("stt_segment_elevenlabs") },
-    { value: STT_BACKENDS.Nvidia, label: t("stt_segment_nvidia") },
+  // SPE-8: level-1 segments mirror the LLM-tab group taxonomy (Cloud /
+  // Native / Local / Custom + the whisper Browser tier) — backends are no
+  // longer segment options. "Cloud"/"Native" are literal (LLM/TTS
+  // precedent); browser/local/custom ride i18n keys.
+  const segment = sttProviderSegmentOf(form.backend, form.config);
+  const segmentOptions: Array<{ value: SttProviderSegment; label: string }> = [
+    { value: "browser", label: t("stt_segment_whisper") },
+    { value: "cloud", label: "Cloud" },
+    { value: "native", label: "Native" },
+    { value: "local", label: t("stt_segment_local") },
+    { value: "custom", label: t("custom") },
   ];
 
   // Data-driven per-backend notes under the segment (SPE-6/7): the NVIDIA
@@ -101,27 +117,77 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
   // (changelog-verified, SPE-R).
   const nativePreset = form.backend === STT_BACKENDS.OpenAiCompat ? undefined : getSttNativePreset(form.backend);
 
+  // Rows of the active group (TTS effectiveGroup twin): a stored preset's
+  // group wins when the segment carries none (custom/local/browser offer
+  // no rows — the dropdown disables there, exactly like the TTS form).
+  const groupPresets: readonly SttProviderPreset[] =
+    segment === "cloud" || segment === "native"
+      ? STT_PROVIDER_PRESETS.filter((p) => p.group === segment)
+      : [];
+
   function handleSegmentChange(next: string) {
-    if (next === form.backend) return;
+    const seg = next as SttProviderSegment;
+    if (seg === segment) return;
     // The hook's backend-switch branch owns the reset + per-backend model
     // prefill (whisper roster default / gemini / native adapter defaults) —
     // setForm resets config + apiKey + hasStoredApiKey on switch.
-    updateForm("backend", next as SttProfileForm["backend"]);
+    if (seg === "browser") {
+      updateForm("backend", STT_BACKENDS.WhisperBrowser);
+    } else if (seg === "local") {
+      // TTS local-branch twin: the flag marks the arm (survives
+      // save/reopen), the endpoint prefills the faster-whisper suggestion
+      // for editing, the model rides the local row's default.
+      const local = getSttProviderPreset("local");
+      updateForm("backend", STT_BACKENDS.OpenAiCompat);
+      updateForm("config", {
+        [STT_LOCAL_SERVER_FLAG]: true,
+        endpoint: STT_LOCAL_PRESET_ENDPOINT,
+        model: local?.modelSource.defaultModel ?? "whisper-1",
+      });
+    } else if (seg === "cloud" || seg === "native") {
+      // Each group segment applies its first roster row (cloud → OpenAI,
+      // native → Gemini — roster order, never hardcoded ids).
+      const first = STT_PROVIDER_PRESETS.find((p) => p.group === seg);
+      if (first) applyPreset(first.id);
+    } else {
+      updateForm("backend", STT_BACKENDS.OpenAiCompat);
+      updateForm("config", {});
+    }
   }
 
-  /** Preset apply (SPE-7 — the stt-quickstarts.ts successor): fills the
-   *  endpoint + default model of an OpenAI-compat preset row. The LOCAL row
-   *  carries an empty baseUrl by design — it prefills the faster-whisper
-   *  default port as a suggestion the user edits (the old quickstart's
-   *  behavior, kept verbatim). Native backends are segment options, not
-   *  presets — they never route through here. */
-  const LOCAL_PRESET_ENDPOINT = "http://127.0.0.1:8000/v1";
+  /** Preset apply (SPE-7 (+ SPE-8 group arms) — the stt-quickstarts.ts
+   *  successor). Cloud rows fill endpoint + default model; the LOCAL row
+   *  takes the local-segment mechanics (flag + port suggestion the user
+   *  edits — the old quickstart's behavior, kept verbatim); native rows
+   *  set the backend slug (the hook prefills the adapter default model)
+   *  and restore the row default on re-apply. */
   function applyPreset(id: string): void {
     const preset = getSttProviderPreset(id);
-    if (!preset || preset.backend !== STT_BACKENDS.OpenAiCompat) return;
+    if (!preset) return;
+    if (preset.group === "native") {
+      if (form.backend !== preset.backend) updateForm("backend", preset.backend);
+      updateForm("config", { ...form.config, model: preset.modelSource.defaultModel });
+      return;
+    }
+    if (preset.id === "local") {
+      if (form.backend !== STT_BACKENDS.OpenAiCompat) updateForm("backend", STT_BACKENDS.OpenAiCompat);
+      updateForm("config", {
+        ...form.config,
+        [STT_LOCAL_SERVER_FLAG]: true,
+        endpoint: STT_LOCAL_PRESET_ENDPOINT,
+        model: preset.modelSource.defaultModel,
+      });
+      return;
+    }
+    if (preset.backend !== STT_BACKENDS.OpenAiCompat) return;
     if (form.backend !== STT_BACKENDS.OpenAiCompat) updateForm("backend", STT_BACKENDS.OpenAiCompat);
-    const endpoint = preset.baseUrl !== "" ? preset.baseUrl : LOCAL_PRESET_ENDPOINT;
-    const next: Record<string, unknown> = { ...form.config, endpoint, model: preset.modelSource.defaultModel };
+    const next: Record<string, unknown> = {
+      ...form.config,
+      endpoint: preset.baseUrl,
+      model: preset.modelSource.defaultModel,
+    };
+    // A cloud apply leaves the local arm (the flag is segment state).
+    delete next[STT_LOCAL_SERVER_FLAG];
     updateForm("config", next);
   }
 
@@ -145,15 +211,17 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
     }
   }
 
-  /** Applied-preset detection (SPE-7): normalized endpoint equality against
-   *  the compat rows with a fixed baseUrl — the local row (empty baseUrl) is
-   *  never auto-detected, exactly like the TTS preset rule (the user stays
-   *  on «custom» until they re-apply). */
-  const compatPresets = STT_PROVIDER_PRESETS.filter((p) => p.backend === STT_BACKENDS.OpenAiCompat);
+  /** Dropdown value (SPE-7 detection + SPE-8 native arm): cloud matches the
+   *  endpoint against fixed-baseUrl rows (the local row never auto-detects
+   *  — TTS preset rule: the user stays on «custom»/«local» until re-apply);
+   *  native resolves the row backing the backend slug. */
   const formEndpoint = normalizeSttEndpoint(configString(form.config, "endpoint"));
-  const selectedPreset = compatPresets.find(
-    (p) => p.baseUrl !== "" && normalizeSttEndpoint(p.baseUrl) === formEndpoint,
-  );
+  const selectedPreset =
+    segment === "cloud"
+      ? groupPresets.find((p) => p.baseUrl !== "" && normalizeSttEndpoint(p.baseUrl) === formEndpoint)
+      : segment === "native"
+        ? getSttNativePreset(form.backend)
+        : undefined;
   const presetId = selectedPreset?.id ?? "";
   const presetEndpoint = selectedPreset?.baseUrl ?? "";
 
@@ -185,7 +253,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
           {/* P7 (audit 2026-09-04): dropdown instead of the wrapping segment
            *  row — same replacement as the TTS preset segment. */}
           <DropdownSelect
-            value={form.backend}
+            value={segment}
             options={segmentOptions.map((o) => ({ id: o.value, label: o.label }))}
             onChange={handleSegmentChange}
             searchable={false}
@@ -213,18 +281,19 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       </div>
 
-      {/* Named presets (SPE-7 — the stt-quickstarts successor): the six
-          OpenAI-compat rows from STT_PROVIDER_PRESETS, pure data (endpoint
-          + default model prefill); the local row prefills a port the user
-          edits. Live discovery stays the level-2 fetched picker (ST-8/P8);
-          natives are segment options above, not presets. */}
-      {isCompat && (
+      {/* Named presets (SPE-7 rows + SPE-8 group filter — the stt-quickstarts
+          successor): the active group's rows from STT_PROVIDER_PRESETS, pure
+          data (endpoint + default model prefill for cloud; backend slug +
+          default model for natives). Custom/local/browser offer no rows —
+          the dropdown disables there, exactly like the TTS form. Live
+          discovery stays the level-2 fetched picker (ST-8/P8). */}
+      {(segment === "cloud" || segment === "native") && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="mb-3">
             <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
             <DropdownSelect
               value={presetId}
-              options={compatPresets.map((p) => {
+              options={groupPresets.map((p) => {
                 const key = STT_PRESET_LABEL_KEYS[p.id as keyof typeof STT_PRESET_LABEL_KEYS];
                 return { id: p.id, label: key !== undefined ? t(key) : p.id };
               })}
@@ -247,10 +316,10 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       )}
 
-      {/* Endpoint (openai-compat only — the connection-level address;
-   *          gemini talks to the fixed Gemini API endpoint, ST-7; the model
-   *          and language moved to the level-2 recognition section, P8). */}
-      {isCompat && (
+      {/* Endpoint (the TTS showEndpoint twin: custom + local always, cloud
+          only for the compat transport — natives talk to fixed endpoints;
+          the model and language moved to the level-2 section, P8). */}
+      {(segment === "custom" || segment === "local" || (segment === "cloud" && isCompat)) && (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("stt_field_endpoint")}</label>
           <input
@@ -264,7 +333,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       )}
 
-      {/* API key (openai-compat + gemini — both are server backends; the
+      {/* API key (every server arm — cloud, native, local, custom; the
           browser tier needs none) */}
       {!isBrowser && (
         <div className="mb-3">
@@ -287,10 +356,10 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       )}
 
-      {/* Local-server discovery + setup help (openai-compat only — the
-          whisper-browser tier is in-browser; gemini has a fixed endpoint).
-          ST-8. */}
-      {isCompat && <SttLocalServerPanel form={form} stt={stt} />}
+      {/* Local-server discovery + setup help (ST-8) — the TTS localHelpers
+          twin: the panel belongs to the Local segment only, not to every
+          compat profile. */}
+      {segment === "local" && <SttLocalServerPanel form={form} stt={stt} />}
 
       {/* Browser-model download panel (audit P5) — the level-1 whisper
           surface, mirroring the kokoro branch of TtsProviderForm: the
@@ -304,7 +373,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
 
       {/* Test connection card — PROBE semantics (P10): key+endpoint+catalog
           via the draft-models route; works on unsaved drafts like TTS.
-          Server backends only (openai-compat and gemini); the browser
+          Every server arm (cloud, native, local, custom); the browser
           backend has nothing remote to test — its "status" is the roster
           badge above. */}
       {!isBrowser ? (
