@@ -12,6 +12,7 @@ import {
   updateTtsProfile,
   type TtsProfileRecord,
 } from "../../../../api/tts-api.js";
+import { refreshVoiceMapData } from "../../../../lib/tts/voice-map-data.js";
 
 export interface TtsProfileForm {
   id: string | null;
@@ -173,6 +174,11 @@ export function useTtsProfiles(): {
     setError(null);
     try {
       await setTtsDefault(id);
+      // The chat-side voice map (useMessageNarration / narrator / auto-narrate)
+      // holds a module-level snapshot — invalidate it or the OLD default keeps
+      // narrating until a link mutation happens to refresh it (live incident
+      // 2026-09-05: default switched to chatterbox, kokoro kept playing).
+      void refreshVoiceMapData();
       const list = await listAllTtsProfiles();
       setProfiles(list);
     } catch (cause) {
@@ -268,6 +274,10 @@ export function useTtsProfiles(): {
       }
       const list = await listAllTtsProfiles();
       setProfiles(list);
+      // Same stale-snapshot contract as setDefault: the cached record the
+      // narrator plays from (voiceId lives on the profile) must not outlive
+      // the save.
+      void refreshVoiceMapData();
       setEditingId(saved.id);
       setFormState({
         id: saved.id,
@@ -304,6 +314,9 @@ export function useTtsProfiles(): {
       await deleteTtsProfile(form.id);
       const list = await listAllTtsProfiles();
       setProfiles(list);
+      // Deleted profile may be the cached default — drop it from the
+      // chat-side voice map too.
+      void refreshVoiceMapData();
       setFormState(null);
       setEditingId(null);
       setDirty(false);

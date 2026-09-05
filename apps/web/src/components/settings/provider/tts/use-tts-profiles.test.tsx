@@ -7,6 +7,16 @@ useDomEnv();
 const realTtsApi = await import("../../../../api/tts-api.js");
 const realI18n = await import("../../../../i18n/context.js");
 const realProviderApi = await import("../../../../api/provider-api.js");
+// Voice-map cache seam: the hook must invalidate the chat-side snapshot
+// after every successful mutation (live incident 2026-09-05 — default
+// switch narrated with the OLD profile until a link mutation refreshed).
+// Safe mock.module pattern: real module first, spread, override one fn.
+const realVoiceMapData = await import("../../../../lib/tts/voice-map-data.js");
+const refreshVoiceMapMock = mock(async () => {});
+mock.module("../../../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  refreshVoiceMapData: refreshVoiceMapMock,
+}));
 
 mock.module("../../../../i18n/context.js", () => ({
   ...realI18n,
@@ -118,6 +128,7 @@ afterEach(async () => {
   deleteMock.mockClear();
   setDefaultMock.mockClear();
   listProvidersMock.mockClear();
+  refreshVoiceMapMock.mockClear();
 });
 
 describe("useTtsProfiles", () => {
@@ -494,6 +505,43 @@ describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mecha
     expect(setDefaultMock.mock.calls[0][0]).toBe("p2");
     await waitFor(() => expect(hook?.profiles.find((p: TtsRecord) => p.id === "p2")?.isDefault).toBe(true));
     expect(hook?.profiles.find((p: TtsRecord) => p.id === "p1")?.isDefault).toBe(false);
+    // The chat-side voice-map snapshot was invalidated (the actual bug).
+    expect(refreshVoiceMapMock).toHaveBeenCalled();
+    cleanup();
+  });
+
+  it("profile mutations (save/remove) invalidate the chat-side voice-map cache", async () => {
+    store = [makeRecord({ id: "p1", isDefault: true, name: "Old" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    expect(refreshVoiceMapMock).not.toHaveBeenCalled();
+
+    // Save (rename) → cache invalidated. Each step wrapped in act: the
+    // hook's callbacks close over state from the LAST render, so the form
+    // updates must flush before save() is invoked.
+    await act(async () => {
+      hook!.select("p1");
+    });
+    await act(async () => {
+      hook!.setForm({ name: "New" });
+    });
+    await act(async () => {
+      await hook!.save();
+    });
+    await waitFor(() => expect(updateMock).toHaveBeenCalled());
+    expect(refreshVoiceMapMock).toHaveBeenCalledTimes(1);
+
+    // Remove → cache invalidated again.
+    await act(async () => {
+      await hook!.remove();
+    });
+    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
+    expect(refreshVoiceMapMock).toHaveBeenCalledTimes(2);
     cleanup();
   });
 });
