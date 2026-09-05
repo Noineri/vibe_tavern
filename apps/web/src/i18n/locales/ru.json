@@ -601,6 +601,8 @@
   "tts_field_style": "Стиль",
   "tts_field_speaker_boost": "Усиление голоса",
   "tts_voices_load_error": "Не удалось загрузить голоса",
+  "tts_voices_empty_library": "Голосов пока нет — вы ещё не добавили голос",
+  "tts_refresh_voices": "Обновить голоса",
   "tts_voices_loading": "Загрузка голосов...",
   "tts_models_refresh": "Обновить модели",
   "tts_models_loading": "Загрузка моделей...",

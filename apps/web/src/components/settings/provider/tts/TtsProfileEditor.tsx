@@ -492,8 +492,13 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
           if (cancelled) return;
           setCloneCaps(capabilities);
           if (list === null) {
+            // Null is NOT a failure: an empty chatterbox-style library (and
+            // any host without a voices endpoint) parses to null by design.
+            // The red error state is reserved for real rejections (.catch) —
+            // the render distinguishes the empty-library case via the clone
+            // capability (owner 2026-09-05: "no voices yet" ≠ "failed").
             setVoices(null);
-            setVoicesError("unavailable");
+            setVoicesError(null);
             setVoicesLoading(false);
             return;
           }
@@ -705,6 +710,8 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
               voices={voices}
               voicesLoading={voicesLoading}
               voicesError={voicesError}
+              cloneCapable={cloneCaps?.supportsCloning === true}
+              onRefreshVoices={() => setVoicesRefreshTick((n) => n + 1)}
             />
             {/* Owner 2026-08-29 (D18): listening docks UNDER the voice
              *  selection. Gated on a chosen voice — synthesizing with an
@@ -821,6 +828,12 @@ export interface TtsVoiceFieldsProps {
   voices: TtsVoiceRecord[] | null;
   voicesLoading: boolean;
   voicesError: string | null;
+  /** Clone capability from the voices envelope — drives the friendly
+   *  empty-library hint (TPE-12: null voices on a clone-capable server is
+   *  "no voices yet", never a load failure). */
+  cloneCapable: boolean;
+  /** Voices are a refreshable resource like models (owner 2026-09-05). */
+  onRefreshVoices: () => void;
 }
 
 /** The character + narrator voice pickers (TE2-9): kokoro manifest dropdown,
@@ -835,6 +848,8 @@ export function TtsVoiceFields({
   voices,
   voicesLoading,
   voicesError,
+  cloneCapable,
+  onRefreshVoices,
 }: TtsVoiceFieldsProps): ReactNode {
   const { t } = useT();
   const isKokoro = form.backend === TTS_BACKEND.Kokoro;
@@ -901,7 +916,25 @@ export function TtsVoiceFields({
           {t("tts_voices_load_error")}
         </div>
       </>
-        ) : voices !== null && voices.length === 0 ? (
+        ) : voices === null ? (
+      cloneCapable ? (
+        // Empty library on a clone-capable server (chatterbox shape): the
+        // honest state is "no voices yet" — uploading the first one IS the
+        // feature (owner 2026-09-05: never render this as a load failure).
+        <div data-testid="tts-voices-empty" className="mt-1 font-ui text-[12px] text-t3">
+          {t("tts_voices_empty_library")}
+        </div>
+      ) : (
+        // Host without a voices endpoint — the manual floor stays honest.
+        <input
+          data-testid="tts-voice-input"
+          className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+          value={form.voiceId}
+          onChange={(e) => updateForm("voiceId", e.target.value)}
+          placeholder={manualPlaceholder}
+        />
+      )
+        ) : voices.length === 0 ? (
       <input
         data-testid="tts-voice-input"
         className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
@@ -921,6 +954,19 @@ export function TtsVoiceFields({
         />
       </div>
         )}
+        {form.backend !== undefined && (
+          <button
+            type="button"
+            data-testid="tts-voices-refresh"
+            onClick={() => onRefreshVoices()}
+            disabled={voicesLoading}
+            className="mt-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
+            title={t("tts_refresh_voices")}
+          >
+            <Icons.Regen />
+            {t("tts_refresh_voices")}
+          </button>
+        )}
       </div>
       <div className="mb-3">
         <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
@@ -928,15 +974,7 @@ export function TtsVoiceFields({
       <div data-testid="tts-narrator-voices-loading" className="mt-1 font-ui text-[12px] text-t3">
         {t("tts_voices_loading")}
       </div>
-        ) : voicesError !== null ? (
-      <input
-        data-testid="tts-narrator-voice-input"
-        className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
-        value={form.narratorVoiceId}
-        onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
-        placeholder={t("tts_field_narrator_voice_none")}
-      />
-        ) : voices !== null && voices.length === 0 ? (
+        ) : voicesError !== null || voices === null || voices.length === 0 ? (
       <input
         data-testid="tts-narrator-voice-input"
         className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}

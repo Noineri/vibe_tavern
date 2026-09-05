@@ -788,7 +788,7 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     await act(async () => {});
   });
 
-  it("null voices (endpoint unavailable) → manual input + load-error hint, no fake roster (TE2-3)", async () => {
+  it("null voices (no endpoint / empty library, non-clone-capable) → manual input floor, NO red error (TPE-12: null is not a failure)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: null, capabilities: { supportsCloning: false } }));
     const tts = viewTts({
       form: {
@@ -801,7 +801,12 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     });
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
-    expect(view.getByTestId("tts-voices-load-error")).toBeTruthy();
+    // Owner 2026-09-05 (TPE-12): null voices is never a load failure — the
+    // manual floor stays, the red error is reserved for transport rejections
+    // (pinned by the clone-section suite's rejection test).
+    expect(view.queryByTestId("tts-voices-load-error")).toBeNull();
+    expect(view.queryByTestId("tts-voices-empty")).toBeNull();
+    expect(input).toBeTruthy();
     cleanup();
     document.body.innerHTML = "";
     await act(async () => {});
@@ -1790,6 +1795,57 @@ describe("TtsProfileEditor — voice clone section", () => {
       await act(async () => {});
     } finally {
       __setGlueDecoderForTests(null);
+      listTtsDraftVoicesMock.mockRestore();
+    }
+  });
+
+  // ── TPE-12: voices-as-a-refreshable-resource (owner 2026-09-05) ────
+  it("empty clone-capable library: friendly 'no voices yet' hint (NOT a load error) + refresh re-fetches; rejection still errors", async () => {
+    // Phase-based stub: voices NULL + capable — the fresh-chatterbox shape.
+    listTtsDraftVoicesMock.mockImplementation(async () => ({
+      voices: null,
+      capabilities: { supportsCloning: true, formats: ["wav", "mp3"], maxSizeMb: 10 },
+    }) as never);
+
+    try {
+      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      await view.findByTestId("tts-voices-empty", undefined, { timeout: 2500 });
+
+      // The empty library is NOT a failure — the red error state must stay absent.
+      expect(view.queryByTestId("tts-voices-load-error")).toBeNull();
+      // The clone section is right there (uploading the first voice IS the feature).
+      expect(view.queryByTestId("tts-clone-section")).toBeTruthy();
+
+      // Refresh button (the models-picker pattern): re-fires the voices load.
+      const before = listTtsDraftVoicesMock.mock.calls.length;
+      fireEvent.click(view.getByTestId("tts-voices-refresh"));
+      await waitFor(
+        () => expect(listTtsDraftVoicesMock.mock.calls.length).toBeGreaterThan(before),
+        { timeout: 2500 },
+      );
+
+      cleanup();
+      document.body.innerHTML = "";
+      await act(async () => {});
+    } finally {
+      listTtsDraftVoicesMock.mockRestore();
+    }
+  });
+
+  it("voices transport rejection → the red load-error state (manual input floor stays)", async () => {
+    listTtsDraftVoicesMock.mockImplementation(async () => {
+      throw new Error("server unreachable");
+    });
+    try {
+      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      await view.findByTestId("tts-voices-load-error", undefined, { timeout: 2500 });
+      expect(view.queryByTestId("tts-voices-empty")).toBeNull();
+      expect(view.queryByTestId("tts-voices-refresh")).toBeTruthy();
+
+      cleanup();
+      document.body.innerHTML = "";
+      await act(async () => {});
+    } finally {
       listTtsDraftVoicesMock.mockRestore();
     }
   });
