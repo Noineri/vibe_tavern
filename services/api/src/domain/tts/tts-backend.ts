@@ -14,6 +14,11 @@ export interface TtsGenerateRequest {
   voiceId: string;
   speed?: number;
   instructions?: string;
+  /** TPE-16: caller's abort signal (stop button → client disconnect). The
+   *  backend chains it into the upstream fetch so an abandoned narration
+   *  stops holding the lane; engines that keep generating server-side are
+   *  their own business. Optional — backends that predate it ignore it. */
+  signal?: AbortSignal;
 }
 
 export interface TtsAudioResult {

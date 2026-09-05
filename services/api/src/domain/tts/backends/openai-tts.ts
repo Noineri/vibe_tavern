@@ -406,9 +406,10 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           method: "POST",
           headers: buildHeaders(cfg.apiKey, true),
           body: JSON.stringify(body),
-          // TPE-17: deliberately NO timeout signal here — heavy local
-          // models may legally take minutes; the generate call is
-          // unbounded (clone/probe/list keep their own ceilings).
+          // TPE-16: chain the caller's abort signal (stop button →
+          // client disconnect → here). Deliberately NO timeout signal —
+          // heavy local models may legally take minutes (TPE-17).
+          signal: req.signal,
         },
         "generate",
       );

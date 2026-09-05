@@ -253,7 +253,7 @@ export class TtsAdapter implements TtsRuntimeApi {
 
   listAllTtsLinks = () => this.stores.tts.listAllLinks();
 
-  generateTtsSpeech: TtsRuntimeApi["generateTtsSpeech"] = async (body) => {
+  generateTtsSpeech: TtsRuntimeApi["generateTtsSpeech"] = async (body, signal) => {
     const profile = await this.stores.tts.getById(body.profileId);
     if (!profile) return null;
     // Kokoro in-browser bypasses the route layer — the client synthesizes locally.
@@ -266,6 +266,9 @@ export class TtsAdapter implements TtsRuntimeApi {
       voiceId: body.voiceId ?? profile.voiceId,
       speed: body.speed,
       instructions: body.instructions,
+      // TPE-16: the route threads the client disconnect through here so
+      // stop actually cancels the upstream fetch (no blind timeouts).
+      signal,
     });
     return { audio: await bufferTtsAudio(result.audio), mime: result.mime };
   };

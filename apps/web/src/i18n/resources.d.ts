@@ -2693,6 +2693,8 @@ export default interface Resources {
     "tts_narration_mode_quoted_desc": "Only quoted dialogue is spoken; messages without quotes fall back to full text.",
     "tts_narration_mode_skip": "Skip *asterisk* spans",
     "tts_narration_mode_skip_desc": "Text between single asterisks is skipped — emphasis marks are dropped too.",
+    "tts_playback_wait_full_hint": "Playback starts after all segments are synthesized — gapless audio on slow models, but a later start.",
+    "tts_playback_wait_full_label": "Wait for full generation before playing",
     "tts_preview": "Preview voice",
     "tts_preview_downloading": "Downloading model… {pct}%",
     "tts_preview_failed": "Preview failed",

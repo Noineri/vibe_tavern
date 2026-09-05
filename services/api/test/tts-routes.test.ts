@@ -289,6 +289,33 @@ describe("TTS routes — generate + voices", () => {
     expect(seenVoiceId).toBe("verse");
   });
 
+  test("TPE-16: aborted client request → backend generate observes the abort (stop propagates upstream)", async () => {
+    let seenSignal: AbortSignal | null | undefined;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({
+        generate: async (req) => {
+          seenSignal = req.signal ?? null;
+          return { audio: Buffer.from([1, 2, 3, 4]), mime: "audio/wav" };
+        },
+      }),
+    );
+    const { app } = await makeApp();
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "P", backend: "openai-compatible", voiceId: "alloy" }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+
+    await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "hi" }),
+      signal: AbortSignal.abort(),
+    });
+    expect(seenSignal?.aborted).toBe(true);
+  });
+
   test("POST /api/tts/generate validation: empty text → 400", async () => {
     registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () => stubBackend());
     const { app } = await makeApp();

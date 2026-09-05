@@ -163,18 +163,23 @@ export async function listAllTtsLinks(): Promise<Array<TtsLinkRecord & { mode: "
  * single buffered audio response per paragraph — paragraph-level streaming
  * already delivers low latency, so byte-level SSE is unnecessary).
  */
-export async function generateTtsSpeech(body: {
-  profileId: string;
-  text: string;
-  speed?: number;
-  instructions?: string;
-  voiceId?: string;
-}): Promise<{ blob: Blob; mime: string }> {
+export async function generateTtsSpeech(
+  body: {
+    profileId: string;
+    text: string;
+    speed?: number;
+    instructions?: string;
+    voiceId?: string;
+  },
+  options?: { signal?: AbortSignal },
+): Promise<{ blob: Blob; mime: string }> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(appendTokenQuery(`${baseUrl}/api/tts/generate`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    // TPE-16: stop-button abort rides here (orchestrator → store seam).
+    signal: options?.signal,
   });
   if (!response.ok) {
     const text = await response.text().catch(() => "");

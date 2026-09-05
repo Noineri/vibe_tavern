@@ -12,6 +12,7 @@
  */
 
 import { create } from "zustand";
+import { toast } from "sonner";
 import type { TtsProfileRecord } from "../api/tts-api.js";
 import { generateTtsSpeech } from "../api/tts-api.js";
 import {
@@ -22,7 +23,8 @@ import { createHtmlAudioNarrationPlayer } from "../lib/tts/narration-player.js";
 import type { NarrationPlayer } from "../lib/tts/narration-player.js";
 import { chunkNarrationText } from "../lib/tts/kokoro/kokoro-text.js";
 import { createTtsOrchestrator } from "../lib/tts/tts-orchestrator.js";
-import type { NarrationState } from "../lib/tts/tts-orchestrator.js";
+import type { NarrationState, SynthesizeOptions } from "../lib/tts/tts-orchestrator.js";
+import { createNarrationSegmentCache, type NarrationSegmentCache } from "../lib/tts/narration-cache.js";
 
 export type { NarrationState };
 
@@ -44,7 +46,12 @@ export interface TtsPlaybackActions {
 
 export type TtsPlaybackStore = TtsPlaybackState & TtsPlaybackActions;
 
-type SynthesizeFn = (text: string, profile: TtsProfileRecord, voiceId: string) => Promise<{ blob: Blob; mime: string }>;
+type SynthesizeFn = (
+  text: string,
+  profile: TtsProfileRecord,
+  voiceId: string,
+  options?: SynthesizeOptions,
+) => Promise<{ blob: Blob; mime: string }>;
 type Orchestrator = ReturnType<typeof createTtsOrchestrator>;
 
 function readSpeed(profile: TtsProfileRecord): number | undefined {
@@ -53,7 +60,12 @@ function readSpeed(profile: TtsProfileRecord): number | undefined {
   return undefined;
 }
 
-async function defaultSynthesize(text: string, profile: TtsProfileRecord, voiceId: string): Promise<{ blob: Blob; mime: string }> {
+async function defaultSynthesize(
+  text: string,
+  profile: TtsProfileRecord,
+  voiceId: string,
+  options?: SynthesizeOptions,
+): Promise<{ blob: Blob; mime: string }> {
   if (profile.backend === "kokoro") {
     const client = await ensureSharedKokoroModel();
     const out = await client.generateChunked(
@@ -62,7 +74,12 @@ async function defaultSynthesize(text: string, profile: TtsProfileRecord, voiceI
     );
     return { blob: out.blob, mime: "audio/wav" };
   }
-  return generateTtsSpeech({ profileId: profile.id, text, speed: readSpeed(profile), voiceId });
+  // TPE-16: the orchestrator's abort signal rides into the fetch so the
+  // stop button cancels the request, not just the UI lane.
+  return generateTtsSpeech(
+    { profileId: profile.id, text, speed: readSpeed(profile), voiceId },
+    options?.signal !== undefined ? { signal: options.signal } : undefined,
+  );
 }
 
 // ── HTML-audio player singleton (lazy — DOM-free until first play) ──────────
@@ -75,47 +92,87 @@ function htmlAudioPlayer(): NarrationPlayer {
 }
 
 function writeNarrationState(messageId: string, state: NarrationState): void {
+  const previous = useTtsPlaybackStore.getState().narrations[messageId];
   useTtsPlaybackStore.setState((s) => ({ narrations: { ...s.narrations, [messageId]: state } }));
+  // TPE-16: narration errors must be VISIBLE — a dead synthesis shows a
+  // toast instead of silently returning the button to idle. Once per
+  // error transition (repeated writes of the same error don't re-toast).
+  if (state.status === "error" && state.error !== undefined && previous?.status !== "error") {
+    const notify = notifyNarrationError ?? defaultNotifyNarrationError;
+    notify(messageId, state.error);
+  }
 }
+
+function defaultNotifyNarrationError(_messageId: string, message: string): void {
+  try {
+    toast.error(message);
+  } catch {
+    // Toast needs a DOM host; the error is already pinned in store state.
+  }
+}
+
+/** Test seam for the error toast (happy-dom has its own sonner mock). */
+let notifyNarrationError: ((messageId: string, message: string) => void) | null = null;
 
 // ── Orchestrator lane (recreated only when test dep identities change) ──────
 
 let orchestratorOverride: Orchestrator | null = null;
 let playerOverride: NarrationPlayer | null = null;
 let synthesizeOverride: SynthesizeFn | null = null;
+let cacheOverride: NarrationSegmentCache | null = null;
 let activeOrchestrator: Orchestrator | null = null;
 let activePlayer: NarrationPlayer | null = null;
 let activeSynthesize: SynthesizeFn | null = null;
+let activeCache: NarrationSegmentCache | null = null;
+let sharedCache: NarrationSegmentCache | null = null;
+
+function narrationCache(): NarrationSegmentCache {
+  if (!sharedCache) sharedCache = createNarrationSegmentCache();
+  return sharedCache;
+}
 
 function ensureOrchestrator(): Orchestrator {
   const player = playerOverride ?? htmlAudioPlayer();
   const synthesize = synthesizeOverride ?? defaultSynthesize;
-  if (activeOrchestrator && activePlayer === player && activeSynthesize === synthesize) {
+  const cache = cacheOverride ?? narrationCache();
+  if (
+    activeOrchestrator &&
+    activePlayer === player &&
+    activeSynthesize === synthesize &&
+    activeCache === cache
+  ) {
     return activeOrchestrator;
   }
   // Deps changed (test seam swap): stop the abandoned lane cleanly first.
   activeOrchestrator?.stop();
-  activeOrchestrator = createTtsOrchestrator({ player, synthesize, onState: writeNarrationState });
+  activeOrchestrator = createTtsOrchestrator({ player, synthesize, onState: writeNarrationState, cache });
   activePlayer = player;
   activeSynthesize = synthesize;
+  activeCache = cache;
   return activeOrchestrator;
 }
 
-/** Test seam: replace orchestrator/player/synthesize. Pass null to restore defaults. */
+/** Test seam: replace orchestrator/player/synthesize/cache/notifyError. Pass null to restore defaults. */
 export function __setTtsPlaybackDepsForTests(deps: {
   orchestrator?: Orchestrator | null;
   player?: NarrationPlayer | null;
   synthesize?: SynthesizeFn | null;
+  cache?: NarrationSegmentCache | null;
+  notifyError?: ((messageId: string, message: string) => void) | null;
 } | null): void {
   if (!deps) {
     orchestratorOverride = null;
     playerOverride = null;
     synthesizeOverride = null;
+    cacheOverride = null;
+    notifyNarrationError = null;
     return;
   }
   if ("orchestrator" in deps) orchestratorOverride = deps.orchestrator ?? null;
   if ("player" in deps) playerOverride = deps.player ?? null;
   if ("synthesize" in deps) synthesizeOverride = deps.synthesize ?? null;
+  if ("cache" in deps) cacheOverride = deps.cache ?? null;
+  if ("notifyError" in deps) notifyNarrationError = deps.notifyError ?? null;
 }
 
 export function __resetKokoroClientForTests(): void {

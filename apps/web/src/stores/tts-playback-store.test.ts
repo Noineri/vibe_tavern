@@ -269,4 +269,62 @@ describe("tts-playback-store", () => {
       __setTtsPlaybackDepsForTests(null);
     }
   });
+
+  test("TPE-16: narration error transition fires the error notifier exactly once", async () => {
+    const notified: Array<{ id: string; message: string }> = [];
+    const synthesize = async (): Promise<{ blob: Blob; mime: string }> => {
+      throw new Error("upstream down");
+    };
+    __setTtsPlaybackDepsForTests({
+      player: createFakePlayer(),
+      synthesize,
+      notifyError: (id, message) => {
+        notified.push({ id, message });
+      },
+    });
+    try {
+      // Unique text: the store's shared segment cache persists across
+      // tests in this file (prod behavior) — a reused text would resume
+      // from cache and never touch synthesize.
+      await useTtsPlaybackStore.getState().startNarration("m-err", "Hello error probe.", profile());
+      expect(useTtsPlaybackStore.getState().narrations["m-err"]?.status).toBe("error");
+      expect(notified).toEqual([{ id: "m-err", message: "upstream down" }]);
+    } finally {
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+
+  test("TPE-16: stopNarration during synthesis completes the lane without an error toast", async () => {
+    const notified: string[] = [];
+    let release!: (value: { blob: Blob; mime: string }) => void;
+    let calls = 0;
+    const gate = new Promise<{ blob: Blob; mime: string }>((resolve) => {
+      release = resolve;
+    });
+    __setTtsPlaybackDepsForTests({
+      player: createFakePlayer(),
+      synthesize: () => {
+        calls += 1;
+        return gate;
+      },
+      notifyError: (_id, message) => {
+        notified.push(message);
+      },
+    });
+    try {
+      // Unique text (see above: the shared cache would otherwise serve it).
+      const started = useTtsPlaybackStore.getState().startNarration("m-stop", "Hello stop probe.", profile());
+      for (let i = 0; i < 40 && calls < 1; i += 1) {
+        await new Promise<void>((r) => setTimeout(r, 25));
+      }
+      expect(calls).toBe(1);
+      useTtsPlaybackStore.getState().stopNarration();
+      release({ blob: new Blob(["x"]), mime: "audio/mpeg" });
+      await started;
+      expect(useTtsPlaybackStore.getState().narrations["m-stop"]?.status).toBe("complete");
+      expect(notified).toEqual([]);
+    } finally {
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
 });

@@ -1961,3 +1961,39 @@ describe("TtsProfileEditor — voice clone section", () => {
     await act(async () => {});
   });
 });
+
+describe("TtsProfileEditor — TPE-16 playback wait-full flag (common section)", () => {
+  it("renders on kokoro AND openai-compatible forms (backend-agnostic), off by default", () => {
+    for (const backend of [TTS_BACKEND.Kokoro, TTS_BACKEND.OpenAiCompatible]) {
+      const tts = viewTts({
+        form: { id: "p1", name: "X", backend: backend as never, config: {}, voiceId: "v" } as never,
+      });
+      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      const card = view.getByTestId("tts-toggle-card-waitForFullGeneration");
+      expect(card.textContent).toContain("tts_playback_wait_full_label");
+      expect(card.textContent).toContain("tts_playback_wait_full_hint");
+      const toggle = card.querySelector('[role="switch"]') as HTMLElement | null;
+      expect(toggle).toBeTruthy();
+      expect(toggle?.getAttribute("aria-checked")).toBe("false");
+      cleanup();
+    }
+  });
+
+  it("checked state reflects config; clicking writes the flag through setForm", async () => {
+    const setForm = mock(() => {});
+    const tts = viewTts({
+      setForm: setForm as never,
+      form: { id: "p1", name: "X", backend: TTS_BACKEND.OpenAiCompatible as never, config: { waitForFullGeneration: true }, voiceId: "v" } as never,
+    });
+    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const card = view.getByTestId("tts-toggle-card-waitForFullGeneration");
+    expect((card.querySelector('[role="switch"]') as HTMLElement | null)?.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(card.querySelector('[role="switch"]') as HTMLElement);
+    // Unchecking removes the key (updateConfigField deletes falsy toggles) —
+    // the flag stays default-off unless explicitly set.
+    expect(setForm).toHaveBeenCalled();
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { config: Record<string, unknown> };
+    expect("waitForFullGeneration" in patch.config).toBe(false);
+    cleanup();
+  });
+});

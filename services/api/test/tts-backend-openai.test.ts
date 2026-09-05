@@ -93,6 +93,20 @@ describe("OpenAI-compatible TTS generate", () => {
     expect(result.mime).toBe("audio/mpeg");
   });
 
+  test("TPE-16: generate chains the caller's AbortSignal into the upstream fetch (stop actually cancels)", async () => {
+    const { captured } = captureFetch(() => audioResponse());
+    const backend = openAiCompatTtsFactory({
+      endpoint: "http://localhost:8880/v1",
+      apiKey: "sk-local",
+      model: "kokoro",
+    });
+    const controller = new AbortController();
+
+    await backend.generate({ text: "Hello world", voiceId: "af_bella", signal: controller.signal });
+
+    expect(captured()!.init.signal).toBe(controller.signal);
+  });
+
   test("trailing slash in endpoint is normalized away", async () => {
     const { captured } = captureFetch(() => audioResponse());
     const backend = openAiCompatTtsFactory({ endpoint: "http://localhost:8880/v1/" });

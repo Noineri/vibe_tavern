@@ -804,6 +804,22 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
         </div>
       </div>
 
+      {form.id !== null && (
+        <div className="rounded-lg border border-border2 bg-s2 px-4 py-2.5" data-testid="tts-toggle-card-waitForFullGeneration">
+          <div className="flex items-center gap-3">
+            <Toggle
+              checked={form.config["waitForFullGeneration"] === true}
+              onChange={(checked) => updateConfigField(tts, form, "waitForFullGeneration", checked || undefined)}
+              aria-label={t("tts_playback_wait_full_label")}
+            />
+            <div>
+              <div className="font-ui text-[13px] font-medium text-t1">{t("tts_playback_wait_full_label")}</div>
+              <div className="mt-0.5 font-ui text-[11px] text-t3">{t("tts_playback_wait_full_hint")}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {form.id !== null && <TtsBindingFields tts={tts} form={form} />}
         </>
       ) : null}

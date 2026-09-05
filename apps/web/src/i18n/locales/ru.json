@@ -2781,6 +2781,8 @@
   "tts_backend_local_server": "Локальный сервер (OpenAI-совместимый)",
   "tts_section_connection": "Подключение",
   "tts_section_voice_tuning": "Голос и настройка",
+  "tts_playback_wait_full_label": "Дождаться полной генерации перед воспроизведением",
+  "tts_playback_wait_full_hint": "Воспроизведение начнётся после синтеза всех сегментов — без пауз на медленных моделях, но с более поздним стартом.",
   "tts_field_api_key_stored": "Ключ сохранён — оставьте пустым, чтобы не менять",
   "tts_field_api_key_status_stored": "В профиле сохранён ключ. Пустое поле — оставить прежний; введите новый, чтобы заменить.",
   "tts_docker_status_probing": "Проверяем docker…",

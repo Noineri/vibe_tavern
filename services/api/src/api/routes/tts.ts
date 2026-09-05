@@ -60,7 +60,10 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
     .post("/api/tts/generate", zValidator("json", schemas.generateTtsSchema), async (c) => {
       const body = c.req.valid("json");
       try {
-        const result = await runtime.generateTtsSpeech(body);
+        // TPE-16: the client's disconnect signal rides into the backend so
+        // the stop button aborts the upstream generate fetch (honest
+        // cancellation instead of a blind timeout).
+        const result = await runtime.generateTtsSpeech(body, c.req.raw.signal);
         if (!result) return c.json({ error: "TTS profile not found" }, 404);
         return c.body(new Uint8Array(result.audio), 200, {
           "Content-Type": result.mime,

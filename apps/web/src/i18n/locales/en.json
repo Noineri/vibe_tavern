@@ -2749,6 +2749,8 @@
   "tts_backend_local_server": "Local server (OpenAI-compatible)",
   "tts_section_connection": "Connection",
   "tts_section_voice_tuning": "Voice & tuning",
+  "tts_playback_wait_full_label": "Wait for full generation before playing",
+  "tts_playback_wait_full_hint": "Playback starts after all segments are synthesized — gapless audio on slow models, but a later start.",
   "tts_field_api_key_stored": "API key saved — leave empty to keep it",
   "tts_field_api_key_status_stored": "A key is saved with this profile. Leave the field empty to keep it; type a new key to replace it.",
   "tts_docker_status_probing": "Checking docker…",
