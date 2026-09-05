@@ -166,10 +166,10 @@ export const TTS_SERVER_SETUP_GUIDES: TtsServerSetupGuide[] = [
         windows: [
           "winget install -e --id Python.Python.3.11 --scope user",
           "py -3.11 -m venv .venv",
-          ".venv\\Scripts\\activate",
-          "pip install -r requirements.txt",
-          "pip uninstall -y torch torchvision torchaudio",
-          "pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124",
+          ".venv\\Scripts\\python.exe -m pip install -r requirements.txt",
+          ".venv\\Scripts\\python.exe -m pip uninstall -y torch torchvision torchaudio",
+          ".venv\\Scripts\\python.exe -m pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124",
+          ".venv\\Scripts\\python.exe -c \"import torch; print(torch.version.cuda, torch.cuda.is_available())\"",
           "copy .env.example .env",
         ],
         unix: [
@@ -184,7 +184,7 @@ export const TTS_SERVER_SETUP_GUIDES: TtsServerSetupGuide[] = [
     run: {
       titleKey: "tts_help_step_run",
       commands: {
-        windows: ["python main.py"],
+        windows: [".venv\\Scripts\\python.exe main.py"],
         unix: ["python main.py"],
       },
       noteKey: "tts_help_run_note_chatterbox",

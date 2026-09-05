@@ -63,8 +63,14 @@ describe("quickstarts (setup reference, TE2-17)", () => {
     expect(cbDocker).toContain("cp .env.example.docker .env");
     expect(cbDocker).toContain("docker compose -f docker/docker-compose.gpu.yml up -d");
     const cbInstall = chatterbox?.install.commands.windows.join(" ") ?? "";
-    expect(cbInstall).toContain(".venv\\Scripts\\activate");
-    expect(cbInstall).toContain("pip install -r requirements.txt");
+    // Live incident 2026-09-05: activated-venv pip commands silently landed
+    // CUDA torch in the wrong Python (ExecutionPolicy blocks activate) — the
+    // Windows branch now calls the venv python directly and verifies CUDA.
+    expect(cbInstall).not.toContain(".venv\\Scripts\\activate");
+    expect(cbInstall).toContain(".venv\\Scripts\\python.exe -m pip install -r requirements.txt");
+    expect(cbInstall).toContain("--index-url https://download.pytorch.org/whl/cu124");
+    expect(cbInstall).toContain("print(torch.version.cuda, torch.cuda.is_available())");
+    expect(chatterbox?.run.commands.windows).toEqual([".venv\\Scripts\\python.exe main.py"]);
     expect(chatterbox?.run.commands.unix).toEqual(["python main.py"]);
 
     const orpheus = TTS_SERVER_SETUP_GUIDES.find((g) => g.id === "orpheus-fastapi");
