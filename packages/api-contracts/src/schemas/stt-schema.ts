@@ -8,7 +8,7 @@ import { z } from 'zod';
  *  server), the Gemini audio-understanding backend (ST-7), and the native
  *  Deepgram adapter (SPE-4). Further native adapters (ElevenLabs, NVIDIA)
  *  extend this enum when they land. */
-export const sttBackendSchema = z.enum(['openai-compat', 'whisper-browser', 'gemini', 'deepgram']);
+export const sttBackendSchema = z.enum(['openai-compat', 'whisper-browser', 'gemini', 'deepgram', 'elevenlabs']);
 export type SttBackendValue = z.infer<typeof sttBackendSchema>;
 
 // ─── Profile shape ────────────────────────────────────────────────────────────

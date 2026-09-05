@@ -28,6 +28,10 @@ import {
   DeepgramSttConfigError,
   DeepgramSttError,
 } from "../../domain/stt/backends/deepgram-stt.js";
+import {
+  ElevenLabsSttConfigError,
+  ElevenLabsSttError,
+} from "../../domain/stt/backends/elevenlabs-stt.js";
 import { SttBackendNotRegisteredError, SttUnknownBackendError } from "../../domain/stt/stt-registry.js";
 
 /** Multipart transcriptions may carry sizable clips — a sane ceiling before
@@ -113,7 +117,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
         if (
           error instanceof OpenAiCompatSttConfigError ||
           error instanceof GeminiSttConfigError ||
-          error instanceof DeepgramSttConfigError
+          error instanceof DeepgramSttConfigError ||
+          error instanceof ElevenLabsSttConfigError
         ) {
           return c.json({ error: error.message }, 400);
         }
@@ -122,7 +127,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
         if (
           error instanceof OpenAiCompatSttError ||
           error instanceof GeminiSttError ||
-          error instanceof DeepgramSttError
+          error instanceof DeepgramSttError ||
+          error instanceof ElevenLabsSttError
         ) {
           const status =
             error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;
@@ -148,14 +154,16 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
         if (
           error instanceof OpenAiCompatSttConfigError ||
           error instanceof GeminiSttConfigError ||
-          error instanceof DeepgramSttConfigError
+          error instanceof DeepgramSttConfigError ||
+          error instanceof ElevenLabsSttConfigError
         ) {
           return c.json({ error: error.message }, 400);
         }
         if (
           error instanceof OpenAiCompatSttError ||
           error instanceof GeminiSttError ||
-          error instanceof DeepgramSttError
+          error instanceof DeepgramSttError ||
+          error instanceof ElevenLabsSttError
         ) {
           const status =
             error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;

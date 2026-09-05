@@ -88,6 +88,16 @@ export const STT_BACKEND_CAPABILITIES: Record<SttBackendType, SttBackendCapabili
     emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.Deepgram],
     requiresApiKey: true,
   },
+  [STT_BACKENDS.ElevenLabs]: {
+    transport: STT_TRANSPORT.Server,
+    // Native `POST /v1/speech-to-text` multipart surface — NOT the OpenAI
+    // transcription protocol (SPE-5).
+    openaiCompatible: false,
+    // One batch request → one full transcript.
+    supportsStreaming: false,
+    emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.ElevenLabs],
+    requiresApiKey: true,
+  },
 };
 
 const KNOWN_SLUGS = new Set<string>(Object.values(STT_BACKENDS));

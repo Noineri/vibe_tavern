@@ -48,6 +48,7 @@ import type { SttRuntimeApi } from "../contract/runtime-api.js";
 import "../../domain/stt/backends/openai-stt.js";
 import "../../domain/stt/backends/gemini-stt.js";
 import "../../domain/stt/backends/deepgram-stt.js";
+import "../../domain/stt/backends/elevenlabs-stt.js";
 
 import { createSttBackend } from "../../domain/stt/stt-registry.js";
 import {
@@ -62,6 +63,10 @@ import {
   DeepgramSttConfigError,
   DeepgramSttError,
 } from "../../domain/stt/backends/deepgram-stt.js";
+import {
+  ElevenLabsSttConfigError,
+  ElevenLabsSttError,
+} from "../../domain/stt/backends/elevenlabs-stt.js";
 
 // ─── Wire projections ────────────────────────────────────────────────────────
 
@@ -100,54 +105,50 @@ function normalizeEndpoint(raw: string): string {
  *  the gemini backend (its config carries NO endpoint field, ST-7). */
 const GEMINI_API_HOST = "https://generativelanguage.googleapis.com";
 
-/** Vendor host of the fixed Deepgram API endpoint — the auto-key match key
- *  for the deepgram backend (fixed endpoint too, SPE-4; same rule as
- *  GEMINI_API_HOST). */
-const DEEPGRAM_API_HOST = "https://api.deepgram.com";
+/** Fixed-endpoint native vendors (ST-7 gemini; SPE-4 deepgram; SPE-5
+ *  elevenlabs): backend slug → vendor API host + the same-vendor TTS
+ *  backend slug for key reuse. The auto-key rule (ST-5b): an LLM provider
+ *  profile on the vendor's host wins, then a same-vendor TTS profile with a
+ *  stored key ("a saved vendor TTS credential makes the vendor's STT
+ *  ready"). SPE-6 (nvidia) extends this table, not the branches. */
+const VENDOR_HOST_BACKENDS: ReadonlyArray<{
+  sttBackend: SttBackendType;
+  host: string;
+  ttsBackend: (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
+}> = [
+  { sttBackend: STT_BACKENDS.Gemini, host: GEMINI_API_HOST, ttsBackend: TTS_BACKEND.Gemini },
+  { sttBackend: STT_BACKENDS.Deepgram, host: "https://api.deepgram.com", ttsBackend: TTS_BACKEND.Deepgram },
+  { sttBackend: STT_BACKENDS.ElevenLabs, host: "https://api.elevenlabs.io", ttsBackend: TTS_BACKEND.ElevenLabs },
+];
+
+function findVendorEntry(backend: SttBackendType) {
+  return VENDOR_HOST_BACKENDS.find((entry) => entry.sttBackend === backend);
+}
 
 /** Auto-match the transcription key. Two match strategies (ST-7):
  *  - openai-compat: by endpoint — first LLM provider profiles (the TTS
  *    default-on reuse), then openai-compat TTS profiles whose typed key is
  *    non-empty. Deterministic: first in list (sort) order wins.
- *  - gemini / deepgram: by VENDOR — any LLM provider profile whose endpoint
- *    lives on the vendor's API host, then a same-vendor TTS profile with a
- *    stored key ("a saved Google/Deepgram TTS credential makes the same
- *    vendor's STT ready", ST-5b/ST-7 rule; deepgram joined in SPE-4).
+ *  - fixed-endpoint natives (gemini/deepgram/elevenlabs): by VENDOR — see
+ *    VENDOR_HOST_BACKENDS.
  * Own-key/provided-key configs short-circuit before this runs. */
 async function autoMatchSttKey(
   stores: Pick<StoreContainer, "providers" | "tts">,
   backend: SttBackendType,
   config: Record<string, unknown>,
 ): Promise<{ config: Record<string, unknown>; matchedName: string | null }> {
-  if (backend === STT_BACKENDS.Gemini) {
+  const vendor = findVendorEntry(backend);
+  if (vendor) {
     const providers = await stores.providers.listAll();
     for (const provider of providers) {
       if (!provider.apiKey) continue;
-      if (normalizeEndpoint(provider.endpoint).startsWith(GEMINI_API_HOST)) {
+      if (normalizeEndpoint(provider.endpoint).startsWith(vendor.host)) {
         return { config: { ...config, apiKey: provider.apiKey }, matchedName: provider.name };
       }
     }
     const ttsProfiles = await stores.tts.listAll();
     for (const profile of ttsProfiles) {
-      if (profile.backend !== TTS_BACKEND.Gemini) continue;
-      const key = profile.apiKey ?? "";
-      if (key === "") continue;
-      return { config: { ...config, apiKey: key }, matchedName: profile.name };
-    }
-    return { config, matchedName: null };
-  }
-
-  if (backend === STT_BACKENDS.Deepgram) {
-    const providers = await stores.providers.listAll();
-    for (const provider of providers) {
-      if (!provider.apiKey) continue;
-      if (normalizeEndpoint(provider.endpoint).startsWith(DEEPGRAM_API_HOST)) {
-        return { config: { ...config, apiKey: provider.apiKey }, matchedName: provider.name };
-      }
-    }
-    const ttsProfiles = await stores.tts.listAll();
-    for (const profile of ttsProfiles) {
-      if (profile.backend !== TTS_BACKEND.Deepgram) continue;
+      if (profile.backend !== vendor.ttsBackend) continue;
       const key = profile.apiKey ?? "";
       if (key === "") continue;
       return { config: { ...config, apiKey: key }, matchedName: profile.name };
@@ -224,44 +225,40 @@ export class SttAdapter implements SttRuntimeApi {
 
   /** Auto-key HINT (UI display only): which provider/TTS profile's key
    *  auto-matches — same rule as decorateAutoKey in tts-adapter. Two
-   *  strategies (ST-7/SPE-4): endpoint match for openai-compat, vendor
-   *  match for the fixed-endpoint natives (gemini, deepgram — provider on
-   *  the vendor's API host wins over a same-vendor TTS profile key). */
+   *  strategies (ST-7/SPE-4/SPE-5): endpoint match for openai-compat,
+   *  vendor match for the fixed-endpoint natives (VENDOR_HOST_BACKENDS —
+   *  provider on the vendor's API host wins over a same-vendor TTS
+   *  profile key). */
   private async decorateAutoKey(records: ClientSttProfileRecord[]): Promise<ClientSttProfileRecord[]> {
     const providers = await this.stores.providers.listAll();
     const keyful = providers.filter((p) => p.apiKey);
     const ttsProfiles = await this.stores.tts.listAll();
 
-    // Vendor matches for the fixed-endpoint backends (provider-on-vendor-
-    // host wins over a same-vendor TTS key — the auto-match precedence).
-    const geminiProvider = keyful.find((p) =>
-      normalizeEndpoint(p.endpoint).startsWith(GEMINI_API_HOST),
-    );
-    const deepgramProvider = keyful.find((p) =>
-      normalizeEndpoint(p.endpoint).startsWith(DEEPGRAM_API_HOST),
-    );
-    const ttsGemini = ttsProfiles.find(
-      (p) => p.backend === TTS_BACKEND.Gemini && (p.apiKey ?? "") !== "",
-    );
-    const ttsDeepgram = ttsProfiles.find(
-      (p) => p.backend === TTS_BACKEND.Deepgram && (p.apiKey ?? "") !== "",
+    // Vendor matches per fixed-endpoint backend (provider-on-vendor-host
+    // wins over a same-vendor TTS key — the auto-match precedence).
+    const vendorHints = new Map(
+      VENDOR_HOST_BACKENDS.map((entry) => [
+        entry.sttBackend,
+        {
+          providerName:
+            keyful.find((p) => normalizeEndpoint(p.endpoint).startsWith(entry.host))?.name ?? null,
+          ttsName:
+            ttsProfiles.find(
+              (p) => p.backend === entry.ttsBackend && (p.apiKey ?? "") !== "",
+            )?.name ?? null,
+        },
+      ]),
     );
     // Nothing can match without any keyful provider or vendor TTS key.
-    if (keyful.length === 0 && !ttsGemini && !ttsDeepgram) return records;
+    const anyVendorHint = [...vendorHints.values()].some((h) => h.providerName !== null || h.ttsName !== null);
+    if (keyful.length === 0 && !anyVendorHint) return records;
 
     const byEndpoint = new Map(keyful.map((p) => [normalizeEndpoint(p.endpoint), p.name]));
     for (const record of records) {
       if (record.hasStoredApiKey) continue;
-      if (record.backend === STT_BACKENDS.Gemini) {
-        // Vendor match: provider wins over TTS (the auto-match precedence).
-        const name = geminiProvider?.name ?? ttsGemini?.name ?? null;
-        record.autoKeyProviderName = name;
-        continue;
-      }
-      if (record.backend === STT_BACKENDS.Deepgram) {
-        // Vendor match, the deepgram twin of the gemini branch (SPE-4).
-        const name = deepgramProvider?.name ?? ttsDeepgram?.name ?? null;
-        record.autoKeyProviderName = name;
+      const vendorHint = vendorHints.get(record.backend);
+      if (vendorHint !== undefined) {
+        record.autoKeyProviderName = vendorHint.providerName ?? vendorHint.ttsName;
         continue;
       }
       if (record.backend !== STT_BACKENDS.OpenAiCompat) continue;

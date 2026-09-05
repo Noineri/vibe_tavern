@@ -860,6 +860,10 @@ export const STT_BACKENDS = {
    *  raw-binary body, `Authorization: Token` — NOT the OpenAI-compat
    *  multipart surface; wire contract in STT_PROVIDER_EXPANSION_REPORT). */
   Deepgram: "deepgram",
+  /** SPE-5 — native ElevenLabs Scribe batch transcription (`POST
+   *  /v1/speech-to-text` multipart, `xi-api-key` — NOT the OpenAI-compat
+   *  surface; wire contract in STT_PROVIDER_EXPANSION_REPORT). */
+  ElevenLabs: "elevenlabs",
 } as const;
 export type SttBackendType = (typeof STT_BACKENDS)[keyof typeof STT_BACKENDS];
 
@@ -877,6 +881,9 @@ export const STT_BACKEND_EMOTION_CAPABILITY: Record<SttBackendType, boolean> = {
   // labels, not a tone phrase in the ST-7 seam's shape, so the seam stays
   // off (SPE-4).
   [STT_BACKENDS.Deepgram]: false,
+  // Pure ASR (SPE-5) — Scribe's diarize/tag_audio_events are not the ST-7
+  // tone-phrase seam.
+  [STT_BACKENDS.ElevenLabs]: false,
 };
 
 /** Default Gemini STT model (ST-7) — the current docs' flash example; the
@@ -890,6 +897,12 @@ export const DEFAULT_GEMINI_STT_MODEL = "gemini-3.8-flash";
  *  empty-field fallback; the live picker (`GET /v1/models` → `stt[]`) is the
  *  real roster. */
 export const DEFAULT_DEEPGRAM_STT_MODEL = "nova-3";
+
+/** Default ElevenLabs STT model (SPE-5) — scribe_v2, the reference's own
+ *  example model. Same role as {@link DEFAULT_GEMINI_STT_MODEL}: no
+ *  discovery endpoint exists for the Scribe roster, so the static preset
+ *  list (SPE-7) is the picker and this is the prefill/fallback. */
+export const DEFAULT_ELEVENLABS_STT_MODEL = "scribe_v2";
 
 /** Backend-specific STT config — a per-backend discriminated union (the
  *  profile's `backend` field discriminates). The Gemini arm (ST-7) is
