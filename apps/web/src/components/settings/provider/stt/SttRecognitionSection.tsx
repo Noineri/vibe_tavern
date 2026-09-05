@@ -64,6 +64,11 @@ export function SttRecognitionSection({
     nativePreset?.modelSource.kind === "static"
       ? nativePreset.modelSource.models.map((id) => ({ id, label: id }))
       : null;
+  // SPE-9: an own-wire LOCAL backend with a server-bound model
+  // (whisper.cpp `-m`) — no request-side model at all; the model picker is
+  // replaced by the server-flags hint (the language field stays: the
+  // server accepts a per-request `language` multipart field).
+  const serverBoundModel = nativePreset?.modelSource.kind === "server";
   const showLanguageField =
     (!isBrowser || whisperAcceptsLanguage(whisperModelId)) && nativePreset?.englishOnly !== true;
   // Lane-aware size (P12 — same rule as WhisperModelPanel): the GPU lane
@@ -74,8 +79,9 @@ export function SttRecognitionSection({
     <>
       {/* Model: fetched picker (openai-compat + gemini + deepgram), the
        *  local roster dropdown (whisper-browser — no fetch; the roster is
-       *  fixed data), or the STATIC native roster (elevenlabs/nvidia —
-       *  preset data, refresh hidden, SPE-7). */}
+       *  fixed data), the STATIC native roster (elevenlabs/nvidia —
+       *  preset data, refresh hidden, SPE-7), or the server-flags hint
+       *  (whisper.cpp — model bound at server start, SPE-9). */}
       {isBrowser ? (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("stt_field_model")}</label>
@@ -93,6 +99,16 @@ export function SttRecognitionSection({
           />
           <div data-testid="stt-backend-browser-note" className="mt-1 font-ui text-[11px] text-t3">
             {t("stt_field_whisper_hint")}
+          </div>
+        </div>
+      ) : serverBoundModel ? (
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("stt_field_model")}</label>
+          <div
+            data-testid="stt-whispercpp-server-model-hint"
+            className="rounded-md border border-border bg-s1 px-3 py-2 font-ui text-[11px] text-t3"
+          >
+            {t("stt_whispercpp_server_hint")}
           </div>
         </div>
       ) : staticRoster !== null ? (

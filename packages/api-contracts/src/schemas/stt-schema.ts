@@ -5,10 +5,10 @@ import { z } from 'zod';
 /** Backend discriminators for the v1 STT roster (domain `STT_BACKENDS`) —
  *  in-browser Whisper (transformers.js, the zero-setup default), one
  *  OpenAI-compatible `/v1/audio/transcriptions` adapter (cloud or local
- *  server), the Gemini audio-understanding backend (ST-7), and the native
- *  Deepgram adapter (SPE-4). Further native adapters (ElevenLabs, NVIDIA)
- *  extend this enum when they land. */
-export const sttBackendSchema = z.enum(['openai-compat', 'whisper-browser', 'gemini', 'deepgram', 'elevenlabs', 'nvidia']);
+ *  server), the Gemini audio-understanding backend (ST-7), the native
+ *  Deepgram / ElevenLabs / NVIDIA adapters (SPE-4..6), and the local
+ *  whisper.cpp `/inference` adapter (SPE-9). */
+export const sttBackendSchema = z.enum(['openai-compat', 'whisper-browser', 'gemini', 'deepgram', 'elevenlabs', 'nvidia', 'whisper-cpp']);
 export type SttBackendValue = z.infer<typeof sttBackendSchema>;
 
 // ─── Profile shape ────────────────────────────────────────────────────────────
@@ -52,7 +52,10 @@ export type SttProfileConfigValue = z.infer<typeof sttProfileConfigSchema>;
 // NOTE (ST-7): the Gemini config arm is structurally identical to the
 // whisper-browser arm above (`{ model, language? }` — the endpoint is a fixed
 // Gemini API constant), so it has no separate schema member: the whisper
-// shape IS its validation, exactly as in the domain union.
+// shape IS its validation, exactly as in the domain union. The whisper.cpp
+// arm (SPE-9) mirrors this the other way round: its `{ endpoint, language? }`
+// (no model — server-bound) satisfies the OPENAI-COMPAT arm (model is
+// optional there since P8), so it needs no separate member either.
 
 /** One entry of the live STT model catalog (P8) — the wire twin of the
  *  backend `SttModelInfo`: OpenAI-compatible `/models` payloads carry

@@ -92,6 +92,10 @@ function defaultConfigForBackend(backend: SttBackendType): Record<string, unknow
       return { model: DEFAULT_ELEVENLABS_STT_MODEL };
     case STT_BACKENDS.Nvidia:
       return { model: DEFAULT_NVIDIA_STT_MODEL };
+    case STT_BACKENDS.WhisperCpp:
+      // The model is bound at server start (`-m`) — the config carries only
+      // the server's default address (SPE-9); endpoint stays editable.
+      return { endpoint: "http://127.0.0.1:8080" };
     default:
       return {};
   }

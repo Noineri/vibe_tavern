@@ -49,13 +49,15 @@ describe("STT provider presets — roster shape", () => {
 			expect(byId.get(id)).toBe(STT_PRESET_GROUP.Native);
 		}
 		expect(byId.get("local")).toBe(STT_PRESET_GROUP.Local);
+		expect(byId.get("whisper-cpp")).toBe(STT_PRESET_GROUP.Local);
 	});
 
 	test("compat rows ride the openai-compat transport; native rows ride their own slugs", () => {
 		// SPE-4..6 + SPE-8: the gemini/deepgram/elevenlabs/nvidia rows ride
 		// their OWN native backend adapters (baseUrl empty, authHeader
-		// omitted — the adapter owns the wire). Every other row must stay
-		// executable by the one OpenAI-compatible server transport.
+		// omitted — the adapter owns the wire). SPE-9 adds the whisper-cpp
+		// row — an own-wire LOCAL backend (editable address). Every other row
+		// must stay executable by the one OpenAI-compatible server transport.
 		const compatIds = ["openai", "openrouter", "groq", "mistral", "cartesia", "local"];
 		for (const preset of STT_PROVIDER_PRESETS) {
 			if (compatIds.includes(preset.id)) {
@@ -66,11 +68,15 @@ describe("STT provider presets — roster shape", () => {
 		}
 	});
 
-	test("baseUrl is non-empty for cloud compat rows; empty only for local and natives", () => {
+	test("baseUrl is non-empty for cloud compat rows; empty only for local and endpoint-fixed natives", () => {
 		for (const preset of STT_PROVIDER_PRESETS) {
-			if (preset.id === "local" || preset.backend !== STT_BACKENDS.OpenAiCompat) {
+			if (preset.id === "local" || (preset.backend !== STT_BACKENDS.OpenAiCompat && preset.id !== "whisper-cpp")) {
 				// Natives have a FIXED endpoint inside their adapter — no baseUrl.
 				expect(preset.baseUrl).toBe("");
+			} else if (preset.id === "whisper-cpp") {
+				// SPE-9: an own-wire LOCAL row carries the server's default
+				// address as a PREFILL — the endpoint stays user-editable.
+				expect(preset.baseUrl).toBe("http://127.0.0.1:8080");
 			} else {
 				expect(preset.baseUrl.startsWith("https://")).toBe(true);
 				// Adapter-normalized form: no trailing slash (the adapter
@@ -80,9 +86,9 @@ describe("STT provider presets — roster shape", () => {
 		}
 	});
 
-	test("only the local preset marks the key optional", () => {
+	test("the two local rows mark the key optional — every server row requires one", () => {
 		for (const preset of STT_PROVIDER_PRESETS) {
-			expect(preset.keyOptional).toBe(preset.id === "local");
+			expect(preset.keyOptional).toBe(preset.id === "local" || preset.id === "whisper-cpp");
 		}
 	});
 
@@ -177,6 +183,10 @@ describe("STT provider presets — model-source union invariants", () => {
 				expect(preset.modelSource.models).toContain(preset.modelSource.defaultModel);
 				// Picker order is the shipped order — no duplicates.
 				expect(new Set(preset.modelSource.models).size).toBe(preset.modelSource.models.length);
+			} else if (preset.modelSource.kind === "server") {
+				// SPE-9: the server-bound arm carries no default — the model is
+				// bound at server start, not request-side.
+				expect(true).toBe(true);
 			} else {
 				// fetch/free-text arms carry a non-empty default.
 				expect(preset.modelSource.defaultModel.length).toBeGreaterThan(0);
@@ -184,11 +194,12 @@ describe("STT provider presets — model-source union invariants", () => {
 		}
 	});
 
-	test("every non-local row carries a vendor slug for the auto-key rule", () => {
+	test("local and whisper.cpp rows carry no vendor slug (localhost — the auto-key rule has nothing to match)", () => {
 		for (const preset of STT_PROVIDER_PRESETS) {
-			if (preset.id === "local") continue;
+			if (preset.id === "local" || preset.id === "whisper-cpp") continue;
 			expect(preset.vendor.length).toBeGreaterThan(0);
 		}
+		expect(getSttProviderPreset("whisper-cpp")?.vendor).toBe("");
 	});
 });
 
@@ -246,6 +257,20 @@ describe("native preset rows (SPE-4..6, SPE-8)", () => {
 			defaultModel: DEFAULT_NVIDIA_STT_MODEL,
 		});
 		expect(preset?.englishOnly).toBe(true);
+	});
+
+	test("whisper-cpp — own-wire LOCAL row, server-bound model, keyless, prefilled default port (SPE-9)", () => {
+		const preset = getSttProviderPreset("whisper-cpp");
+		expect(preset?.group).toBe(STT_PRESET_GROUP.Local);
+		expect(preset?.backend).toBe(STT_BACKENDS.WhisperCpp);
+		// The server's own default host/port (doc-verified: server_params
+		// hostname 127.0.0.1, port 8080) — a PREFILL, not a fixed endpoint.
+		expect(preset?.baseUrl).toBe("http://127.0.0.1:8080");
+		expect(preset?.vendor).toBe("");
+		expect(preset?.authHeader).toBeUndefined();
+		expect(preset?.modelSource).toEqual({ kind: "server" });
+		expect(preset?.keyOptional).toBe(true);
+		expect(preset?.englishOnly ?? false).toBe(false);
 	});
 });
 

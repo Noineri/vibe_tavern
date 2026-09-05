@@ -36,6 +36,10 @@ import {
   NvidiaSttConfigError,
   NvidiaSttError,
 } from "../../domain/stt/backends/nvidia-stt.js";
+import {
+  WhisperCppSttConfigError,
+  WhisperCppSttError,
+} from "../../domain/stt/backends/whisper-cpp-stt.js";
 import { SttBackendNotRegisteredError, SttUnknownBackendError } from "../../domain/stt/stt-registry.js";
 import { SttProbeFailedError } from "../../domain/stt/stt-backend.js";
 
@@ -124,7 +128,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof GeminiSttConfigError ||
           error instanceof DeepgramSttConfigError ||
           error instanceof ElevenLabsSttConfigError ||
-          error instanceof NvidiaSttConfigError
+          error instanceof NvidiaSttConfigError ||
+          error instanceof WhisperCppSttConfigError
         ) {
           return c.json({ error: error.message }, 400);
         }
@@ -135,7 +140,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof GeminiSttError ||
           error instanceof DeepgramSttError ||
           error instanceof ElevenLabsSttError ||
-          error instanceof NvidiaSttError
+          error instanceof NvidiaSttError ||
+          error instanceof WhisperCppSttError
         ) {
           const status =
             error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;
@@ -163,7 +169,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof GeminiSttConfigError ||
           error instanceof DeepgramSttConfigError ||
           error instanceof ElevenLabsSttConfigError ||
-          error instanceof NvidiaSttConfigError
+          error instanceof NvidiaSttConfigError ||
+          error instanceof WhisperCppSttConfigError
         ) {
           return c.json({ error: error.message }, 400);
         }
@@ -173,6 +180,7 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof DeepgramSttError ||
           error instanceof ElevenLabsSttError ||
           error instanceof NvidiaSttError ||
+          error instanceof WhisperCppSttError ||
           error instanceof SttProbeFailedError
         ) {
           const status =

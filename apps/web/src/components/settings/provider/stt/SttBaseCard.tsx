@@ -23,6 +23,7 @@ function sttBackendLabelFor(form: SttProfileForm): string {
   if (form.backend === STT_BACKENDS.Deepgram) return "Deepgram";
   if (form.backend === STT_BACKENDS.ElevenLabs) return "ElevenLabs";
   if (form.backend === STT_BACKENDS.Nvidia) return "NVIDIA";
+  if (form.backend === STT_BACKENDS.WhisperCpp) return "whisper.cpp (local)";
   const endpoint = configString(form.config, "endpoint");
   if (endpoint) {
     try {

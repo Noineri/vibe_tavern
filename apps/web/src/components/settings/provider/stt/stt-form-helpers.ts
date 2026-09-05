@@ -27,15 +27,18 @@ export type SttProviderSegment = "browser" | "cloud" | "native" | "local" | "cus
 /** Derive the segment from the wire state: browser tier → browser;
  *  localServer flag → local (authoritative, exactly like the TTS preset
  *  rule — a legacy localhost endpoint WITHOUT the flag stays custom until
- *  re-applied); non-compat backend → native; compat + endpoint-matched
- *  preset row → that row's group (cloud — the local row has an empty
- *  baseUrl and never matches); otherwise custom. */
+ *  re-applied); the whisper.cpp own-wire local backend → local too (SPE-9
+ *  — it never resolves native despite its own slug); non-compat backend →
+ *  native; compat + endpoint-matched preset row → that row's group (cloud —
+ *  the local row has an empty baseUrl and never matches); otherwise
+ *  custom. */
 export function sttProviderSegmentOf(
   backend: SttBackendType,
   config: Record<string, unknown>,
 ): SttProviderSegment {
   if (backend === STT_BACKENDS.WhisperBrowser) return "browser";
   if (config[STT_LOCAL_SERVER_FLAG] === true) return "local";
+  if (backend === STT_BACKENDS.WhisperCpp) return "local";
   if (backend !== STT_BACKENDS.OpenAiCompat) return "native";
   const endpoint = normalizeSttEndpoint(configString(config, "endpoint"));
   const match = STT_PROVIDER_PRESETS.find(

@@ -51,6 +51,7 @@ import "../../domain/stt/backends/gemini-stt.js";
 import "../../domain/stt/backends/deepgram-stt.js";
 import "../../domain/stt/backends/elevenlabs-stt.js";
 import "../../domain/stt/backends/nvidia-stt.js";
+import "../../domain/stt/backends/whisper-cpp-stt.js";
 
 import { createSttBackend } from "../../domain/stt/stt-registry.js";
 import {

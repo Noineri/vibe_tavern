@@ -33,6 +33,15 @@ import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 
+/** defaultModel of the arms that carry one (static/fetch/free-text);
+ *  `undefined` for the server-bound arm (SPE-9 — whisper.cpp binds its
+ *  model at server start; there is no request-side default to prefill). */
+function defaultModelOf(
+  source: SttProviderPreset["modelSource"],
+): string | undefined {
+  return source.kind === "server" ? undefined : source.defaultModel;
+}
+
 /** Preset id → i18n label key (SPE-7). A template literal would not
  *  typecheck against the i18n key union, so this explicit record is the
  *  one place that must grow with every new preset row — an unmapped id
@@ -44,6 +53,7 @@ const STT_PRESET_LABEL_KEYS = {
   mistral: "stt_preset_mistral",
   cartesia: "stt_preset_cartesia",
   local: "stt_preset_local",
+  "whisper-cpp": "stt_preset_whisper_cpp",
   gemini: "stt_preset_gemini",
   deepgram: "stt_preset_deepgram",
   elevenlabs: "stt_preset_elevenlabs",
@@ -118,10 +128,12 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
   const nativePreset = form.backend === STT_BACKENDS.OpenAiCompat ? undefined : getSttNativePreset(form.backend);
 
   // Rows of the active group (TTS effectiveGroup twin): a stored preset's
-  // group wins when the segment carries none (custom/local/browser offer
-  // no rows — the dropdown disables there, exactly like the TTS form).
+  // group wins when the segment carries none (custom/browser offer no rows
+  // — the dropdown disables there, exactly like the TTS form). The LOCAL
+  // segment carries its named rows too (SPE-9: the generic OpenAI-compat
+  // server + whisper.cpp's own-wire row — the LLM-tab local-group shape).
   const groupPresets: readonly SttProviderPreset[] =
-    segment === "cloud" || segment === "native"
+    segment === "cloud" || segment === "native" || segment === "local"
       ? STT_PROVIDER_PRESETS.filter((p) => p.group === segment)
       : [];
 
@@ -142,7 +154,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
       updateForm("config", {
         [STT_LOCAL_SERVER_FLAG]: true,
         endpoint: STT_LOCAL_PRESET_ENDPOINT,
-        model: local?.modelSource.defaultModel ?? "whisper-1",
+        model: (local ? defaultModelOf(local.modelSource) : undefined) ?? "whisper-1",
       });
     } else if (seg === "cloud" || seg === "native") {
       // Each group segment applies its first roster row (cloud → OpenAI,
@@ -160,13 +172,15 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
    *  takes the local-segment mechanics (flag + port suggestion the user
    *  edits — the old quickstart's behavior, kept verbatim); native rows
    *  set the backend slug (the hook prefills the adapter default model)
-   *  and restore the row default on re-apply. */
+   *  and restore the row default on re-apply. The whisper.cpp row (SPE-9)
+   *  sets its own backend slug + prefilled endpoint under the local flag
+   *  — no model (server-bound). */
   function applyPreset(id: string): void {
     const preset = getSttProviderPreset(id);
     if (!preset) return;
     if (preset.group === "native") {
       if (form.backend !== preset.backend) updateForm("backend", preset.backend);
-      updateForm("config", { ...form.config, model: preset.modelSource.defaultModel });
+      updateForm("config", { ...form.config, model: defaultModelOf(preset.modelSource) });
       return;
     }
     if (preset.id === "local") {
@@ -175,8 +189,23 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         ...form.config,
         [STT_LOCAL_SERVER_FLAG]: true,
         endpoint: STT_LOCAL_PRESET_ENDPOINT,
-        model: preset.modelSource.defaultModel,
+        model: defaultModelOf(preset.modelSource),
       });
+      return;
+    }
+    // SPE-9: an own-wire LOCAL row (whisper.cpp) — backend slug + prefilled
+    // endpoint under the local flag; no model field to fill.
+    if (preset.group === "local" && preset.backend !== STT_BACKENDS.OpenAiCompat) {
+      if (form.backend !== preset.backend) updateForm("backend", preset.backend);
+      const next: Record<string, unknown> = {
+        ...form.config,
+        [STT_LOCAL_SERVER_FLAG]: true,
+        endpoint: preset.baseUrl,
+      };
+      // A stale model from the previous arm is meaningless here — the
+      // model is bound at server start (`-m`), not request-side.
+      delete next.model;
+      updateForm("config", next);
       return;
     }
     if (preset.backend !== STT_BACKENDS.OpenAiCompat) return;
@@ -184,7 +213,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
     const next: Record<string, unknown> = {
       ...form.config,
       endpoint: preset.baseUrl,
-      model: preset.modelSource.defaultModel,
+      model: defaultModelOf(preset.modelSource),
     };
     // A cloud apply leaves the local arm (the flag is segment state).
     delete next[STT_LOCAL_SERVER_FLAG];
@@ -214,14 +243,20 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
   /** Dropdown value (SPE-7 detection + SPE-8 native arm): cloud matches the
    *  endpoint against fixed-baseUrl rows (the local row never auto-detects
    *  — TTS preset rule: the user stays on «custom»/«local» until re-apply);
-   *  native resolves the row backing the backend slug. */
+   *  native resolves the row backing the backend slug; local resolves the
+   *  whisper.cpp row by its backend slug (the generic row never
+   *  auto-detects — its baseUrl is empty by design). */
   const formEndpoint = normalizeSttEndpoint(configString(form.config, "endpoint"));
   const selectedPreset =
     segment === "cloud"
       ? groupPresets.find((p) => p.baseUrl !== "" && normalizeSttEndpoint(p.baseUrl) === formEndpoint)
       : segment === "native"
         ? getSttNativePreset(form.backend)
-        : undefined;
+        : segment === "local"
+          ? groupPresets.find(
+              (p) => p.backend !== STT_BACKENDS.OpenAiCompat && p.backend === form.backend,
+            )
+          : undefined;
   const presetId = selectedPreset?.id ?? "";
   const presetEndpoint = selectedPreset?.baseUrl ?? "";
 
@@ -284,10 +319,12 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
       {/* Named presets (SPE-7 rows + SPE-8 group filter — the stt-quickstarts
           successor): the active group's rows from STT_PROVIDER_PRESETS, pure
           data (endpoint + default model prefill for cloud; backend slug +
-          default model for natives). Custom/local/browser offer no rows —
-          the dropdown disables there, exactly like the TTS form. Live
-          discovery stays the level-2 fetched picker (ST-8/P8). */}
-      {(segment === "cloud" || segment === "native") && (
+          default model for natives; backend slug + prefilled endpoint for
+          own-wire locals, SPE-9). Custom/browser offer no rows — the
+          dropdown disables there, exactly like the TTS form; the Local
+          segment carries its named rows (SPE-9). Live discovery stays the
+          level-2 fetched picker (ST-8/P8). */}
+      {(segment === "cloud" || segment === "native" || segment === "local") && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="mb-3">
             <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
@@ -316,9 +353,11 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       )}
 
-      {/* Endpoint (the TTS showEndpoint twin: custom + local always, cloud
-          only for the compat transport — natives talk to fixed endpoints;
-          the model and language moved to the level-2 section, P8). */}
+      {/* Endpoint (the TTS showEndpoint twin: custom + local always —
+          including the whisper.cpp own-wire local backend, whose address
+          is user-editable; cloud only for the compat transport — cloud
+          natives talk to fixed endpoints; the model and language moved to
+          the level-2 section, P8). */}
       {(segment === "custom" || segment === "local" || (segment === "cloud" && isCompat)) && (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("stt_field_endpoint")}</label>
@@ -333,9 +372,10 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
         </div>
       )}
 
-      {/* API key (every server arm — cloud, native, local, custom; the
-          browser tier needs none) */}
-      {!isBrowser && (
+      {/* API key (cloud, native, custom, and the generic local server —
+          which MAY front a keyed edge server; the browser tier and the
+          keyless whisper.cpp local backend need none, SPE-9) */}
+      {!isBrowser && form.backend !== STT_BACKENDS.WhisperCpp && (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
           <SttApiKeyField

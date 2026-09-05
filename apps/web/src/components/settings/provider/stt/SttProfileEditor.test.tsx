@@ -272,7 +272,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
     expect(customView.queryByTestId("stt-quickstart-select")).toBeNull();
     expect(customView.getByTestId("stt-field-endpoint")).toBeTruthy();
     cleanup();
-    // Local (localServer flag) → hidden, endpoint editable, panel shown.
+    // Local (localServer flag) → named local rows (SPE-9), endpoint editable, panel shown.
     const local = makeStt({
       headerMode: "edit",
       form: makeForm({ config: { localServer: true, endpoint: "http://127.0.0.1:8000/v1", model: "whisper-1" } }),
@@ -281,7 +281,19 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
     await waitFor(() =>
       expect(localView.getByTestId("stt-backend-select").textContent).toContain("stt_segment_local"),
     );
-    expect(localView.queryByTestId("stt-quickstart-select")).toBeNull();
+    // SPE-9: the Local segment carries its named rows — no longer a bare
+    // segment without a dropdown. The generic row never auto-detects
+    // (empty baseUrl — TTS preset rule), so the trigger shows the
+    // placeholder while the OPENED list offers both local rows.
+    expect(localView.getByTestId("stt-quickstart-select")).toBeTruthy();
+    await act(async () => {
+      localView.getByTestId("stt-quickstart-select").click();
+    });
+    await waitFor(() => {
+      const body = document.body.textContent ?? "";
+      expect(body).toContain("stt_preset_local");
+      expect(body).toContain("stt_preset_whisper_cpp");
+    });
     expect(localView.getByTestId("stt-field-endpoint")).toBeTruthy();
     expect(localView.getByTestId("stt-local-server-panel")).toBeTruthy();
     cleanup();
@@ -591,5 +603,99 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
     // The RU note is an EDIT-form element (under the segment dropdown) —
     // view mode shows the base card, never the connection form.
     expect(view.queryByTestId('stt-deepgram-ru-note')).toBeNull();
+  });
+});
+
+describe('SttProfileEditor — whisper.cpp own-wire local backend (SPE-9)', () => {
+  function whisperCppStt(headerMode: 'view' | 'edit') {
+    const form = makeForm({
+      backend: 'whisper-cpp',
+      config: { endpoint: 'http://127.0.0.1:8080' },
+      emotionAnnotation: false,
+    });
+    return makeStt({
+      form,
+      headerMode,
+      profiles: [makeRecord({ backend: 'whisper-cpp', config: { endpoint: 'http://127.0.0.1:8080' } })],
+    });
+  }
+
+  it('edit form: resolves the LOCAL segment, offers the named local rows, editable endpoint, no key field', async () => {
+    const stt = whisperCppStt('edit');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-backend-select')).toBeTruthy());
+    // Segment derivation: the own-wire local backend resolves LOCAL, never
+    // native (the sttProviderSegmentOf whisper-cpp branch).
+    expect(view.getByTestId('stt-backend-select').textContent).toContain('stt_segment_local');
+    // The Local preset dropdown carries the named rows (generic server +
+    // whisper.cpp — the LLM-tab local-group shape).
+    expect(view.getByTestId('stt-quickstart-select').textContent).toContain('stt_preset_whisper_cpp');
+    await act(async () => {
+      view.getByTestId('stt-quickstart-select').click();
+    });
+    await waitFor(() => {
+      const body = document.body.textContent ?? '';
+      expect(body).toContain('stt_preset_local');
+      expect(body).toContain('stt_preset_whisper_cpp');
+      expect(body).not.toContain('stt_preset_openai');
+    });
+    // The endpoint is a PREFILL, not fixed — editable local address.
+    expect(view.getByTestId('stt-field-endpoint')).toBeTruthy();
+    expect((view.getByTestId('stt-field-endpoint') as HTMLInputElement).value).toBe('http://127.0.0.1:8080');
+    // Keyless server — no key field (the server checks no auth).
+    expect(view.queryByTestId('stt-field-api-key')).toBeNull();
+    // The probe/Test button stays (probe fallback — the health route).
+    expect(view.getByTestId('stt-test-connection-btn')).toBeTruthy();
+  });
+
+  it('view mode: server-bound model — the picker is replaced by the server-flags hint; language stays', async () => {
+    const stt = whisperCppStt('view');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-whispercpp-server-model-hint')).toBeTruthy());
+    // No model picker and no fetch — the model is bound at server start.
+    expect(view.queryByTestId('stt-field-model')).toBeNull();
+    expect(listSttDraftModelsMock).not.toHaveBeenCalled();
+    // The server accepts a per-request `language` multipart field — the
+    // hint stays.
+    expect(view.getByTestId('stt-field-language')).toBeTruthy();
+    // Base card labels the own-wire local backend.
+    expect(view.getByTestId('stt-base-card-status').textContent).toContain('whisper.cpp');
+  });
+
+  it('edit form: applying the whisper.cpp row from the generic local server stamps the backend slug + endpoint prefill', async () => {
+    const form = makeForm({
+      backend: 'openai-compat',
+      config: { localServer: true, endpoint: 'http://127.0.0.1:8000/v1', model: 'whisper-1' },
+      emotionAnnotation: false,
+    });
+    const stt = makeStt({ headerMode: 'edit', form });
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-quickstart-select')).toBeTruthy());
+    await act(async () => {
+      view.getByTestId('stt-quickstart-select').click();
+    });
+    const option = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll('[cmdk-item]')).find(
+        (n) => n.textContent?.trim() === 'stt_preset_whisper_cpp',
+      );
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    await act(async () => {
+      (option as HTMLElement).click();
+    });
+    const calls = (stt.setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
+    const slugSwitch = calls.find((patch) => patch['backend'] === 'whisper-cpp');
+    expect(slugSwitch).toBeTruthy();
+    const configPatch = calls.find(
+      (patch) =>
+        typeof patch['config'] === 'object' &&
+        patch['config'] !== null &&
+        (patch['config'] as Record<string, unknown>)['endpoint'] === 'http://127.0.0.1:8080',
+    );
+    expect(configPatch).toBeTruthy();
+    expect((configPatch!['config'] as Record<string, unknown>)['localServer']).toBe(true);
+    // No model key rides the apply — the model is server-bound.
+    expect((configPatch!['config'] as Record<string, unknown>)['model']).toBeUndefined();
   });
 });

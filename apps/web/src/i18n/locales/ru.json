@@ -2844,5 +2844,7 @@
   "stt_preset_elevenlabs": "ElevenLabs",
   "stt_preset_nvidia": "NVIDIA",
   "stt_nvidia_en_only": "Модель распознаёт только английскую речь — для русского диктанта выбери другого провайдера",
-  "stt_deepgram_ru_note": "nova-3 понимает русский из коробки"
+  "stt_deepgram_ru_note": "nova-3 понимает русский из коробки",
+  "stt_preset_whisper_cpp": "whisper.cpp (свой сервер)",
+  "stt_whispercpp_server_hint": "Модель и конвертация формата задаются при запуске сервера: флаги -m <файл модели> и --convert (нужен ffmpeg в PATH — диктовка приходит как webm/opus). Язык можно задать здесь или флагом сервера -l."
 }

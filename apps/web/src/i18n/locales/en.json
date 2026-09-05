@@ -2812,5 +2812,7 @@
   "stt_preset_elevenlabs": "ElevenLabs",
   "stt_preset_nvidia": "NVIDIA",
   "stt_nvidia_en_only": "The model transcribes English speech only — use another provider for Russian dictation",
-  "stt_deepgram_ru_note": "nova-3 understands Russian out of the box"
+  "stt_deepgram_ru_note": "nova-3 understands Russian out of the box",
+  "stt_preset_whisper_cpp": "whisper.cpp (own server)",
+  "stt_whispercpp_server_hint": "The model and audio conversion are set when the server starts: run it with -m <model file> and --convert (requires ffmpeg; dictation audio arrives as webm/opus). Language can be set here or via the server -l flag."
 }

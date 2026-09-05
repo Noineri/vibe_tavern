@@ -870,6 +870,13 @@ export const STT_BACKENDS = {
    *  completeness (owner decision 2026-09-05); the RU path is OpenRouter
    * or the local Riva preset. */
   Nvidia: "nvidia",
+  /** SPE-9 — the whisper.cpp project's OWN local server surface
+   *  (`examples/server`, `POST /inference` multipart `file` field — NOT
+   *  OpenAI-compatible). Keyless localhost; the model is bound at server
+   *  start (`-m`), so the config carries only the endpoint. Also serves
+   *  whisperfile (the llamafile wraps the same server). Wire contract in
+   * STT_PROVIDER_EXPANSION_REPORT. */
+  WhisperCpp: "whisper-cpp",
 } as const;
 export type SttBackendType = (typeof STT_BACKENDS)[keyof typeof STT_BACKENDS];
 
@@ -893,6 +900,9 @@ export const STT_BACKEND_EMOTION_CAPABILITY: Record<SttBackendType, boolean> = {
   // Chat-audio transcription (SPE-6) — a bare transcript model, no tone
   // seam; EN-only per the model card.
   [STT_BACKENDS.Nvidia]: false,
+  // Pure ASR (SPE-9) — the local whisper.cpp server returns a bare
+  // transcript; no tone seam.
+  [STT_BACKENDS.WhisperCpp]: false,
 };
 
 /** Default Gemini STT model (ST-7) — the current docs' flash example; the

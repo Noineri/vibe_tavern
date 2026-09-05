@@ -78,6 +78,9 @@ export type SttPresetModelSource =
 	| {
 			kind: "free-text";
 			defaultModel: string;
+	  }
+	| {
+			kind: "server";
 	  };
 
 /** Provider group — the LLM-tab taxonomy (SPE-8, owner directive
@@ -262,6 +265,22 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 			defaultModel: DEFAULT_GEMINI_STT_MODEL,
 		},
 		keyOptional: false,
+	},
+	{
+		id: "whisper-cpp",
+		group: STT_PRESET_GROUP.Local,
+		backend: STT_BACKENDS.WhisperCpp,
+		// The project's own local server surface (`POST /inference`) —
+		// SPE-9: own-wire locals are adapter territory, not an exclusion
+		// note. Prefilled with the server's default host/port; the endpoint
+		// stays editable (the Local arm). Also covers whisperfile (the
+		// llamafile wraps this server).
+		baseUrl: "http://127.0.0.1:8080",
+		vendor: "",
+		// The model is bound at server start (`-m`) — no request-side
+		// model field; the picker shows the server-flags hint instead.
+		modelSource: { kind: "server" },
+		keyOptional: true,
 	},
 	{
 		id: "deepgram",

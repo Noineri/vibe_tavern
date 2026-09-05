@@ -61,6 +61,7 @@ import { geminiSttFactory } from "../src/domain/stt/backends/gemini-stt.js";
 import { deepgramSttFactory } from "../src/domain/stt/backends/deepgram-stt.js";
 import { elevenlabsSttFactory } from "../src/domain/stt/backends/elevenlabs-stt.js";
 import { nvidiaSttFactory } from "../src/domain/stt/backends/nvidia-stt.js";
+import { whisperCppSttFactory } from "../src/domain/stt/backends/whisper-cpp-stt.js";
 import {
   __resetSttRegistryForTests,
   registerSttBackend,
@@ -74,6 +75,7 @@ beforeEach(() => {
   registerSttBackend(STT_BACKENDS.Deepgram, deepgramSttFactory);
   registerSttBackend(STT_BACKENDS.ElevenLabs, elevenlabsSttFactory);
   registerSttBackend(STT_BACKENDS.Nvidia, nvidiaSttFactory);
+  registerSttBackend(STT_BACKENDS.WhisperCpp, whisperCppSttFactory);
   globalThis.fetch = originalFetch;
 });
 

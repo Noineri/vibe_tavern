@@ -108,6 +108,17 @@ export const STT_BACKEND_CAPABILITIES: Record<SttBackendType, SttBackendCapabili
     emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.Nvidia],
     requiresApiKey: true,
   },
+  [STT_BACKENDS.WhisperCpp]: {
+    transport: STT_TRANSPORT.Server,
+    // The project's OWN `/inference` multipart surface — NOT the OpenAI
+    // transcription protocol (SPE-9; localhost, keyless).
+    openaiCompatible: false,
+    // One batch request → one `{"text"}` reply.
+    supportsStreaming: false,
+    emotionAnnotation: STT_BACKEND_EMOTION_CAPABILITY[STT_BACKENDS.WhisperCpp],
+    // Keyless local server — the server checks no auth at all.
+    requiresApiKey: false,
+  },
 };
 
 const KNOWN_SLUGS = new Set<string>(Object.values(STT_BACKENDS));
