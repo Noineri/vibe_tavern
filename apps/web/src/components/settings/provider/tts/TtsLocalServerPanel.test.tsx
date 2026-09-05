@@ -386,4 +386,51 @@ describe("TtsLocalServerPanel", () => {
     const diag = getByTestId("tts-discover-diag");
     expect(diag.textContent?.length).toBeGreaterThan(0);
   });
+
+  // ── Manual done-marks (owner flow 2026-09-06): tick a command you RAN. ──
+  test("guide checklist: manual check persists to localStorage and reset clears it", async () => {
+    window.localStorage.clear();
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    await openHelp(view);
+
+    // Kokoro guide (default), docker step, first command.
+    const checkId = "tts-help-check-kokoro-fastapi-download-docker-0";
+    expect(view.getByTestId(checkId).getAttribute("aria-checked")).toBe("false");
+    expect(view.queryByTestId("tts-help-reset-checks")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(view.getByTestId(checkId));
+    });
+    expect(view.getByTestId(checkId).getAttribute("aria-checked")).toBe("true");
+    // Persisted per guide+OS — survives a remount (the whole point: installs
+    // outlive the modal).
+    expect(window.localStorage.getItem("vt-guide-checks:v1:kokoro-fastapi:windows")).toContain("download-docker:0");
+    expect(view.queryByTestId("tts-help-reset-checks")).not.toBeNull();
+
+    // Reset (reinstall flow — stale "done" marks must be clearable).
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-help-reset-checks"));
+    });
+    expect(view.getByTestId(checkId).getAttribute("aria-checked")).toBe("false");
+    expect(window.localStorage.getItem("vt-guide-checks:v1:kokoro-fastapi:windows")).toBeNull();
+    cleanup();
+    window.localStorage.clear();
+  });
+
+  test("guide checklist: marking a command never triggers a copy", async () => {
+    window.localStorage.clear();
+    const tts = makeTtsHook({});
+    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
+    await openHelp(view);
+
+    await act(async () => {
+      fireEvent.click(view.getByTestId("tts-help-check-kokoro-fastapi-download-docker-0"));
+    });
+    // Copying ≠ running (owner rule): the check control must not touch the
+    // clipboard — the copy button stays in its idle label.
+    expect(view.getByTestId("tts-help-copy-kokoro-fastapi-download-docker-0").textContent).not.toContain("copied");
+    cleanup();
+    window.localStorage.clear();
+  });
 });

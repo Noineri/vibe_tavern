@@ -15,6 +15,8 @@ import {
 } from "../../../../lib/tts/quickstarts.js";
 import type { TtsHelpStep, TtsOsKind } from "../../../../lib/tts/quickstarts.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
+import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
+import { GuideCommandRow } from "../GuideCommandRow.js";
 import { useDockerStatus } from "./use-docker-status.js";
 import { useTtsDiscovery } from "./use-tts-discovery.js";
 import { configString, updateConfigField } from "./tts-form-helpers.js";
@@ -39,6 +41,9 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
   // manually switchable. It only affects the no-Docker branch.
   const [guideId, setGuideId] = useState<string>(TTS_SERVER_SETUP_GUIDES[0].id);
   const [os, setOs] = useState<TtsOsKind>(() => detectTtsOsKind(navigator.userAgent));
+  // Owner flow 2026-09-06: copy → paste → wait (installs take minutes) →
+  // tick the command off. Manual marks only, persisted per guide+OS.
+  const checklist = useGuideChecklist(guideId, os);
 
   // Locked: whole block renders ONLY for openai-compatible backend — the
   // "Local server" UI variant is exactly that backend plus the localServer
@@ -151,8 +156,21 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
 
             {/* How to run the commands below — one hint for every card
                 (novices paste blocks into nowhere; owner field-test finding). */}
-            <div data-testid="tts-help-terminal-hint" className="font-ui text-[11px] text-t4">
-              {t("tts_help_terminal_hint")}
+            <div
+              data-testid="tts-help-terminal-hint"
+              className="flex items-center justify-between gap-2 font-ui text-[11px] text-t4"
+            >
+              <span>{t("tts_help_terminal_hint")}</span>
+              {checklist.total > 0 && (
+                <button
+                  type="button"
+                  data-testid="tts-help-reset-checks"
+                  className="shrink-0 cursor-pointer font-ui text-[11px] text-t3 underline underline-offset-2 transition-colors hover:text-t1"
+                  onClick={checklist.reset}
+                >
+                  {t("tts_help_reset_checks")}
+                </button>
+              )}
             </div>
 
             {(() => {
@@ -163,20 +181,19 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                   {s.commands[os].map((command, index) => {
                     const copyId = `${guide.id}-${id}-${index}`;
                     return (
-                      <div key={index} className="flex items-center gap-2">
-                        <div className={`${monoUICls} min-w-0 flex-1 whitespace-pre-wrap break-all px-2 py-1.5 text-[11px]`}>
-                          {command}
-                        </div>
-                        <button
-                          type="button"
-                          data-testid={`tts-help-copy-${copyId}`}
-                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-                          onClick={() => void handleCopy(copyId, command)}
-                        >
-                          <Icons.Copy />
-                          {copiedId === copyId ? t("tts_quickstart_copied") : t("tts_quickstart_copy")}
-                        </button>
-                      </div>
+                      <GuideCommandRow
+                        key={index}
+                        command={command}
+                        testPrefix="tts-help"
+                        copyId={copyId}
+                        copied={copiedId === copyId}
+                        onCopy={() => void handleCopy(copyId, command)}
+                        copyLabel={t("tts_quickstart_copy")}
+                        copiedLabel={t("tts_quickstart_copied")}
+                        checked={checklist.isChecked(id, index)}
+                        onToggleChecked={() => checklist.toggle(id, index)}
+                        checkLabel={t("tts_help_mark_done")}
+                      />
                     );
                   })}
                   {s.noteKey !== undefined && (

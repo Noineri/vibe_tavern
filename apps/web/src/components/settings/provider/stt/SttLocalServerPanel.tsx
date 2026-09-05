@@ -9,6 +9,8 @@ import { lblCls, monoUICls } from "../../../build/fields/field-styles.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
+import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
+import { GuideCommandRow } from "../GuideCommandRow.js";
 import { STT_SERVER_GUIDES, type SttHelpStep, type SttOsKind } from "../../../../lib/stt/stt-server-guides.js";
 import { useSttDiscovery } from "./use-stt-discovery.js";
 import { configString, updateConfigField } from "./stt-form-helpers.js";
@@ -30,6 +32,9 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
   const [helpOpen, setHelpOpen] = useState(false);
   const [guideId, setGuideId] = useState<string>(STT_SERVER_GUIDES[0].id);
   const [os, setOs] = useState<SttOsKind>(() => detectTtsOsKind(navigator.userAgent));
+  // Owner flow 2026-09-06: manual per-command done-marks, persisted per
+  // guide+OS (same tracker as the TTS panel — shared row + hook).
+  const checklist = useGuideChecklist(guideId, os);
 
   if (form.backend !== STT_BACKENDS.OpenAiCompat) return null;
 
@@ -127,8 +132,21 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
               />
             </div>
 
-            <div data-testid="stt-help-terminal-hint" className="font-ui text-[11px] text-t4">
-              {t("stt_local_terminal_hint")}
+            <div
+              data-testid="stt-help-terminal-hint"
+              className="flex items-center justify-between gap-2 font-ui text-[11px] text-t4"
+            >
+              <span>{t("stt_local_terminal_hint")}</span>
+              {checklist.total > 0 && (
+                <button
+                  type="button"
+                  data-testid="stt-help-reset-checks"
+                  className="shrink-0 cursor-pointer font-ui text-[11px] text-t3 underline underline-offset-2 transition-colors hover:text-t1"
+                  onClick={checklist.reset}
+                >
+                  {t("stt_local_reset_checks")}
+                </button>
+              )}
             </div>
 
             {(() => {
@@ -139,20 +157,19 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                   {s.commands[os].map((command, index) => {
                     const copyId = `${guide.id}-${id}-${index}`;
                     return (
-                      <div key={index} className="flex items-center gap-2">
-                        <div className={`${monoUICls} min-w-0 flex-1 whitespace-pre-wrap break-all px-2 py-1.5 text-[11px]`}>
-                          {command}
-                        </div>
-                        <button
-                          type="button"
-                          data-testid={`stt-help-copy-${copyId}`}
-                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-s3 px-2 py-1 font-ui text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-                          onClick={() => void handleCopy(copyId, command)}
-                        >
-                          <Icons.Copy />
-                          {copiedId === copyId ? t("stt_local_copied") : t("stt_local_copy")}
-                        </button>
-                      </div>
+                      <GuideCommandRow
+                        key={index}
+                        command={command}
+                        testPrefix="stt-help"
+                        copyId={copyId}
+                        copied={copiedId === copyId}
+                        onCopy={() => void handleCopy(copyId, command)}
+                        copyLabel={t("stt_local_copy")}
+                        copiedLabel={t("stt_local_copied")}
+                        checked={checklist.isChecked(id, index)}
+                        onToggleChecked={() => checklist.toggle(id, index)}
+                        checkLabel={t("stt_local_mark_done")}
+                      />
                     );
                   })}
                   {s.noteKey !== undefined && (
