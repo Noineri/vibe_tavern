@@ -570,7 +570,12 @@
   "tts_clone_section_title": "Voice cloning",
   "tts_clone_name_label": "Voice name",
   "tts_clone_file_label": "Reference audio",
-  "tts_clone_choose_file": "Choose file",
+  "tts_clone_choose_file": "Choose files",
+  "tts_clone_files_selected": "{count} files selected",
+  "tts_clone_sample_row": "{name} · {seconds} s",
+  "tts_clone_samples_total": "Σ {seconds} s · {count} files",
+  "tts_clone_duration_warning": "Recommended total is 10–30 s of clean speech — shorter weakens similarity, longer slows every generation",
+  "tts_clone_glue_err_decode": "Could not decode one of the samples — unsupported or broken audio",
   "tts_clone_no_file": "no file selected",
   "tts_clone_hint": "{formats} · up to {size} MB · 10–30 seconds of clean speech works best",
   "tts_clone_action": "Clone voice",
@@ -2814,5 +2819,9 @@
   "stt_nvidia_en_only": "The model transcribes English speech only — use another provider for Russian dictation",
   "stt_deepgram_ru_note": "nova-3 understands Russian out of the box",
   "stt_preset_whisper_cpp": "whisper.cpp (own server)",
-  "stt_whispercpp_server_hint": "The model and audio conversion are set when the server starts: run it with -m <model file> and --convert (requires ffmpeg; dictation audio arrives as webm/opus). Language can be set here or via the server -l flag."
+  "stt_whispercpp_server_hint": "The model and audio conversion are set when the server starts: run it with -m <model file> and --convert (requires ffmpeg; dictation audio arrives as webm/opus). Language can be set here or via the server -l flag.",
+  "tts_clone_files_selected_one": "{count} file selected",
+  "tts_clone_files_selected_other": "{count} files selected",
+  "tts_clone_samples_total_one": "Σ {seconds} s · {count} file",
+  "tts_clone_samples_total_other": "Σ {seconds} s · {count} files"
 }

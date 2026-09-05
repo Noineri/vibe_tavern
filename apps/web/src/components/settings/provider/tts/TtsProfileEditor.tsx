@@ -10,6 +10,7 @@ import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { cloneTtsVoice, listTtsDraftModels, listTtsDraftVoices, type TtsBackendCapabilities, type TtsModelListEntry, type TtsVoiceRecord } from "../../../../api/tts-api.js";
+import { GLUE_GAP_SECONDS, GlueVoiceSamplesError, glueDecoder, glueVoiceSamples } from "../../../../lib/tts/glue-voice-samples.js";
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
@@ -62,14 +63,51 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
 }): ReactNode {
   const { t } = useT();
   const fileRef = useRef<HTMLInputElement>(null);
+  const selectionToken = useRef(0);
   const [name, setName] = useState("");
   const [referenceText, setReferenceText] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  // TPE-11: MANY short samples glue into one mono WAV at upload time; a lone
+  // sample passes through untouched (owner decision 2026-09-05).
+  const [files, setFiles] = useState<File[]>([]);
+  const [durations, setDurations] = useState<number[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const formats = capabilities.formats ?? ["wav", "mp3", "flac", "m4a", "ogg"];
   const maxMb = capabilities.maxSizeMb ?? 10;
+  // The total the backend will actually see (gaps included for multi).
+  const totalSeconds =
+    durations !== null && durations.length === files.length
+      ? durations.reduce((sum, d) => sum + d, 0) +
+        (files.length > 1 ? GLUE_GAP_SECONDS * (files.length - 1) : 0)
+      : null;
+
+  function handleFiles(picked: File[]): void {
+    setFiles(picked);
+    setError(null);
+    setResult(null);
+    if (picked.length === 0) {
+      setDurations(null);
+      return;
+    }
+    // Duration facts for Σ and the 10–30 s warning; a decode failure here is
+    // silent (no AudioContext in tests; a truly broken file surfaces at clone
+    // time with the typed decode error).
+    const token = ++selectionToken.current;
+    void (async () => {
+      try {
+        const decode = glueDecoder();
+        const secs: number[] = [];
+        for (const file of picked) {
+          const raw = await decode(file);
+          secs.push(raw.channels[0].length / raw.sampleRate);
+        }
+        if (selectionToken.current === token) setDurations(secs);
+      } catch {
+        if (selectionToken.current === token) setDurations(null);
+      }
+    })();
+  }
 
   async function handleClone(): Promise<void> {
     const trimmed = name.trim();
@@ -78,7 +116,7 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
       setResult(null);
       return;
     }
-    if (file === null) {
+    if (files.length === 0) {
       setError(t("tts_clone_err_file"));
       setResult(null);
       return;
@@ -91,21 +129,42 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
       setResult(null);
       return;
     }
-    if (file.size > maxMb * 1024 * 1024) {
-      setError(t("tts_clone_err_size", { size: maxMb }));
-      setResult(null);
-      return;
-    }
     setBusy(true);
     setError(null);
     setResult(null);
     try {
+      // Multi → glue into one mono WAV (the size cap rides the glue); single
+      // → passthrough with the plain file-size check.
+      let audio: File;
+      if (files.length === 1) {
+        audio = files[0];
+        if (audio.size > maxMb * 1024 * 1024) {
+          setError(t("tts_clone_err_size", { size: maxMb }));
+          setResult(null);
+          return;
+        }
+      } else {
+        try {
+          audio = (await glueVoiceSamples(files, glueDecoder(), maxMb * 1024 * 1024)).file;
+        } catch (cause) {
+          if (cause instanceof GlueVoiceSamplesError) {
+            setError(
+              cause.code === "size"
+                ? t("tts_clone_err_size", { size: maxMb })
+                : t("tts_clone_glue_err_decode"),
+            );
+            setResult(null);
+            return;
+          }
+          throw cause;
+        }
+      }
       const voice = await cloneTtsVoice({
         backend,
         config,
         profileId,
         name: trimmed,
-        audio: file,
+        audio,
         ...(capabilities.cloneRequiresReferenceText === true || transcript !== ""
           ? { referenceText: transcript }
           : {}),
@@ -114,7 +173,8 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
       setResult(t("tts_clone_success", { name: voice.label }));
       setName("");
       setReferenceText("");
-      setFile(null);
+      setFiles([]);
+      setDurations(null);
       // Same-file re-pick must re-fire onChange — clearing the hidden input
       // is what makes the browser treat it as a fresh selection.
       if (fileRef.current !== null) fileRef.current.value = "";
@@ -169,21 +229,49 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
             {t("tts_clone_choose_file")}
           </button>
           <span data-testid="tts-clone-file-name" className="min-w-0 truncate font-ui text-[12px] text-t3">
-            {file === null ? t("tts_clone_no_file") : file.name}
+            {files.length === 0
+              ? t("tts_clone_no_file")
+              : files.length === 1
+                ? files[0].name
+                : t("tts_clone_files_selected", { count: files.length })}
           </span>
           <input
             ref={fileRef}
             className="hidden"
             type="file"
+            multiple
             data-testid="tts-clone-file"
             accept={formats.map((f) => "." + f).join(",") + ",audio/*"}
             onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
-              setError(null);
-              setResult(null);
+              handleFiles(Array.from(event.target.files ?? []));
             }}
           />
         </div>
+        {files.length > 1 && (
+          <div data-testid="tts-clone-sample-list" className="flex flex-col gap-0.5">
+            {files.map((file, index) => (
+              <span key={`${file.name}-${index}`} data-testid="tts-clone-sample-row" className="min-w-0 truncate font-ui text-[11px] text-t3">
+                {t("tts_clone_sample_row", {
+                  name: file.name,
+                  seconds: (durations?.[index] ?? 0).toFixed(1),
+                })}
+              </span>
+            ))}
+          </div>
+        )}
+        {totalSeconds !== null && (
+          <div data-testid="tts-clone-samples-total" className="font-ui text-[11px] text-t3">
+            {t("tts_clone_samples_total", {
+              seconds: totalSeconds.toFixed(1),
+              count: files.length,
+            })}
+          </div>
+        )}
+        {totalSeconds !== null && (totalSeconds < 10 || totalSeconds > 30) && (
+          <div data-testid="tts-clone-duration-warning" className="font-ui text-[11px] text-t4">
+            {t("tts_clone_duration_warning")}
+          </div>
+        )}
         <div data-testid="tts-clone-hint" className="font-ui text-[11px] text-t4">
           {t("tts_clone_hint", { formats: formats.join(" · "), size: maxMb })}
         </div>

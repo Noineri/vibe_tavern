@@ -1720,6 +1720,80 @@ describe("TtsProfileEditor — voice clone section", () => {
     await act(async () => {});
   });
 
+  // ── TPE-11: multi-sample glue ───────────────────────────────────────
+  it("multi-select: Σ + per-sample rows + out-of-range warning; clone uploads ONE glued wav; single file still passes through", async () => {
+    const setForm = mock(() => {});
+    // Phase-based stub (the SF-test lesson in this file): every listVoices of
+    // the mount answers the capable envelope; no Once-slots to leak forward.
+    listTtsDraftVoicesMock.mockImplementation(async () => capableEnvelope as never);
+
+    // Fake decode seam: every file is 4 s @ 8 kHz mono — two files = 8 s +
+    // one 0.4 s gap → Σ 8.4 s (below 10 → warning must show).
+    const { __setGlueDecoderForTests } = await import("../../../../lib/tts/glue-voice-samples.js");
+    __setGlueDecoderForTests(async () => ({
+      channels: [new Float32Array(32000)],
+      sampleRate: 8000,
+    }));
+
+    try {
+      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never, setForm }) } as never));
+      await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
+
+      const a = new File([new Uint8Array([1])], "a.mp3", { type: "audio/mpeg" });
+      const b = new File([new Uint8Array([2])], "b.mp3", { type: "audio/mpeg" });
+      fireEvent.change(view.getByTestId("tts-clone-file"), { target: { files: [a, b] } });
+
+      // Σ appears once the async decode settles; two rows listed; warning on (<10 s).
+      await waitFor(() => expect(view.getByTestId("tts-clone-samples-total").textContent).toContain("tts_clone_samples_total"), { timeout: 2500 });
+      expect(view.getAllByTestId("tts-clone-sample-row").length).toBe(2);
+      expect(view.queryByTestId("tts-clone-duration-warning")).toBeTruthy();
+
+      fireEvent.change(view.getByTestId("tts-clone-name"), { target: { value: "my-voice" } });
+      fireEvent.click(view.getByTestId("tts-clone-submit"));
+
+      await waitFor(() => expect(cloneTtsVoiceMock).toHaveBeenCalled(), { timeout: 2500 });
+      const call = cloneTtsVoiceMock.mock.calls.at(-1)![0] as { audio: File };
+      expect(call.audio.name).toBe("voice-samples.wav");
+      expect(call.audio.type).toBe("audio/wav");
+
+      cleanup();
+      document.body.innerHTML = "";
+      await act(async () => {});
+    } finally {
+      __setGlueDecoderForTests(null);
+      listTtsDraftVoicesMock.mockRestore();
+    }
+  });
+
+  it("single-file flow unchanged: passthrough (no glue) when exactly one file is selected", async () => {
+    listTtsDraftVoicesMock.mockImplementation(async () => capableEnvelope as never);
+
+    const { __setGlueDecoderForTests } = await import("../../../../lib/tts/glue-voice-samples.js");
+    __setGlueDecoderForTests(async () => ({ channels: [new Float32Array(32000)], sampleRate: 8000 }));
+    try {
+      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
+
+      const audio = new File([new Uint8Array([1, 2, 3])], "solo.mp3", { type: "audio/mpeg" });
+      fireEvent.change(view.getByTestId("tts-clone-file"), { target: { files: [audio] } });
+      await waitFor(() => expect(view.getByTestId("tts-clone-samples-total")).toBeTruthy(), { timeout: 2500 });
+      fireEvent.change(view.getByTestId("tts-clone-name"), { target: { value: "v" } });
+      fireEvent.click(view.getByTestId("tts-clone-submit"));
+
+      await waitFor(() => expect(cloneTtsVoiceMock).toHaveBeenCalled(), { timeout: 2500 });
+      const call = cloneTtsVoiceMock.mock.calls.at(-1)![0] as { audio: File };
+      // The ORIGINAL file identity — no re-encode for a lone sample.
+      expect(call.audio.name).toBe("solo.mp3");
+
+      cleanup();
+      document.body.innerHTML = "";
+      await act(async () => {});
+    } finally {
+      __setGlueDecoderForTests(null);
+      listTtsDraftVoicesMock.mockRestore();
+    }
+  });
+
   // ── SiliconFlow: conditional transcript field + caveat (TPE-8) ───────
   it("siliconflow: transcript field + caveat hint appear, empty transcript blocks the upload, filled transcript rides the body", async () => {
     // Phase-based stub (NOT mockImplementationOnce): one editor mount

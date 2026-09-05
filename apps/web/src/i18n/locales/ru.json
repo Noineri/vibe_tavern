@@ -572,7 +572,12 @@
   "tts_clone_section_title": "Клонирование голоса",
   "tts_clone_name_label": "Имя голоса",
   "tts_clone_file_label": "Образец аудио",
-  "tts_clone_choose_file": "Выбрать файл",
+  "tts_clone_choose_file": "Выбрать файлы",
+  "tts_clone_files_selected": "Выбрано файлов: {count}",
+  "tts_clone_sample_row": "{name} · {seconds} с",
+  "tts_clone_samples_total": "Σ {seconds} с · файлов: {count}",
+  "tts_clone_duration_warning": "Рекомендуется суммарно 10–30 с чистой речи: короче — слабее похожесть, длиннее — медленнее каждая генерация",
+  "tts_clone_glue_err_decode": "Не удалось декодировать один из семплов — аудио не поддерживается или повреждено",
   "tts_clone_no_file": "файл не выбран",
   "tts_clone_hint": "{formats} · до {size} МБ · лучше всего 10–30 секунд чистой речи",
   "tts_clone_action": "Клонировать голос",
@@ -2846,5 +2851,13 @@
   "stt_nvidia_en_only": "Модель распознаёт только английскую речь — для русского диктанта выбери другого провайдера",
   "stt_deepgram_ru_note": "nova-3 понимает русский из коробки",
   "stt_preset_whisper_cpp": "whisper.cpp (свой сервер)",
-  "stt_whispercpp_server_hint": "Модель и конвертация формата задаются при запуске сервера: флаги -m <файл модели> и --convert (нужен ffmpeg в PATH — диктовка приходит как webm/opus). Язык можно задать здесь или флагом сервера -l."
+  "stt_whispercpp_server_hint": "Модель и конвертация формата задаются при запуске сервера: флаги -m <файл модели> и --convert (нужен ffmpeg в PATH — диктовка приходит как webm/opus). Язык можно задать здесь или флагом сервера -l.",
+  "tts_clone_files_selected_one": "Выбран {count} файл",
+  "tts_clone_files_selected_few": "Выбрано {count} файла",
+  "tts_clone_files_selected_many": "Выбрано {count} файлов",
+  "tts_clone_files_selected_other": "Выбрано {count} файла",
+  "tts_clone_samples_total_one": "Σ {seconds} с · {count} файл",
+  "tts_clone_samples_total_few": "Σ {seconds} с · {count} файла",
+  "tts_clone_samples_total_many": "Σ {seconds} с · {count} файлов",
+  "tts_clone_samples_total_other": "Σ {seconds} с · {count} файла"
 }
