@@ -100,13 +100,15 @@ describe("STT provider presets — verbatim endpoint facts (doc-verified)", () =
 		});
 	});
 
-	test("cartesia row — no /v1 segment and the X-API-Key override", () => {
+	test("cartesia row — no /v1 segment and Bearer auth (SPE-R correction)", () => {
 		// The drop-in endpoint is https://api.cartesia.ai/audio/transcriptions
-		// (no version segment) and keeps Cartesia's own header — the adapter
-		// must NOT send Bearer there (SPE-2 consumes this flag).
+		// (no version segment). Auth is Bearer — their own /stt OpenAPI
+		// declares the bearer scheme and the live cartesia-tts adapter sends
+		// Bearer (SPE-R 2026-09-05; the old X-API-Key claim came from a now
+		// unreachable migrate page — no transport override needed).
 		const preset = getSttProviderPreset("cartesia");
 		expect(preset?.baseUrl).toBe("https://api.cartesia.ai");
-		expect(preset?.authHeader).toBe(STT_PRESET_AUTH_HEADER.XApiKey);
+		expect(preset?.authHeader).toBe(STT_PRESET_AUTH_HEADER.Bearer);
 		expect(preset?.modelSource).toEqual({
 			kind: "static",
 			models: ["ink-whisper"],

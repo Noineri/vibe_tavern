@@ -30,8 +30,10 @@ import { STT_BACKENDS } from "./entities.js";
 import type { SttBackendType } from "./entities.js";
 
 /** Auth header shape a preset's transport must send when a key is set
- *  (SPE-2 consumes this in the openai-stt adapter; Bearer is the
- *  OpenAI-compatible default, X-API-Key is Cartesia's drop-in shape). */
+ *  (Bearer is the OpenAI-compatible default every current row uses;
+ *  X-API-Key stays in the vocabulary for wire shapes that need it — the
+ *  SPE-R pass confirmed no current row does, so no transport override is
+ *  built: if a live probe ever 401s on Bearer, add the override then). */
 export const STT_PRESET_AUTH_HEADER = {
 	Bearer: "bearer",
 	XApiKey: "x-api-key",
@@ -143,6 +145,12 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 		vendor: "mistral",
 		modelSource: {
 			kind: "static",
+			// Documented transcription roster (their API-reference model ids;
+		// SPE-R note: their docs EXAMPLES drift across aliases like
+		// voxtral-mini-latest / voxtral-2602, so revisit this list on the
+		// first live connect — the documented ids stay the safe default
+			// until a key verifies whether /v1/models supports the
+			// output_modalities filter).
 			models: ["voxtral-mini-3b-2507", "voxtral-small-24b-2507-stt"],
 			defaultModel: "voxtral-mini-3b-2507",
 		},
@@ -155,8 +163,13 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 		// https://api.cartesia.ai/audio/transcriptions (no /v1 segment) —
 		// the adapter's append yields exactly that path.
 		baseUrl: "https://api.cartesia.ai",
-		// The drop-in keeps Cartesia's own header, not Bearer (SPE-2).
-		authHeader: STT_PRESET_AUTH_HEADER.XApiKey,
+		// SPE-R correction (2026-09-05): Cartesia auth is Bearer — their own
+		// /stt OpenAPI declares `APIKeyAuth {type: http, scheme: bearer}` and
+		// the repo's live cartesia-tts adapter has been sending Bearer all
+		// along. The earlier X-API-Key claim came from a migrate page that is
+		// now unreachable (Vercel checkpoint); if a live transcription ever
+		// 401s on Bearer, revisit a header override then.
+		authHeader: STT_PRESET_AUTH_HEADER.Bearer,
 		vendor: "cartesia",
 		modelSource: {
 			kind: "static",
