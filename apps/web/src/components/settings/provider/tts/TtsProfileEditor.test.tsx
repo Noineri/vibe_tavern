@@ -1024,7 +1024,7 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     cleanup();
   });
 
-  it("re-open: gemini backend without preset → Cloud", async () => {
+  it("re-open: gemini backend without preset → Native (SPE-8: natives are their own segment)", async () => {
     const tts = makeTts({
       form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: { apiKey: "k" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
     });
@@ -1032,11 +1032,11 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     await act(async () => {
       view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     });
-    expect(checkedSegment(view)).toContain("Cloud");
+    expect(checkedSegment(view)).toContain("Native");
     cleanup();
   });
 
-  it("re-open: elevenlabs backend without preset → Cloud", async () => {
+  it("re-open: elevenlabs backend without preset → Native", async () => {
     const tts = makeTts({
       form: { id: "p1", name: "P", backend: TTS_BACKEND.ElevenLabs as never, config: { apiKey: "k" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
     });
@@ -1044,8 +1044,48 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     await act(async () => {
       view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     });
-    expect(checkedSegment(view)).toContain("Cloud");
+    expect(checkedSegment(view)).toContain("Native");
     cleanup();
+  });
+
+  it("re-open: gemini WITH a native preset → Native with that preset selected", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: { preset: "gemini" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    expect(checkedSegment(view)).toContain("Native");
+    expect(view.container.textContent ?? "").toContain("Gemini");
+    cleanup();
+  });
+
+  it("native segment: the preset dropdown offers native rows only (no cloud transports)", async () => {
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: {}, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    expect(checkedSegment(view)).toContain("Native");
+    // The preset trigger shows the "custom" placeholder (no stored preset);
+    // opening it must list the native roster, not the cloud transports.
+    const fmtTrigger = Array.from(view.container.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "custom",
+    );
+    expect(fmtTrigger).toBeTruthy();
+    fireEvent.click(fmtTrigger!);
+    await waitFor(() => expect(document.body.textContent ?? "").toContain("ElevenLabs"));
+    const body = document.body.textContent ?? "";
+    expect(body).toContain("Gemini");
+    expect(body).toContain("Cartesia");
+    expect(body).not.toContain("OpenAI");
+    expect(body).not.toContain("OpenRouter");
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
   });
 
   it("duplicate-name warning renders for a colliding profile name", async () => {

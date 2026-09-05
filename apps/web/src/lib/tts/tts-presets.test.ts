@@ -48,28 +48,44 @@ describe("tts-presets", () => {
     }
   });
 
-  test("group-filtering helper behaves like provider-presets counterpart", () => {
-    // All 8 presets are in group "cloud" — filtering by that group yields the same set.
+  test("group split mirrors the LLM-tab taxonomy (SPE-8): 6 cloud transports + 11 native wires", () => {
+    // Cloud = the OpenAI-compatible transport rows; native = own-wire
+    // backends (the group the level-1 segment renders).
     expect(getTtsPresetGroup("openai")).toBe("cloud");
-    expect(getTtsPresetGroup("gemini")).toBe("cloud");
+    expect(getTtsPresetGroup("openrouter")).toBe("cloud");
+    expect(getTtsPresetGroup("gemini")).toBe("native");
+    expect(getTtsPresetGroup("elevenlabs")).toBe("native");
+    expect(getTtsPresetGroup("google-cloud")).toBe("native");
     expect(getTtsPresetGroup("unknown")).toBeNull();
     // Alias parity
     expect(getPresetGroup("openai")).toBe("cloud");
+    expect(getPresetGroup("gemini")).toBe("native");
     expect(getPresetGroup("unknown")).toBeNull();
 
     const visible = getVisibleTtsPresets();
     expect(visible.length).toBe(17);
-    expect(visible.every((p) => p.group === "cloud")).toBe(true);
+    expect(visible.filter((p) => p.group === "cloud").map((p) => p.id)).toEqual([
+      "openai",
+      "openrouter",
+      "groq",
+      "siliconflow",
+      "nanogpt",
+      "electronhub",
+    ]);
+    expect(visible.filter((p) => p.group === "native").length).toBe(11);
+    // Native rows ride their own backend slugs — never openai-compat.
+    for (const p of visible.filter((p) => p.group === "native")) {
+      expect(p.backend).not.toBe("openai-compat");
+    }
 
     const visibleWithFlag = getVisibleTtsPresets(true);
     expect(visibleWithFlag.length).toBe(17);
     expect(getVisibleProviderPresets(false).length).toBe(17);
 
     const groups = getVisibleTtsPresetGroups();
-    expect(groups.length).toBe(1);
-    expect(groups[0]?.id).toBe("cloud");
-    expect(getVisiblePresetGroups(true).length).toBe(1);
-    expect(getVisibleTtsPresetGroups(false).length).toBe(1);
+    expect(groups.map((g) => g.id)).toEqual(["cloud", "native"]);
+    expect(getVisiblePresetGroups(true).length).toBe(2);
+    expect(getVisibleTtsPresetGroups(false).length).toBe(2);
   });
 
   test("modelFilter values are within the declared union", () => {

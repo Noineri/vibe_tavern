@@ -1,5 +1,5 @@
 /**
- * Cloud TTS preset registry — fork of `apps/web/src/provider-presets.ts` shape
+ * TTS preset registry — fork of `apps/web/src/provider-presets.ts` shape
  * and helper signatures (TE2-1, TTS Editor V2).
  *
  * Source helpers mirrored: `getPresetGroup` / `getVisibleProviderPresets` /
@@ -16,10 +16,17 @@ export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" 
  *  ?type=audio); known-host criteria (openai/groq) and unknown custom
  *  servers resolve server-side — preset glue optional. */
 export type TtsModelFilter = "modality" | "audio-models" | "audio-type" | "none";
+/** Provider group — the LLM-tab taxonomy (SPE-8, owner directive
+ *  2026-09-05): `cloud` = OpenAI-compatible transport rows, `native` =
+ *  own-wire backend rows. The picker renders level-1 segments from this
+ *  field (the local arm is a segment, not a preset row — the TTS local
+ *  entry never lived in this roster). */
+export type TtsPresetGroup = "cloud" | "native";
+
 export interface TtsPreset {
   id: string;
   label: string;
-  group: "cloud";
+  group: TtsPresetGroup;
   backend: TtsBackend;
   baseUrl?: string;
   modelFilter?: TtsModelFilter;
@@ -27,8 +34,9 @@ export interface TtsPreset {
   defaultModel?: string;
 }
 
-export const TTS_PRESET_GROUPS: Array<{ id: "cloud"; label: string }> = [
+export const TTS_PRESET_GROUPS: Array<{ id: TtsPresetGroup; label: string }> = [
   { id: "cloud", label: "Cloud" },
+  { id: "native", label: "Native" },
 ];
 
 export const TTS_PRESETS: TtsPreset[] = [
@@ -103,21 +111,21 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "gemini",
     label: "Gemini",
-    group: "cloud",
+    group: "native",
     backend: "gemini",
     modelFilter: "none",
   },
   {
     id: "elevenlabs",
     label: "ElevenLabs",
-    group: "cloud",
+    group: "native",
     backend: "elevenlabs",
     modelFilter: "none",
   },
   {
     id: "cartesia",
     label: "Cartesia",
-    group: "cloud",
+    group: "native",
     backend: "cartesia",
     // Manual model input (TPE-9a owner rule): no public models endpoint —
     // the docs link under the input field is the discovery path.
@@ -126,7 +134,7 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "inworld",
     label: "Inworld",
-    group: "cloud",
+    group: "native",
     backend: "inworld",
     // Live discovery (TPE-9a): listModels() fetches the documented
     // GET /llm/v1alpha/models and keeps the audio-output entries.
@@ -135,7 +143,7 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "lmnt",
     label: "LMNT",
-    group: "cloud",
+    group: "native",
     backend: "lmnt",
     // Manual model input (TPE-9a owner rule): no models endpoint — the
     // docs link under the input field is the discovery path (blizzard
@@ -145,7 +153,7 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "minimax",
     label: "MiniMax",
-    group: "cloud",
+    group: "native",
     backend: "minimax",
     // Live discovery (TPE-9a): listModels() fetches the documented
     // OpenAI-compatible GET /v1/models and keeps the speech-* family.
@@ -154,7 +162,7 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "volcengine",
     label: "Volcengine",
-    group: "cloud",
+    group: "native",
     backend: "volcengine",
     // Manual model input (TPE-9a owner rule): the resource id (seed-tts-*
     // / seed-icl-*) doubles as the model; no list endpoint exists for the
@@ -165,7 +173,7 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "deepgram",
     label: "Deepgram",
-    group: "cloud",
+    group: "native",
     backend: "deepgram",
     // Live discovery (TPE-10): listVoices() fetches GET /v1/models and
     // maps the tts array (aura voices) — model == voice, so there is no
@@ -175,7 +183,7 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "azure",
     label: "Azure",
-    group: "cloud",
+    group: "native",
     backend: "azure",
     // Live discovery (TPE-12): listVoices() fetches the region's
     // voices/list roster — the voice id IS the ShortName, no model field.
@@ -184,7 +192,7 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "polly",
     label: "Amazon Polly",
-    group: "cloud",
+    group: "native",
     backend: "polly",
     // Live discovery (TPE-13): listVoices() pages through DescribeVoices
     // — the voice id IS the VoiceId, no model field; the engine select
@@ -194,7 +202,7 @@ export const TTS_PRESETS: TtsPreset[] = [
   {
     id: "google-cloud",
     label: "Google Cloud TTS",
-    group: "cloud",
+    group: "native",
     backend: "google-cloud",
     // Live discovery (TPE-14): listVoices() fetches the v1 voices.list
     // roster — the voice id IS the voice name (engine family included),
@@ -205,7 +213,7 @@ export const TTS_PRESETS: TtsPreset[] = [
 
 // ---- Helpers — same signatures as provider-presets.ts analogs ----
 
-export function getTtsPresetGroup(presetId: string): string | null {
+export function getTtsPresetGroup(presetId: string): TtsPresetGroup | null {
   return TTS_PRESETS.find((p) => p.id === presetId)?.group ?? null;
 }
 

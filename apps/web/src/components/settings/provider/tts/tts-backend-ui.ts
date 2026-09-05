@@ -14,6 +14,7 @@
 
 import { TTS_BACKEND, type TtsBackendSlug } from "@vibe-tavern/domain";
 
+import { getTtsPresetGroup } from "../../../../lib/tts/tts-presets.js";
 import type Resources from "../../../../i18n/resources.js";
 
 /** Typed i18n key (TFunc pattern — typo'd keys fail to compile). */
@@ -28,10 +29,12 @@ export const TTS_LOCAL_SERVER_FLAG = "localServer";
 export const TTS_PRESET_CONFIG_KEY = "preset";
 
 /** Top-level segments rendered by the forked ProviderForm (TtsProviderForm).
- *  The five original variants are grouped into four segments; cloud presets
- *  (including native gemini/elevenlabs via the TE2-1 registry) share one.
+ *  SPE-8 (owner directive 2026-09-05): the segments mirror the LLM-tab group
+ *  taxonomy — Cloud (openai-compat transport rows) and Native (own-wire
+ *  backend rows) are separate segments; the stored preset's group is
+ *  authoritative, a native backend without a preset still resolves native.
  */
-export type TtsProviderSegment = "browser" | "local" | "cloud" | "custom";
+export type TtsProviderSegment = "browser" | "local" | "cloud" | "native" | "custom";
 
 export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud";
 
@@ -485,20 +488,39 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   return "kokoro";
 }
 
-/** Derive the four-segment view for the forked ProviderForm (TE2-8):
- *  Cloud = preset-driven (config.preset present) or native gemini/
- *  elevenlabs; Custom = bare openai-compatible; Local = localServer flag;
- *  Browser = kokoro. Existing profiles without a preset reopen in the
- *  intuitive segment (preset presence is authoritative). */
+/** Native-wire backends — resolve the Native segment even when a legacy
+ *  profile carries no stored preset (SPE-8; the stored preset's group wins
+ *  when present). */
+const TTS_NATIVE_BACKENDS: ReadonlySet<TtsBackendSlug> = new Set([
+  TTS_BACKEND.Gemini,
+  TTS_BACKEND.ElevenLabs,
+  TTS_BACKEND.Cartesia,
+  TTS_BACKEND.Inworld,
+  TTS_BACKEND.Lmnt,
+  TTS_BACKEND.MiniMax,
+  TTS_BACKEND.Volcengine,
+  TTS_BACKEND.Deepgram,
+  TTS_BACKEND.Azure,
+  TTS_BACKEND.Polly,
+  TTS_BACKEND.GoogleCloud,
+]);
+
+/** Derive the five-segment view for the forked ProviderForm (TE2-8, SPE-8):
+ *  Browser = kokoro; Local = localServer flag; Native = stored native preset
+ *  (or a native backend without one); Cloud = stored cloud preset;
+ *  Custom = bare openai-compatible. Existing profiles without a preset
+ *  reopen in the intuitive segment (preset presence is authoritative). */
 export function ttsProviderSegmentOf(
   backend: TtsBackendSlug,
   config: Record<string, unknown>,
 ): TtsProviderSegment {
   if (backend === TTS_BACKEND.Kokoro) return "browser";
   if (config[TTS_LOCAL_SERVER_FLAG] === true) return "local";
-  if (typeof config[TTS_PRESET_CONFIG_KEY] === "string" && (config[TTS_PRESET_CONFIG_KEY] as string).length > 0)
-    return "cloud";
-  if (backend === TTS_BACKEND.Gemini || backend === TTS_BACKEND.ElevenLabs || backend === TTS_BACKEND.Cartesia || backend === TTS_BACKEND.Inworld || backend === TTS_BACKEND.Lmnt || backend === TTS_BACKEND.MiniMax || backend === TTS_BACKEND.Volcengine || backend === TTS_BACKEND.Deepgram || backend === TTS_BACKEND.Azure || backend === TTS_BACKEND.Polly || backend === TTS_BACKEND.GoogleCloud) return "cloud";
+  const storedPreset = config[TTS_PRESET_CONFIG_KEY];
+  if (typeof storedPreset === "string" && storedPreset.length > 0) {
+    return getTtsPresetGroup(storedPreset) === "native" ? "native" : "cloud";
+  }
+  if (TTS_NATIVE_BACKENDS.has(backend)) return "native";
   return "custom";
 }
 

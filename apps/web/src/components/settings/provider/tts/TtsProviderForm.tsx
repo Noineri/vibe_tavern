@@ -76,7 +76,12 @@ export function TtsProviderForm({
   const presetId = ttsPresetIdOf(form.config);
   const presetGroup = presetId ? getTtsPresetGroup(presetId) : null;
   const visiblePresetGroup = presetGroup && visiblePresetGroups.some((g) => g.id === presetGroup) ? presetGroup : null;
-  const filteredPresets = visiblePresetGroup ? visiblePresets.filter((f) => f.group === visiblePresetGroup) : visiblePresets;
+  // SPE-8: with no stored preset the SEGMENT is authoritative (a preset-less
+  // native profile must offer native rows, not the whole roster) — the same
+  // role the group selector plays in the LLM ProviderForm.
+  const effectiveGroup =
+    visiblePresetGroup ?? (segment === "cloud" || segment === "native" ? segment : null);
+  const filteredPresets = effectiveGroup ? visiblePresets.filter((f) => f.group === effectiveGroup) : visiblePresets;
   const preset = presetId ? TTS_PRESETS.find((p) => p.id === presetId) : undefined;
   const presetEndpoint = preset?.baseUrl ?? "";
   const apiKey = form.apiKey;
@@ -92,10 +97,13 @@ export function TtsProviderForm({
 
   // Short segment labels — the row must fit the modal detail pane; the
   // long wording (browser/local detail) lives in the option tooltip.
+  // SPE-8: Cloud/Native/Local mirror the LLM-tab group order (custom
+  // trails); browser stays first (it is the default new-profile tier).
   const segmentOptions: Array<{ value: TtsProviderSegment; label: string; tooltip?: string }> = [
     { value: "browser", label: t("tts_segment_browser"), tooltip: t("tts_backend_kokoro") },
-    { value: "local", label: t("tts_segment_local"), tooltip: t("tts_backend_local_server") },
     { value: "cloud", label: "Cloud" },
+    { value: "native", label: "Native" },
+    { value: "local", label: t("tts_segment_local"), tooltip: t("tts_backend_local_server") },
     { value: "custom", label: t("custom") },
   ];
 
@@ -108,8 +116,10 @@ export function TtsProviderForm({
     } else if (seg === "local") {
       updateForm("backend", TTS_BACKEND.OpenAiCompatible);
       updateForm("config", { localServer: true, endpoint: "http://127.0.0.1:8880/v1" });
-    } else if (seg === "cloud") {
-      const first = visiblePresets[0];
+    } else if (seg === "cloud" || seg === "native") {
+      // SPE-8: each group segment applies its first roster row (cloud →
+      // OpenAI, native → Gemini — roster order, never hardcoded ids).
+      const first = visiblePresets.find((p) => p.group === seg);
       if (first) applyPreset(first.id);
     } else if (seg === "custom") {
       updateForm("backend", TTS_BACKEND.OpenAiCompatible);
@@ -121,7 +131,9 @@ export function TtsProviderForm({
   // servers require a Bearer key by default (openai-edge-tts ships
   // REQUIRE_API_KEY=True with the literal key `your_api_key_here`). A key
   // stays OPTIONAL there: an empty field still sends no Authorization header.
-  const needsKey = segment === "cloud" || segment === "custom";
+  // SPE-8: native backends need keys (they resolved to "cloud" before the
+  // split — without this the key field would vanish for every native row).
+  const needsKey = segment === "cloud" || segment === "native" || segment === "custom";
   const showKeyInput = needsKey || segment === "local";
   const showEndpoint = segment === "custom" || segment === "local" || (segment === "cloud" && form.backend === TTS_BACKEND.OpenAiCompatible);
 
@@ -221,9 +233,13 @@ export function TtsProviderForm({
           <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
           <DropdownSelect
             value={presetId || ""}
-            options={segment === "cloud" ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
+            options={
+              segment === "cloud" || segment === "native"
+                ? filteredPresets.map((f) => ({ id: f.id, label: f.label }))
+                : []
+            }
             placeholder={t("custom")}
-            disabled={segment !== "cloud"}
+            disabled={segment !== "cloud" && segment !== "native"}
             onChange={(val) => {
               if (val) applyPreset(val);
             }}
