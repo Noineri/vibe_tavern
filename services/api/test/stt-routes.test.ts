@@ -58,6 +58,9 @@ function multipartTranscribe(profileId: string, extra?: { language?: string }): 
 
 import { openAiCompatSttFactory } from "../src/domain/stt/backends/openai-stt.js";
 import { geminiSttFactory } from "../src/domain/stt/backends/gemini-stt.js";
+import { deepgramSttFactory } from "../src/domain/stt/backends/deepgram-stt.js";
+import { elevenlabsSttFactory } from "../src/domain/stt/backends/elevenlabs-stt.js";
+import { nvidiaSttFactory } from "../src/domain/stt/backends/nvidia-stt.js";
 import {
   __resetSttRegistryForTests,
   registerSttBackend,
@@ -68,6 +71,9 @@ beforeEach(() => {
   __resetSttRegistryForTests();
   registerSttBackend(STT_BACKENDS.OpenAiCompat, openAiCompatSttFactory);
   registerSttBackend(STT_BACKENDS.Gemini, geminiSttFactory);
+  registerSttBackend(STT_BACKENDS.Deepgram, deepgramSttFactory);
+  registerSttBackend(STT_BACKENDS.ElevenLabs, elevenlabsSttFactory);
+  registerSttBackend(STT_BACKENDS.Nvidia, nvidiaSttFactory);
   globalThis.fetch = originalFetch;
 });
 
@@ -645,6 +651,52 @@ describe("STT routes — draft model discovery (P8)", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("model listing not supported");
+  });
+
+  test("elevenlabs draft (no listModels) → probe fallback: green probe yields [] (SPE-7)", async () => {
+    // Probe-only backends double the draft route as the Test-connection
+    // probe: a reachable account must answer 200 with an EMPTY catalog (the
+    // Scribe roster is static preset data, not a fetched list).
+    const { app } = await makeApp();
+
+    let capturedUrl = "";
+    globalThis.fetch = mock(async (input: FetchArgs[0]) => {
+      capturedUrl = String(input);
+      return new Response(JSON.stringify({ voices: [{ voice_id: "a" }] }), { status: 200 });
+    });
+
+    const res = await app.request("/api/stt/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "elevenlabs", config: { apiKey: "xi-test" } }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+    // The probe hit the voices auth check, not a models catalog.
+    expect(capturedUrl).toBe("https://api.elevenlabs.io/v1/voices");
+  });
+
+  test("elevenlabs draft probe failure → typed upstream error, 4xx maps to 400", async () => {
+    // A garbage key must fail the Test-connection button (no false green):
+    // the probe's 401 rides SttProbeFailedError through the route ladder.
+    const { app } = await makeApp();
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({ detail: { status: "invalid_api_key", message: "bad key" } }),
+          { status: 401 },
+        ),
+    );
+
+    const res = await app.request("/api/stt/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "elevenlabs", config: { apiKey: "xi-bad" } }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("probe failed");
+    expect(body.error).toContain("401");
   });
 
   test("profileId resolves the stored key (endpoint-guarded); gemini vendor filter", async () => {

@@ -38,6 +38,7 @@ import {
 } from "@vibe-tavern/domain";
 import type { SttBackendType, SttProfile, SttProfileConfig } from "@vibe-tavern/domain";
 
+import { SttProbeFailedError } from "../../domain/stt/stt-backend.js";
 import type { SttRuntimeApi } from "../contract/runtime-api.js";
 
 // Import backend modules for their side-effect registrations (protocol-registry
@@ -429,7 +430,22 @@ export class SttAdapter implements SttRuntimeApi {
       }
     }
     const backend = createSttBackend(body.backend, config as SttProfileConfig);
-    if (typeof backend.listModels !== "function") return null;
+    if (typeof backend.listModels !== "function") {
+      // Probe-only backends (elevenlabs, nvidia — no STT discovery
+      // endpoint, SPE-5/SPE-6): the draft route doubles as the
+      // Test-connection probe. A green probe yields an EMPTY catalog (the
+      // static roster lives in the preset data, not here); a failed probe
+      // is a typed upstream failure so the route's ladder maps it (the
+      // Test button must not false-green on a garbage key).
+      const probe = await backend.probe();
+      if (!probe.ok) {
+        throw new SttProbeFailedError(
+          `STT probe failed for ${body.backend}${probe.detail ? `: ${probe.detail}` : ""}`,
+          { status: probe.status },
+        );
+      }
+      return [];
+    }
     return backend.listModels();
   };
 }

@@ -2,6 +2,7 @@ import {
   STT_BACKENDS,
   STT_BACKEND_EMOTION_CAPABILITY,
   WHISPER_MODELS,
+  getSttNativePreset,
 } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { whisperAcceptsLanguage } from "../../../../lib/stt/whisper-language.js";
@@ -54,15 +55,27 @@ export function SttRecognitionSection({
   const isBrowser = form.backend === STT_BACKENDS.WhisperBrowser;
   const showsEmotionToggle = STT_BACKEND_EMOTION_CAPABILITY[form.backend];
   const whisperModelId = configString(form.config, "model");
-  const showLanguageField = !isBrowser || whisperAcceptsLanguage(whisperModelId);
+  // SPE-7 natives: a preset row with a STATIC roster (elevenlabs/nvidia)
+  // feeds the picker shipped data instead of a fetch — same popover UX
+  // (search + custom-slug row), refresh hidden. NVIDIA additionally hides
+  // the language field (the adapter ignores it — English-only roster).
+  const nativePreset = isBrowser ? undefined : getSttNativePreset(form.backend);
+  const staticRoster =
+    nativePreset?.modelSource.kind === "static"
+      ? nativePreset.modelSource.models.map((id) => ({ id, label: id }))
+      : null;
+  const showLanguageField =
+    (!isBrowser || whisperAcceptsLanguage(whisperModelId)) && nativePreset?.englishOnly !== true;
   // Lane-aware size (P12 — same rule as WhisperModelPanel): the GPU lane
   // downloads the fp32-encoder + q4-decoder file set, so the roster detail
   // must describe what will ACTUALLY land on this machine.
 
   return (
     <>
-      {/* Model: fetched picker (openai-compat + gemini) or the local roster
-       * dropdown (whisper-browser — no fetch; the roster is fixed data). */}
+      {/* Model: fetched picker (openai-compat + gemini + deepgram), the
+       *  local roster dropdown (whisper-browser — no fetch; the roster is
+       *  fixed data), or the STATIC native roster (elevenlabs/nvidia —
+       *  preset data, refresh hidden, SPE-7). */}
       {isBrowser ? (
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("stt_field_model")}</label>
@@ -82,6 +95,15 @@ export function SttRecognitionSection({
             {t("stt_field_whisper_hint")}
           </div>
         </div>
+      ) : staticRoster !== null ? (
+        <SttModelPicker
+          value={configString(form.config, "model")}
+          onChange={(id) => onUpdate("model", id)}
+          models={staticRoster}
+          fetching={false}
+          fetchError={null}
+          label={t("stt_field_model")}
+        />
       ) : (
         <SttModelPicker
           value={configString(form.config, "model")}

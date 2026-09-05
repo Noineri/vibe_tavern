@@ -266,7 +266,11 @@ export const nvidiaSttFactory: SttBackendFactory = (config) => {
         });
         if (!response.ok) {
           const excerpt = await readErrorExcerpt(response);
-          return { ok: false, detail: `${response.status}${excerpt ? `: ${excerpt.slice(0, 120)}` : ""}` };
+          return {
+            ok: false,
+            detail: `${response.status}${excerpt ? `: ${excerpt.slice(0, 120)}` : ""}`,
+            status: response.status,
+          };
         }
         const parsed: unknown = await response.json().catch(() => null);
         return { ok: true, detail: `${countModels(parsed)} models (catalog ok)` };

@@ -2833,5 +2833,16 @@
   "voice_draft_pause": "Пауза",
   "unsupported_audio_format": "Неподдерживаемый формат аудио.",
   "stt_whisper_lane_gpu": "GPU",
-  "stt_whisper_lane_cpu": "CPU"
+  "stt_whisper_lane_cpu": "CPU",
+  "stt_segment_deepgram": "Deepgram",
+  "stt_segment_elevenlabs": "ElevenLabs",
+  "stt_segment_nvidia": "NVIDIA",
+  "stt_preset_openai": "OpenAI",
+  "stt_preset_openrouter": "OpenRouter",
+  "stt_preset_groq": "Groq",
+  "stt_preset_mistral": "Mistral",
+  "stt_preset_cartesia": "Cartesia",
+  "stt_preset_local": "Локальный сервер",
+  "stt_nvidia_en_only": "Модель распознаёт только английскую речь — для русского диктанта выбери другого провайдера",
+  "stt_deepgram_ru_note": "nova-3 понимает русский из коробки"
 }

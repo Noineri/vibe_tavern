@@ -12,13 +12,17 @@ interface SttBaseCardProps {
   onSetDefault: () => void;
 }
 
-/** View-mode connection label: browser backend is its own label; gemini is
- *  its own label (fixed endpoint, ST-7); an openai-compat profile labels
- *  itself by endpoint host (the TTS preset-label precedent, minus the cloud
- *  preset table). */
+/** View-mode connection label: browser backend is its own label; the
+ *  fixed-endpoint natives (gemini, deepgram, elevenlabs, nvidia — ST-7 /
+ *  SPE-4..6) are their own labels; an openai-compat profile labels itself
+ *  by endpoint host (the TTS preset-label precedent, minus the cloud preset
+ *  table). */
 function sttBackendLabelFor(form: SttProfileForm): string {
   if (form.backend === STT_BACKENDS.WhisperBrowser) return "Whisper (in browser)";
   if (form.backend === STT_BACKENDS.Gemini) return "Gemini";
+  if (form.backend === STT_BACKENDS.Deepgram) return "Deepgram";
+  if (form.backend === STT_BACKENDS.ElevenLabs) return "ElevenLabs";
+  if (form.backend === STT_BACKENDS.Nvidia) return "NVIDIA";
   const endpoint = configString(form.config, "endpoint");
   if (endpoint) {
     try {

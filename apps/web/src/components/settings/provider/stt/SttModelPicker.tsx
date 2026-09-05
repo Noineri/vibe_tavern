@@ -38,7 +38,9 @@ interface SttModelPickerProps {
   models: SttModelOption[];
   fetching: boolean;
   fetchError: string | null;
-  onRefresh: () => void;
+  /** Refresh handler for FETCHED catalogs; omit for a STATIC roster (the
+   *  refresh button hides — nothing to re-fetch, SPE-7 native presets). */
+  onRefresh?: () => void;
   label: string;
 }
 
@@ -179,28 +181,30 @@ export function SttModelPicker({
               )}
           </div>
         </div>
-        <button
-          type="button"
-          data-testid="stt-models-refresh"
-          onClick={() => onRefresh()}
-          disabled={fetching}
-          className={cn(
-            "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
-            isMobile ? "flex w-[34px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2",
-          )}
-          title={t("refresh_models")}
-        >
-          {fetching ? (
-            <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent" />
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.18s]" />
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.36s]" />
-            </span>
-          ) : (
-            <Icons.Regen />
-          )}
-          {!isMobile && <> {t("refresh_models")}</>}
-        </button>
+        {onRefresh !== undefined && (
+          <button
+            type="button"
+            data-testid="stt-models-refresh"
+            onClick={() => onRefresh()}
+            disabled={fetching}
+            className={cn(
+              "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
+              isMobile ? "flex w-[34px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2",
+            )}
+            title={t("refresh_models")}
+          >
+            {fetching ? (
+              <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent" />
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.18s]" />
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.36s]" />
+              </span>
+            ) : (
+              <Icons.Regen />
+            )}
+            {!isMobile && <> {t("refresh_models")}</>}
+          </button>
+        )}
       </div>
       {fetchError && (
         <div className="mt-3">

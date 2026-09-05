@@ -2801,5 +2801,16 @@
   "voice_draft_pause": "Pause",
   "unsupported_audio_format": "Unsupported audio format.",
   "stt_whisper_lane_gpu": "GPU",
-  "stt_whisper_lane_cpu": "CPU"
+  "stt_whisper_lane_cpu": "CPU",
+  "stt_segment_deepgram": "Deepgram",
+  "stt_segment_elevenlabs": "ElevenLabs",
+  "stt_segment_nvidia": "NVIDIA",
+  "stt_preset_openai": "OpenAI",
+  "stt_preset_openrouter": "OpenRouter",
+  "stt_preset_groq": "Groq",
+  "stt_preset_mistral": "Mistral",
+  "stt_preset_cartesia": "Cartesia",
+  "stt_preset_local": "Local server",
+  "stt_nvidia_en_only": "The model transcribes English speech only — use another provider for Russian dictation",
+  "stt_deepgram_ru_note": "nova-3 understands Russian out of the box"
 }

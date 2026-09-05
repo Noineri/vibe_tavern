@@ -70,10 +70,29 @@ export interface SttTranscribeResult {
 
 /** Probe outcome — normalized so callers never catch an "unreachable"
  *  backend as an exception boundary; failures are reported as
- *  `{ ok: false, detail }`. */
+ *  `{ ok: false, detail }`. `status` carries the upstream HTTP status when
+ *  the failure came from a non-2xx response (the draft-models probe
+ *  fallback maps it onto the route's 4xx→400 / else-502 ladder). */
 export interface SttProbeResult {
   ok: boolean;
   detail?: string;
+  status?: number;
+}
+
+/** The draft-models probe fallback (SPE-7): a backend WITHOUT a live model
+ *  catalog (elevenlabs, nvidia) verifies its credential via `probe()` — a
+ *  failed probe is thrown as this typed error so the draft route's error
+ *  ladder maps it like any upstream failure (the Test-connection button
+ *  shows red on a bad key, green on a reachable account). */
+export class SttProbeFailedError extends Error {
+  /** Upstream HTTP status when the probe failure came from a non-2xx
+   *  response (undefined for transport-level failures). */
+  readonly status?: number;
+  constructor(message: string, options?: { cause?: unknown; status?: number }) {
+    super(message, options);
+    this.name = "SttProbeFailedError";
+    this.status = options?.status;
+  }
 }
 
 /** One entry in a live model catalog (OpenAI-compatible `/models` payloads,

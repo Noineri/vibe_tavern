@@ -80,10 +80,28 @@ export function normalizeSttEndpoint(raw: string): string {
  *  field, so the host constant IS the match key. */
 const STT_GEMINI_API_HOST = "https://generativelanguage.googleapis.com";
 
+/** Fixed-host vendor table — mirror of the server VENDOR_HOST_BACKENDS
+ *  (stt-adapter.ts, SPE-4..6): backend slug → vendor host + the same-vendor
+ *  TTS backend for key reuse. Rule order mirrors the server: a keyful LLM
+ *  provider on the vendor host wins, then a same-vendor stored-key TTS
+ *  profile. NVIDIA has no TTS arm (undefined skips that step). */
+const STT_VENDOR_HOSTS: ReadonlyArray<{
+  backend: SttBackendType;
+  host: string;
+  ttsBackend?: typeof TTS_BACKEND[keyof typeof TTS_BACKEND];
+}> = [
+  { backend: STT_BACKENDS.Gemini, host: STT_GEMINI_API_HOST, ttsBackend: TTS_BACKEND.Gemini },
+  { backend: STT_BACKENDS.Deepgram, host: "https://api.deepgram.com", ttsBackend: TTS_BACKEND.Deepgram },
+  { backend: STT_BACKENDS.ElevenLabs, host: "https://api.elevenlabs.io", ttsBackend: TTS_BACKEND.ElevenLabs },
+  { backend: STT_BACKENDS.Nvidia, host: "https://integrate.api.nvidia.com" },
+];
+
 /** Client-side mirror of the server HINT rule (decorateAutoKey in
  *  stt-adapter.ts — deliberately NOT the runtime autoMatchSttKey cascade):
- *  - gemini: vendor match — the FIRST keyful LLM provider whose endpoint
- *    lives on the Gemini API host, then a stored-key gemini TTS profile.
+ *  - fixed-host natives (gemini/deepgram/elevenlabs/nvidia): vendor match —
+ *    the FIRST keyful LLM provider whose endpoint lives on the vendor's
+ *    host, then a stored-key same-vendor TTS profile (except nvidia, which
+ *    has none — see {@link STT_VENDOR_HOSTS});
  *  - openai-compat: exact endpoint match over keyful providers (a Map, so
  *    a duplicated normalized endpoint resolves to the LAST keyful one —
  *    exactly like the server's byEndpoint map).
@@ -96,11 +114,15 @@ export function matchSttAutoKeyProviderName(
   ttsProfiles: SttAutoKeyTtsCandidate[],
 ): string | null {
   const keyful = providers.filter((p) => p.hasStoredApiKey);
-  if (backend === STT_BACKENDS.Gemini) {
-    const geminiProvider = keyful.find((p) => normalizeSttEndpoint(p.endpoint).startsWith(STT_GEMINI_API_HOST));
-    if (geminiProvider) return geminiProvider.name;
-    const ttsGemini = ttsProfiles.find((p) => p.backend === TTS_BACKEND.Gemini && p.hasStoredApiKey);
-    return ttsGemini?.name ?? null;
+  const vendor = STT_VENDOR_HOSTS.find((v) => v.backend === backend);
+  if (vendor) {
+    const provider = keyful.find((p) => normalizeSttEndpoint(p.endpoint).startsWith(vendor.host));
+    if (provider) return provider.name;
+    if (vendor.ttsBackend !== undefined) {
+      const tts = ttsProfiles.find((p) => p.backend === vendor.ttsBackend && p.hasStoredApiKey);
+      if (tts) return tts.name;
+    }
+    return null;
   }
   if (backend === STT_BACKENDS.OpenAiCompat) {
     const raw = typeof endpoint === "string" ? endpoint.trim() : "";

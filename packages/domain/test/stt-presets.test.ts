@@ -13,9 +13,13 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+	DEFAULT_DEEPGRAM_STT_MODEL,
+	DEFAULT_ELEVENLABS_STT_MODEL,
+	DEFAULT_NVIDIA_STT_MODEL,
 	STT_BACKENDS,
 	STT_PRESET_AUTH_HEADER,
 	STT_PROVIDER_PRESETS,
+	getSttNativePreset,
 	getSttProviderPreset,
 } from "../src/index.js";
 
@@ -33,18 +37,25 @@ describe("STT provider presets — roster shape", () => {
 		}
 	});
 
-	test("all SPE-1 rows are on the openai-compat transport", () => {
-		// Native-adapter vendors (deepgram/elevenlabs/nvidia) join with their
-		// own backends in SPE-4..6 — until then every preset row must be
-		// executable by the ONE existing server transport.
+	test("compat rows ride the openai-compat transport; native rows ride their own slugs", () => {
+		// SPE-4..6: the deepgram/elevenlabs/nvidia rows ride their OWN native
+		// backend adapters (baseUrl empty, authHeader omitted — the adapter owns
+		// the wire). Every other row must stay executable by the one
+		// OpenAI-compatible server transport.
+		const compatIds = ["openai", "openrouter", "groq", "mistral", "cartesia", "local"];
 		for (const preset of STT_PROVIDER_PRESETS) {
-			expect(preset.backend).toBe(STT_BACKENDS.OpenAiCompat);
+			if (compatIds.includes(preset.id)) {
+				expect(preset.backend).toBe(STT_BACKENDS.OpenAiCompat);
+			} else {
+			expect(preset.backend).not.toBe(STT_BACKENDS.OpenAiCompat);
+			}
 		}
 	});
 
-	test("baseUrl is non-empty for every cloud row; empty only for local", () => {
+	test("baseUrl is non-empty for cloud compat rows; empty only for local and natives", () => {
 		for (const preset of STT_PROVIDER_PRESETS) {
-			if (preset.id === "local") {
+			if (preset.id === "local" || preset.backend !== STT_BACKENDS.OpenAiCompat) {
+				// Natives have a FIXED endpoint inside their adapter — no baseUrl.
 				expect(preset.baseUrl).toBe("");
 			} else {
 				expect(preset.baseUrl.startsWith("https://")).toBe(true);
@@ -58,6 +69,22 @@ describe("STT provider presets — roster shape", () => {
 	test("only the local preset marks the key optional", () => {
 		for (const preset of STT_PROVIDER_PRESETS) {
 			expect(preset.keyOptional).toBe(preset.id === "local");
+		}
+	});
+
+	test("authHeader rides compat rows only — native adapters own their wire", () => {
+		for (const preset of STT_PROVIDER_PRESETS) {
+			if (preset.backend === STT_BACKENDS.OpenAiCompat) {
+				expect(preset.authHeader).toBe(STT_PRESET_AUTH_HEADER.Bearer);
+			} else {
+				expect(preset.authHeader).toBeUndefined();
+			}
+		}
+	});
+
+	test("englishOnly flags the NVIDIA row alone", () => {
+		for (const preset of STT_PROVIDER_PRESETS) {
+			expect(preset.englishOnly ?? false).toBe(preset.id === "nvidia");
 		}
 	});
 });
@@ -155,5 +182,54 @@ describe("getSttProviderPreset", () => {
 	test("resolves by slug and returns undefined for unknown ids", () => {
 		expect(getSttProviderPreset("groq")?.id).toBe("groq");
 		expect(getSttProviderPreset("nope")).toBeUndefined();
+	});
+});
+
+describe("native preset rows (SPE-4..6)", () => {
+	test("deepgram — own slug, live catalog fetch, nova-3 default", () => {
+		const preset = getSttProviderPreset("deepgram");
+		expect(preset?.backend).toBe(STT_BACKENDS.Deepgram);
+		expect(preset?.baseUrl).toBe("");
+		expect(preset?.vendor).toBe("deepgram");
+		expect(preset?.modelSource).toEqual({
+			kind: "fetch",
+			defaultModel: DEFAULT_DEEPGRAM_STT_MODEL,
+		});
+		expect(preset?.englishOnly ?? false).toBe(false);
+	});
+
+	test("elevenlabs — own slug, static Scribe roster, scribe_v2 default", () => {
+		const preset = getSttProviderPreset("elevenlabs");
+		expect(preset?.backend).toBe(STT_BACKENDS.ElevenLabs);
+		expect(preset?.modelSource).toEqual({
+			kind: "static",
+			models: [DEFAULT_ELEVENLABS_STT_MODEL, "scribe-1"],
+			defaultModel: DEFAULT_ELEVENLABS_STT_MODEL,
+		});
+	});
+
+	test("nvidia — own slug, static omni roster, EN-only flag", () => {
+		const preset = getSttProviderPreset("nvidia");
+		expect(preset?.backend).toBe(STT_BACKENDS.Nvidia);
+		expect(preset?.modelSource).toEqual({
+			kind: "static",
+			models: [DEFAULT_NVIDIA_STT_MODEL],
+			defaultModel: DEFAULT_NVIDIA_STT_MODEL,
+		});
+		expect(preset?.englishOnly).toBe(true);
+	});
+});
+
+describe("getSttNativePreset", () => {
+	test("resolves the row for each native slug", () => {
+		expect(getSttNativePreset(STT_BACKENDS.Deepgram)?.id).toBe("deepgram");
+		expect(getSttNativePreset(STT_BACKENDS.ElevenLabs)?.id).toBe("elevenlabs");
+		expect(getSttNativePreset(STT_BACKENDS.Nvidia)?.id).toBe("nvidia");
+	});
+
+	test("undefined for compat (many rows per backend), whisper and gemini (named backends, no rows)", () => {
+		expect(getSttNativePreset(STT_BACKENDS.OpenAiCompat)).toBeUndefined();
+		expect(getSttNativePreset(STT_BACKENDS.WhisperBrowser)).toBeUndefined();
+		expect(getSttNativePreset(STT_BACKENDS.Gemini)).toBeUndefined();
 	});
 });

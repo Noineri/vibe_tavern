@@ -1,7 +1,12 @@
 import { useState } from "react";
-import { DEFAULT_WHISPER_MODEL_ID, STT_BACKENDS, STT_BACKEND_EMOTION_CAPABILITY } from "@vibe-tavern/domain";
+import {
+  STT_BACKENDS,
+  STT_BACKEND_EMOTION_CAPABILITY,
+  STT_PROVIDER_PRESETS,
+  getSttNativePreset,
+  getSttProviderPreset,
+} from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
-import { STT_QUICKSTARTS, getSttQuickstart } from "../../../../lib/stt/stt-quickstarts.js";
 import { listSttDraftModels } from "../../../../api/stt-api.js";
 import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
@@ -13,10 +18,23 @@ import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
 import { SttLocalServerPanel } from "./SttLocalServerPanel.js";
 import { WhisperModelPanel } from "./WhisperModelPanel.js";
-import { configString, formDraftConfig, updateConfigField } from "./stt-form-helpers.js";
+import { configString, formDraftConfig, normalizeSttEndpoint, updateConfigField } from "./stt-form-helpers.js";
 import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
+
+/** Preset id → i18n label key (SPE-7). A template literal would not
+ *  typecheck against the i18n key union, so this explicit record is the
+ *  one place that must grow with every new compat preset row — an unmapped
+ *  id falls back to its raw slug (a visible signal, never a wrong label). */
+const STT_PRESET_LABEL_KEYS = {
+  openai: "stt_preset_openai",
+  openrouter: "stt_preset_openrouter",
+  groq: "stt_preset_groq",
+  mistral: "stt_preset_mistral",
+  cartesia: "stt_preset_cartesia",
+  local: "stt_preset_local",
+} as const;
 
 /** Test-connection semantics — PROBE (audit P10, the TTS card pattern):
  *  the button validates key + endpoint + catalog via the draft-models
@@ -70,28 +88,40 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
     { value: STT_BACKENDS.OpenAiCompat, label: t("stt_segment_openai") },
     { value: STT_BACKENDS.WhisperBrowser, label: t("stt_segment_whisper") },
     { value: STT_BACKENDS.Gemini, label: t("stt_segment_gemini") },
+    // SPE-4..6 natives — named backends with a FIXED endpoint (no endpoint
+    // field; the adapter owns the wire), exactly like gemini (ST-7).
+    { value: STT_BACKENDS.Deepgram, label: t("stt_segment_deepgram") },
+    { value: STT_BACKENDS.ElevenLabs, label: t("stt_segment_elevenlabs") },
+    { value: STT_BACKENDS.Nvidia, label: t("stt_segment_nvidia") },
   ];
+
+  // Data-driven per-backend notes under the segment (SPE-6/7): the NVIDIA
+  // roster is English-speech-only (owner-approved roster fact — RU dictation
+  // stays on the other rows); Deepgram's nova-3 understands Russian natively
+  // (changelog-verified, SPE-R).
+  const nativePreset = form.backend === STT_BACKENDS.OpenAiCompat ? undefined : getSttNativePreset(form.backend);
 
   function handleSegmentChange(next: string) {
     if (next === form.backend) return;
-    // Mirror the hook's backend-switch branch: a whisper profile lands on
-    // the roster default model; the config/know-key reset happens in the
-    // hook (setForm resets config + apiKey + hasStoredApiKey on switch).
+    // The hook's backend-switch branch owns the reset + per-backend model
+    // prefill (whisper roster default / gemini / native adapter defaults) —
+    // setForm resets config + apiKey + hasStoredApiKey on switch.
     updateForm("backend", next as SttProfileForm["backend"]);
-    if (next === STT_BACKENDS.WhisperBrowser) {
-      updateForm("config", { model: DEFAULT_WHISPER_MODEL_ID });
-    }
   }
 
-  /** Quickstart glue: fill endpoint+model into the openai-compat config and
-   *  force the backend segment (a whisper profile switching to a quickstart
-   *  must land on openai-compat; the key field clears — same rule as the
-   *  TTS preset apply). */
-  function applyQuickstart(id: string): void {
-    const qs = getSttQuickstart(id);
-    if (!qs) return;
+  /** Preset apply (SPE-7 — the stt-quickstarts.ts successor): fills the
+   *  endpoint + default model of an OpenAI-compat preset row. The LOCAL row
+   *  carries an empty baseUrl by design — it prefills the faster-whisper
+   *  default port as a suggestion the user edits (the old quickstart's
+   *  behavior, kept verbatim). Native backends are segment options, not
+   *  presets — they never route through here. */
+  const LOCAL_PRESET_ENDPOINT = "http://127.0.0.1:8000/v1";
+  function applyPreset(id: string): void {
+    const preset = getSttProviderPreset(id);
+    if (!preset || preset.backend !== STT_BACKENDS.OpenAiCompat) return;
     if (form.backend !== STT_BACKENDS.OpenAiCompat) updateForm("backend", STT_BACKENDS.OpenAiCompat);
-    const next: Record<string, unknown> = { ...form.config, endpoint: qs.endpoint, model: qs.model };
+    const endpoint = preset.baseUrl !== "" ? preset.baseUrl : LOCAL_PRESET_ENDPOINT;
+    const next: Record<string, unknown> = { ...form.config, endpoint, model: preset.modelSource.defaultModel };
     updateForm("config", next);
   }
 
@@ -115,10 +145,17 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
     }
   }
 
-  const selectedQuickstart = STT_QUICKSTARTS.find(
-    (q) => configString(form.config, "endpoint") === q.endpoint && configString(form.config, "model") === q.model,
+  /** Applied-preset detection (SPE-7): normalized endpoint equality against
+   *  the compat rows with a fixed baseUrl — the local row (empty baseUrl) is
+   *  never auto-detected, exactly like the TTS preset rule (the user stays
+   *  on «custom» until they re-apply). */
+  const compatPresets = STT_PROVIDER_PRESETS.filter((p) => p.backend === STT_BACKENDS.OpenAiCompat);
+  const formEndpoint = normalizeSttEndpoint(configString(form.config, "endpoint"));
+  const selectedPreset = compatPresets.find(
+    (p) => p.baseUrl !== "" && normalizeSttEndpoint(p.baseUrl) === formEndpoint,
   );
-  const quickstartId = selectedQuickstart?.id ?? "";
+  const presetId = selectedPreset?.id ?? "";
+  const presetEndpoint = selectedPreset?.baseUrl ?? "";
 
   return (
     <>
@@ -154,22 +191,46 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
             searchable={false}
             triggerTestId="stt-backend-select"
           />
+          {/* Data-driven per-backend notes (SPE-6/7): EN-only warning for the
+           *  NVIDIA roster; the Deepgram RU note — nova-3 understands Russian
+           *  natively. Authored copy, never truncated (layout rule). */}
+          {nativePreset?.englishOnly === true && (
+            <div
+              data-testid="stt-nvidia-en-only-hint"
+              className="mt-1 flex items-center gap-1 text-[11px] text-warning"
+            >
+              <span className="[&_svg]:h-[12px] [&_svg]:w-[12px] shrink-0">
+                <Icons.Alert />
+              </span>
+              {t("stt_nvidia_en_only")}
+            </div>
+          )}
+          {form.backend === STT_BACKENDS.Deepgram && (
+            <div data-testid="stt-deepgram-ru-note" className="mt-1 font-ui text-[11px] text-t3">
+              {t("stt_deepgram_ru_note")}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Quickstart + applied-endpoint readout (openai-compat only — recipes,
-          not a catalog; live discovery is ST-8; gemini has a fixed endpoint,
-          ST-7). */}
+      {/* Named presets (SPE-7 — the stt-quickstarts successor): the six
+          OpenAI-compat rows from STT_PROVIDER_PRESETS, pure data (endpoint
+          + default model prefill); the local row prefills a port the user
+          edits. Live discovery stays the level-2 fetched picker (ST-8/P8);
+          natives are segment options above, not presets. */}
       {isCompat && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="mb-3">
             <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
             <DropdownSelect
-              value={quickstartId}
-              options={STT_QUICKSTARTS.map((q) => ({ id: q.id, label: q.label }))}
+              value={presetId}
+              options={compatPresets.map((p) => {
+                const key = STT_PRESET_LABEL_KEYS[p.id as keyof typeof STT_PRESET_LABEL_KEYS];
+                return { id: p.id, label: key !== undefined ? t(key) : p.id };
+              })}
               placeholder={t("custom")}
               onChange={(val) => {
-                if (val) applyQuickstart(val);
+                if (val) applyPreset(val);
               }}
               triggerTestId="stt-quickstart-select"
             />
@@ -178,7 +239,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
             <label className={labelCls + " mb-[6px]"}>{t("preset_endpoint_label")}</label>
             <input
               type="text"
-              value={configString(form.config, "endpoint") || t("custom")}
+              value={presetEndpoint || t("custom")}
               readOnly
               className={cn(inputCls, "!cursor-not-allowed !opacity-60")}
             />

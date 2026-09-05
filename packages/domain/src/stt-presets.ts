@@ -11,9 +11,9 @@
  * verified transcription vendors speak the SAME OpenAI-compatible multipart
  * `/audio/transcriptions` surface, so they are PRESETS — pure data rows on the
  * one existing transport — not twelve new backends. Native-wire vendors
- * (Deepgram, ElevenLabs, NVIDIA chat-audio) join later as their own backend
- * types (SPE-4..6) and get preset rows of their own then; a preset never
- * references a backend that does not exist yet.
+ * (Deepgram, ElevenLabs, NVIDIA chat-audio) join as their own backend types
+ * with their own preset rows (SPE-4..6, landed). Whisper-browser and gemini
+ * stay named backends in the picker without preset rows.
  *
  * The aggregator rule (owner, standing): an aggregator (OpenRouter) is ONE row
  * among named providers, never a substitute for them — every vendor with a
@@ -26,14 +26,23 @@
  * `/audio/transcriptions` itself.
  */
 
-import { STT_BACKENDS } from "./entities.js";
+import {
+	DEFAULT_DEEPGRAM_STT_MODEL,
+	DEFAULT_ELEVENLABS_STT_MODEL,
+	DEFAULT_NVIDIA_STT_MODEL,
+	STT_BACKENDS,
+} from "./entities.js";
 import type { SttBackendType } from "./entities.js";
 
-/** Auth header shape a preset's transport must send when a key is set
- *  (Bearer is the OpenAI-compatible default every current row uses;
- *  X-API-Key stays in the vocabulary for wire shapes that need it — the
- *  SPE-R pass confirmed no current row does, so no transport override is
- *  built: if a live probe ever 401s on Bearer, add the override then). */
+/** Auth header shape a preset's transport must send when a key is set.
+ *  Optional: it is an instruction for the OpenAI-compatible transport
+ *  only — a preset backed by a NATIVE adapter (deepgram/elevenlabs/nvidia)
+ *  carries none, because its adapter owns the wire shape (Token /
+ *  xi-api-key / Bearer hardcoded there). Bearer is the default every
+ *  compat row uses; X-API-Key stays in the vocabulary for wire shapes that
+ *  need it — the SPE-R pass confirmed no current row does, so no transport
+ *  override is built: if a live probe ever 401s on Bearer, add the override
+ *  then. */
 export const STT_PRESET_AUTH_HEADER = {
 	Bearer: "bearer",
 	XApiKey: "x-api-key",
@@ -76,8 +85,10 @@ export interface SttProviderPreset {
 	 *  slashes stripped, `/audio/transcriptions` appended by the adapter).
 	 *  Empty only for the local-server preset (user-filled field). */
 	baseUrl: string;
-	/** Auth header the transport sends when a key is set (SPE-2). */
-	authHeader: SttPresetAuthHeader;
+	/** Auth header the OpenAI-compatible transport sends when a key is set
+	 *  (SPE-2 — optional: native-adapter presets carry none; see
+	 *  {@link STT_PRESET_AUTH_HEADER}). */
+	authHeader?: SttPresetAuthHeader;
 	/** Vendor slug for the auto-key rule — an STT profile without its own key
 	 *  reuses the same-vendor saved TTS/LLM profile key; `""` = no vendor
 	 *  match (whisper-browser aside, only the local preset has none). */
@@ -88,6 +99,11 @@ export interface SttProviderPreset {
 	 *  run keyless — the openai-stt adapter already sends no Authorization
 	 *  header without a key). */
 	keyOptional: boolean;
+	/** SPE-6 flag: the preset's models transcribe ENGLISH SPEECH ONLY (the
+	 *  hosted NVIDIA omni card, owner-approved roster fact). The picker
+	 *  renders the EN-only hint and hides the language field; RU dictation
+	 *  stays on the other rows. */
+	englishOnly?: boolean;
 }
 
 /** The named-provider roster on the OpenAI-compatible transport. Every row is
@@ -197,9 +213,73 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 		},
 		keyOptional: true,
 	},
+	// ── Native-adapter presets (SPE-4..6) ───────────────────────────────────
+	// These rows ride their OWN backend slugs — the adapter owns the wire
+	// (endpoint, auth shape, payload), so `baseUrl` stays empty (no endpoint
+	// field — the gemini-stt precedent) and `authHeader` is omitted. They
+	// exist so the picker, model roster, auto-key hints and the EN-only flag
+	// stay pure data over ONE roster instead of adapter-code constants.
+	{
+		id: "deepgram",
+		backend: STT_BACKENDS.Deepgram,
+		baseUrl: "",
+		vendor: "deepgram",
+		modelSource: {
+			kind: "fetch",
+			// GET /v1/models → stt[] (live catalog; nova-3 is the default and
+			// understands Russian natively — changelog-verified, SPE-R).
+			defaultModel: DEFAULT_DEEPGRAM_STT_MODEL,
+		},
+		keyOptional: false,
+	},
+	{
+		id: "elevenlabs",
+		backend: STT_BACKENDS.ElevenLabs,
+		baseUrl: "",
+		vendor: "elevenlabs",
+		modelSource: {
+			kind: "static",
+			// No STT discovery endpoint exists (/v1/models is the TTS catalog)
+			// — the Scribe roster is shipped data (SPE-R).
+			models: [DEFAULT_ELEVENLABS_STT_MODEL, "scribe-1"],
+			defaultModel: DEFAULT_ELEVENLABS_STT_MODEL,
+		},
+		keyOptional: false,
+	},
+	{
+		id: "nvidia",
+		backend: STT_BACKENDS.Nvidia,
+		baseUrl: "",
+		vendor: "nvidia",
+		modelSource: {
+			kind: "static",
+			// The hosted chat catalog does not mark audio capability — the
+			// usable roster is the verified omni reference (SPE-6).
+			models: [DEFAULT_NVIDIA_STT_MODEL],
+			defaultModel: DEFAULT_NVIDIA_STT_MODEL,
+		},
+		keyOptional: false,
+		englishOnly: true,
+	},
 ];
 
 /** Lookup by row slug (`undefined` when the id is not in the roster). */
 export function getSttProviderPreset(id: string): SttProviderPreset | undefined {
 	return STT_PROVIDER_PRESETS.find((preset) => preset.id === id);
+}
+
+/** The preset row backing a NATIVE backend slug (deepgram / elevenlabs /
+ *  nvidia), `undefined` for every non-native slug (compat presets are many
+ *  per backend, whisper/gemini are named backends without preset rows).
+ *  The web recognition section and provider form use this for the static
+ *  model roster and the EN-only flag — pure data, no adapter imports. */
+export function getSttNativePreset(backend: SttBackendType): SttProviderPreset | undefined {
+	if (
+		backend === STT_BACKENDS.OpenAiCompat ||
+		backend === STT_BACKENDS.WhisperBrowser ||
+		backend === STT_BACKENDS.Gemini
+	) {
+		return undefined;
+	}
+	return STT_PROVIDER_PRESETS.find((preset) => preset.backend === backend);
 }

@@ -38,7 +38,9 @@ export function SttProfileEditor({ stt }: { stt: SttHook }) {
   );
   const needsRemoteModels =
     isView &&
-    (formBackend === STT_BACKENDS.OpenAiCompat || formBackend === STT_BACKENDS.Gemini) &&
+    (formBackend === STT_BACKENDS.OpenAiCompat ||
+      formBackend === STT_BACKENDS.Gemini ||
+      formBackend === STT_BACKENDS.Deepgram) &&
     formDraft !== undefined;
   const modelsConfigKey = formDraft === undefined ? null : JSON.stringify(formDraft);
   // Mirror of the live config bag (read at fetch-completion time) for the

@@ -203,6 +203,54 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
     act(() => hook!.setForm({ backend: "whisper-browser" as never }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
   });
+
+  it("native drafts (SPE-4..6): vendor host providers win, then same-vendor TTS; nvidia has no TTS arm", async () => {
+    providerStore = [
+      { endpoint: "https://api.deepgram.com", hasStoredApiKey: true, name: "Deepgram LLM" },
+      { endpoint: "https://integrate.api.nvidia.com/v1", hasStoredApiKey: true, name: "NVIDIA LLM" },
+    ];
+    ttsStore = [
+      { backend: "deepgram", hasStoredApiKey: true, name: "My Deepgram TTS" },
+      { backend: "elevenlabs", hasStoredApiKey: true, name: "My ElevenLabs TTS" },
+    ];
+    let hook: any = null;
+    function Probe() {
+      hook = useSttProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    act(() => hook!.startCreate());
+
+    // deepgram: the provider on the vendor host wins over the TTS profile
+    // (the server rule order).
+    act(() => hook!.setForm({ backend: "deepgram" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Deepgram LLM"));
+
+    // elevenlabs: no provider on the host → the same-vendor TTS key hint.
+    act(() => hook!.setForm({ backend: "elevenlabs" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("My ElevenLabs TTS"));
+
+    // nvidia: provider on the vendor host; no TTS arm exists, a stray
+    // TTS profile must never match.
+    act(() => hook!.setForm({ backend: "nvidia" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("NVIDIA LLM"));
+  });
+
+  it("native draft without a host provider falls back to the same-vendor TTS key", async () => {
+    providerStore = [{ endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OR" }];
+    ttsStore = [{ backend: "deepgram", hasStoredApiKey: true, name: "My Deepgram TTS" }];
+    let hook: any = null;
+    function Probe() {
+      hook = useSttProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    act(() => hook!.startCreate());
+    act(() => hook!.setForm({ backend: "deepgram" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("My Deepgram TTS"));
+  });
 });
 
 describe("useSttProfiles — CRUD", () => {
@@ -375,6 +423,32 @@ describe("useSttProfiles — backend switch + key lifecycle", () => {
     hook!.setForm({ backend: "openai-compat" as never });
     await waitFor(() => expect(hook?.form?.backend).toBe("openai-compat"));
     expect(hook!.form?.config).toEqual({});
+  });
+
+  it("switching to a native backend prefills its doc-verified default model (SPE-4..6)", async () => {
+    store = [makeRecord({ id: "p1", backend: "openai-compat", config: { endpoint: "https://api.example.com/v1", model: "whisper-1" } })];
+    let hook: any = null;
+    function Probe() {
+      hook = useSttProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.backend).toBe("openai-compat"));
+
+    // Same rule as gemini (ST-7): the level-2 picker must be non-empty
+    // before the first save — the visible twin of the adapters' server-side
+    // DEFAULT_*_STT_MODEL fallbacks.
+    hook!.setForm({ backend: "deepgram" as never });
+    await waitFor(() => expect(hook?.form?.backend).toBe("deepgram"));
+    expect(hook!.form?.config).toEqual({ model: "nova-3" });
+    hook!.setForm({ backend: "elevenlabs" as never });
+    await waitFor(() => expect(hook?.form?.backend).toBe("elevenlabs"));
+    expect(hook!.form?.config).toEqual({ model: "scribe_v2" });
+    hook!.setForm({ backend: "nvidia" as never });
+    await waitFor(() => expect(hook?.form?.backend).toBe("nvidia"));
+    expect(hook!.form?.config).toEqual({ model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" });
   });
 
   it("select() mirrors autoKeyProviderName from the saved record", async () => {

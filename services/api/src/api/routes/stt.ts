@@ -37,6 +37,7 @@ import {
   NvidiaSttError,
 } from "../../domain/stt/backends/nvidia-stt.js";
 import { SttBackendNotRegisteredError, SttUnknownBackendError } from "../../domain/stt/stt-registry.js";
+import { SttProbeFailedError } from "../../domain/stt/stt-backend.js";
 
 /** Multipart transcriptions may carry sizable clips — a sane ceiling before
  *  the buffer passes to the backend (mirrors the TTS clone guard's shape). */
@@ -171,7 +172,8 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
           error instanceof GeminiSttError ||
           error instanceof DeepgramSttError ||
           error instanceof ElevenLabsSttError ||
-          error instanceof NvidiaSttError
+          error instanceof NvidiaSttError ||
+          error instanceof SttProbeFailedError
         ) {
           const status =
             error.status !== undefined && error.status >= 400 && error.status < 500 ? 400 : 502;

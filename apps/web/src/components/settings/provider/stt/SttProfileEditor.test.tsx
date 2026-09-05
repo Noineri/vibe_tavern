@@ -369,3 +369,89 @@ describe("SttProfileEditor — P12 language dropdown", () => {
     expect(gpu.getByTestId("stt-whisper-model-select").textContent).toContain("570 MB");
   });
 });
+
+
+describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => {
+  function nativeStt(backend: string, model: string, headerMode: 'view' | 'edit' = 'view') {
+    const form = makeForm({ backend, config: { model }, emotionAnnotation: false });
+    return makeStt({
+      form,
+      headerMode,
+      profiles: [makeRecord({ backend, config: { model } })],
+    });
+  }
+
+  it('edit form: the segment dropdown offers the natives; nvidia renders the EN-only warning, deepgram the RU note', async () => {
+    const stt = nativeStt('nvidia', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', 'edit');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-backend-select')).toBeTruthy());
+    // The closed trigger shows the SELECTED option (the mocked t() echoes
+    // the key) — open the list to pin the full native offering (the cmdk
+    // items render into the body portal).
+    expect(view.getByTestId('stt-backend-select').textContent).toContain('stt_segment_nvidia');
+    await act(async () => {
+      view.getByTestId('stt-backend-select').click();
+    });
+    await waitFor(() => {
+      const body = document.body.textContent ?? '';
+      expect(body).toContain('stt_segment_deepgram');
+      expect(body).toContain('stt_segment_elevenlabs');
+      expect(body).toContain('stt_segment_nvidia');
+    });
+    // The mocked t() echoes the key — the EN-only warning is data-driven
+    // (englishOnly flag on the nvidia preset row).
+    expect(view.getByTestId('stt-nvidia-en-only-hint').textContent).toContain('stt_nvidia_en_only');
+    expect(view.queryByTestId('stt-deepgram-ru-note')).toBeNull();
+    expect(view.queryByTestId('stt-quickstart-select')).toBeNull();
+  });
+
+  // RTL binds queries to document.body (baseElement), so a second render in
+  // the SAME test would see the first form's DOM — one render per test.
+  it('edit form: deepgram renders the RU note, not the EN-only warning', async () => {
+    const stt = nativeStt('deepgram', 'nova-3', 'edit');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-deepgram-ru-note')).toBeTruthy());
+    expect(view.queryByTestId('stt-nvidia-en-only-hint')).toBeNull();
+  });
+
+  it('edit form: natives get the key field + probe button, no endpoint field, no preset dropdown', async () => {
+    const stt = nativeStt('elevenlabs', 'scribe_v2', 'edit');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-test-connection-btn')).toBeTruthy());
+    expect(view.getByTestId('stt-field-api-key')).toBeTruthy();
+    expect(view.queryByTestId('stt-field-endpoint')).toBeNull();
+    expect(view.queryByTestId('stt-quickstart-select')).toBeNull();
+  });
+
+  it('elevenlabs view: the STATIC Scribe roster feeds the picker, refresh hidden, language kept', async () => {
+    const stt = nativeStt('elevenlabs', 'scribe_v2');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-field-model')).toBeTruthy());
+    // No draft-models call — the roster is preset data, not a fetch.
+    expect(listSttDraftModelsMock).not.toHaveBeenCalled();
+    expect(view.queryByTestId('stt-models-refresh')).toBeNull();
+    // language_code is a real elevenlabs field — the picker stays.
+    expect(view.getByTestId('stt-field-language')).toBeTruthy();
+    // Base card labels the fixed-endpoint native by name.
+    expect(view.getByTestId('stt-base-card-status').textContent).toContain('ElevenLabs');
+  });
+
+  it('nvidia view: static roster, language hidden (adapter ignores it — EN-only)', async () => {
+    const stt = nativeStt('nvidia', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(view.getByTestId('stt-field-model')).toBeTruthy());
+    expect(listSttDraftModelsMock).not.toHaveBeenCalled();
+    expect(view.queryByTestId('stt-field-language')).toBeNull();
+  });
+
+  it('deepgram view: FETCHED picker (live /v1/models catalog)', async () => {
+    const stt = nativeStt('deepgram', 'nova-3');
+    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    await waitFor(() => expect(listSttDraftModelsMock).toHaveBeenCalled(), { timeout: 2000 });
+    expect(listSttDraftModelsMock.mock.calls[0][0].backend).toBe('deepgram');
+    expect(view.getByTestId('stt-models-refresh')).toBeTruthy();
+    // The RU note is an EDIT-form element (under the segment dropdown) —
+    // view mode shows the base card, never the connection form.
+    expect(view.queryByTestId('stt-deepgram-ru-note')).toBeNull();
+  });
+});

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  DEFAULT_DEEPGRAM_STT_MODEL,
+  DEFAULT_ELEVENLABS_STT_MODEL,
   DEFAULT_GEMINI_STT_MODEL,
+  DEFAULT_NVIDIA_STT_MODEL,
   DEFAULT_WHISPER_MODEL_ID,
   STT_BACKENDS,
   STT_BACKEND_EMOTION_CAPABILITY,
@@ -70,6 +73,28 @@ export type SttHeaderMode = "view" | "edit";
  *  must always land on a valid one (startCreate + backend switch). */
 function defaultWhisperConfig(): Record<string, unknown> {
   return { model: DEFAULT_WHISPER_MODEL_ID };
+}
+
+/** Per-backend model prefill on switch — mirrors the gemini rule
+ *  (ST-7): every native adapter has a doc-verified default that keeps the
+ *  level-2 picker non-empty before the first save (the adapters fall back
+ *  to the same constants server-side, so this is the visible twin of the
+ *  wire behavior). */
+function defaultConfigForBackend(backend: SttBackendType): Record<string, unknown> {
+  switch (backend) {
+    case STT_BACKENDS.WhisperBrowser:
+      return defaultWhisperConfig();
+    case STT_BACKENDS.Gemini:
+      return { model: DEFAULT_GEMINI_STT_MODEL };
+    case STT_BACKENDS.Deepgram:
+      return { model: DEFAULT_DEEPGRAM_STT_MODEL };
+    case STT_BACKENDS.ElevenLabs:
+      return { model: DEFAULT_ELEVENLABS_STT_MODEL };
+    case STT_BACKENDS.Nvidia:
+      return { model: DEFAULT_NVIDIA_STT_MODEL };
+    default:
+      return {};
+  }
 }
 
 export function useSttProfiles(): {
@@ -224,13 +249,9 @@ export function useSttProfiles(): {
         // the emotion toggle resets too — it is a per-backend capability,
         // not a cross-backend preference.
         const nextConfig =
-          nextBackend === STT_BACKENDS.WhisperBrowser
-            ? defaultWhisperConfig()
-            : nextBackend === STT_BACKENDS.Gemini
-              ? { model: DEFAULT_GEMINI_STT_MODEL }
-              : patch.config !== undefined
-                ? { ...patch.config }
-                : {};
+          patch.config !== undefined && patch.backend === STT_BACKENDS.OpenAiCompat
+            ? { ...patch.config }
+            : defaultConfigForBackend(nextBackend);
         return {
           ...prev,
           ...patch,
@@ -335,10 +356,13 @@ export function useSttProfiles(): {
   // P2: resolve the auto-key hint for the LIVE form. A server-decorated
   //  name (saved record) wins; drafts fall through to the client-side
   //  mirror of the server hint rule (see matchSttAutoKeyProviderName).
+  //  Every SERVER backend qualifies (compat by endpoint, the fixed-host
+  //  natives by vendor — mirroring the server VENDOR_HOST_BACKENDS table);
+  //  only whisper-browser (client-side, keyless) is out.
   const draftAutoKeyProviderName =
     form?.autoKeyProviderName !== null && form?.autoKeyProviderName !== undefined
       ? form.autoKeyProviderName
-      : form === null || (form.backend !== STT_BACKENDS.Gemini && form.backend !== STT_BACKENDS.OpenAiCompat)
+      : form === null || form.backend === STT_BACKENDS.WhisperBrowser
         ? null
         : matchSttAutoKeyProviderName(
             form.backend,
