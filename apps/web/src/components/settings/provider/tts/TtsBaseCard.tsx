@@ -1,10 +1,30 @@
 import { useT } from "../../../../i18n/context.js";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
+import { ttsTagDialectForProfile } from "../../../../lib/tts/tts-tags.js";
 import { TTS_PRESETS } from "../../../../lib/tts/tts-presets.js";
 import { Icons } from "../../../shared/icons.js";
+import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { configString } from "./tts-form-helpers.js";
 import { ttsPresetIdOf } from "./tts-backend-ui.js";
+import type { TtsTagDialect } from "../../../../lib/tts/tts-tags.js";
 import type { TtsProfileForm } from "./use-tts-profiles.js";
+
+/** i18n key for the per-dialect tooltip; null when the profile strips tags
+ *  (TPE-15: the badge is hidden in that case, so no tooltip is needed). */
+export function emotionTagsHintKey(dialect: TtsTagDialect): string | null {
+  switch (dialect) {
+    case "orpheus":
+      return "tts_emotion_tags_hint_orpheus";
+    case "chatterbox":
+      return "tts_emotion_tags_hint_chatterbox";
+    case "inworld":
+      return "tts_emotion_tags_hint_inworld";
+    case "minimax":
+      return "tts_emotion_tags_hint_minimax";
+    case "strip":
+      return null;
+  }
+}
 
 interface TtsBaseCardProps {
   /** Current form (clean, collapsed state — label/status derivation). */
@@ -36,12 +56,19 @@ function ttsPresetLabelFor(form: TtsProfileForm): string {
 }
 
 export function TtsBaseCard({ form, isDefault, onEdit, onSetDefault }: TtsBaseCardProps) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
 
   const presetLabel = ttsPresetLabelFor(form);
   const isKokoro = form.backend === TTS_BACKEND.Kokoro;
   const hasKey =
     isKokoro || form.hasStoredApiKey || form.autoKeyProviderName !== null || Boolean(configString(form.config, "apiKey"));
+  // Keep the same status rendering pattern as ProviderViewHeader: a colored chip with icon.
+  // Kokoro has no key — show "Model ready" instead.
+  // TPE-15: surface the profile's emotion-tag dialect as a card-level fact,
+  // next to the other status chips. Visible only when the profile actually
+  // speaks tags (dialect !== "strip"); strip profiles say nothing.
+  const tagDialect = ttsTagDialectForProfile({ backend: form.backend, config: form.config });
+  const tagHintKey = emotionTagsHintKey(tagDialect);
   // Keep the same status rendering pattern as ProviderViewHeader: a colored chip with icon.
   // Kokoro has no key — show "Model ready" instead.
   const statusKey = isKokoro ? "tts_kokoro_model_ready" : hasKey ? "api_key_saved" : "no_api_key";
@@ -72,6 +99,13 @@ export function TtsBaseCard({ form, isDefault, onEdit, onSetDefault }: TtsBaseCa
               <span className="flex items-center gap-1.5 text-warning">
                 <Icons.Alert /> {t("no_api_key")}
               </span>
+            )}
+            {tagHintKey !== null && (
+              <CustomTooltip content={tDynamic(tagHintKey)}>
+                <span className="flex items-center gap-1.5 text-accent" data-testid="tts-emotion-tags-badge">
+                  <Icons.Sparkles /> {t("tts_emotion_tags_badge")}
+                </span>
+              </CustomTooltip>
             )}
           </div>
         </div>
