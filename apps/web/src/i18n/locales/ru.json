@@ -407,6 +407,7 @@
   "narration_playlist_reveal_file": "Показать файл",
   "narration_playlist_drop_file": "Убрать сохранённый файл",
   "narration_playlist_drop_cached": "Убрать из кэша",
+  "narration_playlist_revoice": "Переозвучить",
   "narration_playlist_continue": "Продолжить генерацию",
   "narration_playlist_swipe": "Свайп {current} из {total}",
   "narration_playlist_fetching": "Получено {received} из {total}",

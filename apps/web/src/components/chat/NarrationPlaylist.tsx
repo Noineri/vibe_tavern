@@ -198,6 +198,10 @@ export interface NarrationPlaylistProps {
   /** FS-3: drop a cache-only row (partial) — evicts its cached segments
    *  and removes the index entry. */
   readonly onDropCache: (messageId: string) => void;
+  /** FS-6: re-voice a cache-only settled row — drop its cached segments,
+   *  then re-narrate fresh. Library rows are excluded: the saved file is
+   *  preserved by scope and would otherwise replay library-first. */
+  readonly onRevoice: (messageId: string) => void;
   /** TPE-18c: rows with a save in flight (button disabled, no double-save). */
   readonly savingIds: ReadonlySet<string>;
   /** TPE-18c: false where no OS file manager exists (Android) — the
@@ -242,6 +246,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
               onReveal={() => input.onReveal(row.messageId)}
               onDrop={() => input.onDrop(row.messageId)}
               onDropCache={() => input.onDropCache(row.messageId)}
+              onRevoice={() => input.onRevoice(row.messageId)}
             />
           ))}
         </ul>
@@ -332,6 +337,7 @@ function PlaylistRow(input: {
   readonly onReveal: () => void;
   readonly onDrop: () => void;
   readonly onDropCache: () => void;
+  readonly onRevoice: () => void;
 }): ReactNode {
   const { t } = useT();
   const { row } = input;
@@ -426,11 +432,14 @@ function PlaylistRow(input: {
       {/* TPE-18c: library actions on SETTLED rows only (live rows keep
         play + seek). FS-3: partial rows offer no library save (the file
         is whole-track only) — they get continue + cache-drop instead.
-        Settled arithmetic: play 28 + save 28 + show 28 +
-        gaps = 96px chrome; library rows swap save for reveal + drop
-        (112 + gaps); partial cache-only rows swap save for drop-cache
-        (same 112 + gaps) — the snippet column keeps ~260px, truncation
-        allowed in this density list. Icon-only buttons: no RU width risk. */}
+        FS-6: cache-only full and partial rows offer re-voice (drop plus
+        fresh narration). Library rows keep reveal + drop and omit re-voice:
+        the saved file is preserved and would otherwise replay first.
+        Settled arithmetic: cache-only rows use play 28 + revoice 28 +
+        save-or-cache-drop 28 + show 28 + gaps = 124px chrome; library rows
+        keep play 28 + reveal 28 + drop 28 + show 28 + gaps = 124px chrome —
+        the snippet column keeps ~250px, truncation allowed in this density
+        list. Icon-only buttons: no RU width risk. */}
       {!live && !row.inLibrary && !row.partial && (
         <CustomTooltip content={input.saving ? t("narration_playlist_saving") : t("narration_playlist_save")}>
           <button
@@ -484,6 +493,21 @@ function PlaylistRow(input: {
             className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
           >
             <Ic.del />
+          </button>
+        </CustomTooltip>
+      )}
+      {/* FS-6: re-voice for cache-only settled rows (drop plus fresh
+        narration). Library rows omit it to preserve the saved file. */}
+      {!live && !row.inLibrary && (
+        <CustomTooltip content={t("narration_playlist_revoice")}>
+          <button
+            type="button"
+            aria-label={t("narration_playlist_revoice")}
+            data-testid="playlist-row-revoice"
+            onClick={input.onRevoice}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            <Ic.regen />
           </button>
         </CustomTooltip>
       )}

@@ -221,6 +221,29 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
     },
     [chatId, branchId, characterId, dropLibraryRow],
   );
+  // FS-6: re-voice a cache-only settled row. Drop first so every segment
+  // synthesizes fresh, then start with the same source onPlay uses. The
+  // pre-start checks prevent a destructive drop when a narration cannot
+  // start; the catch is a race guard for a row saved to the library after
+  // render (its file stays untouched and re-voice aborts). This handler is
+  // intentionally never offered on library rows.
+  const onRevoice = useCallback(
+    (messageId: string) => {
+      if (!chatId || resolution === null || resolution.kind !== "profile") return;
+      const message = messages.find((candidate) => candidate.id === messageId);
+      const source = voicedVariantSource(message ?? null, macroContext, isCoauthorMode);
+      if (!source) return;
+      void (async () => {
+        try {
+          await dropCachedRow(chatId, messageId);
+        } catch {
+          return;
+        }
+        onPlay(messageId);
+      })();
+    },
+    [chatId, dropCachedRow, macroContext, isCoauthorMode, messages, onPlay, resolution],
+  );
   // FS-3: cache-drop for partial rows — local only (segment eviction +
   // index removal), so no branch/character scope is needed. The store
   // throws only for library rows, which never render this button; the
@@ -273,6 +296,7 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       onReveal={onReveal}
       onDrop={onDrop}
       onDropCache={onDropCache}
+      onRevoice={onRevoice}
       savingIds={savingIds}
       canReveal={canReveal}
       showTitle={!isMobile}

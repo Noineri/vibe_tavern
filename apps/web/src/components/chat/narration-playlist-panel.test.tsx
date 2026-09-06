@@ -908,6 +908,204 @@ describe("narration playlist partial tracks (FS-3)", () => {
   });
 });
 
+describe("narration playlist re-voice (FS-6)", () => {
+  const FULL_TEXT = "Revoice one.\n\nRevoice two.";
+
+  function revoiceMessage(id: string, text: string): AppMessage {
+    return message({
+      id,
+      content: text,
+      variants: [
+        {
+          id: brandId<MessageVariantId>(`${id}-v1`),
+          messageId: brandId<MessageId>(id),
+          variantIndex: 0,
+          content: text,
+          isSelected: true,
+          finishReason: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+  }
+
+  function revoiceMeta(messageId: string) {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId: `${messageId}-v1`,
+      variantIndex: 0,
+      snippet: "Revoice one.",
+    };
+  }
+
+  function playlistEntry(messageId: string): NarrationPlaylistEntry | undefined {
+    return useTtsPlaybackStore.getState().playlist["c1"]?.find((entry) => entry.messageId === messageId);
+  }
+
+  function trackCacheDeletes(): string[] {
+    const deleted: string[] = [];
+    const originalDelete = cache.delete.bind(cache);
+    cache.delete = async (key: string): Promise<void> => {
+      deleted.push(key);
+      await originalDelete(key);
+    };
+    return deleted;
+  }
+
+  function parkLane(): {
+    plays: Array<{ text: string; startAt: number }>;
+    resolveCurrent: (result?: "ended" | "skipped" | "error") => void;
+  } {
+    const plays: Array<{ text: string; startAt: number }> = [];
+    let currentResolve: ((value: "ended" | "skipped" | "error") => void) | null = null;
+    __setTtsPlaybackDepsForTests({
+      player: {
+        play(blob: Blob, _rate: number, options?: { startAt?: number }): Promise<"ended" | "skipped" | "error"> {
+          void blob.text().then((text) => plays.push({ text, startAt: options?.startAt ?? 0 }));
+          return new Promise<"ended" | "skipped" | "error">((resolve) => {
+            currentResolve = resolve;
+          });
+        },
+        skipCurrent: () => {
+          const resolve = currentResolve;
+          currentResolve = null;
+          if (resolve) resolve("skipped");
+        },
+        pause: () => {},
+        resume: () => {},
+        setRate: () => {},
+        setVolume: () => {},
+        dispose: () => {},
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      notifyError: () => {},
+    });
+    return {
+      plays,
+      resolveCurrent: (result = "ended") => {
+        const resolve = currentResolve;
+        currentResolve = null;
+        if (resolve) resolve(result);
+      },
+    };
+  }
+
+  function rowByMessageId(messageId: string): Element | undefined {
+    return Array.from(document.querySelectorAll('[data-testid="narration-playlist-row"]')).find(
+      (row) => row.getAttribute("data-playlist-message-id") === messageId,
+    );
+  }
+
+  function hasRevoiceButton(messageId: string): boolean {
+    return rowByMessageId(messageId)?.querySelector('[data-testid="playlist-row-revoice"]') !== null;
+  }
+
+  it("FS-6a: re-voice drops cached segments, then synthesizes every segment fresh", async () => {
+    mocks.messages = [revoiceMessage("m1", FULL_TEXT), u1()];
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", FULL_TEXT, profile(), revoiceMeta("m1"));
+    });
+    const beforeEntry = playlistEntry("m1");
+    if (!beforeEntry) throw new Error("m1 was not indexed before re-voice");
+    const beforeKeys = [...beforeEntry.cacheKeys];
+    expect(beforeKeys.length).toBeGreaterThan(0);
+    const baselineSynthCalls = synthCalls.length;
+    const deletedKeys = trackCacheDeletes();
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("playlist-row-revoice"));
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-revoice")); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+    expect(deletedKeys.sort()).toEqual([...beforeKeys].sort());
+    expect(synthCalls).toHaveLength(baselineSynthCalls + beforeKeys.length);
+  });
+
+  it("FS-6b: re-voice is offered on full and partial rows, but not the live row", async () => {
+    mocks.messages = [m1(), m2(), revoiceMessage("m3", "Live one only."), u1()];
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", "First line\nSecond line\nThird line", profile(), {
+        chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
+        variantId: "m1-v1",
+        variantIndex: 0,
+        snippet: "First line",
+      });
+    });
+    const lane = parkLane();
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m2", "Second message body here", profile(), {
+        chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
+        variantId: "m2-v1",
+        variantIndex: 0,
+        snippet: "Second message body here",
+      });
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    act(() => { useTtsPlaybackStore.getState().stopNarration(); });
+    await waitFor(() => { expect(playlistEntry("m2")?.partial).toBe(true); });
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m3", "Live one only.", profile(), {
+        chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
+        variantId: "m3-v1",
+        variantIndex: 0,
+        snippet: "Live one only.",
+      });
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(2); });
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => {
+      expect(rowByMessageId("m1")).toBeDefined();
+      expect(rowByMessageId("m2")).toBeDefined();
+      expect(rowByMessageId("m3")).toBeDefined();
+    });
+    expect(hasRevoiceButton("m1")).toBe(true);
+    expect(hasRevoiceButton("m2")).toBe(true);
+    expect(hasRevoiceButton("m3")).toBe(false);
+  });
+
+  it("FS-6c: a saved library row keeps its file and does not offer re-voice", async () => {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", "First line\nSecond line", profile(), {
+        chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
+        variantId: "m1-v1",
+        variantIndex: 0,
+        snippet: "First line\nSecond line",
+      });
+    });
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("playlist-row-revoice"));
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-save")); });
+    await waitFor(() => getByTestId("playlist-row-library-badge"));
+    expect(librarySaved).toHaveLength(1);
+    expect(queryByTestId("playlist-row-revoice")).toBeNull();
+    expect(getByTestId("playlist-row-reveal")).toBeDefined();
+    expect(getByTestId("playlist-row-drop")).toBeDefined();
+    expect(libraryDeleted).toEqual([]);
+    expect(libraryRevealed).toEqual([]);
+    expect(en["narration_playlist_revoice"]).toBe("Re-voice");
+    expect(ru["narration_playlist_revoice"]).toBe("Переозвучить");
+  });
+});
+
 describe("narration playlist library (TPE-18c)", () => {
   async function narrateM1Settled(): Promise<void> {
     await act(async () => {

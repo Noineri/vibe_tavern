@@ -1446,6 +1446,7 @@ export default interface Resources {
     "narration_playlist_rate": "Playback speed",
     "narration_playlist_resume": "Resume",
     "narration_playlist_reveal_file": "Show file",
+    "narration_playlist_revoice": "Re-voice",
     "narration_playlist_save": "Save to library",
     "narration_playlist_saving": "Saving…",
     "narration_playlist_seek": "Seek narration position",
