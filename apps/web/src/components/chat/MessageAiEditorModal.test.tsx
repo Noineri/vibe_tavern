@@ -862,6 +862,31 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     });
   }
 
+  it("TPE-20: greeting annotate session (no captured variant) hides the Edit segment — no stale-source dead end", async () => {
+    seedTwoVariantMessage();
+    seedBootstrap("prov", "model-a");
+    openEditorForAnnotate();
+    renderModal();
+    // Annotate-entry sessions carry no captured edit variant (TPE-14), so
+    // Edit is structurally impossible — offering it produced the stale-source
+    // banner («Source message no longer exists») with dead buttons.
+    expect(screen.queryByText("message_ai_editor_mode_edit")).toBeNull();
+    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    expect(screen.queryByText("message_ai_editor_stale_source")).toBeNull();
+  });
+
+  it("edit-entry session keeps the Edit segment after switching to Annotate and back", async () => {
+    seedTwoVariantMessage();
+    seedBootstrap("prov", "model-a");
+    openEditorForEdit(VA);
+    renderModal();
+    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    await switchToAnnotate();
+    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    // The captured variant survives the round trip — Edit stays offered.
+    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
+  });
+
   it("switching to annotate: the currently selected variant becomes the single source", async () => {
     seedTwoVariantMessage();
     openEditorForEdit(VA);

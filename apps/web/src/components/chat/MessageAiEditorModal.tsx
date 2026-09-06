@@ -620,7 +620,12 @@ export function MessageAiEditorModal() {
                 setApplyError(null);
               }}
               options={[
-                { value: "message_edit", label: tDynamic("message_ai_editor_mode_edit") },
+                // TPE-20: Edit needs the variant captured at open — an
+                // annotate-entry session (greeting "prepare for narration")
+                // carries none, so switching there would render the stale-
+                // source banner with dead buttons. Hide Edit for those
+                // sessions; edit/merge entries keep the full switch set.
+                ...(editSourceVariantId !== null ? [{ value: "message_edit", label: tDynamic("message_ai_editor_mode_edit") }] : []),
                 // Merge stars variants in the jump browser, which only renders
                 // for messages with > 6 variants — below that the option is
                 // hidden rather than offered with an impossible empty source
