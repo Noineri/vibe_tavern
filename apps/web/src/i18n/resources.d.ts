@@ -17,6 +17,7 @@ export default interface Resources {
     "ai_assistant_mode_lore_keys": "Lore Keys AI",
     "ai_assistant_mode_message_edit": "Message Edit AI",
     "ai_assistant_mode_message_merge": "Message Merge AI",
+    "ai_assistant_mode_message_tts_annotate": "Narration Preparation AI",
     "ai_assistant_mode_scene_schema": "Scene Schema AI",
     "ai_assistant_mode_script": "Scripts AI",
     "ai_assistant_mode_vision_describe": "Image Description AI",

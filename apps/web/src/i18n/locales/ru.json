@@ -951,6 +951,7 @@
   "ai_assistant_mode_scene_schema": "Схема сцены ИИ",
   "ai_assistant_mode_message_edit": "Редактирование сообщений ИИ",
   "ai_assistant_mode_message_merge": "Объединение сообщений ИИ",
+  "ai_assistant_mode_message_tts_annotate": "Подготовка к озвучке ИИ",
   "ai_pill_impersonate": "Писать как персона",
   "ai_pill_impersonate_settings": "Настройки имперсонации",
   "ai_pill_generate_keys": "Генерировать ключи",

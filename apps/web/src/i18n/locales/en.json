@@ -947,6 +947,7 @@
   "ai_assistant_mode_scene_schema": "Scene Schema AI",
   "ai_assistant_mode_message_edit": "Message Edit AI",
   "ai_assistant_mode_message_merge": "Message Merge AI",
+  "ai_assistant_mode_message_tts_annotate": "Narration Preparation AI",
   "ai_pill_impersonate": "Write as persona",
   "ai_pill_impersonate_settings": "Impersonation settings",
   "ai_pill_generate_keys": "Generate keys",
