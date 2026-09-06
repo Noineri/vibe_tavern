@@ -360,6 +360,34 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .crop-zoom-slider::-webkit-slider-thumb:hover{transform:scale(1.15)}
 .crop-zoom-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}
 
+/* ── Narration playlist sliders (FS-5) — a playlist-LOCAL family, NOT the
+   shared SliderField (settings keep it untouched). Rail = theme surface
+   token var(--s3) — the same pair the fetch mini-bar already uses
+   (s3 rail / accent fill) — so every theme stays coherent; never a
+   hardcoded translucent white (owner: «полупрозрачный не везде впишется
+   в темы»). Fill = accent with a hard stop exactly at the value via the
+   --p custom property (set inline per render; Firefox paints the fill via
+   ::-moz-range-progress instead). Density: volume 4px rail / 12px thumb,
+   seek (--seek) 3px / 10px. Thumb = solid accent dot + 1px theme-token
+   outline (owner: «лучше с обводкой»). */
+.playlist-slider{-webkit-appearance:none;appearance:none;background:transparent;height:28px;margin:0;cursor:grab}
+@media (pointer:coarse){.playlist-slider{height:44px}}
+.playlist-slider::-webkit-slider-runnable-track{height:4px;border-radius:9999px;background:linear-gradient(to right,var(--accent) 0 var(--p,50%),var(--s3) var(--p,50%) 100%)}
+.playlist-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;margin-top:-4px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
+.playlist-slider::-moz-range-track{height:4px;border-radius:9999px;background:var(--s3)}
+.playlist-slider::-moz-range-progress{height:4px;border-radius:9999px;background:var(--accent)}
+.playlist-slider::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
+.playlist-slider:active{cursor:grabbing}
+.playlist-slider:active::-webkit-slider-thumb{cursor:grabbing}
+.playlist-slider:active::-moz-range-thumb{cursor:grabbing}
+.playlist-slider:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:9999px}
+.playlist-slider:disabled{opacity:.4;cursor:default}
+.playlist-slider--seek::-webkit-slider-runnable-track{height:3px}
+.playlist-slider--seek::-webkit-slider-thumb{width:10px;height:10px;margin-top:-3.5px}
+.playlist-slider--seek::-moz-range-track{height:3px}
+.playlist-slider--seek::-moz-range-progress{height:3px}
+.playlist-slider--seek::-moz-range-thumb{width:10px;height:10px}
+
 /* ── Summary message-range dual slider (DualRangeSlider) ──
    Two full-width range inputs stacked on one track. Making each *thumb* its own
    hit target — host `pointer-events:none` + `::-webkit-slider-thumb{pointer-events:auto}`

@@ -7,6 +7,7 @@ import type { TtsProfileRecord } from "../../api/tts-api.js";
 import type { NarrationPlayer } from "../../lib/tts/narration-player.js";
 import type { NarrationPlaylistEntry, NarrationPlaylistIndex, NarrationSegmentCache } from "../../lib/tts/narration-cache.js";
 import { useTtsPlaybackStore, __setTtsPlaybackDepsForTests } from "../../stores/tts-playback-store.js";
+import { PlaylistVolumeSlider } from "./playlist-volume-slider.js";
 import en from "../../i18n/locales/en.json";
 import ru from "../../i18n/locales/ru.json";
 
@@ -680,6 +681,57 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect(useTtsPlaybackStore.getState().volume).toBe(0.5);
     expect(localStorage.getItem("vt.tts.narration-volume")).toBe("0.5");
     expect(lane.volumeCalls).toContain(0.5);
+  });
+
+  it("FS-5a: percent box shows 0–100 and round-trips to the 0..1 lane", async () => {
+    const lane = installDeferredLane();
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    let started: Promise<void> | null = null;
+    act(() => {
+      started = useTtsPlaybackStore.getState().startNarration("m1", "First line", profile(), playlistMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    const number = await waitFor(() => getByTestId("playlist-volume-number"));
+    // Default full volume renders as percent, not 0..1.
+    expect((number as HTMLInputElement).value).toBe("100");
+    await act(async () => {
+      fireEvent.change(number, { target: { value: "50" } });
+      fireEvent.blur(number);
+    });
+    // Internal contract unchanged: store + persistence + lane stay 0..1.
+    expect(useTtsPlaybackStore.getState().volume).toBe(0.5);
+    expect(localStorage.getItem("vt.tts.narration-volume")).toBe("0.5");
+    expect(lane.volumeCalls).toContain(0.5);
+    // The hard-stop fill follows the value via the --p custom property.
+    expect(getByTestId("playlist-volume").getAttribute("style") ?? "").toContain("--p: 50%");
+  });
+
+  it("FS-5b: volume and seek render the playlist-local slider family", async () => {
+    const lane = installDeferredLane();
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    let started: Promise<void> | null = null;
+    act(() => {
+      started = useTtsPlaybackStore.getState().startNarration("m1", "First line", profile(), playlistMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    const volume = await waitFor(() => getByTestId("playlist-volume"));
+    expect(volume.getAttribute("class") ?? "").toContain("playlist-slider");
+    expect(volume.getAttribute("class") ?? "").not.toContain("playlist-slider--seek");
+    // The live row's playback bar joins the same family at seek density.
+    const seek = await waitFor(() => getByTestId("playlist-seek"));
+    expect(seek.getAttribute("class") ?? "").toContain("playlist-slider--seek");
+  });
+
+  it("FS-5c: disabled volume control renders inert", () => {
+    const { getByTestId } = render(
+      <PlaylistVolumeSlider label="Volume" value={0.5} onChange={() => {}} disabled rangeTestId="t-range" numberTestId="t-number" />,
+    );
+    expect((getByTestId("t-range") as HTMLInputElement).disabled).toBe(true);
+    expect((getByTestId("t-number") as HTMLInputElement).disabled).toBe(true);
   });
 
   it("formats the seek clock as m:ss", async () => {

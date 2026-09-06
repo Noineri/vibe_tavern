@@ -8,7 +8,7 @@ import { cn } from "../../lib/cn.js";
 import { Ic } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { EmptyState } from "../shared/empty-state.js";
-import { SliderField } from "../shared/SliderField.js";
+import { PlaylistVolumeSlider } from "./playlist-volume-slider.js";
 import { Toggle } from "../shared/Toggle.js";
 
 /** TPE-18a: the playlist body (DiceTray twin) — rows for everything
@@ -148,7 +148,8 @@ function SeekBar(input: {
           const v = parseFloat(e.target.value);
           if (!Number.isNaN(v)) input.onSeek(v);
         }}
-        className="h-[6px] w-auto min-w-0 flex-1 cursor-pointer rounded-full border-0 accent-accent disabled:cursor-default disabled:opacity-40"
+        style={{ "--p": rangeMax > 0 ? `${((position / rangeMax) * 100).toFixed(1)}%` : "0%" } as React.CSSProperties}
+        className="playlist-slider playlist-slider--seek min-w-0 flex-1 border-0"
       />
       <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 tabular-nums">
         {progress
@@ -179,7 +180,6 @@ export interface NarrationPlaylistProps {
   readonly livePaused: boolean;
   /** TPE-18b: live progress per message (seek-bar source). */
   readonly progress: Record<string, NarrationProgress>;
-  /** TPE-18b: global narration volume 0..1 (shared SliderField). */
   readonly volume: number;
   /** TPE-18d: continuous-play pref (footer toggle, default OFF). */
   readonly continuous: boolean;
@@ -301,16 +301,15 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
           </label>
         </CustomTooltip>
       </div>
-      {/* TPE-18b: global volume as its own footer row — the shared
-        SliderField (label + number) is too tall to sit inline with the
-        28px transport buttons, and full width fits any RU label. */}
+      {/* FS-5: global volume as its own footer row — the playlist-local
+        PlaylistVolumeSlider (label + range + percent box), NOT the shared
+        SliderField (settings keep it). Label on its own line + flex track
+        as the only shrinker: full width fits any RU label (see the width
+        arithmetic in playlist-volume-slider.tsx). */}
       <div className="border-t border-border2 px-3 py-2">
-        <SliderField
+        <PlaylistVolumeSlider
           label={t("narration_playlist_volume")}
           value={input.volume}
-          min={0}
-          max={1}
-          step={0.05}
           onChange={input.onVolume}
           rangeTestId="playlist-volume"
           numberTestId="playlist-volume-number"
