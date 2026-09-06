@@ -764,7 +764,7 @@ export function MessageAiEditorModal() {
                   (the static prompt asset is the instruction), so the field
                   is hidden and only the annotate hint line remains. */}
               {activeMode === "message_tts_annotate" ? (
-                <div className="mb-4 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
+                <div className="mb-4 font-ui text-[calc(var(--ui-fs)-4px)] text-t2">
                   {tDynamic("message_ai_editor_annotate_hint")}
                 </div>
               ) : (
