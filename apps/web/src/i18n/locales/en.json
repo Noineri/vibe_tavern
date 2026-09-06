@@ -400,6 +400,7 @@
   "narration_playlist_save": "Save to library",
   "narration_playlist_saving": "Saving…",
   "narration_playlist_in_library": "In library",
+  "narration_playlist_in_cache": "In cache",
   "narration_playlist_reveal_file": "Show file",
   "narration_playlist_drop_file": "Remove saved file",
   "narration_playlist_drop_cached": "Drop cached audio",

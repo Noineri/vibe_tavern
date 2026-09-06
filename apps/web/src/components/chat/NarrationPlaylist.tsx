@@ -393,6 +393,19 @@ function PlaylistRow(input: {
               {t("narration_playlist_in_library")}
             </span>
           )}
+          {/* FS-7: in-cache badge — the twin of the library badge
+            (same markup/density/position). Mutually exclusive:
+            library rows show ONLY the library badge. Settled
+            cache-backed rows (full and FS-3 partial) carry it; live
+            rows show no state badge. No fixed widths (RU «В кэше»). */}
+          {!live && !row.inLibrary && (
+            <span
+              data-testid="playlist-row-cache-badge"
+              className="shrink-0 rounded border border-accent/40 bg-accent-dim px-1 font-ui text-[calc(var(--ui-fs)-4px)] font-medium text-accent-t"
+            >
+              {t("narration_playlist_in_cache")}
+            </span>
+          )}
           {row.live && row.live.total > 0 && (
             <span className="flex min-w-0 flex-1 items-center gap-1.5" title={t("narration_playlist_fetching", { received: row.live.received, total: row.live.total })}>
               <span className="h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-s3">

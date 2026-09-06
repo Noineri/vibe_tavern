@@ -1441,6 +1441,7 @@ export default interface Resources {
     "narration_playlist_fetching": "{received} of {total} received",
     "narration_playlist_generating": "Narrating…",
     "narration_playlist_in_library": "In library",
+    "narration_playlist_in_cache": "In cache",
     "narration_playlist_open": "Open narration playlist",
     "narration_playlist_pause": "Pause",
     "narration_playlist_rate": "Playback speed",

@@ -1264,3 +1264,124 @@ describe("narration playlist continuous play (TPE-18d)", () => {
     expect(en["narration_playlist_continuous"]).not.toBe(ru["narration_playlist_continuous"]);
   });
 });
+
+describe("narration playlist cache badge (FS-7)", () => {
+  const TEXT = "First line\nSecond line";
+
+  function meta() {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId: "m1-v1",
+      variantIndex: 0,
+      snippet: TEXT,
+    };
+  }
+
+  /** Parked player lane (single segment) — the panel shows a live row
+   *  while the play promise is unresolved. */
+  function parkLane(): { plays: string[]; skip: () => void } {
+    const plays: string[] = [];
+    let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
+    __setTtsPlaybackDepsForTests({
+      player: {
+        play(blob: Blob, _rate: number): Promise<"ended" | "skipped" | "error"> {
+          void blob.text().then((t) => plays.push(t));
+          return new Promise<"ended" | "skipped" | "error">((resolve) => {
+            currentResolve = resolve;
+          });
+        },
+        skipCurrent: () => {
+          const fn = currentResolve;
+          currentResolve = null;
+          if (fn) fn("skipped");
+        },
+        pause: () => {},
+        resume: () => {},
+        setRate: () => {},
+        setVolume: () => {},
+        dispose: () => {},
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: memoryIndex(),
+      notifyError: () => {},
+      libraryClient: stubLibraryClient(),
+      mergeToOgg: async () => new Uint8Array([9, 9]),
+    });
+    return {
+      plays,
+      skip: () => {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn("skipped");
+      },
+    };
+  }
+
+  async function openPanel(): Promise<{ getByTestId: (id: string) => HTMLElement; queryByTestId: (id: string) => HTMLElement | null }> {
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    return { getByTestId: getByTestId as (id: string) => HTMLElement, queryByTestId };
+  }
+
+  it("FS-7a: settled cache-only row shows «В кэше», not «В библиотеке»", async () => {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    const { getByTestId, queryByTestId } = await openPanel();
+    const badge = getByTestId("playlist-row-cache-badge");
+    expect(badge.textContent).toBe("narration_playlist_in_cache");
+    expect(queryByTestId("playlist-row-library-badge")).toBeNull();
+  });
+
+  it("FS-7b: partial row shows «В кэше»", async () => {
+    parkLane();
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    await act(async () => { fireEvent.click(getByTestId("playlist-stop")); });
+    await waitFor(() => getByTestId("playlist-row-continue"));
+    expect(getByTestId("playlist-row-cache-badge")).toBeDefined();
+    expect(queryByTestId("playlist-row-library-badge")).toBeNull();
+  });
+
+  it("FS-7c: library row shows ONLY «В библиотеке»", async () => {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    const { getByTestId, queryByTestId } = await openPanel();
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-save")); });
+    await waitFor(() => getByTestId("playlist-row-library-badge"));
+    expect(queryByTestId("playlist-row-cache-badge")).toBeNull();
+  });
+
+  it("FS-7d: live row shows neither badge", async () => {
+    parkLane();
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    expect(queryByTestId("playlist-row-cache-badge")).toBeNull();
+    expect(queryByTestId("playlist-row-library-badge")).toBeNull();
+  });
+
+  it("FS-7e: cache badge strings exist in en and ru", () => {
+    expect(en["narration_playlist_in_cache"]).toBeTruthy();
+    expect(ru["narration_playlist_in_cache"]).toBeTruthy();
+    expect(en["narration_playlist_in_cache"]).not.toBe(ru["narration_playlist_in_cache"]);
+  });
+});

@@ -404,6 +404,7 @@
   "narration_playlist_save": "Сохранить в библиотеку",
   "narration_playlist_saving": "Сохранение…",
   "narration_playlist_in_library": "В библиотеке",
+  "narration_playlist_in_cache": "В кэше",
   "narration_playlist_reveal_file": "Показать файл",
   "narration_playlist_drop_file": "Убрать сохранённый файл",
   "narration_playlist_drop_cached": "Убрать из кэша",
