@@ -16,6 +16,7 @@ export function useAutoNarrate(): void {
     return s.generations[s.activeChatId]?.streamingMessageId ?? null;
   });
   const activeChat = useSnapshotStore((s) => s.activeChat);
+  const activeBranchId = useSnapshotStore((s) => (s.activeBranch ? String(s.activeBranch.id) : null));
   const messagesById = useSnapshotStore((s) => s.messagesById);
   const messageOrder = useSnapshotStore((s) => s.messageOrder);
   const macroContext = useMacroContext();
@@ -87,10 +88,18 @@ export function useAutoNarrate(): void {
       const { text } = source;
       lastAutoNarratedIdRef.current = finishedId;
       // TPE-18a: playlist index meta — the chat + variant this narration
-      // belongs to, plus the two-line snippet (owner decision). The store
+      // belongs to, plus the two-line snippet (owner decision). TPE-18c:
+      // character + branch ride along for library addressing. The store
       // writes the index row when the orchestrator reports completion.
       const meta = activeChatId
-        ? { chatId: activeChatId, variantId: source.variantId, variantIndex: source.variantIndex, snippet: source.snippet }
+        ? {
+            chatId: activeChatId,
+            characterId: activeChat?.characterId ? String(activeChat.characterId) : null,
+            branchId: activeBranchId,
+            variantId: source.variantId,
+            variantIndex: source.variantIndex,
+            snippet: source.snippet,
+          }
         : undefined;
       void startNarration(finishedId, text, resolution.profile, meta);
     }

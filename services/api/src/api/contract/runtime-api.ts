@@ -423,6 +423,15 @@ export interface TtsRuntimeApi {
 	 *  (D8): `docker --version` bounded by a timeout; never throws. */
 	probeLocalDocker: () => Promise<import("@vibe-tavern/api-contracts").LocalDockerStatus>;
 	discoverLocalTts: () => Promise<import("@vibe-tavern/domain").ProbeOutcome[]>;
+	/** TPE-18c: per-character narration library (one OGG per message).
+	 *  The key already encodes character/chat/branch/message/variant — no
+	 *  manifest, no DB table. Throws NarrationLibraryUnavailableError when
+	 *  no library service is wired (route → 501). */
+	saveNarrationFile: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey, audio: Buffer) => Promise<{ leaf: string }>;
+	getNarrationFile: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey) => Promise<{ audio: Buffer; mime: string } | null>;
+	narrationFileExists: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey) => Promise<boolean>;
+	deleteNarrationFile: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey) => Promise<{ deleted: boolean }>;
+	revealNarrationFile: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey) => Promise<{ argv: string[] }>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────

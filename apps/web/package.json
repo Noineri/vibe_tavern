@@ -62,6 +62,7 @@
     "sonner": "^2.0.8",
     "unified": "^11.0.5",
     "use-debounce": "^10.1.1",
+    "wasm-media-encoders": "^0.7.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.15"
   },

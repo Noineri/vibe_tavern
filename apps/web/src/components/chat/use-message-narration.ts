@@ -27,6 +27,7 @@ export function useMessageNarration(
   const macroContext = useMacroContext();
   const isCoauthorMode = useSnapshotStore((s) => s.activeChat?.mode === "coauthor");
   const activeChatId = useSnapshotStore((s) => (s.activeChat ? String(s.activeChat.id) : null));
+  const activeBranchId = useSnapshotStore((s) => (s.activeBranch ? String(s.activeBranch.id) : null));
   const message = useMessage(messageId);
 
   const resolution = useMemo(() => {
@@ -80,13 +81,15 @@ export function useMessageNarration(
       activeChatId && source
         ? {
             chatId: activeChatId,
+            characterId,
+            branchId: activeBranchId,
             variantId: source.variantId,
             variantIndex: source.variantIndex,
             snippet: firstTwoLines(text),
           }
         : undefined;
     void startNarration(messageId, text, resolution.profile, meta);
-  }, [narrating, available, resolution, getText, messageId, startNarration, stopNarration, macroContext, isCoauthorMode, activeChatId, message]);
+  }, [narrating, available, resolution, getText, messageId, startNarration, stopNarration, macroContext, isCoauthorMode, activeChatId, activeBranchId, characterId, message]);
 
   return { available, narrating, onNarrate };
 }

@@ -4,7 +4,12 @@ import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 import type { DraftTtsVoicesInput } from "@vibe-tavern/api-contracts";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
-import { KokoroClientSideError, TtsCloneUnsupportedError } from "../adapters/tts-adapter.js";
+import { KokoroClientSideError, NarrationLibraryUnavailableError, TtsCloneUnsupportedError } from "../adapters/tts-adapter.js";
+import {
+  NarrationLibraryValidationError,
+  NarrationRevealUnsupportedError,
+  parseNarrationLibraryKey,
+} from "../../domain/tts/narration-library.js";
 import { OpenAiCompatTtsError } from "../../domain/tts/backends/openai-tts.js";
 
 export function createTtsRoutes(runtime: TtsRuntimeApi) {
@@ -72,6 +77,167 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
       } catch (error) {
         if (error instanceof KokoroClientSideError) {
           return c.json({ error: "kokoro runs client-side" }, 400);
+        }
+        throw error;
+      }
+    })
+    // ── Narration library (TPE-18c: one OGG per message) ────────────────
+    // Multipart save (clone-route precedent: manual validation, no zod for
+    // multipart) + query/keyed reads. The service re-validates every ID
+    // segment (slug pattern) before any filesystem touch — traversal and
+    // absolute paths reject here with 400, never reach a spawn.
+    .post("/api/tts/narrations", async (c) => {
+      const form = await c.req.parseBody();
+      let key;
+      try {
+        key = parseNarrationLibraryKey({
+          characterId: form["characterId"],
+          chatId: form["chatId"],
+          branchId: form["branchId"],
+          messageId: form["messageId"],
+          variantIndex: form["variantIndex"],
+        });
+      } catch (error) {
+        if (error instanceof NarrationLibraryValidationError) {
+          return c.json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+      const audio = form["audio"];
+      if (!(audio instanceof File)) {
+        return c.json({ error: "audio file is required" }, 400);
+      }
+      // A minute of Vorbis speech is ~1 MB; 25 MB bounds abuse without
+      // clipping any honest narration.
+      const MAX_NARRATION_BYTES = 25 * 1024 * 1024;
+      if (audio.size === 0 || audio.size > MAX_NARRATION_BYTES) {
+        return c.json({ error: `audio must be 1 B - 25 MB (got ${audio.size} B)` }, 400);
+      }
+      const mimeType = audio.type || "application/octet-stream";
+      // Best-effort hygiene only: multipart transport derives the part
+      // type from the FILENAME (a .ogg name always arrives as audio/ogg
+      // even with a lying File type). The stored bytes always take the
+      // fixed .ogg leaf server-side — a corrupt upload only fails its own
+      // decode, never another message's playback.
+      if (!mimeType.startsWith("audio/")) {
+        return c.json({ error: `unsupported audio type: ${mimeType}` }, 400);
+      }
+      try {
+        const saved = await runtime.saveNarrationFile(key, Buffer.from(await audio.arrayBuffer()));
+        return c.json({ saved: true, leaf: saved.leaf }, 201);
+      } catch (error) {
+        if (error instanceof NarrationLibraryUnavailableError) {
+          return c.json({ error: "narration library is not configured" }, 501);
+        }
+        throw error;
+      }
+    })
+    .get("/api/tts/narrations/exists", async (c) => {
+      let key;
+      try {
+        key = parseNarrationLibraryKey({
+          characterId: c.req.query("characterId"),
+          chatId: c.req.query("chatId"),
+          branchId: c.req.query("branchId"),
+          messageId: c.req.query("messageId"),
+          variantIndex: c.req.query("variantIndex"),
+        });
+      } catch (error) {
+        if (error instanceof NarrationLibraryValidationError) {
+          return c.json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+      try {
+        return c.json({ exists: await runtime.narrationFileExists(key) });
+      } catch (error) {
+        if (error instanceof NarrationLibraryUnavailableError) {
+          return c.json({ error: "narration library is not configured" }, 501);
+        }
+        throw error;
+      }
+    })
+    .get("/api/tts/narrations/file", async (c) => {
+      let key;
+      try {
+        key = parseNarrationLibraryKey({
+          characterId: c.req.query("characterId"),
+          chatId: c.req.query("chatId"),
+          branchId: c.req.query("branchId"),
+          messageId: c.req.query("messageId"),
+          variantIndex: c.req.query("variantIndex"),
+        });
+      } catch (error) {
+        if (error instanceof NarrationLibraryValidationError) {
+          return c.json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+      try {
+        const file = await runtime.getNarrationFile(key);
+        if (!file) return c.json({ error: "narration file not found" }, 404);
+        // Re-saves overwrite the same path — never immutably cacheable.
+        return c.body(new Uint8Array(file.audio), 200, {
+          "Content-Type": file.mime,
+          "Cache-Control": "no-store",
+        });
+      } catch (error) {
+        if (error instanceof NarrationLibraryUnavailableError) {
+          return c.json({ error: "narration library is not configured" }, 501);
+        }
+        throw error;
+      }
+    })
+    .delete("/api/tts/narrations", async (c) => {
+      let key;
+      try {
+        key = parseNarrationLibraryKey({
+          characterId: c.req.query("characterId"),
+          chatId: c.req.query("chatId"),
+          branchId: c.req.query("branchId"),
+          messageId: c.req.query("messageId"),
+          variantIndex: c.req.query("variantIndex"),
+        });
+      } catch (error) {
+        if (error instanceof NarrationLibraryValidationError) {
+          return c.json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+      try {
+        return c.json(await runtime.deleteNarrationFile(key));
+      } catch (error) {
+        if (error instanceof NarrationLibraryUnavailableError) {
+          return c.json({ error: "narration library is not configured" }, 501);
+        }
+        throw error;
+      }
+    })
+    .post("/api/tts/narrations/reveal", zValidator("json", schemas.revealNarrationSchema), async (c) => {
+      const body = c.req.valid("json");
+      let key;
+      try {
+        // Shape gate passed (zod) — the service parser is the security
+        // gate (slug segments) before any spawn.
+        key = parseNarrationLibraryKey(body);
+      } catch (error) {
+        if (error instanceof NarrationLibraryValidationError) {
+          return c.json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+      try {
+        if (!(await runtime.narrationFileExists(key))) {
+          return c.json({ error: "narration file not found" }, 404);
+        }
+        await runtime.revealNarrationFile(key);
+        return c.json({ revealed: true });
+      } catch (error) {
+        if (error instanceof NarrationLibraryUnavailableError) {
+          return c.json({ error: "narration library is not configured" }, 501);
+        }
+        if (error instanceof NarrationRevealUnsupportedError) {
+          return c.json({ error: error.message }, 501);
         }
         throw error;
       }

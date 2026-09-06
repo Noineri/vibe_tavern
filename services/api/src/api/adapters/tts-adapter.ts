@@ -26,6 +26,8 @@ import "../../domain/tts/backends/google-cloud-tts.js";
 
 import { createTtsBackend } from "../../domain/tts/tts-registry.js";
 import { probeDockerAvailability } from "../../domain/tts/docker-probe.js";
+import type { NarrationLibraryService } from "../../domain/tts/narration-library.js";
+import { NARRATION_LIBRARY_MIME } from "../../domain/tts/narration-library.js";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 
 /** Wire projection (TE2-16): the secret lives in the typed `apiKey` column
@@ -176,7 +178,13 @@ async function resolveDraftConfig(
 }
 
 export class TtsAdapter implements TtsRuntimeApi {
-  constructor(private readonly stores: Pick<StoreContainer, "tts" | "providers">) {}
+  constructor(
+    private readonly stores: Pick<StoreContainer, "tts" | "providers">,
+    /** TPE-18c: narration-library file service (optional so bare test
+     *  helpers keep constructing the adapter without one — narration
+     *  methods throw NarrationLibraryUnavailableError then, route → 501). */
+    private readonly narrationLibrary?: NarrationLibraryService | null,
+  ) {}
 
   /** Owner decision (2026-08-28): the wire record reports WHICH provider
    *  profile's key auto-matches the profile's endpoint, so the UI can show
@@ -370,6 +378,35 @@ export class TtsAdapter implements TtsRuntimeApi {
     const serverFetch: FetchLike = discoveryFetchOverride ?? ((input, init) => fetch(input, init));
     return discoverLocalTtsServers(serverFetch);
   };
+
+  // ── Narration library (TPE-18c: one OGG per message) ───────────────────
+
+  private requireNarrationLibrary(): NarrationLibraryService {
+    if (!this.narrationLibrary) throw new NarrationLibraryUnavailableError();
+    return this.narrationLibrary;
+  }
+
+  saveNarrationFile: TtsRuntimeApi["saveNarrationFile"] = async (key, audio) => {
+    return this.requireNarrationLibrary().save(key, new Uint8Array(audio));
+  };
+
+  getNarrationFile: TtsRuntimeApi["getNarrationFile"] = async (key) => {
+    const audio = await this.requireNarrationLibrary().read(key);
+    if (!audio) return null;
+    return { audio, mime: NARRATION_LIBRARY_MIME };
+  };
+
+  narrationFileExists: TtsRuntimeApi["narrationFileExists"] = async (key) => {
+    return this.requireNarrationLibrary().exists(key);
+  };
+
+  deleteNarrationFile: TtsRuntimeApi["deleteNarrationFile"] = async (key) => {
+    return this.requireNarrationLibrary().remove(key);
+  };
+
+  revealNarrationFile: TtsRuntimeApi["revealNarrationFile"] = async (key) => {
+    return this.requireNarrationLibrary().reveal(key);
+  };
 }
 
 /** Test seam for the discovery route — swaps the network fetch the pure
@@ -397,6 +434,15 @@ export class KokoroClientSideError extends Error {
   constructor() {
     super("kokoro runs client-side");
     this.name = "KokoroClientSideError";
+  }
+}
+
+/** No narration-library file service is wired (bare test adapter) — the
+ *  narration routes map this to 501, never an unhandled 500. */
+export class NarrationLibraryUnavailableError extends Error {
+  constructor() {
+    super("narration library is not configured");
+    this.name = "NarrationLibraryUnavailableError";
   }
 }
 

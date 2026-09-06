@@ -113,6 +113,8 @@ interface LaneCacheBase {
 
 export function createTtsOrchestrator(deps: NarrationDeps): {
   narrate(messageId: string, text: string, profile: TtsProfileRecord): Promise<void>;
+  /** TPE-18c: replay a saved library file (single-file timeline, zero synthesis). */
+  playLibrary(messageId: string, blob: Blob): Promise<void>;
   pause(): void;
   resume(): void;
   skipSegment(): void;
@@ -177,6 +179,10 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
   /** TPE-18b: per-narrate lane inputs (segments + cache base + profile +
    *  flags) shared by the fill loop and seek. */
   let laneSegments: Array<{ text: string; voiceId: string }> = [];
+  /** TPE-18c: the single library file when the lane replays a saved
+   *  recording instead of synthesizing (null on synth lanes). Seek loads
+   *  serve it directly; retarget keeps forward completion closed. */
+  let laneLibraryBlob: Blob | null = null;
   let laneCacheBase: LaneCacheBase = { backend: "", endpoint: null, model: null, responseFormat: null, speed: null, narrator: false };
   let laneProfile: TtsProfileRecord | null = null;
   let laneWaitForFull = false;
@@ -393,7 +399,14 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     index: number,
     myEpoch: number,
     forSeek = false,
-  ): Promise<{ blob: Blob; key: string } | null> {
+  ): Promise<{ blob: Blob; key: string | null } | null> {
+    // TPE-18c: library lanes serve the saved file (no cache, no synth —
+    // the file IS the audio). forSeek bypasses the generationDone retire
+    // checks like any targeted seek load; the epoch check always applies.
+    if (laneLibraryBlob !== null && index === 0) {
+      if (myEpoch !== epoch) return null;
+      return { blob: laneLibraryBlob, key: null };
+    }
     const segment = laneSegments[index];
     const profile = laneProfile;
     if (!segment || !profile) return null;
@@ -634,6 +647,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     fillActive = false;
     fillCursor = 0;
     laneSegments = [];
+    laneLibraryBlob = null;
     durations = [];
     seekPending = false;
     suppressAdvanceCount = false;
@@ -663,7 +677,10 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     // (a restarted/adopted fill must load ahead again; the terminal
     // branches re-decide). failedMessage is deliberately kept: a lane
     // draining toward an error still ends in the error after the refill.
-    generationDone = false;
+    // TPE-18c: library lanes never reopen forward completion — the file
+    // is whole; a seek just re-lands inside it (the seek's own load
+    // covers the target via laneLibraryBlob above).
+    if (laneLibraryBlob === null) generationDone = false;
     suppressAdvanceCount = true;
     deps.player.skipCurrent();
     pendingBlobs = [];
@@ -803,6 +820,53 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
         if (lastState?.status !== "complete" && lastState?.status !== "error") {
           emitState("complete");
           reportNarrated();
+        }
+      }
+    },
+
+    /** TPE-18c: replay a saved library file — the single-file timeline
+     *  (one-segment queue; the existing SeekBar rides durations/progress
+     *  unchanged). Zero synthesis: the fill loop never starts (cursor is
+     *  parked past the only segment), the cache is untouched, and the
+     *  completion is never re-indexed (epochReported stays true — the row
+     *  already exists). Pause/resume/seek/stop ride the normal lane. */
+    async playLibrary(messageId: string, blob: Blob): Promise<void> {
+      epoch += 1;
+      const myEpoch = epoch;
+      abortActiveNarration();
+      activeMessageId = messageId;
+
+      laneSegments = [{ text: "", voiceId: "" }];
+      laneLibraryBlob = blob;
+      durations = [null];
+      laneProfile = null;
+      laneWaitForFull = false;
+      totalSegments = 1;
+      playedCount = 0;
+      currentIndex = 0;
+      livePosition = 0;
+      generationDone = true;
+      failedMessage = null;
+      pendingBlobs = [{ blob, cacheKey: null, index: 0, startAt: 0 }];
+      epochKeys = [];
+      epochReported = true;
+      fillCursor = 1;
+      fillToken += 1;
+      seekPending = false;
+      suppressAdvanceCount = false;
+      synthesisController = new AbortController();
+      emitState("generating");
+      probeSegment(0, blob);
+      emitProgress();
+      await runPlayback(myEpoch);
+      if (myEpoch !== epoch) return;
+      if (paused) return;
+      // Parked-terminal tail (narrate's own): playback already drained —
+      // ensure exactly one terminal state (reportNarrated is epoch-blocked
+      // above, so library replays never touch the index).
+      if (!playbackRunning && pendingBlobs.length === 0 && generationDone) {
+        if (lastState?.status !== "complete" && lastState?.status !== "error") {
+          emitState("complete");
         }
       }
     },

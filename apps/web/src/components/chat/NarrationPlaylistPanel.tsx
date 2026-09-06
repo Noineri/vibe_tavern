@@ -10,6 +10,7 @@ import { useVoiceMapData } from "../../lib/tts/voice-map-data.js";
 import { resolveNarrationProfile } from "../../lib/tts/voice-map.js";
 import { voicedVariantSource } from "../../lib/tts/narration-source.js";
 import { cn } from "../../lib/cn.js";
+import { isAndroidDevice } from "../../lib/platform.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
@@ -67,14 +68,26 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
   const setVolume = useTtsPlaybackStore((s) => s.setVolume);
   const setRate = useTtsPlaybackStore((s) => s.setRate);
   const loadPlaylist = useTtsPlaybackStore((s) => s.loadPlaylist);
+  // TPE-18c: library actions + per-row saving spinners.
+  const saveToLibrary = useTtsPlaybackStore((s) => s.saveToLibrary);
+  const dropLibraryRow = useTtsPlaybackStore((s) => s.dropLibraryRow);
+  const revealLibraryRow = useTtsPlaybackStore((s) => s.revealLibraryRow);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  // Static per mount (UA-based, not viewport): Android hides reveal.
+  const [canReveal] = useState(() => !isAndroidDevice());
 
   // Collapse + reload the index at the chat/branch boundary (DicePanel pattern).
   useEffect(() => {
     setExpanded(false);
   }, [branchId, chatId]);
+  // Collapse + reload the index at the chat/branch boundary (DicePanel pattern).
+  // TPE-18c: library scope rides along when known so in-library flags
+  // reconcile against the server (the index flag alone is a hint).
   useEffect(() => {
-    if (chatId) void loadPlaylist(chatId);
-  }, [chatId, loadPlaylist]);
+    if (!chatId) return;
+    const scope = characterId && branchId ? { characterId, branchId } : undefined;
+    void loadPlaylist(chatId, scope);
+  }, [chatId, characterId, branchId, loadPlaylist]);
 
   const messageIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const liveIds = useMemo(
@@ -114,12 +127,14 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       if (!source || !chatId) return;
       void startNarration(messageId, source.text, resolution.profile, {
         chatId,
+        characterId,
+        branchId,
         variantId: source.variantId,
         variantIndex: source.variantIndex,
         snippet: source.snippet,
       });
     },
-    [resolution, messages, macroContext, isCoauthorMode, chatId, startNarration],
+    [resolution, messages, macroContext, isCoauthorMode, chatId, characterId, branchId, startNarration],
   );
 
   const onCycleRate = useCallback(() => {
@@ -131,6 +146,57 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       seekNarration(messageId, positionSec);
     },
     [seekNarration],
+  );
+
+  // TPE-18c: library row actions. Save shows a per-row spinner until the
+  // merge + upload lands (badge flip confirms); failures already toasted
+  // in the store, so the handlers only clear the spinner on both paths.
+  const clearSaving = useCallback((messageId: string) => {
+    setSavingIds((prev) => {
+      if (!prev.has(messageId)) return prev;
+      const next = new Set(prev);
+      next.delete(messageId);
+      return next;
+    });
+  }, []);
+  const onSave = useCallback(
+    (messageId: string) => {
+      if (!chatId || !branchId || !characterId || savingIds.has(messageId)) return;
+      setSavingIds((prev) => new Set(prev).add(messageId));
+      void saveToLibrary({ chatId, branchId, characterId, messageId }).then(
+        () => clearSaving(messageId),
+        () => clearSaving(messageId),
+      );
+    },
+    [chatId, branchId, characterId, savingIds, saveToLibrary, clearSaving],
+  );
+  const onReveal = useCallback(
+    (messageId: string) => {
+      if (!chatId || !branchId || !characterId) return;
+      // Store toasts on failure — the panel only avoids the unhandled
+      // rejection (async wrapper, not fire-and-forget void).
+      void (async () => {
+        try {
+          await revealLibraryRow({ chatId, branchId, characterId, messageId });
+        } catch {
+          // Already surfaced via the store toast above.
+        }
+      })();
+    },
+    [chatId, branchId, characterId, revealLibraryRow],
+  );
+  const onDrop = useCallback(
+    (messageId: string) => {
+      if (!chatId || !branchId || !characterId) return;
+      void (async () => {
+        try {
+          await dropLibraryRow({ chatId, branchId, characterId, messageId });
+        } catch {
+          // Already surfaced via the store toast above.
+        }
+      })();
+    },
+    [chatId, branchId, characterId, dropLibraryRow],
   );
 
   // The pill stays hidden until something exists to list — an empty
@@ -159,6 +225,11 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       onResume={resumeNarration}
       onSeek={onSeek}
       onVolume={setVolume}
+      onSave={onSave}
+      onReveal={onReveal}
+      onDrop={onDrop}
+      savingIds={savingIds}
+      canReveal={canReveal}
       showTitle={!isMobile}
     />
   );

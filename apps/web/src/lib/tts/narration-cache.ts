@@ -103,6 +103,10 @@ export interface NarrationPlaylistEntry {
   /** Segment cache keys that back this narration (replay = cache hits). */
   cacheKeys: string[];
   narratedAt: number;
+  /** TPE-18c: a saved library file exists for this exact variant
+   *  (library-first playback + badge). Absent on pre-18c rows —
+   *  loadPlaylist reconciles it against the server, so old rows heal. */
+  inLibrary?: boolean;
 }
 
 export interface NarrationPlaylistIndex {

@@ -201,3 +201,18 @@ export const localDockerStatusSchema = z.object({
   version: z.string().nullable(),
 });
 export type LocalDockerStatus = z.infer<typeof localDockerStatusSchema>;
+
+/** TPE-18c: reveal one saved narration in the OS file manager. The key
+ *  already encodes character/chat/branch/message/variant — the service
+ *  re-validates every segment (slug pattern) before spawning, so this
+ *  schema is the shape gate, not the security gate. variantIndex arrives
+ *  as a number on this JSON route (multipart/query string forms are
+ *  coerced by the service parser instead). */
+export const revealNarrationSchema = z.object({
+  characterId: z.string().min(1),
+  chatId: z.string().min(1),
+  branchId: z.string().min(1),
+  messageId: z.string().min(1),
+  variantIndex: z.number().int().min(0),
+});
+export type RevealNarrationInput = z.infer<typeof revealNarrationSchema>;

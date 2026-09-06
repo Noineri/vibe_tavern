@@ -1373,3 +1373,126 @@ describe("TPE-18b player controls (pause / seek / volume / progress)", () => {
     expect(states.at(-1)?.status).toBe("complete");
   });
 });
+
+describe("TPE-18c library replay (single-file timeline, zero synthesis)", () => {
+  // Local deferred player (the 18b seekable one lives inside its own
+  // describe scope): probe by blob text, records plays + seeks.
+  function createLibraryPlayer(durationsByText: Record<string, number> = {}): NarrationPlayer & {
+    plays: string[];
+    seekCalls: number[];
+    resolveCurrent(result?: SegmentPlayResult): void;
+  } {
+    const plays: string[] = [];
+    const seekCalls: number[] = [];
+    let currentResolve: ((v: SegmentPlayResult) => void) | null = null;
+    return {
+      plays,
+      seekCalls,
+      play(blob: Blob, _rate: number): Promise<SegmentPlayResult> {
+        return new Promise<SegmentPlayResult>((resolve) => {
+          currentResolve = resolve;
+          void blob.text().then((t) => plays.push(t));
+        });
+      },
+      skipCurrent(): void {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn("skipped");
+      },
+      pause(): void {},
+      resume(): void {},
+      setRate(): void {},
+      seekTo(offset: number): void {
+        seekCalls.push(offset);
+      },
+      getPosition() {
+        return { position: 0, duration: null };
+      },
+      probeDuration(blob: Blob): Promise<number | null> {
+        return blob.text().then((t) => durationsByText[t] ?? null);
+      },
+      dispose(): void {},
+      resolveCurrent(result: SegmentPlayResult = "ended"): void {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn(result);
+      },
+    };
+  }
+
+  async function tick(ms = 0): Promise<void> {
+    await new Promise<void>((r) => setTimeout(r, ms));
+  }
+
+  test("library hit plays the single file with zero synthesize calls and never re-indexes", async () => {
+    const player = createLibraryPlayer({ "saved-file-bytes": 30 });
+    let synthCalls = 0;
+    const states: NarrationState[] = [];
+    let narratedReports = 0;
+    const orch = createTtsOrchestrator({
+      synthesize: async () => {
+        synthCalls += 1;
+        return { blob: new Blob(["x"]), mime: "audio/mpeg" };
+      },
+      player,
+      onState: (_id, s) => states.push({ ...s }),
+      onNarrated: () => {
+        narratedReports += 1;
+      },
+    });
+
+    const done = orch.playLibrary("m1", new Blob(["saved-file-bytes"], { type: "audio/ogg" }));
+    await tick();
+    player.resolveCurrent("ended");
+    await done;
+
+    expect(synthCalls).toBe(0);
+    expect(player.plays).toEqual(["saved-file-bytes"]);
+    expect(states.at(-1)?.status).toBe("complete");
+    // The row already exists in the index — replay must not re-report it.
+    expect(narratedReports).toBe(0);
+  });
+
+  test("library seek jumps inside the single file via the live element (no rebuild, no synth)", async () => {
+    const player = createLibraryPlayer({ "saved-file-bytes": 60 });
+    let synthCalls = 0;
+    const orch = createTtsOrchestrator({
+      synthesize: async () => {
+        synthCalls += 1;
+        return { blob: new Blob(["x"]), mime: "audio/mpeg" };
+      },
+      player,
+      onState: () => {},
+    });
+
+    const done = orch.playLibrary("m1", new Blob(["saved-file-bytes"], { type: "audio/ogg" }));
+    await tick();
+    await tick();
+    orch.seekTo(25);
+    expect(player.seekCalls).toEqual([25]);
+    expect(player.plays).toHaveLength(1);
+    player.resolveCurrent("ended");
+    await done;
+    expect(synthCalls).toBe(0);
+  });
+
+  test("pause/resume and stop ride the library lane like a synth lane", async () => {
+    const player = createLibraryPlayer({ "saved-file-bytes": 60 });
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: async () => ({ blob: new Blob(["x"]), mime: "audio/mpeg" }),
+      player,
+      onState: (_id, s) => states.push({ ...s }),
+    });
+
+    const done = orch.playLibrary("m1", new Blob(["saved-file-bytes"], { type: "audio/ogg" }));
+    await tick();
+    orch.pause();
+    expect(states.at(-1)?.status).toBe("paused");
+    orch.resume();
+    expect(states.at(-1)?.status).toBe("playing");
+    player.resolveCurrent("ended");
+    await done;
+    expect(states.at(-1)?.status).toBe("complete");
+  });
+});

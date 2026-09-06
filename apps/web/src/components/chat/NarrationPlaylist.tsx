@@ -31,6 +31,8 @@ export interface PlaylistRowModel {
   variantIndex: number;
   variantCount: number;
   live: NarrationState | null;
+  /** TPE-18c: a saved library file exists for this exact variant. */
+  inLibrary: boolean;
 }
 
 function isLiveState(state: NarrationState | undefined): state is NarrationState {
@@ -71,6 +73,7 @@ export function buildPlaylistRows(
       variantIndex: entry?.variantIndex ?? (selectedIndex >= 0 ? selectedIndex : 0),
       variantCount: variants.length,
       live: liveState,
+      inLibrary: entry?.inLibrary === true,
     };
     if (liveState) live.push(row);
     else settled.push(row);
@@ -178,6 +181,15 @@ export interface NarrationPlaylistProps {
   readonly onResume: () => void;
   readonly onSeek: (messageId: string, positionSec: number) => void;
   readonly onVolume: (volume: number) => void;
+  /** TPE-18c: library actions (settled rows only — live rows hide them). */
+  readonly onSave: (messageId: string) => void;
+  readonly onReveal: (messageId: string) => void;
+  readonly onDrop: (messageId: string) => void;
+  /** TPE-18c: rows with a save in flight (button disabled, no double-save). */
+  readonly savingIds: ReadonlySet<string>;
+  /** TPE-18c: false where no OS file manager exists (Android) — the
+   *  reveal button hides instead of failing into a 501. */
+  readonly canReveal: boolean;
   readonly showTitle: boolean;
 }
 
@@ -209,9 +221,14 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
               key={row.messageId}
               row={row}
               progress={input.progress[row.messageId] ?? null}
+              saving={input.savingIds.has(row.messageId)}
+              canReveal={input.canReveal}
               onPlay={() => input.onPlay(row.messageId)}
               onStop={input.onStop}
               onSeek={(positionSec) => input.onSeek(row.messageId, positionSec)}
+              onSave={() => input.onSave(row.messageId)}
+              onReveal={() => input.onReveal(row.messageId)}
+              onDrop={() => input.onDrop(row.messageId)}
             />
           ))}
         </ul>
@@ -279,9 +296,15 @@ function PlaylistRow(input: {
   readonly row: PlaylistRowModel;
   /** TPE-18b: live progress for the seek bar (null for settled rows). */
   readonly progress: NarrationProgress | null;
+  /** TPE-18c: a save is in flight for this row. */
+  readonly saving: boolean;
+  readonly canReveal: boolean;
   readonly onPlay: () => void;
   readonly onStop: () => void;
   readonly onSeek: (positionSec: number) => void;
+  readonly onSave: () => void;
+  readonly onReveal: () => void;
+  readonly onDrop: () => void;
 }): ReactNode {
   const { t } = useT();
   const { row } = input;
@@ -336,6 +359,17 @@ function PlaylistRow(input: {
           <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 tabular-nums">
             {t("narration_playlist_swipe", { current: row.variantIndex + 1, total: row.variantCount })}
           </span>
+          {/* TPE-18c: in-library badge — a tiny chip in the meta line
+            (no extra row width: ~70px next to the swipe label, both fit
+            the ~260px settled content width even in RU). */}
+          {row.inLibrary && (
+            <span
+              data-testid="playlist-row-library-badge"
+              className="shrink-0 rounded border border-accent/40 bg-accent-dim px-1 font-ui text-[calc(var(--ui-fs)-4px)] font-medium text-accent-t"
+            >
+              {t("narration_playlist_in_library")}
+            </span>
+          )}
           {row.live && row.live.total > 0 && (
             <span className="flex min-w-0 flex-1 items-center gap-1.5" title={t("narration_playlist_fetching", { played: row.live.played, total: row.live.total })}>
               <span className="h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-s3">
@@ -355,6 +389,51 @@ function PlaylistRow(input: {
           <SeekBar progress={input.progress} onSeek={input.onSeek} />
         )}
       </div>
+      {/* TPE-18c: library actions on SETTLED rows only (live rows keep
+        transport). Settled arithmetic: play 28 + save 28 + show 28 +
+        gaps = 96px chrome; library rows swap save for reveal + drop
+        (112 + gaps) — the snippet column keeps ~260px, truncation
+        allowed in this density list. Icon-only buttons: no RU width risk. */}
+      {!live && !row.inLibrary && (
+        <CustomTooltip content={input.saving ? t("narration_playlist_saving") : t("narration_playlist_save")}>
+          <button
+            type="button"
+            aria-label={t("narration_playlist_save")}
+            data-testid="playlist-row-save"
+            disabled={input.saving}
+            onClick={input.onSave}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:cursor-default disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            <Ic.download />
+          </button>
+        </CustomTooltip>
+      )}
+      {!live && row.inLibrary && input.canReveal && (
+        <CustomTooltip content={t("narration_playlist_reveal_file")}>
+          <button
+            type="button"
+            aria-label={t("narration_playlist_reveal_file")}
+            data-testid="playlist-row-reveal"
+            onClick={input.onReveal}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            <Ic.fileText />
+          </button>
+        </CustomTooltip>
+      )}
+      {!live && row.inLibrary && (
+        <CustomTooltip content={t("narration_playlist_drop_file")}>
+          <button
+            type="button"
+            aria-label={t("narration_playlist_drop_file")}
+            data-testid="playlist-row-drop"
+            onClick={input.onDrop}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            <Ic.del />
+          </button>
+        </CustomTooltip>
+      )}
       <CustomTooltip content={t("narration_playlist_show_in_chat")}>
         <button
           type="button"

@@ -30,11 +30,10 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
 
 function createFakePlayer(): NarrationPlayer & { playCalls: number } {
   let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
-  const state = { playCalls: 0 };
-  const player: NarrationPlayer & typeof state = Object.assign(
-    {
+  let playCalls = 0;
+  const player: NarrationPlayer & { playCalls: number } = {
       play(_blob: Blob, _rate: number): Promise<"ended" | "skipped" | "error"> {
-        state.playCalls += 1;
+        playCalls += 1;
         return new Promise<"ended" | "skipped" | "error">((resolve) => {
           currentResolve = resolve;
           // Auto-resolve quickly so narrate completes
@@ -60,9 +59,12 @@ function createFakePlayer(): NarrationPlayer & { playCalls: number } {
           fn("skipped");
         }
       },
-    },
-    state,
-  );
+      // Live counter (a plain field would snapshot 0 — Object.assign
+      // copies numbers by value, so the increment would land detached).
+      get playCalls(): number {
+        return playCalls;
+      },
+    };
   return player;
 }
 
@@ -467,3 +469,322 @@ describe("tts-playback-store player controls (TPE-18b)", () => {
     }
   });
 });
+
+describe("TPE-18c narration library (store)", () => {
+  const SCOPE = { chatId: "c1", branchId: "b1", characterId: "ch1", messageId: "m1" };
+
+  type PlaylistEntry = import("../lib/tts/narration-cache.js").NarrationPlaylistEntry;
+  type PlaylistIndex = import("../lib/tts/narration-cache.js").NarrationPlaylistIndex;
+  type SegmentCache = import("../lib/tts/narration-cache.js").NarrationSegmentCache;
+  type LibraryClient = import("../lib/tts/narration-library-client.js").NarrationLibraryClient;
+  type LibraryIds = import("../lib/tts/narration-library-client.js").NarrationLibraryIds;
+  type FailKind = "fetch" | "exists" | "save" | "delete" | "reveal";
+
+  function memoryCache(): SegmentCache & { blobs: Map<string, Blob> } {
+    const blobs = new Map<string, Blob>();
+    return {
+      blobs,
+      async get(key: string) {
+        return blobs.get(key) ?? null;
+      },
+      async put(key: string, blob: Blob) {
+        blobs.set(key, blob);
+      },
+      async delete(key: string) {
+        blobs.delete(key);
+      },
+    };
+  }
+
+  function memoryIndex(): PlaylistIndex {
+    const chats = new Map<string, Map<string, PlaylistEntry>>();
+    return {
+      async list(chatId: string) {
+        return [...(chats.get(chatId)?.values() ?? [])].sort((a, b) => a.narratedAt - b.narratedAt);
+      },
+      async upsert(chatId: string, entry: PlaylistEntry) {
+        let items = chats.get(chatId);
+        if (!items) {
+          items = new Map();
+          chats.set(chatId, items);
+        }
+        items.set(entry.messageId, entry);
+      },
+      async clear(chatId: string) {
+        chats.delete(chatId);
+      },
+    };
+  }
+
+  interface FakeLibrary {
+    client: LibraryClient;
+    files: Map<string, Blob>;
+    saved: Array<{ ids: LibraryIds; bytes: number }>;
+    deleted: string[];
+    revealed: string[];
+    failOn: Set<FailKind>;
+  }
+
+  function fakeLibrary(): FakeLibrary {
+    const files = new Map<string, Blob>();
+    const saved: FakeLibrary["saved"] = [];
+    const deleted: string[] = [];
+    const revealed: string[] = [];
+    const failOn = new Set<FailKind>();
+    const keyOf = (ids: LibraryIds): string =>
+      `${ids.chatId}/${ids.branchId}/${ids.messageId}/${ids.variantIndex}`;
+    const client: FakeLibrary["client"] = {
+      async saveRecording(ids, audio) {
+        if (failOn.has("save")) throw new Error("upload down");
+        saved.push({ ids, bytes: audio.size });
+        files.set(keyOf(ids), audio);
+        return { saved: true, leaf: "narrations/mock.ogg" };
+      },
+      async recordingExists(ids) {
+        if (failOn.has("exists")) throw new Error("network down");
+        return files.has(keyOf(ids));
+      },
+      async fetchRecording(ids) {
+        if (failOn.has("fetch")) throw new Error("network down");
+        return files.get(keyOf(ids)) ?? null;
+      },
+      async deleteRecording(ids) {
+        if (failOn.has("delete")) throw new Error("network down");
+        const k = keyOf(ids);
+        const had = files.delete(k);
+        if (had) deleted.push(k);
+        return { deleted: had };
+      },
+      async revealRecording(ids) {
+        if (failOn.has("reveal")) throw new Error("no manager");
+        revealed.push(keyOf(ids));
+        return { revealed: true };
+      },
+    };
+    return { client, files, saved, deleted, revealed, failOn };
+  }
+
+  const META = {
+    chatId: "c1",
+    characterId: "ch1",
+    branchId: "b1",
+    variantId: "m1-v0",
+    variantIndex: 0,
+    snippet: "Hello",
+  };
+
+  beforeEach(() => {
+    useTtsPlaybackStore.setState({ playlist: {}, lastStarted: null });
+  });
+
+  test("library hit plays the saved file with zero synthesize calls", async () => {
+    const player = createFakePlayer();
+    let synthCalls = 0;
+    const cache = memoryCache();
+    const index = memoryIndex();
+    await index.upsert("c1", {
+      messageId: "m1", variantId: "m1-v0", variantIndex: 0,
+      snippet: "Hello", cacheKeys: [], narratedAt: 1, inLibrary: true,
+    });
+    const lib = fakeLibrary();
+    lib.files.set("c1/b1/m1/0", new Blob(["saved-audio"], { type: "audio/ogg" }));
+    __setTtsPlaybackDepsForTests({
+      player,
+      synthesize: async (text: string) => {
+        synthCalls += 1;
+        return { blob: new Blob([text]), mime: "audio/mpeg" };
+      },
+      cache,
+      playlistIndex: index,
+      libraryClient: lib.client,
+    });
+
+    await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    await useTtsPlaybackStore.getState().startNarration("m1", "Hello", profile(), META);
+
+    expect(synthCalls).toBe(0);
+    expect(player.playCalls).toBe(1);
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+  });
+
+  test("stale flag (file 404s) heals to synthesis and clears the flag", async () => {
+    const player = createFakePlayer();
+    let synthCalls = 0;
+    const cache = memoryCache();
+    const index = memoryIndex();
+    await index.upsert("c1", {
+      messageId: "m1", variantId: "m1-v0", variantIndex: 0,
+      snippet: "Hello", cacheKeys: [], narratedAt: 1, inLibrary: true,
+    });
+    const lib = fakeLibrary();
+    // No file on the "server" — fetchRecording returns null (404).
+    __setTtsPlaybackDepsForTests({
+      player,
+      synthesize: async (text: string) => {
+        synthCalls += 1;
+        return { blob: new Blob([text]), mime: "audio/mpeg" };
+      },
+      cache,
+      playlistIndex: index,
+      libraryClient: lib.client,
+    });
+
+    await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    // loadPlaylist without scope keeps the index hint…
+    expect(useTtsPlaybackStore.getState().playlist["c1"]?.[0]?.inLibrary).toBe(true);
+    await useTtsPlaybackStore.getState().startNarration("m1", "Hello", profile(), META);
+
+    // …but the 404 heals the flag and synthesis serves the narration.
+    expect(synthCalls).toBeGreaterThan(0);
+    expect(useTtsPlaybackStore.getState().playlist["c1"]?.[0]?.inLibrary).not.toBe(true);
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+  });
+
+  test("save merges segments into ONE ogg, evicts cache keys, marks the row", async () => {
+    const cache = memoryCache();
+    await cache.put("k1", new Blob(["seg1"]), "audio/wav");
+    await cache.put("k2", new Blob(["seg2"]), "audio/wav");
+    const index = memoryIndex();
+    await index.upsert("c1", {
+      messageId: "m1", variantId: "m1-v0", variantIndex: 0,
+      snippet: "Hello", cacheKeys: ["k1", "k2"], narratedAt: 1,
+    });
+    const lib = fakeLibrary();
+    const merged: Blob[][] = [];
+    __setTtsPlaybackDepsForTests({
+      cache,
+      playlistIndex: index,
+      libraryClient: lib.client,
+      mergeToOgg: async (blobs) => {
+        merged.push(blobs);
+        return new Uint8Array([1, 2, 3]);
+      },
+    });
+
+    await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    const { leaf } = await useTtsPlaybackStore.getState().saveToLibrary(SCOPE);
+
+    expect(leaf).toBe("narrations/mock.ogg");
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toHaveLength(2);
+    expect(lib.saved).toHaveLength(1);
+    expect(lib.saved[0]?.bytes).toBe(3);
+    // Library replaces cache (owner decision): keys are gone…
+    expect(await cache.get("k1")).toBeNull();
+    expect(await cache.get("k2")).toBeNull();
+    // …and the row wears the badge.
+    expect(useTtsPlaybackStore.getState().playlist["c1"]?.[0]?.inLibrary).toBe(true);
+  });
+
+  test("save with an expired segment toasts and throws (no upload, flag untouched)", async () => {
+    const cache = memoryCache();
+    await cache.put("k1", new Blob(["seg1"]), "audio/wav");
+    const index = memoryIndex();
+    await index.upsert("c1", {
+      messageId: "m1", variantId: "m1-v0", variantIndex: 0,
+      snippet: "Hello", cacheKeys: ["k1", "missing"], narratedAt: 1,
+    });
+    const lib = fakeLibrary();
+    const toasts: string[] = [];
+    __setTtsPlaybackDepsForTests({
+      cache,
+      playlistIndex: index,
+      libraryClient: lib.client,
+      notifyError: (_id, message) => { toasts.push(message); },
+    });
+
+    await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    await expect(useTtsPlaybackStore.getState().saveToLibrary(SCOPE)).rejects.toThrow(/expired/);
+    expect(lib.saved).toHaveLength(0);
+    expect(toasts).toHaveLength(1);
+    expect(useTtsPlaybackStore.getState().playlist["c1"]?.[0]?.inLibrary).not.toBe(true);
+  });
+
+  test("drop removes the file and clears the flag, keeping the row", async () => {
+    const index = memoryIndex();
+    await index.upsert("c1", {
+      messageId: "m1", variantId: "m1-v0", variantIndex: 0,
+      snippet: "Hello", cacheKeys: [], narratedAt: 1, inLibrary: true,
+    });
+    const lib = fakeLibrary();
+    lib.files.set("c1/b1/m1/0", new Blob(["saved-audio"], { type: "audio/ogg" }));
+    __setTtsPlaybackDepsForTests({ playlistIndex: index, libraryClient: lib.client });
+
+    await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    await useTtsPlaybackStore.getState().dropLibraryRow(SCOPE);
+
+    expect(lib.deleted).toEqual(["c1/b1/m1/0"]);
+    const row = useTtsPlaybackStore.getState().playlist["c1"]?.[0];
+    expect(row?.messageId).toBe("m1");
+    expect(row?.inLibrary).toBe(false);
+  });
+
+  test("drop on a non-library row toasts and throws (button never renders there)", async () => {
+    const index = memoryIndex();
+    await index.upsert("c1", {
+      messageId: "m1", variantId: "m1-v0", variantIndex: 0,
+      snippet: "Hello", cacheKeys: ["k1"], narratedAt: 1,
+    });
+    const lib = fakeLibrary();
+    const toasts: string[] = [];
+    __setTtsPlaybackDepsForTests({
+      playlistIndex: index,
+      libraryClient: lib.client,
+      notifyError: (_id, message) => { toasts.push(message); },
+    });
+
+    await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    await expect(useTtsPlaybackStore.getState().dropLibraryRow(SCOPE)).rejects.toThrow(/no saved library file/);
+    expect(toasts).toHaveLength(1);
+  });
+
+  test("refreshLibraryFlags reconciles per row; one row's failure keeps its hint", async () => {
+    const index = memoryIndex();
+    await index.upsert("c1", {
+      messageId: "m1", variantId: "m1-v0", variantIndex: 0, snippet: "One", cacheKeys: [], narratedAt: 1,
+    });
+    await index.upsert("c1", {
+      messageId: "m2", variantId: "m2-v0", variantIndex: 0, snippet: "Two", cacheKeys: [], narratedAt: 2,
+      inLibrary: true,
+    });
+    const lib = fakeLibrary();
+    lib.files.set("c1/b1/m1/0", new Blob(["a"], { type: "audio/ogg" }));
+    // m2's check throws (transient) — its index hint survives.
+    const checking = lib.client.recordingExists.bind(lib.client);
+    const flaky: LibraryClient = { ...lib.client };
+    flaky.recordingExists = async (ids) => {
+      if (ids.messageId === "m2") throw new Error("network down");
+      return checking(ids);
+    };
+    __setTtsPlaybackDepsForTests({ playlistIndex: index, libraryClient: flaky });
+
+    await useTtsPlaybackStore.getState().loadPlaylist("c1", { characterId: "ch1", branchId: "b1" });
+    const rows = useTtsPlaybackStore.getState().playlist["c1"] ?? [];
+    expect(rows.find((r) => r.messageId === "m1")?.inLibrary).toBe(true);
+    expect(rows.find((r) => r.messageId === "m2")?.inLibrary).toBe(true);
+  });
+
+  test("reveal forwards the scope; a failed reveal toasts and throws", async () => {
+    const index = memoryIndex();
+    await index.upsert("c1", {
+      messageId: "m1", variantId: "m1-v0", variantIndex: 0,
+      snippet: "Hello", cacheKeys: [], narratedAt: 1, inLibrary: true,
+    });
+    const lib = fakeLibrary();
+    const toasts: string[] = [];
+    __setTtsPlaybackDepsForTests({
+      playlistIndex: index,
+      libraryClient: lib.client,
+      notifyError: (_id, message) => { toasts.push(message); },
+    });
+
+    await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    await useTtsPlaybackStore.getState().revealLibraryRow(SCOPE);
+    expect(lib.revealed).toEqual(["c1/b1/m1/0"]);
+
+    lib.failOn.add("reveal");
+    await expect(useTtsPlaybackStore.getState().revealLibraryRow(SCOPE)).rejects.toThrow(/no manager/);
+    expect(toasts).toHaveLength(1);
+  });
+});
+

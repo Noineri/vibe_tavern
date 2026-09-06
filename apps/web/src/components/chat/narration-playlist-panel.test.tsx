@@ -90,6 +90,7 @@ const mocks = {
   chatId: "c1",
   branchId: "b1",
   mobile: false,
+  android: false,
   character: { id: "char1", name: "Hero" },
   persona: { id: "persona1", name: "Player", description: null, pronouns: null, pronounForms: null },
   macroContext: {
@@ -113,6 +114,7 @@ const realMobileHook = await import("../../hooks/use-mobile.js");
 const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realBottomSheet = await import("../shared/BottomSheet.js");
+const realPlatform = await import("../../lib/platform.js");
 
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -171,6 +173,12 @@ mock.module("../shared/BottomSheet.js", () => ({
     open ? <div data-testid="bottom-sheet">{title}{children}</div> : null,
 }));
 
+mock.module("../../lib/platform.js", () => ({
+  ...realPlatform,
+  // UA-driven like the real helper; tests flip mocks.android per case.
+  isAndroidDevice: () => mocks.android,
+}));
+
 let NarrationPlaylistPanel: typeof import("./NarrationPlaylistPanel.js").NarrationPlaylistPanel;
 beforeAll(async () => {
   ({ fireEvent, render, waitFor, act } = await import("@testing-library/react"));
@@ -217,14 +225,51 @@ function autoPlayer(): NarrationPlayer {
 
 let synthCalls: string[];
 let cache: NarrationSegmentCache & { size: () => number };
+// TPE-18c: hermetic library HTTP + merge seams (no real fetch/encoder).
+let libraryFiles: Map<string, Blob>;
+let librarySaved: Array<{ bytes: number; type: string }>;
+let libraryDeleted: string[];
+let libraryRevealed: string[];
+
+function stubLibraryClient(): import("../../lib/tts/narration-library-client.js").NarrationLibraryClient {
+  const keyOf = (ids: import("../../lib/tts/narration-library-client.js").NarrationLibraryIds): string =>
+    `${ids.chatId}/${ids.branchId}/${ids.messageId}/${ids.variantIndex}`;
+  return {
+    async saveRecording(ids, audio) {
+      librarySaved.push({ bytes: audio.size, type: audio.type });
+      libraryFiles.set(keyOf(ids), audio);
+      return { saved: true, leaf: "narrations/mock.ogg" };
+    },
+    async recordingExists(ids) {
+      return libraryFiles.has(keyOf(ids));
+    },
+    async fetchRecording(ids) {
+      return libraryFiles.get(keyOf(ids)) ?? null;
+    },
+    async deleteRecording(ids) {
+      const deleted = libraryFiles.delete(keyOf(ids));
+      if (deleted) libraryDeleted.push(keyOf(ids));
+      return { deleted };
+    },
+    async revealRecording(ids) {
+      libraryRevealed.push(keyOf(ids));
+      return { revealed: true };
+    },
+  };
+}
 
 beforeEach(() => {
   mocks.chatId = "c1";
   mocks.branchId = "b1";
   mocks.mobile = false;
+  mocks.android = false;
   mocks.messages = [m1(), u1()];
   synthCalls = [];
   cache = memoryCache();
+  libraryFiles = new Map();
+  librarySaved = [];
+  libraryDeleted = [];
+  libraryRevealed = [];
   // TPE-18b: reset the player-layer keys too (volume rehydrates from
   // localStorage at creation and would otherwise leak between tests).
   localStorage.clear();
@@ -238,6 +283,8 @@ beforeEach(() => {
     cache,
     playlistIndex: memoryIndex(),
     notifyError: () => {},
+    libraryClient: stubLibraryClient(),
+    mergeToOgg: async () => new Uint8Array([9, 9]),
   });
 });
 
@@ -249,6 +296,8 @@ describe("narration playlist panel (TPE-18a)", () => {
     await act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", "First line\nSecond line\nThird line", profile(), {
         chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
         variantId: "m1-v1",
         variantIndex: 0,
         snippet: "First line\nSecond line",
@@ -272,6 +321,8 @@ describe("narration playlist panel (TPE-18a)", () => {
     await act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", "First line\nSecond line\nThird line", profile(), {
         chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
         variantId: "m1-v1",
         variantIndex: 0,
         snippet: "First line\nSecond line",
@@ -308,6 +359,8 @@ describe("narration playlist panel (TPE-18a)", () => {
     const started = act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", "Para one.\n\nPara two.", profile(), {
         chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
         variantId: "m1-v1",
         variantIndex: 0,
         snippet: "Para one.",
@@ -338,13 +391,13 @@ describe("narration playlist panel (TPE-18a)", () => {
     await act(async () => {
       const store = useTtsPlaybackStore.getState();
       await store.startNarration("m1", "First line", profile(), {
-        chatId: "c1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
+        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
       });
       await store.startNarration("m2", "Second message body here", profile(), {
-        chatId: "c1", variantId: "m2-v1", variantIndex: 0, snippet: "Second message body here",
+        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m2-v1", variantIndex: 0, snippet: "Second message body here",
       });
       await store.startNarration("u1", "user words", profile(), {
-        chatId: "c1", variantId: "u1-v1", variantIndex: 0, snippet: "user words",
+        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "u1-v1", variantIndex: 0, snippet: "user words",
       });
     });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
@@ -360,7 +413,7 @@ describe("narration playlist panel (TPE-18a)", () => {
     const { getByTestId, queryByTestId, rerender } = render(<NarrationPlaylistPanel docked />);
     await act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", "First line", profile(), {
-        chatId: "c1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
+        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
       });
     });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
@@ -380,7 +433,7 @@ describe("narration playlist panel (TPE-18a)", () => {
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     await act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", "First line", profile(), {
-        chatId: "c1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
+        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
       });
     });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
@@ -411,7 +464,7 @@ describe("narration playlist panel (TPE-18a)", () => {
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     await act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", "First line", profile(), {
-        chatId: "c1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
+        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
       });
     });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
@@ -427,7 +480,7 @@ describe("narration playlist panel (TPE-18a)", () => {
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     await act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", "First line", profile(), {
-        chatId: "c1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
+        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
       });
     });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
@@ -514,7 +567,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
   }
 
   function playlistMeta() {
-    return { chatId: "c1", variantId: "m1-v1", variantIndex: 0, snippet: "Para one." };
+    return { chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v1", variantIndex: 0, snippet: "Para one." };
   }
 
   it("pause freezes the live lane and resume continues it (footer toggle)", async () => {
@@ -606,6 +659,94 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect(formatPlaybackTime(5)).toBe("0:05");
     expect(formatPlaybackTime(65)).toBe("1:05");
     expect(formatPlaybackTime(600)).toBe("10:00");
+  });
+});
+
+describe("narration playlist library (TPE-18c)", () => {
+  async function narrateM1Settled(): Promise<void> {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", "First line\nSecond line", profile(), {
+        chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
+        variantId: "m1-v1",
+        variantIndex: 0,
+        snippet: "First line\nSecond line",
+      });
+    });
+  }
+
+  async function openPanel(): Promise<{ getByTestId: (id: string) => HTMLElement; queryByTestId: (id: string) => HTMLElement | null }> {
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    return { getByTestId: getByTestId as (id: string) => HTMLElement, queryByTestId };
+  }
+
+  it("settled row offers save; saving flips the badge and swaps the actions", async () => {
+    await narrateM1Settled();
+    const { getByTestId, queryByTestId } = await openPanel();
+
+    // Pre-save: save button, no badge, no reveal/drop.
+    expect(getByTestId("playlist-row-save")).toBeDefined();
+    expect(queryByTestId("playlist-row-library-badge")).toBeNull();
+    expect(queryByTestId("playlist-row-reveal")).toBeNull();
+    expect(queryByTestId("playlist-row-drop")).toBeNull();
+
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-save")); });
+    await waitFor(() => getByTestId("playlist-row-library-badge"));
+
+    // One merged ogg posted (stub bytes), hash keys evicted…
+    expect(librarySaved).toHaveLength(1);
+    expect(librarySaved[0]?.type).toBe("audio/ogg");
+    expect(cache.size()).toBe(0);
+    // …save swaps for reveal + drop, the badge stays.
+    expect(queryByTestId("playlist-row-save")).toBeNull();
+    expect(getByTestId("playlist-row-reveal")).toBeDefined();
+    expect(getByTestId("playlist-row-drop")).toBeDefined();
+  });
+
+  it("reveal forwards the row; drop clears the badge and brings save back", async () => {
+    await narrateM1Settled();
+    const { getByTestId, queryByTestId } = await openPanel();
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-save")); });
+    await waitFor(() => getByTestId("playlist-row-library-badge"));
+
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-reveal")); });
+    expect(libraryRevealed).toEqual(["c1/b1/m1/0"]);
+
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-drop")); });
+    await waitFor(() => getByTestId("playlist-row-save"));
+    expect(libraryDeleted).toEqual(["c1/b1/m1/0"]);
+    expect(queryByTestId("playlist-row-library-badge")).toBeNull();
+    expect(queryByTestId("playlist-row-reveal")).toBeNull();
+    expect(queryByTestId("playlist-row-drop")).toBeNull();
+  });
+
+  it("reveal hides on Android while drop stays (no file manager to open)", async () => {
+    mocks.android = true;
+    await narrateM1Settled();
+    const { getByTestId, queryByTestId } = await openPanel();
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-save")); });
+    await waitFor(() => getByTestId("playlist-row-library-badge"));
+
+    expect(queryByTestId("playlist-row-reveal")).toBeNull();
+    expect(getByTestId("playlist-row-drop")).toBeDefined();
+  });
+
+  it("library strings exist in en and ru", () => {
+    for (const key of [
+      "narration_playlist_save",
+      "narration_playlist_saving",
+      "narration_playlist_in_library",
+      "narration_playlist_reveal_file",
+      "narration_playlist_drop_file",
+    ] as const) {
+      expect(en[key]).toBeTruthy();
+      expect(ru[key]).toBeTruthy();
+    }
+    expect(en["narration_playlist_save"]).not.toBe(ru["narration_playlist_save"]);
   });
 });
 });

@@ -28,6 +28,9 @@ import { createNarrationSegmentCache, createNarrationPlaylistIndex } from "../li
 import type { NarrationPlaylistEntry, NarrationPlaylistIndex, NarrationSegmentCache } from "../lib/tts/narration-cache.js";
 import type { NarratedReport, NarrationProgress } from "../lib/tts/tts-orchestrator.js";
 import { clampNarrationVolume, persistNarrationVolume, readNarrationVolume } from "../lib/tts/narration-volume.js";
+import { encodeNarrationSegmentsToOgg } from "../lib/tts/narration-ogg.js";
+import { narrationLibraryClient } from "../lib/tts/narration-library-client.js";
+import type { NarrationLibraryClient, NarrationLibraryIds } from "../lib/tts/narration-library-client.js";
 
 export type { NarrationState };
 
@@ -53,13 +56,28 @@ export interface TtsPlaybackState {
 }
 
 /** TPE-18a: index metadata for one narration start — identifies the chat
- *  and variant the playlist row belongs to. */
+ *  and variant the playlist row belongs to. TPE-18c: characterId +
+ *  branchId ride along so the store can address the narration library
+ *  (one file per message per variant) without a second lookup. */
 export interface NarrationStartMeta {
   chatId: string;
+  /** Character whose assets folder hosts the library file (null =
+   *  unindexed narration — plays, but never library-addressable). */
+  characterId: string | null;
+  /** Branch the narrated message lives on (null = same as above). */
+  branchId: string | null;
   variantId: string;
   variantIndex: number;
   /** First two lines of the voiced variant text (owner decision). */
   snippet: string;
+}
+
+/** TPE-18c: a playlist row addressable in the narration library. */
+export interface NarrationLibraryScope {
+  chatId: string;
+  branchId: string;
+  characterId: string;
+  messageId: string;
 }
 
 export interface TtsPlaybackActions {
@@ -75,7 +93,19 @@ export interface TtsPlaybackActions {
   setVolume(volume: number): void;
   setAutoNarrate(value: boolean): void;
   /** TPE-18a: (re)load one chat's playlist rows from the persisted index. */
-  loadPlaylist(chatId: string): Promise<void>;
+  loadPlaylist(chatId: string, libraryScope?: { characterId: string; branchId: string }): Promise<void>;
+  /** TPE-18c: reconcile in-library flags against the server (best-effort
+   *  per row — one row's failure never clears another's flag). */
+  refreshLibraryFlags(chatId: string, scope: { characterId: string; branchId: string }): Promise<void>;
+  /** TPE-18c: merge this message's cached segments into ONE ogg, POST it
+   *  to the library, evict the hash-cache keys. Rejects (after a visible
+   *  toast) when segments are missing or the save fails. */
+  saveToLibrary(scope: NarrationLibraryScope): Promise<{ leaf: string }>;
+  /** TPE-18c: drop the saved FILE for a library row (the row stays —
+   *  replay re-synthesizes fresh). No-op rows never render the button. */
+  dropLibraryRow(scope: NarrationLibraryScope): Promise<void>;
+  /** TPE-18c: reveal the saved file in the OS file manager. */
+  revealLibraryRow(scope: NarrationLibraryScope): Promise<void>;
   /** TPE-18a: drop one chat's rows from state (chat switch / tests). */
   clearPlaylist(chatId: string): void;
 }
@@ -157,6 +187,9 @@ let playerOverride: NarrationPlayer | null = null;
 let synthesizeOverride: SynthesizeFn | null = null;
 let cacheOverride: NarrationSegmentCache | null = null;
 let playlistIndexOverride: NarrationPlaylistIndex | null = null;
+/** TPE-18c: narration-library HTTP client + segment merge seams. */
+let libraryClientOverride: NarrationLibraryClient | null = null;
+let mergeToOggOverride: ((blobs: Blob[]) => Promise<Uint8Array<ArrayBuffer>>) | null = null;
 let activeOrchestrator: Orchestrator | null = null;
 let activePlayer: NarrationPlayer | null = null;
 let activeSynthesize: SynthesizeFn | null = null;
@@ -172,6 +205,26 @@ function narrationCache(): NarrationSegmentCache {
   return sharedCache;
 }
 
+function narrationLibrary(): NarrationLibraryClient {
+  return libraryClientOverride ?? narrationLibraryClient();
+}
+
+async function defaultMergeToOgg(blobs: Blob[]): Promise<Uint8Array<ArrayBuffer>> {
+  return (await encodeNarrationSegmentsToOgg(blobs)).bytes;
+}
+
+function mergeToOgg(): (blobs: Blob[]) => Promise<Uint8Array<ArrayBuffer>> {
+  return mergeToOggOverride ?? defaultMergeToOgg;
+}
+
+/** TPE-18c: visible library failure — same toast path as synthesis
+ *  errors (the row button already flipped to a spinner; silent failure
+ *  would strand it). */
+function notifyLibraryError(messageId: string, message: string): void {
+  const notify = notifyNarrationError ?? defaultNotifyNarrationError;
+  notify(messageId, message);
+}
+
 function narrationPlaylistIndex(): NarrationPlaylistIndex {
   if (!sharedPlaylistIndex) sharedPlaylistIndex = createNarrationPlaylistIndex();
   return sharedPlaylistIndex;
@@ -185,6 +238,7 @@ async function handleNarrated(messageId: string, report: NarratedReport): Promis
   pendingIndexMeta = null;
   if (!meta) return;
   const index = playlistIndexOverride ?? narrationPlaylistIndex();
+  const prior = (await index.list(meta.chatId)).find((candidate) => candidate.messageId === messageId);
   const entry: NarrationPlaylistEntry = {
     messageId,
     variantId: meta.variantId,
@@ -194,8 +248,82 @@ async function handleNarrated(messageId: string, report: NarratedReport): Promis
     narratedAt: Date.now(),
   };
   await index.upsert(meta.chatId, entry);
+  // TPE-18c: a fresh synthesis invalidates the saved file (the audio may
+  // differ — same path for same variant, orphan path on variant switch).
+  // Drop it best-effort so stale audio can never replay as "library";
+  // re-saving is one tap. Skipped without full library scope.
+  if (prior?.inLibrary === true && meta.characterId && meta.branchId) {
+    try {
+      await narrationLibrary().deleteRecording({
+        characterId: meta.characterId,
+        chatId: meta.chatId,
+        branchId: meta.branchId,
+        messageId,
+        variantIndex: prior.variantIndex,
+      });
+    } catch {
+      // Best-effort invalidation — the flag below already cleared.
+    }
+  }
   const rows = await index.list(meta.chatId);
   useTtsPlaybackStore.setState((s) => ({ playlist: { ...s.playlist, [meta.chatId]: rows } }));
+}
+
+/** TPE-18c: write fresh playlist rows for one chat (single state write). */
+async function refreshPlaylistRows(chatId: string): Promise<void> {
+  const index = playlistIndexOverride ?? narrationPlaylistIndex();
+  const rows = await index.list(chatId);
+  useTtsPlaybackStore.setState((s) => ({ playlist: { ...s.playlist, [chatId]: rows } }));
+}
+
+/** TPE-18c: clear a stale in-library flag (the file is gone server-side)
+ *  so the next start falls through to synthesis — self-healing, no toast
+ *  (the synth that follows either succeeds or toasts on its own). */
+async function clearLibraryFlag(chatId: string, messageId: string): Promise<void> {
+  const index = playlistIndexOverride ?? narrationPlaylistIndex();
+  const rows = await index.list(chatId);
+  const row = rows.find((entry) => entry.messageId === messageId);
+  if (!row || row.inLibrary !== true) return;
+  await index.upsert(chatId, { ...row, inLibrary: false });
+  await refreshPlaylistRows(chatId);
+}
+
+/** TPE-18c: library-first playback — a saved file for THIS variant plays
+ *  the single-file timeline with zero synthesis. Returns true when the
+ *  library served the narration (the caller skips synthesis); a stale
+ *  flag (file 404s) heals to false so synthesis follows. Transient fetch
+ *  failures return false WITHOUT clearing the flag (synthesis will
+ *  surface its own error). */
+async function tryPlayLibrary(messageId: string, text: string, meta: NarrationStartMeta): Promise<boolean> {
+  if (!meta.characterId || !meta.branchId) return false;
+  const rows = useTtsPlaybackStore.getState().playlist[meta.chatId] ?? [];
+  const row = rows.find((entry) => entry.messageId === messageId);
+  if (!row || row.inLibrary !== true || row.variantIndex !== meta.variantIndex) return false;
+  const ids: NarrationLibraryIds = {
+    characterId: meta.characterId,
+    chatId: meta.chatId,
+    branchId: meta.branchId,
+    messageId,
+    variantIndex: meta.variantIndex,
+  };
+  let blob: Blob | null;
+  try {
+    blob = await narrationLibrary().fetchRecording(ids);
+  } catch {
+    return false;
+  }
+  if (!blob) {
+    await clearLibraryFlag(meta.chatId, messageId);
+    return false;
+  }
+  const orchestrator = orchestratorOverride ?? ensureOrchestrator();
+  orchestrator.setRate(useTtsPlaybackStore.getState().rate);
+  orchestrator.setVolume(useTtsPlaybackStore.getState().volume);
+  // No re-index: the row already exists (library replays never report).
+  pendingIndexMeta = null;
+  useTtsPlaybackStore.setState({ lastStarted: { messageId, text, meta } });
+  await orchestrator.playLibrary(messageId, blob);
+  return true;
 }
 
 /** TPE-18b: progress snapshots land in store state for the seek bar. */
@@ -224,7 +352,7 @@ function ensureOrchestrator(): Orchestrator {
   return activeOrchestrator;
 }
 
-/** Test seam: replace orchestrator/player/synthesize/cache/playlistIndex/notifyError. Pass null to restore defaults. */
+/** Test seam: replace orchestrator/player/synthesize/cache/playlistIndex/notifyError/libraryClient/mergeToOgg. Pass null to restore defaults. */
 export function __setTtsPlaybackDepsForTests(deps: {
   orchestrator?: Orchestrator | null;
   player?: NarrationPlayer | null;
@@ -232,6 +360,8 @@ export function __setTtsPlaybackDepsForTests(deps: {
   cache?: NarrationSegmentCache | null;
   playlistIndex?: NarrationPlaylistIndex | null;
   notifyError?: ((messageId: string, message: string) => void) | null;
+  libraryClient?: NarrationLibraryClient | null;
+  mergeToOgg?: ((blobs: Blob[]) => Promise<Uint8Array<ArrayBuffer>>) | null;
 } | null): void {
   if (!deps) {
     orchestratorOverride = null;
@@ -241,6 +371,8 @@ export function __setTtsPlaybackDepsForTests(deps: {
     playlistIndexOverride = null;
     pendingIndexMeta = null;
     notifyNarrationError = null;
+    libraryClientOverride = null;
+    mergeToOggOverride = null;
     return;
   }
   if ("orchestrator" in deps) orchestratorOverride = deps.orchestrator ?? null;
@@ -249,6 +381,8 @@ export function __setTtsPlaybackDepsForTests(deps: {
   if ("cache" in deps) cacheOverride = deps.cache ?? null;
   if ("playlistIndex" in deps) playlistIndexOverride = deps.playlistIndex ?? null;
   if ("notifyError" in deps) notifyNarrationError = deps.notifyError ?? null;
+  if ("libraryClient" in deps) libraryClientOverride = deps.libraryClient ?? null;
+  if ("mergeToOgg" in deps) mergeToOggOverride = deps.mergeToOgg ?? null;
 }
 
 export function __resetKokoroClientForTests(): void {
@@ -267,6 +401,9 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
   progress: {},
 
   async startNarration(messageId, text, profile, meta) {
+    // TPE-18c: library-first — a saved file for this exact variant plays
+    // with zero synthesis (the row already exists, nothing re-indexes).
+    if (meta && (await tryPlayLibrary(messageId, text, meta))) return;
     const orchestrator = orchestratorOverride ?? ensureOrchestrator();
     orchestrator.setRate(get().rate);
     // TPE-18b: a recreated lane (or the real player) starts at full
@@ -324,10 +461,140 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
     set({ autoNarrate: value });
   },
 
-  async loadPlaylist(chatId) {
+  async loadPlaylist(chatId, libraryScope) {
     const index = playlistIndexOverride ?? narrationPlaylistIndex();
     const rows = await index.list(chatId);
     set((s) => ({ playlist: { ...s.playlist, [chatId]: rows } }));
+    // TPE-18c: reconcile in-library flags against the server (the index
+    // flag is a hint — files can be dropped outside this browser).
+    if (libraryScope) await get().refreshLibraryFlags(chatId, libraryScope);
+  },
+
+  async refreshLibraryFlags(chatId, scope) {
+    const rows = get().playlist[chatId] ?? [];
+    if (rows.length === 0) return;
+    const client = narrationLibrary();
+    const reconciled = await Promise.all(
+      rows.map(async (entry) => {
+        const ids: NarrationLibraryIds = {
+          characterId: scope.characterId,
+          chatId,
+          branchId: scope.branchId,
+          messageId: entry.messageId,
+          variantIndex: entry.variantIndex,
+        };
+        try {
+          return { ...entry, inLibrary: await client.recordingExists(ids) };
+        } catch {
+          // Best-effort per row: a failed check keeps the index hint.
+          return entry;
+        }
+      }),
+    );
+    set((s) => ({ playlist: { ...s.playlist, [chatId]: reconciled } }));
+  },
+
+  async saveToLibrary(scope) {
+    const rows = get().playlist[scope.chatId] ?? [];
+    const entry = rows.find((candidate) => candidate.messageId === scope.messageId);
+    if (!entry || entry.cacheKeys.length === 0) {
+      const message = "nothing saved for this message yet — narrate it first, then save";
+      notifyLibraryError(scope.messageId, message);
+      throw new Error(message);
+    }
+    try {
+      const cache = cacheOverride ?? narrationCache();
+      const blobs: Blob[] = [];
+      for (const key of entry.cacheKeys) {
+        let blob: Blob | null = null;
+        try {
+          blob = await cache.get(key);
+        } catch {
+          blob = null;
+        }
+        if (!blob) {
+          throw new Error("a cached segment expired — re-narrate the message, then save again");
+        }
+        blobs.push(blob);
+      }
+      const bytes = await mergeToOgg()(blobs);
+      const ids: NarrationLibraryIds = {
+        characterId: scope.characterId,
+        chatId: scope.chatId,
+        branchId: scope.branchId,
+        messageId: scope.messageId,
+        variantIndex: entry.variantIndex,
+      };
+      const { leaf } = await narrationLibrary().saveRecording(ids, new Blob([bytes], { type: "audio/ogg" }));
+      // Library replaces cache (owner decision): evict the hash keys so
+      // later replays can only come from the single file.
+      for (const key of entry.cacheKeys) {
+        try {
+          await cache.delete(key);
+        } catch {
+          // Best-effort eviction — the library file already won.
+        }
+      }
+      const index = playlistIndexOverride ?? narrationPlaylistIndex();
+      await index.upsert(scope.chatId, { ...entry, inLibrary: true });
+      await refreshPlaylistRows(scope.chatId);
+      return { leaf };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      notifyLibraryError(scope.messageId, message);
+      throw error;
+    }
+  },
+
+  async dropLibraryRow(scope) {
+    const rows = get().playlist[scope.chatId] ?? [];
+    const entry = rows.find((candidate) => candidate.messageId === scope.messageId);
+    if (!entry || entry.inLibrary !== true) {
+      const message = "this message has no saved library file to drop";
+      notifyLibraryError(scope.messageId, message);
+      throw new Error(message);
+    }
+    try {
+      const ids: NarrationLibraryIds = {
+        characterId: scope.characterId,
+        chatId: scope.chatId,
+        branchId: scope.branchId,
+        messageId: scope.messageId,
+        variantIndex: entry.variantIndex,
+      };
+      await narrationLibrary().deleteRecording(ids);
+      // The row stays (replay re-synthesizes fresh); only the flag drops.
+      const index = playlistIndexOverride ?? narrationPlaylistIndex();
+      await index.upsert(scope.chatId, { ...entry, inLibrary: false });
+      await refreshPlaylistRows(scope.chatId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      notifyLibraryError(scope.messageId, message);
+      throw error;
+    }
+  },
+
+  async revealLibraryRow(scope) {
+    const rows = get().playlist[scope.chatId] ?? [];
+    const entry = rows.find((candidate) => candidate.messageId === scope.messageId);
+    if (!entry || entry.inLibrary !== true) {
+      const message = "this message has no saved library file to reveal";
+      notifyLibraryError(scope.messageId, message);
+      throw new Error(message);
+    }
+    try {
+      await narrationLibrary().revealRecording({
+        characterId: scope.characterId,
+        chatId: scope.chatId,
+        branchId: scope.branchId,
+        messageId: scope.messageId,
+        variantIndex: entry.variantIndex,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      notifyLibraryError(scope.messageId, message);
+      throw error;
+    }
   },
 
   clearPlaylist(chatId) {

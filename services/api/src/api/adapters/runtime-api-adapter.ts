@@ -15,6 +15,7 @@ import { LorebookAdapter } from "./lorebook-adapter.js";
 import { ScriptAdapter } from "./script-adapter.js";
 import { RegexAdapter } from "./regex-adapter.js";
 import { TtsAdapter } from "./tts-adapter.js";
+import { NarrationLibraryService } from "../../domain/tts/narration-library.js";
 import { SttAdapter } from "./stt-adapter.js";
 import { ProviderAdapter } from "./provider-adapter.js";
 import { ProxyAdapter } from "./proxy-adapter.js";
@@ -117,7 +118,14 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.script = new ScriptAdapter(stores);
 		this.servicePrompts = new ServicePromptAdapter(stores);
 		this.regex = new RegexAdapter(stores);
-		this.tts = new TtsAdapter(stores);
+		// TPE-18c: the narration library writes into the character's EXISTING
+		// assets folder — same folder resolver the AssetService uses, so
+		// narrations land next to avatars/gallery even post-HRF renames.
+		const narrationLibrary = new NarrationLibraryService({
+			content: stores.content,
+			resolveCharacterFolder: (id) => stores.characters.resolveFolderName(id),
+		});
+		this.tts = new TtsAdapter(stores, narrationLibrary);
 		this.provider = new ProviderAdapter(stores, providerProfileService);
 		this.proxy = new ProxyAdapter(proxyService);
 		this.preset = new PresetAdapter(promptPresetService);
