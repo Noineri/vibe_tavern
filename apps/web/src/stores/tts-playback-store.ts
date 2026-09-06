@@ -28,6 +28,7 @@ import { createNarrationSegmentCache, createNarrationPlaylistIndex } from "../li
 import type { NarrationPlaylistEntry, NarrationPlaylistIndex, NarrationSegmentCache } from "../lib/tts/narration-cache.js";
 import type { NarratedReport, NarrationProgress } from "../lib/tts/tts-orchestrator.js";
 import { clampNarrationVolume, persistNarrationVolume, readNarrationVolume } from "../lib/tts/narration-volume.js";
+import { persistContinuousPlay, readContinuousPlay } from "../lib/tts/narration-continuous.js";
 import { encodeNarrationSegmentsToOgg } from "../lib/tts/narration-ogg.js";
 import { narrationLibraryClient } from "../lib/tts/narration-library-client.js";
 import type { NarrationLibraryClient, NarrationLibraryIds } from "../lib/tts/narration-library-client.js";
@@ -53,14 +54,27 @@ export interface TtsPlaybackState {
   volume: number;
   /** TPE-18b: live playback progress per message (seek-bar source). */
   progress: Record<string, NarrationProgress>;
+  /** TPE-18d: continuous play — a naturally completed row advances to
+   *  the next playlist row (panel order) until messages run out.
+   *  Persisted local pref, default OFF (one-shot stays the default). */
+  continuous: boolean;
+  /** TPE-18d: the next row to start — armed by natural completion
+   *  (handleNarrated), consumed by the panel effect (which owns the
+   *  text/profile needed to start it). Cleared by every stop, every
+   *  fresh start, and chat switches away from its chat. */
+  advanceTo: { chatId: string; messageId: string } | null;
 }
 
 /** TPE-18a: index metadata for one narration start — identifies the chat
  *  and variant the playlist row belongs to. TPE-18c: characterId +
  *  branchId ride along so the store can address the narration library
- *  (one file per message per variant) without a second lookup. */
+ *  (one file per message per variant) without a second lookup.
+ *  TPE-18d: chainQueue carries the panel row order at start time so a
+ *  natural completion can arm the next row (message-row starts never
+ *  set it — only playlist row plays chain). */
 export interface NarrationStartMeta {
   chatId: string;
+  chainQueue?: string[];
   /** Character whose assets folder hosts the library file (null =
    *  unindexed narration — plays, but never library-addressable). */
   characterId: string | null;
@@ -108,6 +122,10 @@ export interface TtsPlaybackActions {
   revealLibraryRow(scope: NarrationLibraryScope): Promise<void>;
   /** TPE-18a: drop one chat's rows from state (chat switch / tests). */
   clearPlaylist(chatId: string): void;
+  /** TPE-18d: continuous-play pref (persisted local, default OFF). */
+  setContinuous(value: boolean): void;
+  /** TPE-18d: drop an armed advance (panel consumed it). */
+  clearAdvance(): void;
 }
 
 export type TtsPlaybackStore = TtsPlaybackState & TtsPlaybackActions;
@@ -267,6 +285,18 @@ async function handleNarrated(messageId: string, report: NarratedReport): Promis
   }
   const rows = await index.list(meta.chatId);
   useTtsPlaybackStore.setState((s) => ({ playlist: { ...s.playlist, [meta.chatId]: rows } }));
+  // TPE-18d: continuous play — a NATURAL completion arms the next
+  // queue row (the panel effect performs the actual start: the store
+  // has no text/profile). stop() never reaches here (epoch-only
+  // completion), so an armed advance always means "played to the end".
+  // No next row (or the finished id left the queue) ends the chain.
+  if (useTtsPlaybackStore.getState().continuous && meta.chainQueue) {
+    const at = meta.chainQueue.indexOf(messageId);
+    const next = at >= 0 ? meta.chainQueue[at + 1] : undefined;
+    if (next !== undefined) {
+      useTtsPlaybackStore.setState({ advanceTo: { chatId: meta.chatId, messageId: next } });
+    }
+  }
 }
 
 /** TPE-18c: write fresh playlist rows for one chat (single state write). */
@@ -399,8 +429,15 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
   lastStarted: null,
   volume: readNarrationVolume(),
   progress: {},
+  continuous: readContinuousPlay(),
+  advanceTo: null,
 
   async startNarration(messageId, text, profile, meta) {
+    // TPE-18d: a fresh start replaces the lane — a stale armed advance
+    // (e.g. a message-row play between completion and the panel effect)
+    // must not fire into the new lane. The panel consumes advanceTo
+    // synchronously before starting, so this never eats a live chain.
+    if (get().advanceTo !== null) set({ advanceTo: null });
     // TPE-18c: library-first — a saved file for this exact variant plays
     // with zero synthesis (the row already exists, nothing re-indexes).
     if (meta && (await tryPlayLibrary(messageId, text, meta))) return;
@@ -437,10 +474,12 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
     const stoppedId = get().lastStarted?.messageId;
     pendingIndexMeta = null;
     set((s) => {
-      if (stoppedId === undefined || !(stoppedId in s.progress)) return { lastStarted: null };
+      // TPE-18d: every stop breaks the chain (global button, row stop,
+      // message switch) — an armed advance dies with the lane.
+      if (stoppedId === undefined || !(stoppedId in s.progress)) return { lastStarted: null, advanceTo: null };
       const progress = { ...s.progress };
       delete progress[stoppedId];
-      return { lastStarted: null, progress };
+      return { lastStarted: null, progress, advanceTo: null };
     });
     (orchestratorOverride ?? activeOrchestrator)?.stop();
   },
@@ -464,7 +503,12 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
   async loadPlaylist(chatId, libraryScope) {
     const index = playlistIndexOverride ?? narrationPlaylistIndex();
     const rows = await index.list(chatId);
-    set((s) => ({ playlist: { ...s.playlist, [chatId]: rows } }));
+    set((s) => ({
+      playlist: { ...s.playlist, [chatId]: rows },
+      // TPE-18d: a chat switch mid-chain stops the chain (the armed
+      // advance belongs to the old chat). Same-chat reloads keep it.
+      advanceTo: s.advanceTo && s.advanceTo.chatId !== chatId ? null : s.advanceTo,
+    }));
     // TPE-18c: reconcile in-library flags against the server (the index
     // flag is a hint — files can be dropped outside this browser).
     if (libraryScope) await get().refreshLibraryFlags(chatId, libraryScope);
@@ -599,11 +643,22 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
 
   clearPlaylist(chatId) {
     set((s) => {
-      if (!(chatId in s.playlist)) return s;
+      // TPE-18d: dropping the chat's rows drops its armed advance too.
+      const advanceTo = s.advanceTo && s.advanceTo.chatId === chatId ? null : s.advanceTo;
+      if (!(chatId in s.playlist)) return advanceTo === s.advanceTo ? s : { ...s, advanceTo };
       const playlist = { ...s.playlist };
       delete playlist[chatId];
-      return { playlist };
+      return { playlist, advanceTo };
     });
+  },
+
+  setContinuous(value) {
+    set({ continuous: value });
+    persistContinuousPlay(value);
+  },
+
+  clearAdvance() {
+    set({ advanceTo: null });
   },
 }));
 

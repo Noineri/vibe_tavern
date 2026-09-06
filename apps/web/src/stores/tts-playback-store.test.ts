@@ -71,7 +71,8 @@ function createFakePlayer(): NarrationPlayer & { playCalls: number } {
 beforeEach(() => {
   // TPE-18b: reset the new player-layer keys too (volume persists across
   // tests otherwise — the store rehydrates from localStorage at creation).
-  useTtsPlaybackStore.setState({ narrations: {}, rate: 1, autoNarrate: false, volume: 1, progress: {} });
+  // TPE-18d: same for the chain pref + any armed advance.
+  useTtsPlaybackStore.setState({ narrations: {}, rate: 1, autoNarrate: false, volume: 1, progress: {}, continuous: false, advanceTo: null });
   __setTtsPlaybackDepsForTests(null);
 });
 
@@ -788,3 +789,188 @@ describe("TPE-18c narration library (store)", () => {
   });
 });
 
+
+describe("TPE-18d continuous play (store chain)", () => {
+  type PlaylistEntry = import("../lib/tts/narration-cache.js").NarrationPlaylistEntry;
+  type PlaylistIndex = import("../lib/tts/narration-cache.js").NarrationPlaylistIndex;
+  type SegmentCache = import("../lib/tts/narration-cache.js").NarrationSegmentCache;
+
+  function memoryCache(): SegmentCache & { blobs: Map<string, Blob> } {
+    const blobs = new Map<string, Blob>();
+    return {
+      blobs,
+      async get(key: string) {
+        return blobs.get(key) ?? null;
+      },
+      async put(key: string, blob: Blob) {
+        blobs.set(key, blob);
+      },
+      async delete(key: string) {
+        blobs.delete(key);
+      },
+    };
+  }
+
+  function memoryIndex(): PlaylistIndex {
+    const chats = new Map<string, Map<string, PlaylistEntry>>();
+    return {
+      async list(chatId: string) {
+        return [...(chats.get(chatId)?.values() ?? [])].sort((a, b) => a.narratedAt - b.narratedAt);
+      },
+      async upsert(chatId: string, entry: PlaylistEntry) {
+        let items = chats.get(chatId);
+        if (!items) {
+          items = new Map();
+          chats.set(chatId, items);
+        }
+        items.set(entry.messageId, entry);
+      },
+      async clear(chatId: string) {
+        chats.delete(chatId);
+      },
+    };
+  }
+
+  const pump = async (cond: () => boolean): Promise<void> => {
+    for (let i = 0; i < 40 && !cond(); i += 1) {
+      await new Promise<void>((r) => setTimeout(r, 25));
+    }
+  };
+
+  function chainMeta(messageId: string, queue: string[]) {
+    return {
+      chatId: "c1",
+      chainQueue: queue,
+      characterId: null,
+      branchId: null,
+      variantId: `${messageId}-v0`,
+      variantIndex: 0,
+      snippet: "Shared",
+    };
+  }
+
+  test("continuous chain of three cached rows advances end-to-end with a single synthesis", async () => {
+    const player = createFakePlayer();
+    const synthCalls: string[] = [];
+    __setTtsPlaybackDepsForTests({
+      player,
+      synthesize: async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([text]), mime: "audio/mpeg" };
+      },
+      cache: memoryCache(),
+      playlistIndex: memoryIndex(),
+    });
+    try {
+      // Same text for all three rows = same segment keys: rows two and
+      // three replay from cache (zero synthesis — the owner scene).
+      const text = "Shared chain line one.\n\nShared chain line two.";
+      const queue = ["m1", "m2", "m3"];
+      useTtsPlaybackStore.getState().setContinuous(true);
+
+      await useTtsPlaybackStore.getState().startNarration("m1", text, profile(), chainMeta("m1", queue));
+      await pump(() => useTtsPlaybackStore.getState().advanceTo?.messageId === "m2");
+      expect(useTtsPlaybackStore.getState().advanceTo).toEqual({ chatId: "c1", messageId: "m2" });
+
+      await useTtsPlaybackStore.getState().startNarration("m2", text, profile(), chainMeta("m2", queue));
+      await pump(() => useTtsPlaybackStore.getState().advanceTo?.messageId === "m3");
+      expect(useTtsPlaybackStore.getState().advanceTo).toEqual({ chatId: "c1", messageId: "m3" });
+
+      await useTtsPlaybackStore.getState().startNarration("m3", text, profile(), chainMeta("m3", queue));
+      await pump(() => useTtsPlaybackStore.getState().narrations["m3"]?.status === "complete");
+      // Chain exhausted — nothing armed after the last row.
+      await new Promise<void>((r) => setTimeout(r, 100));
+      expect(useTtsPlaybackStore.getState().advanceTo).toBeNull();
+
+      // Two segments synthesized once for m1; m2/m3 were pure cache hits.
+      expect(synthCalls).toHaveLength(2);
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+      expect(useTtsPlaybackStore.getState().narrations["m2"]?.status).toBe("complete");
+      expect(useTtsPlaybackStore.getState().narrations["m3"]?.status).toBe("complete");
+    } finally {
+      useTtsPlaybackStore.getState().setContinuous(false);
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+
+  test("mid-chain stop breaks the chain — an armed advance dies with the lane", async () => {
+    const player = createFakePlayer();
+    let synthCalls = 0;
+    __setTtsPlaybackDepsForTests({
+      player,
+      synthesize: async (text: string) => {
+        synthCalls += 1;
+        return { blob: new Blob([text]), mime: "audio/mpeg" };
+      },
+      cache: memoryCache(),
+      playlistIndex: memoryIndex(),
+    });
+    try {
+      useTtsPlaybackStore.getState().setContinuous(true);
+      await useTtsPlaybackStore
+        .getState()
+        .startNarration("m1", "Stop me.\n\nPlease.", profile(), chainMeta("m1", ["m1", "m2"]));
+      await pump(() => useTtsPlaybackStore.getState().advanceTo?.messageId === "m2");
+      expect(useTtsPlaybackStore.getState().advanceTo).toEqual({ chatId: "c1", messageId: "m2" });
+
+      // The owner scene: stop AFTER the arm, before the panel consumes it.
+      useTtsPlaybackStore.getState().stopNarration();
+      expect(useTtsPlaybackStore.getState().advanceTo).toBeNull();
+      expect(useTtsPlaybackStore.getState().lastStarted).toBeNull();
+      await new Promise<void>((r) => setTimeout(r, 150));
+      expect(useTtsPlaybackStore.getState().advanceTo).toBeNull();
+      expect(synthCalls).toBe(2);
+    } finally {
+      useTtsPlaybackStore.getState().setContinuous(false);
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+
+  test("toggle off stays one-shot — a queued completion arms nothing (regression pin)", async () => {
+    const player = createFakePlayer();
+    __setTtsPlaybackDepsForTests({
+      player,
+      synthesize: async (text: string) => ({ blob: new Blob([text]), mime: "audio/mpeg" }),
+      cache: memoryCache(),
+      playlistIndex: memoryIndex(),
+    });
+    try {
+      expect(useTtsPlaybackStore.getState().continuous).toBe(false);
+      await useTtsPlaybackStore
+        .getState()
+        .startNarration("m1", "One shot.\n\nOnly.", profile(), chainMeta("m1", ["m1", "m2"]));
+      await pump(() => useTtsPlaybackStore.getState().narrations["m1"]?.status === "complete");
+      // Let the floating completion report land — still nothing armed.
+      await new Promise<void>((r) => setTimeout(r, 100));
+      expect(useTtsPlaybackStore.getState().advanceTo).toBeNull();
+    } finally {
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+
+  test("chat switch clears an armed advance; same-chat reload keeps it", async () => {
+    const player = createFakePlayer();
+    __setTtsPlaybackDepsForTests({
+      player,
+      synthesize: async (text: string) => ({ blob: new Blob([text]), mime: "audio/mpeg" }),
+      cache: memoryCache(),
+      playlistIndex: memoryIndex(),
+    });
+    try {
+      useTtsPlaybackStore.getState().setContinuous(true);
+      await useTtsPlaybackStore
+        .getState()
+        .startNarration("m1", "Arm me.\n\nNow.", profile(), chainMeta("m1", ["m1", "m2"]));
+      await pump(() => useTtsPlaybackStore.getState().advanceTo?.messageId === "m2");
+
+      await useTtsPlaybackStore.getState().loadPlaylist("c1");
+      expect(useTtsPlaybackStore.getState().advanceTo).toEqual({ chatId: "c1", messageId: "m2" });
+
+      await useTtsPlaybackStore.getState().loadPlaylist("c2");
+      expect(useTtsPlaybackStore.getState().advanceTo).toBeNull();
+    } finally {
+      useTtsPlaybackStore.getState().setContinuous(false);
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+});

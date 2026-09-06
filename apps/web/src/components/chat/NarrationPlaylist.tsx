@@ -9,11 +9,13 @@ import { Ic } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { EmptyState } from "../shared/empty-state.js";
 import { SliderField } from "../shared/SliderField.js";
+import { Toggle } from "../shared/Toggle.js";
 
 /** TPE-18a: the playlist body (DiceTray twin) — rows for everything
  *  narrated (or being narrated) in the current chat, plus the footer
- *  controls (global stop + pause + playback rate + volume, TPE-18b).
- *  NO library (TPE-18c), NO auto-advance (TPE-18d). */
+ *  controls (global stop + pause + playback rate + volume, TPE-18b;
+ *  continuous-play toggle, TPE-18d). NO library file writes here —
+ *  the save/reveal/drop buttons call back into TPE-18c store actions. */
 
 /** TPE-18b: m:ss clock for the seek bar (RU-safe: digits only). */
 export function formatPlaybackTime(totalSeconds: number): string {
@@ -174,6 +176,9 @@ export interface NarrationPlaylistProps {
   readonly progress: Record<string, NarrationProgress>;
   /** TPE-18b: global narration volume 0..1 (shared SliderField). */
   readonly volume: number;
+  /** TPE-18d: continuous-play pref (footer toggle, default OFF). */
+  readonly continuous: boolean;
+  readonly onContinuous: (value: boolean) => void;
   readonly onPlay: (messageId: string) => void;
   readonly onStop: () => void;
   readonly onCycleRate: () => void;
@@ -271,6 +276,21 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
           >
             {`×${input.rate}`}
           </button>
+        </CustomTooltip>
+        {/* TPE-18d: continuous-play toggle — label + switch. Footer
+          arithmetic: stop 28 + pause 28 + rate ~44 + gaps 18 ≈ 118px;
+          toggle ~34 + RU label ~90 + gaps ≈ 140px; total ≈ 260px <
+          392px inner width. The full phrase lives in the tooltip so
+          the short label never truncates meaning. */}
+        <CustomTooltip content={t("narration_playlist_continuous_hint")}>
+          <label className="ml-auto flex min-w-0 cursor-pointer items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
+            <Toggle
+              checked={input.continuous}
+              onChange={input.onContinuous}
+              aria-label={t("narration_playlist_continuous")}
+            />
+            <span className="truncate">{t("narration_playlist_continuous")}</span>
+          </label>
         </CustomTooltip>
       </div>
       {/* TPE-18b: global volume as its own footer row — the shared

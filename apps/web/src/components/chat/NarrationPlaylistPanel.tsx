@@ -15,7 +15,7 @@ import { Ic, Icons } from "../shared/icons.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import type { NarrationPlaylistEntry } from "../../lib/tts/narration-cache.js";
-import { NarrationPlaylist, nextPlaybackRate } from "./NarrationPlaylist.js";
+import { NarrationPlaylist, buildPlaylistRows, nextPlaybackRate } from "./NarrationPlaylist.js";
 
 /** TPE-18a: narration playlist panel — the DicePanel twin for voiced
  *  messages. Pill above the chat (launcher-bar sibling) → Radix Popover
@@ -61,6 +61,11 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
   const volume = useTtsPlaybackStore((s) => s.volume);
   const progress = useTtsPlaybackStore((s) => s.progress);
   const startNarration = useTtsPlaybackStore((s) => s.startNarration);
+  // TPE-18d: continuous-play pref + chain arming/consumption.
+  const continuous = useTtsPlaybackStore((s) => s.continuous);
+  const advanceTo = useTtsPlaybackStore((s) => s.advanceTo);
+  const setContinuous = useTtsPlaybackStore((s) => s.setContinuous);
+  const clearAdvance = useTtsPlaybackStore((s) => s.clearAdvance);
   const stopNarration = useTtsPlaybackStore((s) => s.stopNarration);
   const pauseNarration = useTtsPlaybackStore((s) => s.pause);
   const resumeNarration = useTtsPlaybackStore((s) => s.resume);
@@ -125,8 +130,14 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       const message = messages.find((candidate) => candidate.id === messageId);
       const source = voicedVariantSource(message ?? null, macroContext, isCoauthorMode);
       if (!source || !chatId) return;
+      // TPE-18d: arm the chain with the CURRENT panel row order (the
+      // same derivation the list renders — live rows first, chat order).
+      // Message-row starts never set chainQueue, so only panel plays
+      // chain; a natural completion arms the row after the finished one.
+      const chainQueue = buildPlaylistRows(messages, entries, narrations, liveTextById).map((row) => row.messageId);
       void startNarration(messageId, source.text, resolution.profile, {
         chatId,
+        chainQueue,
         characterId,
         branchId,
         variantId: source.variantId,
@@ -134,8 +145,18 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
         snippet: source.snippet,
       });
     },
-    [resolution, messages, macroContext, isCoauthorMode, chatId, characterId, branchId, startNarration],
+    [resolution, messages, entries, narrations, liveTextById, macroContext, isCoauthorMode, chatId, characterId, branchId, startNarration],
   );
+
+  // TPE-18d: consume an armed advance — the store fires this only on a
+  // natural completion (stop paths clear it), so reaching here always
+  // means "played to the end, chain on". onPlay re-arms from the
+  // clicked row, keeping the queue fresh as rows land.
+  useEffect(() => {
+    if (!advanceTo || advanceTo.chatId !== chatId || !continuous) return;
+    onPlay(advanceTo.messageId);
+    clearAdvance();
+  }, [advanceTo, chatId, continuous, onPlay, clearAdvance]);
 
   const onCycleRate = useCallback(() => {
     setRate(nextPlaybackRate(rate));
@@ -225,6 +246,8 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       onResume={resumeNarration}
       onSeek={onSeek}
       onVolume={setVolume}
+      continuous={continuous}
+      onContinuous={setContinuous}
       onSave={onSave}
       onReveal={onReveal}
       onDrop={onDrop}

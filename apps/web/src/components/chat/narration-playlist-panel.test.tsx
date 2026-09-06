@@ -272,8 +272,9 @@ beforeEach(() => {
   libraryRevealed = [];
   // TPE-18b: reset the player-layer keys too (volume rehydrates from
   // localStorage at creation and would otherwise leak between tests).
+  // TPE-18d: same for the chain pref + any armed advance.
   localStorage.clear();
-  useTtsPlaybackStore.setState({ narrations: {}, playlist: {}, lastStarted: null, rate: 1, autoNarrate: false, volume: 1, progress: {} });
+  useTtsPlaybackStore.setState({ narrations: {}, playlist: {}, lastStarted: null, rate: 1, autoNarrate: false, volume: 1, progress: {}, continuous: false, advanceTo: null });
   __setTtsPlaybackDepsForTests({
     player: autoPlayer(),
     synthesize: mock(async (text: string) => {
@@ -749,4 +750,74 @@ describe("narration playlist library (TPE-18c)", () => {
     expect(en["narration_playlist_save"]).not.toBe(ru["narration_playlist_save"]);
   });
 });
+});
+
+describe("narration playlist continuous play (TPE-18d)", () => {
+  async function seedM1WithQueue(queue: string[]): Promise<void> {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", "First line\nSecond line", profile(), {
+        chatId: "c1",
+        chainQueue: queue,
+        characterId: "char1",
+        branchId: "b1",
+        variantId: "m1-v1",
+        variantIndex: 0,
+        snippet: "First line\nSecond line",
+      });
+    });
+  }
+
+  async function openPanel(): Promise<{ getByTestId: (id: string) => HTMLElement }> {
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    return { getByTestId: getByTestId as (id: string) => HTMLElement };
+  }
+
+  it("footer toggle flips the pref and persists it across reload", async () => {
+    await seedM1WithQueue(["m1"]);
+    await openPanel();
+    expect(useTtsPlaybackStore.getState().continuous).toBe(false);
+
+    const toggle = document.querySelector('[aria-label="narration_playlist_continuous"]');
+    expect(toggle).not.toBeNull();
+    await act(async () => { fireEvent.click(toggle!); });
+    expect(useTtsPlaybackStore.getState().continuous).toBe(true);
+    expect(localStorage.getItem("vt.tts.continuous-play")).toBe("true");
+
+    await act(async () => { fireEvent.click(toggle!); });
+    expect(useTtsPlaybackStore.getState().continuous).toBe(false);
+    expect(localStorage.getItem("vt.tts.continuous-play")).toBe("false");
+  });
+
+  it("armed advance auto-plays the next row end-to-end (owner chain scene)", async () => {
+    mocks.messages = [m1(), m2()];
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    await act(async () => {
+      useTtsPlaybackStore.getState().setContinuous(true);
+    });
+    await seedM1WithQueue(["m1", "m2"]);
+
+    // m1 completes → the panel effect starts m2 with its voiced text.
+    await waitFor(() => {
+      const narr = useTtsPlaybackStore.getState().narrations["m2"];
+      if (!narr || narr.status !== "complete") throw new Error("m2 not complete yet");
+    });
+    expect(synthCalls).toContain("First line\nSecond line");
+    expect(synthCalls).toContain("Second message body here");
+    // Chain exhausted after the last row — nothing stays armed.
+    await waitFor(() => {
+      if (useTtsPlaybackStore.getState().advanceTo !== null) throw new Error("advance still armed");
+    });
+    expect(getByTestId("narration-playlist-pill")).toBeDefined();
+  });
+
+  it("continuous strings exist in en and ru", () => {
+    for (const key of ["narration_playlist_continuous", "narration_playlist_continuous_hint"] as const) {
+      expect(en[key]).toBeTruthy();
+      expect(ru[key]).toBeTruthy();
+    }
+    expect(en["narration_playlist_continuous"]).not.toBe(ru["narration_playlist_continuous"]);
+  });
 });

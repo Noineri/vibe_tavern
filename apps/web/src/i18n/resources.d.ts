@@ -1429,6 +1429,8 @@ export default interface Resources {
     "narrate_stop": "Stop narration",
     "narrate_stop_tooltip": "Stop narration",
     "narrate_tooltip": "Read this message aloud",
+    "narration_playlist_continuous": "Continuous",
+    "narration_playlist_continuous_hint": "Play the playlist in order until messages run out",
     "narration_playlist_count": "{count} narrated",
     "narration_playlist_count_one": "{count} narrated",
     "narration_playlist_count_other": "{count} narrated",
