@@ -187,6 +187,22 @@ function seedMessage(variants: AppMessage["variants"], selectedVariantIndex = 0)
   }));
 }
 
+/** FS-4: make MID the greeting — the first assistant message in the order
+ *  (the row derivation: MessageList firstAssistantMsgId + isFirstAssistant). */
+function seedGreetingOrder() {
+  useSnapshotStore.setState({ messageOrder: [MID] } as Partial<SnapshotStore> as SnapshotStore);
+}
+
+/** FS-4: the same MID is NOT a greeting when an earlier assistant message
+ *  precedes it in the order. */
+function seedPrecedingAssistantMessage() {
+  const earlier = brandId<MessageId>("msg-0");
+  useSnapshotStore.setState((s) => ({
+    messagesById: { ...s.messagesById, [earlier]: makeMessage({ id: earlier, content: "earlier assistant message" }) },
+    messageOrder: [earlier, MID],
+  }));
+}
+
 function makeVariants(n: number): AppMessage["variants"] {
   return Array.from({ length: n }, (_, i) => ({
     id: brandId<MessageVariantId>(`var-${i}`),
@@ -1020,6 +1036,58 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
 
     // Success closes the editor.
     await waitFor(() => expect(useMessageAiEditorStore.getState().target).toBeNull());
+  });
+
+  it("FS-4a: greeting target hides Merge even with >6 variants (annotate entry — the real greeting path)", () => {
+    // The defect path: greetings open the modal via annotate entry, and the
+    // in-modal switcher offered Merge whenever the jump browser existed.
+    seedMessage(makeVariants(8));
+    seedGreetingOrder();
+    openEditorForAnnotate();
+    renderModal();
+    // Merge forbidden (owner: «конечно запретить»); Edit hidden by the
+    // TPE-20 guard (annotate entries carry no captured variant); Annotate
+    // keeps the modal alive — never an empty selector or a dead modal.
+    expect(screen.queryByText("message_ai_editor_mode_merge")).toBeNull();
+    expect(screen.queryByText("message_ai_editor_mode_edit")).toBeNull();
+    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    expect(screen.getByText("message_ai_editor_annotate_hint")).toBeTruthy();
+  });
+
+  it("FS-4b: the same message is NOT a greeting when another assistant message precedes it — Merge stays", () => {
+    // Same target, same variant count; only the order changes. Proves the
+    // ban follows the row derivation (first assistant message), not the
+    // message itself.
+    seedMessage(makeVariants(8));
+    seedPrecedingAssistantMessage();
+    openEditorForEdit(brandId<MessageVariantId>("var-0"));
+    renderModal();
+    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    expect(screen.getByText("message_ai_editor_mode_merge")).toBeTruthy();
+    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+  });
+
+  it("FS-4c: TPE-20 guard intact on non-greeting annotate entries — Edit hidden, Merge + Annotate offered", () => {
+    seedMessage(makeVariants(8));
+    seedPrecedingAssistantMessage();
+    openEditorForAnnotate();
+    renderModal();
+    expect(screen.queryByText("message_ai_editor_mode_edit")).toBeNull();
+    expect(screen.getByText("message_ai_editor_mode_merge")).toBeTruthy();
+    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+  });
+
+  it("FS-4d: merge requested directly on a greeting degrades to Annotate (no stranded merge mode)", () => {
+    // requestedMode=message_merge on a greeting is unreachable through the
+    // UI, but the store accepts it — the clamp must land on Annotate.
+    seedMessage(makeVariants(8));
+    seedGreetingOrder();
+    openEditorForMerge();
+    renderModal();
+    expect(screen.queryByText("message_ai_editor_mode_merge")).toBeNull();
+    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    expect(screen.getByText("message_ai_editor_annotate_hint")).toBeTruthy();
+    expect(screen.queryByText("message_ai_editor_merge_min_sources")).toBeNull();
   });
 
   it("annotate shows the word diff against the variant content (inserted tags are visible)", async () => {

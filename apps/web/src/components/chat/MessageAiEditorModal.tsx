@@ -58,6 +58,7 @@ import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { useMessageAiEditorStore, type MessageAiEditorMode } from "../../stores/message-ai-editor-store.js";
+import { useMessageOrder } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMacroContext } from "../../stores/chat-selectors.js";
 import { replaceUiMacros } from "../../lib/macros.js";
@@ -117,6 +118,19 @@ export function MessageAiEditorModal() {
   // selected source variant for edit) disappears mid-session, the modal
   // surfaces a non-destructive stale-target state and blocks Apply/Save.
   const targetMessage = targetMessageId !== null ? messagesById[targetMessageId] ?? null : null;
+  // FS-4: row parity for the merge ban. The SAME derivation the rows use —
+  // MessageList.tsx computes firstAssistantMsgId as the first id in
+  // messageOrder whose message has role "assistant", and MessageBlock.tsx:123
+  // reads `isGreeting = !!msg && input.isFirstAssistant`. Reused verbatim
+  // here (live subscription, same source) — no second definition.
+  const messageOrder = useMessageOrder();
+  const firstAssistantMsgId = useMemo(() => {
+    for (const id of messageOrder) {
+      if (messagesById[id]?.role === "assistant") return id;
+    }
+    return null;
+  }, [messageOrder, messagesById]);
+  const isGreetingTarget = targetMessage !== null && targetMessageId === firstAssistantMsgId;
 
   // Active mode starts from the requested mode but the user may switch via
   // the SegmentedControl. Reset whenever a new target opens.
@@ -256,6 +270,26 @@ export function MessageAiEditorModal() {
   // that there is no way to star anything, so the merge option is hidden rather
   // than offered with an impossible-to-satisfy empty source state.
   const canMerge = (targetMessage?.variants.length ?? 0) > 6;
+  /** FS-4: Merge is forbidden on greeting targets even when the jump
+   *  browser exists (>6 variants) — parity with row-level
+   *  `canAiEdit = !isGreeting` (owner: «конечно запретить»). The in-modal
+   *  mode switcher is the only path that could offer it (annotate-entry on
+   *  a greeting), so hiding the option closes the hole. */
+  const canOfferMerge = canMerge && !isGreetingTarget;
+  // FS-4: clamp a merge session off a greeting target. requestedMode=merge
+  // on a greeting is unreachable through the UI, but the store accepts it —
+  // without the clamp the switcher would hold a value with no matching
+  // segment (a dead modal). Falls back to Edit when the session captured a
+  // variant, else Annotate (always offered). Deliberately merge-on-greeting
+  // only: the pinned below-minimum merge state (≤6 variants) and the
+  // stale-source banner are separate contracts and stay untouched.
+  // Instruction/candidate are untouched: generation must be re-triggered
+  // explicitly, and nothing here mutates canonical state.
+  useEffect(() => {
+    if (target && activeMode === "message_merge" && isGreetingTarget) {
+      setActiveMode(editSourceVariantId !== null ? "message_edit" : "message_tts_annotate");
+    }
+  }, [target, activeMode, isGreetingTarget, editSourceVariantId]);
 
   // ─── Token + assembled-context preview (debounced over the live body) ───
   const previewSourceVariantIds: MessageVariantId[] = activeMode === "message_edit"
@@ -629,9 +663,10 @@ export function MessageAiEditorModal() {
                 // Merge stars variants in the jump browser, which only renders
                 // for messages with > 6 variants — below that the option is
                 // hidden rather than offered with an impossible empty source
-                // state. Annotate needs only the selected variant, so it stays
-                // available on every message.
-                ...(canMerge ? [{ value: "message_merge", label: tDynamic("message_ai_editor_mode_merge") }] : []),
+                // state. FS-4: merge is additionally forbidden on greeting
+                // targets (canOfferMerge) — Annotate needs only the selected
+                // variant, so it stays available on every message.
+                ...(canOfferMerge ? [{ value: "message_merge", label: tDynamic("message_ai_editor_mode_merge") }] : []),
                 { value: "message_tts_annotate", label: tDynamic("message_ai_editor_mode_annotate") },
               ]}
               compact
