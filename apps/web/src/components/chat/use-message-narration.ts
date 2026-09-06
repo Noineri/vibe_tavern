@@ -1,12 +1,14 @@
 import { useCallback, useMemo } from "react";
 
 import { useTtsPlaybackStore } from "../../stores/tts-playback-store.js";
+import type { NarrationStartMeta } from "../../stores/tts-playback-store.js";
 import { useMacroContext } from "../../stores/chat-selectors.js";
-import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useMessage, useSnapshotStore } from "../../stores/snapshot-store.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { resolveNarrationProfile } from "../../lib/tts/voice-map.js";
 import { prepareNarrationTextPreservingTags, narrationTextOptionsForMode } from "../../lib/tts/narration-text.js";
 import { readTtsNarrationMode } from "../../lib/local-storage.js";
+import { firstTwoLines, voicedVariantSource } from "../../lib/tts/narration-source.js";
 import { useVoiceMapData } from "../../lib/tts/voice-map-data.js";
 
 export function useMessageNarration(
@@ -24,6 +26,8 @@ export function useMessageNarration(
   // store), so the narrated text always matches the screen text.
   const macroContext = useMacroContext();
   const isCoauthorMode = useSnapshotStore((s) => s.activeChat?.mode === "coauthor");
+  const activeChatId = useSnapshotStore((s) => (s.activeChat ? String(s.activeChat.id) : null));
+  const message = useMessage(messageId);
 
   const resolution = useMemo(() => {
     if (data === null) return null;
@@ -65,8 +69,24 @@ export function useMessageNarration(
       ...narrationTextOptionsForMode(readTtsNarrationMode()),
     });
     if (text.trim().length === 0) return;
-    void startNarration(messageId, text, resolution.profile);
-  }, [narrating, available, resolution, getText, messageId, startNarration, stopNarration, macroContext, isCoauthorMode]);
+    // TPE-18a: playlist index meta from the shared voicedVariantSource
+    // seam (same selected-variant preference, same TPE-19 macro rules).
+    // The snippet is cut from the final voiced text (what the
+    // synthesizer receives), not from the pre-prepare source.
+    const source = voicedVariantSource(message, macroContext, isCoauthorMode);
+    // Null-safe: without a chat or message the narration still plays,
+    // just unindexed.
+    const meta: NarrationStartMeta | undefined =
+      activeChatId && source
+        ? {
+            chatId: activeChatId,
+            variantId: source.variantId,
+            variantIndex: source.variantIndex,
+            snippet: firstTwoLines(text),
+          }
+        : undefined;
+    void startNarration(messageId, text, resolution.profile, meta);
+  }, [narrating, available, resolution, getText, messageId, startNarration, stopNarration, macroContext, isCoauthorMode, activeChatId, message]);
 
   return { available, narrating, onNarrate };
 }

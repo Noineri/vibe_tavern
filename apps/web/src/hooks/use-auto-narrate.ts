@@ -3,12 +3,10 @@ import { useEffect, useRef } from "react";
 import { useChatStore } from "../stores/chat-store.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useMacroContext } from "../stores/chat-selectors.js";
-import { replaceUiMacros } from "../lib/macros.js";
 import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
 import { useVoiceMapData } from "../lib/tts/voice-map-data.js";
 import { resolveNarrationProfile } from "../lib/tts/voice-map.js";
-import { prepareNarrationTextPreservingTags, narrationTextOptionsForMode } from "../lib/tts/narration-text.js";
-import { readTtsNarrationMode } from "../lib/local-storage.js";
+import { voicedVariantSource } from "../lib/tts/narration-source.js";
 
 export function useAutoNarrate(): void {
   const autoNarrate = useTtsPlaybackStore((s) => s.autoNarrate);
@@ -71,34 +69,30 @@ export function useAutoNarrate(): void {
         prevStreamingIdRef.current = cur;
         return;
       }
-      // Text seam: mirror `useDisplayMessage` (chat-selectors) — macro-resolve
-      // UI macros ({{user}}/{{char}} literal names must not be spoken raw);
-      // skip in coauthor mode exactly like the display selector. KNOWN v1
-      // DIVERGENCE (documented in TTS_PLAN): markdownOnly display-regex presets
-      // are NOT re-applied here (that seam lives inside MessageBlock's render
+      // Text seam: the shared voicedVariantSource (TPE-18a) — same
+      // selected-variant preference (TTS annotation first, TPE-1) and same
+      // TPE-19 macro rules as the manual button, so both speak
+      // byte-identical text for the same message. KNOWN v1 DIVERGENCE
+      // (documented in TTS_PLAN): markdownOnly display-regex presets are
+      // NOT re-applied here (that seam lives inside MessageBlock's render
       // hooks); persist-mode regex already baked into stored content. The
       // manual narrate button reads the exact screen text.
-      // TPE-1: the selected variant's TTS annotation, when present, IS the
-      // narration source (same preference as the manual button) — the same
-      // macro rules apply to it.
-      const selectedVariant = msg.variants.find((variant) => variant.isSelected) ?? null;
-      const source = selectedVariant?.ttsAnnotation ?? msg.content;
-      const base =
-        macroContext && activeChat?.mode !== "coauthor"
-          ? replaceUiMacros(source, macroContext)
-          : source;
-      const text = prepareNarrationTextPreservingTags(base, {
-        regexPresets: [],
-        skipCodeblocks: true,
-        stripHtml: true,
-        ...narrationTextOptionsForMode(readTtsNarrationMode()),
-      });
-      if (text.trim().length === 0) {
+      const source = voicedVariantSource(msg, macroContext, activeChat?.mode === "coauthor");
+      if (!source) {
+        // No speakable text (no variants / empty after cleaning) — consume
+        // the transition like every other early-return path above.
         prevStreamingIdRef.current = cur;
         return;
       }
+      const { text } = source;
       lastAutoNarratedIdRef.current = finishedId;
-      void startNarration(finishedId, text, resolution.profile);
+      // TPE-18a: playlist index meta — the chat + variant this narration
+      // belongs to, plus the two-line snippet (owner decision). The store
+      // writes the index row when the orchestrator reports completion.
+      const meta = activeChatId
+        ? { chatId: activeChatId, variantId: source.variantId, variantIndex: source.variantIndex, snippet: source.snippet }
+        : undefined;
+      void startNarration(finishedId, text, resolution.profile, meta);
     }
 
     prevStreamingIdRef.current = cur;

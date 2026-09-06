@@ -228,7 +228,7 @@ export function MessageShell(props: MessageShellProps) {
         </div>,
         document.body,
       )}
-      <div className={isMobile ? "relative mx-auto w-full px-3" : "relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7"}>
+      <div data-message-id={messageId} className={isMobile ? "relative mx-auto w-full px-3" : "relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7"}>
         <div className={msgWrap}>
           {/* ── Author Header ── */}
           {/* Assistant messages use the adaptive context header (identity +

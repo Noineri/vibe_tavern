@@ -48,6 +48,15 @@ export interface SynthesizeOptions {
   signal?: AbortSignal;
 }
 
+/** TPE-18a: completion report for one successful narration — the segment
+ *  cache keys that back it (replay = cache hits) plus the segment count.
+ *  Fired exactly once per genuinely completed narrate(); stop() and error
+ *  paths never report. */
+export interface NarratedReport {
+  cacheKeys: string[];
+  segments: number;
+}
+
 export interface NarrationDeps {
   synthesize(
     text: string,
@@ -59,6 +68,10 @@ export interface NarrationDeps {
   /** Pre-narration text transform — identity seam, TS-10 wires the real pipeline. */
   preprocess?(text: string): string;
   onState(messageId: string, state: NarrationState): void;
+  /** TPE-18a: fired once when a narrate() genuinely completes (all
+   *  segments generated and played, no failure). Optional so pure unit
+   *  tests can omit it; the store wires the playlist index here. */
+  onNarrated?(messageId: string, report: NarratedReport): void;
   /** TPE-16: segment blob cache (resume without re-generation). Optional
    *  so pure unit tests can omit it; the store always wires the shared one. */
   cache?: NarrationSegmentCache;
@@ -101,6 +114,15 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
    *  (resume serves them from the cache) and the terminal state is the
    *  error — never a silent return to idle. */
   let failedMessage: string | null = null;
+
+  /** TPE-18a: segment cache keys of the ruling epoch (cache hits AND
+   *  fresh syntheses) — reported once via onNarrated when the narration
+   *  genuinely completes, so the playlist index can point at them. */
+  let epochKeys: string[] = [];
+  /** TPE-18a: the report fired at most once per epoch (completion can be
+   *  reached via runPlayback, the narrate tail, or resume — exactly one
+   *  of them reports). */
+  let epochReported = false;
 
   function isAbortError(error: unknown): boolean {
     return (
@@ -157,6 +179,16 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     deps.onState(activeMessageId, state);
   }
 
+  /** TPE-18a: report a genuine completion exactly once per epoch. Only
+   *  the success paths call this — stop() emits "complete" directly
+   *  (it must NOT index an aborted lane) and error paths never do. */
+  function reportNarrated(): void {
+    if (!activeMessageId || epochReported) return;
+    if (failedMessage !== null || pendingBlobs.length !== 0 || !generationDone) return;
+    epochReported = true;
+    deps.onNarrated?.(activeMessageId, { cacheKeys: [...epochKeys], segments: totalSegments });
+  }
+
   /** Mark the playback loop as exited and wake whoever awaits its completion.
    *  Called only from the loop itself (its epoch is still the ruling one —
    *  stop()/reset paths clear the flag on their own before the loop unwinds). */
@@ -194,7 +226,10 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
           // TPE-16: a hard failure mid-queue drains the good segments
           // first — the terminal state stays the error, never complete.
           if (failedMessage !== null) emitState("error", failedMessage);
-          else emitState("complete");
+          else {
+            emitState("complete");
+            reportNarrated();
+          }
           settlePlayback();
           return;
         }
@@ -232,10 +267,17 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       if (pendingBlobs.length === 0 && generationDone) {
         // TPE-16: see above — drain-then-error on hard failure.
         if (failedMessage !== null) emitState("error", failedMessage);
-        else emitState("complete");
+        else {
+          emitState("complete");
+          reportNarrated();
+        }
         settlePlayback();
         return;
       }
+      // TPE-18a: surface per-segment progress — the playlist live row
+      // reads played/total as its n/total fetch indicator. Same status,
+      // new count; terminal branches above stay the only completions.
+      emitState("playing");
     }
     wakeStaleWaiter();
   }
@@ -250,6 +292,9 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     pendingBlobs = [];
     generationDone = false;
     failedMessage = null;
+    // TPE-18a: a retired epoch must never report (its keys are stale).
+    epochKeys = [];
+    epochReported = true;
     playbackRunning = false;
     paused = false;
     playedCount = 0;
@@ -294,6 +339,8 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       generationDone = false;
       failedMessage = null;
       pendingBlobs = [];
+      epochKeys = [];
+      epochReported = false;
       synthesisController = new AbortController();
       const synthesisSignal = synthesisController.signal;
       // TPE-16: wait-for-full-generation profile flag — progressive
@@ -335,6 +382,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
           if (cached) {
             if (myEpoch !== epoch || generationDone) return false;
             pendingBlobs.push({ blob: cached, cacheKey: key });
+            epochKeys.push(key);
             kickPlayback();
             return true;
           }
@@ -355,6 +403,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
             }
             if (myEpoch !== epoch || generationDone) return false;
             pendingBlobs.push({ blob: result.blob, cacheKey: key });
+            epochKeys.push(key);
             kickPlayback();
             return true;
           } catch (error) {
@@ -446,6 +495,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
         // terminal state is emitted exactly once.
         if (lastState?.status !== "complete" && lastState?.status !== "error") {
           emitState("complete");
+          reportNarrated();
         }
       }
     },
@@ -467,7 +517,11 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       } else if (!playbackRunning && pendingBlobs.length === 0 && generationDone) {
         // TPE-16: a failed narration stays failed — resume must never flip
         // an error into a completion.
-        if (lastState?.status !== "complete" && lastState?.status !== "error") emitState("complete");
+        if (lastState?.status !== "complete" && lastState?.status !== "error") {
+          emitState("complete");
+          // TPE-18a: playback finished while parked on pause — genuine.
+          reportNarrated();
+        }
       }
     },
 

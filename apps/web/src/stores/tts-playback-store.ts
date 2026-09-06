@@ -24,7 +24,9 @@ import type { NarrationPlayer } from "../lib/tts/narration-player.js";
 import { chunkNarrationText } from "../lib/tts/kokoro/kokoro-text.js";
 import { createTtsOrchestrator } from "../lib/tts/tts-orchestrator.js";
 import type { NarrationState, SynthesizeOptions } from "../lib/tts/tts-orchestrator.js";
-import { createNarrationSegmentCache, type NarrationSegmentCache } from "../lib/tts/narration-cache.js";
+import { createNarrationSegmentCache, createNarrationPlaylistIndex } from "../lib/tts/narration-cache.js";
+import type { NarrationPlaylistEntry, NarrationPlaylistIndex, NarrationSegmentCache } from "../lib/tts/narration-cache.js";
+import type { NarratedReport } from "../lib/tts/tts-orchestrator.js";
 
 export type { NarrationState };
 
@@ -32,16 +34,40 @@ export interface TtsPlaybackState {
   narrations: Record<string, NarrationState>;
   rate: number;
   autoNarrate: boolean;
+  /** TPE-18a: playlist index rows per chat (loaded via loadPlaylist). */
+  playlist: Record<string, NarrationPlaylistEntry[]>;
+  /** TPE-18a: the most recently started narration (text + index meta so
+   *  the panel can render the live row before the index row lands).
+   *  Cleared by stopNarration, overwritten by every start. */
+  lastStarted: {
+    messageId: string;
+    text: string;
+    meta: NarrationStartMeta | null;
+  } | null;
+}
+
+/** TPE-18a: index metadata for one narration start — identifies the chat
+ *  and variant the playlist row belongs to. */
+export interface NarrationStartMeta {
+  chatId: string;
+  variantId: string;
+  variantIndex: number;
+  /** First two lines of the voiced variant text (owner decision). */
+  snippet: string;
 }
 
 export interface TtsPlaybackActions {
-  startNarration(messageId: string, text: string, profile: TtsProfileRecord): Promise<void>;
+  startNarration(messageId: string, text: string, profile: TtsProfileRecord, meta?: NarrationStartMeta): Promise<void>;
   pause(): void;
   resume(): void;
   skipSegment(): void;
   stopNarration(): void;
   setRate(rate: number): void;
   setAutoNarrate(value: boolean): void;
+  /** TPE-18a: (re)load one chat's playlist rows from the persisted index. */
+  loadPlaylist(chatId: string): Promise<void>;
+  /** TPE-18a: drop one chat's rows from state (chat switch / tests). */
+  clearPlaylist(chatId: string): void;
 }
 
 export type TtsPlaybackStore = TtsPlaybackState & TtsPlaybackActions;
@@ -120,15 +146,46 @@ let orchestratorOverride: Orchestrator | null = null;
 let playerOverride: NarrationPlayer | null = null;
 let synthesizeOverride: SynthesizeFn | null = null;
 let cacheOverride: NarrationSegmentCache | null = null;
+let playlistIndexOverride: NarrationPlaylistIndex | null = null;
 let activeOrchestrator: Orchestrator | null = null;
 let activePlayer: NarrationPlayer | null = null;
 let activeSynthesize: SynthesizeFn | null = null;
 let activeCache: NarrationSegmentCache | null = null;
 let sharedCache: NarrationSegmentCache | null = null;
+let sharedPlaylistIndex: NarrationPlaylistIndex | null = null;
+/** TPE-18a: index meta of the ruling narration start (consumed by the
+ *  onNarrated completion report). Cleared on stop. */
+let pendingIndexMeta: NarrationStartMeta | null = null;
 
 function narrationCache(): NarrationSegmentCache {
   if (!sharedCache) sharedCache = createNarrationSegmentCache();
   return sharedCache;
+}
+
+function narrationPlaylistIndex(): NarrationPlaylistIndex {
+  if (!sharedPlaylistIndex) sharedPlaylistIndex = createNarrationPlaylistIndex();
+  return sharedPlaylistIndex;
+}
+
+/** TPE-18a: completion report → persisted index row + state refresh.
+ *  Best-effort: index failures never surface (the narration already
+ *  succeeded — playback state is the source of truth, not the index). */
+async function handleNarrated(messageId: string, report: NarratedReport): Promise<void> {
+  const meta = pendingIndexMeta;
+  pendingIndexMeta = null;
+  if (!meta) return;
+  const index = playlistIndexOverride ?? narrationPlaylistIndex();
+  const entry: NarrationPlaylistEntry = {
+    messageId,
+    variantId: meta.variantId,
+    variantIndex: meta.variantIndex,
+    snippet: meta.snippet,
+    cacheKeys: report.cacheKeys,
+    narratedAt: Date.now(),
+  };
+  await index.upsert(meta.chatId, entry);
+  const rows = await index.list(meta.chatId);
+  useTtsPlaybackStore.setState((s) => ({ playlist: { ...s.playlist, [meta.chatId]: rows } }));
 }
 
 function ensureOrchestrator(): Orchestrator {
@@ -145,19 +202,20 @@ function ensureOrchestrator(): Orchestrator {
   }
   // Deps changed (test seam swap): stop the abandoned lane cleanly first.
   activeOrchestrator?.stop();
-  activeOrchestrator = createTtsOrchestrator({ player, synthesize, onState: writeNarrationState, cache });
+  activeOrchestrator = createTtsOrchestrator({ player, synthesize, onState: writeNarrationState, onNarrated: handleNarrated, cache });
   activePlayer = player;
   activeSynthesize = synthesize;
   activeCache = cache;
   return activeOrchestrator;
 }
 
-/** Test seam: replace orchestrator/player/synthesize/cache/notifyError. Pass null to restore defaults. */
+/** Test seam: replace orchestrator/player/synthesize/cache/playlistIndex/notifyError. Pass null to restore defaults. */
 export function __setTtsPlaybackDepsForTests(deps: {
   orchestrator?: Orchestrator | null;
   player?: NarrationPlayer | null;
   synthesize?: SynthesizeFn | null;
   cache?: NarrationSegmentCache | null;
+  playlistIndex?: NarrationPlaylistIndex | null;
   notifyError?: ((messageId: string, message: string) => void) | null;
 } | null): void {
   if (!deps) {
@@ -165,6 +223,8 @@ export function __setTtsPlaybackDepsForTests(deps: {
     playerOverride = null;
     synthesizeOverride = null;
     cacheOverride = null;
+    playlistIndexOverride = null;
+    pendingIndexMeta = null;
     notifyNarrationError = null;
     return;
   }
@@ -172,6 +232,7 @@ export function __setTtsPlaybackDepsForTests(deps: {
   if ("player" in deps) playerOverride = deps.player ?? null;
   if ("synthesize" in deps) synthesizeOverride = deps.synthesize ?? null;
   if ("cache" in deps) cacheOverride = deps.cache ?? null;
+  if ("playlistIndex" in deps) playlistIndexOverride = deps.playlistIndex ?? null;
   if ("notifyError" in deps) notifyNarrationError = deps.notifyError ?? null;
 }
 
@@ -185,10 +246,14 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
   narrations: {},
   rate: 1,
   autoNarrate: false,
+  playlist: {},
+  lastStarted: null,
 
-  async startNarration(messageId, text, profile) {
+  async startNarration(messageId, text, profile, meta) {
     const orchestrator = orchestratorOverride ?? ensureOrchestrator();
     orchestrator.setRate(get().rate);
+    pendingIndexMeta = meta ?? null;
+    set({ lastStarted: { messageId, text, meta: meta ?? null } });
     await orchestrator.narrate(messageId, text, profile);
   },
 
@@ -205,6 +270,8 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
   },
 
   stopNarration() {
+    pendingIndexMeta = null;
+    set({ lastStarted: null });
     (orchestratorOverride ?? activeOrchestrator)?.stop();
   },
 
@@ -215,6 +282,21 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
 
   setAutoNarrate(value) {
     set({ autoNarrate: value });
+  },
+
+  async loadPlaylist(chatId) {
+    const index = playlistIndexOverride ?? narrationPlaylistIndex();
+    const rows = await index.list(chatId);
+    set((s) => ({ playlist: { ...s.playlist, [chatId]: rows } }));
+  },
+
+  clearPlaylist(chatId) {
+    set((s) => {
+      if (!(chatId in s.playlist)) return s;
+      const playlist = { ...s.playlist };
+      delete playlist[chatId];
+      return { playlist };
+    });
   },
 }));
 

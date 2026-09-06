@@ -2,6 +2,7 @@ import { InputArea } from "../chat/InputArea.js";
 import { MessageList } from "../chat/MessageList.js";
 import { QueueManager } from "../chat/QueueManager.js";
 import { DicePanel } from "../chat/DicePanel.js";
+import { NarrationPlaylistPanel } from "../chat/NarrationPlaylistPanel.js";
 import { MessageAiEditorModal } from "../chat/MessageAiEditorModal.js";
 import { ExperienceLauncher } from "../experience/ExperienceLauncher.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -29,6 +30,9 @@ export function PlayMode() {
         <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 flex -translate-x-1/2 items-center gap-2">
           <div className="pointer-events-auto">
             <DicePanel docked />
+          </div>
+          <div className="pointer-events-auto">
+            <NarrationPlaylistPanel docked />
           </div>
           <div className="pointer-events-auto">
             <ExperienceLauncher docked />
