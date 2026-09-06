@@ -26,7 +26,8 @@ import { createTtsOrchestrator } from "../lib/tts/tts-orchestrator.js";
 import type { NarrationState, SynthesizeOptions } from "../lib/tts/tts-orchestrator.js";
 import { createNarrationSegmentCache, createNarrationPlaylistIndex } from "../lib/tts/narration-cache.js";
 import type { NarrationPlaylistEntry, NarrationPlaylistIndex, NarrationSegmentCache } from "../lib/tts/narration-cache.js";
-import type { NarratedReport } from "../lib/tts/tts-orchestrator.js";
+import type { NarratedReport, NarrationProgress } from "../lib/tts/tts-orchestrator.js";
+import { clampNarrationVolume, persistNarrationVolume, readNarrationVolume } from "../lib/tts/narration-volume.js";
 
 export type { NarrationState };
 
@@ -44,6 +45,11 @@ export interface TtsPlaybackState {
     text: string;
     meta: NarrationStartMeta | null;
   } | null;
+  /** TPE-18b: global narration volume 0..1 (persisted local pref) —
+   *  applies to every segment element, both playback surfaces. */
+  volume: number;
+  /** TPE-18b: live playback progress per message (seek-bar source). */
+  progress: Record<string, NarrationProgress>;
 }
 
 /** TPE-18a: index metadata for one narration start — identifies the chat
@@ -61,8 +67,12 @@ export interface TtsPlaybackActions {
   pause(): void;
   resume(): void;
   skipSegment(): void;
+  /** TPE-18b: jump the ruling lane to a cumulative position (seconds). */
+  seek(messageId: string, positionSec: number): void;
   stopNarration(): void;
   setRate(rate: number): void;
+  /** TPE-18b: global volume — persisted and forwarded to the lane. */
+  setVolume(volume: number): void;
   setAutoNarrate(value: boolean): void;
   /** TPE-18a: (re)load one chat's playlist rows from the persisted index. */
   loadPlaylist(chatId: string): Promise<void>;
@@ -188,6 +198,11 @@ async function handleNarrated(messageId: string, report: NarratedReport): Promis
   useTtsPlaybackStore.setState((s) => ({ playlist: { ...s.playlist, [meta.chatId]: rows } }));
 }
 
+/** TPE-18b: progress snapshots land in store state for the seek bar. */
+function writeNarrationProgress(messageId: string, progress: NarrationProgress): void {
+  useTtsPlaybackStore.setState((s) => ({ progress: { ...s.progress, [messageId]: progress } }));
+}
+
 function ensureOrchestrator(): Orchestrator {
   const player = playerOverride ?? htmlAudioPlayer();
   const synthesize = synthesizeOverride ?? defaultSynthesize;
@@ -202,7 +217,7 @@ function ensureOrchestrator(): Orchestrator {
   }
   // Deps changed (test seam swap): stop the abandoned lane cleanly first.
   activeOrchestrator?.stop();
-  activeOrchestrator = createTtsOrchestrator({ player, synthesize, onState: writeNarrationState, onNarrated: handleNarrated, cache });
+  activeOrchestrator = createTtsOrchestrator({ player, synthesize, onState: writeNarrationState, onProgress: writeNarrationProgress, onNarrated: handleNarrated, cache });
   activePlayer = player;
   activeSynthesize = synthesize;
   activeCache = cache;
@@ -248,10 +263,15 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
   autoNarrate: false,
   playlist: {},
   lastStarted: null,
+  volume: readNarrationVolume(),
+  progress: {},
 
   async startNarration(messageId, text, profile, meta) {
     const orchestrator = orchestratorOverride ?? ensureOrchestrator();
     orchestrator.setRate(get().rate);
+    // TPE-18b: a recreated lane (or the real player) starts at full
+    // volume unless the store says otherwise — apply every start.
+    orchestrator.setVolume(get().volume);
     pendingIndexMeta = meta ?? null;
     set({ lastStarted: { messageId, text, meta: meta ?? null } });
     await orchestrator.narrate(messageId, text, profile);
@@ -269,15 +289,35 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
     (orchestratorOverride ?? activeOrchestrator)?.skipSegment();
   },
 
+  seek(messageId, positionSec) {
+    // The orchestrator is a single global lane — only the ruling
+    // narration accepts a seek; anything else is a stale row action.
+    if (get().lastStarted?.messageId !== messageId) return;
+    (orchestratorOverride ?? activeOrchestrator)?.seekTo(positionSec);
+  },
+
   stopNarration() {
+    const stoppedId = get().lastStarted?.messageId;
     pendingIndexMeta = null;
-    set({ lastStarted: null });
+    set((s) => {
+      if (stoppedId === undefined || !(stoppedId in s.progress)) return { lastStarted: null };
+      const progress = { ...s.progress };
+      delete progress[stoppedId];
+      return { lastStarted: null, progress };
+    });
     (orchestratorOverride ?? activeOrchestrator)?.stop();
   },
 
   setRate(rate) {
     set({ rate });
     (orchestratorOverride ?? activeOrchestrator)?.setRate(rate);
+  },
+
+  setVolume(volume) {
+    const clamped = clampNarrationVolume(volume);
+    set({ volume: clamped });
+    persistNarrationVolume(clamped);
+    (orchestratorOverride ?? activeOrchestrator)?.setVolume(clamped);
   },
 
   setAutoNarrate(value) {

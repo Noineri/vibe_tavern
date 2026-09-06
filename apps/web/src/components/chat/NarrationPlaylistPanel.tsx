@@ -56,8 +56,15 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
   const narrations = useTtsPlaybackStore((s) => s.narrations);
   const lastStarted = useTtsPlaybackStore((s) => s.lastStarted);
   const rate = useTtsPlaybackStore((s) => s.rate);
+  // TPE-18b: player-layer controls (pause/seek/volume ride the store lane).
+  const volume = useTtsPlaybackStore((s) => s.volume);
+  const progress = useTtsPlaybackStore((s) => s.progress);
   const startNarration = useTtsPlaybackStore((s) => s.startNarration);
   const stopNarration = useTtsPlaybackStore((s) => s.stopNarration);
+  const pauseNarration = useTtsPlaybackStore((s) => s.pause);
+  const resumeNarration = useTtsPlaybackStore((s) => s.resume);
+  const seekNarration = useTtsPlaybackStore((s) => s.seek);
+  const setVolume = useTtsPlaybackStore((s) => s.setVolume);
   const setRate = useTtsPlaybackStore((s) => s.setRate);
   const loadPlaylist = useTtsPlaybackStore((s) => s.loadPlaylist);
 
@@ -82,6 +89,8 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
     [narrations, messageIds],
   );
   const anyLive = liveIds.length > 0;
+  // TPE-18b: single global lane — the first live row owns the transport.
+  const livePaused = liveIds.length > 0 && narrations[liveIds[0]]?.status === "paused";
 
   const liveTextById = useCallback(
     (messageId: string): string | null =>
@@ -117,6 +126,13 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
     setRate(nextPlaybackRate(rate));
   }, [rate, setRate]);
 
+  const onSeek = useCallback(
+    (messageId: string, positionSec: number) => {
+      seekNarration(messageId, positionSec);
+    },
+    [seekNarration],
+  );
+
   // The pill stays hidden until something exists to list — an empty
   // playlist with no live lane is noise above the input area.
   if (!chatId || (entries.length === 0 && !anyLive)) return null;
@@ -133,9 +149,16 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       liveTextById={liveTextById}
       rate={rate}
       anyLive={anyLive}
+      livePaused={livePaused}
+      progress={progress}
+      volume={volume}
       onPlay={onPlay}
       onStop={stopNarration}
       onCycleRate={onCycleRate}
+      onPause={pauseNarration}
+      onResume={resumeNarration}
+      onSeek={onSeek}
+      onVolume={setVolume}
       showTitle={!isMobile}
     />
   );

@@ -999,3 +999,377 @@ describe("TTS orchestrator — resilience (TPE-16)", () => {
     expect(states.at(-1)?.status).toBe("complete");
   });
 });
+describe("TPE-18b player controls (pause / seek / volume / progress)", () => {
+  interface SeekablePlayer extends NarrationPlayer {
+    plays: Array<{ text: string; startAt: number }>;
+    volumeCalls: number[];
+    seekCalls: number[];
+    pauseCalls: number;
+    onTimes: Array<(pos: number) => void>;
+    resolveCurrent(result?: SegmentPlayResult): void;
+  }
+
+  /** Deferred fake with TPE-18b seams: records startAt, volume, seeks,
+   *  pauses; probe durations come from a per-text stub map. */
+  function createSeekablePlayer(durationsByText: Record<string, number | null> = {}): SeekablePlayer {
+    const plays: SeekablePlayer["plays"] = [];
+    const volumeCalls: number[] = [];
+    const seekCalls: number[] = [];
+    const onTimes: Array<(pos: number) => void> = [];
+    let pauseCalls = 0;
+    let currentResolve: ((v: SegmentPlayResult) => void) | null = null;
+    const player: SeekablePlayer = {
+      plays,
+      volumeCalls,
+      seekCalls,
+      onTimes,
+      get pauseCalls() {
+        return pauseCalls;
+      },
+      play(blob: Blob, _rate: number, options?: { startAt?: number; onTime?: (pos: number) => void }): Promise<SegmentPlayResult> {
+        if (options?.onTime) onTimes.push(options.onTime);
+        return new Promise<SegmentPlayResult>((resolve) => {
+          currentResolve = resolve;
+          void blob.text().then((t) => {
+            plays.push({ text: t, startAt: options?.startAt ?? 0 });
+          });
+        });
+      },
+      skipCurrent(): void {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn("skipped");
+      },
+      pause(): void {
+        pauseCalls += 1;
+      },
+      resume(): void {},
+      setRate(): void {},
+      setVolume(v: number): void {
+        volumeCalls.push(v);
+      },
+      seekTo(offset: number): void {
+        seekCalls.push(offset);
+      },
+      getPosition() {
+        return { position: 0, duration: null };
+      },
+      probeDuration(blob: Blob): Promise<number | null> {
+        return blob.text().then((t) => durationsByText[t] ?? null);
+      },
+      dispose(): void {
+        if (currentResolve) {
+          const fn = currentResolve;
+          currentResolve = null;
+          fn("skipped");
+        }
+      },
+      resolveCurrent(result: SegmentPlayResult = "ended"): void {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn(result);
+      },
+    };
+    return player;
+  }
+
+  function memoryCache(): NarrationSegmentCache {
+    const blobs = new Map<string, Blob>();
+    return {
+      async get(key: string) {
+        return blobs.get(key) ?? null;
+      },
+      async put(key: string, blob: Blob) {
+        blobs.set(key, blob);
+      },
+      async delete(key: string) {
+        blobs.delete(key);
+      },
+    };
+  }
+
+  async function tick(ms = 0): Promise<void> {
+    await new Promise<void>((r) => setTimeout(r, ms));
+  }
+
+  test("pause mid-segment freezes and resume completes the SAME segment, not skipped", async () => {
+    const player = createSeekablePlayer();
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({ synthesize: synth.fn, player, onState: (_id, s) => states.push({ ...s }) });
+
+    const done = orch.narrate("m1", "Para one.\n\nPara two.", profile());
+    // Let the fill loop issue its first synthesize (sync without a
+    // cache, one macrotask with one — resolving blindly would waste
+    // one resolution and shift every segment).
+    await tick(0);
+    synth.resolveNext();
+    await tick(100);
+    synth.resolveNext();
+    await tick(100);
+    await tick(0);
+    expect(player.plays.map((p) => p.text)).toEqual(["Para one."]);
+
+    orch.pause();
+    expect(player.pauseCalls).toBe(1);
+    expect(states.at(-1)?.status).toBe("paused");
+    // Frozen: time passes, nothing advances to the second segment.
+    await tick(150);
+    expect(player.plays.map((p) => p.text)).toEqual(["Para one."]);
+
+    orch.resume();
+    expect(states.at(-1)?.status).toBe("playing");
+    // The parked first segment completes (not skipped), then the second plays.
+    player.resolveCurrent("ended");
+    await tick(0);
+    await tick(0);
+    expect(player.plays.map((p) => p.text)).toEqual(["Para one.", "Para two."]);
+    player.resolveCurrent("ended");
+    await done;
+    expect(synth.calls).toHaveLength(2);
+    expect(states.at(-1)?.status).toBe("complete");
+    expect(states.at(-1)?.played).toBe(2);
+  });
+
+  test("forward seek jumps to the later segment at the given offset (cache hit, no re-synth)", async () => {
+    const player = createSeekablePlayer({ "Para one.": 10, "Para two.": 10, "Para three.": 10 });
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      cache: memoryCache(),
+      onState: (_id, s) => states.push({ ...s }),
+    });
+
+    const done = orch.narrate("m1", "Para one.\n\nPara two.\n\nPara three.", profile());
+    // Let the fill loop issue its first synthesize (the cache lookup
+    // suspends past narrate()'s sync prefix — resolving blindly here
+    // would waste one resolution and shift every segment).
+    await tick(0);
+    synth.resolveNext();
+    await tick(100);
+    synth.resolveNext();
+    await tick(100);
+    synth.resolveNext();
+    await tick(150);
+    await tick(0);
+    expect(player.plays.map((p) => p.text)).toEqual(["Para one."]);
+
+    // 25s into 10+10+10 → third segment at offset 5. The fake reports a
+    // live clock but position 0 on another segment — the same-segment fast
+    // path only applies to the CURRENT segment, so this rebuilds the queue.
+    orch.seekTo(25);
+    await tick(0);
+    await tick(100);
+    expect(player.plays).toHaveLength(2);
+    expect(player.plays[1]).toEqual({ text: "Para three.", startAt: 5 });
+    // Served from the segment cache — synthesis ran exactly 3× (once each).
+    expect(synth.calls).toHaveLength(3);
+
+    player.resolveCurrent("ended");
+    await done;
+    expect(states.at(-1)?.status).toBe("complete");
+    expect(states.at(-1)?.played).toBe(3);
+  });
+
+  test("backward seek replays the earlier segment from cache and refills forward without re-synthesizing", async () => {
+    const player = createSeekablePlayer({ "Para one.": 10, "Para two.": 10 });
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      cache: memoryCache(),
+      onState: (_id, s) => states.push({ ...s }),
+    });
+
+    const done = orch.narrate("m1", "Para one.\n\nPara two.", profile());
+    // Let the fill loop issue its first synthesize (sync without a
+    // cache, one macrotask with one — resolving blindly would waste
+    // one resolution and shift every segment).
+    await tick(0);
+    synth.resolveNext();
+    await tick(100);
+    synth.resolveNext();
+    await tick(150);
+    await tick(0);
+    expect(player.plays.map((p) => p.text)).toEqual(["Para one."]);
+    player.resolveCurrent("ended");
+    await tick(0);
+    await tick(0);
+    expect(player.plays.map((p) => p.text)).toEqual(["Para one.", "Para two."]);
+
+    // 5s → first segment at offset 5: replay from cache (serial lane —
+    // the refilled second segment plays after the replay ends), then the
+    // second segment refills from cache behind it (finished fill restarts).
+    orch.seekTo(5);
+    await tick(0);
+    await tick(150);
+    expect(player.plays.map((p) => p.text)).toEqual(["Para one.", "Para two.", "Para one."]);
+    expect(player.plays[2]).toEqual({ text: "Para one.", startAt: 5 });
+    expect(synth.calls).toHaveLength(2);
+
+    player.resolveCurrent("ended");
+    await tick(0);
+    await tick(0);
+    expect(player.plays.map((p) => p.text)).toEqual(["Para one.", "Para two.", "Para one.", "Para two."]);
+    player.resolveCurrent("ended");
+    await done;
+    expect(states.at(-1)?.status).toBe("complete");
+    expect(states.at(-1)?.played).toBe(2);
+  });
+
+  test("seek while paused stays paused at the new position until resume", async () => {
+    const player = createSeekablePlayer({ "Para one.": 10, "Para two.": 10 });
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      cache: memoryCache(),
+      onState: (_id, s) => states.push({ ...s }),
+    });
+
+    const done = orch.narrate("m1", "Para one.\n\nPara two.", profile());
+    // Let the fill loop issue its first synthesize (sync without a
+    // cache, one macrotask with one — resolving blindly would waste
+    // one resolution and shift every segment).
+    await tick(0);
+    synth.resolveNext();
+    await tick(100);
+    synth.resolveNext();
+    await tick(150);
+    await tick(0);
+    expect(player.plays).toHaveLength(1);
+
+    orch.pause();
+    orch.seekTo(15);
+    await tick(0);
+    await tick(150);
+    // Still parked: the target is queued but nothing plays while paused.
+    expect(states.at(-1)?.status).toBe("paused");
+    expect(player.plays).toHaveLength(1);
+
+    orch.resume();
+    await tick(0);
+    await tick(0);
+    expect(player.plays).toHaveLength(2);
+    expect(player.plays[1]).toEqual({ text: "Para two.", startAt: 5 });
+    player.resolveCurrent("ended");
+    await done;
+    expect(states.at(-1)?.status).toBe("complete");
+  });
+
+  test("same-segment seek uses the live clock without rebuilding the queue", async () => {
+    const player = createSeekablePlayer({ "Para one.": 10, "Para two.": 10 });
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      cache: memoryCache(),
+      onState: (_id, s) => states.push({ ...s }),
+    });
+
+    const done = orch.narrate("m1", "Para one.\n\nPara two.", profile());
+    // Let the fill loop issue its first synthesize (sync without a
+    // cache, one macrotask with one — resolving blindly would waste
+    // one resolution and shift every segment).
+    await tick(0);
+    synth.resolveNext();
+    await tick(100);
+    synth.resolveNext();
+    await tick(150);
+    await tick(0);
+    expect(player.plays).toHaveLength(1);
+
+    // 6s lands inside the CURRENT first segment → seamless clock jump.
+    orch.seekTo(6);
+    await tick(0);
+    expect(player.seekCalls).toEqual([6]);
+    expect(player.plays).toHaveLength(1);
+    expect(synth.calls).toHaveLength(2);
+
+    player.resolveCurrent("ended");
+    await tick(0);
+    await tick(0);
+    player.resolveCurrent("ended");
+    await done;
+    expect(states.at(-1)?.status).toBe("complete");
+  });
+
+  test("setVolume forwards to the player", async () => {
+    const player = createSeekablePlayer();
+    const synth = createDeferredSynthesize();
+    const orch = createTtsOrchestrator({ synthesize: synth.fn, player, onState: () => {} });
+    orch.setVolume(0.4);
+    expect(player.volumeCalls).toEqual([0.4]);
+  });
+
+  test("progress reports cumulative position and total once durations are known", async () => {
+    const player = createSeekablePlayer({ "Para one.": 10, "Para two.": 20 });
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const progresses: Array<{ positionSec: number; totalSec: number | null; currentIndex: number }> = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      onState: (_id, s) => states.push({ ...s }),
+      onProgress: (_id, p) => progresses.push({ positionSec: p.positionSec, totalSec: p.totalSec, currentIndex: p.currentIndex }),
+    });
+
+    const done = orch.narrate("m1", "Para one.\n\nPara two.", profile());
+    // Let the fill loop issue its first synthesize (sync without a
+    // cache, one macrotask with one — resolving blindly would waste
+    // one resolution and shift every segment).
+    await tick(0);
+    synth.resolveNext();
+    await tick(100);
+    synth.resolveNext();
+    await tick(150);
+    await tick(0);
+    expect(player.plays).toHaveLength(1);
+    expect(player.onTimes.length).toBeGreaterThan(0);
+
+    // Simulate ~4 Hz timeupdate ticks inside the first segment.
+    player.onTimes[0](4);
+    const last = progresses.at(-1);
+    expect(last?.currentIndex).toBe(0);
+    expect(last?.positionSec).toBe(4);
+    expect(last?.totalSec).toBe(30);
+
+    player.resolveCurrent("ended");
+    await tick(0);
+    await tick(0);
+    // Second segment: cumulative position starts at the first duration.
+    const after = progresses.at(-1);
+    expect(after?.currentIndex).toBe(1);
+    expect(after?.positionSec).toBe(10);
+    player.resolveCurrent("ended");
+    await done;
+    expect(states.at(-1)?.status).toBe("complete");
+  });
+
+  test("seek is a no-op on a settled lane", async () => {
+    const player = createSeekablePlayer();
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({ synthesize: synth.fn, player, onState: (_id, s) => states.push({ ...s }) });
+
+    const done = orch.narrate("m1", "Para one.", profile());
+    synth.resolveNext();
+    await tick(150);
+    await tick(0);
+    player.resolveCurrent("ended");
+    await done;
+    expect(states.at(-1)?.status).toBe("complete");
+
+    const playsBefore = player.plays.length;
+    orch.seekTo(5);
+    await tick(50);
+    // No rebuild, no replay, no state churn on a finished lane.
+    expect(player.plays).toHaveLength(playsBefore);
+    expect(states.at(-1)?.status).toBe("complete");
+  });
+});

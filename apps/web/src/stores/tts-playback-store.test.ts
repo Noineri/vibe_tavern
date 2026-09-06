@@ -67,7 +67,9 @@ function createFakePlayer(): NarrationPlayer & { playCalls: number } {
 }
 
 beforeEach(() => {
-  useTtsPlaybackStore.setState({ narrations: {}, rate: 1, autoNarrate: false });
+  // TPE-18b: reset the new player-layer keys too (volume persists across
+  // tests otherwise — the store rehydrates from localStorage at creation).
+  useTtsPlaybackStore.setState({ narrations: {}, rate: 1, autoNarrate: false, volume: 1, progress: {} });
   __setTtsPlaybackDepsForTests(null);
 });
 
@@ -323,6 +325,143 @@ describe("tts-playback-store", () => {
       await started;
       expect(useTtsPlaybackStore.getState().narrations["m-stop"]?.status).toBe("complete");
       expect(notified).toEqual([]);
+    } finally {
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+});
+
+describe("tts-playback-store player controls (TPE-18b)", () => {
+  /** Recording fake: auto-ending plays with text/startAt capture, fixed
+   *  probe durations, volume capture. */
+  function createRecordingPlayer(durationsByText: Record<string, number> = {}): NarrationPlayer & {
+    plays: Array<{ text: string; startAt: number }>;
+    volumeCalls: number[];
+  } {
+    const plays: Array<{ text: string; startAt: number }> = [];
+    const volumeCalls: number[] = [];
+    return {
+      plays,
+      volumeCalls,
+      play(blob: Blob, _rate: number, options?: { startAt?: number }): Promise<"ended" | "skipped" | "error"> {
+        void blob.text().then((t) => plays.push({ text: t, startAt: options?.startAt ?? 0 }));
+        return new Promise<"ended" | "skipped" | "error">((resolve) => {
+          queueMicrotask(() => resolve("ended"));
+        });
+      },
+      skipCurrent(): void {},
+      pause(): void {},
+      resume(): void {},
+      setRate(): void {},
+      setVolume(v: number): void {
+        volumeCalls.push(v);
+      },
+      probeDuration(blob: Blob): Promise<number | null> {
+        return blob.text().then((t) => durationsByText[t] ?? null);
+      },
+      dispose(): void {},
+    };
+  }
+
+  test("setVolume clamps and stores; forwarding reaches the lane once it exists", async () => {
+    const player = createRecordingPlayer();
+    __setTtsPlaybackDepsForTests({ player, synthesize: async () => ({ blob: new Blob(["x"]), mime: "audio/mpeg" }) });
+    try {
+      // No lane yet — the value persists, nothing to forward to (no crash).
+      useTtsPlaybackStore.getState().setVolume(0.35);
+      expect(useTtsPlaybackStore.getState().volume).toBe(0.35);
+      expect(player.volumeCalls).toEqual([]);
+      // Clamp, not wrap: out-of-lane values pin to the edges.
+      useTtsPlaybackStore.getState().setVolume(2);
+      expect(useTtsPlaybackStore.getState().volume).toBe(1);
+      useTtsPlaybackStore.getState().setVolume(-1);
+      expect(useTtsPlaybackStore.getState().volume).toBe(0);
+      // A live lane receives the stored value.
+      useTtsPlaybackStore.getState().setVolume(0.35);
+      await useTtsPlaybackStore.getState().startNarration("m-volstate", "Hello.", profile());
+      expect(player.volumeCalls).toEqual([0.35]);
+    } finally {
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+
+  test("startNarration applies the stored volume to the lane", async () => {
+    const player = createRecordingPlayer();
+    __setTtsPlaybackDepsForTests({ player, synthesize: async () => ({ blob: new Blob(["x"]), mime: "audio/mpeg" }) });
+    try {
+      useTtsPlaybackStore.getState().setVolume(0.5);
+      player.volumeCalls.length = 0;
+      await useTtsPlaybackStore.getState().startNarration("m-vol", "Hello.", profile());
+      // A recreated lane starts at full volume unless told otherwise —
+      // the store applies its value on every start.
+      expect(player.volumeCalls).toEqual([0.5]);
+    } finally {
+      __setTtsPlaybackDepsForTests(null);
+    }
+  });
+
+  test("seek forwards to the ruling lane only; foreign ids are ignored", async () => {
+    // Deferred player: the lane stays parked inside the first segment
+    // (instant fakes would play the whole message before the seek).
+    const plays: Array<{ text: string; startAt: number }> = [];
+    let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
+    const player: NarrationPlayer = {
+      play(blob: Blob, _rate: number, options?: { startAt?: number }): Promise<"ended" | "skipped" | "error"> {
+        void blob.text().then((t) => plays.push({ text: t, startAt: options?.startAt ?? 0 }));
+        return new Promise<"ended" | "skipped" | "error">((resolve) => {
+          currentResolve = resolve;
+        });
+      },
+      skipCurrent(): void {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn("skipped");
+      },
+      pause(): void {},
+      resume(): void {},
+      setRate(): void {},
+      probeDuration(blob: Blob): Promise<number | null> {
+        const known: Record<string, number> = { "Seg one.": 10, "Seg two.": 10 };
+        return blob.text().then((t) => known[t] ?? null);
+      },
+      dispose(): void {},
+    };
+    const synthCalls: string[] = [];
+    __setTtsPlaybackDepsForTests({
+      player,
+      synthesize: async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([text]), mime: "audio/mpeg" };
+      },
+    });
+    const pump = async (cond: () => boolean): Promise<void> => {
+      for (let i = 0; i < 40 && !cond(); i += 1) {
+        await new Promise<void>((r) => setTimeout(r, 25));
+      }
+    };
+    const releaseCurrent = (): void => {
+      const fn = currentResolve;
+      currentResolve = null;
+      if (fn) fn("ended");
+    };
+    try {
+      const started = useTtsPlaybackStore.getState().startNarration("m-seek", "Seg one.\n\nSeg two.", profile());
+      await pump(() => plays.length >= 1);
+      expect(plays.map((p) => p.text)).toEqual(["Seg one."]);
+
+      // A stale row action for another message must not touch the lane.
+      useTtsPlaybackStore.getState().seek("m-other", 15);
+      await new Promise<void>((r) => setTimeout(r, 100));
+      expect(plays).toHaveLength(1);
+
+      // 15s into 10+10 → second segment at offset 5 (re-synthesized on
+      // the seek load — the store suite wires no segment cache).
+      useTtsPlaybackStore.getState().seek("m-seek", 15);
+      await pump(() => plays.length >= 2);
+      expect(plays[1]).toEqual({ text: "Seg two.", startAt: 5 });
+      releaseCurrent();
+      await started;
+      expect(useTtsPlaybackStore.getState().narrations["m-seek"]?.status).toBe("complete");
     } finally {
       __setTtsPlaybackDepsForTests(null);
     }

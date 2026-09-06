@@ -14,6 +14,13 @@
  * already playing. One narration lane: a new narrate() stops whatever was
  * active (epoch guard makes late synthesize resolves from the abandoned
  * epoch a no-op).
+ *
+ * TPE-18b: the generation loop is cursor-driven (fillCursor) so a seek can
+ * retarget it mid-flight — the loop adopts the new cursor instead of a
+ * second loop starting (single fill owner, no enqueue races). The playback
+ * queue carries per-entry segment indexes + start offsets, durations fill
+ * in via background probes, and progress (position/total) flows out through
+ * the optional onProgress callback for the playlist seek bar.
  */
 
 import { splitParagraphs } from "./kokoro/kokoro-text.js";
@@ -48,6 +55,18 @@ export interface SynthesizeOptions {
   signal?: AbortSignal;
 }
 
+/** TPE-18b: live playback progress for the playlist seek bar. Position is
+ *  best-effort while durations are still loading (unknown earlier segments
+ *  count as 0); total is null until EVERY segment duration is known — the
+ *  bar renders unknown segments as fixed slivers instead of estimates. */
+export interface NarrationProgress {
+  positionSec: number;
+  totalSec: number | null;
+  currentIndex: number;
+  segmentCount: number;
+  durations: Array<number | null>;
+}
+
 /** TPE-18a: completion report for one successful narration — the segment
  *  cache keys that back it (replay = cache hits) plus the segment count.
  *  Fired exactly once per genuinely completed narrate(); stop() and error
@@ -68,6 +87,10 @@ export interface NarrationDeps {
   /** Pre-narration text transform — identity seam, TS-10 wires the real pipeline. */
   preprocess?(text: string): string;
   onState(messageId: string, state: NarrationState): void;
+  /** TPE-18b: progress snapshots (position/total/durations) for the seek
+   *  bar — fired on segment starts, time updates, duration learns, seeks.
+   *  Optional like onNarrated; the store wires playlist progress here. */
+  onProgress?(messageId: string, progress: NarrationProgress): void;
   /** TPE-18a: fired once when a narrate() genuinely completes (all
    *  segments generated and played, no failure). Optional so pure unit
    *  tests can omit it; the store wires the playlist index here. */
@@ -77,11 +100,28 @@ export interface NarrationDeps {
   cache?: NarrationSegmentCache;
 }
 
+/** TPE-18b: per-narrate lane inputs the fill loop and seek share. Reset by
+ *  every narrate(); seek only moves the cursor inside them. */
+interface LaneCacheBase {
+  backend: string;
+  endpoint: string | null;
+  model: string | null;
+  responseFormat: string | null;
+  speed: number | null;
+  narrator: boolean;
+}
+
 export function createTtsOrchestrator(deps: NarrationDeps): {
   narrate(messageId: string, text: string, profile: TtsProfileRecord): Promise<void>;
   pause(): void;
   resume(): void;
   skipSegment(): void;
+  /** TPE-18b: jump to a cumulative position (seconds) — maps to
+   *  (segment, offset) over the known durations and rebuilds the queue.
+   *  No-op unless the lane is generating/playing/paused. */
+  seekTo(positionSec: number): void;
+  /** TPE-18b: forward the store-level volume to the player. */
+  setVolume(volume: number): void;
   stop(): void;
   setRate(rate: number): void;
 } {
@@ -91,22 +131,33 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
   let paused = false;
   /** Queue of blobs waiting to be played (FIFO). Each entry carries its
    *  cache key so a blob that fails playback can be evicted (an
-   *  undecodable cached blob must not poison every retry forever). */
-  let pendingBlobs: Array<{ blob: Blob; cacheKey: string | null }> = [];
+   *  undecodable cached blob must not poison every retry forever), its
+   *  segment index (TPE-18b seek mapping), and its start offset (TPE-18b
+   *  seek landings inside a segment). */
+  let pendingBlobs: Array<{ blob: Blob; cacheKey: string | null; index: number; startAt: number }> = [];
   let generationDone = false;
   let totalSegments = 0;
   let playedCount = 0;
+  /** TPE-18b: index of the segment currently loaded in the player (set at
+   *  shift time — playedCount keeps counting COMPLETED segments exactly
+   *  as before, so TPE-16/18a pins are untouched). */
+  let currentIndex = 0;
+  /** TPE-18b: live clock inside the current segment (timeupdate + seeks). */
+  let livePosition = 0;
   let lastState: NarrationState | null = null;
   let playbackRunning = false;
   /** Resolved when the current playback loop exits, so narrate() can await
    *  completion without polling. Single slot: only one loop runs at a time. */
   let playbackSettled: (() => void) | null = null;
+  /** Resolved when the fill loop exits, so narrate() can await synthesis
+   *  without polling. Single slot: only one fill loop runs at a time. */
+  let fillSettled: (() => void) | null = null;
   /** Resolved when the playback queue shrinks / playback exits, so the paced
-   *  generation loop can re-check the lookahead cap. Single slot: only one
-   *  generation loop exists per orchestrator. */
+   *  fill loop can re-check the lookahead cap. Single slot: only one
+   *  fill loop exists per orchestrator. */
   let generationQueueDrained: (() => void) | null = null;
   /** TPE-16: abort handle for the in-flight synthesize of the ruling epoch.
-   *  stop()/new-narrate abort it; the generation loop treats the resulting
+   *  stop()/new-narrate abort it; the fill loop treats the resulting
    *  rejection as a clean retire, never an error. */
   let synthesisController: AbortController | null = null;
   /** TPE-16: hard-failure message of the ruling epoch. Set on the second
@@ -123,6 +174,30 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
    *  reached via runPlayback, the narrate tail, or resume — exactly one
    *  of them reports). */
   let epochReported = false;
+  /** TPE-18b: per-narrate lane inputs (segments + cache base + profile +
+   *  flags) shared by the fill loop and seek. */
+  let laneSegments: Array<{ text: string; voiceId: string }> = [];
+  let laneCacheBase: LaneCacheBase = { backend: "", endpoint: null, model: null, responseFormat: null, speed: null, narrator: false };
+  let laneProfile: TtsProfileRecord | null = null;
+  let laneWaitForFull = false;
+  /** TPE-18b: next segment index the fill loop will process. Seek moves it;
+   *  the loop re-reads it every iteration (single fill owner — no races). */
+  let fillCursor = 0;
+  /** TPE-18b: bumped by every seek; an in-flight fill iteration that
+   *  notices the mismatch ADOPTS the new cursor (drops its stale result,
+   *  continues) instead of a second loop starting. */
+  let fillToken = 0;
+  /** TPE-18b: exactly one fill loop per epoch (narrate starts it; seek
+   *  never starts a second one — the running loop adopts). */
+  let fillActive = false;
+  /** TPE-18b: per-segment durations (null = unknown yet); reset per narrate. */
+  let durations: Array<number | null> = [];
+  /** TPE-18b: a seek target is loading — the empty-queue branches must not
+   *  mistake the momentary gap for completion. */
+  let seekPending = false;
+  /** TPE-18b: the next loop continuation was seek-induced — it must not
+   *  count the abandoned segment as played (retarget presets playedCount). */
+  let suppressAdvanceCount = false;
 
   function isAbortError(error: unknown): boolean {
     return (
@@ -179,6 +254,28 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     deps.onState(activeMessageId, state);
   }
 
+  /** TPE-18b: progress snapshot for the seek bar (position best-effort,
+   *  total null until every duration is known). */
+  function emitProgress(): void {
+    if (!activeMessageId) return;
+    let position = livePosition;
+    let total = 0;
+    let allKnown = laneSegments.length > 0;
+    for (let i = 0; i < laneSegments.length; i += 1) {
+      const d = durations[i] ?? null;
+      if (i < currentIndex) position += d ?? 0;
+      if (d === null) allKnown = false;
+      else total += d;
+    }
+    deps.onProgress?.(activeMessageId, {
+      positionSec: position,
+      totalSec: allKnown ? total : null,
+      currentIndex,
+      segmentCount: laneSegments.length,
+      durations: [...durations],
+    });
+  }
+
   /** TPE-18a: report a genuine completion exactly once per epoch. Only
    *  the success paths call this — stop() emits "complete" directly
    *  (it must NOT index an aborted lane) and error paths never do. */
@@ -197,7 +294,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     const settle = playbackSettled;
     playbackSettled = null;
     settle?.();
-    // Playback exited — the paced generation loop must re-check its wait.
+    // Playback exited — the paced fill loop must re-check its wait.
     wakeGeneration();
   }
 
@@ -209,6 +306,213 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     playbackSettled = null;
     settle?.();
     wakeGeneration();
+  }
+
+  /** Wake a stale narrate-tail fill waiter (stop()/new narrate retired it). */
+  function wakeStaleFillWaiter(): void {
+    fillWaiterEpoch = -1;
+    const settle = fillSettled;
+    fillSettled = null;
+    settle?.();
+  }
+
+  function kickPlayback(myEpoch: number): void {
+    if (myEpoch !== epoch) return;
+    if (!laneWaitForFull && !playbackRunning && !paused) {
+      void runPlayback(myEpoch);
+    }
+  }
+
+  /** Epoch the pending fill waiter belongs to (-1 = none). Guards the
+   *  single fillSettled slot against a retired loop settling its
+   *  successor's narrate tail early. */
+  let fillWaiterEpoch = -1;
+
+  function ensureFill(myEpoch: number): void {
+    if (fillActive) return;
+    fillActive = true;
+    const epochAtStart = myEpoch;
+    void runFill(myEpoch, fillToken).finally(() => {
+      // Only the ruling epoch owns the flag and the waiter — a retired
+      // loop must not clear its successor's flag or settle its tail
+      // (narrate always bumps the epoch, so same-epoch loops are always
+      // the same lane).
+      if (epochAtStart !== epoch) return;
+      fillActive = false;
+      if (fillWaiterEpoch === epoch) {
+        fillWaiterEpoch = -1;
+        const settle = fillSettled;
+        fillSettled = null;
+        settle?.();
+      }
+    });
+  }
+
+  /** TPE-18b: background duration probe for one enqueued blob — refines the
+   *  seek bar as metadata arrives. Unknown stays unknown (sliver). */
+  function probeSegment(index: number, blob: Blob): void {
+    const probe = deps.player.probeDuration;
+    if (!probe) return;
+    const myEpoch = epoch;
+    probe.call(deps.player, blob).then(
+      (d) => {
+        if (myEpoch !== epoch || index >= durations.length) return;
+        if (typeof d === "number" && Number.isFinite(d) && d > 0) {
+          durations[index] = d;
+          emitProgress();
+        }
+      },
+      () => {
+        // Unknown stays unknown — the bar keeps the sliver.
+      },
+    );
+  }
+
+  function keyForSegment(index: number): string {
+    const segment = laneSegments[index];
+    return buildNarrationCacheKey({
+      backend: laneCacheBase.backend,
+      endpoint: laneCacheBase.endpoint,
+      model: laneCacheBase.model,
+      responseFormat: laneCacheBase.responseFormat,
+      speed: laneCacheBase.speed,
+      narrator: laneCacheBase.narrator,
+      voiceId: segment.voiceId,
+      text: segment.text,
+    });
+  }
+
+  /** TPE-16 cache-or-synthesize for ONE segment (retry-once discipline
+   *  preserved verbatim) — returns the blob WITHOUT enqueueing, so both
+   *  the fill loop and seek can share it. A seek load (forSeek) bypasses
+   *  the generationDone retire checks: done means "stop synthesizing
+   *  forward", but a targeted seek load is not forward synthesis (the
+   *  fill already finished — without the bypass every post-fill seek
+   *  would wedge the lane). Epoch checks always apply. */
+  async function loadSegmentBlob(
+    index: number,
+    myEpoch: number,
+    forSeek = false,
+  ): Promise<{ blob: Blob; key: string } | null> {
+    const segment = laneSegments[index];
+    const profile = laneProfile;
+    if (!segment || !profile) return null;
+    const signal = synthesisController?.signal;
+    const key = keyForSegment(index);
+    if (deps.cache) {
+      let cached: Blob | null = null;
+      try {
+        cached = await deps.cache.get(key);
+      } catch {
+        // Best-effort cache: storage failure degrades to synthesis.
+        cached = null;
+      }
+      if (cached) {
+        if (myEpoch !== epoch || (!forSeek && generationDone)) return null;
+        epochKeys.push(key);
+        return { blob: cached, key };
+      }
+    }
+    // One retry after a short backoff: a single transient failure
+    // must not kill the narration (the TPE-16 drop).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (myEpoch !== epoch || (!forSeek && generationDone)) return null;
+      try {
+        const result = await deps.synthesize(segment.text, profile, segment.voiceId, { signal });
+        if (myEpoch !== epoch) return null;
+        if (deps.cache) {
+          try {
+            await deps.cache.put(key, result.blob, result.mime);
+          } catch {
+            // Best-effort cache: a failed write never fails the narration.
+          }
+        }
+        if (myEpoch !== epoch || (!forSeek && generationDone)) return null;
+        epochKeys.push(key);
+        return { blob: result.blob, key };
+      } catch (error) {
+        // Abort/stale-epoch/retired lane: clean retire, never an error.
+        if (myEpoch !== epoch || generationDone || isAbortError(error) || signal?.aborted === true) return null;
+        if (attempt === 0) {
+          try {
+            await sleepOrAbort(SYNTHESIZE_RETRY_DELAY_MS, signal ?? undefined);
+          } catch {
+            return null;
+          }
+          continue;
+        }
+        // Hard failure (second consecutive): keep everything already
+        // generated — resume serves it from the cache — stop past
+        // this segment, and surface the error (never silent).
+        generationDone = true;
+        failedMessage = error instanceof Error ? error.message : String(error);
+        if (!playbackRunning && (pendingBlobs.length === 0 || paused)) {
+          emitState("error", failedMessage);
+        } else if (!playbackRunning) {
+          // Good segments are queued but playback never started:
+          // drain them first; the loop ends in the error state.
+          void runPlayback(myEpoch);
+        }
+        // Active playback keeps draining the good queue; its terminal
+        // branch emits the error. Never skipCurrent here — the
+        // currently playing segment is innocent.
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /** TPE-18b cursor-driven fill loop (the old inline generation loop,
+   *  extracted so seek can retarget it). Reads fillCursor every iteration
+   *  and ADOPTS a seek-moved cursor (drops the stale result, continues)
+   *  — one fill owner, no enqueue races. */
+  async function runFill(myEpoch: number, myToken: number): Promise<void> {
+    while (fillCursor < laneSegments.length) {
+      if (myEpoch !== epoch) return;
+      if (myToken !== fillToken) {
+        myToken = fillToken;
+        continue;
+      }
+      const i = fillCursor;
+      while (
+        !laneWaitForFull &&
+        myEpoch === epoch &&
+        myToken === fillToken &&
+        !generationDone &&
+        pendingBlobs.length >= GENERATION_LOOKAHEAD_CAP
+      ) {
+        await new Promise<void>((resolve) => {
+          generationQueueDrained = resolve;
+        });
+      }
+      if (myEpoch !== epoch) return;
+      if (myToken !== fillToken) continue;
+      if (generationDone) return;
+      const loaded = await loadSegmentBlob(i, myEpoch);
+      if (myEpoch !== epoch) return;
+      if (myToken !== fillToken) continue;
+      if (!loaded) return;
+      pendingBlobs.push({ blob: loaded.blob, cacheKey: loaded.key, index: i, startAt: 0 });
+      fillCursor = i + 1;
+      probeSegment(i, loaded.blob);
+      kickPlayback(myEpoch);
+      // TE2-14: breathe between syntheses. In progressive mode the
+      // first audio was already kicked above, so this yield is
+      // inaudible; in wait-full mode it paces the whole batch.
+      await new Promise<void>((resolve) => setTimeout(resolve, INTER_SYNTHESIS_YIELD_MS));
+      if (myEpoch !== epoch) return;
+      if (myToken !== fillToken) continue;
+    }
+    // A retired EPOCH touches nothing (a new lane owns the flags). A mere
+    // token change (a seek landed while this loop drained) still closes
+    // forward completion: cursor >= len means every index was processed,
+    // so the fill has no more work for this epoch — the seek's own load
+    // covers its target, and the seekPending guard shelters the gap.
+    if (myEpoch !== epoch) return;
+    generationDone = true;
+    if (!playbackRunning && !paused && pendingBlobs.length > 0) {
+      void runPlayback(myEpoch);
+    }
   }
 
   async function runPlayback(myEpoch: number): Promise<void> {
@@ -223,6 +527,12 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       const item = pendingBlobs.shift();
       if (!item) {
         if (generationDone) {
+          // TPE-18b: a seek target is still loading — the momentary gap
+          // is not completion.
+          if (seekPending) {
+            settlePlayback();
+            return;
+          }
           // TPE-16: a hard failure mid-queue drains the good segments
           // first — the terminal state stays the error, never complete.
           if (failedMessage !== null) emitState("error", failedMessage);
@@ -239,8 +549,23 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       }
       // The queue just shrank — paced generation may resume (TE2-14).
       wakeGeneration();
+      currentIndex = item.index;
+      livePosition = item.startAt;
       emitState("playing");
-      const result = await deps.player.play(item.blob, currentRate);
+      emitProgress();
+      const result = await deps.player.play(item.blob, currentRate, {
+        ...(item.startAt > 0 ? { startAt: item.startAt } : {}),
+        onTime: (pos) => {
+          livePosition = pos;
+          // Learn the duration from the live element when the player
+          // reports one (fakes that stub durations skip this).
+          const snap = deps.player.getPosition?.();
+          if (snap?.duration !== null && snap?.duration !== undefined && currentIndex < durations.length) {
+            if (durations[currentIndex] === null) durations[currentIndex] = snap.duration;
+          }
+          emitProgress();
+        },
+      });
       if (myEpoch !== epoch) {
         wakeStaleWaiter();
         return;
@@ -263,8 +588,16 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
         return;
       }
       // "ended" | "skipped" — both advance the queue position.
-      playedCount += 1;
+      // TPE-18b: a seek-induced skip does not count the abandoned segment
+      // (retarget presets playedCount); plain skips keep TPE-16 semantics.
+      if (suppressAdvanceCount) suppressAdvanceCount = false;
+      else playedCount += 1;
       if (pendingBlobs.length === 0 && generationDone) {
+        // TPE-18b: seek target still loading — not completion (see above).
+        if (seekPending) {
+          settlePlayback();
+          return;
+        }
         // TPE-16: see above — drain-then-error on hard failure.
         if (failedMessage !== null) emitState("error", failedMessage);
         else {
@@ -278,6 +611,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       // reads played/total as its n/total fetch indicator. Same status,
       // new count; terminal branches above stay the only completions.
       emitState("playing");
+      emitProgress();
     }
     wakeStaleWaiter();
   }
@@ -295,15 +629,73 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     // TPE-18a: a retired epoch must never report (its keys are stale).
     epochKeys = [];
     epochReported = true;
+    // TPE-18b: retire the fill loop and the lane inputs with it.
+    fillToken += 1;
+    fillActive = false;
+    fillCursor = 0;
+    laneSegments = [];
+    durations = [];
+    seekPending = false;
+    suppressAdvanceCount = false;
+    livePosition = 0;
+    currentIndex = 0;
     playbackRunning = false;
     paused = false;
     playedCount = 0;
     totalSegments = 0;
     lastState = null;
-    // A previous generation loop may be parked on the lookahead cap — wake it
+    wakeStaleFillWaiter();
+    // A previous fill loop may be parked on the lookahead cap — wake it
     // so its epoch check can retire it (otherwise narrate() would leak a
     // pending promise).
     wakeGeneration();
+  }
+
+  /** TPE-18b: rebuild the queue around one target segment (full retarget).
+   *  The running fill loop adopts the moved cursor; the stale playback
+   *  continuation reaps into the new queue (shift-time index assignment
+   *  keeps currentIndex exact). */
+  function retarget(index: number, offset: number): void {
+    const myEpoch = epoch;
+    fillToken += 1;
+    fillCursor = index + 1;
+    // The lane continues past the seek point — reopen forward completion
+    // (a restarted/adopted fill must load ahead again; the terminal
+    // branches re-decide). failedMessage is deliberately kept: a lane
+    // draining toward an error still ends in the error after the refill.
+    generationDone = false;
+    suppressAdvanceCount = true;
+    deps.player.skipCurrent();
+    pendingBlobs = [];
+    playedCount = index;
+    currentIndex = index;
+    livePosition = offset;
+    seekPending = true;
+    // The parked fill loop (if any) waits on the cap — the cleared queue
+    // unblocks it; its cursor check adopts the retarget.
+    wakeGeneration();
+    void (async () => {
+      const myToken = fillToken;
+      const loaded = await loadSegmentBlob(index, myEpoch, true);
+      if (myEpoch !== epoch || myToken !== fillToken) return;
+      seekPending = false;
+      if (!loaded) {
+        // The lane retired inside the load or the segment hard-failed
+        // (the error path already surfaced it) — wake the narrate tail
+        // parked on the gap instead of hanging it.
+        wakeStaleWaiter();
+        return;
+      }
+      pendingBlobs.unshift({ blob: loaded.blob, cacheKey: loaded.key, index, startAt: offset });
+      probeSegment(index, loaded.blob);
+      if (paused) {
+        emitState("paused");
+        emitProgress();
+      } else {
+        kickPlayback(myEpoch);
+      }
+      ensureFill(myEpoch);
+    })();
   }
 
   return {
@@ -336,24 +728,28 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
 
       totalSegments = segments.length;
       playedCount = 0;
+      currentIndex = 0;
+      livePosition = 0;
       generationDone = false;
       failedMessage = null;
       pendingBlobs = [];
       epochKeys = [];
       epochReported = false;
-      synthesisController = new AbortController();
-      const synthesisSignal = synthesisController.signal;
+      // TPE-18b: publish the lane inputs, then start the cursor fill.
+      laneSegments = segments;
+      durations = segments.map(() => null);
+      laneProfile = profile;
       // TPE-16: wait-for-full-generation profile flag — progressive
       // playback starts on the first blob by default; heavy models opt
       // into synthesizing everything before the first sound (gapless
       // audio at the cost of a later start). Backend-agnostic: any
       // profile can be slow, so the flag lives in the common config.
-      const waitForFullGeneration = profile.config["waitForFullGeneration"] === true;
+      laneWaitForFull = profile.config["waitForFullGeneration"] === true;
       const config = profile.config;
       const configString = (value: unknown): string | null => (typeof value === "string" ? value : null);
       const speedRaw = config["speed"];
       const synthesisSpeed = typeof speedRaw === "number" && Number.isFinite(speedRaw) ? speedRaw : null;
-      const cacheBase = {
+      laneCacheBase = {
         backend: profile.backend,
         endpoint: configString(config["endpoint"]) ?? configString(config["baseUrl"]),
         model: configString(config["model"]) ?? configString(config["modelId"]),
@@ -361,119 +757,19 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
         speed: synthesisSpeed,
         narrator: hasNarrator,
       };
+      fillCursor = 0;
+      fillToken += 1;
+      seekPending = false;
+      suppressAdvanceCount = false;
+      synthesisController = new AbortController();
       emitState("generating");
+      emitProgress();
+      ensureFill(myEpoch);
 
-      function kickPlayback(): void {
-        if (!waitForFullGeneration && !playbackRunning && !paused) {
-          void runPlayback(myEpoch);
-        }
-      }
-
-      async function cachedOrSynthesize(segment: { text: string; voiceId: string }): Promise<boolean> {
-        const key = buildNarrationCacheKey({ ...cacheBase, voiceId: segment.voiceId, text: segment.text });
-        if (deps.cache) {
-          let cached: Blob | null = null;
-          try {
-            cached = await deps.cache.get(key);
-          } catch {
-            // Best-effort cache: storage failure degrades to synthesis.
-            cached = null;
-          }
-          if (cached) {
-            if (myEpoch !== epoch || generationDone) return false;
-            pendingBlobs.push({ blob: cached, cacheKey: key });
-            epochKeys.push(key);
-            kickPlayback();
-            return true;
-          }
-        }
-        // One retry after a short backoff: a single transient failure
-        // must not kill the narration (the TPE-16 drop).
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          if (myEpoch !== epoch || generationDone) return false;
-          try {
-            const result = await deps.synthesize(segment.text, profile, segment.voiceId, { signal: synthesisSignal });
-            if (myEpoch !== epoch) return false;
-            if (deps.cache) {
-              try {
-                await deps.cache.put(key, result.blob, result.mime);
-              } catch {
-                // Best-effort cache: a failed write never fails the narration.
-              }
-            }
-            if (myEpoch !== epoch || generationDone) return false;
-            pendingBlobs.push({ blob: result.blob, cacheKey: key });
-            epochKeys.push(key);
-            kickPlayback();
-            return true;
-          } catch (error) {
-            // Abort/stale-epoch/retired lane: clean retire, never an error.
-            if (myEpoch !== epoch || generationDone || isAbortError(error) || synthesisSignal.aborted) return false;
-            if (attempt === 0) {
-              try {
-                await sleepOrAbort(SYNTHESIZE_RETRY_DELAY_MS, synthesisSignal);
-              } catch {
-                return false;
-              }
-              continue;
-            }
-            // Hard failure (second consecutive): keep everything already
-            // generated — resume serves it from the cache — stop past
-            // this segment, and surface the error (never silent).
-            generationDone = true;
-            failedMessage = error instanceof Error ? error.message : String(error);
-            if (!playbackRunning && (pendingBlobs.length === 0 || paused)) {
-              emitState("error", failedMessage);
-            } else if (!playbackRunning) {
-              // Good segments are queued but playback never started:
-              // drain them first; the loop ends in the error state.
-              void runPlayback(myEpoch);
-            }
-            // Active playback keeps draining the good queue; its terminal
-            // branch emits the error. Never skipCurrent here — the
-            // currently playing segment is innocent.
-            return false;
-          }
-        }
-        return false;
-      }
-
-      // Generation loop: per-segment cache-or-synthesize, enqueue, and
-      // (progressive mode) kick playback on the first blob so it overlaps
-      // with the remaining synthesis. TE2-14: wait while the lookahead
-      // queue is full — EXCEPT in wait-for-full-generation mode, where
-      // playback is deferred and the queue must be allowed to grow (the
-      // yield still paces the shared GPU; only the queue ceiling lifts,
-      // otherwise >CAP+1 segments would deadlock against a drain that
-      // never starts). generationDone is set by the error/stop paths —
-      // checked everywhere so we never synthesize into a dead narration.
-      const genPromise = (async () => {
-        for (const segment of segments) {
-          while (
-            !waitForFullGeneration &&
-            myEpoch === epoch &&
-            !generationDone &&
-            pendingBlobs.length >= GENERATION_LOOKAHEAD_CAP
-          ) {
-            await new Promise<void>((resolve) => {
-              generationQueueDrained = resolve;
-            });
-          }
-          if (myEpoch !== epoch || generationDone) return;
-          const advanced = await cachedOrSynthesize(segment);
-          if (!advanced) return;
-          // TE2-14: breathe between syntheses. In progressive mode the
-          // first audio was already kicked above, so this yield is
-          // inaudible; in wait-full mode it paces the whole batch.
-          await new Promise<void>((resolve) => setTimeout(resolve, INTER_SYNTHESIS_YIELD_MS));
-        }
-        generationDone = true;
-        if (!playbackRunning && !paused && pendingBlobs.length > 0) {
-          void runPlayback(myEpoch);
-        }
-      })();
-
-      await genPromise;
+      await new Promise<void>((resolve) => {
+        fillWaiterEpoch = myEpoch;
+        fillSettled = resolve;
+      });
       if (myEpoch !== epoch) return;
       if (paused) return;
 
@@ -490,6 +786,17 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
           await runPlayback(myEpoch);
         }
       }
+      // TPE-18b: a seek may land while the tail is parked above — the
+      // stale continuation wakes it over a momentary queue gap that is
+      // not completion. Park until the landing settles instead of
+      // emitting a spurious complete→playing churn.
+      while (seekPending && !paused && myEpoch === epoch) {
+        await new Promise<void>((resolve) => {
+          playbackSettled = resolve;
+        });
+      }
+      if (myEpoch !== epoch) return;
+      if (paused) return;
       if (!playbackRunning && pendingBlobs.length === 0 && generationDone) {
         // Everything already played (or nothing was playable); ensure the
         // terminal state is emitted exactly once.
@@ -505,6 +812,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       paused = true;
       deps.player.pause();
       if (activeMessageId) emitState("paused");
+      emitProgress();
     },
 
     resume(): void {
@@ -512,9 +820,13 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       paused = false;
       deps.player.resume();
       if (activeMessageId) emitState("playing");
+      emitProgress();
       if (!playbackRunning && (pendingBlobs.length > 0 || !generationDone)) {
         void runPlayback(epoch);
       } else if (!playbackRunning && pendingBlobs.length === 0 && generationDone) {
+        // TPE-18b: a seek target may still be loading — its landing kicks
+        // playback; emitting completion here would freeze the bar mid-air.
+        if (seekPending) return;
         // TPE-16: a failed narration stays failed — resume must never flip
         // an error into a completion.
         if (lastState?.status !== "complete" && lastState?.status !== "error") {
@@ -531,6 +843,54 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       deps.player.skipCurrent();
     },
 
+    seekTo(positionSec: number): void {
+      const status = lastState?.status;
+      if (!activeMessageId || laneSegments.length === 0) return;
+      if (status !== "generating" && status !== "playing" && status !== "paused") return;
+      if (typeof positionSec !== "number" || !Number.isFinite(positionSec)) return;
+      const clamped = Math.max(0, positionSec);
+      // Map the cumulative position to (segment, offset) over the known
+      // durations. Unknown segments have no width: a position inside one
+      // lands at its start (offset 0) — honest slivers, never estimates.
+      let acc = 0;
+      let target = laneSegments.length - 1;
+      let offset = 0;
+      for (let i = 0; i < laneSegments.length; i += 1) {
+        const d = durations[i] ?? null;
+        if (d === null || clamped <= acc) {
+          target = i;
+          offset = 0;
+          break;
+        }
+        if (clamped < acc + d) {
+          target = i;
+          offset = Math.min(clamped - acc, d);
+          break;
+        }
+        acc += d;
+      }
+      // Same-segment landing with a live element: seamless clock jump,
+      // no queue rebuild. Everything else goes through the full retarget.
+      if (
+        target === currentIndex &&
+        offset !== livePosition &&
+        (status === "playing" || status === "paused") &&
+        deps.player.seekTo &&
+        deps.player.getPosition?.() !== null
+      ) {
+        deps.player.seekTo(offset);
+        livePosition = offset;
+        emitProgress();
+        return;
+      }
+      if (target === currentIndex && offset === livePosition) return;
+      retarget(target, offset);
+    },
+
+    setVolume(volume: number): void {
+      deps.player.setVolume?.(volume);
+    },
+
     stop(): void {
       epoch += 1;
       // TPE-16: honest cancellation — the in-flight synthesize fetch dies
@@ -543,8 +903,14 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       generationDone = true;
       playbackRunning = false;
       paused = false;
+      // TPE-18b: retire the fill loop with the lane.
+      fillToken += 1;
+      fillActive = false;
+      seekPending = false;
+      suppressAdvanceCount = false;
       deps.player.skipCurrent();
       wakeStaleWaiter();
+      wakeStaleFillWaiter();
       if (activeMessageId) emitState("complete");
     },
 

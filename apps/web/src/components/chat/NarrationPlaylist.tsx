@@ -3,16 +3,25 @@ import type { AppMessage } from "../../api/types.js";
 import { useT } from "../../i18n/context.js";
 import { firstTwoLines } from "../../lib/tts/narration-source.js";
 import type { NarrationPlaylistEntry } from "../../lib/tts/narration-cache.js";
-import type { NarrationState } from "../../lib/tts/tts-orchestrator.js";
+import type { NarrationProgress, NarrationState } from "../../lib/tts/tts-orchestrator.js";
 import { cn } from "../../lib/cn.js";
 import { Ic } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { EmptyState } from "../shared/empty-state.js";
+import { SliderField } from "../shared/SliderField.js";
 
 /** TPE-18a: the playlist body (DiceTray twin) — rows for everything
  *  narrated (or being narrated) in the current chat, plus the footer
- *  controls (global stop + playback rate). NO pause/seek/volume (TPE-18b),
+ *  controls (global stop + pause + playback rate + volume, TPE-18b).
  *  NO library (TPE-18c), NO auto-advance (TPE-18d). */
+
+/** TPE-18b: m:ss clock for the seek bar (RU-safe: digits only). */
+export function formatPlaybackTime(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(clamped / 60);
+  const seconds = clamped % 60;
+  return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+}
 
 export interface PlaylistRowModel {
   messageId: string;
@@ -104,6 +113,44 @@ export function showMessageInChat(messageId: string): boolean {
   return true;
 }
 
+/** TPE-18b: cumulative playback position control for the live row. */
+function SeekBar(input: {
+  readonly progress: NarrationProgress | null;
+  readonly onSeek: (positionSec: number) => void;
+}): ReactNode {
+  const { t } = useT();
+  const progress = input.progress;
+  const knownSum = progress ? progress.durations.reduce<number>((sum, d) => sum + (d ?? 0), 0) : 0;
+  const rangeMax: number = progress !== null && progress.totalSec !== null ? progress.totalSec : knownSum;
+  const position = progress ? Math.min(progress.positionSec, rangeMax) : 0;
+  return (
+    <span className="mt-1 flex min-w-0 items-center gap-1.5">
+      <input
+        type="range"
+        min={0}
+        max={rangeMax}
+        step={0.1}
+        value={position}
+        disabled={!progress || rangeMax <= 0}
+        aria-label={t("narration_playlist_seek")}
+        data-testid="playlist-seek"
+        onChange={(e) => {
+          const v = parseFloat(e.target.value);
+          if (!Number.isNaN(v)) input.onSeek(v);
+        }}
+        className="h-[6px] w-auto min-w-0 flex-1 cursor-pointer rounded-full border-0 accent-accent disabled:cursor-default disabled:opacity-40"
+      />
+      <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 tabular-nums">
+        {progress
+          ? progress.totalSec !== null
+            ? `${formatPlaybackTime(position)} / ${formatPlaybackTime(progress.totalSec)}`
+            : formatPlaybackTime(position)
+          : `0:00`}
+      </span>
+    </span>
+  );
+}
+
 const PLAYBACK_RATES = [1, 1.25, 1.5, 0.75];
 
 export function nextPlaybackRate(current: number): number {
@@ -118,9 +165,19 @@ export interface NarrationPlaylistProps {
   readonly liveTextById: (messageId: string) => string | null;
   readonly rate: number;
   readonly anyLive: boolean;
+  /** TPE-18b: the live lane is parked (pause toggle shows Resume). */
+  readonly livePaused: boolean;
+  /** TPE-18b: live progress per message (seek-bar source). */
+  readonly progress: Record<string, NarrationProgress>;
+  /** TPE-18b: global narration volume 0..1 (shared SliderField). */
+  readonly volume: number;
   readonly onPlay: (messageId: string) => void;
   readonly onStop: () => void;
   readonly onCycleRate: () => void;
+  readonly onPause: () => void;
+  readonly onResume: () => void;
+  readonly onSeek: (messageId: string, positionSec: number) => void;
+  readonly onVolume: (volume: number) => void;
   readonly showTitle: boolean;
 }
 
@@ -151,8 +208,10 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
             <PlaylistRow
               key={row.messageId}
               row={row}
+              progress={input.progress[row.messageId] ?? null}
               onPlay={() => input.onPlay(row.messageId)}
               onStop={input.onStop}
+              onSeek={(positionSec) => input.onSeek(row.messageId, positionSec)}
             />
           ))}
         </ul>
@@ -170,6 +229,21 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
             <Ic.stopSquare />
           </button>
         </CustomTooltip>
+        {/* TPE-18b: pause/resume toggle for the live lane. Same 28px
+          footprint as stop — footer arithmetic: 28+28+~44+gaps fits the
+          392px inner width with room for RU labels. */}
+        <CustomTooltip content={input.livePaused ? t("narration_playlist_resume") : t("narration_playlist_pause")}>
+          <button
+            type="button"
+            aria-label={input.livePaused ? t("narration_playlist_resume") : t("narration_playlist_pause")}
+            data-testid="playlist-pause"
+            disabled={!input.anyLive}
+            onClick={input.livePaused ? input.onResume : input.onPause}
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:cursor-default disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            {input.livePaused ? <Ic.play /> : <Ic.pause />}
+          </button>
+        </CustomTooltip>
         <CustomTooltip content={t("narration_playlist_rate")}>
           <button
             type="button"
@@ -182,14 +256,32 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
           </button>
         </CustomTooltip>
       </div>
+      {/* TPE-18b: global volume as its own footer row — the shared
+        SliderField (label + number) is too tall to sit inline with the
+        28px transport buttons, and full width fits any RU label. */}
+      <div className="border-t border-border2 px-3 py-2">
+        <SliderField
+          label={t("narration_playlist_volume")}
+          value={input.volume}
+          min={0}
+          max={1}
+          step={0.05}
+          onChange={input.onVolume}
+          rangeTestId="playlist-volume"
+          numberTestId="playlist-volume-number"
+        />
+      </div>
     </div>
   );
 }
 
 function PlaylistRow(input: {
   readonly row: PlaylistRowModel;
+  /** TPE-18b: live progress for the seek bar (null for settled rows). */
+  readonly progress: NarrationProgress | null;
   readonly onPlay: () => void;
   readonly onStop: () => void;
+  readonly onSeek: (positionSec: number) => void;
 }): ReactNode {
   const { t } = useT();
   const { row } = input;
@@ -255,6 +347,13 @@ function PlaylistRow(input: {
             </span>
           )}
         </div>
+        {/* TPE-18b: PLAYBACK position bar — a control (range + clock),
+          visually distinct from the FETCH mini-bar above (accent fill +
+          n/total). Unknown total: seeks over the known prefix; unknown
+          segments are slivers, never estimates. */}
+        {row.live !== null && (
+          <SeekBar progress={input.progress} onSeek={input.onSeek} />
+        )}
       </div>
       <CustomTooltip content={t("narration_playlist_show_in_chat")}>
         <button
