@@ -76,6 +76,8 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
   // TPE-18c: library actions + per-row saving spinners.
   const saveToLibrary = useTtsPlaybackStore((s) => s.saveToLibrary);
   const dropLibraryRow = useTtsPlaybackStore((s) => s.dropLibraryRow);
+  // FS-3: cache-only row drop (partial discard).
+  const dropCachedRow = useTtsPlaybackStore((s) => s.dropCachedRow);
   const revealLibraryRow = useTtsPlaybackStore((s) => s.revealLibraryRow);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   // Static per mount (UA-based, not viewport): Android hides reveal.
@@ -219,9 +221,28 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
     },
     [chatId, branchId, characterId, dropLibraryRow],
   );
+  // FS-3: cache-drop for partial rows — local only (segment eviction +
+  // index removal), so no branch/character scope is needed. The store
+  // throws only for library rows, which never render this button; the
+  // catch mirrors the library handlers above.
+  const onDropCache = useCallback(
+    (messageId: string) => {
+      if (!chatId) return;
+      void (async () => {
+        try {
+          await dropCachedRow(chatId, messageId);
+        } catch {
+          // Unreachable from the UI (button renders on cache-only rows).
+        }
+      })();
+    },
+    [chatId, dropCachedRow],
+  );
 
-  // The pill stays hidden until something exists to list — an empty
-  // playlist with no live lane is noise above the input area.
+  // The pill stays mounted while the chat has anything to list — live
+  // lanes, completed narrations, AND aborted-but-cached partials (FS-3:
+  // partial tracks count, so stopNarration persists the aborted lane as a
+  // partial row and the completed-only index no longer decides alone).
   if (!chatId || (entries.length === 0 && !anyLive)) return null;
 
   const pillLabel = anyLive
@@ -251,6 +272,7 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       onSave={onSave}
       onReveal={onReveal}
       onDrop={onDrop}
+      onDropCache={onDropCache}
       savingIds={savingIds}
       canReveal={canReveal}
       showTitle={!isMobile}

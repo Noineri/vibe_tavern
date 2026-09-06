@@ -208,6 +208,9 @@ function memoryIndex(): NarrationPlaylistIndex {
       if (!items) { items = new Map(); chats.set(chatId, items); }
       items.set(entry.messageId, entry);
     },
+    async remove(chatId: string, messageId: string) {
+      chats.get(chatId)?.delete(messageId);
+    },
     async clear(chatId: string) { chats.delete(chatId); },
   };
 }
@@ -685,6 +688,171 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect(formatPlaybackTime(5)).toBe("0:05");
     expect(formatPlaybackTime(65)).toBe("1:05");
     expect(formatPlaybackTime(600)).toBe("10:00");
+  });
+});
+
+describe("narration playlist partial tracks (FS-3)", () => {
+  const TEXT = "Para one and only.";
+
+  function singleLineMessage(): AppMessage {
+    return message({
+      id: "m1",
+      content: TEXT,
+      variants: [
+        {
+          id: brandId<MessageVariantId>("m1-v1"),
+          messageId: brandId<MessageId>("m1"),
+          variantIndex: 0,
+          content: TEXT,
+          isSelected: true,
+          finishReason: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+  }
+
+  function abortMeta() {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId: "m1-v1",
+      variantIndex: 0,
+      snippet: TEXT,
+    };
+  }
+
+  /** Deferred player lane (single parked segment) — same shape as the
+   *  TPE-18b helper, scoped here because that one lives in its describe. */
+  function parkLane(): {
+    plays: Array<{ text: string; startAt: number }>;
+    resolveCurrent: (result?: "ended" | "skipped" | "error") => void;
+  } {
+    const plays: Array<{ text: string; startAt: number }> = [];
+    let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
+    __setTtsPlaybackDepsForTests({
+      player: {
+        play(blob: Blob, _rate: number, options?: { startAt?: number }): Promise<"ended" | "skipped" | "error"> {
+          void blob.text().then((t) => plays.push({ text: t, startAt: options?.startAt ?? 0 }));
+          return new Promise<"ended" | "skipped" | "error">((resolve) => {
+            currentResolve = resolve;
+          });
+        },
+        skipCurrent: () => {
+          const fn = currentResolve;
+          currentResolve = null;
+          if (fn) fn("skipped");
+        },
+        pause: () => {},
+        resume: () => {},
+        setRate: () => {},
+        setVolume: () => {},
+        dispose: () => {},
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: memoryIndex(),
+      notifyError: () => {},
+    });
+    return {
+      plays,
+      resolveCurrent: (result = "ended") => {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn(result);
+      },
+    };
+  }
+
+  function partialEntry(): NarrationPlaylistEntry | undefined {
+    return useTtsPlaybackStore.getState().playlist["c1"]?.find((entry) => entry.messageId === "m1");
+  }
+
+  it("FS-3a: aborting mid-way keeps the pill and surfaces a partial row with continue", async () => {
+    mocks.messages = [singleLineMessage(), u1()];
+    const lane = parkLane();
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), abortMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    // Abort through the footer stop (the only stop since FS-2).
+    await act(async () => { fireEvent.click(getByTestId("playlist-stop")); });
+    // The aborted lane lands in the index as a partial row — wait for
+    // the write before asserting the pill, so the test pins the end
+    // state instead of racing the live-to-index handoff.
+    await waitFor(() => { expect(partialEntry()?.partial).toBe(true); });
+    expect(getByTestId("narration-playlist-pill")).toBeDefined();
+    const row = getByTestId("narration-playlist-row");
+    expect(row.textContent).toContain(TEXT);
+    expect(getByTestId("playlist-row-continue")).toBeDefined();
+    expect(getByTestId("playlist-row-drop-cache")).toBeDefined();
+    // Partials never offer library save (the file is whole-track only).
+    expect(queryByTestId("playlist-row-save")).toBeNull();
+    const entry = partialEntry();
+    expect(entry?.cacheKeys.length).toBeGreaterThan(0);
+  });
+
+  it("FS-3b: continue re-runs the narration from cache and settles the row", async () => {
+    mocks.messages = [singleLineMessage(), u1()];
+    const lane = parkLane();
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), abortMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    act(() => { useTtsPlaybackStore.getState().stopNarration(); });
+    await waitFor(() => { expect(partialEntry()?.partial).toBe(true); });
+    await act(async () => { fireEvent.click(getByTestId("narration-playlist-pill")); });
+    await waitFor(() => getByTestId("playlist-row-continue"));
+    expect(synthCalls).toHaveLength(1);
+    // Continue speaks the same voiced variant text, so every segment is
+    // a cache hit: one more play, zero new synthesis.
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-continue")); });
+    await waitFor(() => { expect(lane.plays).toHaveLength(2); });
+    expect(lane.plays[1]?.text).toBe(`audio:${TEXT}`);
+    expect(synthCalls).toHaveLength(1);
+    await act(async () => { lane.resolveCurrent("ended"); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+    // A genuine completion clears the partial flag — the row settles.
+    await waitFor(() => { expect(partialEntry()?.partial).not.toBe(true); });
+    expect(queryByTestId("playlist-row-continue")).toBeNull();
+    expect(getByTestId("narration-playlist-row")).toBeDefined();
+    expect(getByTestId("narration-playlist-pill")).toBeDefined();
+  });
+
+  it("FS-3c: dropping the partial clears it and hides the pill when nothing remains", async () => {
+    mocks.messages = [singleLineMessage(), u1()];
+    const lane = parkLane();
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), abortMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    act(() => { useTtsPlaybackStore.getState().stopNarration(); });
+    await waitFor(() => { expect(partialEntry()?.partial).toBe(true); });
+    const keys = [...(partialEntry()?.cacheKeys ?? [])];
+    expect(keys.length).toBeGreaterThan(0);
+    await act(async () => { fireEvent.click(getByTestId("narration-playlist-pill")); });
+    await waitFor(() => getByTestId("playlist-row-drop-cache"));
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-drop-cache")); });
+    // The row is gone, its blobs are evicted, and with no live lane and
+    // no rows left the pill unmounts.
+    await waitFor(() => { expect(queryByTestId("narration-playlist-pill")).toBeNull(); });
+    expect(queryByTestId("narration-playlist-row")).toBeNull();
+    expect(partialEntry()).toBeUndefined();
+    for (const key of keys) {
+      expect(await cache.get(key)).toBeNull();
+    }
   });
 });
 

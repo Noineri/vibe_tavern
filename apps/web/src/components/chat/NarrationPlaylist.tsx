@@ -35,6 +35,10 @@ export interface PlaylistRowModel {
   live: NarrationState | null;
   /** TPE-18c: a saved library file exists for this exact variant. */
   inLibrary: boolean;
+  /** FS-3: aborted before completing — a cached prefix with an explicit
+   *  continue-generation button (no library save: the file is whole-track
+   *  only). */
+  partial: boolean;
 }
 
 function isLiveState(state: NarrationState | undefined): state is NarrationState {
@@ -76,6 +80,7 @@ export function buildPlaylistRows(
       variantCount: variants.length,
       live: liveState,
       inLibrary: entry?.inLibrary === true,
+      partial: entry?.partial === true,
     };
     if (liveState) live.push(row);
     else settled.push(row);
@@ -190,6 +195,9 @@ export interface NarrationPlaylistProps {
   readonly onSave: (messageId: string) => void;
   readonly onReveal: (messageId: string) => void;
   readonly onDrop: (messageId: string) => void;
+  /** FS-3: drop a cache-only row (partial) — evicts its cached segments
+   *  and removes the index entry. */
+  readonly onDropCache: (messageId: string) => void;
   /** TPE-18c: rows with a save in flight (button disabled, no double-save). */
   readonly savingIds: ReadonlySet<string>;
   /** TPE-18c: false where no OS file manager exists (Android) — the
@@ -233,6 +241,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
               onSave={() => input.onSave(row.messageId)}
               onReveal={() => input.onReveal(row.messageId)}
               onDrop={() => input.onDrop(row.messageId)}
+              onDropCache={() => input.onDropCache(row.messageId)}
             />
           ))}
         </ul>
@@ -323,6 +332,7 @@ function PlaylistRow(input: {
   readonly onSave: () => void;
   readonly onReveal: () => void;
   readonly onDrop: () => void;
+  readonly onDropCache: () => void;
 }): ReactNode {
   const { t } = useT();
   const { row } = input;
@@ -389,6 +399,23 @@ function PlaylistRow(input: {
             </span>
           )}
         </div>
+        {/* FS-3: partial rows carry an explicit continue-generation
+          button — a full-width text control under the snippet (w-full,
+          wrapping: RU «Продолжить генерацию» never truncates, and the
+          right-side icon chrome keeps its 28px arithmetic). Re-running
+          the narration resumes from cache (TPE-16: only missing segments
+          synthesize) and a genuine completion clears the partial flag. */}
+        {!live && row.partial && (
+          <button
+            type="button"
+            data-testid="playlist-row-continue"
+            onClick={input.onPlay}
+            className="mt-1 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent-dim px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-accent-t transition-colors hover:bg-accent/20 [&_svg]:h-3 [&_svg]:w-3"
+          >
+            <Ic.play />
+            <span>{t("narration_playlist_continue")}</span>
+          </button>
+        )}
         {/* TPE-18b: PLAYBACK position bar — a control (range + clock),
           visually distinct from the FETCH mini-bar above (accent fill +
           n/total). Unknown total: seeks over the known prefix; unknown
@@ -398,11 +425,14 @@ function PlaylistRow(input: {
         )}
       </div>
       {/* TPE-18c: library actions on SETTLED rows only (live rows keep
-        play + seek). Settled arithmetic: play 28 + save 28 + show 28 +
+        play + seek). FS-3: partial rows offer no library save (the file
+        is whole-track only) — they get continue + cache-drop instead.
+        Settled arithmetic: play 28 + save 28 + show 28 +
         gaps = 96px chrome; library rows swap save for reveal + drop
-        (112 + gaps) — the snippet column keeps ~260px, truncation
+        (112 + gaps); partial cache-only rows swap save for drop-cache
+        (same 112 + gaps) — the snippet column keeps ~260px, truncation
         allowed in this density list. Icon-only buttons: no RU width risk. */}
-      {!live && !row.inLibrary && (
+      {!live && !row.inLibrary && !row.partial && (
         <CustomTooltip content={input.saving ? t("narration_playlist_saving") : t("narration_playlist_save")}>
           <button
             type="button"
@@ -436,6 +466,22 @@ function PlaylistRow(input: {
             aria-label={t("narration_playlist_drop_file")}
             data-testid="playlist-row-drop"
             onClick={input.onDrop}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            <Ic.del />
+          </button>
+        </CustomTooltip>
+      )}
+      {/* FS-3: cache-drop for partial cache-only rows (a partial that
+        also carries a library flag keeps the library drop above — the
+        file goes first, the row stays). Same 28px icon language. */}
+      {!live && row.partial && !row.inLibrary && (
+        <CustomTooltip content={t("narration_playlist_drop_cached")}>
+          <button
+            type="button"
+            aria-label={t("narration_playlist_drop_cached")}
+            data-testid="playlist-row-drop-cache"
+            onClick={input.onDropCache}
             className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
           >
             <Ic.del />

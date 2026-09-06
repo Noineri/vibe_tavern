@@ -118,6 +118,10 @@ export interface TtsPlaybackActions {
   /** TPE-18c: drop the saved FILE for a library row (the row stays —
    *  replay re-synthesizes fresh). No-op rows never render the button. */
   dropLibraryRow(scope: NarrationLibraryScope): Promise<void>;
+  /** FS-3: drop a CACHE-ONLY playlist row (an aborted partial): evict its
+   *  cached segment blobs and remove the index entry. Library rows keep
+   *  their own drop (the file goes first, the row stays). */
+  dropCachedRow(chatId: string, messageId: string): Promise<void>;
   /** TPE-18c: reveal the saved file in the OS file manager. */
   revealLibraryRow(scope: NarrationLibraryScope): Promise<void>;
   /** TPE-18a: drop one chat's rows from state (chat switch / tests). */
@@ -299,6 +303,43 @@ async function handleNarrated(messageId: string, report: NarratedReport): Promis
   }
 }
 
+/** FS-3: persist an aborted lane as a partial playlist row — same index,
+ *  same shape as completed rows plus the partial flag. The captured keys
+ *  stay resumable (TPE-16: a fresh narrate synthesizes only the missing
+ *  segments); a genuine completion overwrites the row via handleNarrated.
+ *  A stop that captured nothing over a COMPLETE row (library replay end,
+ *  instant restop of a finished re-narration) leaves the full entry
+ *  standing — there is nothing partial about it. Best-effort like every
+ *  other index write. */
+async function persistAbortedPlaylistEntry(
+  messageId: string,
+  meta: NarrationStartMeta,
+  abortedKeys: string[],
+): Promise<void> {
+  const index = playlistIndexOverride ?? narrationPlaylistIndex();
+  const rows = await index.list(meta.chatId);
+  const prior = rows.find((candidate) => candidate.messageId === messageId);
+  if (abortedKeys.length === 0 && prior && prior.partial !== true) return;
+  // Re-narration keys are content-hashed, so an aborted re-run recaptures
+  // the same keys for unchanged segments — union with the prior row
+  // (prior order first: save-to-library merges in key order).
+  const cacheKeys = [...(prior?.cacheKeys ?? [])];
+  for (const key of abortedKeys) {
+    if (!cacheKeys.includes(key)) cacheKeys.push(key);
+  }
+  await index.upsert(meta.chatId, {
+    messageId,
+    variantId: meta.variantId,
+    variantIndex: meta.variantIndex,
+    snippet: meta.snippet,
+    cacheKeys,
+    narratedAt: Date.now(),
+    ...(prior?.inLibrary === true ? { inLibrary: true } : {}),
+    partial: true,
+  });
+  await refreshPlaylistRows(meta.chatId);
+}
+
 /** TPE-18c: write fresh playlist rows for one chat (single state write). */
 async function refreshPlaylistRows(chatId: string): Promise<void> {
   const index = playlistIndexOverride ?? narrationPlaylistIndex();
@@ -471,7 +512,13 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
   },
 
   stopNarration() {
-    const stoppedId = get().lastStarted?.messageId;
+    const stopped = get().lastStarted;
+    const lane = orchestratorOverride ?? activeOrchestrator;
+    // FS-3: snapshot the ruling lane's captured segment keys BEFORE the
+    // stop resets the lane (stop() itself keeps them, but reading first
+    // is order-proof) — an aborted indexed lane becomes a partial row.
+    const abortedKeys = lane?.abortedCacheKeys() ?? [];
+    const stoppedId = stopped?.messageId;
     pendingIndexMeta = null;
     set((s) => {
       // TPE-18d: every stop breaks the chain (footer stop, message-row
@@ -481,7 +528,13 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
       delete progress[stoppedId];
       return { lastStarted: null, progress, advanceTo: null };
     });
-    (orchestratorOverride ?? activeOrchestrator)?.stop();
+    lane?.stop();
+    // FS-3: the aborted lane survives as a PARTIAL playlist row (owner:
+    // partial tracks count), so the pill outlives the stop. A ruling lane
+    // without index meta (unscoped message-block narrate) leaves no row.
+    // Best-effort: index writes never throw by contract, so no catch —
+    // the narration already ended either way.
+    if (stopped?.meta) void persistAbortedPlaylistEntry(stopped.messageId, stopped.meta, abortedKeys);
   },
 
   setRate(rate) {
@@ -616,6 +669,33 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
       notifyLibraryError(scope.messageId, message);
       throw error;
     }
+  },
+
+  async dropCachedRow(chatId, messageId) {
+    const rows = get().playlist[chatId] ?? [];
+    const entry = rows.find((candidate) => candidate.messageId === messageId);
+    if (entry && entry.inLibrary === true) {
+      throw new Error("this message has a saved library file — drop the file first");
+    }
+    const cache = cacheOverride ?? narrationCache();
+    for (const key of entry?.cacheKeys ?? []) {
+      try {
+        await cache.delete(key);
+      } catch {
+        // Best-effort eviction — the index removal below still lands.
+      }
+    }
+    const index = playlistIndexOverride ?? narrationPlaylistIndex();
+    await index.remove(chatId, messageId);
+    await refreshPlaylistRows(chatId);
+    set((s) => {
+      if (!(messageId in s.narrations) && !(messageId in s.progress)) return s;
+      const narrations = { ...s.narrations };
+      delete narrations[messageId];
+      const progress = { ...s.progress };
+      delete progress[messageId];
+      return { narrations, progress };
+    });
   },
 
   async revealLibraryRow(scope) {

@@ -130,6 +130,11 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
   /** TPE-18b: forward the store-level volume to the player. */
   setVolume(volume: number): void;
   stop(): void;
+  /** FS-3: snapshot of the ruling epoch's captured segment cache keys.
+   *  stop() leaves them intact (only a new narrate() retires the epoch),
+   *  so the store reads this around an abort to persist a partial row.
+   *  A copy — the lane keeps owning its array. */
+  abortedCacheKeys(): string[];
   setRate(rate: number): void;
 } {
   let epoch = 0;
@@ -995,6 +1000,14 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       wakeStaleWaiter();
       wakeStaleFillWaiter();
       if (activeMessageId) emitState("complete");
+    },
+
+    abortedCacheKeys(): string[] {
+      // FS-3: the keys stop() is about to orphan (cache hits included —
+      // the fill loop records every obtained segment, synthesized or
+      // not). Read-only copy; the lane array stays live until the next
+      // narrate() retires the epoch.
+      return [...epochKeys];
     },
 
     setRate(rate: number): void {

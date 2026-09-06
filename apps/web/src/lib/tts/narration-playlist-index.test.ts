@@ -54,4 +54,16 @@ describe("narration playlist index (TPE-18a)", () => {
     expect(await index.list("c1")).toEqual([]);
     expect(await index.list("c2")).toHaveLength(1);
   });
+
+  it("FS-3: remove drops one row and keeps its siblings", async () => {
+    const index = createNarrationPlaylistIndex();
+    await index.upsert("c1", entry());
+    await index.upsert("c1", entry({ messageId: "m2", narratedAt: 2000 }));
+    await index.remove("c1", "m1");
+    expect((await index.list("c1")).map((row) => row.messageId)).toEqual(["m2"]);
+    // Removing a missing row is a silent no-op, never a throw.
+    await index.remove("c1", "m1");
+    await index.remove("missing-chat", "m1");
+    expect((await index.list("c1")).map((row) => row.messageId)).toEqual(["m2"]);
+  });
 });

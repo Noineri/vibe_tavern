@@ -103,6 +103,11 @@ export interface NarrationPlaylistEntry {
   /** Segment cache keys that back this narration (replay = cache hits). */
   cacheKeys: string[];
   narratedAt: number;
+  /** FS-3: the lane was aborted before completing — the row is a cached
+   *  prefix, resumable via a fresh narrate (TPE-16: resume synthesizes
+   *  only the missing segments). A genuine completion overwrites the row
+   *  without the flag. Absent on all pre-FS-3 rows (they are complete). */
+  partial?: boolean;
   /** TPE-18c: a saved library file exists for this exact variant
    *  (library-first playback + badge). Absent on pre-18c rows —
    *  loadPlaylist reconciles it against the server, so old rows heal. */
@@ -112,6 +117,9 @@ export interface NarrationPlaylistEntry {
 export interface NarrationPlaylistIndex {
   list(chatId: string): Promise<NarrationPlaylistEntry[]>;
   upsert(chatId: string, entry: NarrationPlaylistEntry): Promise<void>;
+  /** FS-3: drop ONE message row (a partial being discarded) — clear()
+   *  only ever drops whole chats. */
+  remove(chatId: string, messageId: string): Promise<void>;
   clear(chatId: string): Promise<void>;
 }
 
@@ -173,6 +181,20 @@ class IndexedDbNarrationPlaylistIndex implements NarrationPlaylistIndex {
     }
   }
 
+  async remove(chatId: string, messageId: string): Promise<void> {
+    try {
+      const db = await this.db();
+      const store = db.transaction(INDEX_STORE_NAME, "readwrite").objectStore(INDEX_STORE_NAME);
+      const record = await requestToPromise<StoredPlaylistIndex | undefined>(store.get(chatId));
+      if (!record || typeof record.items !== "object" || record.items === null) return;
+      if (!(messageId in record.items)) return;
+      delete record.items[messageId];
+      await requestToPromise(store.put({ ...record, updatedAt: Date.now() }));
+    } catch {
+      // Best-effort index: a failed removal never fails the narration.
+    }
+  }
+
   async clear(chatId: string): Promise<void> {
     try {
       const db = await this.db();
@@ -201,6 +223,10 @@ class MemoryNarrationPlaylistIndex implements NarrationPlaylistIndex {
       this.chats.set(chatId, items);
     }
     items.set(entry.messageId, entry);
+  }
+
+  async remove(chatId: string, messageId: string): Promise<void> {
+    this.chats.get(chatId)?.delete(messageId);
   }
 
   async clear(chatId: string): Promise<void> {
@@ -238,6 +264,17 @@ export function createNarrationPlaylistIndex(): NarrationPlaylistIndex {
         }
       }
       await memory.upsert(chatId, entry);
+    },
+    async remove(chatId: string, messageId: string): Promise<void> {
+      if (primary !== null) {
+        try {
+          await primary.remove(chatId, messageId);
+          return;
+        } catch {
+          primary = null;
+        }
+      }
+      await memory.remove(chatId, messageId);
     },
     async clear(chatId: string): Promise<void> {
       if (primary !== null) {

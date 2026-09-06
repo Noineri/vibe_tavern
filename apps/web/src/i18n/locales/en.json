@@ -402,6 +402,8 @@
   "narration_playlist_in_library": "In library",
   "narration_playlist_reveal_file": "Show file",
   "narration_playlist_drop_file": "Remove saved file",
+  "narration_playlist_drop_cached": "Drop cached audio",
+  "narration_playlist_continue": "Continue generation",
   "narration_playlist_swipe": "Swipe {current} of {total}",
   "narration_playlist_fetching": "{received} of {total} received",
   "narration_playlist_rate": "Playback speed",

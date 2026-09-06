@@ -511,6 +511,9 @@ describe("TPE-18c narration library (store)", () => {
         }
         items.set(entry.messageId, entry);
       },
+      async remove(chatId: string, messageId: string) {
+        chats.get(chatId)?.delete(messageId);
+      },
       async clear(chatId: string) {
         chats.delete(chatId);
       },
@@ -824,6 +827,9 @@ describe("TPE-18d continuous play (store chain)", () => {
           chats.set(chatId, items);
         }
         items.set(entry.messageId, entry);
+      },
+      async remove(chatId: string, messageId: string) {
+        chats.get(chatId)?.delete(messageId);
       },
       async clear(chatId: string) {
         chats.delete(chatId);
