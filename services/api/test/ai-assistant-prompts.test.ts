@@ -128,3 +128,11 @@ describe("message editor prompt modes", () => {
     });
   }
 });
+
+describe("annotate prompt — macro-verbatim rule (TPE-19)", () => {
+  it("the default annotate asset tells the model to copy {{...}} constructs byte-for-byte", async () => {
+    const prompt = await getDefaultPromptForMode("message_tts_annotate");
+    expect(prompt).toContain("byte-for-byte");
+    expect(prompt).toContain("{{user}}");
+  });
+});

@@ -1,6 +1,9 @@
 import { useCallback, useMemo } from "react";
 
 import { useTtsPlaybackStore } from "../../stores/tts-playback-store.js";
+import { useMacroContext } from "../../stores/chat-selectors.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { replaceUiMacros } from "../../lib/macros.js";
 import { resolveNarrationProfile } from "../../lib/tts/voice-map.js";
 import { prepareNarrationTextPreservingTags, narrationTextOptionsForMode } from "../../lib/tts/narration-text.js";
 import { readTtsNarrationMode } from "../../lib/local-storage.js";
@@ -16,6 +19,11 @@ export function useMessageNarration(
   const narrations = useTtsPlaybackStore((s) => s.narrations);
   const startNarration = useTtsPlaybackStore((s) => s.startNarration);
   const stopNarration = useTtsPlaybackStore((s) => s.stopNarration);
+  // TPE-19: the SAME macro context the chat view renders with
+  // (useMacroContext — character/persona/pronouns from the snapshot
+  // store), so the narrated text always matches the screen text.
+  const macroContext = useMacroContext();
+  const isCoauthorMode = useSnapshotStore((s) => s.activeChat?.mode === "coauthor");
 
   const resolution = useMemo(() => {
     if (data === null) return null;
@@ -42,7 +50,15 @@ export function useMessageNarration(
     const raw = getText();
     // getText() already prefers the selected variant's TTS annotation
     // (MessageBlock seam, TPE-1): when present it IS the narration source.
-    const text = prepareNarrationTextPreservingTags(raw, {
+    // TPE-19: resolve UI macros BEFORE prepare — byte-identical to the
+    // useAutoNarrate seam (same resolver, same context, same coauthor
+    // guard) so manual and auto narration speak the same text. BEFORE
+    // (not after): prepare strips codeblocks/HTML, and macro VALUES
+    // (persona description, names) must go through the same cleaning as
+    // the rest of the narration text. replaceUiMacros is idempotent, so
+    // the already-resolved screen-text path is a no-op here.
+    const base = macroContext && !isCoauthorMode ? replaceUiMacros(raw, macroContext) : raw;
+    const text = prepareNarrationTextPreservingTags(base, {
       regexPresets: [],
       skipCodeblocks: true,
       stripHtml: true,
@@ -50,7 +66,7 @@ export function useMessageNarration(
     });
     if (text.trim().length === 0) return;
     void startNarration(messageId, text, resolution.profile);
-  }, [narrating, available, resolution, getText, messageId, startNarration, stopNarration]);
+  }, [narrating, available, resolution, getText, messageId, startNarration, stopNarration, macroContext, isCoauthorMode]);
 
   return { available, narrating, onNarrate };
 }

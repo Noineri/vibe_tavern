@@ -59,6 +59,8 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { useMessageAiEditorStore, type MessageAiEditorMode } from "../../stores/message-ai-editor-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useMacroContext } from "../../stores/chat-selectors.js";
+import { replaceUiMacros } from "../../lib/macros.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import {
@@ -212,8 +214,17 @@ export function MessageAiEditorModal() {
     return rows;
   }, [targetMessage, activeMode, editSourceVariantId, annotateSourceVariantId, targetMessageId, starredByMessage]);
 
+  // TPE-19: the same macro context the chat view renders with.
+  const macroContext = useMacroContext();
+  const isCoauthorMode = activeChat?.mode === "coauthor";
   /** Edit/annotate diff base: the canonical text of the variant being
-   *  worked on. Null when the variant has been deleted (stale-source state). */
+   *  worked on. Null when the variant has been deleted (stale-source state).
+   *  TPE-19: in annotate mode the baseline is macro-RESOLVED (the model
+   *  must see real names, not raw {{user}}/{{char}} — it strips braces
+   *  otherwise). The stored annotation therefore carries resolved names;
+   *  raw-variant narration re-resolves at narrate-time (accepted). Edit
+   *  mode keeps the canonical raw text (its flow never sends it raw to a
+   *  model as content-to-copy). */
   const editBaselineText = useMemo(() => {
     if (!targetMessage) return null;
     const sourceId = activeMode === "message_edit"
@@ -221,8 +232,12 @@ export function MessageAiEditorModal() {
       : activeMode === "message_tts_annotate" ? annotateSourceVariantId : null;
     if (!sourceId) return null;
     const variant = targetMessage.variants.find((v) => v.id === sourceId);
-    return variant ? variant.content : null;
-  }, [activeMode, targetMessage, editSourceVariantId, annotateSourceVariantId]);
+    if (!variant) return null;
+    if (activeMode === "message_tts_annotate" && macroContext && !isCoauthorMode) {
+      return replaceUiMacros(variant.content, macroContext);
+    }
+    return variant.content;
+  }, [activeMode, targetMessage, editSourceVariantId, annotateSourceVariantId, macroContext, isCoauthorMode]);
 
   // Stale-target / stale-source detection. Edit is stale when the captured
   // variant is no longer in the message. Merge is never "stale" by variant

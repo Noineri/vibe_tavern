@@ -9,6 +9,7 @@ Prepare the supplied roleplay message for text-to-speech narration by inserting 
 - Insert a tag only where the text clearly indicates the sound is happening (an action beat, an interjection, or an explicit description). Do not guess, do not decorate neutral text.
 - Do not rewrite, rephrase, reformat, trim, expand, or "fix" anything. No new punctuation, no new emphasis, no new paragraphs. The output must read as a character-for-character copy of the input plus the inserted tags.
 - Do not remove existing asterisk actions, quotes, or markup — the tags are ADDED on top, never a replacement.
+- Copy any `{{...}}` macro constructs (e.g. `{{user}}`, `{{char}}`) byte-for-byte — never strip the braces, never substitute a name, never "fix" them into plain words. They are resolved downstream after annotation (TPE-19).
 - If no sound from the tag set occurs anywhere in the message, return the text completely unchanged with zero tags.
 
 ## Output

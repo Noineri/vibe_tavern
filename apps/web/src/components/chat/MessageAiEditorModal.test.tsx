@@ -947,6 +947,30 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     expect(mockState.requests[0].existingContent).toBe('She laughed and said "wait for me".');
   });
 
+  it("annotate sends macro-RESOLVED text as existingContent (TPE-19)", async () => {
+    // Greeting-row case: card-authored raw macros must reach the model as
+    // real names (the model strips braces otherwise — owner live-test bug).
+    useSnapshotStore.setState({
+      character: { name: "Noi" },
+      persona: { name: "Alya" },
+      activeChat: { mode: "chat" },
+    } as never);
+    seedMessage([
+      { id: VA, messageId: MID, variantIndex: 0, content: '{{user}} laughed and said "wait for me", claimed {{char}}.', isSelected: true, finishReason: "stop" },
+    ] as AppMessage["variants"], 0);
+    setChunks([
+      { type: "text", text: 'Alya [laugh] said "wait for me".' },
+      { type: "done" },
+    ]);
+    openEditorForAnnotate();
+    renderModal();
+
+    await generateAnnotate();
+    expect(mockState.requests).toHaveLength(1);
+    expect(mockState.requests[0].mode).toBe("message_tts_annotate");
+    expect(mockState.requests[0].existingContent).toBe('Alya laughed and said "wait for me", claimed Noi.');
+  });
+
   it("Save writes the annotation to the variant's side field and never touches content actions", async () => {
     seedTwoVariantMessage();
     openEditorForEdit(VA);

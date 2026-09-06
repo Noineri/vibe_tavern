@@ -5,6 +5,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 useDomEnv();
 
 import { useTtsPlaybackStore, __setTtsPlaybackDepsForTests } from "../../stores/tts-playback-store.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
 import { TTS_NARRATION_MODE_KEY, persistTtsNarrationMode } from "../../lib/local-storage.js";
 
@@ -326,5 +327,78 @@ describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
     // quote filter) falls to the end instead of vanishing.
     expect(capturedText as unknown as string).toBe("Wait, don’t ever go. [laugh]");
     __setTtsPlaybackDepsForTests(null);
+  });
+});
+
+// ── TPE-19: narration resolves UI macros ────────────────────────────────────
+
+describe("useMessageNarration — macro resolution (TPE-19)", () => {
+  function seedMacroContext(coauthor = false) {
+    useSnapshotStore.setState({
+      character: { name: "Noi" },
+      persona: { name: "Alya", pronouns: "she/her" },
+      activeChat: { mode: coauthor ? "coauthor" : "chat" },
+    } as never);
+  }
+
+  function resetMacroContext() {
+    useSnapshotStore.setState({ character: null, persona: null, activeChat: null } as never);
+  }
+
+  async function captureStartNarrationText(source: string): Promise<unknown> {
+    currentData = { profiles: [pDefault], links: [] };
+    const fakePlayer = {
+      play: async () => "ended" as const,
+      skipCurrent: () => {},
+      pause: () => {},
+      resume: () => {},
+      setRate: () => {},
+      dispose: () => {},
+    };
+    const fakeSynthesize = mock(async (text: string) => ({ blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
+    __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
+    const origStart = useTtsPlaybackStore.getState().startNarration;
+    let captured: unknown = null;
+    useTtsPlaybackStore.setState({
+      startNarration: async (...args: unknown[]) => {
+        captured = args[1];
+        return origStart(...(args as [string, string, TtsProfileRecord]));
+      },
+    } as never);
+    let hook: any = null;
+    function Probe() {
+      hook = (useMessageNarration as any)("m1", null, null, () => source);
+      return null;
+    }
+    await act(async () => {
+      render(React.createElement(Probe));
+    });
+    await act(async () => {
+      hook!.onNarrate();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    __setTtsPlaybackDepsForTests(null);
+    return captured;
+  }
+
+  test("greeting macros resolve to persona/character names at the startNarration seam", async () => {
+    seedMacroContext();
+    const text = await captureStartNarrationText("{{user}} nodded as {{char}} spoke.");
+    expect(text as unknown as string).toBe("Alya nodded as Noi spoke.");
+    resetMacroContext();
+  });
+
+  test("pronoun macros follow the shared preset table (she/her → she)", async () => {
+    seedMacroContext();
+    const text = await captureStartNarrationText("{{sub}} smiled.");
+    expect(text as unknown as string).toBe("she smiled.");
+    resetMacroContext();
+  });
+
+  test("coauthor mode leaves raw macros untouched (display parity)", async () => {
+    seedMacroContext(true);
+    const text = await captureStartNarrationText("{{user}} nodded as {{char}} spoke.");
+    expect(text as unknown as string).toBe("{{user}} nodded as {{char}} spoke.");
+    resetMacroContext();
   });
 });
