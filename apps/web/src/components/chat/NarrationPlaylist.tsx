@@ -335,7 +335,7 @@ function PlaylistRow(input: {
   // (swipe label, progress) are never truncated.
   const snippet = row.snippet;
   const progress = row.live && row.live.total > 0
-    ? Math.min(100, Math.round((row.live.played / row.live.total) * 100))
+    ? Math.min(100, Math.round((row.live.received / row.live.total) * 100))
     : null;
   return (
     <li
@@ -391,12 +391,12 @@ function PlaylistRow(input: {
             </span>
           )}
           {row.live && row.live.total > 0 && (
-            <span className="flex min-w-0 flex-1 items-center gap-1.5" title={t("narration_playlist_fetching", { played: row.live.played, total: row.live.total })}>
+            <span className="flex min-w-0 flex-1 items-center gap-1.5" title={t("narration_playlist_fetching", { received: row.live.received, total: row.live.total })}>
               <span className="h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-s3">
                 <span className="block h-full rounded-full bg-accent" style={{ width: `${progress ?? 0}%` }} />
               </span>
               <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 tabular-nums">
-                {t("narration_playlist_fetching", { played: row.live.played, total: row.live.total })}
+                {t("narration_playlist_fetching", { received: row.live.received, total: row.live.total })}
               </span>
             </span>
           )}

@@ -407,7 +407,7 @@
   "narration_playlist_reveal_file": "Показать файл",
   "narration_playlist_drop_file": "Убрать сохранённый файл",
   "narration_playlist_swipe": "Свайп {current} из {total}",
-  "narration_playlist_fetching": "Получено {played} из {total}",
+  "narration_playlist_fetching": "Получено {received} из {total}",
   "narration_playlist_rate": "Скорость воспроизведения",
   "narration_playlist_pause": "Пауза",
   "narration_playlist_resume": "Продолжить",

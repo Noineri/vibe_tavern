@@ -46,6 +46,11 @@ export interface NarrationState {
   status: NarrationStatus;
   total: number;
   played: number;
+  /** TPE-21: segments RECEIVED from the provider (synthesized or cache-
+   * hit), independent of playback. With waitForFullGeneration the playback
+   * loop is held until the batch completes, so `played` stays 0 for the
+   * whole synthesis — this counter is what progress UI must show. */
+  received: number;
   error?: string;
 }
 
@@ -140,6 +145,10 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
   let generationDone = false;
   let totalSegments = 0;
   let playedCount = 0;
+  // TPE-21: received-from-provider counter (see NarrationState.received).
+  // Advances in the fill loop; survives seek retargets (unlike playedCount,
+  // which a seek presets); resets only with the lane.
+  let receivedCount = 0;
   /** TPE-18b: index of the segment currently loaded in the player (set at
    *  shift time — playedCount keeps counting COMPLETED segments exactly
    *  as before, so TPE-16/18a pins are untouched). */
@@ -254,6 +263,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       status,
       total: totalSegments,
       played: playedCount,
+      received: receivedCount,
       ...(error !== undefined ? { error } : {}),
     };
     lastState = state;
@@ -507,6 +517,12 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       if (!loaded) return;
       pendingBlobs.push({ blob: loaded.blob, cacheKey: loaded.key, index: i, startAt: 0 });
       fillCursor = i + 1;
+      // TPE-21: a segment landed — publish the honest fetch progress even
+      // while playback is held (wait-full mode). The STATUS is derived from
+      // the live lane (never claim "generating" while audio plays — seekTo's
+      // same-segment branch and the store UI read the status machine).
+      receivedCount += 1;
+      emitState(playbackRunning ? "playing" : paused ? "paused" : "generating");
       probeSegment(i, loaded.blob);
       kickPlayback(myEpoch);
       // TE2-14: breathe between syntheses. In progressive mode the
@@ -656,6 +672,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
     playbackRunning = false;
     paused = false;
     playedCount = 0;
+    receivedCount = 0;
     totalSegments = 0;
     lastState = null;
     wakeStaleFillWaiter();
@@ -745,6 +762,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
 
       totalSegments = segments.length;
       playedCount = 0;
+      receivedCount = 0;
       currentIndex = 0;
       livePosition = 0;
       generationDone = false;
@@ -843,6 +861,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       laneWaitForFull = false;
       totalSegments = 1;
       playedCount = 0;
+      receivedCount = 1;
       currentIndex = 0;
       livePosition = 0;
       generationDone = true;

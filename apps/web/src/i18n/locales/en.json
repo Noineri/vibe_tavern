@@ -403,7 +403,7 @@
   "narration_playlist_reveal_file": "Show file",
   "narration_playlist_drop_file": "Remove saved file",
   "narration_playlist_swipe": "Swipe {current} of {total}",
-  "narration_playlist_fetching": "{played} of {total} received",
+  "narration_playlist_fetching": "{received} of {total} received",
   "narration_playlist_rate": "Playback speed",
   "narration_playlist_pause": "Pause",
   "narration_playlist_resume": "Resume",

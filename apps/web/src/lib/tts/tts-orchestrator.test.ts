@@ -876,6 +876,46 @@ describe("TTS orchestrator — resilience (TPE-16)", () => {
     expect(states.at(-1)?.played).toBe(3);
   });
 
+  test("TPE-21: waitForFullGeneration reports received n/total honestly while playback is held", async () => {
+    const player = createDeferredPlayer();
+    const synth = createDeferredSynthesize();
+    const states: NarrationState[] = [];
+    const orch = createTtsOrchestrator({
+      synthesize: synth.fn,
+      player,
+      onState: (_id, s) => states.push({ ...s }),
+    });
+    const waitProfile = profile({ config: { waitForFullGeneration: true } });
+    const sleep = (ms: number): Promise<void> => new Promise<void>((r) => setTimeout(r, ms));
+    const p = orch.narrate("m-wait2", "A.\n\nB.\n\nC.", waitProfile);
+    await Promise.resolve();
+    // Owner scene (2026-09-06): the live playlist row read «Получено 0 из N»
+    // for the whole synthesis because the panel showed PLAYED segments and
+    // wait-full mode holds playback. The generating states must carry the
+    // received counter instead — ticking per segment, played pinned at 0.
+    synth.resolveNext();
+    await sleep(120);
+    const afterA = states.filter((s) => s.status === "generating").at(-1);
+    expect(afterA?.received).toBe(1);
+    expect(afterA?.played).toBe(0);
+    expect(afterA?.total).toBe(3);
+    synth.resolveNext();
+    await sleep(120);
+    const afterB = states.filter((s) => s.status === "generating").at(-1);
+    expect(afterB?.received).toBe(2);
+    expect(afterB?.played).toBe(0);
+    synth.resolveNext();
+    for (let i = 0; i < 12 && states.at(-1)?.status !== "complete"; i += 1) {
+      if (synth.deferreds.length > 0) synth.resolveNext();
+      player.resolveCurrent("ended");
+      await genTick();
+    }
+    await p;
+    expect(states.at(-1)?.status).toBe("complete");
+    expect(states.at(-1)?.received).toBe(3);
+    expect(states.at(-1)?.played).toBe(3);
+  });
+
   test("waitForFullGeneration off (default): playback still starts on the first blob", async () => {
     const player = createDeferredPlayer();
     const synth = createDeferredSynthesize();

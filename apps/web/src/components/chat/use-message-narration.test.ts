@@ -184,7 +184,7 @@ describe("useMessageNarration", () => {
 
     // Simulate narrating state
     useTtsPlaybackStore.setState({
-      narrations: { m1: { status: "playing", total: 1, played: 0 } },
+      narrations: { m1: { status: "playing", total: 1, played: 0, received: 1 } },
     } as never);
     // Re-render to pick up narrating=true
     await act(async () => {
