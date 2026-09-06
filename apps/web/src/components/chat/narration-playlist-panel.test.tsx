@@ -606,6 +606,31 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect(lane.plays).toHaveLength(1);
   });
 
+  it("FS-2: live rows render no per-row stop; the footer stop is the only stop trigger", async () => {
+    const lane = installDeferredLane();
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    // Do NOT await the narration inside act — the deferred play parks it.
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", "Para one.", profile(), playlistMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+
+    // No per-row stop anywhere — the live row offers replay instead.
+    expect(queryByTestId("playlist-row-stop")).toBeNull();
+    expect(getByTestId("playlist-row-play")).toBeDefined();
+    // The footer stop stays enabled and aborts the parked lane.
+    const stop = getByTestId("playlist-stop");
+    expect(stop.getAttribute("disabled")).toBeNull();
+    await act(async () => { fireEvent.click(stop); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().lastStarted).toBeNull();
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+  });
+
   it("seek bar jumps the live lane to the dragged position (cache hit, offset kept)", async () => {
     const lane = installDeferredLane({ "audio:Para one.": 10 });
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);

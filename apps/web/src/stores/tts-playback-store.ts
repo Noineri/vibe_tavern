@@ -474,8 +474,8 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
     const stoppedId = get().lastStarted?.messageId;
     pendingIndexMeta = null;
     set((s) => {
-      // TPE-18d: every stop breaks the chain (global button, row stop,
-      // message switch) — an armed advance dies with the lane.
+      // TPE-18d: every stop breaks the chain (footer stop, message-row
+      // stop, message switch) — an armed advance dies with the lane.
       if (stoppedId === undefined || !(stoppedId in s.progress)) return { lastStarted: null, advanceTo: null };
       const progress = { ...s.progress };
       delete progress[stoppedId];

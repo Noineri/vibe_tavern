@@ -229,7 +229,6 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
               saving={input.savingIds.has(row.messageId)}
               canReveal={input.canReveal}
               onPlay={() => input.onPlay(row.messageId)}
-              onStop={input.onStop}
               onSeek={(positionSec) => input.onSeek(row.messageId, positionSec)}
               onSave={() => input.onSave(row.messageId)}
               onReveal={() => input.onReveal(row.messageId)}
@@ -320,7 +319,6 @@ function PlaylistRow(input: {
   readonly saving: boolean;
   readonly canReveal: boolean;
   readonly onPlay: () => void;
-  readonly onStop: () => void;
   readonly onSeek: (positionSec: number) => void;
   readonly onSave: () => void;
   readonly onReveal: () => void;
@@ -346,31 +344,21 @@ function PlaylistRow(input: {
         live ? "bg-accent-dim" : "hover:bg-s2",
       )}
     >
-      {live ? (
-        <CustomTooltip content={t("narrate_stop")}>
-          <button
-            type="button"
-            aria-label={t("narrate_stop")}
-            data-testid="playlist-row-stop"
-            onClick={input.onStop}
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-accent-t transition-colors hover:bg-s3 [&_svg]:h-3.5 [&_svg]:w-3.5"
-          >
-            <Ic.stopSquare />
-          </button>
-        </CustomTooltip>
-      ) : (
-        <CustomTooltip content={t("narrate_action")}>
-          <button
-            type="button"
-            aria-label={t("narrate_action")}
-            data-testid="playlist-row-play"
-            onClick={input.onPlay}
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
-          >
-            <Ic.play />
-          </button>
-        </CustomTooltip>
-      )}
+      {/* FS-2: the row transport is play-only — the footer stop is
+        the only stop trigger. Clicking play on a live row restarts it
+        (single global lane; cache hits make the restart instant), and
+        the 28px slot keeps row chrome identical for live/settled rows. */}
+      <CustomTooltip content={t("narrate_action")}>
+        <button
+          type="button"
+          aria-label={t("narrate_action")}
+          data-testid="playlist-row-play"
+          onClick={input.onPlay}
+          className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+        >
+          <Ic.play />
+        </button>
+      </CustomTooltip>
       <div className="min-w-0 flex-1">
         <p className="line-clamp-2 break-words font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t1">
           {snippet}
@@ -410,7 +398,7 @@ function PlaylistRow(input: {
         )}
       </div>
       {/* TPE-18c: library actions on SETTLED rows only (live rows keep
-        transport). Settled arithmetic: play 28 + save 28 + show 28 +
+        play + seek). Settled arithmetic: play 28 + save 28 + show 28 +
         gaps = 96px chrome; library rows swap save for reveal + drop
         (112 + gaps) — the snippet column keeps ~260px, truncation
         allowed in this density list. Icon-only buttons: no RU width risk. */}
