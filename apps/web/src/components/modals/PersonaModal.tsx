@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
+import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
@@ -123,11 +124,20 @@ export function PersonaModal(input: PersonaModalProps) {
     void discardCreatedDraft();
     setIsOpen(false);
   };
+  // Canon dirty-close guard (PromptManagerModal handleClose): overlay click,
+  // the header X, and the footer Close all funnel through here. A dirty draft
+  // asks first; confirm and plain close both end in onClose (which discards
+  // a created draft).
+  const handleClose = () => {
+    if (isDirty) setConfirmCloseOpen(true);
+    else onClose();
+  };
   const [selectedId, setSelectedId] = useState<string | null>(input.activePersonaId);
   const [createdDraftPersonaId, setCreatedDraftPersonaId] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const isMobile = useIsMobile();
   const stImport = useStPersonaImport({ isOpen });
   // ── Avatar crop modal state ──
@@ -401,7 +411,7 @@ export function PersonaModal(input: PersonaModalProps) {
     <>
       <MasterDetailModal
         isOpen={isOpen}
-        onClose={onClose}
+        onClose={handleClose}
         title={t("persona_manager_title")}
         subtitle={t("persona_manager_sub")}
         detailTitle={selectedPersona ? selectedPersona.name : t("persona_manager_title")}
@@ -476,7 +486,7 @@ export function PersonaModal(input: PersonaModalProps) {
                   ]
                 : []
             }
-            onClose={onClose}
+            onClose={handleClose}
             right={
               <SaveButton
                 dirty={isDirty}
@@ -555,6 +565,16 @@ export function PersonaModal(input: PersonaModalProps) {
             }
           }}
           onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
+      {/* Dirty-close guard (canon: ConfirmCloseModal, same as PromptManager). */}
+      {confirmCloseOpen && (
+        <ConfirmCloseModal
+          onCancel={() => setConfirmCloseOpen(false)}
+          onConfirm={() => {
+            setConfirmCloseOpen(false);
+            onClose();
+          }}
         />
       )}
     </>
