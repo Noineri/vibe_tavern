@@ -809,6 +809,8 @@
   "set_default_persona": "Set as default for new chats",
   "default_persona_is": "Default persona for new chats",
   "persona_default_label": "Default",
+  "persona_use_for_chat": "Use for chat",
+  "persona_chat_active": "Active",
   "failed_to_set_default_persona": "Failed to set default persona.",
   "st_import_personas_btn": "ST Import",
   "st_folder_import_btn": "Folder",

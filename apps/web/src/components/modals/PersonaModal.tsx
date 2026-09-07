@@ -8,7 +8,7 @@ import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { MasterDetailModal, MasterDetailFooter, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { SaveButton } from "../shared/SaveBar.js";
-import { PersonaCardCollapsed } from "./PersonaCardCollapsed.js";
+import { PersonaListRow } from "./PersonaListRow.js";
 import { PersonaCardEditor } from "./PersonaCardEditor.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -355,12 +355,17 @@ export function PersonaModal(input: PersonaModalProps) {
   };
 
   // ── Master row rendering: canon list-row chrome (border-l-2 accent +
-  // active dot + drill-down caret); content is the unchanged preview card.
-  // Row click activates the persona AND seeds the editor (preset canon). ──
+  // drill-down caret); content is the messenger-layout preview row. Wave 4:
+  // the row itself only SELECTS for viewing/editing (seedForm) — activation
+  // is explicit via the row's "use for chat" button (ProviderViewHeader
+  // make-active pattern, rendered by PersonaListRow).
   const renderRow = (persona: PersonaListItem, openDetail: () => void) => {
     const isSelected = selectedId === persona.id;
     const avatar = resolveEntityAvatarUrl({ kind: "personas", id: persona.id, avatarExt: persona.avatarExt, avatarAssetId: persona.avatarAssetId, updatedAt: persona.updatedAt });
     const select = () => {
+      seedForm(persona);
+    };
+    const activate = () => {
       input.onSetActive(persona.id);
       seedForm(persona);
     };
@@ -378,13 +383,13 @@ export function PersonaModal(input: PersonaModalProps) {
           if (isMobile) openDetail();
         }}
       >
-        <div className={cn("mt-1 h-[6px] w-[6px] shrink-0 rounded-full", isSelected ? "bg-accent" : "bg-transparent")} />
-        <PersonaCardCollapsed
+        <PersonaListRow
           persona={persona}
           isActive={input.activePersonaId === persona.id}
           avatar={avatar}
           isMobile={isMobile}
           onSetDefault={() => { if (!persona.defaultForNewChats) void input.onSetDefaultPersona(persona.id); }}
+          onSelectForChat={activate}
         />
         <MasterDetailMobileDrillDown onSelect={select} className="self-center" />
       </div>
@@ -429,7 +434,7 @@ export function PersonaModal(input: PersonaModalProps) {
         subtitle={t("persona_manager_sub")}
         detailTitle={selectedPersona ? selectedPersona.name : t("persona_manager_title")}
         dirty={isDirty}
-        masterClassName="flex w-[300px] shrink-0 flex-col border-r border-border"
+        masterClassName="flex w-[380px] shrink-0 flex-col border-r border-border"
         masterContent={({ openDetail }) => (
           <>
             <div ref={scrollBodyRef} className="min-h-0 flex-1 overflow-y-auto py-2">

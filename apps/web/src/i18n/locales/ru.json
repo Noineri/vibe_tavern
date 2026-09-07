@@ -813,6 +813,8 @@
   "set_default_persona": "Выбрать персоной по умолчанию",
   "default_persona_is": "Персона по умолчанию",
   "persona_default_label": "По умолчанию",
+  "persona_use_for_chat": "Выбрать для чата",
+  "persona_chat_active": "Активна",
   "failed_to_set_default_persona": "Не удалось установить персону по умолчанию.",
   "st_import_personas_btn": "ST Импорт",
   "st_folder_import_btn": "Папка",

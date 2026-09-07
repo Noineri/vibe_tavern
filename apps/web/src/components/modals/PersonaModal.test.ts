@@ -159,11 +159,18 @@ describe("PersonaModal master-detail wiring", () => {
 		expect((view.getByPlaceholderText("persona_name_placeholder") as HTMLInputElement).value).toBe("Alice");
 	});
 
-	test("row click activates the persona and seeds the detail editor", async () => {
+	test("row click selects for editing only; the row button activates", async () => {
 		const calls: Calls = { setActive: [], saveEdit: [] };
 		const view = renderOpen(calls);
 		await settled();
 		fireEvent.click(view.getByText("Bob"));
+		await settled();
+		// Wave 4: the row itself no longer mutates the active persona — it only
+		// seeds the detail editor. Activation is explicit via the row button
+		// (ProviderViewHeader make-active pattern).
+		expect(calls.setActive).toEqual([]);
+		expect((view.getByPlaceholderText("persona_name_placeholder") as HTMLInputElement).value).toBe("Bob");
+		fireEvent.click(view.getByText("persona_use_for_chat"));
 		await settled();
 		expect(calls.setActive).toEqual(["p2"]);
 		expect((view.getByPlaceholderText("persona_name_placeholder") as HTMLInputElement).value).toBe("Bob");
