@@ -83,8 +83,12 @@ export function PersonaCardEditor({
 
   return (
     <div className="w-full">
-      {/* Avatar + Name + Pronouns row */}
-      <div className={cn("flex gap-3 mb-3", isMobile ? "items-start" : "items-start")}>
+      {/* Avatar + Name + Pronouns row. D-4: mobile stacks like the character
+          card's portrait branch (flex-col items-center, avatar w-full
+          max-w-[280px], name column w-full); desktop keeps the side-by-side
+          layout. Spacing constants (gap-3/mb-3) keep the persona pane's
+          rhythm, structure mirrors the reference. */}
+      <div className={cn("gap-3 mb-3", isMobile ? "flex flex-col items-center" : "flex")}>
         {/* Avatar — character-card portrait pattern (CharacterForm.tsx portrait
             branch, D-1 clone): dashed rounded-lg frame that sizes to the image
             (contain, ≤180px wide / 250px tall), h-20 w-28 empty placeholder.
@@ -95,13 +99,15 @@ export function PersonaCardEditor({
             avatar-deletion affordance — the character card has none either
             (owner ruling 2026-09-07). Square crop (aspect 1) unchanged;
             pick→AvatarCropModal flow unchanged. */}
-        <div className="group/ava relative shrink-0 self-start">
+        <div className="group/ava relative shrink-0">
           <CustomTooltip content={t("change_avatar")}>
           <div
             className={cn(
               "group relative cursor-pointer overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t",
+              isMobile ? "w-full max-w-[280px]" : "self-start",
               avatarUploading && "pointer-events-none opacity-60",
             )}
+            style={isMobile ? { aspectRatio: "auto" } : undefined}
             onClick={() => !avatarUploading && avatarInputRef.current?.click()}
           >
             <input
@@ -115,7 +121,7 @@ export function PersonaCardEditor({
             />
             {avatarDisplayUrl ? (
               <>
-                <img src={avatarDisplayUrl} alt="" className="block" style={{ maxWidth: isMobile ? 280 : 180, maxHeight: 250, objectFit: "contain" }} />
+                <img src={avatarDisplayUrl} alt="" className={cn("block", isMobile && "w-full")} style={isMobile ? undefined : { maxWidth: 180, maxHeight: 250, objectFit: "contain" }} />
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
                 <CustomTooltip content={t("edit_thumbnail")}>
                   <button type="button"
@@ -125,7 +131,7 @@ export function PersonaCardEditor({
                 </CustomTooltip>
               </>
             ) : (
-              <div className="flex h-20 w-28 flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover/ava:text-accent-t">
+              <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover/ava:text-accent-t", isMobile ? "min-h-[120px] w-full" : "h-20 w-28")}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                 <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
               </div>
@@ -133,8 +139,10 @@ export function PersonaCardEditor({
           </div>
           </CustomTooltip>
         </div>
-        {/* Name + Pronouns */}
-        <div className="flex-1 min-w-0">
+        {/* Name + Pronouns. D-4: full width on mobile (stacked under the
+            avatar); D-3: bound lorebooks sit directly under this row — the
+            character-card order (name → resources → description). */}
+        <div className={cn("flex-1 min-w-0", isMobile && "w-full")}>
           <input
             className="w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none focus:border-accent"
             value={editName}
@@ -172,6 +180,11 @@ export function PersonaCardEditor({
               ))}
             </div>
           )}
+          {/* Bound lorebooks — reverse-direction binding (PR-12), moved here in
+              D-3 (character-card order: name → resources → description).
+              Shown only in the edit form (requires a persisted personaId).
+              Scripts are tracked separately — see script-link-binding-gap.md. */}
+          <BoundResourcesField entityKind="persona" entityId={persona.id} isMobile={isMobile} />
         </div>
       </div>
       {/* Description */}
@@ -194,10 +207,6 @@ export function PersonaCardEditor({
           <TokenCounter text={editDescription} className="font-ui text-[11px] tabular-nums text-t3" />
         </div>
       </div>
-      {/* Bound lorebooks — reverse-direction binding (PR-12). Shown only
-          in the edit form (requires a persisted personaId). Scripts are
-          tracked separately — see script-link-binding-gap.md. */}
-      <BoundResourcesField entityKind="persona" entityId={persona.id} isMobile={isMobile} />
       {/* Avatar-in-prompt — describe via vision + toggle + description.
           Out-of-band from this modal's form (see onAvatarPatch). */}
       <div className="mb-3">

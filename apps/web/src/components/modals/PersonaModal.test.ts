@@ -242,6 +242,23 @@ describe("PersonaModal master-detail wiring", () => {
 		expect(view.getByText("crop_avatar_title")).toBeTruthy();
 		expect(document.querySelector('img[src*="/avatar/full"]')).toBeTruthy();
 	});
+
+	test("editor section order: bound lorebooks directly under the name row, before the description (D-3)", async () => {
+		const calls: Calls = { setActive: [], saveEdit: [] };
+		const view = renderOpen(calls);
+		await settled();
+		// D-3: the character-card order is name -> resources -> description.
+		// The modal portals to document.body; compare DOM positions there
+		// (the description is a textarea whose label is an attribute, not text).
+		const pronounEl = Array.from(document.querySelectorAll("button")).find(b => b.textContent === "they/them");
+		const boundEl = Array.from(document.querySelectorAll("span")).find(s => s.textContent === "bound_lorebooks_label");
+		const descEl = document.querySelector('textarea[placeholder="persona_desc_placeholder"]');
+		expect(pronounEl).toBeTruthy();
+		expect(boundEl).toBeTruthy();
+		expect(descEl).toBeTruthy();
+		expect(boundEl!.compareDocumentPosition(pronounEl!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+		expect(boundEl!.compareDocumentPosition(descEl!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
 });
 
 describe("computePersonaIsDirty", () => {
