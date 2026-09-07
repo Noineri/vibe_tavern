@@ -36,7 +36,7 @@ concurrency:
 #     declared in scripts/test.ts (`skipOnWindows`) and in the two
 #     `skipIf(process.platform === "win32")` gates in scripts/*.test.ts —
 #     not here, so a dev running `bun run test` locally sees the same thing CI does.
-#   - The 4 platform builds fan out after typecheck passes.
+#   - The platform builds fan out after typecheck passes.
 # Nothing is published; the docker job only loads locally to prove the image builds.
 # Build artifacts are intentionally NOT uploaded — CI verifies compilation only,
 # not distribution. release.yml re-builds from the tag when cutting a real release;
@@ -214,15 +214,37 @@ jobs:
   build-docker:
     needs: [typecheck]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
     steps:
       - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v4
+        if: matrix.arch == 'arm64'
+        with:
+          platforms: arm64
       - uses: docker/setup-buildx-action@v3
       # NOTE: NO docker/login-action — we don't push. Only verify the image builds.
       - uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: ${{ matrix.platform }}
           push: false
           load: true
-          tags: vibe-tavern:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: vibe-tavern:ci-${{ matrix.arch }}
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+      - name: Verify image architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          ACTUAL_ARCH=$(docker image inspect \
+            --format '{{.Architecture}}' \
+            "vibe-tavern:ci-${EXPECTED_ARCH}")
+          test "$ACTUAL_ARCH" = "$EXPECTED_ARCH"
