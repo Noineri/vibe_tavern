@@ -462,7 +462,20 @@ export function PersonaModal(input: PersonaModalProps) {
         ) : null}
         footer={
           <MasterDetailFooter
-            actions={[]}
+            actions={
+              selectedPersona
+                ? [
+                    { icon: <Icons.Copy />, label: t("duplicate"), onClick: () => { void input.onDuplicatePersona(selectedPersona.id); } },
+                    { icon: <Icons.download />, label: t("persona_export"), onClick: () => { exportPersona(selectedPersona.id, "st").catch((err) => toast.error(err instanceof Error ? err.message : t("persona_export_failed"))); } },
+                    // Last-persona guard (mirrors the presets footer): the
+                    // Delete action is omitted, not disabled, when only one
+                    // persona exists. handleDelete keeps its own error path.
+                    ...(isLastPersona
+                      ? []
+                      : [{ icon: <Icons.del />, label: t("delete"), onClick: () => handleDelete(selectedPersona.id) } as const]),
+                  ]
+                : []
+            }
             onClose={onClose}
             right={
               <SaveButton
