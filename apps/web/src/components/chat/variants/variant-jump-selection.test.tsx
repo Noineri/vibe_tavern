@@ -272,6 +272,16 @@ describe("MAE-53 mobile BottomSheet — row tap jumps; star tap is independent",
     await act(async () => { fireEvent.click(row4); });
 
     expect(onSelect).toHaveBeenCalledWith(3);
+    // The Drawer unmounts asynchronously after open=false (Base UI exit), so
+    // the disappearance must be awaited, not asserted synchronously — a slower
+    // runner loses the race (seen on the Linux CI runner; the sync assert
+    // passed only because local flushes happened to land the unmount inside
+    // the act above). Same boundary: the sheet closes and the rows leave the DOM.
+    const deadline = Date.now() + 1000;
+    while (Date.now() < deadline) {
+      if (document.querySelector(`[data-testid="variant-select-4"]`) === null) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
     expect(document.querySelector(`[data-testid="variant-select-4"]`)).toBeNull();
   });
 
