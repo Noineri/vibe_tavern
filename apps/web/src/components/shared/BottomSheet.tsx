@@ -1,6 +1,6 @@
-import { type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Drawer } from "@base-ui/react/drawer";
-import { getModalPortal } from "./modal-helpers.js";
+import { getModalPortal, registerOverlayPortal } from "./modal-helpers.js";
 
 interface BottomSheetProps {
   open: boolean;
@@ -39,6 +39,18 @@ interface BottomSheetProps {
  * there (no layout), so the portal must be given a concrete node.
  */
 export function BottomSheet({ open, onClose, title, children }: BottomSheetProps) {
+  // D2 (v1.2.1): register the sheet's own portal node so nested floating UI
+  // (DropdownSelect popups) opened inside the sheet portals HERE — inside the
+  // drawer's focus scope and stacking context — instead of document.body
+  // (z-400, under the sheet's z-500/501). Registration follows `open`, NOT
+  // mount: Base UI keeps portal children mounted while closed, and a closed
+  // sheet must never resolve as the topmost overlay (a dropdown opened
+  // elsewhere would land in its hidden subtree and render invisibly).
+  const [portalNode, setPortalNode] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open || !portalNode) return;
+    return registerOverlayPortal(portalNode);
+  }, [open, portalNode]);
   return (
     <Drawer.Root
       open={open}
@@ -72,6 +84,17 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
             )}
             <Drawer.Content className="flex flex-col">{children}</Drawer.Content>
           </Drawer.Popup>
+          {/* Portal anchor for nested floating UI (DropdownSelect popups).
+           *  Mirrors Modal's #modal-portal (same 0×0 fixed node shape): it must
+           *  sit inside the Viewport for focus trapping, but OUTSIDE the
+           *  animated Popup — transforms break fixed positioning (Modal.tsx
+           *  carries the same warning). Placed after the Popup so popup
+           *  content paints above the sheet body within the z-501 context. */}
+          <div
+            ref={setPortalNode}
+            data-overlay-portal="bottom-sheet"
+            style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "visible", pointerEvents: "auto" }}
+          />
         </Drawer.Viewport>
       </Drawer.Portal>
     </Drawer.Root>
