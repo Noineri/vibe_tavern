@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { cn } from "../../lib/cn.js";
@@ -96,6 +96,19 @@ export function DropdownSelect({
   const [search, setSearch] = useState("");
   const commandRef = useRef<HTMLDivElement>(null);
 
+  // Popup portal container, frozen per popup-open session
+  // (SHEET_PORTAL_SELF_TARGETING): re-evaluating `getModalPortal()` on every
+  // render meant a stack-top change mid-popup (or a sheet re-render while this
+  // popup is open inside it) re-targeted the portal and tore the popup down.
+  // The rising edge of `open` always goes through handleOpenChange, so the
+  // container is captured in the same event/batch as the open flip — the
+  // first popup render already sees the frozen container, no staging gap.
+  // Kept through close (Radix exit presence — never re-target an exiting
+  // popup); replaced on the next open. `container: null` means "no overlay
+  // host — default body"; the session wrapper distinguishes it from
+  // "not resolved yet".
+  const [portalSession, setPortalSession] = useState<{ container: HTMLElement | null } | null>(null);
+
   const selected = (groups ? groups.flatMap((g) => g.options) : options).find((o) => o.id === value);
   const display = selected?.label || value || placeholder;
 
@@ -120,6 +133,7 @@ export function DropdownSelect({
   }
 
   function handleOpenChange(isOpen: boolean) {
+    if (isOpen) setPortalSession({ container: getModalPortal() });
     setOpen(isOpen);
     if (isOpen && searchable) setSearch("");
   }
@@ -137,8 +151,13 @@ export function DropdownSelect({
   // When inside an overlay (Modal, BottomSheet), portal into the topmost
   // overlay's anchor element so the content stays within that overlay's focus
   // scope AND paints above it (modal-helpers keeps a stack of overlay portal
-  // nodes; D2). When outside any overlay, portal to body.
-  const portalContainer = getModalPortal() ?? undefined;
+  // nodes; D2). When outside any overlay, portal to body. Resolved ONCE per
+  // popup-open session (see portalSession above); the isConnected guard bounds
+  // a stale disconnected container to one frame before the next capture.
+  const portalContainer =
+    portalSession?.container && portalSession.container.isConnected
+      ? portalSession.container
+      : undefined;
 
   function renderOption(o: DropdownOption) {
     return (

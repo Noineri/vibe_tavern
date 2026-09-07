@@ -24,13 +24,28 @@ export function registerOverlayPortal(node: HTMLElement): () => void {
   };
 }
 
-/** The innermost currently-open overlay's portal node, or null. */
+/** The innermost currently-open overlay's portal node, or null.
+ *  Hardened after SHEET_PORTAL_SELF_TARGETING: a teardown path that skips
+ *  the ref cleanup (exactly the bug this hardening follows) can leave
+ *  disconnected nodes in the stack; walk from the top, pruning them, so a
+ *  stale detached anchor can never become a portal target again. */
 export function getTopmostOverlayPortal(): HTMLElement | null {
-  return overlayPortalStack.length > 0
-    ? overlayPortalStack[overlayPortalStack.length - 1]
-    : null;
+  for (let i = overlayPortalStack.length - 1; i >= 0; i--) {
+    const node = overlayPortalStack[i];
+    if (node.isConnected) return node;
+    overlayPortalStack.splice(i, 1);
+  }
+  return null;
 }
 
 export function getModalPortal(): HTMLElement | null {
   return getTopmostOverlayPortal() ?? document.getElementById("modal-portal");
+}
+
+/** The application-level modal host — stable per call, independent of the
+ *  overlay stack. For overlays that must NEVER chase the topmost sheet
+ *  anchor (the rail sidebar): re-targeting their portal mid-life to a sheet
+ *  anchor tears them down exactly like SHEET_PORTAL_SELF_TARGETING. */
+export function getApplicationModalPortal(): HTMLElement | null {
+  return document.getElementById("modal-portal");
 }
