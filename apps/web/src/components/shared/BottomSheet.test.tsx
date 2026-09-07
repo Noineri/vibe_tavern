@@ -43,10 +43,14 @@ let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 
 let BottomSheet: typeof import("./BottomSheet.js").BottomSheet;
+let getModalPortal: typeof import("./modal-helpers.js").getModalPortal;
+let getTopmostOverlayPortal: typeof import("./modal-helpers.js").getTopmostOverlayPortal;
+let registerOverlayPortal: typeof import("./modal-helpers.js").registerOverlayPortal;
 
 beforeAll(async () => {
 	({ render, fireEvent } = await import("@testing-library/react"));
 	({ BottomSheet } = await import("./BottomSheet.js"));
+	({ getModalPortal, getTopmostOverlayPortal, registerOverlayPortal } = await import("./modal-helpers.js"));
 });
 
 /** Scrim overlay — `.inset-0` (full-screen fixed) is unique to the scrim; the
@@ -121,6 +125,77 @@ describe("BottomSheet", () => {
 		fireEvent.touchMove(sheet, { touches: [{ clientY: 400 }] }); // delta -100 (upward)
 		fireEvent.touchEnd(sheet);
 		expect(onClose).not.toHaveBeenCalled();
+	});
+});
+
+describe("BottomSheet overlay portal (D2 — nested floating UI)", () => {
+	// v1.2.1 mobile defect D2: a DropdownSelect opened inside the sheet portaled
+	// its popup to document.body (z-400), painting UNDER the sheet (z-500/501)
+	// with cmdk's autofocus summoning the keyboard for an invisible popup.
+	// The sheet now mounts its own portal node (mirroring Modal's
+	// #modal-portal), registered as the topmost overlay portal. Radix
+	// Popover.Content itself never mounts under happy-dom (0×0 layout), so the
+	// dropdown-open half of the contract is pinned at the resolver level here
+	// and the popup half stays manual — same limitation as DropdownSelect.test.
+	function portalNode(): HTMLElement {
+		const el = document.querySelector<HTMLElement>('[data-overlay-portal="bottom-sheet"]');
+		if (!el) throw new Error("sheet portal node not rendered");
+		return el;
+	}
+
+	it("mounts its portal node when open, outside the animated popup", () => {
+		render(<BottomSheet open={true} onClose={() => {}}><span>x</span></BottomSheet>);
+		const node = portalNode();
+		// OUTSIDE the animated Popup (transforms break fixed positioning)
+		// but inside the same viewport: sibling of the sheet body.
+		const popup = sheetEl(document);
+		expect(popup.contains(node)).toBe(false);
+		expect(node.parentElement).toBe(popup.parentElement);
+	});
+
+	it("exposes the node as the topmost overlay portal while open", () => {
+		render(<BottomSheet open={true} onClose={() => {}}><span>x</span></BottomSheet>);
+		expect(getTopmostOverlayPortal()).toBe(portalNode());
+		expect(getModalPortal()).toBe(portalNode());
+	});
+
+	it("unregisters on close — resolver falls back, no stale node", () => {
+		const { rerender } = render(<BottomSheet open={true} onClose={() => {}}><span>x</span></BottomSheet>);
+		expect(getTopmostOverlayPortal()).not.toBeNull();
+		rerender(<BottomSheet open={false} onClose={() => {}}><span>x</span></BottomSheet>);
+		// Base UI keeps portal children mounted while closed, so the node
+		// element may persist — what must NOT persist is its registration:
+		// a dropdown opened elsewhere must not resolve the closed sheet.
+		expect(getTopmostOverlayPortal()).toBeNull();
+		expect(getModalPortal()).toBeNull();
+	});
+
+	it("sheet node wins over #modal-portal (sheet inside a modal)", () => {
+		const anchor = document.createElement("div");
+		anchor.id = "modal-portal";
+		document.body.appendChild(anchor);
+		try {
+			// No sheet: the Modal node resolves (unchanged legacy behavior).
+			expect(getModalPortal()).toBe(anchor);
+			render(<BottomSheet open={true} onClose={() => {}}><span>x</span></BottomSheet>);
+			// Sheet open: the sheet's own node resolves — a DropdownSelect
+			// inside the sheet portals above the sheet, not under it.
+			expect(getModalPortal()).toBe(portalNode());
+		} finally {
+			anchor.remove();
+		}
+	});
+
+	it("overlay stack is LIFO with clean unregister", () => {
+		const a = document.createElement("div");
+		const b = document.createElement("div");
+		const unA = registerOverlayPortal(a);
+		const unB = registerOverlayPortal(b);
+		expect(getTopmostOverlayPortal()).toBe(b);
+		unA();
+		expect(getTopmostOverlayPortal()).toBe(b);
+		unB();
+		expect(getTopmostOverlayPortal()).toBeNull();
 	});
 });
 

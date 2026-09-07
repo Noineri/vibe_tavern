@@ -743,8 +743,12 @@ export function AiAssistantModal({
   );
 
   if (isMobile && !isFull) {
+    // D1 (v1.2.1): NO title prop — contentBody starts with AiAssistantShell's
+    // own header strip, and BottomSheet would render a second visible
+    // Drawer.Title above it. The omitted-title sr-only fallback keeps the
+    // dialog's accessible name without a duplicate visible header.
     return (
-      <BottomSheet open={isOpen} onClose={onClose} title={title}>
+      <BottomSheet open={isOpen} onClose={onClose}>
         <div className="flex max-h-[85vh] flex-col overflow-hidden">
           {contentBody}
         </div>

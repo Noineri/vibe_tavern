@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star, Volume2, Square, AudioLines, Play, Pause } from 'lucide-react';
+import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Settings, Sparkles, Star, Volume2, Square, AudioLines, Play, Pause } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -27,7 +27,11 @@ export const Ic = {
   branch:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><path d="M4 6v4"/><path d="M12 6v2.5A1.5 1.5 0 0 1 10.5 10H4"/></svg>,
   regen:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 10 3H13.5"/><polyline points="10,3 13.5,3 13.5,6.5"/></svg>,
   caret:(d:string)=><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" style={{transform:d==='l'?'rotate(180deg)':d==='d'?'rotate(90deg)':d==='u'?'rotate(270deg)':undefined}}><polyline points="6 3 11 8 6 13"/></svg>,
-  settings:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M11.54 4.46l1.41-1.41M3.05 12.95l1.41-1.41"/></svg>,
+  // Lucide `Settings` — a real cog gear. Was a hand-drawn circle + 8 rays
+  // that read as a phone-brightness sun (v1.2.1 mobile defect D7: users
+  // tapped past it looking for "brightness"). The call site (AiQuickPill)
+  // already names its tooltip `gearTooltip` — the intent was always a gear.
+  settings: (props?: { className?: string }) => <Settings size={13} strokeWidth={2} {...props} />,
   menu:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="10" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>,
   plus:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>,
   tool:()=><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 2v1.5M8 12.5V14M2 8h1.5M12.5 8H14M3.76 3.76l1.06 1.06M11.18 11.18l1.06 1.06M11.18 3.76l1.06 1.06M3.76 11.18l1.06 1.06"/></svg>,

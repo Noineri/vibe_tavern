@@ -231,10 +231,16 @@ function MobileLightbox({ src, onClose }: AvatarPanelProps) {
     <div
       ref={containerRef}
       className="fixed inset-0 z-[600] flex items-center justify-center bg-black/95"
+      // touch-action none: the lightbox OWNS all gestures. React's onTouchMove
+      // runs on a passive root listener (preventDefault is ignored — the device
+      // console showed the passive warnings), so CSS is the only way to stop
+      // the browser's native pinch/pan from racing the hook's zoom.
+      style={{ touchAction: "none" }}
       onClick={onClose}
       onTouchStart={touchHandlers.onTouchStart}
       onTouchMove={touchHandlers.onTouchMove}
       onTouchEnd={touchHandlers.onTouchEnd}
+      onTouchCancel={touchHandlers.onTouchCancel}
     >
       {/* Close button */}
       <button type="button"

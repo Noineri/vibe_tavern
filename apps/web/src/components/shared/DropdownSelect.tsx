@@ -134,8 +134,10 @@ export function DropdownSelect({
     }
   }
 
-  // When inside a Modal, portal into the Modal's anchor element so the content
-  // stays within Dialog's focus trap. When outside a Modal, portal to body.
+  // When inside an overlay (Modal, BottomSheet), portal into the topmost
+  // overlay's anchor element so the content stays within that overlay's focus
+  // scope AND paints above it (modal-helpers keeps a stack of overlay portal
+  // nodes; D2). When outside any overlay, portal to body.
   const portalContainer = getModalPortal() ?? undefined;
 
   function renderOption(o: DropdownOption) {

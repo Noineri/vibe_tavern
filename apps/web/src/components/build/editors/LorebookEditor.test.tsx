@@ -468,3 +468,33 @@ describe("LorebookEditor (characterization)", () => {
     expect(toastSuccess).toHaveBeenCalledWith("lore_entry_duplicated");
   });
 });
+
+describe("LorebookEditor — D3 mobile touch booster", () => {
+  beforeEach(() => {
+    mock.clearAllMocks();
+    ensureSessionStorage();
+    sessionStorage.clear();
+    mocked(listAllLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listLoreEntries).mockResolvedValue([makeEntry()]);
+    mocked(getLorebookLinks).mockResolvedValue([]);
+    mocked(updateLoreEntry).mockResolvedValue(makeEntry());
+    setViewport(375); // mobile — the booster class is mobile-only
+  });
+
+  it("excludes role=switch from the list-view touch-target booster", async () => {
+    // v1.2.1 mobile defect D3: the blanket `[&_button]:min-h-[44px]` booster
+    // stretched Toggle tracks (the track IS the button) into 44px orange
+    // blobs. happy-dom has no layout engine, so this is a string-level
+    // regression pin on the selector: the 44px booster must carry
+    // `:not([role=switch])` (the Toggle side of the contract — the root
+    // actually having role=switch — is pinned in Toggle.test.tsx).
+    const { container } = await renderAtList();
+    const candidates = Array.from(container.querySelectorAll('[class*="min-h-"]'));
+    const booster = candidates.find((el) =>
+      (el as HTMLElement).className.includes("min-h-[44px]"),
+    ) as HTMLElement | undefined;
+    expect(booster).toBeTruthy();
+    expect(booster!.className).toContain(":not([role=switch])");
+  });
+});
