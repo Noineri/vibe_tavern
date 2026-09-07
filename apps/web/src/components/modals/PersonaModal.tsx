@@ -6,7 +6,7 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
-import { MasterDetailModal, MasterDetailFooter } from "../shared/MasterDetailModal.js";
+import { MasterDetailModal, MasterDetailFooter, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { SaveButton } from "../shared/SaveBar.js";
 import { PersonaCardCollapsed } from "./PersonaCardCollapsed.js";
 import { PersonaCardEditor } from "./PersonaCardEditor.js";
@@ -331,40 +331,39 @@ export function PersonaModal(input: PersonaModalProps) {
     void fetchPersonasAction();
   };
 
-  // ── Master row rendering (card chrome becomes canon list-row in PSM-2) ──
+  // ── Master row rendering: canon list-row chrome (border-l-2 accent +
+  // active dot + drill-down caret); content is the unchanged preview card.
+  // Row click activates the persona AND seeds the editor (preset canon). ──
   const renderRow = (persona: PersonaListItem, openDetail: () => void) => {
     const isSelected = selectedId === persona.id;
     const avatar = resolveEntityAvatarUrl({ kind: "personas", id: persona.id, avatarExt: persona.avatarExt, avatarAssetId: persona.avatarAssetId, updatedAt: persona.updatedAt });
+    const select = () => {
+      input.onSetActive(persona.id);
+      seedForm(persona);
+    };
 
     return (
       <div
         key={persona.id}
         ref={(el) => handleCardRef(persona.id, el)}
         className={cn(
-          "group flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all duration-200",
-          isMobile ? "active:bg-s2" : "hover:bg-s2",
-          isSelected ? "border-accent bg-accent-dim" : "border-transparent",
+          "group flex cursor-pointer items-start gap-2 border-l-2 px-3 py-3 transition-colors",
+          isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
         )}
         onClick={() => {
-          input.onSetActive(persona.id);
-          seedForm(persona);
+          select();
           if (isMobile) openDetail();
         }}
       >
+        <div className={cn("mt-1 h-[6px] w-[6px] shrink-0 rounded-full", isSelected ? "bg-accent" : "bg-transparent")} />
         <PersonaCardCollapsed
           persona={persona}
           isActive={input.activePersonaId === persona.id}
           avatar={avatar}
-          isLastPersona={isLastPersona}
           isMobile={isMobile}
-          menuOpenId={menuOpenId}
-          setMenuOpenId={setMenuOpenId}
-          onStartEdit={() => seedForm(persona)}
-          onExport={() => { exportPersona(persona.id, "st").catch((err) => toast.error(err instanceof Error ? err.message : t("persona_export_failed"))); }}
-          onDuplicate={() => { void input.onDuplicatePersona(persona.id); }}
           onSetDefault={() => { if (!persona.defaultForNewChats) void input.onSetDefaultPersona(persona.id); }}
-          onDelete={() => { handleDelete(persona.id); }}
         />
+        <MasterDetailMobileDrillDown onSelect={select} className="self-center" />
       </div>
     );
   };
@@ -410,7 +409,7 @@ export function PersonaModal(input: PersonaModalProps) {
         masterClassName="flex w-[300px] shrink-0 flex-col border-r border-border"
         masterContent={({ openDetail }) => (
           <>
-            <div ref={scrollBodyRef} className={cn("min-h-0 flex-1 overflow-y-auto", isMobile ? "px-4 py-2" : "p-5")}>
+            <div ref={scrollBodyRef} className="min-h-0 flex-1 overflow-y-auto py-2">
               {input.personas.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="mb-3 text-t4"><Icons.User /></div>
@@ -418,7 +417,7 @@ export function PersonaModal(input: PersonaModalProps) {
                   <div className="font-ui text-[12px] text-t3 mt-1">{t("create_first_persona")}</div>
                 </div>
               )}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col">
                 {input.personas.map((p) => renderRow(p, openDetail))}
               </div>
             </div>

@@ -9,43 +9,24 @@ interface PersonaCardCollapsedProps {
   persona: PersonaListItem;
   isActive: boolean;
   avatar: string | null;
-  isLastPersona: boolean;
   isMobile: boolean;
-  /** Shared with the host: the actual mobile ActionSheet renders at content level. */
-  menuOpenId: string | null;
-  setMenuOpenId: (id: string | null) => void;
-  /** All actions are zero-arg; the host binds `persona.id` and any gating. */
-  onStartEdit: () => void;
-  onExport: () => void;
-  onDuplicate: () => void;
+  /** Zero-arg; the host binds `persona.id` and any gating. */
   onSetDefault: () => void;
-  onDelete: () => void;
 }
 
 /**
- * PersonaCardCollapsed — the non-editing (display) view of a persona card,
- * extracted from PersonaModal's renderCard (PERSONA_MODAL_GOD_OBJECT_AUDIT.md,
- * Finding 2 / step 2). Owns the avatar + default-persona star (PR-8), the info
- * block (name / pronouns / description + token count), and the row actions
- * (Edit / Export / Duplicate / Delete inline on desktop; Edit inline + a
- * three-dots menu on mobile — PR-10). Rendered inside the host card wrapper, so
- * the `group`-hover affordances still apply. Actions are zero-arg callbacks
- * supplied by the host; the mobile three-dots `menuOpenId` is shared because the
- * ActionSheet itself lives at the content level.
+ * PersonaCardCollapsed — the master-list row content for a persona: avatar +
+ * default-persona star (PR-8) and the info block (name / pronouns / description
+ * + token count). Row chrome (border-l-2, active bg, drill-down caret) lives
+ * in the host's renderRow; row actions (Export / Duplicate / Delete) live in
+ * the MasterDetailFooter (desktop) / footer icon buttons (mobile).
  */
 export function PersonaCardCollapsed({
   persona,
   isActive,
   avatar,
-  isLastPersona,
   isMobile,
-  menuOpenId,
-  setMenuOpenId,
-  onStartEdit,
-  onExport,
-  onDuplicate,
   onSetDefault,
-  onDelete,
 }: PersonaCardCollapsedProps) {
   const { t } = useT();
 
@@ -112,67 +93,6 @@ export function PersonaCardCollapsed({
         })()}
         <div className={cn("font-ui text-[13px] leading-snug text-t3", isMobile ? "line-clamp-2" : "line-clamp-3")}>{persona.description}</div>
         <TokenCounter text={persona.description} className="font-ui text-[11px] tabular-nums text-t3" />
-      </div>
-      {/* Actions — PR-10 revised:
-          Desktop: all 4 buttons (Edit/Export/Copy/Delete) inline, visible on card hover.
-          Mobile: Edit stays as a direct inline button (primary action); Export/Copy/Delete collapse into a three-dots menu (row too narrow for 4 inline buttons). */}
-      <div className="relative flex shrink-0 items-start gap-0.5 self-start">
-        <CustomTooltip content={t("persona_edit")}>
-          <div
-            className={cn(
-              "flex cursor-pointer items-center justify-center rounded-md text-t3 transition-all hover:bg-s2 hover:text-t1 active:bg-s3",
-              isMobile ? "min-h-[44px] min-w-[44px]" : "h-7 w-7",
-              // Desktop: hidden until the card is hovered. Mobile: always visible.
-              !isMobile && "opacity-0 group-hover:opacity-100",
-            )}
-            onClick={(e) => { e.stopPropagation(); onStartEdit(); }}
-          >
-            <Icons.Edit />
-          </div>
-        </CustomTooltip>
-
-        {!isMobile ? (
-          /* Desktop: direct inline icon buttons */
-          <>
-            <CustomTooltip content={t("persona_export")}>
-              <div
-                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 opacity-0 transition-all hover:bg-s2 hover:text-t1 active:bg-s3 group-hover:opacity-100"
-                onClick={(e) => { e.stopPropagation(); onExport(); }}
-              >
-                <Icons.download />
-              </div>
-            </CustomTooltip>
-            <CustomTooltip content={t("duplicate")}>
-              <div
-                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 opacity-0 transition-all hover:bg-s2 hover:text-t1 active:bg-s3 group-hover:opacity-100"
-                onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-              >
-                <Icons.Copy />
-              </div>
-            </CustomTooltip>
-            <CustomTooltip content={t("delete")}>
-              <div
-                className={cn(
-                  "flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition-all active:bg-s3 opacity-0 group-hover:opacity-100",
-                  isLastPersona ? "text-t4" : "text-t3 hover:bg-s2 hover:text-danger",
-                )}
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              >
-                <Icons.del />
-              </div>
-            </CustomTooltip>
-          </>
-        ) : (
-          /* Mobile: Edit stays inline; Export/Copy/Delete in a bottom ActionSheet (reuses the same component the character rail uses). */
-          <>
-            <div
-              className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 active:bg-s3"
-              onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === persona.id ? null : persona.id); }}
-            >
-              <Icons.ellipsis />
-            </div>
-          </>
-        )}
       </div>
     </>
   );
