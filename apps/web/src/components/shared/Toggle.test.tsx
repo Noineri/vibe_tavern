@@ -111,3 +111,18 @@ describe("Toggle", () => {
 		expect((container.firstChild as HTMLElement).classList.contains("my-override")).toBe(true);
 	});
 });
+
+describe("Toggle — D3 switch exclusion key", () => {
+	it("renders with role=switch (the selector mobile boosters exclude)", () => {
+		// v1.2.1 mobile defect D3: the Lorebook/Script editor touch-target
+		// boosters blanket all <button>s; they exclude the toggle via
+		// `:not([role=switch])`. That exclusion only works while the Toggle
+		// root actually carries role=switch (Radix Switch.Root does) — pin it,
+		// so a future reimplementation that drops the role fails loudly
+		// instead of silently re-growing the 44px blob.
+		const { container } = render(<Toggle checked={false} onChange={() => {}} />);
+		const sw = container.querySelector('[role="switch"]');
+		expect(sw).not.toBeNull();
+		expect(sw!.getAttribute("aria-checked")).toBe("false");
+	});
+});

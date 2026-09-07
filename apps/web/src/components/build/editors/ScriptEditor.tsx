@@ -495,7 +495,10 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   // ── Script editor panel (for LorebookEditor editor view) ──
   const scriptEditorPanel = activeScript ? (
-    <div className={cn("mx-auto max-w-[860px]", isMobile && "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] [&_button]:min-h-[40px] [&_input]:text-base")}>
+    <div className={cn("mx-auto max-w-[860px]",
+      // D3 (v1.2.1): same exclusion as LorebookEditor — the blanket min-h
+      // stretched Toggle tracks (role=switch) into oversized blobs.
+      isMobile && "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] [&_button:not([role=switch])]:min-h-[40px] [&_input]:text-base")}>
       {/* Explicit-save status + action. Ctrl/Cmd+S calls the same handler. */}
       <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-border bg-s2 px-3 py-2">
         <span

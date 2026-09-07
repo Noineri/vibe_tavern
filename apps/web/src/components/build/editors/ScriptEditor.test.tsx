@@ -16,7 +16,7 @@
  *
  * Runner: bun:test with scoped happy-dom.
  */
-import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import type { ReactNode } from "react";
 import {
   type ScriptRecord,
@@ -88,9 +88,13 @@ mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
   useBootstrapStore: <T,>(selector: (state: { personas: never[] }) => T): T => selector({ personas: [] }),
 }));
 
+// Mobile flag as a mutable cell: the file's tests pin the desktop path by
+// default; the D3 block below flips it for the mobile booster path.
+const mobileState = { isMobile: false };
+
 mock.module("../../../hooks/use-mobile.js", () => ({
 	...realMobileHook,
-  useIsMobile: () => false,
+  useIsMobile: () => mobileState.isMobile,
 }));
 
 mock.module("../../shared/AiAssistantModal.js", () => ({
@@ -365,5 +369,30 @@ describe("useScriptPanel interactive-script filtering", () => {
 
     expect(await findByText("Prompt All")).toBeTruthy();
     expect(queryByText("Interactive All")).toBeNull();
+  });
+});
+
+describe("ScriptEditor — D3 mobile touch booster", () => {
+  beforeEach(() => {
+    mobileState.isMobile = true;
+  });
+
+  afterEach(() => {
+    mobileState.isMobile = false;
+  });
+
+  it("excludes role=switch from the editor-panel touch-target booster", async () => {
+    // v1.2.1 mobile defect D3: the blanket `[&_button]:min-h-[40px]` booster
+    // stretched Toggle tracks into oversized blobs. happy-dom has no layout
+    // engine, so this is a string-level regression pin (see the matching
+    // LorebookEditor D3 test; the Toggle side is pinned in Toggle.test.tsx).
+    const { container, findByText } = render(<Harness />);
+    await openEditor(container, findByText);
+    const candidates = Array.from(container.querySelectorAll('[class*="min-h-"]'));
+    const booster = candidates.find((el) =>
+      (el as HTMLElement).className.includes("min-h-[40px]"),
+    ) as HTMLElement | undefined;
+    expect(booster).toBeTruthy();
+    expect(booster!.className).toContain(":not([role=switch])");
   });
 });

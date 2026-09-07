@@ -590,8 +590,11 @@ export function LorebookEditor({
     <div
       className={cn(
         "flex-1 overflow-y-auto pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]",
+        // D3 (v1.2.1): the touch-target booster must exclude role=switch —
+        // the Toggle track IS its button (h-[20px] root, absolute inset-0
+        // track), so a blanket min-h stretched it into a 44px orange blob.
         isMobile &&
-          "[&_button]:min-h-[44px] [&_input]:text-base [&_textarea]:text-base [&_select]:text-base"
+          "[&_button:not([role=switch])]:min-h-[44px] [&_input]:text-base [&_textarea]:text-base [&_select]:text-base"
       )}
       style={{ padding: isMobile ? "12px" : "20px 24px" }}
     >
