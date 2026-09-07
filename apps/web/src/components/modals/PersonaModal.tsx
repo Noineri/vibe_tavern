@@ -4,7 +4,6 @@ import type { PronounForms } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
-import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { MasterDetailModal, MasterDetailFooter, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
@@ -135,7 +134,6 @@ export function PersonaModal(input: PersonaModalProps) {
   const [selectedId, setSelectedId] = useState<string | null>(input.activePersonaId);
   const [createdDraftPersonaId, setCreatedDraftPersonaId] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -508,41 +506,6 @@ export function PersonaModal(input: PersonaModalProps) {
           onCancel={handleAvatarCropCancel}
         />
       )}
-      {/* Mobile ActionSheet — persona actions (Export/Copy/Delete). Mirrors the
-          character rail's three-dots bottom sheet (Rail.tsx). Desktop uses
-          inline icon buttons instead, so this is mobile-only. (PSM-5: replaced
-          by the footer icon buttons.) */}
-      {isMobile && menuOpenId && (() => {
-        const active = input.personas.find((p) => p.id === menuOpenId);
-        const items: ActionSheetItem[] = [
-          { icon: <Icons.download />, label: t("persona_export"), action: async () => {
-            const id = menuOpenId;
-            setMenuOpenId(null);
-            try { await exportPersona(id, "st"); }
-            catch (err) { toast.error(err instanceof Error ? err.message : t("persona_export_failed")); }
-          }},
-          { icon: <Icons.Copy />, label: t("duplicate"), action: () => {
-            const id = menuOpenId;
-            setMenuOpenId(null);
-            void input.onDuplicatePersona(id);
-          }},
-        ];
-        if (!isLastPersona) {
-          items.push({ icon: <Icons.del />, label: t("delete"), danger: true, action: () => {
-            const id = menuOpenId;
-            setMenuOpenId(null);
-            handleDelete(id);
-          }});
-        }
-        return (
-          <ActionSheet
-            open={true}
-            title={active?.name ?? ""}
-            items={items}
-            onClose={() => setMenuOpenId(null)}
-          />
-        );
-      })()}
       {/* Delete confirm */}
       {deleteConfirm && (
         <DestructiveConfirmModal
