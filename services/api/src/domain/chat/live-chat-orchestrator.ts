@@ -45,7 +45,26 @@ export class LiveChatOrchestrator {
     private readonly waitForForwardState?: (chatId: string, signal?: AbortSignal) => Promise<void>,
     /** RX-5/RX-8/RX-10: regex transformation seam (`RegexHookService.createHooks()`). Absent ⇒ every hook is the identity — byte-for-byte current behavior. Only persist-mode presets transform here; display/prompt-only modes are Wave 3 seams. */
     private readonly regexHooks?: { onUserInput: RegexTextHook; onAiOutput: RegexTextHook; onReasoning: RegexTextHook },
+    /** Executor injection seam (mock-free test boundary; `deps.streamTextImpl`
+     *  precedent from regex-assist). Absent ⇒ the real infrastructure
+     *  executors run — production behavior byte-for-byte. Tests pass stubs of
+     *  the executor type here instead of `mock.module()` patching, which is
+     *  process-global under bun:test (AGENTS.md tier policy). */
+    private readonly executors?: {
+      nonstreaming: typeof nonstreamingProviderExecute;
+      stream: typeof streamProviderExecutor;
+    },
   ) {}
+
+  /** Executor seam accessors: injected stub (tests) or the real module fn. */
+  private get executeNonstreaming(): typeof nonstreamingProviderExecute {
+    return this.executors?.nonstreaming ?? nonstreamingProviderExecute;
+  }
+
+  /** Executor seam accessor — see {@link executors}. */
+  private get executeStream(): typeof streamProviderExecutor {
+    return this.executors?.stream ?? streamProviderExecutor;
+  }
 
   /** RX-8/RX-10 regex seam: runs `text` through the injected hook (persist-mode presets only), or returns it unchanged when none is present. */
   private async applyRegexLayer(hook: "USER_INPUT" | "AI_OUTPUT" | "REASONING", chatId: string, text: string): Promise<string> {
@@ -109,7 +128,7 @@ export class LiveChatOrchestrator {
     try {
       // Non-streaming path: generateText() awaits the full reply, returned as JSON.
       // The streaming equivalent (SSE text/reasoning deltas) lives in sendMessageStream() / startStream().
-      const result = await nonstreamingProviderExecute({
+      const result = await this.executeNonstreaming({
         profile: provider.profile,
         model: provider.model,
         transport: input.transport,
@@ -197,7 +216,7 @@ export class LiveChatOrchestrator {
     let toolCalls: ExtractedToolCall[] | undefined;
     let toolResults: ExtractedToolResult[] | undefined;
     try {
-      const result = await nonstreamingProviderExecute({
+      const result = await this.executeNonstreaming({
         profile: provider.profile,
         model: provider.model,
         transport: input.transport,
@@ -287,7 +306,7 @@ export class LiveChatOrchestrator {
     let toolCalls: ExtractedToolCall[] | undefined;
     let toolResults: ExtractedToolResult[] | undefined;
     try {
-      const result = await nonstreamingProviderExecute({
+      const result = await this.executeNonstreaming({
         profile: provider.profile,
         model: provider.model,
         transport: input.transport,
@@ -591,7 +610,7 @@ export class LiveChatOrchestrator {
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
     try {
-      const streamResult = await streamProviderExecutor({
+      const streamResult = await this.executeStream({
         profile: input.profile,
         model: input.model,
         transport: input.transport,
