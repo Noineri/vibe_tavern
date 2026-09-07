@@ -18,6 +18,9 @@ import { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
 import { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
 import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
+import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // RX-10 (REGEX_EXTENSION_PLAN, Wave 2b) — REASONING live hook.
@@ -40,76 +43,45 @@ import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 //     is never even invoked (spy), and it IS invoked once when reasoning
 //     exists.
 //
-// Provider executors are mocked via the SAFE mock.module pattern (identical
-// to regex-hooks.test.ts / dice-send-stream-nonstream.test.ts): real exports
-// captured FIRST (`await import`), spread, then ONLY the executor functions
-// overridden. The mocked replies are configurable per test via module-level
-// mutable state (reset in beforeEach). The orchestrator is dynamic-imported
-// AFTER registration so it resolves THESE mocks.
+// Provider executors are injected through the orchestrator's `executors`
+// constructor seam (regex-assist `deps.streamTextImpl` precedent) — no
+// `mock.module`, which is process-global and permanent under bun:test
+// (AGENTS.md tier policy: T1 doubles enter through DI seams only). The stub
+// replies are configurable per test via module-level mutable state (reset in
+// beforeEach) read at call time.
 // ════════════════════════════════════════════════════════════════════════════
 
 const RAW_REASONING = "line one\n\n\n\nline two";
 const THINKING_REPLY = `<think>${RAW_REASONING}</think>Plain reply body.`;
 const PLAIN_REPLY = "Plain reply body.";
 
-// Per-test mock state (reset in beforeEach).
+// Per-test stub state (reset in beforeEach).
 let nonstreamReplyText = THINKING_REPLY;
 let streamReasoningDelta: string | null = RAW_REASONING;
 let streamBodyText = PLAIN_REPLY;
 
-// ── Safe mock.module: capture real executor exports BEFORE registering ──────
-const realNonstreaming = await import("../src/infrastructure/ai/nonstreaming-provider-executor.js");
-const realStream = await import("../src/infrastructure/ai/stream-provider-executor.js");
-// Capture the FUNCTIONS, not the module objects: bun's mock.module MUTATES the
-// real module's export slots at registration, so `realNonstreaming.<fn>` read
-// later resolves to our own stub (sync infinite recursion). The dice file
-// already uses this pattern.
-const realNonstreamingExecute = realNonstreaming.nonstreamingProviderExecute;
-const realStreamExecute = realStream.streamProviderExecutor;
-
-// Leak guard: mock.module is PROCESS-GLOBAL and LAST registration wins — without
-// this flag, every test file sorted after this one that imports the executors
-// would receive this stub instead of the real implementation (observed with
-// ST-6's stt-voice-executor tests). Once this file's tests finish, delegate
-// calls through to the captured REAL functions so later files exercise real code.
-let delegateExecutorsToReal = false;
-
-mock.module("../src/infrastructure/ai/nonstreaming-provider-executor.js", () => ({
-  ...realNonstreaming,
-  nonstreamingProviderExecute: (input: Parameters<typeof realNonstreamingExecute>[0]) => {
-    if (delegateExecutorsToReal) return realNonstreamingExecute(input);
-    return Promise.resolve({
-      text: nonstreamReplyText,
-      providerResponse: { mode: "nonstream" as const, steps: [] },
-    });
-  },
-}));
-
-mock.module("../src/infrastructure/ai/stream-provider-executor.js", () => ({
-  ...realStream,
-  streamProviderExecutor: (input: Parameters<typeof realStreamExecute>[0]) => {
-    if (delegateExecutorsToReal) return realStreamExecute(input);
-    return Promise.resolve({
-      stream: (async function* () {
-        // Raw reasoning first (as a reasoning model streams), then the body.
-        // Deltas must stream UNTRANSFORMED — the transform lands only on the
-        // finalized stored reasoning.
-        if (streamReasoningDelta !== null) {
-          yield { type: "reasoning-delta" as const, textDelta: streamReasoningDelta };
-        }
-        yield { type: "text-delta" as const, delta: streamBodyText };
-      })(),
-      finished: Promise.resolve({ finishReason: "stop" as const }),
-      text: Promise.resolve(streamBodyText),
-      reasoning: Promise.resolve(undefined),
-      hasRedactedReasoning: false,
-      providerResponse: { mode: "stream" as const, steps: [] },
-    });
-  },
-}));
-
-// Dynamic import AFTER mock registration so the orchestrator resolves mocks.
-const { LiveChatOrchestrator } = await import("../src/domain/chat/live-chat-orchestrator.js");
+// ── Executor seam stubs ──────────────────────────────────────────────────
+const STUB_NONSTREAMING: typeof nonstreamingProviderExecute = async () => ({
+  text: nonstreamReplyText,
+  providerResponse: { mode: "nonstream", steps: [] },
+});
+const STUB_STREAM: typeof streamProviderExecutor = async () => ({
+  stream: (async function* () {
+    // Raw reasoning first (as a reasoning model streams), then the body.
+    // Deltas must stream UNTRANSFORMED — the transform lands only on the
+    // finalized stored reasoning.
+    if (streamReasoningDelta !== null) {
+      yield { type: "reasoning-delta" as const, textDelta: streamReasoningDelta };
+    }
+    yield { type: "text-delta" as const, delta: streamBodyText };
+  })(),
+  finished: Promise.resolve({ finishReason: "stop" as const }),
+  text: Promise.resolve(streamBodyText),
+  reasoning: Promise.resolve(undefined),
+  hasRedactedReasoning: false,
+  providerResponse: { mode: "stream" as const, steps: [] },
+});
+const STUB_EXECUTORS = { nonstreaming: STUB_NONSTREAMING, stream: STUB_STREAM };
 
 // ── Test harness (mirrors regex-hooks.test.ts) ───────────────────────────────
 
@@ -158,9 +130,6 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
-  // Arm the leak guard for every test file that runs after this one in the
-  // same process (see comment at delegateExecutorsToReal).
-  delegateExecutorsToReal = true;
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
 });
 
@@ -238,6 +207,7 @@ function makeHarness(
     async () => fakeStrategy,
     undefined,
     hooksOverride ?? new RegexHookService(chat.stores).createHooks(),
+    STUB_EXECUTORS,
   );
 }
 
