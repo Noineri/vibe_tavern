@@ -13,7 +13,7 @@
  * for provider/model persistence and done-metadata capture live next to the
  * extracted hook under `ai-assistant/use-ai-assistant-runner.test.tsx`.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { AiAssistantChunk, AiAssistantRequestBody, ProviderProfileRecord, UiSettingsRecord } from "../../api/types.js";
 
@@ -64,8 +64,12 @@ mock.module("../../i18n/context.js", () => {
   };
 });
 
+// Mobile flag as a mutable cell: the file's tests pin the desktop Modal path
+// by default; the D1 block below flips it for the BottomSheet path.
+const mobileState = { isMobile: false };
+
 // Force desktop layout so the Modal (not BottomSheet) path renders.
-mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
+mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => mobileState.isMobile }));
 
 let AiAssistantModal: typeof import("./AiAssistantModal.js").AiAssistantModal;
 let TooltipProvider: typeof import("./Tooltip.js").TooltipProvider;
@@ -591,5 +595,38 @@ describe("AiAssistantModal — quickpill settings sync", () => {
     // In quickpill mode, changing settings should not call updateUiSettings.
     // The only writes to ui settings come from full-mode persistence.
     expect(updateUiSettings).not.toHaveBeenCalled();
+  });
+});
+
+// ── D1: mobile quickpill sheet must not render a duplicate header ──────────
+
+describe("AiAssistantModal — D1 mobile sheet header", () => {
+  beforeEach(() => {
+    mobileState.isMobile = true;
+    useProviderDataStore.setState({ profiles: [], favoritesByProfile: {} });
+    seedBootstrap(null, null);
+  });
+
+  afterEach(() => {
+    mobileState.isMobile = false;
+  });
+
+  it("renders the sheet title exactly once (shell header only, no BottomSheet title)", () => {
+    // v1.2.1 mobile defect D1: the mobile branch passed title={title} to
+    // BottomSheet while contentBody starts with AiAssistantShell's OWN header
+    // strip → two stacked headers. The fix drops the BottomSheet title; the
+    // shell header is the single visible title (the i18n mock returns keys,
+    // so the title text is the literal key).
+    renderModal(
+      <AiAssistantModal
+        mode="quickpill"
+        isOpen={true}
+        onClose={() => {}}
+        settings={{ providerId: "", modelName: "" }}
+        onSettingsChange={() => {}}
+      />,
+    );
+    const occurrences = document.body.textContent?.match(/ai_quickpill_settings/g) ?? [];
+    expect(occurrences).toHaveLength(1);
   });
 });
