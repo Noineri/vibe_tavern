@@ -38,6 +38,22 @@ function touch2(x1: number, y1: number, x2: number, y2: number): React.TouchEven
   } as unknown as React.TouchEvent;
 }
 
+/** Single-finger touch event. */
+function touch1(x: number, y: number): React.TouchEvent {
+  return {
+    touches: [{ clientX: x, clientY: y }],
+    preventDefault() {},
+  } as unknown as React.TouchEvent;
+}
+
+/** touchend/touchcancel with the given fingers still on screen. */
+function touchEnd(remaining: Array<{ clientX: number; clientY: number }>): React.TouchEvent {
+  return {
+    touches: remaining,
+    preventDefault() {},
+  } as unknown as React.TouchEvent;
+}
+
 describe("useImageZoomPan", () => {
   test("CRASH (D5): translate updater queued by touchMove must survive touchEnd nulling the refs before the commit", async () => {
     const { result } = renderHook(() => useImageZoomPan());
@@ -47,7 +63,7 @@ describe("useImageZoomPan", () => {
     result.current.touchHandlers.onTouchMove(touch2(0, 0, 150, 0));
     // touchEnd before React commits the queued updater → refs nulled while
     // the translate closure is still pending.
-    result.current.touchHandlers.onTouchEnd();
+    result.current.touchHandlers.onTouchEnd(touchEnd([]));
     // Flush: the OLD updater read lastTouchCenter.current!.x here → TypeError
     // during render → tree unmount. Must commit cleanly instead.
     await act(async () => {});
@@ -104,4 +120,50 @@ describe("useImageZoomPan", () => {
     }
   });
 
+  test("single-finger move while zoomed in pans the image, incl. the 2→1 pinch handoff (D5b)", async () => {
+    const { result } = renderHook(() => useImageZoomPan());
+    // Zoom in via a SYMMETRIC pinch (spread around a fixed center): 1 → 2
+    // with translate unchanged, so the pan assertions below are pure pan.
+    await act(async () => {
+      result.current.touchHandlers.onTouchStart(touch2(0, 0, 100, 0));
+      result.current.touchHandlers.onTouchMove(touch2(-50, 0, 150, 0));
+    });
+    expect(result.current.scale).toBeCloseTo(2);
+    expect(result.current.translate).toEqual({ x: 0, y: 0 });
+    // Lift one finger (2→1): the hook must re-baseline on the remaining
+    // finger at ITS current position (60,0) — panning continues seamlessly.
+    await act(async () => {
+      result.current.touchHandlers.onTouchEnd(touchEnd([{ clientX: 60, clientY: 0 }]));
+      result.current.touchHandlers.onTouchMove(touch1(90, 10));
+      result.current.touchHandlers.onTouchMove(touch1(120, 20));
+    });
+    // Pan delta = 60→120 (+60 x, +20 y) — the image follows the finger.
+    expect(result.current.translate.x).toBeCloseTo(60);
+    expect(result.current.translate.y).toBeCloseTo(20);
+    // The pinch refs must be released: isPinching is false after the lift.
+    expect(result.current.isPinching).toBe(false);
+  });
+
+  test("single-finger move does nothing at scale 1 (no ghost-drag of a fitted image)", async () => {
+    const { result } = renderHook(() => useImageZoomPan());
+    await act(async () => {
+      result.current.touchHandlers.onTouchStart(touch1(60, 0));
+      result.current.touchHandlers.onTouchMove(touch1(120, 20));
+    });
+    expect(result.current.translate).toEqual({ x: 0, y: 0 });
+  });
+
+  test("touchcancel clears all gesture state — no stale refs, no phantom pinch", async () => {
+    const { result } = renderHook(() => useImageZoomPan());
+    // Pinch in progress, then the browser takes the gesture over (cancel).
+    result.current.touchHandlers.onTouchStart(touch2(0, 0, 100, 0));
+    result.current.touchHandlers.onTouchCancel(touchEnd([]));
+    // A following 2-finger move must be inert (dist ref cleared → no zoom),
+    // and the queued updater from a cancel-racing move must not throw either.
+    await act(async () => {
+      result.current.touchHandlers.onTouchMove(touch2(0, 0, 400, 0));
+    });
+    expect(result.current.scale).toBe(1);
+    expect(result.current.isPinching).toBe(false);
+  });
 });
