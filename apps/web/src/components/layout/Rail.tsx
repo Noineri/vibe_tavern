@@ -11,7 +11,7 @@ import { TagFilterSheet } from "./rail/TagFilterSheet.js";
 import { RailCollapsedStrip } from "./rail/RailCollapsedStrip.js";
 import { CharacterChatsSheet } from "./rail/CharacterChatsSheet.js";
 import { Drawer } from "@base-ui/react/drawer";
-import { getModalPortal } from "../shared/modal-helpers.js";
+import { getApplicationModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
 import { useRowActions } from "./hooks/use-row-actions.js";
@@ -237,7 +237,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       )}
 
       {/* ═══ EXPANDED OVERLAY PANEL ═══ */}
-      <Drawer.Portal container={getModalPortal() ?? document.body}>
+      {/* App-level host, NOT the overlay stack: the rail must never chase the
+       *  topmost sheet anchor — a stack-top change mid-session would re-target
+       *  this portal and tear the rail down (SHEET_PORTAL_SELF_TARGETING). */}
+      <Drawer.Portal container={getApplicationModalPortal() ?? document.body}>
         <Drawer.Backdrop className="rail-backdrop fixed inset-0 z-[299] bg-black/40 backdrop-blur-sm" />
         <Drawer.Viewport className="fixed inset-0 z-[300]">
           <Drawer.Popup className="rail-popup glass-blur fixed left-0 top-0 bottom-0 flex w-[260px] flex-col border-r border-border bg-glass-bg shadow-theme-xl">

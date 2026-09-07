@@ -45,12 +45,13 @@ let fireEvent: typeof import("@testing-library/react").fireEvent;
 let BottomSheet: typeof import("./BottomSheet.js").BottomSheet;
 let getModalPortal: typeof import("./modal-helpers.js").getModalPortal;
 let getTopmostOverlayPortal: typeof import("./modal-helpers.js").getTopmostOverlayPortal;
+let getApplicationModalPortal: typeof import("./modal-helpers.js").getApplicationModalPortal;
 let registerOverlayPortal: typeof import("./modal-helpers.js").registerOverlayPortal;
 
 beforeAll(async () => {
 	({ render, fireEvent } = await import("@testing-library/react"));
 	({ BottomSheet } = await import("./BottomSheet.js"));
-	({ getModalPortal, getTopmostOverlayPortal, registerOverlayPortal } = await import("./modal-helpers.js"));
+	({ getModalPortal, getTopmostOverlayPortal, getApplicationModalPortal, registerOverlayPortal } = await import("./modal-helpers.js"));
 });
 
 /** Scrim overlay — `.inset-0` (full-screen fixed) is unique to the scrim; the
@@ -187,15 +188,146 @@ describe("BottomSheet overlay portal (D2 — nested floating UI)", () => {
 	});
 
 	it("overlay stack is LIFO with clean unregister", () => {
+		// Nodes must be live (connected): the hardened resolver skips and prunes
+		// detached entries (SHEET_PORTAL_SELF_TARGETING), which is pinned in the
+		// resolver-hardening block below — this test pins ordering + unregister.
 		const a = document.createElement("div");
 		const b = document.createElement("div");
+		document.body.appendChild(a);
+		document.body.appendChild(b);
 		const unA = registerOverlayPortal(a);
 		const unB = registerOverlayPortal(b);
-		expect(getTopmostOverlayPortal()).toBe(b);
-		unA();
-		expect(getTopmostOverlayPortal()).toBe(b);
-		unB();
+		try {
+			expect(getTopmostOverlayPortal()).toBe(b);
+			unA();
+			expect(getTopmostOverlayPortal()).toBe(b);
+			unB();
+			expect(getTopmostOverlayPortal()).toBeNull();
+		} finally {
+			a.remove();
+			b.remove();
+		}
+	});
+});
+
+describe("BottomSheet portal session (SHEET_PORTAL_SELF_TARGETING)", () => {
+	// v1.2.2 regression: D2 made `getModalPortal()` consult the live overlay
+	// stack while `Drawer.Portal container={getModalPortal() ?? document.body}`
+	// re-evaluated it on EVERY render. The first open render portaled to body;
+	// once the sheet's own anchor registered (at commit), the NEXT re-render
+	// resolved the container to the sheet's OWN anchor — a node inside the very
+	// subtree being re-targeted — so React tore the sheet down mid-life: the
+	// dialog DOM vanished while `open` stayed true (re-tap = no-op), Base UI's
+	// inert restore never landed (`#root[data-base-ui-inert]` leak → whole app
+	// dead to pointer input), onOpenChange never fired. These tests pin the
+	// session contract: the container is captured once per open transition and
+	// frozen for the whole open lifecycle.
+	function portalNode(): HTMLElement {
+		const el = document.querySelector<HTMLElement>('[data-overlay-portal="bottom-sheet"]');
+		if (!el) throw new Error("sheet portal node not rendered");
+		return el;
+	}
+	it("survives a mid-session re-render while open (the production repro)", () => {
+		// Repro shape: any store-driven re-render while the sheet is open
+		// (production trigger: the provider model-list fetch resolving).
+		const { rerender } = render(
+			<BottomSheet open={true} onClose={() => {}}>
+				<span>MIDLIFE1</span>
+			</BottomSheet>,
+		);
+		const sheetBefore = sheetEl(document);
+		expect(getTopmostOverlayPortal()).toBe(portalNode());
+		// Mid-life re-render while open — content changes, sheet stays open.
+		rerender(
+			<BottomSheet open={true} onClose={() => {}}>
+				<span>MIDLIFE2</span>
+			</BottomSheet>,
+		);
+		const sheetAfter = sheetEl(document);
+		// DOM identity preserved — no teardown/re-mount of the portal subtree.
+		expect(sheetAfter).toBe(sheetBefore);
+		expect(sheetAfter.isConnected).toBe(true);
+		// The sheet body must still live in the document (a self-targeted portal
+		// detaches the subtree from body under the old code).
+		expect(document.body.textContent).toContain("MIDLIFE2");
+		// The app host must not be inert-poisoned (leak symptom from the field).
+		const root = document.getElementById("root");
+		expect(root?.hasAttribute("data-base-ui-inert") ?? false).toBe(false);
+		expect(root?.getAttribute("aria-hidden")).not.toBe("true");
+	});
+
+	it("closes and reopens cleanly — no stuck session, anchor re-registers", () => {
+		// The field symptom ended with “opens once, then never again”. Pin the
+		// full open → close → reopen cycle: after a close the resolver must fall
+		// back (anchor unregistered), and the next open must re-register it and
+		// render live DOM again.
+		const { rerender } = render(
+			<BottomSheet open={true} onClose={() => {}}>
+				<span>CYCLE</span>
+			</BottomSheet>,
+		);
+		expect(getTopmostOverlayPortal()).toBe(portalNode());
+		rerender(
+			<BottomSheet open={false} onClose={() => {}}>
+				<span>CYCLE</span>
+			</BottomSheet>,
+		);
 		expect(getTopmostOverlayPortal()).toBeNull();
+		rerender(
+			<BottomSheet open={true} onClose={() => {}}>
+				<span>CYCLE</span>
+			</BottomSheet>,
+		);
+		const sheet = sheetEl(document);
+		expect(sheet.isConnected).toBe(true);
+		expect(document.body.textContent).toContain("CYCLE");
+		expect(getTopmostOverlayPortal()).toBe(portalNode());
+	});
+});
+
+describe("modal-helpers resolver hardening (SHEET_PORTAL_SELF_TARGETING)", () => {
+	// A teardown path that skips the ref cleanup (exactly the class of bug
+	// this hardening follows) can leave disconnected nodes in the overlay
+	// stack; the resolver must never return — or keep — a detached anchor.
+	it("skips and prunes disconnected top entries, falling to a connected one", () => {
+		const detached = document.createElement("div"); // never appended
+		const live = document.createElement("div");
+		document.body.appendChild(live);
+		const unDetached = registerOverlayPortal(detached);
+		const unLive = registerOverlayPortal(live);
+		try {
+			expect(getTopmostOverlayPortal()).toBe(live); // skips the detached top
+		} finally {
+			unDetached();
+			unLive();
+			live.remove();
+		}
+	});
+
+	it("returns null (and empties the stack) when every entry is disconnected", () => {
+		const detached = document.createElement("div");
+		registerOverlayPortal(detached); // leak: unregister never runs
+		expect(getTopmostOverlayPortal()).toBeNull();
+	});
+
+	it("getApplicationModalPortal ignores the overlay stack", () => {
+		// The rail (and any app-level overlay) must resolve a STABLE host that
+		// never chases the topmost sheet anchor — re-targeting mid-life is the
+		// self-targeting bug again, one level up.
+		const overlayNode = document.createElement("div");
+		document.body.appendChild(overlayNode);
+		const un = registerOverlayPortal(overlayNode);
+		const host = document.createElement("div");
+		host.id = "modal-portal";
+		document.body.appendChild(host);
+		try {
+			expect(getModalPortal()).toBe(overlayNode); // stack-consulting resolver
+			expect(getApplicationModalPortal()).toBe(host); // app-level: ignores stack
+		} finally {
+			un();
+			host.remove();
+			overlayNode.remove();
+		}
 	});
 });
 
