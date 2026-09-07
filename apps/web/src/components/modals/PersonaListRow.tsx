@@ -21,9 +21,9 @@ interface PersonaListRowProps {
  * PersonaCardCollapsed in Wave 4: after the master-detail port there is no
  * collapsed/editing card pair anymore, just list rows), in the
  * messenger layout (Wave 4): header line = avatar (88px, default-persona star
- * PR-8) + name with the explicit "use for chat" button (ProviderViewHeader
- * make-active pattern: accent border, pressed/disabled on the active persona)
- * + pronouns; the description (clamp-3) and token counter span the FULL row
+ * PR-8) + name on the left with the explicit "use for chat" button docked to
+ * the OPPOSITE (right) edge of the header line (owner correction 2026-09-07:
+ * напротив имени, not adjacent) + pronouns; the description (clamp-3) and token counter span the FULL row
  * width below (354px of text vs the old 256px side column — see the plan's
  * layout arithmetic). Row chrome (border-l-2, active bg, drill-down caret)
  * lives in the host's renderRow; row actions (Export / Duplicate / Delete)
@@ -96,7 +96,7 @@ export function PersonaListRow({
                 onSelectForChat();
               }}
               disabled={isActive}
-              className="shrink-0 cursor-pointer rounded-md border border-accent bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="ml-auto shrink-0 cursor-pointer rounded-md border border-accent bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isActive ? t("persona_chat_active") : t("persona_use_for_chat")}
             </button>
