@@ -7,24 +7,20 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
-import { SaveButton } from "../shared/SaveBar.js";
 import { BoundResourcesField } from "../shared/BoundResourcesField.js";
 import { AvatarDescriptionField, type AvatarDescriptionPatch } from "../build/editors/AvatarDescriptionField.js";
 import type { PersonaListItem, PersonaFormData } from "./PersonaModal.js";
 
 interface PersonaCardEditorProps {
-  /** The persona being edited (rendered only when editingId === persona.id). */
+  /** The persona being edited (the master's selected row). */
   persona: PersonaListItem;
   /** The host's react-hook-form instance (stable) — the editor reads/writes it directly. */
   form: UseFormReturn<PersonaFormData>;
-  isDirty: boolean;
   isSaving: boolean;
   avatarUploading: boolean;
   /** Resolved display avatar URL (parent-computed from form + persona). */
   avatarDisplayUrl: string | null;
   isMobile: boolean;
-  onSave: () => void;
-  onCancel: () => void;
   onAvatarSelected: (file: File) => void;
   onAvatarPatch: (patch: AvatarDescriptionPatch) => void;
   onAvatarDescribe: (signal: AbortSignal) => Promise<void>;
@@ -34,22 +30,19 @@ interface PersonaCardEditorProps {
  * PersonaCardEditor — the editing view of a persona card, extracted from
  * PersonaModal's renderCard (PERSONA_MODAL_GOD_OBJECT_AUDIT.md, Finding 2 /
  * step 3). Owns the avatar + name + pronoun row, the description, the bound
- * lorebooks (BoundResourcesField, PR-12), the avatar-in-prompt fields
- * (AvatarDescriptionField, out-of-band), and the Save/Cancel actions. Owns its
- * own file-input ref and pronoun option/field tables; reads/writes the shared
- * react-hook-form instance via the `form` prop. Rendered only when this card is
- * the one being edited.
+ * lorebooks (BoundResourcesField, PR-12), and the avatar-in-prompt fields
+ * (AvatarDescriptionField, out-of-band). Owns its own file-input ref and
+ * pronoun option/field tables; reads/writes the shared react-hook-form
+ * instance via the `form` prop. Rendered in the master-detail modal's detail
+ * pane for the selected persona (PSM-1); the footer owns Save now.
  */
 export function PersonaCardEditor({
   persona,
   form,
-  isDirty,
   isSaving,
   avatarUploading,
   avatarDisplayUrl,
   isMobile,
-  onSave,
-  onCancel,
   onAvatarSelected,
   onAvatarPatch,
   onAvatarDescribe,
@@ -86,7 +79,7 @@ export function PersonaCardEditor({
   ];
 
   return (
-    <div className="w-full" onClick={(e) => e.stopPropagation()}>
+    <div className="w-full">
       {/* Avatar + Name + Pronouns row */}
       <div className={cn("flex gap-3 mb-3", isMobile ? "items-start" : "items-start")}>
         {/* Avatar */}
@@ -209,24 +202,6 @@ export function PersonaCardEditor({
           onDescribe={onAvatarDescribe}
           disabled={isSaving}
         />
-      </div>
-      {/* Save / Cancel */}
-      <div className="flex gap-2">
-        <SaveButton
-          dirty={isDirty}
-          saveState={isSaving ? "saving" : "idle"}
-          resetKey={persona.id}
-          disabled={isSaving || !(editName || "").trim()}
-          label={t("save_btn")}
-          onClick={onSave}
-          size="touch"
-        />
-        <button type="button"
-          className="min-h-[40px] cursor-pointer rounded-md bg-transparent px-3.5 font-ui text-sm text-t3 active:bg-s2"
-          onClick={onCancel}
-        >
-          {t("cancel_btn")}
-        </button>
       </div>
     </div>
   );
