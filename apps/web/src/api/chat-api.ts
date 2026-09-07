@@ -13,7 +13,7 @@ import type { z } from "zod";
  *  (z.infer of the shared attachmentSchema: audio + purpose + durationMs
  *  included, ST-6). */
 export type WireAttachment = z.infer<typeof attachmentSchema>;
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { getGatewayBaseUrl } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 
 export type CreateMessageVariantInput = {
@@ -135,7 +135,6 @@ export async function sendChatMessage(
   input: { content: string; attachments?: WireAttachment[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
-  logClientSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });
   const response = await client.api.chats[":chatId"].messages.$post(
     { param: { chatId }, json: input },
     { init: { signal: options?.signal } },
@@ -754,24 +753,4 @@ export async function fetchContextPreview(
     { init: { signal } },
   );
   return unwrapRpc<ContextPreviewResponse>(response);
-}
-
-// ─── Debug ──────────────────────────────────────────────────────────────
-
-function logClientSendDebug(event: string, data: Record<string, unknown> = {}): void {
-  postSendDebug(event, data);
-}
-
-export { logClientSendDebug };
-
-function postSendDebug(event: string, data: Record<string, unknown>): void {
-  const token = getMobileToken();
-  void fetch(`${getGatewayBaseUrl()}/api/debug/send-log`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ event, ...data, clientTs: new Date().toISOString() }),
-  }).catch(() => undefined);
 }

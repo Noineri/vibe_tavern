@@ -99,7 +99,6 @@ export {
   updateInsightsConfig,
   exportChatJsonl,
   exportPromptTrace,
-  logClientSendDebug,
   refreshInsightsCompletion,
   previewScene,
   generateScene,

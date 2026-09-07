@@ -100,7 +100,7 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	app.onError((err, c) => {
 		const url = c.req.url;
 		const method = c.req.method;
-		if (url.includes("/messages") || url.includes("/debug/send-log")) {
+		if (url.includes("/messages")) {
 			logSendDebug("api.route.error", {
 				method,
 				url,

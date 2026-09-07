@@ -5,7 +5,6 @@ import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
 import {
   generateReplyStream,
-  logClientSendDebug,
   regenerateChatMessageStream,
   sendChatMessageStream,
   type AppMessage,
@@ -339,9 +338,6 @@ export function useChatController(): ChatControllerActions {
   function getIsSending(chatId: string): boolean {
     return useChatStore.getState().generations[chatId]?.isSending ?? false;
   }
-  function getGenerationStatus(chatId: string): ChatGenerationStatus {
-    return useChatStore.getState().generations[chatId]?.generationStatus ?? "idle";
-  }
 
   // --- Snapshot cache helpers ---
 
@@ -523,11 +519,9 @@ export function useChatController(): ChatControllerActions {
       // Fresh send/generate paths emit message.appended and start insight work;
       // regenerate targets an existing message and intentionally does not.
       if (!streamingMessageId) startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
-      void logClientSendDebug("web.hook.stream.success", { chatId, replyLength: collected.length });
       return "done";
     } catch (error) {
       if (controller.signal.aborted) {
-        void logClientSendDebug("web.hook.stream.cancelled", { chatId });
         const snapshot = await refreshAfterAbort(chatId);
         // The backend persists and emits message.appended for a partial fresh
         // assistant response. Refresh only when abort produced a new target;
@@ -552,10 +546,6 @@ export function useChatController(): ChatControllerActions {
         useChatStore.getState().setGenerationStatus(chatId, "failed");
         return "failed";
       }
-      void logClientSendDebug("web.hook.stream.error", {
-        chatId,
-        message: error instanceof Error ? error.message : String(error),
-      });
       if (gateErrorCode(error) === "vision_not_supported") {
         toast.error(getT()("vision_not_supported"), {
           description: getT()("vision_not_supported_desc"),
@@ -626,9 +616,6 @@ export function useChatController(): ChatControllerActions {
       /** Caller-specific non-abort error recovery (toast / draft restore /
        *  snapshot refresh). Abort is handled uniformly by the helper. */
       onError?: (error: unknown) => void | Promise<void>;
-      /** When set, the helper emits `${label}.success/.cancelled/.error` debug
-       *  logs — uniformizing what call sites previously logged inconsistently. */
-      debugLabel?: string;
     } = {},
   ): Promise<StreamOutcome> {
     const controller = useChatStore.getState().startGeneration(
@@ -644,16 +631,13 @@ export function useChatController(): ChatControllerActions {
       if (snapshot.promptTrace && snapshot.activeBranch?.id) {
         useTraceHistoryStore.getState().upsertLatest(chatId, snapshot.activeBranch.id, snapshot.promptTrace);
       }
-      if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.success`, { chatId });
       return "done";
     } catch (error) {
       if (controller.signal.aborted) {
-        if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.cancelled`, { chatId });
         await refreshAfterAbort(chatId);
         if (!opts.suppressCancelToast) toast.info(getT()("generation_cancelled"));
         return "cancelled";
       }
-      if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.error`, { chatId, error: String(error) });
       await opts.onError?.(error);
       return "failed";
     } finally {
@@ -678,27 +662,11 @@ export function useChatController(): ChatControllerActions {
       ...(a.type === "audio" ? { purpose: a.purpose ?? ("voice" as const), durationMs: a.durationMs } : {}),
     }));
 
-    void logClientSendDebug("web.hook.handleSend.enter", {
-      activeChatId,
-      draftLength: draft.length,
-      trimmedLength: trimmed.length,
-      attachmentsCount: attachments.length,
-      isSending: activeChatId ? getIsSending(activeChatId) : false,
-      canSendViaActiveProfile: canSendRef.current,
-    });
-
     if ((!trimmed && attachments.length === 0) || !activeChatId || getIsSending(activeChatId)) {
-      void logClientSendDebug("web.hook.handleSend.blocked.basic", {
-        activeChatId,
-        trimmedLength: trimmed.length,
-        attachmentsCount: attachments.length,
-        isSending: activeChatId ? getIsSending(activeChatId) : false,
-      });
       return;
     }
 
     if (!canSendRef.current) {
-      void logClientSendDebug("web.hook.handleSend.blocked.provider", { activeChatId });
       toast.error(getT()("message_unavailable_no_provider"));
       return;
     }
@@ -709,7 +677,6 @@ export function useChatController(): ChatControllerActions {
     // defense-in-depth backstop for any direct handleSend call.
     const dice = readDiceSendState();
     if (dice.blockReason) {
-      void logClientSendDebug("web.hook.handleSend.blocked.dice", { activeChatId, reason: dice.blockReason });
       return;
     }
 
@@ -723,10 +690,6 @@ export function useChatController(): ChatControllerActions {
     const exp = readExperienceSendState(activeChatId);
 
     if (streamResponseRef.current) {
-      void logClientSendDebug("web.hook.handleSend.stream-request", {
-        activeChatId,
-        generationStatus: getGenerationStatus(activeChatId),
-      });
       const currentAttachments = [...csStore.draftAttachments];
       csStore.clearDraftAttachments();
       const outcome = await executeStreamAction(
@@ -737,7 +700,6 @@ export function useChatController(): ChatControllerActions {
       );
       notifyUserTurnSettled(outcome === "done");
     } else {
-      void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
       const currentAttachments = [...csStore.draftAttachments];
       csStore.clearDraftAttachments();
       csStore.setDraft("");
@@ -751,7 +713,6 @@ export function useChatController(): ChatControllerActions {
         {
           pendingUserContent: draft,
           pendingAttachments: currentAttachments,
-          debugLabel: "web.hook.handleSend",
           onError: (error) => {
             // DICE-F3: a dice commit conflict resyncs the lane and keeps the
             // draft — it is not a provider failure.
@@ -812,10 +773,6 @@ export function useChatController(): ChatControllerActions {
     }
 
     if (streamResponseRef.current) {
-      void logClientSendDebug("web.hook.handleResend.stream-request", {
-        activeChatId,
-        generationStatus: getGenerationStatus(activeChatId),
-      });
       await executeStreamAction(
         activeChatId,
         (opts) => generateReplyStream(activeChatId, opts),
@@ -825,7 +782,6 @@ export function useChatController(): ChatControllerActions {
         activeChatId,
         (signal) => generateReplyAction(activeChatId, signal),
         {
-          debugLabel: "web.hook.handleResend",
           onError: async (error) => {
             await refreshChatSnapshotCache(activeChatId);
             showProviderErrorToast(error, getT(), "resend_failed");
@@ -923,10 +879,6 @@ export function useChatController(): ChatControllerActions {
     useChatStore.getState().setMessageActionId(messageId);
     try {
       if (streamResponseRef.current) {
-        void logClientSendDebug("web.hook.handleRegenerate.stream-request", {
-          activeChatId, messageId,
-          generationStatus: getGenerationStatus(activeChatId),
-        });
         await executeStreamAction(
           activeChatId,
           (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
@@ -940,7 +892,6 @@ export function useChatController(): ChatControllerActions {
           (signal) => regenerateMessageAction(activeChatId, messageId, signal),
           {
             streamingMessageId: messageId,
-            debugLabel: "web.hook.handleRegenerate",
             onError: async (error) => {
               await refreshChatSnapshotCache(activeChatId);
               toast.error(error instanceof Error ? error.message : getT()("regen_failed"));

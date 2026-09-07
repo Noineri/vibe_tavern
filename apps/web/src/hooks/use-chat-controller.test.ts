@@ -25,14 +25,13 @@ useDomEnv();
 const regenerateChatMessage = mock();
 const sendChatMessageStream = mock();
 const fetchChat = mock();
-const logClientSendDebug = mock();
 const sendChatMessageAction = mock();
 
 const realAppClient = await import("../app-client.js");
 const realChatActions = await import("../stores/api-actions/chat-actions.js");
 const realLocaleHelpers = await import("../i18n/locale-helpers.js");
 mock.module("../app-client.js", () => {
-	return { ...realAppClient, regenerateChatMessage, sendChatMessageStream, fetchChat, logClientSendDebug };
+	return { ...realAppClient, regenerateChatMessage, sendChatMessageStream, fetchChat };
 });
 
 // sendChatMessageAction (chat-actions) is the non-stream send entry handleSend

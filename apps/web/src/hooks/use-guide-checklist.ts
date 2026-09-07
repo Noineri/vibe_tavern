@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { devLog } from "../lib/dev-log.js";
-
 /** Per-command "done" marks for the setup guides (owner flow 2026-09-06:
  *  copy → paste → wait → tick the step off). Persisted in localStorage so a
  *  long install (torch cu124 downloads for minutes) survives modal close and
@@ -28,7 +26,7 @@ function persistChecks(storageKey: string, checks: Set<string>): void {
   } catch (cause) {
     // Private mode / quota — the checklist degrades to in-memory for this
     // session instead of breaking the guide.
-    devLog("guide-checks-persist-failed", { error: String(cause) });
+    console.warn("guide-checks-persist-failed", cause);
   }
 }
 
@@ -78,7 +76,7 @@ export function useGuideChecklist(guideId: string, os: string): GuideChecklist {
     try {
       window.localStorage.removeItem(storageKey);
     } catch (cause) {
-      devLog("guide-checks-reset-failed", { error: String(cause) });
+      console.warn("guide-checks-reset-failed", cause);
     }
   }, [storageKey]);
 

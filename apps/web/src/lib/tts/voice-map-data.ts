@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { listAllTtsLinks, listAllTtsProfiles, type TtsLinkRecord, type TtsProfileRecord } from "../../api/tts-api.js";
-import { devLog } from "../dev-log.js";
 
 export interface VoiceMapData {
   profiles: TtsProfileRecord[];
@@ -21,7 +20,7 @@ async function fetchVoiceMapData(): Promise<VoiceMapData | null> {
     const [profiles, links] = await Promise.all([listAllTtsProfiles(), listAllTtsLinks()]);
     return { profiles, links };
   } catch (error) {
-    devLog("voice-map-data-fetch-failed", { error: String(error) });
+    console.warn("voice-map-data-fetch-failed", error);
     return null;
   }
 }

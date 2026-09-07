@@ -1,6 +1,5 @@
 import type { ChatId } from "@vibe-tavern/domain";
 import {
-  logClientSendDebug,
   refreshInsightsCompletion,
   type AppSnapshot,
   type InsightsCompletionTarget,
@@ -110,15 +109,7 @@ export async function refreshInsightsCompletionAction(
       useSceneGenerationStore.getState().clearGenerating(response.target.variantId);
     }
     return applied;
-  } catch (error) {
-    if (!controller.signal.aborted) {
-      logClientSendDebug("web.insights.completion-refresh.error", {
-        chatId,
-        branchId: target.branchId,
-        messageId: target.messageId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  } catch {
     return false;
   } finally {
     if (pendingByChat.get(chatId) === pending) pendingByChat.delete(chatId);

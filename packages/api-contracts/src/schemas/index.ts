@@ -128,7 +128,6 @@ export type {
   ScenePathResolution,
 } from "./tracker-schema.js";
 export {
-  debugSendLogSchema,
   importJsonSchema,
   importJsonBatchSchema,
   stDirectoryPathSchema,
