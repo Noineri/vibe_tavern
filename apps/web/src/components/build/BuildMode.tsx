@@ -518,7 +518,13 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
         <div
           className={cn(
             "flex-1 min-h-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            isFullBleed ? "overflow-hidden" : "overflow-y-auto p-4",
+            // D4 (v1.2.1): kill horizontal scroll at the source. The sticky
+            // glass-bar's ::before frost bleeds 20px past the bar (which spans
+            // exactly this padding box via -mx), and overflow-y:auto coerces
+            // overflow-x to auto — the bleed became a 20px swipe-scroll.
+            // Clipping at the padding box is visually lossless (the bar ends
+            // exactly here) and also guards against future bleeders.
+            isFullBleed ? "overflow-hidden" : "overflow-y-auto overflow-x-clip p-4",
           )}
         >
           {renderPanelContent()}
@@ -530,8 +536,10 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
   // ── Desktop ──
   return (
     <div
+      // D4 (v1.2.1): overflow-x-clip — same glass-bar ::before bleed as the
+      // mobile container above (bar spans exactly the 40px padding box).
       className={cn(
-        "flex-1 overflow-y-auto",
+        "flex-1 overflow-y-auto overflow-x-clip",
         isFullBleed && "flex overflow-hidden p-0",
       )}
       style={!isFullBleed ? { padding: "32px 40px" } : undefined}
