@@ -86,10 +86,19 @@ export function useImageZoomPan(): ImageZoomPan {
       const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       setScale((prev) => clamp(prev * ratio, 0.5, 5));
-      if (lastTouchCenter.current) {
+      // D5 (v1.2.1): capture the previous center at QUEUE time. The old updater
+      // read `lastTouchCenter.current` at RENDER time, which was wrong twice:
+      // (a) if touchEnd ran before the commit, the ref was null and `null!.x`
+      // threw during render — with no root ErrorBoundary the whole tree
+      // unmounted (blank page on real devices);
+      // (b) if a later touchMove had already reassigned the ref, the delta was
+      // computed against the NEW center (≈0) and the pinch pan was silently
+      // lost. Updaters must be pure over queue-time captured values.
+      const prevCenter = lastTouchCenter.current;
+      if (prevCenter) {
         setTranslate((prev) => ({
-          x: prev.x + (centerX - lastTouchCenter.current!.x),
-          y: prev.y + (centerY - lastTouchCenter.current!.y),
+          x: prev.x + (centerX - prevCenter.x),
+          y: prev.y + (centerY - prevCenter.y),
         }));
       }
       lastTouchCenter.current = { x: centerX, y: centerY };
