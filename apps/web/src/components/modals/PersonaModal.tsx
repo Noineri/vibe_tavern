@@ -17,6 +17,7 @@ import { useRevealOnCreate } from "../../hooks/use-reveal-on-create.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 
 import { uploadPersonaAvatar, exportPersona } from "../../app-client.js";
+import { promoteSourceAsFull } from "../build/editors/thumbnail-crop.js";
 import { useT } from "../../i18n/context.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { toast } from "sonner";
@@ -34,6 +35,11 @@ export interface PersonaListItem {
   pronounForms: PronounForms | null;
   avatarAssetId: string | null;
   avatarExt: string | null;
+  // Full-size avatar fields from the wire PersonaRecord (the bootstrap store
+  // passes PersonaRecord[] straight through). Surfaced for the D-1
+  // "adjust thumbnail" flow: preferFull resolution + hasSeparateFull gate.
+  avatarFullAssetId: string | null;
+  avatarFullExt: string | null;
   avatarCropJson: string | null;
   defaultForNewChats: boolean;
   // Avatar-appearance prompt injection (MEDIA_GALLERY). Fed straight from
@@ -140,6 +146,9 @@ export function PersonaModal(input: PersonaModalProps) {
   const stImport = useStPersonaImport({ isOpen });
   // ── Avatar crop modal state ──
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+  // D-1 "adjust thumbnail" crop mode: non-null while the second AvatarCropModal
+  // is open on the EXISTING avatar (full endpoint), cloned from CharacterForm.
+  const [thumbnailEditSrc, setThumbnailEditSrc] = useState<string | null>(null);
 
   // F10 — the form is fully controlled (value={watch} + onChange=setValue, no
   // `register`), so react-hook-form's `formState.isDirty` can't reliably
@@ -315,8 +324,70 @@ export function PersonaModal(input: PersonaModalProps) {
   const footerName = form.watch("name");
 
   const selectedPersona = input.personas.find(p => p.id === selectedId) ?? null;
+  // The editor slot is a LARGE display slot (character-card parity, D-1): it
+  // renders the uncropped full when one exists (preferFull); /avatar/full
+  // falls back to the thumbnail server-side for single-image personas.
   const editDisplayAvatar = editAvatarPreview
-    ?? (selectedId ? resolveEntityAvatarUrl({ kind: "personas", id: selectedId, avatarExt: selectedPersona?.avatarExt ?? null, avatarAssetId: editAvatarAssetId, updatedAt: selectedPersona?.updatedAt ?? null }) : null);
+    ?? (selectedId ? resolveEntityAvatarUrl({ kind: "personas", id: selectedId, avatarExt: selectedPersona?.avatarExt ?? null, avatarAssetId: editAvatarAssetId, avatarFullExt: selectedPersona?.avatarFullExt ?? null, avatarFullAssetId: selectedPersona?.avatarFullAssetId ?? null, updatedAt: selectedPersona?.updatedAt ?? null, preferFull: true }) : null);
+
+  // D-1: "adjust thumbnail" flow (CharacterForm portrait-branch clone). Opens
+  // the cropper on the EXISTING avatar via the full endpoint so the square
+  // 512×512 thumbnail can be re-framed; the original is NOT re-uploaded —
+  // uploadPersonaAvatar(id, crop) with no `full` arg leaves avatar-full.{ext}
+  // untouched, so this editor (a large, preferFull slot) keeps the uncropped
+  // source.
+  const handleOpenThumbnailCrop = (): void => {
+    const persona = selectedPersona;
+    if (!persona) return;
+    const src = resolveEntityAvatarUrl({
+      kind: "personas",
+      id: persona.id,
+      avatarExt: persona.avatarExt,
+      avatarAssetId: persona.avatarAssetId,
+      avatarFullExt: persona.avatarFullExt,
+      avatarFullAssetId: persona.avatarFullAssetId,
+      updatedAt: persona.updatedAt,
+      preferFull: true,
+    });
+    if (src) setThumbnailEditSrc(src);
+  };
+  const handleThumbnailCropConfirm = async (result: AvatarCropResult): Promise<void> => {
+    if (!selectedId) return;
+    // Capture the cropper source BEFORE closing it. For a SINGLE-IMAGE persona
+    // (avatarExt set, avatarFullExt null) that source is the only copy of the
+    // uncropped original — /avatar/full falls back to serving avatar.{ext}, so
+    // writing the crop without preserving it would snap every preferFull slot
+    // (this editor) to the crop. promoteSourceAsFull returns the source as a
+    // File iff no separate full exists, promoting the original to
+    // avatar-full.{ext} in the same upload; undefined ⇒ crop-only write.
+    // Same helper as the character side (thumbnail-crop.ts).
+    const sourceUrl = thumbnailEditSrc;
+    setThumbnailEditSrc(null);
+    setAvatarUploading(true);
+    try {
+      const fullFile = await promoteSourceAsFull({
+        sourceUrl,
+        hasSeparateFull: !!selectedPersona?.avatarFullExt,
+      });
+      // No local avatarPreview here: the editor renders the full image,
+      // unchanged by a thumbnail crop — a cropped preview would visibly snap
+      // back after the list refresh. The new thumbnail surfaces in small
+      // slots (list rows, sidebar) via fetchPersonasAction.
+      await uploadPersonaAvatar(selectedId, result.croppedFile, fullFile);
+      // Mirror handleAvatarCropConfirm: the backend cleared the legacy asset
+      // ids (folder-resident now); null them so a later Save won't re-send
+      // stale legacy ids through PATCH.
+      form.setValue("avatarAssetId", null, { shouldDirty: true });
+      form.setValue("avatarFullAssetId", null, { shouldDirty: true });
+      await fetchPersonasAction();
+    } catch (err) {
+      // Nothing was optimistically previewed, so there is nothing to roll
+      // back — log and leave the persisted avatar untouched.
+      console.warn("[PersonaModal] thumbnail crop upload failed", err);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   // F10 — isDirty computed against the snapshot captured at seedForm /
   // create-new (see baselineRef above). `form.watch()` with no args subscribes
@@ -480,6 +551,7 @@ export function PersonaModal(input: PersonaModalProps) {
             onAvatarSelected={(file) => setPendingAvatar({ file, url: URL.createObjectURL(file) })}
             onAvatarPatch={handlePersonaAvatarPatch}
             onAvatarDescribe={handlePersonaAvatarDescribe}
+            onOpenThumbnailCrop={handleOpenThumbnailCrop}
           />
         ) : input.personas.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center py-12 text-center">
@@ -524,6 +596,16 @@ export function PersonaModal(input: PersonaModalProps) {
           imageUrl={pendingAvatar.url}
           onConfirm={handleAvatarCropConfirm}
           onCancel={handleAvatarCropCancel}
+        />
+      )}
+      {/* D-1 "adjust thumbnail" crop — opens on the existing avatar (full
+          endpoint); confirm re-frames the 512×512 thumbnail only. */}
+      {thumbnailEditSrc && (
+        <AvatarCropModal
+          imageUrl={thumbnailEditSrc}
+          fileName="persona_avatar.png"
+          onConfirm={handleThumbnailCropConfirm}
+          onCancel={() => setThumbnailEditSrc(null)}
         />
       )}
       {/* Delete confirm */}

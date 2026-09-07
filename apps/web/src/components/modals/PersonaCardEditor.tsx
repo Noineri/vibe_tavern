@@ -2,7 +2,7 @@ import { useRef } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
-import { Icons } from "../shared/icons.js";
+import { Ic } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
@@ -22,6 +22,8 @@ interface PersonaCardEditorProps {
   avatarDisplayUrl: string | null;
   isMobile: boolean;
   onAvatarSelected: (file: File) => void;
+  /** Open the "adjust thumbnail" cropper on the existing avatar (D-1, CharacterForm clone). */
+  onOpenThumbnailCrop: () => void;
   onAvatarPatch: (patch: AvatarDescriptionPatch) => void;
   onAvatarDescribe: (signal: AbortSignal) => Promise<void>;
 }
@@ -44,6 +46,7 @@ export function PersonaCardEditor({
   avatarDisplayUrl,
   isMobile,
   onAvatarSelected,
+  onOpenThumbnailCrop,
   onAvatarPatch,
   onAvatarDescribe,
 }: PersonaCardEditorProps) {
@@ -83,11 +86,17 @@ export function PersonaCardEditor({
       {/* Avatar + Name + Pronouns row */}
       <div className={cn("flex gap-3 mb-3", isMobile ? "items-start" : "items-start")}>
         {/* Avatar — character-card portrait pattern (CharacterForm.tsx portrait
-            branch): dashed rounded-lg frame that sizes to the image (contain,
-            ≤180px wide / 250px tall), h-20 w-28 empty placeholder. Square
-            crop (aspect 1) unchanged; pick→AvatarCropModal flow unchanged. */}
+            branch, D-1 clone): dashed rounded-lg frame that sizes to the image
+            (contain, ≤180px wide / 250px tall), h-20 w-28 empty placeholder.
+            With an avatar present: black/50 veil + pencil on hover (pick a new
+            image via click, tooltip change_avatar) and the corner crop button
+            (edit_thumbnail) opens the cropper on the EXISTING avatar so the
+            512×512 thumbnail can be re-framed without re-uploading. No
+            avatar-deletion affordance — the character card has none either
+            (owner ruling 2026-09-07). Square crop (aspect 1) unchanged;
+            pick→AvatarCropModal flow unchanged. */}
         <div className="group/ava relative shrink-0 self-start">
-          <CustomTooltip content={t("upload_avatar")}>
+          <CustomTooltip content={t("change_avatar")}>
           <div
             className={cn(
               "group relative cursor-pointer overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t",
@@ -105,7 +114,16 @@ export function PersonaCardEditor({
               }}
             />
             {avatarDisplayUrl ? (
-              <img src={avatarDisplayUrl} alt="" className="block" style={{ maxWidth: isMobile ? 280 : 180, maxHeight: 250, objectFit: "contain" }} />
+              <>
+                <img src={avatarDisplayUrl} alt="" className="block" style={{ maxWidth: isMobile ? 280 : 180, maxHeight: 250, objectFit: "contain" }} />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
+                <CustomTooltip content={t("edit_thumbnail")}>
+                  <button type="button"
+                    className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface/90 text-t2 shadow-sm backdrop-blur transition-colors hover:text-accent-t"
+                    onClick={(e) => { e.stopPropagation(); onOpenThumbnailCrop(); }}
+                  ><Ic.crop /></button>
+                </CustomTooltip>
+              </>
             ) : (
               <div className="flex h-20 w-28 flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover/ava:text-accent-t">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -114,19 +132,6 @@ export function PersonaCardEditor({
             )}
           </div>
           </CustomTooltip>
-          {avatarDisplayUrl && (
-            <button type="button"
-              className="absolute -right-1 -bottom-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface text-t4 opacity-0 transition-all hover:text-danger group-hover/ava:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                form.setValue("avatarAssetId", null, { shouldDirty: true });
-                form.setValue("avatarPreview", null);
-                if (avatarInputRef.current) avatarInputRef.current.value = "";
-              }}
-            >
-              <Icons.Close />
-            </button>
-          )}
         </div>
         {/* Name + Pronouns */}
         <div className="flex-1 min-w-0">

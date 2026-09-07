@@ -13,6 +13,7 @@
  */
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
+import type { PersonaListItem } from "./PersonaModal.js";
 
 useDomEnv();
 
@@ -96,6 +97,8 @@ describe("PersonaModal master-detail wiring", () => {
 			pronounForms: null,
 			avatarAssetId: null,
 			avatarExt: null,
+			avatarFullAssetId: null,
+			avatarFullExt: null,
 			avatarCropJson: null,
 			defaultForNewChats: true,
 			includeAvatarInPrompt: false,
@@ -110,6 +113,8 @@ describe("PersonaModal master-detail wiring", () => {
 			pronounForms: null,
 			avatarAssetId: null,
 			avatarExt: null,
+			avatarFullAssetId: null,
+			avatarFullExt: null,
 			avatarCropJson: null,
 			defaultForNewChats: false,
 			includeAvatarInPrompt: false,
@@ -121,7 +126,7 @@ describe("PersonaModal master-detail wiring", () => {
 	type Draft = { name: string; description: string };
 	type Calls = { setActive: string[]; saveEdit: Array<{ id: string; draft: Draft }> };
 
-	function propsFor(calls: Calls, list = fixtures, activeId: string | null = "p1") {
+	function propsFor(calls: Calls, list: PersonaListItem[] = fixtures, activeId: string | null = "p1") {
 		return {
 			personas: list,
 			activePersonaId: activeId,
@@ -135,7 +140,7 @@ describe("PersonaModal master-detail wiring", () => {
 		};
 	}
 
-	function renderOpen(calls: Calls, list = fixtures, activeId: string | null = "p1") {
+	function renderOpen(calls: Calls, list: PersonaListItem[] = fixtures, activeId: string | null = "p1") {
 		useModalStore.setState({ isPersonaModalOpen: true });
 		return render(createElement(TooltipProvider, null,
 			createElement(PersonaModal, propsFor(calls, list, activeId)),
@@ -205,6 +210,37 @@ describe("PersonaModal master-detail wiring", () => {
 		single.getByText("duplicate");
 		single.getByText("persona_export");
 		expect(single.queryByText("delete")).toBeNull();
+	});
+
+
+	test("editor avatar block mirrors the character card (D-1): veil + thumbnail crop, no delete x, opens cropper on the full endpoint", async () => {
+		const calls: Calls = { setActive: [], saveEdit: [] };
+		// p1 gets a folder-resident avatar so the editor renders the avatar
+		// branch (placeholder otherwise). editDisplayAvatar resolves preferFull,
+		// so the editor frame must show /avatar/full. NOTE: the modal portals to
+		// document.body, so raw DOM queries must run against document (RTL
+		// query helpers are already baseElement-bound).
+		const withAvatar = fixtures.map((p, i) => (i === 0 ? { ...p, avatarExt: "png" } : p));
+		const view = renderOpen(calls, withAvatar);
+		await settled();
+		// The editor avatar frame = the dashed frame containing the full img.
+		// (The master list's "+ New" block is the other dashed frame.)
+		const editorFrame = Array.from(document.querySelectorAll('div[class*="border-dashed"]')).find(f => f.querySelector('img[src*="/avatar/full"]'));
+		expect(editorFrame).toBeTruthy();
+		// Hover veil (black/50 + pencil) - character-card parity.
+		expect(editorFrame!.querySelector('div[class*="bg-black/50"]')).toBeTruthy();
+		// Corner "edit thumbnail" button (always visible, not hover-only).
+		const cropBtn = editorFrame!.querySelector('button[class*="bottom-1.5"]');
+		expect(cropBtn).toBeTruthy();
+		// The un-flagged x delete affordance is gone (owner ruling: the
+		// character card has no avatar deletion either).
+		expect(editorFrame!.querySelector('button[class*="hover:text-danger"]')).toBeNull();
+		// Clicking the corner button opens the cropper on the EXISTING avatar
+		// via the full endpoint (re-frame the thumbnail without re-uploading).
+		fireEvent.click(cropBtn!);
+		await settled();
+		expect(view.getByText("crop_avatar_title")).toBeTruthy();
+		expect(document.querySelector('img[src*="/avatar/full"]')).toBeTruthy();
 	});
 });
 
