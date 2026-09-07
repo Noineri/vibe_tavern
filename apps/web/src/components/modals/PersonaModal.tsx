@@ -464,7 +464,7 @@ export function PersonaModal(input: PersonaModalProps) {
               >
                 <Icons.Plus /> {t("create_new_persona")}
               </button>
-              <div className="mt-2 grid">{stImport.triggers}</div>
+              <div className="mt-2 grid gap-2">{stImport.triggers}</div>
             </div>
             {stImport.hiddenInputs}
           </>

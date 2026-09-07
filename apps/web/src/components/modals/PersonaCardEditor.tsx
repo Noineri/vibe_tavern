@@ -82,13 +82,15 @@ export function PersonaCardEditor({
     <div className="w-full">
       {/* Avatar + Name + Pronouns row */}
       <div className={cn("flex gap-3 mb-3", isMobile ? "items-start" : "items-start")}>
-        {/* Avatar */}
-        <div className="group/ava relative shrink-0">
+        {/* Avatar — character-card portrait pattern (CharacterForm.tsx portrait
+            branch): dashed rounded-lg frame that sizes to the image (contain,
+            ≤180px wide / 250px tall), h-20 w-28 empty placeholder. Square
+            crop (aspect 1) unchanged; pick→AvatarCropModal flow unchanged. */}
+        <div className="group/ava relative shrink-0 self-start">
           <CustomTooltip content={t("upload_avatar")}>
           <div
             className={cn(
-              "relative flex cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 transition-all hover:border-accent",
-              isMobile ? "h-[68px] w-[68px]" : "h-16 w-16",
+              "group relative cursor-pointer overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t",
               avatarUploading && "pointer-events-none opacity-60",
             )}
             onClick={() => !avatarUploading && avatarInputRef.current?.click()}
@@ -103,10 +105,11 @@ export function PersonaCardEditor({
               }}
             />
             {avatarDisplayUrl ? (
-              <img src={avatarDisplayUrl} alt="" className="h-full w-full object-cover" />
+              <img src={avatarDisplayUrl} alt="" className="block" style={{ maxWidth: isMobile ? 280 : 180, maxHeight: 250, objectFit: "contain" }} />
             ) : (
-              <div className="text-t3 transition-colors group-hover/ava:text-accent-t">
+              <div className="flex h-20 w-28 flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover/ava:text-accent-t">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
               </div>
             )}
           </div>
