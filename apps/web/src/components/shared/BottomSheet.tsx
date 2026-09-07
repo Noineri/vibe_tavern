@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { Drawer } from "@base-ui/react/drawer";
 import { getModalPortal, registerOverlayPortal } from "./modal-helpers.js";
 
@@ -42,15 +42,21 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
   // D2 (v1.2.1): register the sheet's own portal node so nested floating UI
   // (DropdownSelect popups) opened inside the sheet portals HERE — inside the
   // drawer's focus scope and stacking context — instead of document.body
-  // (z-400, under the sheet's z-500/501). Registration follows `open`, NOT
-  // mount: Base UI keeps portal children mounted while closed, and a closed
-  // sheet must never resolve as the topmost overlay (a dropdown opened
-  // elsewhere would land in its hidden subtree and render invisibly).
-  const [portalNode, setPortalNode] = useState<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open || !portalNode) return;
-    return registerOverlayPortal(portalNode);
-  }, [open, portalNode]);
+  // (z-400, under the sheet's z-500/501).
+  //
+  // State-free BY DESIGN (regression found by the MAE-53 sheet-close test):
+  // a useState+useEffect pair here caused an extra render while Base UI was
+  // running the drawer's exit transition, and the popup never unmounted —
+  // the sheet stopped closing. The registration now IS the anchor's mount:
+  // `{open && <div/>}` gates it on `open` (Base UI keeps the portal host
+  // mounted while closed, so an unconditionally-mounted anchor would leave a
+  // closed sheet registered as the topmost overlay), and the stable callback
+  // ref's return value is React 19's ref-cleanup (unregister on unmount).
+  const portalAnchorRef = useCallback(
+    (node: HTMLDivElement | null): (() => void) | undefined =>
+      node === null ? undefined : registerOverlayPortal(node),
+    [],
+  );
   return (
     <Drawer.Root
       open={open}
@@ -89,12 +95,15 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
            *  sit inside the Viewport for focus trapping, but OUTSIDE the
            *  animated Popup — transforms break fixed positioning (Modal.tsx
            *  carries the same warning). Placed after the Popup so popup
-           *  content paints above the sheet body within the z-501 context. */}
-          <div
-            ref={setPortalNode}
-            data-overlay-portal="bottom-sheet"
-            style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "visible", pointerEvents: "auto" }}
-          />
+           *  content paints above the sheet body within the z-501 context.
+           *  Rendered only while `open` — see the registration note above. */}
+          {open && (
+            <div
+              ref={portalAnchorRef}
+              data-overlay-portal="bottom-sheet"
+              style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "visible", pointerEvents: "auto" }}
+            />
+          )}
         </Drawer.Viewport>
       </Drawer.Portal>
     </Drawer.Root>
