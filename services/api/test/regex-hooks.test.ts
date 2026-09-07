@@ -18,7 +18,9 @@ import { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
 import { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
 import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
-import { mock } from "bun:test";
+import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // RX-8 (REGEX_EXTENSION_PLAN, Wave 2) — USER_INPUT + AI_OUTPUT live hooks.
@@ -40,67 +42,34 @@ import { mock } from "bun:test";
 //   - the service-built macro source resolves {{char}} in a find pattern
 //     (substituteRegex RAW).
 //
-// The provider executors are mocked via the SAFE mock.module pattern (same as
-// dice-send-stream-nonstream.test.ts): real exports are captured FIRST
-// (`await import`), then spread before overriding ONLY the two executor
-// functions, so every other export stays genuine for the rest of the process.
-// mock.module is process-global; the earlier dice file's registration is what
-// this file would otherwise inherit, and a LATER re-registration never
-// retroactively changes references dice already captured. The orchestrator is
-// dynamic-imported AFTER registration so it resolves THESE mocks.
-// ChatRuntime / ChatApplicationService / createRuntimeStore / RegexHookService
-// do not import the executors, so they remain safe to import statically.
+// The provider executors are injected through the orchestrator's `executors`
+// constructor seam (regex-assist `deps.streamTextImpl` precedent) — no
+// `mock.module`, which is process-global and permanent under bun:test
+// (AGENTS.md tier policy: T1 doubles enter through DI seams only). This file
+// needs the SUCCESS path (AI_OUTPUT hooks fire on the appended reply), so the
+// stubs return AI_REPLY_TEXT for both send modes.
 // ════════════════════════════════════════════════════════════════════════════
 
 const AI_REPLY_TEXT = "<think>quiet planning</think>Some **bold** text.";
 
-// ── Safe mock.module: capture real executor exports BEFORE registering ──────
-const realNonstreaming = await import("../src/infrastructure/ai/nonstreaming-provider-executor.js");
-const realStream = await import("../src/infrastructure/ai/stream-provider-executor.js");
-// Capture the FUNCTIONS, not the module objects: bun's mock.module MUTATES the
-// real module's export slots at registration, so `realNonstreaming.<fn>` read
-// later resolves to our own stub (sync infinite recursion). The dice file
-// already uses this pattern.
-const realNonstreamingExecute = realNonstreaming.nonstreamingProviderExecute;
-const realStreamExecute = realStream.streamProviderExecutor;
-
-// Leak guard: mock.module is PROCESS-GLOBAL and LAST registration wins — without
-// this flag, every test file sorted after this one that imports the executors
-// would receive this stub instead of the real implementation (observed with
-// ST-6's stt-voice-executor tests). Once this file's tests finish, delegate
-// calls through to the captured REAL functions so later files exercise real code.
-let delegateExecutorsToReal = false;
-
-mock.module("../src/infrastructure/ai/nonstreaming-provider-executor.js", () => ({
-  ...realNonstreaming,
-  nonstreamingProviderExecute: (input: Parameters<typeof realNonstreamingExecute>[0]) => {
-    if (delegateExecutorsToReal) return realNonstreamingExecute(input);
-    return Promise.resolve({
-      text: AI_REPLY_TEXT,
-      providerResponse: { mode: "nonstream" as const, steps: [] },
-    });
-  },
-}));
-
-mock.module("../src/infrastructure/ai/stream-provider-executor.js", () => ({
-  ...realStream,
-  streamProviderExecutor: (input: Parameters<typeof realStreamExecute>[0]) => {
-    if (delegateExecutorsToReal) return realStreamExecute(input);
-    return Promise.resolve({
-      stream: (async function* () {
-        yield { type: "text-delta" as const, delta: AI_REPLY_TEXT };
-      })(),
-      finished: Promise.resolve({ finishReason: "stop" as const }),
-      text: Promise.resolve(AI_REPLY_TEXT),
-      reasoning: Promise.resolve(undefined),
-      hasRedactedReasoning: false,
-      providerResponse: { mode: "stream" as const, steps: [] },
-    });
-  },
-}));
-
-// Dynamic import AFTER mock registration so the orchestrator resolves mocks.
-const { LiveChatOrchestrator } = await import("../src/domain/chat/live-chat-orchestrator.js");
+/** Success-path executor stubs: completes the send cycle so USER_INPUT and
+ *  AI_OUTPUT hooks fire on the stored messages. Fresh generator per stream
+ *  call (a generator cannot be re-consumed). */
+const STUB_NONSTREAMING: typeof nonstreamingProviderExecute = async () => ({
+  text: AI_REPLY_TEXT,
+  providerResponse: { mode: "nonstream", steps: [] },
+});
+const STUB_STREAM: typeof streamProviderExecutor = async () => ({
+  stream: (async function* () {
+    yield { type: "text-delta" as const, delta: AI_REPLY_TEXT };
+  })(),
+  finished: Promise.resolve({ finishReason: "stop" as const }),
+  text: Promise.resolve(AI_REPLY_TEXT),
+  reasoning: Promise.resolve(undefined),
+  hasRedactedReasoning: false,
+  providerResponse: { mode: "stream" as const, steps: [] },
+});
+const STUB_EXECUTORS = { nonstreaming: STUB_NONSTREAMING, stream: STUB_STREAM };
 
 // ── Test harness (mirrors dice-send-stream-nonstream.test.ts) ───────────────
 
@@ -143,9 +112,6 @@ async function setup(characterName = "RegexProbe"): Promise<TestChat> {
 }
 
 afterAll(async () => {
-  // Arm the leak guard for every test file that runs after this one in the
-  // same process (see comment at delegateExecutorsToReal).
-  delegateExecutorsToReal = true;
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
 });
 
@@ -236,6 +202,7 @@ function makeHarness(chat: TestChat): Harness {
     async () => fakeStrategy,
     undefined,
     new RegexHookService(chat.stores).createHooks(),
+    STUB_EXECUTORS,
   );
 
   return { orch, assembledUserContent: () => lastAssembledUserContent };
