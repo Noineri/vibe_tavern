@@ -9,6 +9,22 @@ import type { SdkMessage } from "../src/infrastructure/ai/provider-executor-util
 
 // Capture real modules before any mock overrides (safe mock pattern — see AGENTS gotcha).
 const realAiSdkOpenai = await import("@ai-sdk/openai");
+// Capture the FUNCTION reference too: bun's mock.module MUTATES the real
+// module's export slots at registration, so `realAiSdkOpenai.createOpenAI`
+// read later resolves to the mock (infinite recursion).
+const realCreateOpenAI = realAiSdkOpenai.createOpenAI;
+
+// T2 third-party mock (AGENTS.md tier policy): @ai-sdk/openai is not
+// parameterizable, so mock.module with ...real spread is the sanctioned form.
+// Audit (2026-09-07): the registration below is process-global and permanent,
+// and provider-executor-utils' STATIC import resolves it for every later file
+// in this bun test process. Today no later file reaches createOpenAI (the only
+// src call site is resolveResponsesModel; all later-file resolveModel calls
+// pass the default chatCompletions transport via @ai-sdk/openai-compatible).
+// To keep it safe if that ever changes, the override DELEGATES to the real
+// factory outside this one test's call window — later files get genuine
+// behavior, never the spy (which returns a responses-only provider).
+let routeCreateOpenAIToSpy = false;
 
 afterEach(() => {
   mock.restore();
@@ -325,20 +341,28 @@ describe("resolveModel", () => {
 
     mock.module("@ai-sdk/openai", () => ({
       ...realAiSdkOpenai,
-      createOpenAI: createOpenAISpy,
+      createOpenAI: (...args: Parameters<typeof realCreateOpenAI>) => {
+        if (!routeCreateOpenAIToSpy) return realCreateOpenAI(...args);
+        return createOpenAISpy(args[0]) as ReturnType<typeof realCreateOpenAI>;
+      },
     }));
 
-    resolveModel(
-      {
-        providerPreset: "openai",
-        endpoint: "https://custom-proxy.example.com/v1",
-        apiKey: "sk-custom",
-        coauthorTransport: COAUTHOR_TRANSPORT.responses,
-      },
-      "gpt-5.2",
-      COAUTHOR_TRANSPORT.responses,
-      customFetch,
-    );
+    routeCreateOpenAIToSpy = true;
+    try {
+      resolveModel(
+        {
+          providerPreset: "openai",
+          endpoint: "https://custom-proxy.example.com/v1",
+          apiKey: "sk-custom",
+          coauthorTransport: COAUTHOR_TRANSPORT.responses,
+        },
+        "gpt-5.2",
+        COAUTHOR_TRANSPORT.responses,
+        customFetch,
+      );
+    } finally {
+      routeCreateOpenAIToSpy = false;
+    }
 
     expect(createOpenAISpy).toHaveBeenCalledTimes(1);
     const callArgs = createOpenAISpy.mock.calls[0][0] as Record<string, unknown>;
