@@ -95,7 +95,7 @@ const EMPTY_PERSONA_FORM: PersonaFormData = {
  *  is fully controlled (value={watch} + onChange=setValue, no `register`):
  *  per RHF docs, isDirty compares current values against a baseline and
  *  setValue on unregistered fields doesn't update it predictably. Instead we
- *  snapshot the values the form was reset to (startEdit / create-new) into
+ *  snapshot the values the form was reset to (seedForm / create-new) into
  *  `baselineRef` and compare the live values against it. Pure function so it
  *  can be unit-tested without a DOM. */
 export function computePersonaIsDirty(
@@ -188,15 +188,30 @@ export function PersonaModal(input: PersonaModalProps) {
     baselineRef.current = next;
   }
 
-  // Null-fill: whenever nothing is selected (fresh open with a stale or null
-  // selection, post-delete), load the active persona — or the first row when
-  // there is no active one — into the editor. Explicit row clicks and creates
-  // set selectedId directly; this effect only fills nulls, so it never
-  // clobbers in-progress edits.
+  // Open-seed + null-fill. The form starts empty (EMPTY_PERSONA_FORM), so on
+  // fresh open the detail pane would show blanks until the first row click —
+  // seed it with the selected (else active, else first) persona instead.
+  // Afterwards only nulls are filled (create-before-list, post-delete), so
+  // in-progress edits are never clobbered.
+  const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      prevOpenRef.current = false;
+      return;
+    }
+    if (input.personas.length === 0) {
+      prevOpenRef.current = true;
+      return;
+    }
+    if (!prevOpenRef.current) {
+      prevOpenRef.current = true;
+      const target = input.personas.find((p) => p.id === selectedId)
+        ?? input.personas.find((p) => p.id === input.activePersonaId)
+        ?? input.personas[0];
+      if (target) seedForm(target);
+      return;
+    }
     if (selectedId !== null) return;
-    if (input.personas.length === 0) return;
     const fallback = input.personas.find((p) => p.id === input.activePersonaId) ?? input.personas[0];
     if (fallback) seedForm(fallback);
     // seedForm intentionally excluded: stable logic over stable form/setter

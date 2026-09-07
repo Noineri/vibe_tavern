@@ -1547,7 +1547,6 @@ export default interface Resources {
     "persona_default_label": "Default",
     "persona_delete_failed": "Failed to delete persona.",
     "persona_desc_placeholder": "Description",
-    "persona_edit": "Edit",
     "persona_export": "Export",
     "persona_export_failed": "Failed to export persona.",
     "persona_manager_sub": "Whose voice are you using in chat?",

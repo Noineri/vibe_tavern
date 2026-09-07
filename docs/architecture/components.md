@@ -593,6 +593,8 @@ The modal persists the last-used model per mode in `localStorage` so the lightbu
 
 State is shared via context: `useMasterDetail()` returns `{ isMobile, isDetailOpen, openDetail, closeDetail }`. Call it inside a `MasterDetailModal` to drive the mobile transition (e.g. showing a back button when `isDetailOpen`).
 
+Consumers: `ProviderModal` (provider profiles), `PromptManagerModal` (prompt presets), `PersonaModal` (personas — master preview cards, always-on detail editor, `MasterDetailFooter` Duplicate/Export/Delete + Save), `ContextMemoryModal`, coauthor module/skill modals.
+
 ---
 
 ## ActionSheet
