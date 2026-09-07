@@ -253,10 +253,13 @@ function MobileLightbox({
   return (
     <div
       className="fixed inset-0 z-[600] flex items-center justify-center bg-black/95"
+      // touch-action none: see the matching comment in AvatarPanel's lightbox.
+      style={{ touchAction: "none" }}
       onClick={onClose}
       onTouchStart={touchHandlers.onTouchStart}
       onTouchMove={touchHandlers.onTouchMove}
       onTouchEnd={touchHandlers.onTouchEnd}
+      onTouchCancel={touchHandlers.onTouchCancel}
     >
       <button type="button"
         className="absolute right-3 top-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"

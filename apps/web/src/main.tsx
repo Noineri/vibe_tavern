@@ -10,6 +10,9 @@ import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import { VibeMdThemePreview } from "./components/build/editors/VibeMdThemePreview.js";
 import { ExperienceDetachedHost, isDetachedExperienceWindow } from "./components/experience/ExperienceDetachedWindow.js";
 import { clearMobileToken, extractTokenFromHash, saveMobileToken } from "./lib/mobile-token.js";
+// D5 (v1.2.1): last-resort boundary — a render throw anywhere in the app must
+// show the crash screen, never unmount the tree into a blank page.
+import { RootErrorBoundary } from "./components/shared/RootErrorBoundary.js";
 import { useSessionStore } from "./stores/session-store.js";
 import "./styles.css";
 
@@ -105,7 +108,9 @@ function Root() {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <LocaleProvider initialLocale={initialLocale}>
-      <Root />
+      <RootErrorBoundary>
+        <Root />
+      </RootErrorBoundary>
     </LocaleProvider>
   </React.StrictMode>,
 );
