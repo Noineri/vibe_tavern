@@ -610,9 +610,9 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect(lane.plays).toHaveLength(1);
   });
 
-  it("FS-2: live rows render no per-row stop; the footer stop is the only stop trigger", async () => {
+  it("RD-3: live rows show a row stop; both it and the footer stop abort the same lane (single stopNarration path)", async () => {
     const lane = installDeferredLane();
-    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     // Do NOT await the narration inside act — the deferred play parks it.
     act(() => {
       void useTtsPlaybackStore.getState().startNarration("m1", "Para one.", profile(), playlistMeta());
@@ -622,13 +622,19 @@ describe("narration playlist player controls (TPE-18b)", () => {
     await act(async () => { fireEvent.click(pill); });
     await waitFor(() => getByTestId("narration-playlist-row"));
 
-    // No per-row stop anywhere — the live row offers replay instead.
-    expect(queryByTestId("playlist-row-stop")).toBeNull();
+    // RD-3 supersedes the FS-2 layout ("no per-row stop") per the
+    // owner's «отдельно кнопка стоп»: the live row offers a stop next
+    // to play/pause, inside the controls zone.
+    const rowStop = getByTestId("playlist-row-stop");
     expect(getByTestId("playlist-row-play")).toBeDefined();
-    // The footer stop stays enabled and aborts the parked lane.
-    const stop = getByTestId("playlist-stop");
-    expect(stop.getAttribute("disabled")).toBeNull();
-    await act(async () => { fireEvent.click(stop); });
+    const controls = rowStop.closest('[data-testid="playlist-row-zone-controls"]');
+    expect(controls).not.toBeNull();
+    // The footer stop surface stays: enabled while the lane is live.
+    const footerStop = getByTestId("playlist-stop");
+    expect(footerStop.getAttribute("disabled")).toBeNull();
+    // The row surface aborts the parked lane with the same store
+    // outcome the FS-2 footer-stop assertion pinned — one path.
+    await act(async () => { fireEvent.click(rowStop); });
     await waitFor(() => {
       expect(useTtsPlaybackStore.getState().lastStarted).toBeNull();
       expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
@@ -1716,5 +1722,165 @@ describe("narration playlist row play/pause toggle (RD-2)", () => {
     expect(rows).toHaveLength(2);
     expect(rowPlay(rows[0] as HTMLElement).getAttribute("aria-label")).toContain("narration_playlist_pause");
     expect(rowPlay(rows[1] as HTMLElement).getAttribute("aria-label")).toContain("narrate_action");
+  });
+});
+
+describe("narration playlist row stop (RD-3)", () => {
+  const TEXT = "First line\nSecond line\nThird line";
+
+  function meta() {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId: "m1-v1",
+      variantIndex: 0,
+      snippet: "First line\nSecond line",
+    };
+  }
+
+  /** Parked single-segment lane — the panel shows a live row while the
+   *  play promise is unresolved (same shape as the RD-2 helper). */
+  function parkLane(): { pauseCalls: string[]; plays: number; index: NarrationPlaylistIndex } {
+    const pauseCalls: string[] = [];
+    const index = memoryIndex();
+    let plays = 0;
+    let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
+    __setTtsPlaybackDepsForTests({
+      player: {
+        play(): Promise<"ended" | "skipped" | "error"> {
+          plays += 1;
+          return new Promise<"ended" | "skipped" | "error">((resolve) => {
+            currentResolve = resolve;
+          });
+        },
+        skipCurrent: () => {
+          const fn = currentResolve;
+          currentResolve = null;
+          if (fn) fn("skipped");
+        },
+        pause: () => { pauseCalls.push("pause"); },
+        resume: () => { pauseCalls.push("resume"); },
+        setRate: () => {},
+        setVolume: () => {},
+        dispose: () => {},
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: index,
+      notifyError: () => {},
+    });
+    return { pauseCalls, index, get plays() { return plays; } };
+  }
+
+  async function openPanel(): Promise<{
+    getByTestId: (id: string) => HTMLElement;
+    queryByTestId: (id: string) => HTMLElement | null;
+  }> {
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    return { getByTestId: getByTestId as (id: string) => HTMLElement, queryByTestId };
+  }
+
+  function rowStop(row: HTMLElement): HTMLElement | null {
+    const button = row.querySelector('[data-testid="playlist-row-stop"]');
+    return button instanceof HTMLElement ? button : null;
+  }
+
+  it("RD-3b: settled row renders no row stop", async () => {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    const { getByTestId, queryByTestId } = await openPanel();
+    expect(rowStop(getByTestId("narration-playlist-row"))).toBeNull();
+    expect(queryByTestId("playlist-row-stop")).toBeNull();
+  });
+
+  it("RD-3c: paused row keeps the stop — it still aborts the parked lane", async () => {
+    parkLane();
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    });
+    const { getByTestId } = await openPanel();
+    // Park the lane first (RD-2 row-pause path).
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-play")); });
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("paused");
+    const stop = rowStop(getByTestId("narration-playlist-row"));
+    expect(stop).not.toBeNull();
+    await act(async () => { fireEvent.click(stop as HTMLElement); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().lastStarted).toBeNull();
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+  });
+
+  it("RD-3d: partial row renders no row stop", async () => {
+    parkLane();
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    // Abort through the footer stop — the lane lands as a partial row.
+    await act(async () => { fireEvent.click(getByTestId("playlist-stop")); });
+    await waitFor(() => getByTestId("playlist-row-continue"));
+    expect(rowStop(getByTestId("narration-playlist-row"))).toBeNull();
+    expect(queryByTestId("playlist-row-stop")).toBeNull();
+  });
+
+  it("RD-3e: library row renders no row stop", async () => {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    const { getByTestId, queryByTestId } = await openPanel();
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-save")); });
+    await waitFor(() => getByTestId("playlist-row-library-badge"));
+    expect(rowStop(getByTestId("narration-playlist-row"))).toBeNull();
+    expect(queryByTestId("playlist-row-stop")).toBeNull();
+  });
+
+  it("RD-3f: only the live row offers a stop — the settled sibling has none", async () => {
+    mocks.messages = [m1(), m2()];
+    const lane = parkLane();
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    });
+    await act(async () => {
+      await lane.index.upsert("c1", {
+        messageId: "m2",
+        variantId: "m2-v1",
+        variantIndex: 0,
+        snippet: "Second message body here",
+        cacheKeys: [],
+        narratedAt: Date.now(),
+      });
+      await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    });
+    render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => document.querySelector('[data-testid="narration-playlist-pill"]'));
+    if (!(pill instanceof HTMLElement)) throw new Error("missing pill");
+    await act(async () => { fireEvent.click(pill); });
+    // Live rows sort first: m1 (stop) then the settled m2 (no stop).
+    const rows = await waitFor(() => {
+      const found = [...document.querySelectorAll('[data-testid="narration-playlist-row"]')];
+      expect(found).toHaveLength(2);
+      return found;
+    });
+    expect(rowStop(rows[0] as HTMLElement)).not.toBeNull();
+    expect(rowStop(rows[1] as HTMLElement)).toBeNull();
   });
 });

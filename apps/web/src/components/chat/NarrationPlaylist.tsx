@@ -243,6 +243,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
               onPlay={() => input.onPlay(row.messageId)}
               onPause={input.onPause}
               onResume={input.onResume}
+              onStop={input.onStop}
               onSeek={(positionSec) => input.onSeek(row.messageId, positionSec)}
               onSave={() => input.onSave(row.messageId)}
               onReveal={() => input.onReveal(row.messageId)}
@@ -339,6 +340,9 @@ function PlaylistRow(input: {
    *  resume while its own lane is parked. */
   readonly onPause: () => void;
   readonly onResume: () => void;
+  /** RD-3: second SURFACE for the same single stopNarration path — the
+   *  row stops only its own live narration (see rowStop below). */
+  readonly onStop: () => void;
   readonly onSeek: (positionSec: number) => void;
   readonly onSave: () => void;
   readonly onReveal: () => void;
@@ -442,11 +446,11 @@ function PlaylistRow(input: {
         </div>
       </div>
       {/* RD-1 zone C — the row control panel: play plus the per-kind
-        action set, laid out horizontally. FS-2 still holds: the footer
-        stop is the only stop trigger (RD-3 adds the row stop to this same
-        panel). Icon-only buttons: no RU width risk; the panel holds at
-        most four 28px buttons plus gaps (~130px of the ~384px card
-        width). */}
+        action set, laid out horizontally. RD-3: the row stop joins this
+        panel — a second SURFACE for the same single stopNarration path
+        (FS-2 invariant intact: one path, two surfaces). Icon-only
+        buttons: no RU width risk; the panel holds at most five 28px
+        buttons plus gaps (~160px of the ~384px card width). */}
       <div data-testid="playlist-row-zone-controls" className="mt-1 border-t border-border2 pt-1">
         <div className="flex items-center gap-1.5">
           {/* RD-2: the play button turns into pause while THIS row's
@@ -473,6 +477,24 @@ function PlaylistRow(input: {
               {rowPlaying ? <Ic.pause /> : <Ic.play />}
             </button>
           </CustomTooltip>
+          {/* RD-3: row stop — owner's «отдельно кнопка стоп», next to
+            play/pause. Visible on live rows only (generating/playing/
+            paused are all stopNarration-abortable); settled, partial
+            and library rows never render it. Routes through the SAME
+            input.onStop the footer stop uses — no second path. */}
+          {live && (
+            <CustomTooltip content={t("narrate_stop")}>
+              <button
+                type="button"
+                aria-label={t("narrate_stop")}
+                data-testid="playlist-row-stop"
+                onClick={input.onStop}
+                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+              >
+                <Ic.stopSquare />
+              </button>
+            </CustomTooltip>
+          )}
       {/* TPE-18c: library actions on SETTLED rows only. FS-3: partial rows
         offer no library save (the file is whole-track only) — they get
         continue + cache-drop instead. FS-6: cache-only full and partial
