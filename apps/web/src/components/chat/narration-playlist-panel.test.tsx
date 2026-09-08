@@ -181,9 +181,11 @@ mock.module("../../lib/platform.js", () => ({
 }));
 
 let NarrationPlaylistPanel: typeof import("./NarrationPlaylistPanel.js").NarrationPlaylistPanel;
+let isFetchIncomplete: typeof import("./NarrationPlaylist.js").isFetchIncomplete;
 beforeAll(async () => {
   ({ fireEvent, render, waitFor, act } = await import("@testing-library/react"));
   ({ NarrationPlaylistPanel } = await import("./NarrationPlaylistPanel.js"));
+  ({ isFetchIncomplete } = await import("./NarrationPlaylist.js"));
 });
 
 function memoryCache(): NarrationSegmentCache & { size: () => number } {
@@ -625,11 +627,11 @@ describe("narration playlist player controls (TPE-18b)", () => {
     await waitFor(() => getByTestId("narration-playlist-row"));
 
     // RD-3 supersedes the FS-2 layout ("no per-row stop") per the
-    // owner's «отдельно кнопка стоп»: the live row offers a stop next
-    // to play/pause, inside the controls zone.
+    // owner's «отдельно кнопка стоп»: the live row offers a stop under
+    // the round play in the left transport column (RD-9 position).
     const rowStop = getByTestId("playlist-row-stop");
     expect(getByTestId("playlist-row-play")).toBeDefined();
-    const controls = rowStop.closest('[data-testid="playlist-row-zone-controls"]');
+    const controls = rowStop.closest('[data-testid="playlist-row-zone-transport"]');
     expect(controls).not.toBeNull();
     // The footer stop surface stays: enabled while the lane is live.
     const footerStop = getByTestId("playlist-stop");
@@ -1267,21 +1269,41 @@ describe("narration playlist library (TPE-18c)", () => {
     expect(getByTestId("playlist-row-drop")).toBeDefined();
   });
 
-  it("reveal forwards the row; drop clears the badge and brings save back", async () => {
+  it("reveal forwards the row; drop confirms, then badges Deleted with save hidden", async () => {
     await narrateM1Settled();
-    const { getByTestId, queryByTestId } = await openPanel();
+    // RD-9: this flow needs the modal copy, so it renders directly
+    // instead of the shared openPanel (which returns no getByText).
+    const { getByTestId, queryByTestId, getByText } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
     await act(async () => { fireEvent.click(getByTestId("playlist-row-save")); });
     await waitFor(() => getByTestId("playlist-row-library-badge"));
 
     await act(async () => { fireEvent.click(getByTestId("playlist-row-reveal")); });
     expect(libraryRevealed).toEqual(["c1/b1/m1/0"]);
 
+    // RD-9: drop opens the shared confirm first — nothing is deleted yet.
     await act(async () => { fireEvent.click(getByTestId("playlist-row-drop")); });
-    await waitFor(() => getByTestId("playlist-row-save"));
+    expect(getByText("narration_playlist_drop_file_title")).toBeDefined();
+    expect(getByText("narration_playlist_drop_file_body")).toBeDefined();
+    expect(libraryDeleted).toEqual([]);
+    // Cancel keeps the file and the library state.
+    await act(async () => { fireEvent.click(getByText("cancel")); });
+    expect(libraryDeleted).toEqual([]);
+    expect(getByTestId("playlist-row-library-badge")).toBeDefined();
+    // Confirm deletes: the row badges «Deleted» (never «In cache» — the
+    // cache was evicted at save time) and save stays hidden.
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-drop")); });
+    await act(async () => { fireEvent.click(getByText("narration_playlist_drop_file_confirm")); });
+    await waitFor(() => getByText("narration_playlist_deleted"));
     expect(libraryDeleted).toEqual(["c1/b1/m1/0"]);
     expect(queryByTestId("playlist-row-library-badge")).toBeNull();
+    expect(queryByTestId("playlist-row-save")).toBeNull();
     expect(queryByTestId("playlist-row-reveal")).toBeNull();
     expect(queryByTestId("playlist-row-drop")).toBeNull();
+    expect(getByTestId("playlist-row-revoice")).toBeDefined();
+    expect(getByTestId("playlist-row-play")).toBeDefined();
   });
 
   it("reveal hides on Android while drop stays (no file manager to open)", async () => {
@@ -1565,7 +1587,7 @@ describe("narration playlist card layout (RD-1)", () => {
     return el;
   }
 
-  it("RD-1a: settled cache-only card — head, chunk, controls; no playback zone", async () => {
+  it("RD-1a: settled cache-only card — head, chunk, actions; no playback zone", async () => {
     await act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
     });
@@ -1573,24 +1595,28 @@ describe("narration playlist card layout (RD-1)", () => {
     const row = getByTestId("narration-playlist-row");
     const head = zone(row, "playlist-row-zone-head");
     const chunk = zone(row, "playlist-row-zone-chunk");
-    const controls = zone(row, "playlist-row-zone-controls");
+    // RD-9: the horizontal controls zone is gone — actions ride the
+    // right column under the magnifier; transport rides the left.
+    const transport = zone(row, "playlist-row-zone-transport");
+    const actions = zone(row, "playlist-row-zone-actions");
     expect(queryByTestId("playlist-row-zone-playback")).toBeNull();
-    // Head: the two-line snippet clamps, the magnifier docks right.
+    // Head: the three-line snippet clamps (RD-9); no magnifier here.
     const snippet = head.querySelector("p");
-    expect(snippet?.getAttribute("class") ?? "").toContain("line-clamp-2");
+    expect(snippet?.getAttribute("class") ?? "").toContain("line-clamp-3");
     expect(snippet?.textContent).toContain("First line");
-    expect(head.querySelector('[data-testid="playlist-row-show"]')).not.toBeNull();
-    // Chunk line: swipe label + cache badge.
+    expect(head.querySelector('[data-testid="playlist-row-show"]')).toBeNull();
+    // Chunk line: swipe label + cache badge, no fetch line (settled).
     expect(chunk.textContent).toContain("narration_playlist_swipe:1:1:");
     expect(chunk.querySelector('[data-testid="playlist-row-cache-badge"]')).not.toBeNull();
     expect(chunk.querySelector('[data-testid="playlist-row-library-badge"]')).toBeNull();
-    // Control panel: save + re-voice (FS-6), no continue. RD-8: the
-    // transport button is the round play at the card's left edge —
-    // outside the controls zone, but still on the row.
-    expect(controls.querySelector('[data-testid="playlist-row-play"]')).toBeNull();
-    expect(row.querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
-    expect(controls.querySelector('[data-testid="playlist-row-save"]')).not.toBeNull();
-    expect(controls.querySelector('[data-testid="playlist-row-revoice"]')).not.toBeNull();
+    expect(chunk.textContent).not.toContain("narration_playlist_fetching:");
+    // Transport: round play, no stop on a settled row. Actions: show
+    // + save + re-voice (FS-6), no continue.
+    expect(transport.querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
+    expect(transport.querySelector('[data-testid="playlist-row-stop"]')).toBeNull();
+    expect(actions.querySelector('[data-testid="playlist-row-show"]')).not.toBeNull();
+    expect(actions.querySelector('[data-testid="playlist-row-save"]')).not.toBeNull();
+    expect(actions.querySelector('[data-testid="playlist-row-revoice"]')).not.toBeNull();
     expect(queryByTestId("playlist-row-continue")).toBeNull();
   });
 
@@ -1605,7 +1631,8 @@ describe("narration playlist card layout (RD-1)", () => {
     const row = await waitFor(() => getByTestId("narration-playlist-row"));
     const head = zone(row, "playlist-row-zone-head");
     const chunk = zone(row, "playlist-row-zone-chunk");
-    const controls = zone(row, "playlist-row-zone-controls");
+    const transport = zone(row, "playlist-row-zone-transport");
+    const actions = zone(row, "playlist-row-zone-actions");
     const playback = zone(row, "playlist-row-zone-playback");
     // Fetch progress lives on the chunk line (eventual: segments land async).
     await waitFor(() => {
@@ -1618,10 +1645,12 @@ describe("narration playlist card layout (RD-1)", () => {
     expect(playback.querySelector('[data-testid="playlist-seek"]')).not.toBeNull();
     expect(queryByTestId("playlist-row-cache-badge")).toBeNull();
     expect(queryByTestId("playlist-row-library-badge")).toBeNull();
-    // Head + controls keep their controls (RD-8: round play at the
-    // card's left edge, outside the controls zone).
-    expect(head.querySelector('[data-testid="playlist-row-show"]')).not.toBeNull();
-    expect(controls.querySelector('[data-testid="playlist-row-play"]')).toBeNull();
+    // RD-9: the magnifier rides the actions column (never the head);
+    // transport owns the round play, never the actions column.
+    expect(head.querySelector('[data-testid="playlist-row-show"]')).toBeNull();
+    expect(actions.querySelector('[data-testid="playlist-row-show"]')).not.toBeNull();
+    expect(transport.querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
+    expect(actions.querySelector('[data-testid="playlist-row-play"]')).toBeNull();
     expect(row.querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
   });
 
@@ -1636,13 +1665,20 @@ describe("narration playlist card layout (RD-1)", () => {
     await waitFor(() => getByTestId("narration-playlist-row"));
     await act(async () => { fireEvent.click(getByTestId("playlist-stop")); });
     const row = await waitFor(() => getByTestId("narration-playlist-row"));
-    const controls = zone(row, "playlist-row-zone-controls");
+    const actions = zone(row, "playlist-row-zone-actions");
     expect(zone(row, "playlist-row-zone-head")).toBeDefined();
     expect(zone(row, "playlist-row-zone-chunk")).toBeDefined();
     expect(queryByTestId("playlist-row-zone-playback")).toBeNull();
-    expect(controls.querySelector('[data-testid="playlist-row-continue"]')).not.toBeNull();
-    expect(controls.querySelector('[data-testid="playlist-row-drop-cache"]')).not.toBeNull();
+    // RD-9: continue rides the center stack (full-width text button —
+    // it cannot fit the icon-sized actions column); drop-cache rides
+    // the actions column. No save on partials (FS-3).
+    expect(row.querySelector('[data-testid="playlist-row-continue"]')).not.toBeNull();
+    expect(actions.querySelector('[data-testid="playlist-row-drop-cache"]')).not.toBeNull();
     expect(queryByTestId("playlist-row-save")).toBeNull();
+    // The stopped lane is settled (no live state): no generation line,
+    // the resumable prefix keeps its cache badge.
+    expect(zone(row, "playlist-row-zone-chunk").textContent).not.toContain("narration_playlist_fetching");
+    expect(zone(row, "playlist-row-zone-chunk").querySelector('[data-testid="playlist-row-cache-badge"]')).not.toBeNull();
   });
 
   it("RD-1d: library card — library badge on chunk, reveal + drop in controls", async () => {
@@ -1654,11 +1690,11 @@ describe("narration playlist card layout (RD-1)", () => {
     await waitFor(() => getByTestId("playlist-row-library-badge"));
     const row = getByTestId("narration-playlist-row");
     const chunk = zone(row, "playlist-row-zone-chunk");
-    const controls = zone(row, "playlist-row-zone-controls");
+    const actions = zone(row, "playlist-row-zone-actions");
     expect(chunk.querySelector('[data-testid="playlist-row-library-badge"]')).not.toBeNull();
     expect(chunk.querySelector('[data-testid="playlist-row-cache-badge"]')).toBeNull();
-    expect(controls.querySelector('[data-testid="playlist-row-reveal"]')).not.toBeNull();
-    expect(controls.querySelector('[data-testid="playlist-row-drop"]')).not.toBeNull();
+    expect(actions.querySelector('[data-testid="playlist-row-reveal"]')).not.toBeNull();
+    expect(actions.querySelector('[data-testid="playlist-row-drop"]')).not.toBeNull();
     expect(queryByTestId("playlist-row-revoice")).toBeNull();
     expect(queryByTestId("playlist-row-zone-playback")).toBeNull();
   });
@@ -2284,7 +2320,10 @@ describe("narration playlist transport bar (RD-5)", () => {
         variantId: "m1-v1",
         variantIndex: 0,
         snippet: "Alpha one.",
-        cacheKeys: [],
+        // RD-9 cache honesty: index fixtures for settled cache rows
+        // carry a symbolic key (the panel never reads blobs, only key
+        // presence) — an empty key list is the post-drop state now.
+        cacheKeys: ["rd5g-m1"],
         narratedAt: Date.now(),
       });
       await useTtsPlaybackStore.getState().loadPlaylist("c1");
@@ -2573,7 +2612,10 @@ describe("narration playlist visual polish (RD-8)", () => {
     expect(cls).toContain("h-8");
     expect(cls).toContain("w-8");
     expect(play.parentElement?.getAttribute("class") ?? "").toContain("flex");
-    expect(zone(row, "playlist-row-zone-controls").querySelector('[data-testid="playlist-row-play"]')).toBeNull();
+    // RD-9: the play rides the left transport column with the stop —
+    // never in the actions column.
+    expect(zone(row, "playlist-row-zone-transport").querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
+    expect(zone(row, "playlist-row-zone-actions").querySelector('[data-testid="playlist-row-play"]')).toBeNull();
     // Idle: neutral fill, play icon.
     expect(cls).toContain("bg-s3");
     expect(play.getAttribute("aria-label")).toContain("narrate_action");
@@ -2663,7 +2705,7 @@ describe("narration playlist visual polish (RD-8)", () => {
     });
     const { getByTestId } = await openPanel();
     const row = getByTestId("narration-playlist-row");
-    for (const zoneId of ["playlist-row-zone-head", "playlist-row-zone-chunk", "playlist-row-zone-controls", "playlist-row-zone-playback"]) {
+    for (const zoneId of ["playlist-row-zone-transport", "playlist-row-zone-head", "playlist-row-zone-chunk", "playlist-row-zone-actions", "playlist-row-zone-playback"]) {
       expect(zone(row, zoneId).getAttribute("class") ?? "").not.toContain("border-t");
     }
     expect(zone(row, "playlist-row-zone-playback").querySelector('[data-testid="playlist-seek"]')).not.toBeNull();
@@ -2684,5 +2726,163 @@ describe("narration playlist visual polish (RD-8)", () => {
     expect(getByTestId("playlist-volume")).toBeDefined();
     expect(getByTestId("playlist-volume-mute")).toBeDefined();
     expect(getByTestId("playlist-volume-percent")).toBeDefined();
+  });
+});
+
+describe("narration playlist card layout v3 (RD-9)", () => {
+  const TEXT = "First line\nSecond line";
+
+  function meta() {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId: "m1-v1",
+      variantIndex: 0,
+      snippet: "First line\nSecond line",
+    };
+  }
+
+  function metaM2() {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId: "m2-v1",
+      variantIndex: 0,
+      snippet: "Second message body here",
+    };
+  }
+
+  function entry(messageId: string) {
+    return useTtsPlaybackStore.getState().playlist["c1"]?.find((candidate) => candidate.messageId === messageId);
+  }
+
+  function scope(messageId: string) {
+    return { chatId: "c1", branchId: "b1", characterId: "char1", messageId };
+  }
+
+  async function narrateM1Settled(): Promise<void> {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+  }
+
+  async function openPanel(): Promise<{
+    getByTestId: (id: string) => HTMLElement;
+    queryByTestId: (id: string) => HTMLElement | null;
+    getByText: (text: string) => HTMLElement;
+  }> {
+    const { getByTestId, queryByTestId, getByText } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    // RD-9c narrates two messages: wait row-scoped (a bare row testid
+    // matches twice and RTL throws on multiples).
+    await waitFor(() => rowByMessageId("m1"));
+    return {
+      getByTestId: getByTestId as (id: string) => HTMLElement,
+      queryByTestId,
+      getByText: getByText as (text: string) => HTMLElement,
+    };
+  }
+
+  function rowByMessageId(messageId: string): HTMLElement {
+    const row = Array.from(document.querySelectorAll('[data-testid="narration-playlist-row"]')).find(
+      (candidate) => candidate.getAttribute("data-playlist-message-id") === messageId,
+    );
+    if (!(row instanceof HTMLElement)) throw new Error(`missing row ${messageId}`);
+    return row;
+  }
+
+  function zone(container: HTMLElement, zoneId: string): HTMLElement {
+    const el = container.querySelector(`[data-testid="${zoneId}"]`);
+    if (!(el instanceof HTMLElement)) throw new Error(`missing zone ${zoneId}`);
+    return el;
+  }
+
+  it("RD-9a: save evicts blobs and clears index keys; drop clears keys too", async () => {
+    await narrateM1Settled();
+    const before = entry("m1");
+    if (!before) throw new Error("m1 was not indexed");
+    expect(before.cacheKeys.length).toBeGreaterThan(0);
+    expect(cache.size()).toBeGreaterThan(0);
+
+    // Save: the blobs go, the library file wins — and the index entry
+    // must not keep dead keys (the pre-fix lie).
+    await act(async () => {
+      await useTtsPlaybackStore.getState().saveToLibrary(scope("m1"));
+    });
+    expect(librarySaved).toHaveLength(1);
+    expect(cache.size()).toBe(0);
+    expect(entry("m1")?.cacheKeys).toEqual([]);
+    expect(entry("m1")?.inLibrary).toBe(true);
+
+    // Drop: the file goes, the flag drops — and the keys clear with it,
+    // so the row reads audio-less instead of «In cache».
+    await act(async () => {
+      await useTtsPlaybackStore.getState().dropLibraryRow(scope("m1"));
+    });
+    expect(libraryDeleted).toEqual(["c1/b1/m1/0"]);
+    expect(entry("m1")?.cacheKeys).toEqual([]);
+    expect(entry("m1")?.inLibrary).not.toBe(true);
+  });
+
+  it("RD-9b: settled complete rows show badges but no generation line", async () => {
+    await narrateM1Settled();
+    const { getByTestId } = await openPanel();
+    const row = getByTestId("narration-playlist-row");
+    const chunk = zone(row, "playlist-row-zone-chunk");
+    expect(chunk.textContent).toContain("narration_playlist_swipe:1:1:");
+    expect(chunk.querySelector('[data-testid="playlist-row-cache-badge"]')).not.toBeNull();
+    // The fetch line is gated: a finished recording shows no
+    // «received n of n» noise (owner: complete = nothing to show).
+    expect(chunk.textContent).not.toContain("narration_playlist_fetching");
+    expect(chunk.querySelector('[data-testid="playlist-row-deleted-badge"]')).toBeNull();
+    // The gate itself, pinned pure: only incomplete lanes pass.
+    expect(isFetchIncomplete(null)).toBe(false);
+    expect(isFetchIncomplete({ status: "playing", total: 0, played: 0, received: 0 })).toBe(false);
+    expect(isFetchIncomplete({ status: "generating", total: 2, played: 0, received: 1 })).toBe(true);
+    expect(isFetchIncomplete({ status: "playing", total: 2, played: 2, received: 2 })).toBe(false);
+  });
+
+  it("RD-9c: save-all skips the keyless post-drop row", async () => {
+    mocks.messages = [m1(), m2(), u1()];
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m2", "Second message body here", profile(), metaM2());
+    });
+    const { getByTestId, getByText } = await openPanel();
+    const saveM1 = rowByMessageId("m1").querySelector('[data-testid="playlist-row-save"]');
+    if (!(saveM1 instanceof HTMLElement)) throw new Error("m1 save missing");
+    await act(async () => { fireEvent.click(saveM1); });
+    await waitFor(() => rowByMessageId("m1").querySelector('[data-testid="playlist-row-library-badge"]'));
+    expect(librarySaved).toHaveLength(1);
+    // Drop m1 through the confirm: the row goes keyless («Deleted").
+    const dropM1 = rowByMessageId("m1").querySelector('[data-testid="playlist-row-drop"]');
+    if (!(dropM1 instanceof HTMLElement)) throw new Error("m1 drop missing");
+    await act(async () => { fireEvent.click(dropM1); });
+    await act(async () => { fireEvent.click(getByText("narration_playlist_drop_file_confirm")); });
+    await waitFor(() => getByText("narration_playlist_deleted"));
+    // Save-all touches only the cache-backed row: one new file.
+    await act(async () => { fireEvent.click(getByTestId("playlist-save-all")); });
+    await waitFor(() => rowByMessageId("m2").querySelector('[data-testid="playlist-row-library-badge"]'));
+    expect(librarySaved).toHaveLength(2);
+    expect(rowByMessageId("m1").querySelector('[data-testid="playlist-row-save"]')).toBeNull();
+  });
+
+  it("RD-9d: drop-file and deleted strings exist in en and ru", () => {
+    for (const key of [
+      "narration_playlist_drop_file_title",
+      "narration_playlist_drop_file_body",
+      "narration_playlist_drop_file_confirm",
+      "narration_playlist_deleted",
+    ] as const) {
+      expect(en[key]).toBeTruthy();
+      expect(ru[key]).toBeTruthy();
+    }
+    expect(en["narration_playlist_drop_file_title"]).not.toBe(ru["narration_playlist_drop_file_title"]);
+    expect(en["narration_playlist_deleted"]).not.toBe(ru["narration_playlist_deleted"]);
   });
 });

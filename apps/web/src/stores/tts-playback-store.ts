@@ -355,7 +355,9 @@ async function clearLibraryFlag(chatId: string, messageId: string): Promise<void
   const rows = await index.list(chatId);
   const row = rows.find((entry) => entry.messageId === messageId);
   if (!row || row.inLibrary !== true) return;
-  await index.upsert(chatId, { ...row, inLibrary: false });
+  // RD-9 cache honesty: same dead-keys vector as dropLibraryRow — the
+  // cache was evicted at save time, so the flag clears with empty keys.
+  await index.upsert(chatId, { ...row, cacheKeys: [], inLibrary: false });
   await refreshPlaylistRows(chatId);
 }
 
@@ -624,7 +626,10 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
       };
       const { leaf } = await narrationLibrary().saveRecording(ids, new Blob([bytes], { type: "audio/ogg" }));
       // Library replaces cache (owner decision): evict the hash keys so
-      // later replays can only come from the single file.
+      // later replays can only come from the single file. The index entry
+      // clears its keys with them (RD-9 cache honesty): stale keys would
+      // otherwise outlive the blobs and badge the row «In cache» after
+      // the library file is dropped.
       for (const key of entry.cacheKeys) {
         try {
           await cache.delete(key);
@@ -633,7 +638,7 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
         }
       }
       const index = playlistIndexOverride ?? narrationPlaylistIndex();
-      await index.upsert(scope.chatId, { ...entry, inLibrary: true });
+      await index.upsert(scope.chatId, { ...entry, cacheKeys: [], inLibrary: true });
       await refreshPlaylistRows(scope.chatId);
       return { leaf };
     } catch (error) {
@@ -661,8 +666,11 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
       };
       await narrationLibrary().deleteRecording(ids);
       // The row stays (replay re-synthesizes fresh); only the flag drops.
+      // RD-9 cache honesty: the cache was evicted at save time, so the
+      // row's keys (dead since the save) clear with the flag — the row is
+      // audio-less and badges «Deleted», never «In cache».
       const index = playlistIndexOverride ?? narrationPlaylistIndex();
-      await index.upsert(scope.chatId, { ...entry, inLibrary: false });
+      await index.upsert(scope.chatId, { ...entry, cacheKeys: [], inLibrary: false });
       await refreshPlaylistRows(scope.chatId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

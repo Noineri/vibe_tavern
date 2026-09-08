@@ -36,6 +36,11 @@ export interface PlaylistRowModel {
   live: NarrationState | null;
   /** TPE-18c: a saved library file exists for this exact variant. */
   inLibrary: boolean;
+  /** RD-9 cache honesty: the index entry carries live cache keys (blobs
+   *  present in the segment cache). False exactly for post-drop rows —
+   *  the save evicted the blobs and the drop cleared the keys. The UI
+   *  badges and the save button key off this, never off flags alone. */
+  hasCache: boolean;
   /** FS-3: aborted before completing — a cached prefix with an explicit
    *  continue-generation button (no library save: the file is whole-track
    *  only). */
@@ -44,6 +49,13 @@ export interface PlaylistRowModel {
 
 function isLiveState(state: NarrationState | undefined): state is NarrationState {
   return state !== undefined && (state.status === "generating" || state.status === "playing" || state.status === "paused");
+}
+
+/** RD-9: the chunk-generation line renders only while segments are still
+ *  landing (owner: complete recordings must not show «received n of n»).
+ *  Exported pure for direct tests — the card keys its fetch line off this. */
+export function isFetchIncomplete(live: NarrationState | null): live is NarrationState {
+  return live !== null && live.total > 0 && live.received < live.total;
 }
 
 /** Derive panel rows from chat order: every character (assistant-role)
@@ -81,6 +93,7 @@ export function buildPlaylistRows(
       variantCount: variants.length,
       live: liveState,
       inLibrary: entry?.inLibrary === true,
+      hasCache: (entry?.cacheKeys.length ?? 0) > 0,
       partial: entry?.partial === true,
     };
     if (liveState) live.push(row);
@@ -270,7 +283,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
   // reason). Both skip the live lane: saving is per-row independent,
   // drops are not.
   const completeIds = rows
-    .filter((row) => row.live === null && !row.partial && !row.inLibrary)
+    .filter((row) => row.live === null && !row.partial && !row.inLibrary && row.hasCache)
     .map((row) => row.messageId);
   const cacheIds = rows
     .filter((row) => row.live === null && !row.inLibrary)
@@ -527,6 +540,10 @@ function PlaylistRow(input: {
   // count-parameterized copy are settled code — merging them into a
   // union state would churn RD-5 for zero behavioral gain.
   const [revoicePending, setRevoicePending] = useState(false);
+  // RD-9: row-level drop-file confirm (owner: «на убрать так и не
+  // сделал конфирм») — same shared modal pattern as the RD-6
+  // re-voice confirm; cancel leaves the library file in place.
+  const [dropPending, setDropPending] = useState(false);
   // RD-2: this row owns the lane's transport icon — pause only while
   // its own narration is playing, resume offer while it is parked.
   const rowPlaying = row.live?.status === "playing";
@@ -567,6 +584,12 @@ function PlaylistRow(input: {
       )}
     >
       <div className="flex min-w-0 items-start gap-2">
+        {/* RD-9 left column — the row's transport: round play on top
+          (RD-8 surface, RD-2 semantics), stop directly under it.
+          Stop shows while the lane is live for this row
+          (generating/playing/paused are all «в процессе», owner) —
+          position change only, the RD-3 single path is untouched. */}
+        <div data-testid="playlist-row-zone-transport" className="flex shrink-0 flex-col items-center gap-1.5">
         {/* RD-8: round transport button, left edge (owner: «круглый
           слева от карточки», variant-2 look). Same RD-2 semantics —
           only the surface changed: playing → pause icon on an accent
@@ -597,24 +620,29 @@ function PlaylistRow(input: {
             {rowPlaying ? <Ic.pause /> : <Ic.play />}
           </button>
         </CustomTooltip>
+          {live && (
+            <CustomTooltip content={t("narrate_stop")}>
+              <button
+                type="button"
+                aria-label={t("narrate_stop")}
+                data-testid="playlist-row-stop"
+                onClick={input.onStop}
+                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+              >
+                <Ic.stopSquare />
+              </button>
+            </CustomTooltip>
+          )}
+        </div>
+        {/* RD-9 center stack: text → state badges → gated generation →
+          playback → continue. No dividers: one block. */}
         <div className="min-w-0 flex-1">
-      {/* RD-1 zone A — head: the two-line snippet (owner decision) plus
-        the show-in-chat magnifier docked at the right edge. */}
+      {/* RD-9 head — the THREE-line snippet (owner decision). The
+        magnifier moved to the right action column. */}
       <div data-testid="playlist-row-zone-head" className="flex min-w-0 items-start gap-1.5">
-        <p className="line-clamp-2 min-w-0 flex-1 break-words font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t1">
+        <p className="line-clamp-3 min-w-0 flex-1 break-words font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t1">
           {snippet}
         </p>
-        <CustomTooltip content={t("narration_playlist_show_in_chat")}>
-          <button
-            type="button"
-            aria-label={t("narration_playlist_show_in_chat")}
-            data-testid="playlist-row-show"
-            onClick={() => showMessageInChat(row.messageId)}
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
-          >
-            <Ic.search />
-          </button>
-        </CustomTooltip>
       </div>
       {/* RD-1 zone B — chunk status: swipe badge, cache/library badge,
         and the live fetch progress (n/total + bar). */}
@@ -634,12 +662,11 @@ function PlaylistRow(input: {
               {t("narration_playlist_in_library")}
             </span>
           )}
-          {/* FS-7: in-cache badge — the twin of the library badge
-            (same markup/density/position). Mutually exclusive:
-            library rows show ONLY the library badge. Settled
-            cache-backed rows (full and FS-3 partial) carry it; live
-            rows show no state badge. No fixed widths (RU «В кэше»). */}
-          {!live && !row.inLibrary && (
+          {/* FS-7: in-cache badge — settled rows whose index keys are
+            live (RD-9 cache honesty: `hasCache`, never flags alone).
+            Partial rows keep the badge (their keys are the resumable
+            prefix by construction). No fixed widths (RU «В кэше»). */}
+          {!live && !row.inLibrary && (row.hasCache || row.partial) && (
             <span
               data-testid="playlist-row-cache-badge"
               className="shrink-0 rounded border border-accent/40 bg-accent-dim px-1 font-ui text-[calc(var(--ui-fs)-4px)] font-medium text-accent-t"
@@ -647,7 +674,27 @@ function PlaylistRow(input: {
               {t("narration_playlist_in_cache")}
             </span>
           )}
-          {row.live && row.live.total > 0 && (
+          {/* RD-9: post-drop state (owner: «может, сделать еще одно
+            состояние бейджа? например "удалена"») — settled,
+            non-partial, keyless. Uniquely the row whose library file
+            was dropped after the save evicted its cache: audio-less
+            until re-narrated. Neutral terminal tone (border2/t3), not
+            the accent the live badges wear. Legacy rows with stale
+            keys (dropped pre-fix) keep «В кэше» until re-voiced. */}
+          {!live && !row.inLibrary && !row.partial && !row.hasCache && (
+            <span
+              data-testid="playlist-row-deleted-badge"
+              className="shrink-0 rounded border border-border2 px-1 font-ui text-[calc(var(--ui-fs)-4px)] font-medium text-t3"
+            >
+              {t("narration_playlist_deleted")}
+            </span>
+          )}
+          {/* RD-9: the generation line renders ONLY while chunks are
+            still landing (isFetchIncomplete). Complete rows — live or
+            settled — show no fetch line at all: «Получено n из n» on a
+            finished recording is the noise the owner cut. Badges above
+            stay in both states. */}
+          {isFetchIncomplete(row.live) && (
             <span className="flex min-w-0 flex-1 items-center gap-1.5" title={t("narration_playlist_fetching", { received: row.live.received, total: row.live.total })}>
               <span className="h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-s3">
                 <span className="block h-full rounded-full bg-accent" style={{ width: `${progress ?? 0}%` }} />
@@ -659,41 +706,69 @@ function PlaylistRow(input: {
           )}
         </div>
       </div>
-      {/* RD-8 zone C — the row action line: the per-kind action set,
-        laid out horizontally, docked right of the meta badges is the
-        mock's variant-1 row (always visible — no hover-reveal; touch
-        and Android targets). The round transport button moved to the
-        card's left edge (see above); RD-3's stop stays in this line —
-        a second SURFACE for the same single stopNarration path (FS-2
-        invariant intact: one path, two surfaces). Icon-only buttons:
-        no RU width risk. */}
-      <div data-testid="playlist-row-zone-controls" className="mt-1">
-        <div className="flex items-center gap-1.5">
-          {/* RD-3: row stop — owner's «отдельно кнопка стоп», next to
-            play/pause. Visible on live rows only (generating/playing/
-            paused are all stopNarration-abortable); settled, partial
-            and library rows never render it. Routes through the SAME
-            input.onStop the footer stop uses — no second path. */}
-          {live && (
-            <CustomTooltip content={t("narrate_stop")}>
-              <button
-                type="button"
-                aria-label={t("narrate_stop")}
-                data-testid="playlist-row-stop"
-                onClick={input.onStop}
-                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
-              >
-                <Ic.stopSquare />
-              </button>
-            </CustomTooltip>
-          )}
+      {/* RD-9 zone D — playback status, live rows only: the TPE-18b
+        PLAYBACK position bar (range + clock), moved up into the center
+        stack (owner: text → badges → generation → playback). Visually
+        distinct from the FETCH mini-bar in zone B (accent fill +
+        n/total). Unknown total: seeks over the known prefix; unknown
+        segments are slivers, never estimates. */}
+      {row.live !== null && (
+        <div data-testid="playlist-row-zone-playback">
+          <SeekBar progress={input.progress} onSeek={input.onSeek} />
+        </div>
+      )}
+        {/* FS-3: partial rows carry an explicit continue-generation
+          button — a full-width text control at the bottom of the
+          center stack (w-full, wrapping: RU «Продолжить генерацию» never
+          truncates). Re-running the narration resumes from cache (TPE-16:
+          only missing segments synthesize) and a genuine completion clears
+          the partial flag. */}
+        {!live && row.partial && (
+          <button
+            type="button"
+            data-testid="playlist-row-continue"
+            onClick={input.onPlay}
+            className="mt-1 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent-dim px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-accent-t transition-colors hover:bg-accent/20 [&_svg]:h-3 [&_svg]:w-3"
+          >
+            <Ic.play />
+            <span>{t("narration_playlist_continue")}</span>
+          </button>
+        )}
+        {/* RD-9: the center stack closes here (head → chunk → playback
+          → continue); the actions column follows as the card's third
+          flex child (owner: buttons vertical under the magnifier). */}
+        </div>
+        {/* RD-9 right column — the row's actions, vertical under the
+          magnifier (owner): locate first, then the per-kind pair
+          (save/show-file, drop/re-voice, drop-cache). Same buttons and
+          handlers as before (FS-6 boundary kept: library rows omit
+          re-voice, cache-only rows omit reveal) — arrangement only.
+          RD-9: save shows ONLY with a live cache (owner: «и прятать
+          кнопку сейва» — post-drop rows have nothing to save); re-voice
+          stays for cache rows AND the post-drop state (dropCachedRow on
+          empty keys removes the entry, the fresh narration follows). */}
+        <div data-testid="playlist-row-zone-actions" className="flex shrink-0 flex-col items-center gap-1.5">
+        <CustomTooltip content={t("narration_playlist_show_in_chat")}>
+          <button
+            type="button"
+            aria-label={t("narration_playlist_show_in_chat")}
+            data-testid="playlist-row-show"
+            onClick={() => showMessageInChat(row.messageId)}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            <Ic.search />
+          </button>
+        </CustomTooltip>
+      {/* RD-9: the per-kind action set moved to the right column
+          below (after the center stack closes) — stop rides the left
+          transport column now. This block is deleted content-wise. */}
       {/* TPE-18c: library actions on SETTLED rows only. FS-3: partial rows
         offer no library save (the file is whole-track only) — they get
         continue + cache-drop instead. FS-6: cache-only full and partial
         rows offer re-voice (drop plus fresh narration). Library rows keep
         reveal + drop and omit re-voice: the saved file is preserved and
         would otherwise replay first. */}
-      {!live && !row.inLibrary && !row.partial && (
+      {!live && !row.inLibrary && !row.partial && row.hasCache && (
         <CustomTooltip content={input.saving ? t("narration_playlist_saving") : t("narration_playlist_save")}>
           <button
             type="button"
@@ -726,12 +801,24 @@ function PlaylistRow(input: {
             type="button"
             aria-label={t("narration_playlist_drop_file")}
             data-testid="playlist-row-drop"
-            onClick={input.onDrop}
+            onClick={() => setDropPending(true)}
             className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
           >
             <Ic.del />
           </button>
         </CustomTooltip>
+      )}
+      {dropPending && (
+        <DestructiveConfirmModal
+          title={t("narration_playlist_drop_file_title")}
+          body={t("narration_playlist_drop_file_body")}
+          confirmLabel={t("narration_playlist_drop_file_confirm")}
+          onConfirm={() => {
+            setDropPending(false);
+            input.onDrop();
+          }}
+          onCancel={() => setDropPending(false)}
+        />
       )}
       {/* FS-3: cache-drop for partial cache-only rows (a partial that
         also carries a library flag keeps the library drop above — the
@@ -779,35 +866,6 @@ function PlaylistRow(input: {
             />
           )}
         </>
-      )}
-        </div>
-        {/* FS-3: partial rows carry an explicit continue-generation
-          button — a full-width text control docked at the bottom of the
-          control panel (w-full, wrapping: RU «Продолжить генерацию» never
-          truncates). Re-running the narration resumes from cache (TPE-16:
-          only missing segments synthesize) and a genuine completion clears
-          the partial flag. */}
-        {!live && row.partial && (
-          <button
-            type="button"
-            data-testid="playlist-row-continue"
-            onClick={input.onPlay}
-            className="mt-1 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent-dim px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-accent-t transition-colors hover:bg-accent/20 [&_svg]:h-3 [&_svg]:w-3"
-          >
-            <Ic.play />
-            <span>{t("narration_playlist_continue")}</span>
-          </button>
-        )}
-      </div>
-      {/* RD-1 zone D — playback status, live rows only: the TPE-18b
-        PLAYBACK position bar (range + clock) at full card width,
-        visually distinct from the FETCH mini-bar in zone B (accent fill +
-        n/total). Unknown total: seeks over the known prefix; unknown
-        segments are slivers, never estimates. */}
-      {row.live !== null && (
-        <div data-testid="playlist-row-zone-playback">
-          <SeekBar progress={input.progress} onSeek={input.onSeek} />
-        </div>
       )}
         </div>
       </div>
