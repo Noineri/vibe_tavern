@@ -160,9 +160,12 @@ export function useCopilotMention(config: UseCopilotMentionConfig): {
   );
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>, fallback: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void) => {
+    // The fallback is optional (E4, MOBILE_DEFECTS_ROUND_2): mobile input areas
+    // pass none — bare Enter there must insert a newline, not send (the on-screen
+    // enter key IS the newline key). Desktop keeps its Enter-to-send fallback.
+    (e: React.KeyboardEvent<HTMLTextAreaElement>, fallback?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void) => {
       if (!open) {
-        fallback(e);
+        fallback?.(e);
         return;
       }
       const count = filtered.length;
@@ -191,7 +194,7 @@ export function useCopilotMention(config: UseCopilotMentionConfig): {
           close();
           break;
         default:
-          fallback(e);
+          fallback?.(e);
       }
     },
     [open, filtered, activeIndex, pick, close],

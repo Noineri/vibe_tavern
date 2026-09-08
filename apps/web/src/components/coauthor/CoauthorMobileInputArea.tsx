@@ -7,7 +7,7 @@
 // "Manage Modules" footer) and `ToolbarSelect` (favorites) — both BottomSheet, vaul.
 
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
+import type { ChangeEvent } from "react";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { ToolbarSelect } from "../shared/ToolbarSelect.js";
@@ -34,15 +34,13 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 			ta.style.height = `${Math.min(ta.scrollHeight, window.innerHeight * 0.4)}px`;
 		}
 	};
+	// E4 (MOBILE_DEFECTS_ROUND_2): NO Enter-to-send on mobile — the on-screen
+	// enter key is the newline key; sending happens via the send button only.
+	// Mirrors the RP MobileInputArea (no keydown handler at all); the desktop
+	// CoauthorInputArea keeps Enter-to-send.
 	const mobileOnChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
 		setDraft(e.target.value);
 		adjustTextareaHeight();
-	};
-	const mobileOnKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-		if (e.key === "Enter" && !e.shiftKey) {
-			e.preventDefault();
-			if (canSend) void chat.handleSend();
-		}
 	};
 	useEffect(() => {
 		if (!draft) adjustTextareaHeight();
@@ -122,7 +120,6 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						placeholder={t("coauthor.input.placeholder")}
 						value={draft}
 						onChange={mobileOnChange}
-						onKeyDown={mobileOnKeyDown}
 						rows={1}
 					/>
 					<div className="flex shrink-0 items-center">
