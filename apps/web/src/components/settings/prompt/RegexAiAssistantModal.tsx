@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Modal } from "../../shared/Modal.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
 import { AiAssistantPanel } from "../../shared/ai-assistant/AiAssistantPanel.js";
@@ -370,22 +371,14 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 						searchModel: t("regexAssistant.searchModel"),
 					}}
 				/>
-				<div className="flex flex-wrap gap-2">
-					{ARCHETYPES.map((a) => (
-						<button
-							key={a.id}
-							type="button"
-							onClick={() => setArchetype(a.id)}
-							className={
-								archetype === a.id
-									? "cursor-pointer rounded-full bg-accent px-3 py-1 font-ui text-xs text-white"
-									: "cursor-pointer rounded-full border border-border bg-s2 px-3 py-1 font-ui text-xs text-t2 transition-colors hover:text-t1"
-							}
-						>
-							{t(a.labelKey)}
-						</button>
-					))}
-				</div>
+				<SegmentedControl
+					value={archetype}
+					onChange={(v) => setArchetype(v as RegexAssistArchetype)}
+					wrap
+					mobileFill
+					mobileSelect
+					options={ARCHETYPES.map((a) => ({ value: a.id, label: t(a.labelKey) }))}
+				/>
 				<div>
 					<label className={lblCls}>{t("regexAssistant.taskLabel")}</label>
 					<AutoTextarea
