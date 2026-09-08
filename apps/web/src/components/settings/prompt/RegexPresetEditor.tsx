@@ -7,7 +7,7 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { ToggleChips } from "../../shared/ToggleChips.js";
 import { NumberInput } from "../../shared/NumberInput.js";
-import { inputCls, monoUICls, lblCls } from "../../build/fields/field-styles.js";
+import { inputCls, monoCls, lblCls } from "../../build/fields/field-styles.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { RegexAiAssistantModal } from "./RegexAiAssistantModal.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -553,13 +553,13 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
         </div>
       </div>
 
-      {/* Rule fields (R-7): mono at the SAME size as regular inputs —
-          typeface-only distinction, these are not a lesser class of field. */}
+      {/* Rule fields (R-7): mono via the shared `monoCls` canon — the same
+          mono field style the build form's prompt-instruction fields use. */}
       <div>
         <label className={lblCls} htmlFor="regex-find">{t("promptManager.regex.fieldFind")}</label>
         <AutoTextarea
           id="regex-find"
-          className={monoUICls}
+          className={monoCls}
           value={draft.findRegex}
           onChange={(e) => update("findRegex", e.target.value)}
           placeholder={t("promptManager.regex.findPlaceholder")}
@@ -573,7 +573,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
         <label className={lblCls} htmlFor="regex-replace">{t("promptManager.regex.fieldReplace")}</label>
         <AutoTextarea
           id="regex-replace"
-          className={monoUICls}
+          className={monoCls}
           value={draft.replaceString}
           onChange={(e) => update("replaceString", e.target.value)}
           placeholder={t("promptManager.regex.replacePlaceholder")}
@@ -587,7 +587,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
         <label className={lblCls} htmlFor="regex-trim">{t("promptManager.regex.fieldTrim")}</label>
         <AutoTextarea
           id="regex-trim"
-          className={monoUICls}
+          className={monoCls}
           value={draft.trimStrings}
           onChange={(e) => update("trimStrings", e.target.value)}
           placeholder={t("promptManager.regex.trimPlaceholder")}
@@ -622,7 +622,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
         </div>
         <div className="mb-2 font-ui text-[11px] text-t4">{t("promptManager.regex.testDisclaimer")}</div>
         <AutoTextarea
-          className={monoUICls}
+          className={monoCls}
           value={testInput}
           onChange={(e) => setTestInput(e.target.value)}
           placeholder={t("promptManager.regex.testInputPlaceholder")}

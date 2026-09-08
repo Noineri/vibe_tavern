@@ -12,7 +12,7 @@ import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
-import { lblCls, monoUICls } from "../../build/fields/field-styles.js";
+import { lblCls, monoCls } from "../../build/fields/field-styles.js";
 import { requestRegexAssist } from "../../../api/regex-assist-api.js";
 import type {
 	RegexAssistArchetype,
@@ -389,7 +389,7 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 				<div>
 					<label className={lblCls}>{t("regexAssistant.taskLabel")}</label>
 					<AutoTextarea
-						className={monoUICls}
+						className={monoCls}
 						value={task}
 						onChange={(e) => setTask(e.target.value)}
 						placeholder={t("regexAssistant.taskPlaceholder")}
@@ -399,7 +399,7 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 				<div>
 					<label className={lblCls}>{t("regexAssistant.sampleLabel")}</label>
 					<AutoTextarea
-						className={monoUICls}
+						className={monoCls}
 						value={sampleText}
 						onChange={(e) => setSampleText(e.target.value)}
 						placeholder={t("regexAssistant.samplePlaceholder")}
