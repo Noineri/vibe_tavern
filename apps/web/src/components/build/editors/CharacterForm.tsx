@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useWatch, type Control, type UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 
 import { cn } from "../../../lib/cn";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
@@ -160,6 +161,8 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
   const mInput = isMobile ? " text-base" : "";
   const { register, setValue } = form;
   const [altGreetIdx, setAltGreetIdx] = useState(0);
+  // E2: alt-greeting deletion goes through the shared destructive confirm.
+  const [pendingGreetingDelete, setPendingGreetingDelete] = useState<number | null>(null);
   const [description, firstMessage, mesExample, mesExampleMode, mesExampleDepth, scenario, personalitySummary, altGreetingsRaw] = useWatch({
     control: form.control,
     name: ["description", "firstMessage", "mesExample", "mesExampleMode", "mesExampleDepth", "scenario", "personalitySummary", "alternateGreetings"],
@@ -200,12 +203,26 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
               onClick={() => setAltGreetIdx(idx)}
             >
               Alt {idx + 1}
-              <span className="ml-0.5 cursor-pointer text-[10px]" onClick={(e) => {
-                e.stopPropagation();
-                const next = [...alternateGreetings]; next.splice(idx, 1);
-                setValue("alternateGreetings", next, { shouldDirty: true });
-                if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
-              }}>✕</span>
+              {/* E2 (MOBILE_DEFECTS_ROUND_2): the ✕ is a real button with its own
+                  hit area — on mobile 36×36 (the chip itself is min-h-9, so the
+                  longer chip is exactly the owner's ask) instead of a 10px inline
+                  glyph sharing the chip's tap target — and deleting goes through
+                  the shared DestructiveConfirmModal instead of firing instantly. */}
+              <button
+                type="button"
+                aria-label={t("alternate_greeting_delete")}
+                data-testid={`alt-greeting-remove-${idx}`}
+                className={cn(
+                  "ml-0.5 flex items-center justify-center rounded text-t4 transition-colors hover:text-danger",
+                  isMobile ? "h-9 w-9" : "h-4 w-4",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingGreetingDelete(idx);
+                }}
+              >
+                <Ic.close />
+              </button>
             </span>
           ))}
           <span
@@ -334,6 +351,21 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
         placeholder={t("system_prompt_override_placeholder")}
         isSaving={isSaving}
       />
+
+      {pendingGreetingDelete !== null && (
+        <DestructiveConfirmModal
+          title={t("alternate_greeting_delete_title")}
+          body={t("alternate_greeting_delete_msg")}
+          onConfirm={() => {
+            const next = [...alternateGreetings];
+            next.splice(pendingGreetingDelete, 1);
+            setValue("alternateGreetings", next, { shouldDirty: true });
+            if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
+            setPendingGreetingDelete(null);
+          }}
+          onCancel={() => setPendingGreetingDelete(null)}
+        />
+      )}
     </>
   );
 }
