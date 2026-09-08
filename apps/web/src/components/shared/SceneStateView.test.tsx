@@ -171,6 +171,20 @@ describe("SceneStateView — stale + shared coverage", () => {
   });
 });
 
+describe("SceneStateView — string values wrap (E1, MOBILE_DEFECTS_ROUND_2)", () => {
+  it("the string leaf wraps long values — no truncate/nowrap, anywhere-break", () => {
+    const long = "supercalifragilistic-unbroken-token-".repeat(4);
+    const c = r({ mood: { $type: "string" } }, { mood: long });
+    const span = Array.from(c.querySelectorAll("span")).find((el) => el.textContent === long);
+    expect(span).toBeDefined();
+    // `truncate` (nowrap+ellipsis) clipped on desktop and inflated min-content
+    // width on mobile (horizontal scroll) — the leaf must wrap instead.
+    expect(span!.className).toContain("[overflow-wrap:anywhere]");
+    expect(span!.className).not.toContain("truncate");
+    expect(span!.className).not.toContain("whitespace-nowrap");
+  });
+});
+
 describe("SceneStateView — per-node `label` (label || key)", () => {
   it("shows the `label` instead of the raw key when present", () => {
     const schema = {

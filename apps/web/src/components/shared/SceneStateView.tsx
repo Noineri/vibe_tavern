@@ -204,10 +204,15 @@ function Leaf({
   }
 
   // string (and any non-matching primitive falls through to string-ish display).
+  // E1 (MOBILE_DEFECTS_ROUND_2): values WRAP, never truncate — `truncate`'s
+  // nowrap both clipped values on desktop (ellipsis past the fold) and inflated
+  // the intrinsic min-content width on mobile (horizontal scroll). `anywhere`
+  // (not `break-words`) so min-content sizing itself accounts for the break —
+  // the column cannot push its container wider than the viewport.
   const text = value == null ? "—" : typeof value === "string" ? value : String(value);
   return (
     <KvRow label={label}>
-      <span className="truncate text-[11px] text-t2">{text}</span>
+      <span className="text-[11px] text-t2 [overflow-wrap:anywhere]">{text}</span>
     </KvRow>
   );
 }
