@@ -17,7 +17,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { MasterDetailFooter } from "../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
-import { monoCls, lblCls } from "../../build/fields/field-styles.js";
+import { inputCls, monoCls, lblCls } from "../../build/fields/field-styles.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
@@ -725,12 +725,12 @@ export function ServicePromptsPane({
 			{detailState === "ready" && detail && (
 				<>
 					{!isDefaultSelected && (
-						<label className={lblCls}>
+						<label className={lblCls + " mb-1.5"}>
 							{t("promptManager.servicePrompts.profileName")}
 							<input
 								value={draftName}
 								onChange={(e) => setDraftName(e.target.value)}
-								className="mt-1 w-full rounded-md border border-border bg-s2 px-2.5 py-2 font-ui text-[13px] text-t1 outline-none focus:border-accent"
+								className={inputCls}
 							/>
 						</label>
 					)}
