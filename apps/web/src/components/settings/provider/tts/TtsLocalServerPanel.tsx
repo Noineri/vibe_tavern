@@ -4,7 +4,7 @@ import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { copyText } from "../../../../lib/clipboard.js";
 import { cn } from "../../../../lib/cn.js";
-import { lblCls, monoUICls } from "../../../build/fields/field-styles.js";
+import { lblCls, monoCls } from "../../../build/fields/field-styles.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
 import {
@@ -216,7 +216,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
                   <div data-testid="tts-help-step-endpoint" className="flex flex-col gap-1.5">
                     <label className={lblCls}>{t("tts_help_step_endpoint")}</label>
                     <div className="flex items-center gap-2">
-                      <div className={`${monoUICls} min-w-0 flex-1 whitespace-pre-wrap break-all px-2 py-1.5 text-[11px] text-t3`}>
+                      <div className={`${monoCls} min-w-0 flex-1 whitespace-pre-wrap break-all text-t3`}>
                         {guide.endpoint}
                       </div>
                       <button

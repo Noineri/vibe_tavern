@@ -13,7 +13,7 @@ import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { labelCls, inputCls } from "../form-field-classes.js";
-import { monoUICls } from "../../../build/fields/field-styles.js";
+import { monoCls } from "../../../build/fields/field-styles.js";
 import { SttApiKeyField } from "./SttApiKeyField.js";
 import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.js";
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
@@ -366,7 +366,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
             value={configString(form.config, "endpoint")}
             onChange={(e) => updateConfigField(stt, form, "endpoint", e.target.value)}
             placeholder="https://api.openai.com/v1"
-            className={monoUICls}
+            className={monoCls}
             data-testid="stt-field-endpoint"
           />
         </div>

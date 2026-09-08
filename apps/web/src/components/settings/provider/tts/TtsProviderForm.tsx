@@ -10,7 +10,7 @@ import { cn } from "../../../../lib/cn.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { labelCls, inputCls } from "../form-field-classes.js";
-import { monoUICls } from "../../../build/fields/field-styles.js";
+import { monoCls } from "../../../build/fields/field-styles.js";
 import { TtsApiKeyField } from "./TtsApiKeyField.js";
 import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.js";
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
@@ -369,7 +369,7 @@ export function TtsProviderForm({
             // stored-status line below carries the F2b semantics.
             <div data-testid="tts-field-api-key-multiline">
               <AutoTextarea
-                className={monoUICls + " w-full px-3 py-2 text-[12px]"}
+                className={monoCls + " w-full"}
                 value={apiKey}
                 onChange={(e) => updateForm("apiKey", e.target.value)}
                 placeholder={

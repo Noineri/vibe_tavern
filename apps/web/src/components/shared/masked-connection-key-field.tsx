@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { monoUICls } from "../build/fields/field-styles.js";
+import { monoCls } from "../build/fields/field-styles.js";
 import { Ic } from "./icons.js";
 
 interface MaskedConnectionKeyFieldProps {
@@ -49,7 +49,7 @@ export function MaskedConnectionKeyField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={emptyStored ? storedPlaceholder : placeholder}
-        className={monoUICls + " w-full pr-10 px-3 py-2 text-[13px]"}
+        className={monoCls + " w-full pr-10"}
       />
       <button
         type="button"

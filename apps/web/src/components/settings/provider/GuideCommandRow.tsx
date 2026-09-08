@@ -1,6 +1,6 @@
 import { Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
-import { monoUICls } from "../../build/fields/field-styles.js";
+import { monoCls } from "../../build/fields/field-styles.js";
 
 export interface GuideCommandRowProps {
   /** The command text (copyable, mono). */
@@ -60,7 +60,7 @@ export function GuideCommandRow({
       </button>
       <div
         className={cn(
-          monoUICls + " min-w-0 flex-1 whitespace-pre-wrap break-all px-2 py-1.5 text-[11px]",
+          monoCls + " min-w-0 flex-1 whitespace-pre-wrap break-all",
           checked && "opacity-50",
         )}
       >

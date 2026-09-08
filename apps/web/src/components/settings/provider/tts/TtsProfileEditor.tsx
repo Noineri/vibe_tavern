@@ -3,7 +3,7 @@ import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { Ic, Icons } from "../../../shared/icons.js";
-import { inputCls, lblCls, monoUICls } from "../../../build/fields/field-styles.js";
+import { inputCls, lblCls, monoCls } from "../../../build/fields/field-styles.js";
 import { cn } from "../../../../lib/cn.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
@@ -923,7 +923,7 @@ export function TtsVoiceFields({
       <>
         <input
           data-testid="tts-voice-input"
-          className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+          className={monoCls + " mt-1"}
           value={form.voiceId}
           onChange={(e) => updateForm("voiceId", e.target.value)}
           placeholder={manualPlaceholder}
@@ -944,7 +944,7 @@ export function TtsVoiceFields({
         // Host without a voices endpoint — the manual floor stays honest.
         <input
           data-testid="tts-voice-input"
-          className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+          className={monoCls + " mt-1"}
           value={form.voiceId}
           onChange={(e) => updateForm("voiceId", e.target.value)}
           placeholder={manualPlaceholder}
@@ -953,7 +953,7 @@ export function TtsVoiceFields({
         ) : voices.length === 0 ? (
       <input
         data-testid="tts-voice-input"
-        className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+        className={monoCls + " mt-1"}
         value={form.voiceId}
         onChange={(e) => updateForm("voiceId", e.target.value)}
         placeholder={manualPlaceholder}
@@ -993,7 +993,7 @@ export function TtsVoiceFields({
         ) : voicesError !== null || voices === null || voices.length === 0 ? (
       <input
         data-testid="tts-narrator-voice-input"
-        className={monoUICls + " mt-1 px-3 py-2 text-[13px]"}
+        className={monoCls + " mt-1"}
         value={form.narratorVoiceId}
         onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
         placeholder={t("tts_field_narrator_voice_none")}
