@@ -470,7 +470,15 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           persists on the chat (coauthorContextLinks); L2/L3 bind to the
           character (lorebook_links / script_links via BoundResourcesField, the
           same shared primitive the card editor uses). */}
-      <div className="shrink-0 border-b border-border/50 bg-surface px-4 py-2">
+      {/* E5 (MOBILE_DEFECTS_ROUND_2): on mobile the context block is
+          height-bounded with its OWN scroll (40vh — the same cap the co-author
+          mobile textarea uses), so the md-editor's flex-1 floor is real and the
+          editor can take the full phone screen. Desktop keeps the natural
+          height — the editor pane stays the single scrolling surface. */}
+      <div
+        data-testid="coauthor-context-block"
+        className="shrink-0 border-b border-border/50 bg-surface px-4 py-2 max-md:max-h-[40vh] max-md:overflow-y-auto"
+      >
         {/* Level 1 — pinned, full content. */}
         <div className="flex items-center gap-2">
           <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.context.label")}</span>

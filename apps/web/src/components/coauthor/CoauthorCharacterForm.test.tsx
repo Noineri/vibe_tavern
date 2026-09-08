@@ -337,6 +337,23 @@ describe("CoauthorCharacterForm", () => {
 		expect(await findByText("coauthor.context.bound_scripts_caption")).toBeTruthy();
 	});
 
+	// ── E5: context block height contract (MOBILE_DEFECTS_ROUND_2) ────────────
+
+	it("E5: the context block is height-bounded with its own scroll on mobile, untouched on desktop", async () => {
+		useSnapshotStore.setState({
+			character: makeCharacter(),
+			activeChat: { id: TEST_CHAT } as never,
+		});
+		const { getByTestId } = render(<CoauthorCharacterForm />);
+		const block = getByTestId("coauthor-context-block");
+		// CSS contract: on mobile the block caps at 40vh and scrolls its own
+		// content, so the md-editor below gets a real flex-1 floor; desktop keeps
+		// the natural height (no max-h/overflow outside the max-md scope).
+		expect(block.className).toContain("max-md:max-h-[40vh]");
+		expect(block.className).toContain("max-md:overflow-y-auto");
+		expect(block.className).not.toContain("overflow-y-auto "); // bare overflow would fork desktop
+	});
+
 	// ── CA-11: reviewing state + Apply/Reject ──────────────────────────────────
 	// The turn store + chatId are what drive reviewing. The Apply RPC is
 	// intercepted via globalThis.fetch (NOT chat-api mock.module — that would
