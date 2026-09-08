@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "../../../lib/cn.js";
+import { Ic } from "../../shared/icons.js";
 import { useT } from "../../../i18n/context.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -381,7 +382,13 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           />
         </div>
         <div className="flex shrink-0 items-center gap-2 pb-[7px]">
-          <button type="button" className="shrink-0 rounded-md border border-border bg-s2 px-3 py-1.5 text-xs text-t2" onClick={() => setAiOpen(true)}>{t("regexAssistant.open")}</button>
+          <button
+            type="button"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+            onClick={() => setAiOpen(true)}
+          >
+            <Ic.brain /> {t("regexAssistant.open")}
+          </button>
           <Toggle
             id="regex-active"
             checked={!draft.disabled}
