@@ -43,7 +43,7 @@ book's entries together.
 
 | Field | Purpose |
 |-------|---------|
-| `scopeType` | `global` / `character` / `persona` / `chat` — who the book is bound to |
+| `scopeType` | `global` / `entity` / `chat` — who the book is bound to. `entity` covers both character and persona homes (collapsed from two scope values 2026-09; the typed FK — `characterId` or `personaId` — says which) |
 | `scanDepth` | How many recent chat messages to scan for keys (N from the bottom) |
 | `tokenBudget` | Fixed token budget for this book's entries (when `tokenBudgetPercent` is null) |
 | `tokenBudgetPercent` | Context-% mode — `round(maxContext × percent / 100)`, capped by `tokenBudget`. ST parity: `null` = fixed mode |
@@ -320,7 +320,7 @@ Full audit: `vibe_tavern_plan/archive/lorebook-st-parity-audit.md`. Summary:
 - Probability roll
 - Character filter (include/exclude)
 - At-depth injection
-- Auxiliary lorebook stacking (global / character / chat scopes)
+- Auxiliary lorebook stacking (global / entity / chat scopes)
 - Case sensitivity / match whole words
 - Inclusion groups (LG-1–LG-8: strict-loser scoring filter, tier order, per-pass pipeline with earlier-winner locks, book-level default + tri-state entry flag, import mapping)
 - Sticky dominance in groups (LG-6)
@@ -410,7 +410,7 @@ Three tables:
 
 - **`lorebooks`** — the containers, with all per-book settings.
 - **`lore_entries`** — 40 columns mirroring `LoreEntry` one-to-one. Indexed by `lorebookId`.
-- **`lorebook_links`** — junction table binding lorebooks to scopes
+- **`lorebook_links`** — junction table binding lorebooks to targets
   (character / persona / chat). A lorebook itself carries a `scopeType`, but
   the link table enables many-to-many bindings (one global book linked to
   multiple characters, etc.).
