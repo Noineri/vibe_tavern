@@ -139,10 +139,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
 
   // ── Queries (replaced with local state + async fetch) ────
+  // "entity" is a BROWSE filter here, not an owner view: the sidebar's
+  // "Bound" tab lists every entity-home script regardless of which
+  // character/persona owns it (symmetric with the Global tab). Owner-scoped
+  // views live in the character/persona build sidebars (explicit ownerId).
   const scopeId = (() => {
-    // Entity scope: the owner resolves from the current context — a persona
-    // context (personaId set) owns the view, otherwise the character does.
-    if (scope === "entity") return personaId ?? characterId;
     if (scope === "chat") return chatId ?? undefined;
     return undefined;
   })();

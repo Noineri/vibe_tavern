@@ -366,20 +366,28 @@ describe("LorebookEditor (characterization)", () => {
     fireEvent.click(getByText("scope_entity"));
 
     await waitFor(() => {
-      // Entity owner resolves from the context: no persona context here, so
-      // the character owns the entity view.
-      expect(listLorebooks).toHaveBeenCalledWith("entity", CHARACTER_ID);
+      // The "Bound" tab is a BROWSE filter — every entity-home book
+      // regardless of owner, so no ownerId is sent (symmetric with Global).
+      // The old contract resolved an owner from context (character here),
+      // which hid the other owner kind's books — the owner view lives in
+      // the character/persona build sidebars, not this tab.
+      expect(listLorebooks).toHaveBeenCalledWith("entity", undefined);
     });
   });
 
-  it("data-loading: the entity scope's owner resolves to the persona when a persona context is active", async () => {
+  it("data-loading: the entity scope browse ignores a persona context (no owner hijack)", async () => {
     setViewport(375);
     const { getByText } = await renderAtList({ personaId: "persona-9" });
 
     fireEvent.click(getByText("scope_entity"));
 
     await waitFor(() => {
-      expect(listLorebooks).toHaveBeenCalledWith("entity", "persona-9");
+      // Regression pin (owner-reported 2026-09-09): with a persona context
+      // active, the Bound tab used to query entity+persona-9 — the tab then
+      // showed ONLY persona-owned books and character-bound ones (e.g. a
+      // book bound to the chat character) became unreachable outside "All".
+      // Browse semantics: the persona context must NOT leak into the query.
+      expect(listLorebooks).toHaveBeenCalledWith("entity", undefined);
     });
   });
 

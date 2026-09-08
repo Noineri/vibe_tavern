@@ -118,16 +118,27 @@ export class ScriptStore {
         .all();
       return rows.map((r) => this.mapRow(r));
     }
-    if (!ownerId) return [];
-
     // Entity scope: the home FK is whichever owner column is set
     // (characterId OR personaId), so the direct match covers both.
+    // Without an ownerId this is a BROWSE view — every entity-home script
+    // regardless of which owner it is bound to (the editor sidebar's
+    // "entity" tab is a scope filter, symmetric with the global tab).
+    // Owner views (character/persona build sidebars) always pass ownerId.
     if (scopeType === 'entity') {
+      if (!ownerId) {
+        const rows = await this.db
+          .select()
+          .from(scripts)
+          .where(eq(scripts.scopeType, 'entity'))
+          .orderBy(asc(scripts.sortOrder), asc(scripts.name))
+          .all();
+        return rows.map((r) => this.mapRow(r));
+      }
       const directCondition = and(
         eq(scripts.scopeType, 'entity'),
         or(eq(scripts.characterId, ownerId), eq(scripts.personaId, ownerId)),
       );
-      // The entity tab shows both directly scoped scripts and scripts linked
+      // The owner view shows both directly scoped scripts and scripts linked
       // via the junction table (either target type — a script bound to the
       // owner through any link belongs to the owner's view). Mirrors
       // `LorebookStore.listLorebooksByScope`. Chat scope remains direct-only
@@ -152,6 +163,9 @@ export class ScriptStore {
       return rows.map((r) => this.mapRow(r));
     }
 
+    // Legacy/chat fallthrough is an owner view by definition — no ownerId
+    // means nothing to match (chat tab without a chat context stays empty).
+    if (!ownerId) return [];
     const fkCol = scopeType === 'chat' ? scripts.chatId : scripts.characterId;
     const directCondition = and(eq(scripts.scopeType, scopeType), eq(fkCol, ownerId));
 

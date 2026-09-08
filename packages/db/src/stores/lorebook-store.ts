@@ -459,16 +459,27 @@ export class LorebookStore {
       return rows.map((r) => this.mapLorebookRow(r));
     }
 
-    if (!ownerId) return [];
-
     // Entity scope: the home FK is whichever owner column is set
     // (characterId OR personaId), so the direct match covers both.
+    // Without an ownerId this is a BROWSE view — every entity-home book
+    // regardless of which owner it is bound to (the editor sidebar's
+    // "entity" tab is a scope filter, symmetric with the global tab).
+    // Owner views (character/persona build sidebars) always pass ownerId.
     if (scopeType === 'entity') {
+      if (!ownerId) {
+        const rows = await this.db
+          .select()
+          .from(lorebooks)
+          .where(eq(lorebooks.scopeType, 'entity'))
+          .orderBy(asc(lorebooks.scopeType), asc(lorebooks.sortOrder), asc(lorebooks.name))
+          .all();
+        return rows.map((r) => this.mapLorebookRow(r));
+      }
       const directCondition = and(
         eq(lorebooks.scopeType, 'entity'),
         or(eq(lorebooks.characterId, ownerId), eq(lorebooks.personaId, ownerId)),
       );
-      // The entity tab shows both directly scoped lorebooks and lorebooks
+      // The owner view shows both directly scoped lorebooks and lorebooks
       // linked via the junction table (either target type — a book bound to
       // the owner through any link belongs to the owner's view).
       const linkedRows = await this.db
@@ -493,7 +504,9 @@ export class LorebookStore {
 
     // Chat scope remains direct-only because lorebook_links supports
     // character/persona targets only. Any other (legacy) scope value falls
-    // through to the same direct-FK read — no junction union.
+    // through to the same direct-FK read — no junction union. These are
+    // owner views by definition — no ownerId means nothing to match.
+    if (!ownerId) return [];
     const fkCol = scopeType === 'persona' ? lorebooks.personaId
       : scopeType === 'chat' ? lorebooks.chatId
       : lorebooks.characterId;

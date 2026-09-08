@@ -215,13 +215,15 @@ export function useLorebookEditorState({
   // ── Scope → ownerId ──
   const getOwnerId = useCallback(
     (s: Scope): string | undefined => {
-      // Entity scope: the owner resolves from the current context — a persona
-      // context (personaId set) owns the view, otherwise the character does.
-      if (s === "entity") return personaId ?? characterId;
+      // "entity" is a BROWSE filter here, not an owner view: the sidebar's
+      // "Bound" tab lists every entity-home book regardless of which
+      // character/persona owns it (symmetric with the Global tab). Owner-
+      // scoped views live in the character/persona build sidebars, which
+      // call the API with an explicit ownerId.
       if (s === "chat") return chatId ?? undefined;
       return undefined;
     },
-    [characterId, personaId, chatId],
+    [chatId],
   );
 
   // ═══ Lorebook loading ═══

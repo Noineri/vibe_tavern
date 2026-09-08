@@ -57,6 +57,43 @@ describe("LorebookStore.listLorebooksByScope", () => {
     const otherPersonaLorebooks = await store.listLorebooksByScope("entity", "persona_other");
     expect(otherPersonaLorebooks.map((lb) => lb.id)).not.toContain(linked.id);
   });
+
+  test("entity browse (no ownerId) lists every entity-home book regardless of owner kind", async () => {
+    // FK parents first — lorebooks.characterId/personaId are enforced.
+    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+    const db = await createDb(join(dir, "test.db"));
+    const store = new LorebookStore(db, {
+      clock: testClock,
+      idGenerator: testIdGen,
+      content: null,
+    });
+    await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_arachnid', 'C', '2026-01-01', '2026-01-01')`);
+    await db.run(sql`INSERT INTO personas (id, name, description, default_for_new_chats, has_file_on_disk, created_at, updated_at) VALUES ('persona_1', 'P', '', 0, 0, '2026-01-01', '2026-01-01')`);
+    await db.run(sql`INSERT INTO chats (id, character_id, active_branch_id, title, created_at, updated_at) VALUES ('chat_1', 'char_arachnid', 'branch_1', 'T', '2026-01-01', '2026-01-01')`);
+
+    // Regression pin (owner-reported 2026-09-09): the sidebar's Bound tab
+    // used to resolve an owner from context, so a character-bound book was
+    // invisible when a persona context was active. Browse semantics: no
+    // ownerId → every entity-home book, both FK kinds, and nothing else.
+    const charBound = await store.createLorebook({
+      name: "Silk Lair",
+      scopeType: "entity",
+      characterId: "char_arachnid",
+    });
+    const personaBound = await store.createLorebook({
+      name: "Persona notes",
+      scopeType: "entity",
+      personaId: "persona_1",
+    });
+    await store.createLorebook({ name: "Global one", scopeType: "global" });
+    await store.createLorebook({ name: "Chat one", scopeType: "chat", chatId: "chat_1" });
+
+    const browsed = await store.listLorebooksByScope("entity");
+    const ids = browsed.map((lb) => lb.id);
+    expect(ids).toContain(charBound.id);
+    expect(ids).toContain(personaBound.id);
+    expect(ids.filter((id) => id !== charBound.id && id !== personaBound.id)).toEqual([]);
+  });
 });
 
 describe("LorebookStore.listLorebooksLinkedToTarget", () => {

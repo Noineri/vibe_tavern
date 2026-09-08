@@ -141,6 +141,17 @@ describe("ScriptStore link management (script_links junction)", () => {
 		expect(names).toContain("linked-persona");
 	});
 
+	test("listByScope entity browse (no ownerId) lists every entity-home script regardless of owner kind", async () => {
+		const { store } = await setup();
+		// Browse semantics for the sidebar's Bound tab (mirrors LorebookStore):
+		// no ownerId → every entity-home script, both FK kinds, nothing else.
+		await store.create({ name: "char-owned", scopeType: "entity", characterId: "char_1" });
+		await store.create({ name: "persona-owned", scopeType: "entity", personaId: "persona_9" });
+		await store.create({ name: "global-one", scopeType: "global" });
+		const names = (await store.listByScope("entity")).map((s) => s.name).sort();
+		expect(names).toEqual(["char-owned", "persona-owned"]);
+	});
+
 	test("listScriptsLinkedToTarget is the reverse query (persona/character editor view)", async () => {
 		const { store } = await setup();
 		const a = await store.create({ name: "a", scopeType: "global" });
