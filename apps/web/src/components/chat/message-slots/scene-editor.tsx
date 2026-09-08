@@ -12,13 +12,14 @@
  * correctness boundary — a save that the server rejects surfaces as a toast
  * (the caller owns the error UX), leaving the prior valid record untouched.
  *
- * Reuses shared primitives: `Toggle` and the `inputCls`/`lblCls` field styles.
- * No bespoke input chrome — see AGENTS.md §9.
+ * Reuses shared primitives: `Toggle`, `NumberInput`, `AutoTextarea` and the
+ * `inputCls`/`lblCls` field styles. No bespoke input chrome — see AGENTS.md §9.
  */
 import { useState, type ReactNode } from "react";
 import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import { Toggle } from "../../shared/Toggle.js";
 import { NumberInput } from "../../shared/NumberInput.js";
+import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { inputCls, lblCls } from "../../build/fields/field-styles.js";
 import type { TFunc } from "../../../i18n/context.js";
 
@@ -109,11 +110,11 @@ function LeafInput({ node, value, onChange }: { node: Extract<SceneTrackerSchema
     );
   }
   return (
-    <input
-      type="text"
+    <AutoTextarea
       value={typeof value === "string" ? value : value == null ? "" : String(value)}
       maxLength={4000}
       onChange={(e) => onChange(e.target.value)}
+      minRows={1}
       className={inputCls}
     />
   );
