@@ -89,7 +89,7 @@ function Harness({ greetings }: { greetings: string[] }) {
     setAvatarPreview: () => {},
     isDirty: false,
     isSaving: false,
-    avatarUrl: null,
+    avatarUrl: undefined,
     onSave: mock(),
     onReset: mock(),
     onAvatarUpload: mock(),
@@ -100,7 +100,7 @@ function Harness({ greetings }: { greetings: string[] }) {
     onDuplicate: mock(),
     onDelete: mock(),
     hasAvatar: false,
-    characterId: null,
+    characterId: "test-character-id",
   });
 }
 
