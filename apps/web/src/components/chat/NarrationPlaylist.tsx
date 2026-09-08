@@ -241,6 +241,8 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
               saving={input.savingIds.has(row.messageId)}
               canReveal={input.canReveal}
               onPlay={() => input.onPlay(row.messageId)}
+              onPause={input.onPause}
+              onResume={input.onResume}
               onSeek={(positionSec) => input.onSeek(row.messageId, positionSec)}
               onSave={() => input.onSave(row.messageId)}
               onReveal={() => input.onReveal(row.messageId)}
@@ -332,6 +334,11 @@ function PlaylistRow(input: {
   readonly saving: boolean;
   readonly canReveal: boolean;
   readonly onPlay: () => void;
+  /** RD-2: lane-global pause/resume (same path as the footer toggle) —
+   *  the row only OFFERS pause while its own narration is playing and
+   *  resume while its own lane is parked. */
+  readonly onPause: () => void;
+  readonly onResume: () => void;
   readonly onSeek: (positionSec: number) => void;
   readonly onSave: () => void;
   readonly onReveal: () => void;
@@ -342,6 +349,10 @@ function PlaylistRow(input: {
   const { t } = useT();
   const { row } = input;
   const live = row.live !== null;
+  // RD-2: this row owns the lane's transport icon — pause only while
+  // its own narration is playing, resume offer while it is parked.
+  const rowPlaying = row.live?.status === "playing";
+  const rowPaused = row.live?.status === "paused";
   // The snippet is LLM/character-authored text in a density list —
   // line-clamp-2 truncation is the allowed context (rule: unbounded
   // user data may ellipsize in list rows). Our own UI strings below
@@ -431,26 +442,35 @@ function PlaylistRow(input: {
         </div>
       </div>
       {/* RD-1 zone C — the row control panel: play plus the per-kind
-        action set, laid out horizontally. FS-2 still holds: the transport
-        is play-only, the footer stop is the only stop trigger (RD-3 adds
-        the row stop to this same panel). Same handlers as before — only
-        the arrangement changed. Icon-only buttons: no RU width risk; the
-        panel holds at most four 28px buttons plus gaps (~130px of the
-        ~384px card width). */}
+        action set, laid out horizontally. FS-2 still holds: the footer
+        stop is the only stop trigger (RD-3 adds the row stop to this same
+        panel). Icon-only buttons: no RU width risk; the panel holds at
+        most four 28px buttons plus gaps (~130px of the ~384px card
+        width). */}
       <div data-testid="playlist-row-zone-controls" className="mt-1 border-t border-border2 pt-1">
         <div className="flex items-center gap-1.5">
-          {/* Clicking play on a live row restarts it (single global lane;
-            cache hits make the restart instant). RD-2 turns this button
-            into a play/pause toggle. */}
-          <CustomTooltip content={t("narrate_action")}>
+          {/* RD-2: the play button turns into pause while THIS row's
+            narration is playing (owner decision) — same lane pause as
+            the footer toggle. A parked lane offers resume (native
+            orchestrator resume: playback continues from position, no
+            re-synthesis). Everywhere else the button (re)starts the
+            lane via onPlay: settled rows replay from cache, a
+            still-generating lane re-arms fresh (FS-2 restart). */}
+          <CustomTooltip
+            content={
+              rowPlaying ? t("narration_playlist_pause") : rowPaused ? t("narration_playlist_resume") : t("narrate_action")
+            }
+          >
             <button
               type="button"
-              aria-label={t("narrate_action")}
+              aria-label={
+                rowPlaying ? t("narration_playlist_pause") : rowPaused ? t("narration_playlist_resume") : t("narrate_action")
+              }
               data-testid="playlist-row-play"
-              onClick={input.onPlay}
+              onClick={rowPlaying ? input.onPause : rowPaused ? input.onResume : input.onPlay}
               className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
             >
-              <Ic.play />
+              {rowPlaying ? <Ic.pause /> : <Ic.play />}
             </button>
           </CustomTooltip>
       {/* TPE-18c: library actions on SETTLED rows only. FS-3: partial rows
