@@ -195,6 +195,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 imageUrl={pendingAvatar.url}
                 onConfirm={handleAvatarCropConfirm}
                 onCancel={handleAvatarCropCancel}
+                stacked
               />
             )}
             <div className="flex-1">

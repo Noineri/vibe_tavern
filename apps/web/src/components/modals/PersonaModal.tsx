@@ -596,6 +596,7 @@ export function PersonaModal(input: PersonaModalProps) {
           imageUrl={pendingAvatar.url}
           onConfirm={handleAvatarCropConfirm}
           onCancel={handleAvatarCropCancel}
+          stacked
         />
       )}
       {/* D-1 "adjust thumbnail" crop — opens on the existing avatar (full
@@ -606,6 +607,7 @@ export function PersonaModal(input: PersonaModalProps) {
           fileName="persona_avatar.png"
           onConfirm={handleThumbnailCropConfirm}
           onCancel={() => setThumbnailEditSrc(null)}
+          stacked
         />
       )}
       {/* Delete confirm */}

@@ -24,6 +24,13 @@ interface AvatarCropModalProps {
   initialCropJson?: string | null;
   onConfirm: (result: AvatarCropResult) => void;
   onCancel: () => void;
+  /** True when this crop modal renders ABOVE another open modal (a z-[501]
+   *  panel, e.g. PersonaModal or CreateCharacterModal). The shared Modal's
+   *  default z-[500] overlay would paint UNDER the parent modal's z-[501]
+   *  panel — no darkening, washed-out panel — so a stacked crop must use the
+   *  in-content backdrop (Modal.tsx `hideOverlay` mechanism, same as the
+   *  confirm-style modals stacked on top of other modals). */
+  stacked?: boolean;
 }
 
 const CROP_SIZE = 512;
@@ -71,6 +78,7 @@ export function AvatarCropModal({
   initialCropJson = null,
   onConfirm,
   onCancel,
+  stacked = false,
 }: AvatarCropModalProps) {
   const { t } = useT();
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
@@ -118,7 +126,7 @@ export function AvatarCropModal({
   }, [imageUrl, croppedAreaPixels, croppedAreaPercent, fileName, onConfirm]);
 
   return (
-    <Modal open={true} onClose={onCancel}>
+    <Modal open={true} onClose={onCancel} hideOverlay={stacked}>
       <div
         className="bg-surface border border-border2 rounded-xl max-w-[calc(100vw-32px)] max-h-[calc(100vh-60px)] flex flex-col shadow-[0_24px_60px_rgba(0,0,0,.5)] overflow-hidden"
         style={{ width: "420px" }}
