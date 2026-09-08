@@ -171,6 +171,10 @@ export function LorebookImportModal({
       // this is purely defensive against a stale importOpen state).
       const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "character" : scope;
       body.scopeType = effectiveScope;
+      // A standalone world file activates nothing on arrival at the source
+      // (ST parity) — it lands disabled; the scope it lands in stays the
+      // surface's current selection.
+      body.enabled = false;
       if (effectiveScope === "character") body.characterId = characterId;
       if (effectiveScope === "persona" && personaId) body.personaId = personaId;
       if (effectiveScope === "chat" && chatId) body.chatId = chatId;

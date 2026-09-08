@@ -56,6 +56,7 @@ export async function importLorebook(
 		chatId?: string;
 		fallbackName?: string;
 		globalUseGroupScoring?: boolean;
+		enabled?: boolean;
 	},
 ): Promise<LorebookImportResult> {
 	const parsed = await parseLorebook(body.format, body.data, {
@@ -79,6 +80,9 @@ export async function importLorebook(
 			personaId: body.personaId ?? null,
 			chatId: body.chatId ?? null,
 			extensions: parsed.lorebook.extensions,
+			// Absent → store default (enabled). Merge/replace into an existing
+			// book never reach this branch, so the flag only affects creation.
+			enabled: body.enabled ?? true,
 		});
 		targetId = created.id;
 	} else {

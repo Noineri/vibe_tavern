@@ -143,6 +143,10 @@ export const importLorebookSchema = z.object({
   personaId: z.string().optional(),
   chatId: z.string().optional(),
   fallbackName: z.string().optional(),
+  // Activation state for newly created books (L1 disabled-on-arrival).
+  // Absent → the store default (enabled). Merge/replace into an existing
+  // book ignore it — only the mode:"new" creation path consumes it.
+  enabled: z.boolean().optional(),
 });
 
 // ─── Link management ─────────────────────────────────────────────────────────

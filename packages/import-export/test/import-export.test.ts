@@ -304,6 +304,41 @@ describe("parseSillyTavernChat", () => {
     const result = parseSillyTavernChat("");
     expect(result.messages).toHaveLength(0);
   });
+
+  // L1: the ST first-line `world_info` (world selected for this chat) must
+  // survive parsing — the directory scanner classifies chat-bound lorebooks
+  // from it. Export serialization is untouched (no world_info written back).
+  it("captures first-line world_info into metadata.worldInfo", () => {
+    const jsonl = [
+      JSON.stringify({ user_name: "User", character_name: "Bot", world_info: "Chat Tome" }),
+      JSON.stringify({ name: "User", is_user: true, mes: "Hi", send_date: Date.now() }),
+    ].join("\n");
+
+    const result = parseSillyTavernChat(jsonl);
+    expect(result.metadata.worldInfo).toBe("Chat Tome");
+    expect(result.messages).toHaveLength(1);
+  });
+
+  it("captures world_info from a metadata-only first line carrying no other keys", () => {
+    const jsonl = [
+      JSON.stringify({ world_info: "Lonely World" }),
+      JSON.stringify({ name: "User", is_user: true, mes: "Hi", send_date: Date.now() }),
+    ].join("\n");
+
+    const result = parseSillyTavernChat(jsonl);
+    expect(result.metadata.worldInfo).toBe("Lonely World");
+    expect(result.messages).toHaveLength(1);
+  });
+
+  it("leaves worldInfo undefined when the first line carries none", () => {
+    const jsonl = [
+      JSON.stringify({ user_name: "User", character_name: "Bot" }),
+      JSON.stringify({ name: "User", is_user: true, mes: "Hi", send_date: Date.now() }),
+    ].join("\n");
+
+    const result = parseSillyTavernChat(jsonl);
+    expect(result.metadata.worldInfo).toBeUndefined();
+  });
 });
 
 describe("serializeSillyTavernChat", () => {

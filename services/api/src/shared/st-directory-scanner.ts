@@ -322,7 +322,7 @@ export async function importSillyTavernDirectory(
 	// Returns a discriminated outcome so the collect pass stays deterministic
 	// (file order preserved for lastActiveChatId / name map).
 	type CharImportOutcome =
-		| { kind: "ok"; nameLower: string; slug: string; characterId: string; chatId: ChatId }
+		| { kind: "ok"; nameLower: string; slug: string; characterId: string; chatId: ChatId; worldName: string | null }
 		| { kind: "skipped" }
 		| { kind: "error"; file: string; message: string };
 
@@ -440,7 +440,13 @@ export async function importSillyTavernDirectory(
 			);
 			deps.chatOrder.add(chat.id as ChatId);
 
-			return { kind: "ok", nameLower, slug, characterId, chatId: chat.id as ChatId };
+			// L1: ST card → world link (data.extensions.world, verbatim
+			// passthrough). Carried on the outcome so the collect pass below
+			// can build the worldName → characterId map deterministically.
+			const extWorld = imported.character.extensions.world;
+			const worldName = typeof extWorld === "string" && extWorld.trim() ? extWorld.trim() : null;
+
+			return { kind: "ok", nameLower, slug, characterId, chatId: chat.id as ChatId, worldName };
 		} catch (err) {
 			return {
 				kind: "error",
@@ -475,12 +481,19 @@ export async function importSillyTavernDirectory(
 
 	// Collect in original file order so lastActiveChatId is the last card by
 	// readdir order that successfully imported (matches pre-parallel behavior).
+	// L1: worldName → characterId ownership map for the lorebook phase (first
+	// card in file order wins a contested world — deterministic by construction).
+	const cardWorldToCharacterId = new Map<string, CharacterId>();
 	for (const o of outcomes) {
 		if (o.kind === "ok") {
 			result.characters++;
 			nameToCharacterId.set(o.nameLower, o.characterId as CharacterId);
 			nameToCharacterId.set(o.slug, o.characterId as CharacterId);
 			result.lastActiveChatId = o.chatId;
+			if (o.worldName) {
+				const key = o.worldName.toLowerCase();
+				if (!cardWorldToCharacterId.has(key)) cardWorldToCharacterId.set(key, o.characterId as CharacterId);
+			}
 		} else if (o.kind === "error") {
 			result.errors.push({ file: o.file, stage: "import", message: o.message });
 		}
@@ -496,6 +509,9 @@ export async function importSillyTavernDirectory(
 	let chatVarCount = 0;
 	const chatsDir = join(resolved, "chats");
 	const chatFiles = await scanOptionalGlob(chatsDir, "*/*.[jJ][sS][oO][nN][lL]");
+	// L1: worldName → chatId ownership map for the lorebook phase (first chat
+	// in file order wins a contested world — the loop below is sequential).
+	const chatWorldToChatId = new Map<string, ChatId>();
 
 	for (const relativePath of chatFiles) {
 		const sub = relativePath.slice(0, relativePath.lastIndexOf("/"));
@@ -548,6 +564,13 @@ export async function importSillyTavernDirectory(
 			deps.chatOrder.add(chat.id as ChatId);
 			result.lastActiveChatId = chat.id as ChatId;
 			result.chats++;
+			// L1: ST chat → world link (first-line world_info, L1b). Recorded
+			// only for successfully imported chats — a skipped chat has no id
+			// to bind a book to.
+			if (typeof parsed.metadata.worldInfo === "string" && parsed.metadata.worldInfo.trim()) {
+				const key = parsed.metadata.worldInfo.trim().toLowerCase();
+				if (!chatWorldToChatId.has(key)) chatWorldToChatId.set(key, chat.id as ChatId);
+			}
 			await onProgress?.({ type: "progress", phase: "chats", current: result.chats });
 		} catch (err) {
 			result.errors.push({
@@ -572,12 +595,28 @@ export async function importSillyTavernDirectory(
 	// world_info_use_group_scoring), not part of any world file — map it onto
 	// every imported book (owner decision, 2026-08-31). Absent/unreadable
 	// settings → undefined → books default false.
+	// L1: the same settings.json carries the only true ST "works everywhere"
+	// state — world_info_settings.globalSelect (worlds the user explicitly
+	// selected as global). A worlds/ file selected there imports global+enabled;
+	// a file referenced by an imported card/ chat binds to that owner; a file
+	// referenced nowhere lands global+DISABLED (inert at the source stays inert).
 	let globalUseGroupScoring: boolean | undefined;
+	const globalSelectNames = new Set<string>();
 	try {
 		const settingsRaw: unknown = JSON.parse(await Bun.file(join(resolved, "settings.json")).text());
 		if (typeof settingsRaw === "object" && settingsRaw !== null) {
-			const flag = (settingsRaw as Record<string, unknown>).world_info_use_group_scoring;
+			const record = settingsRaw as Record<string, unknown>;
+			const flag = record.world_info_use_group_scoring;
 			if (typeof flag === "boolean") globalUseGroupScoring = flag;
+			const worldInfoSettings = record.world_info_settings;
+			if (typeof worldInfoSettings === "object" && worldInfoSettings !== null) {
+				const select = (worldInfoSettings as Record<string, unknown>).globalSelect;
+				if (Array.isArray(select)) {
+					for (const name of select) {
+						if (typeof name === "string" && name.trim()) globalSelectNames.add(name.trim().toLowerCase());
+					}
+				}
+			}
 		}
 	} catch { /* no settings.json next to worlds/ — leave undefined */ }
 
@@ -587,17 +626,56 @@ export async function importSillyTavernDirectory(
 		try {
 			const content = await Bun.file(filePath).text();
 			const parsed: unknown = JSON.parse(content);
-			const fallbackName = basename(fileName, ".json");
+			// extname-strip (not a hardcoded ".json" suffix) so mixed-case
+			// extensions ("World.JSON") classify by the same stem they import as.
+			const stemFromFile = fileName.slice(0, fileName.length - extname(fileName).length);
+			const fallbackName = stemFromFile;
+			// ST world references (extensions.world, world_info, globalSelect)
+			// name the world — match lowercased against both the file stem and
+			// the JSON name field (either may be what ST stored).
+			const candidates = [stemFromFile.toLowerCase()];
+			if (typeof parsed === "object" && parsed !== null) {
+				const nameField = (parsed as Record<string, unknown>).name;
+				if (typeof nameField === "string") {
+					const normalized = nameField.trim().toLowerCase();
+					if (normalized && normalized !== candidates[0]) candidates.push(normalized);
+				}
+			}
+			// Precedence: globalSelect (strongest explicit signal) > card > chat > none.
+			let scopeType = "global";
+			let characterId: string | undefined;
+			let chatId: string | undefined;
+			let enabled = false;
+			if (candidates.some((c) => globalSelectNames.has(c))) {
+				enabled = true;
+			} else {
+				const cardOwner = candidates.map((c) => cardWorldToCharacterId.get(c)).find((v) => v !== undefined);
+				if (cardOwner !== undefined) {
+					scopeType = "character";
+					characterId = cardOwner;
+					enabled = true;
+				} else {
+					const chatOwner = candidates.map((c) => chatWorldToChatId.get(c)).find((v) => v !== undefined);
+					if (chatOwner !== undefined) {
+						scopeType = "chat";
+						chatId = chatOwner;
+						enabled = true;
+					}
+				}
+			}
 			// STN-1D: REAL lorebook write (was a TODO no-op that just counted).
-			// Mass-imported worlds are global scope. importLorebook parses +
-			// creates the lorebook + bulk-inserts entries in one call.
+			// importLorebook parses + creates the lorebook + bulk-inserts
+			// entries in one call.
 			await importLorebook(deps.stores, null, {
 				format: "st",
 				data: parsed,
 				mode: "new",
-				scopeType: "global",
+				scopeType,
+				characterId,
+				chatId,
 				fallbackName,
 				globalUseGroupScoring,
+				enabled,
 			});
 			result.lorebooks++;
 			await onProgress?.({ type: "progress", phase: "lorebooks", current: result.lorebooks });

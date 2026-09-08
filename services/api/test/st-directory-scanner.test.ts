@@ -490,6 +490,168 @@ function scannerCard(name: string): string {
 	});
 }
 
+// ── L1 ownership-aware lorebook import ───────────────────────────────────────
+//
+// ST worlds/ files are inert until selected at the source; the mass importer
+// must not convert them into always-on globals. The fixture below covers all
+// four classification branches plus the enabled bit per branch:
+//
+//   GlobalTome → global+enabled (globalSelect hit; ALSO card-referenced, so
+//                  this pins globalSelect > card precedence)
+//   CardTome   → character+enabled (card extensions.world only)
+//   ChatTome   → chat+enabled (chat first-line world_info only)
+//   BothTome   → character+enabled (card AND chat → card wins, pins card > chat)
+//   OrphanTome → global+DISABLED (referenced nowhere — inert stays inert)
+//
+// Runs through the REAL runtime import (same boundary as the STN-1D tests
+// above) so the character/chat/world wiring is exercised end-to-end.
+
+function ownershipCard(name: string, world?: string): string {
+	return JSON.stringify({
+		spec: "chara_card_v2",
+		spec_version: "2.0",
+		data: {
+			name,
+			description: "ownership fixture",
+			first_mes: "Hello.",
+			...(world ? { extensions: { world } } : {}),
+		},
+	});
+}
+
+function ownershipChat(characterName: string, worldInfo?: string): string {
+	const meta: Record<string, unknown> = { user_name: "User", character_name: characterName };
+	if (worldInfo) meta.world_info = worldInfo;
+	return [
+		JSON.stringify(meta),
+		JSON.stringify({ name: "User", is_user: true, mes: "Hello.", send_date: Date.now() }),
+	].join("\n");
+}
+
+function ownershipWorld(name: string): string {
+	return JSON.stringify({
+		name,
+		entries: {
+			"0": {
+				uid: 0, key: [`key-${name}`], keysecondary: [],
+				content: `Entry for ${name}.`, comment: "test",
+				constant: false, vectorized: false, selective: true,
+				selectiveLogic: 0, addMemo: false, order: 100, position: 0,
+				disable: false, excludeRecursion: false, preventRecursion: false,
+				delayUntilRecursion: false, probability: 100, useProbability: true,
+				depth: 4, group: "", groupOverride: false, groupWeight: 100,
+				scanDepth: null, caseSensitive: null, matchWholeWords: null,
+				useGroupScoring: null, automationId: "", role: null, sticky: null,
+				cooldown: null, delay: null, displayIndex: 0,
+			},
+		},
+	});
+}
+
+async function buildOwnershipStDir(root: string) {
+	await mkdir(join(root, "characters"), { recursive: true });
+	await Bun.write(join(root, "characters", "GlobalChar.json"), ownershipCard("Global Char", "GlobalTome"));
+	await Bun.write(join(root, "characters", "CardChar.json"), ownershipCard("Card Char", "CardTome"));
+	await Bun.write(join(root, "characters", "BothChar.json"), ownershipCard("Both Char", "BothTome"));
+	await Bun.write(join(root, "characters", "ChatChar.json"), ownershipCard("Chat Char"));
+
+	await mkdir(join(root, "chats", "Chat Char"), { recursive: true });
+	await Bun.write(join(root, "chats", "Chat Char", "history.jsonl"), ownershipChat("Chat Char", "ChatTome"));
+	await mkdir(join(root, "chats", "Both Char"), { recursive: true });
+	await Bun.write(join(root, "chats", "Both Char", "other.jsonl"), ownershipChat("Both Char", "BothTome"));
+
+	await mkdir(join(root, "worlds"), { recursive: true });
+	for (const world of ["GlobalTome", "CardTome", "ChatTome", "BothTome", "OrphanTome"]) {
+		await Bun.write(join(root, "worlds", `${world}.json`), ownershipWorld(world));
+	}
+
+	await Bun.write(
+		join(root, "settings.json"),
+		JSON.stringify({
+			world_info_use_group_scoring: true,
+			world_info_settings: { globalSelect: ["GlobalTome"] },
+		}),
+	);
+	return root;
+}
+
+describe("ST directory scanner — ownership-aware lorebook import (L1)", () => {
+	let env: Env;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("classifies each world by ownership: globalSelect > card > chat > none (disabled)", async () => {
+		env = await createRuntime();
+		const stDir = await buildOwnershipStDir(join(env.tmpDir, "st-ownership"));
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		expect(result.errors).toEqual([]);
+		expect(result.characters).toBe(4);
+		expect(result.chats).toBe(2);
+		expect(result.lorebooks).toBe(5);
+
+		const books = await env.stores.lorebooks.listAllLorebooks();
+		const byName = (name: string) => {
+			const book = books.find((b) => b.name === name);
+			expect(book, `lorebook ${name} should exist`).toBeTruthy();
+			return book!;
+		};
+		const characters = await env.stores.characters.listAll();
+		const charId = (name: string) => {
+			const c = characters.find((x) => x.name === name);
+			expect(c, `character ${name} should exist`).toBeTruthy();
+			return c!.id;
+		};
+		const chats = await env.stores.chats.listAll();
+		const chatIdByTitle = (title: string) => {
+			const chat = chats.find((x) => x.title === title);
+			expect(chat, `chat ${title} should exist`).toBeTruthy();
+			return chat!.id;
+		};
+
+		// GlobalTome: globalSelect hit (card reference loses) → global+enabled.
+		const global = byName("GlobalTome");
+		expect(global.scopeType).toBe("global");
+		expect(global.enabled).toBe(true);
+		expect(global.characterId).toBeNull();
+		expect(global.chatId).toBeNull();
+		// The settings-block rewrite must not drop the group-scoring passthrough.
+		expect(global.useGroupScoring).toBe(true);
+
+		// CardTome: card extensions.world only → character+enabled, bound to Card Char.
+		const card = byName("CardTome");
+		expect(card.scopeType).toBe("character");
+		expect(card.enabled).toBe(true);
+		expect(card.characterId).toBe(charId("Card Char"));
+		expect(card.chatId).toBeNull();
+
+		// ChatTome: chat world_info only → chat+enabled, bound to the history chat.
+		const chat = byName("ChatTome");
+		expect(chat.scopeType).toBe("chat");
+		expect(chat.enabled).toBe(true);
+		expect(chat.chatId).toBe(chatIdByTitle("history"));
+		expect(chat.characterId).toBeNull();
+
+		// BothTome: card AND chat → character wins (card > chat).
+		const both = byName("BothTome");
+		expect(both.scopeType).toBe("character");
+		expect(both.enabled).toBe(true);
+		expect(both.characterId).toBe(charId("Both Char"));
+		expect(both.chatId).toBeNull();
+
+		// OrphanTome: referenced nowhere → global+DISABLED (inert stays inert).
+		const orphan = byName("OrphanTome");
+		expect(orphan.scopeType).toBe("global");
+		expect(orphan.enabled).toBe(false);
+		expect(orphan.characterId).toBeNull();
+		expect(orphan.chatId).toBeNull();
+		// The orphan still imports its entries — only activation is withheld.
+		const orphanEntries = await env.stores.lorebooks.listEntries(orphan.id);
+		expect(orphanEntries.length).toBe(1);
+	});
+});
+
 function scannerChat(name: string): string {
 	return [
 		JSON.stringify({ character_name: name }),

@@ -319,7 +319,7 @@ export interface LorebookRuntimeApi {
 	exportLorebook: (lorebookId: string) => Promise<Record<string, unknown>>;
 	getLorebookLinks: (lorebookId: string) => Promise<LorebookLink[]>;
 	setLorebookLinks: (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<LorebookLink[]>;
-	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => Promise<LorebookImportResult>;
+	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string; enabled?: boolean }) => Promise<LorebookImportResult>;
 
 	// Entries
 	createLoreEntry: (lorebookId: string, body: Record<string, unknown>) => Promise<LoreEntry>;
