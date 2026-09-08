@@ -53,9 +53,13 @@ function isLiveState(state: NarrationState | undefined): state is NarrationState
 
 /** RD-9: the chunk-generation line renders only while segments are still
  *  landing (owner: complete recordings must not show «received n of n»).
- *  Exported pure for direct tests — the card keys its fetch line off this. */
+ *  RD-10: `received < total` is also true transiently during pure cache
+ *  reads, so the line additionally requires genuine synthesis work this
+ *  lane — a replay that reads every chunk from cache synthesizes nothing
+ *  and shows nothing. Exported pure for direct tests — the card keys its
+ *  fetch line off this. */
 export function isFetchIncomplete(live: NarrationState | null): live is NarrationState {
-  return live !== null && live.total > 0 && live.received < live.total;
+  return live !== null && live.total > 0 && live.received < live.total && live.synthesized > 0;
 }
 
 /** Derive panel rows from chat order: every character (assistant-role)

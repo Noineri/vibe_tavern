@@ -51,6 +51,11 @@ export interface NarrationState {
    * loop is held until the batch completes, so `played` stays 0 for the
    * whole synthesis — this counter is what progress UI must show. */
   received: number;
+  /** RD-10: genuine provider syntheses completed by the ruling lane
+   *  (cache hits excluded). The playlist generation line keys off this:
+   *  a pure cache-hit replay reads every chunk without synthesizing
+   *  anything, so `received < total` alone cannot mean "generating". */
+  synthesized: number;
   error?: string;
 }
 
@@ -135,6 +140,13 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
    *  so the store reads this around an abort to persist a partial row.
    *  A copy — the lane keeps owning its array. */
   abortedCacheKeys(): string[];
+  /** RD-10: the ruling epoch's FULL segment key plan (one key per planned
+   *  segment, computed with the same keyForSegment the fill loop uses).
+   *  The store compares this against the persisted key union: coverage
+   *  means "settled", a gap means "partial". Empty when no lane ever
+   *  planned (library lanes plan no segments — the file IS the audio).
+   *  A copy — the lane keeps owning its segments. */
+  plannedCacheKeys(): string[];
   setRate(rate: number): void;
 } {
   let epoch = 0;
@@ -154,6 +166,9 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
   // Advances in the fill loop; survives seek retargets (unlike playedCount,
   // which a seek presets); resets only with the lane.
   let receivedCount = 0;
+  // RD-10: genuine provider syntheses this lane (cache hits excluded —
+  // see NarrationState.synthesized). Resets with the lane like receivedCount.
+  let synthCount = 0;
   /** TPE-18b: index of the segment currently loaded in the player (set at
    *  shift time — playedCount keeps counting COMPLETED segments exactly
    *  as before, so TPE-16/18a pins are untouched). */
@@ -269,6 +284,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       total: totalSegments,
       played: playedCount,
       received: receivedCount,
+      synthesized: synthCount,
       ...(error !== undefined ? { error } : {}),
     };
     lastState = state;
@@ -455,6 +471,9 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
             // Best-effort cache: a failed write never fails the narration.
           }
         }
+        // RD-10: a genuine provider synthesis landed (cache hits return
+        // above, so this counter is the honest "work happened" signal).
+        synthCount += 1;
         if (myEpoch !== epoch || (!forSeek && generationDone)) return null;
         epochKeys.push(key);
         return { blob: result.blob, key };
@@ -768,6 +787,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       totalSegments = segments.length;
       playedCount = 0;
       receivedCount = 0;
+      synthCount = 0;
       currentIndex = 0;
       livePosition = 0;
       generationDone = false;
@@ -867,6 +887,7 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       totalSegments = 1;
       playedCount = 0;
       receivedCount = 1;
+      synthCount = 0;
       currentIndex = 0;
       livePosition = 0;
       generationDone = true;
@@ -1008,6 +1029,17 @@ export function createTtsOrchestrator(deps: NarrationDeps): {
       // not). Read-only copy; the lane array stays live until the next
       // narrate() retires the epoch.
       return [...epochKeys];
+    },
+
+    plannedCacheKeys(): string[] {
+      // RD-10: the full plan for the coverage check (see the interface
+      // doc). Library lanes carry a dummy segment and no synth plan —
+      // they report nothing plannable, so a library replay end can never
+      // read as an incomplete plan.
+      if (laneLibraryBlob !== null) return [];
+      const keys: string[] = [];
+      for (let i = 0; i < laneSegments.length; i += 1) keys.push(keyForSegment(i));
+      return keys;
     },
 
     setRate(rate: number): void {

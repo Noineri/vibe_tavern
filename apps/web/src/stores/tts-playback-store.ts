@@ -315,6 +315,7 @@ async function persistAbortedPlaylistEntry(
   messageId: string,
   meta: NarrationStartMeta,
   abortedKeys: string[],
+  plannedKeys: string[],
 ): Promise<void> {
   const index = playlistIndexOverride ?? narrationPlaylistIndex();
   const rows = await index.list(meta.chatId);
@@ -327,6 +328,14 @@ async function persistAbortedPlaylistEntry(
   for (const key of abortedKeys) {
     if (!cacheKeys.includes(key)) cacheKeys.push(key);
   }
+  // RD-10: `partial` means segments MISSING. A stop after a full
+  // cache-hit replay captures every key (reads record them like synths),
+  // so coverage of the lane's FULL plan — not "captured anything" —
+  // decides. The subset check (not a length check) is immune to stale
+  // keys from an edited text: a changed plan's keys simply are not
+  // covered. A covered plan keeps the settled row standing.
+  const covered = plannedKeys.length > 0 && plannedKeys.every((key) => cacheKeys.includes(key));
+  if (covered && prior && prior.partial !== true) return;
   await index.upsert(meta.chatId, {
     messageId,
     variantId: meta.variantId,
@@ -335,7 +344,10 @@ async function persistAbortedPlaylistEntry(
     cacheKeys,
     narratedAt: Date.now(),
     ...(prior?.inLibrary === true ? { inLibrary: true } : {}),
-    partial: true,
+    // A covered plan on a rowless lane or a healed partial settles
+    // without the flag (completion writes omit it too); a genuine gap
+    // stays partial and resumable.
+    ...(covered ? {} : { partial: true }),
   });
   await refreshPlaylistRows(meta.chatId);
 }
@@ -520,6 +532,9 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
     // stop resets the lane (stop() itself keeps them, but reading first
     // is order-proof) — an aborted indexed lane becomes a partial row.
     const abortedKeys = lane?.abortedCacheKeys() ?? [];
+    // RD-10: the lane's full key plan feeds the persisted entry —
+    // coverage (not "captured anything") decides settled vs partial.
+    const plannedKeys = lane?.plannedCacheKeys() ?? [];
     const stoppedId = stopped?.messageId;
     pendingIndexMeta = null;
     set((s) => {
@@ -536,7 +551,7 @@ export const useTtsPlaybackStore = create<TtsPlaybackStore>()((set, get) => ({
     // without index meta (unscoped message-block narrate) leaves no row.
     // Best-effort: index writes never throw by contract, so no catch —
     // the narration already ended either way.
-    if (stopped?.meta) void persistAbortedPlaylistEntry(stopped.messageId, stopped.meta, abortedKeys);
+    if (stopped?.meta) void persistAbortedPlaylistEntry(stopped.messageId, stopped.meta, abortedKeys, plannedKeys);
   },
 
   setRate(rate) {

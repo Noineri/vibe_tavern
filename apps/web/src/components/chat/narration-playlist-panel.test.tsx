@@ -801,7 +801,11 @@ describe("narration playlist player controls (TPE-18b)", () => {
 });
 
 describe("narration playlist partial tracks (FS-3)", () => {
-  const TEXT = "Para one and only.";
+  // RD-10: two segments so a stop can land mid-synthesis (a genuine gap).
+  // Stopping after every segment synthesized is the settled case now —
+  // the owner's «при стопе предлагает продолжить генерацию, хотя уже все
+  // сгенерировано» — so these tests park the SECOND synthesis pending.
+  const TEXT = "Para one.\n\nPara two.";
 
   function singleLineMessage(): AppMessage {
     return message({
@@ -877,18 +881,75 @@ describe("narration playlist partial tracks (FS-3)", () => {
     };
   }
 
+  /** Parked player + held second synthesis: the lane lands its first
+   *  segment (cache hit for later runs), plays it parked, and waits on
+   *  the second synthesis — so a stop captures a genuine gap. */
+  function holdSecondLane(): {
+    plays: Array<{ text: string; startAt: number }>;
+    calls: () => number;
+    releaseSecond: (value: { blob: Blob; mime: string }) => void;
+    resolveCurrent: (result?: "ended" | "skipped" | "error") => void;
+  } {
+    const plays: Array<{ text: string; startAt: number }> = [];
+    let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
+    let calls = 0;
+    let releaseSecond!: (value: { blob: Blob; mime: string }) => void;
+    __setTtsPlaybackDepsForTests({
+      player: {
+        play(blob: Blob, _rate: number, options?: { startAt?: number }): Promise<"ended" | "skipped" | "error"> {
+          void blob.text().then((t) => plays.push({ text: t, startAt: options?.startAt ?? 0 }));
+          return new Promise<"ended" | "skipped" | "error">((resolve) => {
+            currentResolve = resolve;
+          });
+        },
+        skipCurrent: () => {
+          const fn = currentResolve;
+          currentResolve = null;
+          if (fn) fn("skipped");
+        },
+        pause: () => {},
+        resume: () => {},
+        setRate: () => {},
+        setVolume: () => {},
+        dispose: () => {},
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        calls += 1;
+        if (calls === 2) return new Promise<{ blob: Blob; mime: string }>((resolve) => { releaseSecond = resolve; });
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: memoryIndex(),
+      notifyError: () => {},
+    });
+    return {
+      plays,
+      calls: () => calls,
+      releaseSecond: (value) => { releaseSecond(value); },
+      resolveCurrent: (result = "ended") => {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn(result);
+      },
+    };
+  }
+
   function partialEntry(): NarrationPlaylistEntry | undefined {
     return useTtsPlaybackStore.getState().playlist["c1"]?.find((entry) => entry.messageId === "m1");
   }
 
   it("FS-3a: aborting mid-way keeps the pill and surfaces a partial row with continue", async () => {
     mocks.messages = [singleLineMessage(), u1()];
-    const lane = parkLane();
+    // RD-10: the abort must land mid-synthesis (second segment pending) —
+    // stopping after full synthesis is the settled case, not a partial.
+    const lane = holdSecondLane();
     const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
     act(() => {
       void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), abortMeta());
     });
     await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    await waitFor(() => { expect(lane.calls()).toBe(2); });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
     await waitFor(() => getByTestId("narration-playlist-row"));
@@ -911,23 +972,34 @@ describe("narration playlist partial tracks (FS-3)", () => {
 
   it("FS-3b: continue re-runs the narration from cache and settles the row", async () => {
     mocks.messages = [singleLineMessage(), u1()];
-    const lane = parkLane();
+    // RD-10: the partial must come from a mid-synthesis abort (second
+    // segment pending) — stopping after full synthesis settles now.
+    const lane = holdSecondLane();
     const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
     act(() => {
       void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), abortMeta());
     });
     await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    await waitFor(() => { expect(lane.calls()).toBe(2); });
     act(() => { useTtsPlaybackStore.getState().stopNarration(); });
     await waitFor(() => { expect(partialEntry()?.partial).toBe(true); });
+    // The held synthesis stays pending (the aborted lane waits on it
+    // forever — no timers, no handles); continue must synthesize the
+    // missing segment fresh instead of inheriting it.
     await act(async () => { fireEvent.click(getByTestId("narration-playlist-pill")); });
     await waitFor(() => getByTestId("playlist-row-continue"));
-    expect(synthCalls).toHaveLength(1);
-    // Continue speaks the same voiced variant text, so every segment is
-    // a cache hit: one more play, zero new synthesis.
+    expect(synthCalls).toEqual(["Para one.", "Para two."]);
+    // Continue speaks the same voiced variant text: the captured first
+    // segment is a cache hit, so it replays first while the missing
+    // second segment synthesizes fresh behind the paced fill.
     await act(async () => { fireEvent.click(getByTestId("playlist-row-continue")); });
     await waitFor(() => { expect(lane.plays).toHaveLength(2); });
-    expect(lane.plays[1]?.text).toBe(`audio:${TEXT}`);
-    expect(synthCalls).toHaveLength(1);
+    expect(lane.plays[1]?.text).toBe("audio:Para one.");
+    // Ending the replayed first segment lets the fill synthesize the
+    // missing second one (TE2-14 pacing holds it while one plays).
+    await act(async () => { lane.resolveCurrent("ended"); });
+    await waitFor(() => { expect(synthCalls).toEqual(["Para one.", "Para two.", "Para two."]); });
+    await waitFor(() => { expect(lane.plays).toHaveLength(3); });
     await act(async () => { lane.resolveCurrent("ended"); });
     await waitFor(() => {
       expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
@@ -941,12 +1013,14 @@ describe("narration playlist partial tracks (FS-3)", () => {
 
   it("FS-3c: dropping the partial clears it and hides the pill when nothing remains", async () => {
     mocks.messages = [singleLineMessage(), u1()];
-    const lane = parkLane();
+    // RD-10: like FS-3a — the partial must come from a mid-synthesis abort.
+    const lane = holdSecondLane();
     const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
     act(() => {
       void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), abortMeta());
     });
     await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    await waitFor(() => { expect(lane.calls()).toBe(2); });
     act(() => { useTtsPlaybackStore.getState().stopNarration(); });
     await waitFor(() => { expect(partialEntry()?.partial).toBe(true); });
     const keys = [...(partialEntry()?.cacheKeys ?? [])];
@@ -1104,6 +1178,21 @@ describe("narration playlist re-voice (FS-6)", () => {
       });
     });
     const lane = parkLane();
+    // RD-10: m2's partial must be genuine (mid-synthesis abort) —
+    // stopping after full synthesis settles now. Hold its only synthesis.
+    let holdM2 = true;
+    __setTtsPlaybackDepsForTests({
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        if (holdM2) {
+          holdM2 = false;
+          // Never resolves: the aborted lane waits on it forever (no
+          // timers, no handles), so the segment stays genuinely missing.
+          return new Promise<{ blob: Blob; mime: string }>(() => {});
+        }
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+    });
     act(() => {
       void useTtsPlaybackStore.getState().startNarration("m2", "Second message body here", profile(), {
         chatId: "c1",
@@ -1114,7 +1203,9 @@ describe("narration playlist re-voice (FS-6)", () => {
         snippet: "Second message body here",
       });
     });
-    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    // m2's single synthesis is held, so nothing ever plays for it —
+    // wait for the synth attempt itself, then abort mid-synthesis.
+    await waitFor(() => { expect(synthCalls.length).toBe(2); });
     act(() => { useTtsPlaybackStore.getState().stopNarration(); });
     await waitFor(() => { expect(playlistEntry("m2")?.partial).toBe(true); });
     act(() => {
@@ -1127,7 +1218,9 @@ describe("narration playlist re-voice (FS-6)", () => {
         snippet: "Live one only.",
       });
     });
-    await waitFor(() => { expect(lane.plays).toHaveLength(2); });
+    // m2 never plays (its only synthesis is held) — the single parked
+    // play below is m3's live lane.
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
@@ -1194,11 +1287,24 @@ describe("narration playlist re-voice (FS-6)", () => {
 
   it("RD-6b: a partial row also confirms before re-voicing, then synthesizes fresh", async () => {
     const lane = parkLane();
+    // RD-10: the partial must be genuine (mid-synthesis abort) —
+    // stopping after full synthesis settles now. Hold the 2nd synth.
+    let calls = 0;
+    __setTtsPlaybackDepsForTests({
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        calls += 1;
+        if (calls === 2) return new Promise<{ blob: Blob; mime: string }>(() => {});
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+    });
     mocks.messages = [revoiceMessage("m1", FULL_TEXT)];
     const { getByTestId, getByText, queryByText } = render(<NarrationPlaylistPanel docked />);
     act(() => {
       void useTtsPlaybackStore.getState().startNarration("m1", FULL_TEXT, profile(), revoiceMeta("m1"));
     });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    await waitFor(() => { expect(calls).toBe(2); });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
     await waitFor(() => getByTestId("narration-playlist-row"));
@@ -1481,10 +1587,24 @@ describe("narration playlist cache badge (FS-7)", () => {
 
   it("FS-7b: partial row shows «В кэше»", async () => {
     parkLane();
+    // RD-10: the partial must be genuine (mid-synthesis abort) —
+    // stopping after full synthesis settles now. Two segments with the
+    // second synthesis held: the first lands and parks on play.
+    const TWO_SEG = "Badge one.\n\nBadge two.";
+    let calls = 0;
+    __setTtsPlaybackDepsForTests({
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        calls += 1;
+        if (calls === 2) return new Promise<{ blob: Blob; mime: string }>(() => {});
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+    });
     const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
     act(() => {
-      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+      void useTtsPlaybackStore.getState().startNarration("m1", TWO_SEG, profile(), meta());
     });
+    await waitFor(() => { expect(calls).toBe(2); });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
     await waitFor(() => getByTestId("narration-playlist-row"));
@@ -1656,10 +1776,24 @@ describe("narration playlist card layout (RD-1)", () => {
 
   it("RD-1c: partial card — continue + cache-drop in the control panel, no save", async () => {
     parkLane();
+    // RD-10: the partial must be genuine (mid-synthesis abort) —
+    // stopping after full synthesis settles now. Two segments with the
+    // second synthesis held.
+    const TWO_SEG = "Card one.\n\nCard two.";
+    let calls = 0;
+    __setTtsPlaybackDepsForTests({
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        calls += 1;
+        if (calls === 2) return new Promise<{ blob: Blob; mime: string }>(() => {});
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+    });
     const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
     act(() => {
-      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+      void useTtsPlaybackStore.getState().startNarration("m1", TWO_SEG, profile(), meta());
     });
+    await waitFor(() => { expect(calls).toBe(2); });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
     await waitFor(() => getByTestId("narration-playlist-row"));
@@ -1975,16 +2109,22 @@ describe("narration playlist row stop (RD-3)", () => {
   });
 
   it("RD-3d: partial row renders no row stop", async () => {
-    parkLane();
-    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
-    act(() => {
-      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    // RD-10: seed a genuine partial straight into the index (a stop that
+    // lands mid-synthesis is pinned by FS-3a) — the row must offer
+    // continue, never a row stop.
+    const lane = parkLane();
+    await lane.index.upsert("c1", {
+      messageId: "m1",
+      variantId: "m1-v1",
+      variantIndex: 0,
+      snippet: "First line",
+      cacheKeys: ["seed-key"],
+      narratedAt: Date.now(),
+      partial: true,
     });
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
-    await waitFor(() => getByTestId("narration-playlist-row"));
-    // Abort through the footer stop — the lane lands as a partial row.
-    await act(async () => { fireEvent.click(getByTestId("playlist-stop")); });
     await waitFor(() => getByTestId("playlist-row-continue"));
     expect(rowStop(getByTestId("narration-playlist-row"))).toBeNull();
     expect(queryByTestId("playlist-row-stop")).toBeNull();
@@ -2840,9 +2980,9 @@ describe("narration playlist card layout v3 (RD-9)", () => {
     expect(chunk.querySelector('[data-testid="playlist-row-deleted-badge"]')).toBeNull();
     // The gate itself, pinned pure: only incomplete lanes pass.
     expect(isFetchIncomplete(null)).toBe(false);
-    expect(isFetchIncomplete({ status: "playing", total: 0, played: 0, received: 0 })).toBe(false);
-    expect(isFetchIncomplete({ status: "generating", total: 2, played: 0, received: 1 })).toBe(true);
-    expect(isFetchIncomplete({ status: "playing", total: 2, played: 2, received: 2 })).toBe(false);
+    expect(isFetchIncomplete({ status: "playing", total: 0, played: 0, received: 0, synthesized: 0 })).toBe(false);
+    expect(isFetchIncomplete({ status: "generating", total: 2, played: 0, received: 1, synthesized: 1 })).toBe(true);
+    expect(isFetchIncomplete({ status: "playing", total: 2, played: 2, received: 2, synthesized: 2 })).toBe(false);
   });
 
   it("RD-9c: save-all skips the keyless post-drop row", async () => {
@@ -2884,5 +3024,253 @@ describe("narration playlist card layout v3 (RD-9)", () => {
     }
     expect(en["narration_playlist_drop_file_title"]).not.toBe(ru["narration_playlist_drop_file_title"]);
     expect(en["narration_playlist_deleted"]).not.toBe(ru["narration_playlist_deleted"]);
+  });
+});
+
+describe("narration playlist stop/partial honesty (RD-10)", () => {
+  // TEXT_1 is m1's own voiced variant text (see the message() helper) —
+  // a replay must address the same segment key, or the cache honestly
+  // misses (content-hash contract, pinned by the relisten test).
+  const TEXT_1 = "First line\nSecond line\nThird line";
+  const TEXT_2 = "Para one.\n\nPara two.";
+
+  function meta() {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId: "m1-v1",
+      variantIndex: 0,
+      snippet: "First line\nSecond line",
+    };
+  }
+
+  function scope() {
+    return { chatId: "c1", branchId: "b1", characterId: "char1", messageId: "m1" };
+  }
+
+  function entry() {
+    return useTtsPlaybackStore.getState().playlist["c1"]?.find((candidate) => candidate.messageId === "m1");
+  }
+
+  function rowByMessageId(messageId: string): HTMLElement {
+    const row = Array.from(document.querySelectorAll('[data-testid="narration-playlist-row"]')).find(
+      (candidate) => candidate.getAttribute("data-playlist-message-id") === messageId,
+    );
+    if (!(row instanceof HTMLElement)) throw new Error(`missing row ${messageId}`);
+    return row;
+  }
+
+  async function openPanel(): Promise<{
+    getByTestId: (id: string) => HTMLElement;
+    queryByTestId: (id: string) => HTMLElement | null;
+  }> {
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => rowByMessageId("m1"));
+    return {
+      getByTestId: getByTestId as (id: string) => HTMLElement,
+      queryByTestId,
+    };
+  }
+
+  /** Parked player (plays resolve only via the handle) — the caller
+   *  owns cache/index. */
+  function parkedPlayer(plays: Array<{ text: string; startAt: number }>): NarrationPlayer & {
+    resolveCurrent: (result?: "ended" | "skipped" | "error") => void;
+  } {
+    let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
+    return {
+      play(blob: Blob, _rate: number, options?: { startAt?: number }): Promise<"ended" | "skipped" | "error"> {
+        void blob.text().then((t) => plays.push({ text: t, startAt: options?.startAt ?? 0 }));
+        return new Promise<"ended" | "skipped" | "error">((resolve) => {
+          currentResolve = resolve;
+        });
+      },
+      skipCurrent: () => {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn("skipped");
+      },
+      pause: () => {},
+      resume: () => {},
+      setRate: () => {},
+      setVolume: () => {},
+      dispose: () => {},
+      resolveCurrent: (result = "ended") => {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn(result);
+      },
+    };
+  }
+
+  function autoSynthesize() {
+    return mock(async (text: string) => {
+      synthCalls.push(text);
+      return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+    });
+  }
+
+  it("RD-10a: stop after a full cache-hit replay keeps the row settled (owner bug)", async () => {
+    const index = memoryIndex();
+    __setTtsPlaybackDepsForTests({
+      player: autoPlayer(),
+      synthesize: autoSynthesize(),
+      cache,
+      playlistIndex: index,
+      notifyError: () => {},
+    });
+    // Phase 1: settle the row with one genuine synthesis.
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT_1, profile(), meta());
+    });
+    expect(synthCalls).toHaveLength(1);
+    expect(entry()?.partial).not.toBe(true);
+    // Phase 2: replay from cache against a parked player, then stop
+    // mid-replay — the captured keys cover the whole plan, so the row
+    // must NOT turn partial (the pre-RD-10 lie).
+    const plays: Array<{ text: string; startAt: number }> = [];
+    __setTtsPlaybackDepsForTests({ player: parkedPlayer(plays) });
+    const { getByTestId, queryByTestId } = await openPanel();
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-play")); });
+    await waitFor(() => getByTestId("playlist-row-stop"));
+    // Pure cache read: nothing synthesized this lane, no fetch line.
+    expect(synthCalls).toHaveLength(1);
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.synthesized).toBe(0);
+    expect(rowByMessageId("m1").textContent).not.toContain("narration_playlist_fetching");
+    await act(async () => { fireEvent.click(getByTestId("playlist-stop")); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().lastStarted).toBeNull();
+    });
+    expect(entry()?.partial).not.toBe(true);
+    expect(entry()?.cacheKeys).toHaveLength(1);
+    expect(rowByMessageId("m1").querySelector('[data-testid="playlist-row-cache-badge"]')).not.toBeNull();
+    expect(queryByTestId("playlist-row-continue")).toBeNull();
+  });
+
+  it("RD-10b: no generation line while a live lane has synthesized nothing yet", async () => {
+    const index = memoryIndex();
+    const plays: Array<{ text: string; startAt: number }> = [];
+    const player = parkedPlayer(plays);
+    let calls = 0;
+    let releaseSecond!: (value: { blob: Blob; mime: string }) => void;
+    __setTtsPlaybackDepsForTests({
+      player,
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        calls += 1;
+        if (calls === 2) return new Promise<{ blob: Blob; mime: string }>((resolve) => { releaseSecond = resolve; });
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: index,
+      notifyError: () => {},
+    });
+    // m1's variant text is single-segment; voice TEXT_2 (two segments)
+    // directly so the second synthesis can pend while the first plays.
+    await act(async () => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT_2, profile(), meta());
+    });
+    await waitFor(() => { expect(plays).toHaveLength(1); });
+    await waitFor(() => { expect(calls).toBe(2); });
+    const { queryByTestId } = await openPanel();
+    // The first segment WAS synthesized, so the line honestly shows
+    // received 1 of 2 here. The pure-read half (synthesized 0 with
+    // received < total) is pinned by RD-10a (DOM) and RD-10c (pure).
+    expect(rowByMessageId("m1").textContent).toContain("narration_playlist_fetching:1:2:");
+    // Finishing the held synthesis queues the second segment behind the
+    // parked first play: end each in turn to complete the row. The line
+    // retires with the lane and the row settles with its cache badge.
+    await act(async () => { releaseSecond({ blob: new Blob(["a2"]), mime: "audio/wav" }); });
+    await act(async () => { player.resolveCurrent("ended"); });
+    await waitFor(() => { expect(plays).toHaveLength(2); });
+    await act(async () => { player.resolveCurrent("ended"); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+    expect(queryByTestId("playlist-row-continue")).toBeNull();
+    expect(rowByMessageId("m1").textContent).not.toContain("narration_playlist_fetching");
+    expect(rowByMessageId("m1").querySelector('[data-testid="playlist-row-cache-badge"]')).not.toBeNull();
+  });
+
+  it("RD-10c: the fetch gate keys off genuine synthesis, not reads", async () => {
+    // Pure cache read in flight (received advances, nothing synthesized).
+    expect(
+      isFetchIncomplete({ status: "playing", total: 2, played: 0, received: 1, synthesized: 0 }),
+    ).toBe(false);
+    // Genuine synthesis in flight.
+    expect(
+      isFetchIncomplete({ status: "generating", total: 2, played: 0, received: 1, synthesized: 1 }),
+    ).toBe(true);
+    // Finished lanes never pass, however they got there.
+    expect(
+      isFetchIncomplete({ status: "playing", total: 2, played: 2, received: 2, synthesized: 0 }),
+    ).toBe(false);
+    expect(
+      isFetchIncomplete({ status: "playing", total: 2, played: 2, received: 2, synthesized: 2 }),
+    ).toBe(false);
+    expect(isFetchIncomplete(null)).toBe(false);
+  });
+
+  it("RD-10d: library replay + stop leaves the library row untouched", async () => {
+    const index = memoryIndex();
+    __setTtsPlaybackDepsForTests({
+      player: autoPlayer(),
+      synthesize: autoSynthesize(),
+      cache,
+      playlistIndex: index,
+      notifyError: () => {},
+      libraryClient: stubLibraryClient(),
+      mergeToOgg: async () => new Uint8Array([9, 9]),
+    });
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT_1, profile(), meta());
+    });
+    await act(async () => {
+      await useTtsPlaybackStore.getState().saveToLibrary(scope());
+    });
+    expect(entry()?.inLibrary).toBe(true);
+    const plays: Array<{ text: string; startAt: number }> = [];
+    __setTtsPlaybackDepsForTests({ player: parkedPlayer(plays) });
+    const { getByTestId, queryByTestId } = await openPanel();
+    expect(getByTestId("playlist-row-library-badge")).toBeDefined();
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-play")); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    });
+    // The library file plays with zero synthesis.
+    expect(synthCalls).toHaveLength(1);
+    await act(async () => { useTtsPlaybackStore.getState().stopNarration(); });
+    expect(entry()?.inLibrary).toBe(true);
+    expect(entry()?.partial).not.toBe(true);
+    expect(getByTestId("playlist-row-library-badge")).toBeDefined();
+    expect(queryByTestId("playlist-row-continue")).toBeNull();
+  });
+
+  it("RD-10e: store pin — stop after a completed replay writes no partial flag", async () => {
+    const index = memoryIndex();
+    __setTtsPlaybackDepsForTests({
+      player: autoPlayer(),
+      synthesize: autoSynthesize(),
+      cache,
+      playlistIndex: index,
+      notifyError: () => {},
+    });
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT_1, profile(), meta());
+    });
+    // Full cache replay to completion (auto player resolves everything).
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT_1, profile(), meta());
+    });
+    expect(synthCalls).toHaveLength(1);
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.synthesized).toBe(0);
+    // The completed lane is still the ruling one (completion does not
+    // clear lastStarted), so a stop persists it — and must keep it settled.
+    await act(async () => { useTtsPlaybackStore.getState().stopNarration(); });
+    expect(entry()?.partial).not.toBe(true);
+    expect(entry()?.cacheKeys).toHaveLength(1);
   });
 });
