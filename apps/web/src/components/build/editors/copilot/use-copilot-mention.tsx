@@ -60,7 +60,7 @@ export function useCopilotMention(config: UseCopilotMentionConfig): {
    *  win (arrows/Enter/Tab/Escape); otherwise `fallback` runs unchanged. */
   handleKeyDown: (
     e: React.KeyboardEvent<HTMLTextAreaElement>,
-    fallback: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void,
+    fallback?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void,
   ) => void;
 } {
   const { setDraft, catalog, onPick, anchorEl } = config;
