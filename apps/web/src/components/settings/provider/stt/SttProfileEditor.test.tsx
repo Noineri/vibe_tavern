@@ -393,7 +393,10 @@ describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7, level-2 si
     const stt = geminiStt();
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(view.getByTestId("stt-emotion-toggle-block")).toBeTruthy());
-    const toggle = view.getByRole("switch", { name: "Tone annotation" }) as HTMLButtonElement;
+    // This file's useT mock returns keys VERBATIM (identity), so the switch's
+    // accessible name is the KEY, not the translated string (FS-7's update
+    // queried "Tone annotation" — unreachable under the identity mock).
+    const toggle = view.getByRole("switch", { name: "stt_emotion_label" }) as HTMLButtonElement;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     await act(async () => {
       fireEvent.click(toggle);
