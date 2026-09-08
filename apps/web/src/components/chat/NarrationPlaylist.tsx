@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { AppMessage } from "../../api/types.js";
 import { useT } from "../../i18n/context.js";
 import { firstTwoLines } from "../../lib/tts/narration-source.js";
@@ -7,6 +7,7 @@ import type { NarrationProgress, NarrationState } from "../../lib/tts/tts-orches
 import { cn } from "../../lib/cn.js";
 import { Ic } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { EmptyState } from "../shared/empty-state.js";
 import { PlaylistVolumeRail } from "./playlist-volume-rail.js";
 import { Toggle } from "../shared/Toggle.js";
@@ -189,6 +190,15 @@ export interface NarrationPlaylistProps {
   readonly onCycleRate: () => void;
   readonly onPause: () => void;
   readonly onResume: () => void;
+  /** RD-5: bar-level play-pause — playing → pause; paused → resume;
+   *  idle → start the first playable card (panel owns the choice). */
+  readonly onBarPlay: () => void;
+  /** RD-5: bulk save — the panel runs the existing per-row save for
+   *  every passed id (complete cache rows only, chosen below). */
+  readonly onSaveAll: (messageIds: string[]) => void;
+  /** RD-5: bulk re-voice — the panel drops the passed rows' caches and
+   *  re-narrates fresh (fires only after the confirm below). */
+  readonly onRevoiceAll: (messageIds: string[]) => void;
   readonly onSeek: (messageId: string, positionSec: number) => void;
   readonly onVolume: (volume: number) => void;
   /** TPE-18c: library actions (settled rows only — live rows hide them). */
@@ -213,6 +223,23 @@ export interface NarrationPlaylistProps {
 export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
   const { t } = useT();
   const rows = buildPlaylistRows(input.messages, input.entries, input.narrations, input.liveTextById);
+  // RD-5: bulk targets, derived from the same rows the list renders.
+  // Save-all: settled cache rows with a COMPLETE track (partials have
+  // no whole-track file; library rows are already saved). Re-voice-all:
+  // every settled cache row (full + partial); library rows stay out
+  // (FS-6 boundary) and live rows stay out (a destructive drop must not
+  // race the live lane — row re-voice is settled-only for the same
+  // reason). Both skip the live lane: saving is per-row independent,
+  // drops are not.
+  const completeIds = rows
+    .filter((row) => row.live === null && !row.partial && !row.inLibrary)
+    .map((row) => row.messageId);
+  const cacheIds = rows
+    .filter((row) => row.live === null && !row.inLibrary)
+    .map((row) => row.messageId);
+  // RD-5: pending bulk re-voice (ids snapshotted at button click) — the
+  // confirm below fires onRevoiceAll; cancel leaves caches intact.
+  const [pendingRevoice, setPendingRevoice] = useState<string[] | null>(null);
 
   return (
     <div className="flex max-h-[min(28rem,calc(100dvh-12rem))]">
@@ -258,61 +285,138 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
           ))}
         </ul>
       )}
-      <div className="flex items-center gap-1.5 border-t border-border2 px-3 py-2">
-        <CustomTooltip content={t("narrate_stop")}>
-          <button
-            type="button"
-            aria-label={t("narrate_stop")}
-            data-testid="playlist-stop"
-            disabled={!input.anyLive}
-            onClick={input.onStop}
-            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:cursor-default disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5"
+      {/* RD-5: the transport bar — transport line (unified play-pause +
+        stop + rate + continuous toggle) over a bulk line (save-all +
+        re-voice-all as text buttons). Two lines because one line cannot
+        hold it: popover w-[26rem] (416px) minus px-3 padding minus the
+        w-11 volume rail ≈ 340px of bar width; a single line would need
+        play 28 + stop 28 + rate ~44 + save-all ~110 (RU «Сохранить всё»)
+        + re-voice-all ~130 (RU «Переозвучить всё») + toggle ~130 +
+        gaps ~36 ≈ 500px. Transport line ≈ 28+28+44+130+gaps ≈ 250px <
+        340px ✓. Bulk line: two text buttons at natural width (authored
+        strings are never truncated; labels wrap instead). */}
+      <div className="border-t border-border2 px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          {/* RD-5: unified bar play-pause (owner's «плей-пауза») — lane
+            playing → pause; lane parked → resume; idle → start the
+            first card. Replaces the old pause-only toggle: one surface,
+            the same lane pause/resume path, no duplicate affordance. */}
+          <CustomTooltip
+            content={
+              input.anyLive && !input.livePaused
+                ? t("narration_playlist_pause")
+                : input.livePaused
+                  ? t("narration_playlist_resume")
+                  : t("narration_playlist_bar_play")
+            }
           >
-            <Ic.stopSquare />
-          </button>
-        </CustomTooltip>
-        {/* TPE-18b: pause/resume toggle for the live lane. Same 28px
-          footprint as stop — footer arithmetic: 28+28+~44+gaps fits the
-          392px inner width with room for RU labels. */}
-        <CustomTooltip content={input.livePaused ? t("narration_playlist_resume") : t("narration_playlist_pause")}>
-          <button
-            type="button"
-            aria-label={input.livePaused ? t("narration_playlist_resume") : t("narration_playlist_pause")}
-            data-testid="playlist-pause"
-            disabled={!input.anyLive}
-            onClick={input.livePaused ? input.onResume : input.onPause}
-            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:cursor-default disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5"
-          >
-            {input.livePaused ? <Ic.play /> : <Ic.pause />}
-          </button>
-        </CustomTooltip>
-        <CustomTooltip content={t("narration_playlist_rate")}>
-          <button
-            type="button"
-            aria-label={t("narration_playlist_rate")}
-            data-testid="playlist-rate"
-            onClick={input.onCycleRate}
-            className="flex h-7 min-w-7 cursor-pointer items-center justify-center rounded-md px-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-t3 tabular-nums transition-colors hover:bg-s3 hover:text-t1"
-          >
-            {`×${input.rate}`}
-          </button>
-        </CustomTooltip>
-        {/* TPE-18d: continuous-play toggle — label + switch. Footer
-          arithmetic: stop 28 + pause 28 + rate ~44 + gaps 18 ≈ 118px;
-          toggle ~34 + RU label ~90 + gaps ≈ 140px; total ≈ 260px <
-          392px inner width. The full phrase lives in the tooltip so
-          the short label never truncates meaning. */}
-        <CustomTooltip content={t("narration_playlist_continuous_hint")}>
-          <label className="ml-auto flex min-w-0 cursor-pointer items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
-            <Toggle
-              checked={input.continuous}
-              onChange={input.onContinuous}
-              aria-label={t("narration_playlist_continuous")}
-            />
-            <span className="truncate">{t("narration_playlist_continuous")}</span>
-          </label>
-        </CustomTooltip>
+            <button
+              type="button"
+              aria-label={
+                input.anyLive && !input.livePaused
+                  ? t("narration_playlist_pause")
+                  : input.livePaused
+                    ? t("narration_playlist_resume")
+                    : t("narration_playlist_bar_play")
+              }
+              data-testid="playlist-bar-play"
+              disabled={rows.length === 0}
+              onClick={input.onBarPlay}
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:cursor-default disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5"
+            >
+              {input.anyLive && !input.livePaused ? <Ic.pause /> : <Ic.play />}
+            </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("narrate_stop")}>
+            <button
+              type="button"
+              aria-label={t("narrate_stop")}
+              data-testid="playlist-stop"
+              disabled={!input.anyLive}
+              onClick={input.onStop}
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:cursor-default disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5"
+            >
+              <Ic.stopSquare />
+            </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("narration_playlist_rate")}>
+            <button
+              type="button"
+              aria-label={t("narration_playlist_rate")}
+              data-testid="playlist-rate"
+              onClick={input.onCycleRate}
+              className="flex h-7 min-w-7 cursor-pointer items-center justify-center rounded-md px-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-t3 tabular-nums transition-colors hover:bg-s3 hover:text-t1"
+            >
+              {`×${input.rate}`}
+            </button>
+          </CustomTooltip>
+          {/* TPE-18d: continuous-play toggle — label + switch. The full
+            phrase lives in the tooltip so the short label never
+            truncates meaning. */}
+          <CustomTooltip content={t("narration_playlist_continuous_hint")}>
+            <label className="ml-auto flex min-w-0 cursor-pointer items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
+              <Toggle
+                checked={input.continuous}
+                onChange={input.onContinuous}
+                aria-label={t("narration_playlist_continuous")}
+              />
+              <span className="truncate">{t("narration_playlist_continuous")}</span>
+            </label>
+          </CustomTooltip>
+        </div>
+        <div className="mt-1.5 flex items-center gap-1.5">
+          {/* RD-5: save-all — the existing per-row save over every
+            complete cache row; partials skipped (no whole-track file),
+            library rows skipped (already saved). No confirm: the
+            action is non-destructive (owner decision). */}
+          <CustomTooltip content={t("narration_playlist_save_all")}>
+            <button
+              type="button"
+              aria-label={t("narration_playlist_save_all")}
+              data-testid="playlist-save-all"
+              disabled={completeIds.length === 0}
+              onClick={() => input.onSaveAll(completeIds)}
+              className="flex h-7 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border2 px-2 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:cursor-default disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+            >
+              <Ic.download />
+              <span className="min-w-0">{t("narration_playlist_save_all")}</span>
+            </button>
+          </CustomTooltip>
+          {/* RD-5: re-voice-all — tooltip + shared destructive confirm
+            (owner: «на переозвучку повесить конфирм»). Opens the
+            confirm with the ids snapshotted here; disabled with no
+            cache rows or while the lane is live (same settled-only
+            rule as row re-voice). */}
+          <CustomTooltip content={t("narration_playlist_revoice_all_hint")}>
+            <button
+              type="button"
+              aria-label={t("narration_playlist_revoice_all")}
+              data-testid="playlist-revoice-all"
+              disabled={cacheIds.length === 0 || input.anyLive}
+              onClick={() => setPendingRevoice(cacheIds)}
+              className="flex h-7 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border2 px-2 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:cursor-default disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+            >
+              <Ic.regen />
+              <span className="min-w-0">{t("narration_playlist_revoice_all")}</span>
+            </button>
+          </CustomTooltip>
+        </div>
       </div>
+      {/* RD-5: bulk re-voice confirm — fires only after explicit
+        confirmation; cancel leaves every cache intact. */}
+      {pendingRevoice !== null && (
+        <DestructiveConfirmModal
+          title={t("narration_playlist_revoice_all_title")}
+          body={t("narration_playlist_revoice_all_body", { count: pendingRevoice.length })}
+          confirmLabel={t("narration_playlist_revoice_all_confirm")}
+          onConfirm={() => {
+            const ids = pendingRevoice;
+            setPendingRevoice(null);
+            input.onRevoiceAll(ids);
+          }}
+          onCancel={() => setPendingRevoice(null)}
+        />
+      )}
       {/* FS-5's horizontal volume block (label + range + percent box) is
         GONE — RD-4 replaces it with the right-edge vertical rail below
         (owner: «без ввода цифр вообще»). The footer keeps only the

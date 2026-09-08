@@ -423,6 +423,13 @@
   "narration_playlist_unmute": "Включить звук",
   "narration_playlist_seek": "Перемотать озвучку",
   "narration_playlist_continuous": "Непрерывное",
+  "narration_playlist_bar_play": "Запустить плейлист с начала",
+  "narration_playlist_save_all": "Сохранить всё",
+  "narration_playlist_revoice_all": "Переозвучить всё",
+  "narration_playlist_revoice_all_hint": "Сбросить кэшированное аудио всех строк и озвучить плейлист заново — файлы библиотеки не трогаются",
+  "narration_playlist_revoice_all_title": "Переозвучить весь плейлист?",
+  "narration_playlist_revoice_all_body": "Кэшированное аудио всех строк плейлиста ({count}) будет сброшено и синтезировано заново по порядку, с включённым «Непрерывное». Сохранённые файлы библиотеки не трогаются.",
+  "narration_playlist_revoice_all_confirm": "Переозвучить всё",
   "narration_playlist_continuous_hint": "Озвучить плейлист по порядку, пока не кончатся сообщения",
   "topbar_autonarrate_on": "Авто-озвучка: вкл — новые ответы ИИ озвучиваются",
   "topbar_autonarrate_off": "Авто-озвучка: выкл",
@@ -2907,5 +2914,9 @@
   "tts_clone_samples_total_one": "Σ {seconds} с · {count} файл",
   "tts_clone_samples_total_few": "Σ {seconds} с · {count} файла",
   "tts_clone_samples_total_many": "Σ {seconds} с · {count} файлов",
-  "tts_clone_samples_total_other": "Σ {seconds} с · {count} файла"
+  "tts_clone_samples_total_other": "Σ {seconds} с · {count} файла",
+  "narration_playlist_revoice_all_body_few": "Кэшированное аудио всех строк плейлиста ({count}) будет сброшено и синтезировано заново по порядку, с включённым «Непрерывное». Сохранённые файлы библиотеки не трогаются.",
+  "narration_playlist_revoice_all_body_many": "Кэшированное аудио всех строк плейлиста ({count}) будет сброшено и синтезировано заново по порядку, с включённым «Непрерывное». Сохранённые файлы библиотеки не трогаются.",
+  "narration_playlist_revoice_all_body_one": "Кэшированное аудио всех строк плейлиста ({count}) будет сброшено и синтезировано заново по порядку, с включённым «Непрерывное». Сохранённые файлы библиотеки не трогаются.",
+  "narration_playlist_revoice_all_body_other": "Кэшированное аудио всех строк плейлиста ({count}) будет сброшено и синтезировано заново по порядку, с включённым «Непрерывное». Сохранённые файлы библиотеки не трогаются."
 }

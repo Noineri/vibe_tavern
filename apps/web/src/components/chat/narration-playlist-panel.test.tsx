@@ -575,7 +575,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
     return { chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v1", variantIndex: 0, snippet: "Para one." };
   }
 
-  it("pause freezes the live lane and resume continues it (footer toggle)", async () => {
+  it("pause freezes the live lane and resume continues it (unified bar play-pause; RD-5 replaces the pause-only toggle)", async () => {
     const lane = installDeferredLane();
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     // Do NOT await the narration inside act — the deferred play parks it.
@@ -588,15 +588,17 @@ describe("narration playlist player controls (TPE-18b)", () => {
     await act(async () => { fireEvent.click(pill); });
     await waitFor(() => getByTestId("narration-playlist-row"));
 
-    const pause = getByTestId("playlist-pause");
+    // RD-5: the footer pause-only toggle is gone — the unified bar
+    // play-pause owns the same lane path (playing → pause offered).
+    const pause = getByTestId("playlist-bar-play");
     expect(pause.getAttribute("aria-label")).toContain("narration_playlist_pause");
     await act(async () => { fireEvent.click(pause); });
     expect(lane.pauseCalls).toEqual(["pause"]);
     expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("paused");
 
-    // The toggle now offers resume; the parked segment does not advance.
-    expect(getByTestId("playlist-pause").getAttribute("aria-label")).toContain("narration_playlist_resume");
-    await act(async () => { fireEvent.click(getByTestId("playlist-pause")); });
+    // The button now offers resume; the parked segment does not advance.
+    expect(getByTestId("playlist-bar-play").getAttribute("aria-label")).toContain("narration_playlist_resume");
+    await act(async () => { fireEvent.click(getByTestId("playlist-bar-play")); });
     expect(lane.pauseCalls).toEqual(["pause", "resume"]);
     expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
 
@@ -1929,5 +1931,348 @@ describe("narration playlist row stop (RD-3)", () => {
     });
     expect(rowStop(rows[0] as HTMLElement)).not.toBeNull();
     expect(rowStop(rows[1] as HTMLElement)).toBeNull();
+  });
+});
+
+describe("narration playlist transport bar (RD-5)", () => {
+  function metaFor(variantId: string, snippet: string) {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId,
+      variantIndex: 0,
+      snippet,
+    };
+  }
+
+  async function openPanel(): Promise<{
+    getByTestId: (id: string) => HTMLElement;
+    queryByTestId: (id: string) => HTMLElement | null;
+    queryByText: (text: string) => HTMLElement | null;
+    getByText: (text: string) => HTMLElement;
+  }> {
+    const queries = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => queries.getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    // Bulk tests always render several rows — wait for at least one
+    // (getByTestId demands exactly one and throws on multiples).
+    await waitFor(() => {
+      const found = document.querySelectorAll('[data-testid="narration-playlist-row"]');
+      expect(found.length).toBeGreaterThan(0);
+    });
+    return {
+      getByTestId: queries.getByTestId as (id: string) => HTMLElement,
+      queryByTestId: queries.queryByTestId,
+      queryByText: queries.queryByText as (text: string) => HTMLElement | null,
+      getByText: queries.getByText as (text: string) => HTMLElement,
+    };
+  }
+
+  async function settleTwo(): Promise<void> {
+    mocks.messages = [m1(), m2()];
+    await act(async () => {
+      const store = useTtsPlaybackStore.getState();
+      await store.startNarration("m1", "Alpha one.", profile(), metaFor("m1-v1", "Alpha one."));
+      await store.startNarration("m2", "Beta two.", profile(), metaFor("m2-v1", "Beta two."));
+    });
+    expect(synthCalls).toHaveLength(2);
+  }
+
+  it("RD-5a: save-all writes every complete row to the library, no confirm in between", async () => {
+    await settleTwo();
+    const { getByTestId, queryByText } = await openPanel();
+    expect(librarySaved).toHaveLength(0);
+    await act(async () => { fireEvent.click(getByTestId("playlist-save-all")); });
+    // Both complete rows saved via the existing per-row path; the bulk
+    // action itself never asks (non-destructive, owner decision).
+    await waitFor(() => { expect(librarySaved).toHaveLength(2); });
+    expect(queryByText("narration_playlist_revoice_all_title")).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-testid="playlist-row-library-badge"]')).toHaveLength(2);
+    });
+  });
+
+  it("RD-5b: save-all skips partial rows (no whole-track file exists)", async () => {
+    // m1 narrated for real (genuine cached segments); the result is
+    // transplanted into a fresh index next to a seeded partial m2
+    // (RD-3f pattern — the filter reads flags, not history).
+    mocks.messages = [m1(), m2()];
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", "Alpha one.", profile(), metaFor("m1-v1", "Alpha one."));
+    });
+    const settledM1 = useTtsPlaybackStore.getState().playlist["c1"]?.find((entry) => entry.messageId === "m1");
+    if (!settledM1) throw new Error("m1 did not settle");
+    const index = memoryIndex();
+    __setTtsPlaybackDepsForTests({
+      player: autoPlayer(),
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: index,
+      notifyError: () => {},
+    });
+    await act(async () => {
+      await index.upsert("c1", settledM1);
+      await index.upsert("c1", {
+        messageId: "m2",
+        variantId: "m2-v1",
+        variantIndex: 0,
+        snippet: "Beta two.",
+        cacheKeys: [],
+        narratedAt: Date.now(),
+        partial: true,
+      });
+      await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    });
+    const { getByTestId } = await openPanel();
+    expect(getByTestId("playlist-row-continue")).toBeDefined();
+    await act(async () => { fireEvent.click(getByTestId("playlist-save-all")); });
+    await waitFor(() => { expect(librarySaved).toHaveLength(1); });
+    // Only m1 settled to a library badge; the partial keeps continue.
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-testid="playlist-row-library-badge"]')).toHaveLength(1);
+    });
+    expect(getByTestId("playlist-row-continue")).toBeDefined();
+  });
+
+  it("RD-5c: save-all skips library rows; re-voice-all counts only cache rows", async () => {
+    mocks.messages = [m1(), m2()];
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", "Alpha one.", profile(), metaFor("m1-v1", "Alpha one."));
+    });
+    const settledM1 = useTtsPlaybackStore.getState().playlist["c1"]?.find((entry) => entry.messageId === "m1");
+    if (!settledM1) throw new Error("m1 did not settle");
+    // Transplant the genuine m1 entry next to a seeded library m2
+    // (RD-3f pattern) BEFORE opening — post-open state writes do not
+    // survive the panel's own derivations.
+    const index = memoryIndex();
+    __setTtsPlaybackDepsForTests({
+      player: autoPlayer(),
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: index,
+      notifyError: () => {},
+      libraryClient: stubLibraryClient(),
+    });
+    await act(async () => {
+      await index.upsert("c1", settledM1);
+      await index.upsert("c1", {
+        messageId: "m2",
+        variantId: "m2-v1",
+        variantIndex: 0,
+        snippet: "Second message body here",
+        cacheKeys: [],
+        narratedAt: Date.now(),
+        inLibrary: true,
+      });
+      // The mount-time reconcile checks the server for the file — the
+      // stub must actually hold m2's recording or the flag heals to false.
+      libraryFiles.set("c1/b1/m2/0", new Blob(["saved-m2"]));
+      await useTtsPlaybackStore.getState().loadPlaylist("c1");
+    });
+    const { getByTestId, getByText } = await openPanel();
+    // The bulk re-voice offer covers the single cache row (m1): the
+    // modal body carries count 1, never 2. Checked BEFORE save-all —
+    // saving m1 would leave zero cache rows and disable the button.
+    await act(async () => { fireEvent.click(getByTestId("playlist-revoice-all")); });
+    expect(getByText("narration_playlist_revoice_all_title")).toBeDefined();
+    expect(getByText("narration_playlist_revoice_all_body:1:")).toBeDefined();
+    await act(async () => { fireEvent.click(getByText("cancel")); });
+    await act(async () => { fireEvent.click(getByTestId("playlist-save-all")); });
+    await waitFor(() => { expect(librarySaved).toHaveLength(1); });
+  });
+
+  it("RD-5d: re-voice-all confirms, then drops every cache and re-narrates the whole set", async () => {
+    await settleTwo();
+    expect(cache.size()).toBeGreaterThan(0);
+    const { getByTestId, getByText } = await openPanel();
+    await act(async () => { fireEvent.click(getByTestId("playlist-revoice-all")); });
+    expect(getByText("narration_playlist_revoice_all_title")).toBeDefined();
+    await act(async () => { fireEvent.click(getByText("narration_playlist_revoice_all_confirm")); });
+    // The chain needs Continuous on — the bulk flow enables it (the
+    // modal copy says so), then both tracks synthesize fresh.
+    await waitFor(() => { expect(useTtsPlaybackStore.getState().continuous).toBe(true); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+      expect(useTtsPlaybackStore.getState().narrations["m2"]?.status).toBe("complete");
+    });
+    expect(synthCalls).toHaveLength(4);
+  });
+
+  it("RD-5e: cancelling re-voice-all leaves caches, synthesis and prefs intact", async () => {
+    await settleTwo();
+    const sizeBefore = cache.size();
+    expect(sizeBefore).toBeGreaterThan(0);
+    const { getByTestId, getByText, queryByText } = await openPanel();
+    await act(async () => { fireEvent.click(getByTestId("playlist-revoice-all")); });
+    expect(getByText("narration_playlist_revoice_all_title")).toBeDefined();
+    await act(async () => { fireEvent.click(getByText("cancel")); });
+    expect(queryByText("narration_playlist_revoice_all_title")).toBeNull();
+    expect(synthCalls).toHaveLength(2);
+    expect(cache.size()).toBe(sizeBefore);
+    expect(useTtsPlaybackStore.getState().continuous).toBe(false);
+  });
+
+  it("RD-5f: idle bar-play starts the first card; while playing it offers pause", async () => {
+    // Parked lane: the bar start is observable as a live m1 row served
+    // from cache (zero new synthesis — a replay, not a re-voice).
+    mocks.messages = [m1(), m2()];
+    let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
+    __setTtsPlaybackDepsForTests({
+      player: {
+        play(): Promise<"ended" | "skipped" | "error"> {
+          return new Promise<"ended" | "skipped" | "error">((resolve) => { currentResolve = resolve; });
+        },
+        skipCurrent: () => {},
+        pause: () => {},
+        resume: () => {},
+        setRate: () => {},
+        setVolume: () => {},
+        dispose: () => {},
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: memoryIndex(),
+      notifyError: () => {},
+      libraryClient: stubLibraryClient(),
+      mergeToOgg: async () => new Uint8Array([9, 9]),
+    });
+    // Seed both rows settled (synth + cache). Never await a parked
+    // start inside act — the play promise resolves only below.
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", "Alpha one.", profile(), metaFor("m1-v1", "Alpha one."));
+    });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    });
+    await act(async () => { currentResolve?.("ended"); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m2", "Beta two.", profile(), metaFor("m2-v1", "Beta two."));
+    });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m2"]?.status).toBe("playing");
+    });
+    await act(async () => { currentResolve?.("ended"); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m2"]?.status).toBe("complete");
+    });
+    const synthBaseline = synthCalls.length;
+    const { getByTestId } = await openPanel();
+    // Idle lane: bar-play offers the playlist start, then starts m1
+    // (the first card). The start replays the message's CURRENT variant
+    // text — not the seeded snippet — so it synthesizes the variant
+    // (cache miss by design); the asserted text proves WHICH card won.
+    expect(getByTestId("playlist-bar-play").getAttribute("aria-label")).toContain("narration_playlist_bar_play");
+    await act(async () => { fireEvent.click(getByTestId("playlist-bar-play")); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    });
+    expect(synthCalls).toHaveLength(synthBaseline + 1);
+    expect(synthCalls[synthBaseline]).toBe("First line\nSecond line\nThird line");
+    // While the lane plays, the same button offers pause.
+    expect(getByTestId("playlist-bar-play").getAttribute("aria-label")).toContain("narration_playlist_pause");
+    await act(async () => { currentResolve?.("ended"); });
+  });
+
+  it("RD-5g: re-voice-all stays disabled while the lane is live; save-all stays available", async () => {
+    mocks.messages = [m1(), m2()];
+    // Own index (RD-3f pattern): m1 seeded settled, m2 started live on
+    // a parked player — swapping the index after a narrated settle
+    // would drop the settled entry, so the settle is seeded, not played.
+    const index = memoryIndex();
+    __setTtsPlaybackDepsForTests({
+      player: {
+        play(): Promise<"ended" | "skipped" | "error"> {
+          return new Promise<"ended" | "skipped" | "error">(() => {});
+        },
+        skipCurrent: () => {},
+        pause: () => {},
+        resume: () => {},
+        setRate: () => {},
+        setVolume: () => {},
+        dispose: () => {},
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: index,
+      notifyError: () => {},
+    });
+    await act(async () => {
+      await index.upsert("c1", {
+        messageId: "m1",
+        variantId: "m1-v1",
+        variantIndex: 0,
+        snippet: "Alpha one.",
+        cacheKeys: [],
+        narratedAt: Date.now(),
+      });
+      await useTtsPlaybackStore.getState().loadPlaylist("c1");
+      void useTtsPlaybackStore.getState().startNarration("m2", "Beta two.", profile(), metaFor("m2-v1", "Beta two."));
+    });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m2"]?.status).toBe("playing");
+    });
+    const { getByTestId } = await openPanel();
+    // A destructive bulk drop must not race the live lane (same
+    // settled-only rule as row re-voice); saving is per-row
+    // independent and stays available.
+    expect(getByTestId("playlist-revoice-all").getAttribute("disabled")).not.toBeNull();
+    expect(getByTestId("playlist-save-all").getAttribute("disabled")).toBeNull();
+  });
+
+  it("RD-5h: empty playlist — bar-play, save-all and re-voice-all all disabled", async () => {
+    const { NarrationPlaylist } = await import("./NarrationPlaylist.js");
+    const noop = () => {};
+    const { getByTestId } = render(
+      <NarrationPlaylist
+        messages={[]}
+        entries={[]}
+        narrations={{}}
+        liveTextById={() => null}
+        rate={1}
+        anyLive={false}
+        livePaused={false}
+        progress={{}}
+        volume={1}
+        continuous={false}
+        onContinuous={noop}
+        onPlay={noop}
+        onStop={noop}
+        onCycleRate={noop}
+        onPause={noop}
+        onResume={noop}
+        onBarPlay={noop}
+        onSeek={noop}
+        onVolume={noop}
+        onSave={noop}
+        onReveal={noop}
+        onDrop={noop}
+        onDropCache={noop}
+        onRevoice={noop}
+        onSaveAll={noop}
+        onRevoiceAll={noop}
+        savingIds={new Set()}
+        canReveal={true}
+        showTitle={false}
+      />,
+    );
+    expect(getByTestId("playlist-bar-play").getAttribute("disabled")).not.toBeNull();
+    expect(getByTestId("playlist-save-all").getAttribute("disabled")).not.toBeNull();
+    expect(getByTestId("playlist-revoice-all").getAttribute("disabled")).not.toBeNull();
   });
 });

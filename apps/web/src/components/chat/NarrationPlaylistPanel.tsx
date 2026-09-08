@@ -126,17 +126,15 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
     });
   }, [voiceMapData, characterId, personaId]);
 
-  const onPlay = useCallback(
-    (messageId: string) => {
-      if (resolution === null || resolution.kind !== "profile") return;
+  // RD-5: the actual lane start — the chain queue is an explicit
+  // argument so bulk flows (re-voice-all) can pass a queue captured
+  // BEFORE destructive drops, instead of deriving it after.
+  const startWithQueue = useCallback(
+    (messageId: string, chainQueue: string[]): boolean => {
+      if (resolution === null || resolution.kind !== "profile") return false;
       const message = messages.find((candidate) => candidate.id === messageId);
       const source = voicedVariantSource(message ?? null, macroContext, isCoauthorMode);
-      if (!source || !chatId) return;
-      // TPE-18d: arm the chain with the CURRENT panel row order (the
-      // same derivation the list renders — live rows first, chat order).
-      // Message-row starts never set chainQueue, so only panel plays
-      // chain; a natural completion arms the row after the finished one.
-      const chainQueue = buildPlaylistRows(messages, entries, narrations, liveTextById).map((row) => row.messageId);
+      if (!source || !chatId) return false;
       void startNarration(messageId, source.text, resolution.profile, {
         chatId,
         chainQueue,
@@ -146,9 +144,40 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
         variantIndex: source.variantIndex,
         snippet: source.snippet,
       });
+      return true;
     },
-    [resolution, messages, entries, narrations, liveTextById, macroContext, isCoauthorMode, chatId, characterId, branchId, startNarration],
+    [resolution, messages, macroContext, isCoauthorMode, chatId, characterId, branchId, startNarration],
   );
+
+  const onPlay = useCallback(
+    (messageId: string) => {
+      // TPE-18d: arm the chain with the CURRENT panel row order (the
+      // same derivation the list renders — live rows first, chat order).
+      // Message-row starts never set chainQueue, so only panel plays
+      // chain; a natural completion arms the row after the finished one.
+      const chainQueue = buildPlaylistRows(messages, entries, narrations, liveTextById).map((row) => row.messageId);
+      startWithQueue(messageId, chainQueue);
+    },
+    [messages, entries, narrations, liveTextById, startWithQueue],
+  );
+
+  // RD-5: bar-level play — the lane owns the icon. Parked lane resumes
+  // (same path as the footer toggle RD-2 mirrored); idle lane starts
+  // the FIRST card in panel order (live-first derivation: idle means no
+  // live rows, so this is the first settled card in chat order). The
+  // bar play is disabled with zero rows, so first is never undefined.
+  const onBarPlay = useCallback(() => {
+    if (livePaused) {
+      resumeNarration();
+      return;
+    }
+    if (anyLive) {
+      pauseNarration();
+      return;
+    }
+    const first = buildPlaylistRows(messages, entries, narrations, liveTextById)[0];
+    if (first) onPlay(first.messageId);
+  }, [livePaused, anyLive, resumeNarration, pauseNarration, messages, entries, narrations, liveTextById, onPlay]);
 
   // TPE-18d: consume an armed advance — the store fires this only on a
   // natural completion (stop paths clear it), so reaching here always
@@ -261,6 +290,48 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
     },
     [chatId, dropCachedRow],
   );
+  // RD-5: bulk save — the existing per-row save over every passed id
+  // (the component passes complete cache rows only). No confirm: the
+  // action writes library files, it destroys nothing. Per-row spinners
+  // ride the same savingIds path as single saves.
+  const onSaveAll = useCallback(
+    (messageIds: string[]) => {
+      for (const messageId of messageIds) onSave(messageId);
+    },
+    [onSave],
+  );
+  // RD-5: bulk re-voice — drop every passed row's cached segments,
+  // then re-narrate the whole set fresh (fires only after the shared
+  // destructive confirm). Pre-validate the first start BEFORE any drop
+  // (FS-6 pattern): a failed pre-check must not destroy caches. The
+  // chain needs Continuous on to walk the full queue, so it is enabled
+  // here (the modal copy says so); the captured queue — not a fresh
+  // derivation — arms the first start, because the drops land before it
+  // and a post-drop derivation would see no rows. Library rows never
+  // reach here (excluded from the component's target set).
+  const onRevoiceAll = useCallback(
+    (messageIds: string[]) => {
+      if (messageIds.length === 0 || !chatId || resolution === null || resolution.kind !== "profile") return;
+      const firstId = messageIds[0];
+      if (firstId === undefined) return;
+      const firstMessage = messages.find((candidate) => candidate.id === firstId);
+      const source = voicedVariantSource(firstMessage ?? null, macroContext, isCoauthorMode);
+      if (!source) return;
+      void (async () => {
+        if (!continuous) setContinuous(true);
+        for (const messageId of messageIds) {
+          try {
+            await dropCachedRow(chatId, messageId);
+          } catch {
+            // Race: the row was saved to the library after render —
+            // skip it, its file stays untouched.
+          }
+        }
+        startWithQueue(firstId, messageIds);
+      })();
+    },
+    [chatId, resolution, messages, macroContext, isCoauthorMode, continuous, setContinuous, dropCachedRow, startWithQueue],
+  );
 
   // The pill stays mounted while the chat has anything to list — live
   // lanes, completed narrations, AND aborted-but-cached partials (FS-3:
@@ -288,6 +359,9 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       onCycleRate={onCycleRate}
       onPause={pauseNarration}
       onResume={resumeNarration}
+      onBarPlay={onBarPlay}
+      onSaveAll={onSaveAll}
+      onRevoiceAll={onRevoiceAll}
       onSeek={onSeek}
       onVolume={setVolume}
       continuous={continuous}
