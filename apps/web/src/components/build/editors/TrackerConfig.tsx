@@ -238,9 +238,9 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           <button
             type="button"
             onClick={() => setSchemaAiOpen(true)}
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-border2 bg-s3 px-2 py-1 font-ui text-[11px] font-medium text-t2 transition-colors hover:border-accent hover:text-accent"
+            className="ml-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
           >
-            <Ic.sparkles />
+            <Ic.brain />
             {t("scn_ai_generate")}
           </button>
         </div>
@@ -374,9 +374,9 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
                 <button
                   type="button"
                   onClick={() => setRulesAiOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-md border border-border2 bg-s3 px-2 py-1 font-ui text-[11px] font-medium text-t2 transition-colors hover:border-accent hover:text-accent"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
                 >
-                  <Ic.sparkles />
+                  <Ic.brain />
                   {t("scn_pull_rules_button")}
                 </button>
               }
