@@ -136,7 +136,7 @@ export function RegexProfileEditor({
       {/* Name + Active toggle */}
       <div className="flex items-end gap-4">
         <div className="min-w-0 flex-1">
-          <label className={lblCls} htmlFor="regex-profile-name">
+          <label className={lblCls + " mb-1.5"} htmlFor="regex-profile-name">
             {t("promptManager.regex.fieldName")}
           </label>
           <input
@@ -172,7 +172,7 @@ export function RegexProfileEditor({
 
       {/* Scope */}
       <div>
-        <div className={lblCls}>{t("promptManager.regex.scopeLabel")}</div>
+        <div className={lblCls + " mb-1.5"}>{t("promptManager.regex.scopeLabel")}</div>
         <SegmentedControl
           value={profile.isGlobal ? "all" : "bind"}
           onChange={(v) => onScopeChange(v === "all")}
@@ -186,7 +186,7 @@ export function RegexProfileEditor({
       {/* Bindings — shown only in bind mode */}
       {!profile.isGlobal && (
         <div>
-          <div className={lblCls}>{t("promptManager.regex.bindingsLabel")}</div>
+          <div className={lblCls + " mb-1.5"}>{t("promptManager.regex.bindingsLabel")}</div>
           <LinkBindingPopover
             links={bindLinks}
             characters={characterTargets}

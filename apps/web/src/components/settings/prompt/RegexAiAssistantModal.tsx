@@ -387,7 +387,7 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 					))}
 				</div>
 				<div>
-					<label className={lblCls}>{t("regexAssistant.taskLabel")}</label>
+					<label className={lblCls + " mb-1.5"}>{t("regexAssistant.taskLabel")}</label>
 					<AutoTextarea
 						className={monoCls}
 						value={task}
@@ -397,7 +397,7 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 					/>
 				</div>
 				<div>
-					<label className={lblCls}>{t("regexAssistant.sampleLabel")}</label>
+					<label className={lblCls + " mb-1.5"}>{t("regexAssistant.sampleLabel")}</label>
 					<AutoTextarea
 						className={monoCls}
 						value={sampleText}
