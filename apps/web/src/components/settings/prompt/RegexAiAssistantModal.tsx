@@ -400,37 +400,37 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 					/>
 				</div>
 				{error && (
-					<div className="rounded border border-danger bg-danger-dim p-2 font-ui text-xs text-danger-text">{error}</div>
+					<div className="rounded border border-danger bg-danger-dim p-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger-text">{error}</div>
 				)}
 				{draft && (
 					<div className="rounded-md border border-border bg-s2 p-3">
-						<div className="font-ui text-xs font-semibold text-t1">{draft.name}</div>
-						<div className="mt-1 font-mono text-xs text-t2">find: {draft.findRegex}</div>
-						<div className="font-mono text-xs text-t2">replace: {draft.replaceString}</div>
+						<div className="font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-t1">{draft.name}</div>
+						<div className="mt-1 font-mono text-[calc(var(--ui-fs)-2px)] text-t2">find: {draft.findRegex}</div>
+						<div className="font-mono text-[calc(var(--ui-fs)-2px)] text-t2">replace: {draft.replaceString}</div>
 						{draft.trimStrings.length > 0 && (
-							<div className="font-mono text-xs text-t2">trim: {draft.trimStrings.join(", ")}</div>
+							<div className="font-mono text-[calc(var(--ui-fs)-2px)] text-t2">trim: {draft.trimStrings.join(", ")}</div>
 						)}
-						<div className="font-ui text-xs text-t2">
+						<div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">
 							{t("promptManager.regex.behaviorLabel")}: {t(APPLY_TARGET_LABEL_KEYS[draft.applyTarget])} · {t(DEPTH_MODE_LABEL_KEYS[draft.depthMode])}
 							{draft.depthValue !== undefined ? ` ${draft.depthValue}` : ""}
 						</div>
-						<div className="mt-1 font-ui text-xs text-t2">{draft.explanation}</div>
+						<div className="mt-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{draft.explanation}</div>
 					</div>
 				)}
 				{live.kind !== "idle" && (
 					<div className="rounded-md border border-border2 bg-s3 p-3">
-						<div className="font-ui text-xs font-semibold text-t1">{t("regexAssistant.testTitle")}</div>
-						{live.kind === "error" && <div className="font-ui text-xs text-danger">{live.message}</div>}
-						{live.kind === "noMatch" && <div className="font-ui text-xs text-t3">{t("regexAssistant.testNoMatch")}</div>}
+						<div className="font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-t1">{t("regexAssistant.testTitle")}</div>
+						{live.kind === "error" && <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-danger">{live.message}</div>}
+						{live.kind === "noMatch" && <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("regexAssistant.testNoMatch")}</div>}
 						{(live.kind === "ok" || live.kind === "noMatch") && (
 							<>
-								<div className="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-t1">{live.markedView}</div>
-								<div className="mt-1 font-ui text-xs text-t2">
+								<div className="mt-1 whitespace-pre-wrap break-all font-mono text-[calc(var(--ui-fs)-2px)] text-t1">{live.markedView}</div>
+								<div className="mt-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t2">
 									{t("regexAssistant.removedCount", { count: live.removedCount })}
 								</div>
-								{live.isAiSample && <div className="font-ui text-xs text-t3">{t("regexAssistant.aiSampleLabel")}</div>}
+								{live.isAiSample && <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("regexAssistant.aiSampleLabel")}</div>}
 								{live.kind === "ok" && live.unchanged && (
-									<div className="font-ui text-xs text-t3">{t("promptManager.regex.testUnchanged")}</div>
+									<div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("promptManager.regex.testUnchanged")}</div>
 								)}
 							</>
 						)}
