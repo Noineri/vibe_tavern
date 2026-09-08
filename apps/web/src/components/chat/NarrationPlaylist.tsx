@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AppMessage } from "../../api/types.js";
 import { useT } from "../../i18n/context.js";
 import { firstTwoLines } from "../../lib/tts/narration-source.js";
@@ -124,6 +124,38 @@ export function showMessageInChat(messageId: string): boolean {
   return true;
 }
 
+/** RD-7: scroll the playlist's own list so the given message's card is
+ *  visible (owner: «и при переходе к следующему сообщению прокручивать
+ *  до него»). Container-scoped by construction: the card is queried
+ *  inside the list element and `block: "nearest"` only moves ancestors
+ *  that actually clip the card — the open popover is in-viewport, so
+ *  the page/chat never scrolls, only the `overflow-y-auto` list does.
+ *  rAF-deferred (bottom-pinning discipline: batch DOM scrolls with
+ *  paint, no layout thrash); a missing list/card is a silent no-op so
+ *  a closed panel or a short list can never break playback. Returns
+ *  whether the scroll was scheduled (card found). */
+export function scrollPlaylistListToMessage(list: HTMLElement, messageId: string): boolean {
+  // Same escape pattern as showMessageInChat above: CSS.escape in
+  // browsers, raw slug fallback in non-DOM runtimes. The selector is
+  // data-playlist-message-id, NEVER data-message-id — playlist rows
+  // must not shadow the MessageShell chat anchor (pinned by test).
+  const escaped =
+    typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(messageId) : messageId;
+  const card = list.querySelector(`[data-playlist-message-id="${escaped}"]`);
+  if (!(card instanceof HTMLElement)) return false;
+  const run = (): void => {
+    try {
+      card.scrollIntoView({ block: "nearest" });
+    } catch {
+      // Test DOMs without a scroll implementation — the call is
+      // best-effort, playback continues regardless.
+    }
+  };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+  else run();
+  return true;
+}
+
 /** TPE-18b: cumulative playback position control for the live row. */
 function SeekBar(input: {
   readonly progress: NarrationProgress | null;
@@ -218,6 +250,12 @@ export interface NarrationPlaylistProps {
    *  reveal button hides instead of failing into a 501. */
   readonly canReveal: boolean;
   readonly showTitle: boolean;
+  /** RD-7: advance-edge scroll target — set by the panel ONLY when the
+   *  continuous chain advances to a new message (never on manual
+   *  plays, never while paused/stopped). Null means no scroll owed. */
+  readonly scrollToMessageId: string | null;
+  /** RD-7: clears the scroll target after the card was scrolled. */
+  readonly onScrollToMessageDone: () => void;
 }
 
 export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
@@ -240,6 +278,21 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
   // RD-5: pending bulk re-voice (ids snapshotted at button click) — the
   // confirm below fires onRevoiceAll; cancel leaves caches intact.
   const [pendingRevoice, setPendingRevoice] = useState<string[] | null>(null);
+  // RD-7: the list is the panel's own overflow container (flex-1 +
+  // overflow-y-auto) — the scroll target below never leaves it.
+  const listRef = useRef<HTMLUListElement | null>(null);
+  // RD-7: advance-edge follow — runs when the target is set AND whenever
+  // the rows re-derive (the next card lands asynchronously after the
+  // advance fires, so the first pass usually finds no card and retries
+  // on the narrations update). The target clears after the scroll is
+  // scheduled; a card that never lands leaves a harmless pending target.
+  useEffect(() => {
+    if (!input.scrollToMessageId || !listRef.current) return;
+    if (scrollPlaylistListToMessage(listRef.current, input.scrollToMessageId)) {
+      input.onScrollToMessageDone();
+    }
+    // rows: re-run as the next card lands (fresh array per render).
+  }, [input.scrollToMessageId, rows, input.onScrollToMessageDone]);
 
   return (
     <div className="flex max-h-[min(28rem,calc(100dvh-12rem))]">
@@ -263,7 +316,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
           <EmptyState icon={<Ic.speaker />} title={t("narration_playlist_empty")} />
         </div>
       ) : (
-        <ul className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
+        <ul ref={listRef} data-testid="playlist-row-list" className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
           {rows.map((row) => (
             <PlaylistRow
               key={row.messageId}

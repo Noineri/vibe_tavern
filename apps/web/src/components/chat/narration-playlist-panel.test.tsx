@@ -2327,6 +2327,8 @@ describe("narration playlist transport bar (RD-5)", () => {
         onRevoice={noop}
         onSaveAll={noop}
         onRevoiceAll={noop}
+        scrollToMessageId={null}
+        onScrollToMessageDone={noop}
         savingIds={new Set()}
         canReveal={true}
         showTitle={false}
@@ -2335,5 +2337,167 @@ describe("narration playlist transport bar (RD-5)", () => {
     expect(getByTestId("playlist-bar-play").getAttribute("disabled")).not.toBeNull();
     expect(getByTestId("playlist-save-all").getAttribute("disabled")).not.toBeNull();
     expect(getByTestId("playlist-revoice-all").getAttribute("disabled")).not.toBeNull();
+  });
+});
+
+describe("narration playlist advance auto-scroll (RD-7)", () => {
+  /** Prototype-level scrollIntoView stub (happy-dom has no scroll
+   *  implementation): records the scrolled element per call. Restored
+   *  per test — the show-in-chat test above stubs per element instead,
+   *  but the advance edge fires from a store effect, so the call site
+   *  cannot be reached to stub the instance first. */
+  function stubCardScrolling(): { calls: Element[]; restore: () => void } {
+    const calls: Element[] = [];
+    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (options?: unknown) => void };
+    const prev = proto.scrollIntoView;
+    proto.scrollIntoView = function (this: Element): void {
+      calls.push(this);
+    };
+    return {
+      calls,
+      restore: () => {
+        if (prev === undefined) delete proto.scrollIntoView;
+        else proto.scrollIntoView = prev;
+      },
+    };
+  }
+
+  /** Minimal deferred player (mirrors the RD-5 helper without coupling
+   *  across describe blocks): parks the current play until released. */
+  function installParkedLane(): { release: (result?: "ended" | "skipped" | "error") => void } {
+    let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
+    __setTtsPlaybackDepsForTests({
+      player: {
+        ...autoPlayer(),
+        play: () =>
+          new Promise<"ended" | "skipped" | "error">((resolve) => {
+            currentResolve = resolve;
+          }),
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: memoryIndex(),
+      notifyError: () => {},
+      libraryClient: stubLibraryClient(),
+      mergeToOgg: async () => new Uint8Array([9, 9]),
+    });
+    return {
+      release: (result = "ended") => {
+        const fn = currentResolve;
+        currentResolve = null;
+        if (fn) fn(result);
+      },
+    };
+  }
+
+  function scrolledMessageIds(calls: Element[]): string[] {
+    return calls
+      .filter((el): el is HTMLElement => el instanceof HTMLElement)
+      .map((el) => el.getAttribute("data-playlist-message-id"))
+      .filter((id): id is string => id !== null);
+  }
+
+  it("continuous advance scrolls the newly started card into view — and never the manually started one", async () => {
+    mocks.messages = [m1(), m2()];
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    await act(async () => {
+      useTtsPlaybackStore.getState().setContinuous(true);
+    });
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", "First line\nSecond line", profile(), {
+        chatId: "c1",
+        chainQueue: ["m1", "m2"],
+        characterId: "char1",
+        branchId: "b1",
+        variantId: "m1-v1",
+        variantIndex: 0,
+        snippet: "First line\nSecond line",
+      });
+    });
+    const scrolling = stubCardScrolling();
+    try {
+      const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+      await act(async () => {
+        fireEvent.click(pill);
+      });
+      // The list is the panel's own overflow container (the RD-7 seam).
+      await waitFor(() => getByTestId("playlist-row-list"));
+      // m1 completes → the advance edge starts m2 and owes exactly one
+      // scroll: the m2 card. The target persists until the card lands,
+      // so opening the panel late still scrolls deterministically.
+      await waitFor(() => {
+        if (!scrolledMessageIds(scrolling.calls).includes("m2")) throw new Error("m2 card not scrolled yet");
+      });
+      const ids = scrolledMessageIds(scrolling.calls);
+      expect(ids).toContain("m2");
+      // m1 was started manually (direct startNarration, no advance edge)
+      // — its own start must never owe a scroll.
+      expect(ids).not.toContain("m1");
+      // Container-scoped: every scrolled card lives inside the list.
+      const list = getByTestId("playlist-row-list");
+      for (const el of scrolling.calls) {
+        expect(list.contains(el)).toBe(true);
+      }
+    } finally {
+      scrolling.restore();
+    }
+  });
+
+  it("parked lane never scrolls: progress pokes and re-renders leave the view alone", async () => {
+    const lane = installParkedLane();
+    const { getByTestId, rerender } = render(<NarrationPlaylistPanel docked />);
+    // Park m1 mid-play (deferred play never resolves on its own).
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", "Para one.", profile(), {
+        chatId: "c1",
+        characterId: "char1",
+        branchId: "b1",
+        variantId: "m1-v1",
+        variantIndex: 0,
+        snippet: "Para one.",
+      });
+    });
+    await waitFor(() => {
+      if (useTtsPlaybackStore.getState().narrations["m1"]?.status !== "playing") {
+        throw new Error("m1 not playing yet");
+      }
+    });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => {
+      fireEvent.click(pill);
+    });
+    await waitFor(() => getByTestId("playlist-row-list"));
+    // Park the lane via the bar play-pause (continuous stays ON — the
+    // stronger case: even with the pref on, a parked lane owes nothing).
+    await act(async () => {
+      useTtsPlaybackStore.getState().setContinuous(true);
+    });
+    await act(async () => {
+      fireEvent.click(getByTestId("playlist-bar-play"));
+    });
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("paused");
+    const scrolling = stubCardScrolling();
+    try {
+      // Same-message progress + a re-render: no advance edge, no scroll.
+      await act(async () => {
+        useTtsPlaybackStore.setState({
+          progress: { m1: { positionSec: 4, totalSec: 10, currentIndex: 0, segmentCount: 1, durations: [10] } },
+        });
+      });
+      rerender(<NarrationPlaylistPanel docked />);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(useTtsPlaybackStore.getState().advanceTo).toBeNull();
+      expect(scrolling.calls).toHaveLength(0);
+    } finally {
+      scrolling.restore();
+      await act(async () => {
+        lane.release();
+      });
+    }
   });
 });

@@ -80,12 +80,19 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
   const dropCachedRow = useTtsPlaybackStore((s) => s.dropCachedRow);
   const revealLibraryRow = useTtsPlaybackStore((s) => s.revealLibraryRow);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  // RD-7: advance-edge scroll target (set in the advance effect below,
+  // cleared by the list once the card is scrolled). Declared up here so
+  // the chat-boundary reset below reads naturally in source order.
+  const [advanceScrollTarget, setAdvanceScrollTarget] = useState<string | null>(null);
+  const clearAdvanceScrollTarget = useCallback(() => setAdvanceScrollTarget(null), []);
   // Static per mount (UA-based, not viewport): Android hides reveal.
   const [canReveal] = useState(() => !isAndroidDevice());
 
   // Collapse + reload the index at the chat/branch boundary (DicePanel pattern).
   useEffect(() => {
     setExpanded(false);
+    // RD-7: a pending advance scroll belongs to the old chat — drop it.
+    setAdvanceScrollTarget(null);
   }, [branchId, chatId]);
   // Collapse + reload the index at the chat/branch boundary (DicePanel pattern).
   // TPE-18c: library scope rides along when known so in-library flags
@@ -179,14 +186,21 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
     if (first) onPlay(first.messageId);
   }, [livePaused, anyLive, resumeNarration, pauseNarration, messages, entries, narrations, liveTextById, onPlay]);
 
+  // RD-7: the scroll target is set ONLY on this advance edge — the
+  // store fires advanceTo solely on natural completion (stop/pause
+  // paths clear it) and the effect additionally requires the
+  // continuous pref, so manual plays and parked lanes can never owe
+  // a scroll. The list component scrolls once the card lands.
   // TPE-18d: consume an armed advance — the store fires this only on a
   // natural completion (stop paths clear it), so reaching here always
   // means "played to the end, chain on". onPlay re-arms from the
   // clicked row, keeping the queue fresh as rows land.
   useEffect(() => {
     if (!advanceTo || advanceTo.chatId !== chatId || !continuous) return;
-    onPlay(advanceTo.messageId);
+    const targetId = advanceTo.messageId;
+    onPlay(targetId);
     clearAdvance();
+    setAdvanceScrollTarget(targetId);
   }, [advanceTo, chatId, continuous, onPlay, clearAdvance]);
 
   const onCycleRate = useCallback(() => {
@@ -366,6 +380,8 @@ export function NarrationPlaylistPanel({ docked = false }: NarrationPlaylistPane
       onVolume={setVolume}
       continuous={continuous}
       onContinuous={setContinuous}
+      scrollToMessageId={advanceScrollTarget}
+      onScrollToMessageDone={clearAdvanceScrollTarget}
       onSave={onSave}
       onReveal={onReveal}
       onDrop={onDrop}
