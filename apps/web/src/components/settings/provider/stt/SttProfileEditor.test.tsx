@@ -37,7 +37,7 @@ mock.module("../../../../api/stt-api.js", () => ({
   listSttDraftModels: listSttDraftModelsMock,
 }));
 
-const { act, cleanup, waitFor, render } = await import("@testing-library/react");
+const { act, cleanup, waitFor, render, fireEvent } = await import("@testing-library/react");
 const { SttProfileEditor } = await import("./SttProfileEditor.js");
 const { DEFAULT_WHISPER_MODEL_ID } = await import("@vibe-tavern/domain");
 
@@ -392,10 +392,11 @@ describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7, level-2 si
   it("clicking the toggle flips the form flag through setForm", async () => {
     const stt = geminiStt();
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
-    await waitFor(() => expect(view.getByTestId("stt-emotion-toggle")).toBeTruthy());
-    expect(view.getByTestId("stt-emotion-toggle").getAttribute("aria-checked")).toBe("false");
+    await waitFor(() => expect(view.getByTestId("stt-emotion-toggle-block")).toBeTruthy());
+    const toggle = view.getByRole("switch", { name: "Tone annotation" }) as HTMLButtonElement;
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
     await act(async () => {
-      view.getByTestId("stt-emotion-toggle").click();
+      fireEvent.click(toggle);
     });
     expect(stt.setForm).toHaveBeenCalledWith({ emotionAnnotation: true });
   });

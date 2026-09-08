@@ -10,7 +10,7 @@ import { WHISPER_LANGUAGES, whisperLanguageLabel } from "../../../../lib/stt/whi
 import { currentWhisperLane } from "../../../../lib/stt/whisper-client-instance.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { Icons } from "../../../shared/icons.js";
-import { cn } from "../../../../lib/cn.js";
+import { Toggle } from "../../../shared/Toggle.js";
 import { labelCls } from "../form-field-classes.js";
 import { configString } from "./stt-form-helpers.js";
 import { SttModelPicker } from "./SttModelPicker.js";
@@ -162,32 +162,18 @@ export function SttRecognitionSection({
           P8 (governing rule: tuning is level-2). */}
       {showsEmotionToggle && (
         <div className="mb-3" data-testid="stt-emotion-toggle-block">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={form.emotionAnnotation}
-            onClick={() => onUpdateForm({ emotionAnnotation: !form.emotionAnnotation })}
-            className="flex cursor-pointer items-start gap-2.5 text-left"
-            data-testid="stt-emotion-toggle"
-          >
-            <span
-              className={cn(
-                "mt-0.5 flex h-[18px] w-[32px] shrink-0 items-center rounded-full border px-[2px] transition-colors",
-                form.emotionAnnotation ? "border-accent bg-accent/20 justify-end" : "border-border bg-s3 justify-start",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-[12px] w-[12px] rounded-full transition-colors",
-                  form.emotionAnnotation ? "bg-accent" : "bg-t4",
-                )}
-              />
-            </span>
+          <div className="flex cursor-pointer items-start gap-2.5 text-left">
+            <Toggle
+              checked={form.emotionAnnotation}
+              onChange={(v) => onUpdateForm({ emotionAnnotation: v })}
+              aria-label={t("stt_emotion_label")}
+              className="mt-0.5"
+            />
             <span className="flex flex-col gap-0.5">
               <span className="font-ui text-[13px] text-t1">{t("stt_emotion_label")}</span>
               <span className="font-ui text-[11px] text-t3">{t("stt_emotion_hint")}</span>
             </span>
-          </button>
+          </div>
         </div>
       )}
     </>
