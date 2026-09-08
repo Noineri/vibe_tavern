@@ -241,6 +241,12 @@ describe("PersonaModal master-detail wiring", () => {
 		await settled();
 		expect(view.getByText("crop_avatar_title")).toBeTruthy();
 		expect(document.querySelector('img[src*="/avatar/full"]')).toBeTruthy();
+		// D-6: the crop modal opens STACKED on top of the persona modal (a
+		// z-[501] panel). The plain z-[500] overlay would paint under the parent
+		// panel (no darkening — the reported defect); the fix routes it through
+		// Modal's hideOverlay mechanism, which renders the backdrop INSIDE the
+		// z-[501] content. Pin that in-content backdrop.
+		expect(document.querySelector('.z-\\[501\\] .bg-black\\/55')).toBeTruthy();
 	});
 
 	test("editor section order: bound lorebooks directly under the name row, before the description (D-3)", async () => {
@@ -258,6 +264,19 @@ describe("PersonaModal master-detail wiring", () => {
 		expect(descEl).toBeTruthy();
 		expect(boundEl!.compareDocumentPosition(pronounEl!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
 		expect(boundEl!.compareDocumentPosition(descEl!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	test("master row clamps the description at 5 centered lines on desktop (D-7)", async () => {
+		const calls: Calls = { setActive: [], saveEdit: [] };
+		const view = renderOpen(calls);
+		await settled();
+		// Owner ruling: clamp-5 desktop (was clamp-6) and the (metadata +
+		// description) group vertically centered in the height the left column
+		// provides. Happy-dom defaults to desktop (use-mobile). Portal scoping:
+		// query document, not view.container.
+		const desc = Array.from(document.querySelectorAll(".line-clamp-5")).find(el => el.textContent === "Second persona");
+		expect(desc).toBeTruthy();
+		expect(desc!.parentElement!.className).toContain("justify-center");
 	});
 });
 

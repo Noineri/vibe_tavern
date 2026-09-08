@@ -182,9 +182,14 @@ export function PersonaCardEditor({
           )}
           {/* Bound lorebooks — reverse-direction binding (PR-12), moved here in
               D-3 (character-card order: name → resources → description).
+              mt-3 (D-5): breathing room under the pronouns block — the field's
+              own root has no top margin; the character reference column gets
+              this spacing from its gap-3.
               Shown only in the edit form (requires a persisted personaId).
               Scripts are tracked separately — see script-link-binding-gap.md. */}
-          <BoundResourcesField entityKind="persona" entityId={persona.id} isMobile={isMobile} />
+          <div className="mt-3">
+            <BoundResourcesField entityKind="persona" entityId={persona.id} isMobile={isMobile} />
+          </div>
         </div>
       </div>
       {/* Description */}

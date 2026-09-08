@@ -113,8 +113,12 @@ export function PersonaListRow({
       {/* Right column: one metadata line (name + counter + pronouns) above
           the description. Name is the sole flexible element (min-w-0 +
           truncate + title); counter and pronouns are shrink-0, pushed right
-          by the counter's ml-auto — worst RU case the name truncates first. */}
-      <div className="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
+          by the counter's ml-auto — worst RU case the name truncates first.
+          D-7: self-stretch + justify-center — the (metadata + description)
+          group centers vertically in the height the left column provides,
+          leaving equal breathing room above and below (134px column, 114px
+          content at clamp-5 → ~10px margins). */}
+      <div className={cn("flex min-w-0 flex-1 flex-col gap-1 py-0.5", !isMobile && "self-stretch justify-center")}>
         <div className="flex items-baseline gap-2">
           <div className="min-w-0 truncate font-ui text-[15px] font-semibold tracking-tight text-t1" title={persona.name}>{persona.name}</div>
           <TokenCounter text={persona.description} className="ml-auto shrink-0 font-ui text-[11px] tabular-nums text-t3" />
@@ -133,9 +137,10 @@ export function PersonaListRow({
           })()}
         </div>
         {/* Description — right column only (owner sketch): fills the height
-            the left column provides; clamp-6 desktop (≈234 chars at 39/line,
-            +44% vs the old full-width clamp-3) / clamp-4 mobile. */}
-        <div className={cn("font-ui text-[13px] leading-snug text-t3", isMobile ? "line-clamp-4" : "line-clamp-6")}>{persona.description}</div>
+            the left column provides; D-7: clamp-5 desktop, vertically
+            centered by the column's justify-center (≈195 chars at 39/line,
+            +21% vs the old full-width clamp-3) / clamp-4 mobile. */}
+        <div className={cn("font-ui text-[13px] leading-snug text-t3", isMobile ? "line-clamp-4" : "line-clamp-5")}>{persona.description}</div>
       </div>
     </div>
   );
