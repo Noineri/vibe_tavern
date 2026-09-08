@@ -1584,8 +1584,11 @@ describe("narration playlist card layout (RD-1)", () => {
     expect(chunk.textContent).toContain("narration_playlist_swipe:1:1:");
     expect(chunk.querySelector('[data-testid="playlist-row-cache-badge"]')).not.toBeNull();
     expect(chunk.querySelector('[data-testid="playlist-row-library-badge"]')).toBeNull();
-    // Control panel: play + save + re-voice (FS-6), no continue.
-    expect(controls.querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
+    // Control panel: save + re-voice (FS-6), no continue. RD-8: the
+    // transport button is the round play at the card's left edge —
+    // outside the controls zone, but still on the row.
+    expect(controls.querySelector('[data-testid="playlist-row-play"]')).toBeNull();
+    expect(row.querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
     expect(controls.querySelector('[data-testid="playlist-row-save"]')).not.toBeNull();
     expect(controls.querySelector('[data-testid="playlist-row-revoice"]')).not.toBeNull();
     expect(queryByTestId("playlist-row-continue")).toBeNull();
@@ -1615,9 +1618,11 @@ describe("narration playlist card layout (RD-1)", () => {
     expect(playback.querySelector('[data-testid="playlist-seek"]')).not.toBeNull();
     expect(queryByTestId("playlist-row-cache-badge")).toBeNull();
     expect(queryByTestId("playlist-row-library-badge")).toBeNull();
-    // Head + controls keep their controls.
+    // Head + controls keep their controls (RD-8: round play at the
+    // card's left edge, outside the controls zone).
     expect(head.querySelector('[data-testid="playlist-row-show"]')).not.toBeNull();
-    expect(controls.querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
+    expect(controls.querySelector('[data-testid="playlist-row-play"]')).toBeNull();
+    expect(row.querySelector('[data-testid="playlist-row-play"]')).not.toBeNull();
   });
 
   it("RD-1c: partial card — continue + cache-drop in the control panel, no save", async () => {
@@ -2499,5 +2504,185 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
         lane.release();
       });
     }
+  });
+});
+
+describe("narration playlist visual polish (RD-8)", () => {
+  const TEXT = "First line\nSecond line\nThird line";
+
+  function meta() {
+    return {
+      chatId: "c1",
+      characterId: "char1",
+      branchId: "b1",
+      variantId: "m1-v1",
+      variantIndex: 0,
+      snippet: "First line\nSecond line",
+    };
+  }
+
+  function zone(container: HTMLElement, zoneId: string): HTMLElement {
+    const el = container.querySelector(`[data-testid="${zoneId}"]`);
+    if (!(el instanceof HTMLElement)) throw new Error(`missing zone ${zoneId}`);
+    return el;
+  }
+
+  async function openPanel(): Promise<{
+    getByTestId: (id: string) => HTMLElement;
+    queryByTestId: (id: string) => HTMLElement | null;
+  }> {
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    return { getByTestId: getByTestId as (id: string) => HTMLElement, queryByTestId };
+  }
+
+  /** Deferred single-segment lane — the panel shows a live row while
+   *  the play promise is unresolved (same shape as the RD-2 helper). */
+  function installParkedLane(): void {
+    __setTtsPlaybackDepsForTests({
+      player: {
+        ...autoPlayer(),
+        play: () => new Promise<"ended" | "skipped" | "error">(() => {}),
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: memoryIndex(),
+      notifyError: () => {},
+      libraryClient: stubLibraryClient(),
+      mergeToOgg: async () => new Uint8Array([9, 9]),
+    });
+  }
+
+  it("RD-8a: settled row — round transport button at the card's left edge, neutral idle style", async () => {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    const { getByTestId } = await openPanel();
+    const row = getByTestId("narration-playlist-row");
+    const play = row.querySelector('[data-testid="playlist-row-play"]');
+    if (!(play instanceof HTMLElement)) throw new Error("missing playlist-row-play");
+    // Round player button: 32px circle at the left edge, outside the
+    // controls zone (RD-8 layout, supersedes the RD-1 placement).
+    const cls = play.getAttribute("class") ?? "";
+    expect(cls).toContain("rounded-full");
+    expect(cls).toContain("h-8");
+    expect(cls).toContain("w-8");
+    expect(play.parentElement?.getAttribute("class") ?? "").toContain("flex");
+    expect(zone(row, "playlist-row-zone-controls").querySelector('[data-testid="playlist-row-play"]')).toBeNull();
+    // Idle: neutral fill, play icon.
+    expect(cls).toContain("bg-s3");
+    expect(play.getAttribute("aria-label")).toContain("narrate_action");
+  });
+
+  it("RD-8b: playing row — accent round button with pause; card highlighted by state", async () => {
+    installParkedLane();
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    });
+    const { getByTestId } = await openPanel();
+    const row = getByTestId("narration-playlist-row");
+    const play = row.querySelector('[data-testid="playlist-row-play"]');
+    if (!(play instanceof HTMLElement)) throw new Error("missing playlist-row-play");
+    expect(play.getAttribute("aria-label")).toContain("narration_playlist_pause");
+    const playCls = play.getAttribute("class") ?? "";
+    expect(playCls).toContain("bg-accent");
+    expect(playCls).toContain("text-on-accent");
+    // State-driven card highlight (DiceTray active-item language).
+    const rowCls = row.getAttribute("class") ?? "";
+    expect(rowCls).toContain("border-accent/50");
+    expect(rowCls).toContain("bg-accent-dim");
+  });
+
+  it("RD-8c: parked row — accent-outline play marks the resume row; card not highlighted", async () => {
+    installParkedLane();
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    });
+    const { getByTestId } = await openPanel();
+    const row = getByTestId("narration-playlist-row");
+    const play = row.querySelector('[data-testid="playlist-row-play"]');
+    if (!(play instanceof HTMLElement)) throw new Error("missing playlist-row-play");
+    await act(async () => { fireEvent.click(play); });
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("paused");
+    const parked = getByTestId("narration-playlist-row").querySelector('[data-testid="playlist-row-play"]');
+    if (!(parked instanceof HTMLElement)) throw new Error("missing parked playlist-row-play");
+    expect(parked.getAttribute("aria-label")).toContain("narration_playlist_resume");
+    const playCls = parked.getAttribute("class") ?? "";
+    expect(playCls).toContain("border-accent/60");
+    expect(playCls).toContain("text-accent-t");
+    expect(playCls).not.toContain("bg-accent");
+    expect(getByTestId("narration-playlist-row").getAttribute("class") ?? "").not.toContain("border-accent/50");
+  });
+
+  it("RD-8d: header count is a chip keyed on the track-count plural (en + ru)", async () => {
+    mocks.messages = [m1(), m2()];
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+      await useTtsPlaybackStore.getState().startNarration("m2", "Second message body here", profile(), {
+        ...meta(),
+        variantId: "m2-v1",
+      });
+    });
+    // Two rows on screen: openPanel's single-row wait does not apply,
+    // so open the panel directly here.
+    const { getByTestId, getAllByTestId } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("playlist-row-list"));
+    expect(getAllByTestId("narration-playlist-row")).toHaveLength(2);
+    const chip = getByTestId("playlist-header-count");
+    expect(chip.getAttribute("class") ?? "").toContain("rounded-full");
+    // The mocked t renders key + vars — the chip carries the count.
+    expect(chip.textContent ?? "").toContain("narration_playlist_count:2:");
+    // Plural copy exists in both locales (i18next pluralSeparator "_").
+    expect(en["narration_playlist_count_one"]).toContain("track");
+    expect(en["narration_playlist_count_other"]).toContain("tracks");
+    expect(ru["narration_playlist_count_one"]).toContain("трек");
+    expect(ru["narration_playlist_count_few"]).toContain("трека");
+    expect(ru["narration_playlist_count_many"]).toContain("треков");
+  });
+
+  it("RD-8e: card zones carry no divider rules; playback zone keeps the seek", async () => {
+    installParkedLane();
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", "Para one.\n\nPara two.", profile(), meta());
+    });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    });
+    const { getByTestId } = await openPanel();
+    const row = getByTestId("narration-playlist-row");
+    for (const zoneId of ["playlist-row-zone-head", "playlist-row-zone-chunk", "playlist-row-zone-controls", "playlist-row-zone-playback"]) {
+      expect(zone(row, zoneId).getAttribute("class") ?? "").not.toContain("border-t");
+    }
+    expect(zone(row, "playlist-row-zone-playback").querySelector('[data-testid="playlist-seek"]')).not.toBeNull();
+  });
+
+  it("RD-8f: volume rail keeps its behavior seams under the v2 restyle", async () => {
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    });
+    const { getByTestId } = await openPanel();
+    const rail = getByTestId("playlist-volume-rail");
+    const railCls = rail.getAttribute("class") ?? "";
+    // Narrower v2 column with the recessed backdrop (RD-4 behavior pins
+    // live in their own tests — here only the restyle surface).
+    expect(railCls).toContain("w-10");
+    expect(railCls).not.toContain("w-11");
+    expect(railCls).toContain("bg-black/15");
+    expect(getByTestId("playlist-volume")).toBeDefined();
+    expect(getByTestId("playlist-volume-mute")).toBeDefined();
+    expect(getByTestId("playlist-volume-percent")).toBeDefined();
   });
 });

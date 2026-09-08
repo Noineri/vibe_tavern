@@ -23,8 +23,13 @@ import { CustomTooltip } from "../shared/Tooltip.js";
  *  stash (fresh mount at 0 restores full volume). Dragging away from 0
  *  clears the muted look because the value IS the mute state.
  *
+ *  RD-8: variant-2 styling (owner) — w-10, softened left divider, a
+ *  subtle recessed backdrop. The mock's bg-black/20 is mapped, not
+ *  copied: the s2/s3 tokens flip direction between themes (light-lava
+ *  s2 is darker than surface, coffee s2 is lighter), so neither reads
+ *  as a recess everywhere — a faint black overlay darkens in BOTH.
  *  Rail width arithmetic (budgeted on paper — popover is 26rem = 416px):
- *  the rail is a fixed w-11 (44px) column; the percent label peaks at
+ *  the rail is a fixed w-10 (40px) column; the percent label peaks at
  *  "100%" (~24px in 10px tabular-nums) so it can never clip the panel
  *  edge. The left content column is min-w-0 flex-1, the only shrinker.
  *
@@ -55,7 +60,7 @@ export function PlaylistVolumeRail(input: {
   }
 
   return (
-    <div data-testid="playlist-volume-rail" className="flex w-11 shrink-0 flex-col items-center gap-1.5 border-l border-border2 px-1 py-2">
+    <div data-testid="playlist-volume-rail" className="flex w-10 shrink-0 flex-col items-center gap-2 border-l border-border2/50 bg-black/15 px-1 py-2">
       {/* RD-4: reserved percent slot ABOVE the slider — blank space when
         idle (not a zero, not a number), "N%" only while interacting. */}
       <span

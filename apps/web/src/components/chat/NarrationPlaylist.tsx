@@ -306,7 +306,13 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
           <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-t1">
             {t("narration_playlist_title")}
           </span>
-          <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
+          {/* RD-8: header count as a chip (owner: variant-2 badge).
+            Numeric content only — tabular-nums keeps the width stable
+            as the count changes; ml-auto docks it at the right. */}
+          <span
+            data-testid="playlist-header-count"
+            className="ml-auto shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[10px] font-medium text-t2 tabular-nums"
+          >
             {t("narration_playlist_count", { count: rows.length })}
           </span>
         </div>
@@ -342,7 +348,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
         stop + rate + continuous toggle) over a bulk line (save-all +
         re-voice-all as text buttons). Two lines because one line cannot
         hold it: popover w-[26rem] (416px) minus px-3 padding minus the
-        w-11 volume rail ≈ 340px of bar width; a single line would need
+        w-10 volume rail ≈ 344px of bar width; a single line would need
         play 28 + stop 28 + rate ~44 + save-all ~110 (RU «Сохранить всё»)
         + re-voice-all ~130 (RU «Переозвучить всё») + toggle ~130 +
         gaps ~36 ≈ 500px. Transport line ≈ 28+28+44+130+gaps ≈ 250px <
@@ -533,25 +539,65 @@ function PlaylistRow(input: {
   const progress = row.live && row.live.total > 0
     ? Math.min(100, Math.round((row.live.received / row.live.total) * 100))
     : null;
-  // RD-1: the row is a four-zone card — head (A), chunk status (B),
-  // controls (C), playback (D, live rows only). Zones B/C/D are split
-  // by thin rules (border-border2, the file's existing divider token).
+  // RD-8: the row is a dividerless four-zone card (owner: «без
+  // разделителя, так чище» — RD-1's border-t rules are gone; zones are
+  // one block now). Player composition: a round transport button docks
+  // at the LEFT edge, the content zones flow to its right. Magnifier
+  // stays docked right of the snippet (a locate action tied to the
+  // text, not to playback).
   // Width budget: the popover is w-[26rem] (416px, capped by
   // max-w-[calc(100vw-2rem)]), the list pads px-2 and the card px-2, so
-  // a zone is ~384px at most. Head: snippet flexes, magnifier is a fixed
-  // 28px dock. The control panel holds at most four 28px icon buttons
-  // plus gaps (~130px). No fixed widths for authored strings anywhere
-  // (RU runs 20–30% longer): labels/badges size to content, and only
-  // the snippet (unbounded user data in a density list) clamps.
+  // a card is ~384px at most: round play 32 + gap 8 + content ~344px.
+  // The action row holds at most four 28px icon buttons plus gaps
+  // (~130px of the ~344px content width). No fixed widths for authored
+  // strings anywhere (RU runs 20–30% longer): labels/badges size to
+  // content, and only the snippet (unbounded user data in a density
+  // list) clamps.
+  // Playing highlight (owner: «с подсветкой карточки»): the card whose
+  // narration is PLAYING gets the app's active-item language
+  // (DiceTray twin: border-accent/50 + bg-accent-dim) — state-driven,
+  // never hover. Live-but-not-playing keeps the plain accent-dim wash.
   return (
     <li
       data-testid="narration-playlist-row"
       data-playlist-message-id={row.messageId}
       className={cn(
-        "rounded-md px-2 py-1.5",
-        live ? "bg-accent-dim" : "hover:bg-s2",
+        "rounded-md border border-transparent px-2 py-1.5",
+        rowPlaying ? "border-accent/50 bg-accent-dim" : live ? "bg-accent-dim" : "hover:bg-s2",
       )}
     >
+      <div className="flex min-w-0 items-start gap-2">
+        {/* RD-8: round transport button, left edge (owner: «круглый
+          слева от карточки», variant-2 look). Same RD-2 semantics —
+          only the surface changed: playing → pause icon on an accent
+          fill; paused → play icon in an accent outline (marks the exact
+          row the parked lane will resume from); idle → neutral fill
+          with an accent hover. Handlers untouched. */}
+        <CustomTooltip
+          content={
+            rowPlaying ? t("narration_playlist_pause") : rowPaused ? t("narration_playlist_resume") : t("narrate_action")
+          }
+        >
+          <button
+            type="button"
+            aria-label={
+              rowPlaying ? t("narration_playlist_pause") : rowPaused ? t("narration_playlist_resume") : t("narrate_action")
+            }
+            data-testid="playlist-row-play"
+            onClick={rowPlaying ? input.onPause : rowPaused ? input.onResume : input.onPlay}
+            className={cn(
+              "mt-0.5 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5",
+              rowPlaying
+                ? "bg-accent text-on-accent"
+                : rowPaused
+                  ? "border border-accent/60 bg-transparent text-accent-t"
+                  : "bg-s3 text-t1 hover:bg-accent hover:text-on-accent",
+            )}
+          >
+            {rowPlaying ? <Ic.pause /> : <Ic.play />}
+          </button>
+        </CustomTooltip>
+        <div className="min-w-0 flex-1">
       {/* RD-1 zone A — head: the two-line snippet (owner decision) plus
         the show-in-chat magnifier docked at the right edge. */}
       <div data-testid="playlist-row-zone-head" className="flex min-w-0 items-start gap-1.5">
@@ -572,7 +618,7 @@ function PlaylistRow(input: {
       </div>
       {/* RD-1 zone B — chunk status: swipe badge, cache/library badge,
         and the live fetch progress (n/total + bar). */}
-      <div data-testid="playlist-row-zone-chunk" className="mt-1 border-t border-border2 pt-1">
+      <div data-testid="playlist-row-zone-chunk" className="mt-1">
         <div className="flex items-center gap-2">
           <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t3 tabular-nums">
             {t("narration_playlist_swipe", { current: row.variantIndex + 1, total: row.variantCount })}
@@ -613,38 +659,16 @@ function PlaylistRow(input: {
           )}
         </div>
       </div>
-      {/* RD-1 zone C — the row control panel: play plus the per-kind
-        action set, laid out horizontally. RD-3: the row stop joins this
-        panel — a second SURFACE for the same single stopNarration path
-        (FS-2 invariant intact: one path, two surfaces). Icon-only
-        buttons: no RU width risk; the panel holds at most five 28px
-        buttons plus gaps (~160px of the ~384px card width). */}
-      <div data-testid="playlist-row-zone-controls" className="mt-1 border-t border-border2 pt-1">
+      {/* RD-8 zone C — the row action line: the per-kind action set,
+        laid out horizontally, docked right of the meta badges is the
+        mock's variant-1 row (always visible — no hover-reveal; touch
+        and Android targets). The round transport button moved to the
+        card's left edge (see above); RD-3's stop stays in this line —
+        a second SURFACE for the same single stopNarration path (FS-2
+        invariant intact: one path, two surfaces). Icon-only buttons:
+        no RU width risk. */}
+      <div data-testid="playlist-row-zone-controls" className="mt-1">
         <div className="flex items-center gap-1.5">
-          {/* RD-2: the play button turns into pause while THIS row's
-            narration is playing (owner decision) — same lane pause as
-            the footer toggle. A parked lane offers resume (native
-            orchestrator resume: playback continues from position, no
-            re-synthesis). Everywhere else the button (re)starts the
-            lane via onPlay: settled rows replay from cache, a
-            still-generating lane re-arms fresh (FS-2 restart). */}
-          <CustomTooltip
-            content={
-              rowPlaying ? t("narration_playlist_pause") : rowPaused ? t("narration_playlist_resume") : t("narrate_action")
-            }
-          >
-            <button
-              type="button"
-              aria-label={
-                rowPlaying ? t("narration_playlist_pause") : rowPaused ? t("narration_playlist_resume") : t("narrate_action")
-              }
-              data-testid="playlist-row-play"
-              onClick={rowPlaying ? input.onPause : rowPaused ? input.onResume : input.onPlay}
-              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
-            >
-              {rowPlaying ? <Ic.pause /> : <Ic.play />}
-            </button>
-          </CustomTooltip>
           {/* RD-3: row stop — owner's «отдельно кнопка стоп», next to
             play/pause. Visible on live rows only (generating/playing/
             paused are all stopNarration-abortable); settled, partial
@@ -781,10 +805,12 @@ function PlaylistRow(input: {
         n/total). Unknown total: seeks over the known prefix; unknown
         segments are slivers, never estimates. */}
       {row.live !== null && (
-        <div data-testid="playlist-row-zone-playback" className="mt-1 border-t border-border2 pt-1">
+        <div data-testid="playlist-row-zone-playback">
           <SeekBar progress={input.progress} onSeek={input.onSeek} />
         </div>
       )}
+        </div>
+      </div>
     </li>
   );
 }
