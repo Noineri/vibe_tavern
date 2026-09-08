@@ -337,21 +337,35 @@ describe("CoauthorCharacterForm", () => {
 		expect(await findByText("coauthor.context.bound_scripts_caption")).toBeTruthy();
 	});
 
-	// ── E5: context block height contract (MOBILE_DEFECTS_ROUND_2) ────────────
+	// ── E5: context block scrolls AWAY, editor fills the phone screen ────────
 
-	it("E5: the context block is height-bounded with its own scroll on mobile, untouched on desktop", async () => {
+	it("E5: mobile uses ONE page scroll — the context block rides it and the editor section can fill the screen", async () => {
 		useSnapshotStore.setState({
 			character: makeCharacter(),
 			activeChat: { id: TEST_CHAT } as never,
 		});
-		const { getByTestId } = render(<CoauthorCharacterForm />);
+		const { container, getByTestId } = render(<CoauthorCharacterForm />);
 		const block = getByTestId("coauthor-context-block");
-		// CSS contract: on mobile the block caps at 40vh and scrolls its own
-		// content, so the md-editor below gets a real flex-1 floor; desktop keeps
-		// the natural height (no max-h/overflow outside the max-md scope).
-		expect(block.className).toContain("max-md:max-h-[40vh]");
-		expect(block.className).toContain("max-md:overflow-y-auto");
-		expect(block.className).not.toContain("overflow-y-auto "); // bare overflow would fork desktop
+		// The context block must NOT own a scroll or a height cap (owner re-spec
+		// 2026-09-08: it scrolls away with the page — the original fix gave it a
+		// nested 40vh scroll, which pinned the block at half the phone screen).
+		expect(block.className).not.toContain("max-md:overflow");
+		expect(block.className).not.toContain("max-h-");
+		expect(block.className).not.toContain("overflow-y-auto"); // not even desktop — never a scroller
+		// ONE page scroll: the form root itself is the scrolling container on
+		// mobile (block flow — the flex column stays for desktop).
+		const root = container.firstElementChild as HTMLElement;
+		expect(root.className).toContain("max-md:overflow-y-auto");
+		expect(root.className).toContain("max-md:block");
+		// The editor section is at least a full screen tall, so once the context
+		// is scrolled past, the editor occupies the whole phone viewport; the
+		// editor box itself grows toward a full screen (min-height, never clips —
+		// the md bundle is auto-growing by design).
+		const pane = block.nextElementSibling as HTMLElement;
+		expect(pane.className).toContain("max-md:min-h-[100dvh]");
+		const host = pane.querySelector(".vibe-md-editor") as HTMLElement;
+		expect(host.className).toContain("max-md:min-h-[calc(100dvh-140px)]");
+		expect(host.style.minHeight).toBe(""); // inline min-height would beat the mobile class
 	});
 
 	// ── CA-11: reviewing state + Apply/Reject ──────────────────────────────────

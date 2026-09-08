@@ -435,7 +435,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   const canSave = (form.watch("name") || "").trim().length > 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col max-md:block max-md:overflow-y-auto">
       {/* Header bar — title + state subtitle + save. */}
       <div className="glass-bar sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-surface px-4 py-2.5">
         <div className="min-w-0">
@@ -470,14 +470,18 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           persists on the chat (coauthorContextLinks); L2/L3 bind to the
           character (lorebook_links / script_links via BoundResourcesField, the
           same shared primitive the card editor uses). */}
-      {/* E5 (MOBILE_DEFECTS_ROUND_2): on mobile the context block is
-          height-bounded with its OWN scroll (40vh — the same cap the co-author
-          mobile textarea uses), so the md-editor's flex-1 floor is real and the
-          editor can take the full phone screen. Desktop keeps the natural
-          height — the editor pane stays the single scrolling surface. */}
+      {/* E5 (MOBILE_DEFECTS_ROUND_2, owner re-spec 2026-09-08): the context
+          block must scroll AWAY, not scroll INSIDE — on mobile the whole form
+          is ONE page scroll (root becomes the scrolling block), so the context
+          block rides the page like any document content and the editor section
+          below can be scrolled to fill the full phone screen. The md bundle is
+          auto-growing by design (height:auto + overflow:hidden scroller — the
+          page scroll is the only scroll), so a nested scroll container here
+          would fight the editor itself. Desktop keeps the flex column with the
+          editor pane as the scroller. */}
       <div
         data-testid="coauthor-context-block"
-        className="shrink-0 border-b border-border/50 bg-surface px-4 py-2 max-md:max-h-[40vh] max-md:overflow-y-auto"
+        className="shrink-0 border-b border-border/50 bg-surface px-4 py-2"
       >
         {/* Level 1 — pinned, full content. */}
         <div className="flex items-center gap-2">
@@ -517,13 +521,12 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           preserved) but is removed from flow so it cannot be scrolled to and
           doesn't show through; the reviewing overlay takes its place and fills
           the panel height (diff stretches, footer sits at the bottom). */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className={"min-h-0 flex-1 overflow-y-auto px-4 py-4" + (showReview ? " hidden" : "")}>
+      <div className="relative flex min-h-0 flex-1 flex-col max-md:min-h-[100dvh]">
+        <div className={"min-h-0 flex-1 overflow-y-auto px-4 py-4 max-md:min-h-fit max-md:overflow-visible" + (showReview ? " hidden" : "")}>
           <label className={lblCls}>{t("coauthor.editor.label")}</label>
           <div
             ref={editorHostRef}
-            className="vibe-md-editor rounded-lg border border-border"
-            style={{ minHeight: 360 }}
+            className="vibe-md-editor min-h-[360px] max-md:min-h-[calc(100dvh-140px)] rounded-lg border border-border"
           />
           <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>
         </div>
