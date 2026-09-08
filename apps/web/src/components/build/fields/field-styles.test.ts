@@ -2,6 +2,20 @@ import { describe, expect, it } from "bun:test";
 import { inputCls, lblCls, monoCls } from "./field-styles.js";
 
 /**
+ * Contract pin: the label class carries the canon 6px label→control gap
+ * (mb-1.5) baked into the shared constant (LBLCLS_MB_SPACING_CANON), so the
+ * spacing is structural, not per-callsite discipline. Horizontal row contexts
+ * opt out with a local `!mb-0` (see ProviderBindingPanel/ProviderModelSelector).
+ * If mb-1.5 disappears here, ~90 labels across 28 files silently lose their
+ * gap — this test makes that loud.
+ */
+describe("field-styles — label spacing contract", () => {
+  it("lblCls carries the canon mb-1.5 gap", () => {
+    expect(lblCls).toContain("mb-1.5");
+  });
+});
+
+/**
  * Contract pin: the shared field classes must keep AutoTextarea's documented
  * `maxRows` behavior intact — "Max rows before the textarea stops growing and
  * SCROLLS INTERNALLY" (auto-textarea.tsx). `overflow-hidden` on a capped

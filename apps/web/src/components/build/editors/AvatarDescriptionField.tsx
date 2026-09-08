@@ -112,7 +112,7 @@ export function AvatarDescriptionField({
 		>
 			{/* Header: label + toggle */}
 			<div className="mb-2.5 flex items-center justify-between gap-2">
-				<label className={cn(lblCls, "mb-0")}>{t("avatar_description_label")}</label>
+				<label className={cn(lblCls, "!mb-0")}>{t("avatar_description_label")}</label>
 				<div className="flex items-center gap-2">
 					<span className="font-ui text-[12px] text-t3">{t("avatar_include_in_prompt")}</span>
 					<Toggle

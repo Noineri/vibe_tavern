@@ -74,7 +74,7 @@ function FieldRow({ label, node, value, onChange, t }: {
   if (node.$type === "object") {
     const obj = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
     return (
-      <fieldset className="flex flex-col gap-2 rounded-lg border border-border p-2.5">
+      <fieldset className="flex flex-col rounded-lg border border-border p-2.5">
         <legend className={lblCls + " px-1"}>{label}</legend>
         <FieldsEditor schema={node.properties} value={obj} onChange={onChange} t={t} />
       </fieldset>
@@ -85,7 +85,7 @@ function FieldRow({ label, node, value, onChange, t }: {
   }
   // Leaves
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col">
       <label className={lblCls}>{label}{node.$type === "number" && (node.min != null || node.max != null) ? ` (${rangeHint(node)})` : ""}</label>
       <LeafInput node={node} value={value} onChange={onChange} />
     </div>
@@ -146,7 +146,7 @@ function ArrayEditor({ label, items, value, onChange, t }: {
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col">
       <div className="flex items-center justify-between">
         <label className={lblCls}>{label}</label>
         <button type="button" onClick={add} className="rounded px-2 py-0.5 text-[11px] text-accent transition-colors hover:bg-s2">

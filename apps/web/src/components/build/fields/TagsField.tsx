@@ -49,7 +49,7 @@ export function TagsField({ form, isSaving }: TagsFieldProps) {
 
   return (
     <div>
-      <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
+      <label className={lblCls}>{t("char_tags_label")}</label>
       <input
         type="text"
         className={inputCls + mInput}

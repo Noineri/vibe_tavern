@@ -371,7 +371,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           saved preset, applies instantly — see handleActiveToggle. */}
       <div className="flex items-end gap-4">
         <div className="min-w-0 flex-1">
-          <label className={lblCls + " mb-1.5"} htmlFor="regex-name">{t("promptManager.regex.fieldName")}</label>
+          <label className={lblCls} htmlFor="regex-name">{t("promptManager.regex.fieldName")}</label>
           <input
             id="regex-name"
             type="text"
@@ -415,7 +415,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           own isGlobal/bindings are shadowed by the profile gate. */}
       {preset?.profileId ? (
         <div>
-          <div className={lblCls + " mb-1.5"}>{t("promptManager.regex.scopeLabel")}</div>
+          <div className={lblCls}>{t("promptManager.regex.scopeLabel")}</div>
           <div className="flex items-center gap-2 rounded-md border border-border bg-s2 px-3 py-2">
             <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-success" />
             <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">
@@ -433,7 +433,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       ) : (
         <>
           <div>
-            <div className={lblCls + " mb-1.5"}>{t("promptManager.regex.scopeLabel")}</div>
+            <div className={lblCls}>{t("promptManager.regex.scopeLabel")}</div>
             <SegmentedControl
               value={draft.isGlobal ? "all" : "bind"}
               onChange={(v) => update("isGlobal", v === "all")}
@@ -446,7 +446,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
 
           {presetId && !draft.isGlobal && (
             <div>
-              <div className={lblCls + " mb-1.5"}>{t("promptManager.regex.bindingsLabel")}</div>
+              <div className={lblCls}>{t("promptManager.regex.bindingsLabel")}</div>
               <LinkBindingPopover
                 links={bindLinks}
                 characters={characterTargets}
@@ -472,7 +472,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
 
       {/* Как срабатывает (R-7): placement chips → depth modes → apply-target. */}
       <div>
-        <div className={lblCls + " mb-1.5"}>{t("promptManager.regex.behaviorLabel")}</div>
+        <div className={lblCls}>{t("promptManager.regex.behaviorLabel")}</div>
         <div className="flex flex-col gap-4">
           <ToggleChips
             selected={draft.placement.map(String)}
@@ -563,7 +563,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       {/* Rule fields (R-7): mono via the shared `monoCls` canon — the same
           mono field style the build form's prompt-instruction fields use. */}
       <div>
-        <label className={lblCls + " mb-1.5"} htmlFor="regex-find">{t("promptManager.regex.fieldFind")}</label>
+        <label className={lblCls} htmlFor="regex-find">{t("promptManager.regex.fieldFind")}</label>
         <AutoTextarea
           id="regex-find"
           className={monoCls}
@@ -577,7 +577,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       </div>
 
       <div>
-        <label className={lblCls + " mb-1.5"} htmlFor="regex-replace">{t("promptManager.regex.fieldReplace")}</label>
+        <label className={lblCls} htmlFor="regex-replace">{t("promptManager.regex.fieldReplace")}</label>
         <AutoTextarea
           id="regex-replace"
           className={monoCls}
@@ -591,7 +591,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       </div>
 
       <div>
-        <label className={lblCls + " mb-1.5"} htmlFor="regex-trim">{t("promptManager.regex.fieldTrim")}</label>
+        <label className={lblCls} htmlFor="regex-trim">{t("promptManager.regex.fieldTrim")}</label>
         <AutoTextarea
           id="regex-trim"
           className={monoCls}
@@ -606,7 +606,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
 
       {/* Substitute macros — part of the rule (affects the find pattern). */}
       <div>
-        <label className={lblCls + " mb-1.5"} htmlFor="regex-substitute">{t("promptManager.regex.fieldSubstitute")}</label>
+        <label className={lblCls} htmlFor="regex-substitute">{t("promptManager.regex.fieldSubstitute")}</label>
         <SegmentedControl
           value={String(draft.substituteRegex)}
           onChange={(v) => update("substituteRegex", Number(v) as RegexSubstituteMode)}

@@ -511,7 +511,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           the panel height (diff stretches, footer sits at the bottom). */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className={"min-h-0 flex-1 overflow-y-auto px-4 py-4" + (showReview ? " hidden" : "")}>
-          <label className={lblCls + " mb-1.5 block"}>{t("coauthor.editor.label")}</label>
+          <label className={lblCls}>{t("coauthor.editor.label")}</label>
           <div
             ref={editorHostRef}
             className="vibe-md-editor rounded-lg border border-border"

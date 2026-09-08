@@ -230,23 +230,23 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
           <div className="space-y-4">
             <div>
               <label className={lblCls}>{t("proxy_name")}</label>
-              <input className={cn(inputCls, "mt-1.5")} value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder={t("proxy_name_placeholder")} />
+              <input className={inputCls} value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder={t("proxy_name_placeholder")} />
             </div>
             <div>
               <label className={lblCls}>{t("proxy_url")}</label>
-              <input className={cn(inputCls, "mt-1.5")} value={draft.url} onChange={(event) => updateDraft("url", event.target.value)} placeholder="http://proxy.example:8080" />
+              <input className={inputCls} value={draft.url} onChange={(event) => updateDraft("url", event.target.value)} placeholder="http://proxy.example:8080" />
               <p className="mt-1 font-ui text-[11px] text-t3">{t("proxy_url_hint")}</p>
             </div>
             <div>
               <label className={lblCls}>{t("proxy_username")}</label>
-              <input className={cn(inputCls, "mt-1.5")} value={draft.username} onChange={(event) => updateDraft("username", event.target.value)} autoComplete="username" />
+              <input className={inputCls} value={draft.username} onChange={(event) => updateDraft("username", event.target.value)} autoComplete="username" />
             </div>
             <div>
               <div className="flex items-center justify-between gap-3">
                 <label className={lblCls}>{t("proxy_password")}</label>
                 {draft.hasStoredPassword && !draft.clearStoredPassword && <span className="font-ui text-[11px] text-t3">{t("proxy_password_stored")}</span>}
               </div>
-              <input className={cn(inputCls, "mt-1.5 font-mono tracking-[0.05em]")} type="password" value={draft.password} onChange={(event) => { updateDraft("password", event.target.value); if (event.target.value) updateDraft("clearStoredPassword", false); }} autoComplete="new-password" placeholder={draft.hasStoredPassword && !draft.clearStoredPassword ? t("proxy_password_preserve") : undefined} />
+              <input className={cn(inputCls, "font-mono tracking-[0.05em]")} type="password" value={draft.password} onChange={(event) => { updateDraft("password", event.target.value); if (event.target.value) updateDraft("clearStoredPassword", false); }} autoComplete="new-password" placeholder={draft.hasStoredPassword && !draft.clearStoredPassword ? t("proxy_password_preserve") : undefined} />
               {draft.hasStoredPassword && (
                 <button type="button" className="mt-2 font-ui text-[12px] text-danger/80 transition-colors hover:text-danger" onClick={toggleClearPassword}>
                   {draft.clearStoredPassword ? t("cancel") : t("proxy_password_clear")}

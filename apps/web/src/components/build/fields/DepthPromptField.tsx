@@ -41,7 +41,7 @@ export function DepthPromptField({ form, isSaving }: DepthPromptFieldProps) {
   return (
     <div className="mb-5">
       <div className="mb-1.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <label className={lblCls}>{t("depth_prompt")}</label>
+        <label className={lblCls + " !mb-0"}>{t("depth_prompt")}</label>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
             <SegmentedControl

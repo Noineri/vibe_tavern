@@ -234,7 +234,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
       {/* DSL schema editor */}
       <div>
         <div className="flex items-center gap-2">
-          <label className={lblCls}>{t("scn_schema_label")}</label>
+          <label className={lblCls + " !mb-0"}>{t("scn_schema_label")}</label>
           <button
             type="button"
             onClick={() => setSchemaAiOpen(true)}
@@ -533,7 +533,7 @@ function PromptField({ label, hint, defaultValue, onSave, action }: { label: str
   return (
     <div>
       <div className="flex items-center gap-2">
-        <label className={lblCls}>{label}</label>
+        <label className={lblCls + " !mb-0"}>{label}</label>
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>
       <AutoTextarea

@@ -590,7 +590,7 @@ interface ProfileEditorProps {
 function ProfileEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool }: ProfileEditorProps) {
 	return (
 		<div className="flex flex-col gap-4" data-testid="copilot-profile-editor">
-			<div className="flex flex-col gap-1">
+			<div className="flex flex-col">
 				<label className={lblCls}>{t("copilot_profile_name_label")}</label>
 				<input
 					type="text"
@@ -602,7 +602,7 @@ function ProfileEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool
 				/>
 			</div>
 
-			<div className="flex flex-col gap-1">
+			<div className="flex flex-col">
 				<label className={lblCls}>{t("copilot_profile_base_prompt")}</label>
 				<AutoTextarea
 					className={monoCls}

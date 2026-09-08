@@ -55,7 +55,7 @@ export function PromptModal(input: PromptModalProps) {
         <div className="mb-4 text-base font-medium text-t1">
           {input.title}
         </div>
-        <label className={lblCls + " mb-1.5 block"}>{input.label}</label>
+        <label className={lblCls}>{input.label}</label>
         <input
           ref={inputRef}
           type="text"

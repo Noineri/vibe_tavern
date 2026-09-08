@@ -77,7 +77,7 @@ export function TextAreaField({
   const cls = (mono ? monoCls : inputCls) + mInput;
   return (
     <div className="mb-5">
-      <label className={lblCls + " mb-1.5 block"}>{label}</label>
+      <label className={lblCls}>{label}</label>
       <MobileExpandTextarea value={value || ""} onChange={(v) => setValue(field, v)} label={mobileExpandLabel}>
         <AutoTextarea
           className={cls}

@@ -725,7 +725,7 @@ export function ServicePromptsPane({
 			{detailState === "ready" && detail && (
 				<>
 					{!isDefaultSelected && (
-						<label className={lblCls + " mb-1.5"}>
+						<label className={lblCls}>
 							{t("promptManager.servicePrompts.profileName")}
 							<input
 								value={draftName}
@@ -769,7 +769,7 @@ export function ServicePromptsPane({
 											const placeholder = truncateForPlaceholder(defaultText);
 											if (isDefaultSelected) {
 												return (
-													<div key={field} className="flex flex-col gap-1.5">
+													<div key={field} className="flex flex-col">
 														<label className={lblCls}>{tDynamic(labelKey)}</label>
 														<AutoTextarea className={monoCls} value={defaultText} disabled minRows={2} />
 													</div>
@@ -778,7 +778,7 @@ export function ServicePromptsPane({
 											return (
 												<div key={field} className="flex flex-col gap-1.5">
 													<div className="flex items-center justify-between">
-														<label className={lblCls}>{tDynamic(labelKey)}</label>
+														<label className={lblCls + " !mb-0"}>{tDynamic(labelKey)}</label>
 														<div className="flex items-center gap-2">
 															<span className="font-ui text-[11px] text-t4">
 																{tDynamic("promptManager.servicePrompts.charCount", { count: overrideValue.length })}

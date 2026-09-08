@@ -136,7 +136,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
         <div>
           <label className={lblCls}>{t("obj_description_label")}</label>
           <AutoTextarea
-            className={inputCls + " mt-1.5"}
+            className={inputCls}
             defaultValue={state.objectiveDescription}
             placeholder={t("obj_description_placeholder")}
             minRows={2}
@@ -691,7 +691,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
             type="number"
             min={0}
             defaultValue={state.autoCheckFrequency}
-            className={inputCls + " mt-1.5"}
+            className={inputCls}
             onBlur={(e) => saveNumber("autoCheckFrequency", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_frequency_hint")}</p>
@@ -702,7 +702,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
             type="number"
             min={1}
             defaultValue={state.contextWindow}
-            className={inputCls + " mt-1.5"}
+            className={inputCls}
             onBlur={(e) => saveNumber("contextWindow", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_context_window_hint")}</p>
@@ -713,7 +713,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
             type="number"
             min={1}
             defaultValue={state.injectionDepth}
-            className={inputCls + " mt-1.5"}
+            className={inputCls}
             onBlur={(e) => saveNumber("injectionDepth", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_depth_hint")}</p>
@@ -746,7 +746,7 @@ function PromptField({ label, hint, defaultValue, onSave }: { label: string; hin
     <div>
       <label className={lblCls}>{label}</label>
       <AutoTextarea
-        className={monoCls + " mt-1.5"}
+        className={monoCls}
         defaultValue={defaultValue}
         placeholder={hint}
         minRows={2}

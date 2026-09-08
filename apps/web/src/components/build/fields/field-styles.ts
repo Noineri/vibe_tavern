@@ -18,6 +18,9 @@ export const inputCls =
 /** Monospace variant for prompt-instruction fields (system / post-history / depth). */
 export const monoCls = inputCls + " font-mono text-xs";
 
-/** Uppercase tracked label used above every field. */
+/** Uppercase tracked label used above every field. Carries the canon 6px
+ *  gap below itself (mb-1.5) so label→control spacing is a property of the
+ *  constant, not per-callsite discipline. Horizontal row contexts where the
+ *  row's own gap provides spacing opt out with a local `!mb-0`. */
 export const lblCls =
-  "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
+  "mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
