@@ -141,7 +141,7 @@ export function WhisperModelPanel({
       <button
         type="button"
         data-testid="stt-whisper-model-download-btn"
-        className="flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+        className="flex h-7 w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
         onClick={downloadAndClose}
       >
         <Ic.download />
