@@ -18,6 +18,7 @@
 import { useState, type ReactNode } from "react";
 import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import { Toggle } from "../../shared/Toggle.js";
+import { NumberInput } from "../../shared/NumberInput.js";
 import { inputCls, lblCls } from "../../build/fields/field-styles.js";
 import type { TFunc } from "../../../i18n/context.js";
 
@@ -34,10 +35,10 @@ export function SceneEditorBody({ schema, initial, onSave, onCancel, t }: {
     <div className="flex flex-col gap-3">
       <FieldsEditor schema={schema} value={draft} onChange={setDraft} t={t} />
       <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
-        <button type="button" onClick={onCancel} className="rounded px-3 py-1.5 text-sm text-t3 transition-colors hover:bg-s2">
+        <button type="button" onClick={onCancel} className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1">
           {t("scn_edit_cancel")}
         </button>
-        <button type="button" onClick={() => onSave(draft)} className="rounded bg-accent px-3 py-1.5 text-sm text-white transition-opacity hover:opacity-90">
+        <button type="button" onClick={() => onSave(draft)} className="h-[37px] cursor-pointer rounded-md bg-accent px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110">
           {t("scn_edit_save")}
         </button>
       </div>
@@ -98,17 +99,12 @@ function LeafInput({ node, value, onChange }: { node: Extract<SceneTrackerSchema
   }
   if (node.$type === "number") {
     return (
-      <input
-        type="number"
-        inputMode="decimal"
+      <NumberInput
         value={typeof value === "number" ? value : Number(value) || 0}
+        onChange={onChange}
         min={node.min}
         max={node.max}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          onChange(Number.isFinite(n) ? n : 0);
-        }}
-        className={inputCls}
+        className="w-full"
       />
     );
   }
