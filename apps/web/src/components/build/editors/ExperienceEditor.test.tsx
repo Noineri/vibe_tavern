@@ -614,8 +614,12 @@ describe("ExperienceEditor", () => {
     serverScripts = [{ ...baseScript }];
     mobileMocks.mobile = true;
 
-    const { findByText, queryByText, getByRole } = render(<ExperienceEditor />);
+    const { findByText, queryByText, findByRole, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("experience_editor_create_new"));
+    // E6: the management cluster lives in the mobile Правка tab — role queries
+    // skip the display:none-hidden pane, so switch tabs before querying the
+    // save button (text queries below match hidden nodes fine).
+    fireEvent.click(await findByRole("tab", { name: "experience_copilot_tab_edit" }));
 
     // Fresh script is disabled → short pill key, never the full word.
     expect(await findByText("experience_editor_disabled_short")).toBeTruthy();
@@ -1632,21 +1636,35 @@ describe("ExperienceEditor", () => {
     expect(scroller.classList.contains("max-w-[860px]")).toBe(true);
   });
 
-  it("script header: mobile recomposes into two tight rows — name shares the back row, save is an icon-only floppy (4a follow-up + round 3)", async () => {
+  it("script header (E6): mobile management cluster lives in the Правка tab; back folds into the tab-bar row", async () => {
     serverScripts = [{ ...baseScript }];
     mobileMocks.mobile = true;
-    const { container, findByText } = render(<ExperienceEditor />);
+    const { container, findByText, findByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
 
-    // The name input must NOT claim its own row anymore (no basis-full): it
-    // shares row 1 with the back button (flex-1 fills the remainder).
-    const nameInput = container.querySelector('input[placeholder="script_name"]');
+    // The cluster renders at the top of the Правка tab (inside the edit pane),
+    // never above the tab bar and never inside the chat pane.
+    const header = container.querySelector('[data-testid="copilot-edit-tab-header"]');
+    if (!(header instanceof HTMLElement)) throw new Error("edit-tab header missing");
+    expect(header.closest('[data-testid="copilot-pane-edit"]')).not.toBeNull();
+    expect(header.closest('[data-testid="copilot-pane-chat"]')).toBeNull();
+
+    // Back is a chevron in the tab-bar row (zero added height), and it is the
+    // FIRST row sibling — left of the tablist proper. The desktop back TEXT
+    // button does not render on mobile.
+    const chevron = container.querySelector('[data-testid="copilot-mobile-back"]');
+    if (!(chevron instanceof HTMLElement)) throw new Error("mobile back chevron missing");
+    expect(chevron.getAttribute("aria-label")).toBe("experience_editor_back");
+    expect(chevron.nextElementSibling?.getAttribute("role")).toBe("tablist");
+
+    // The composition contracts survive the move: name input flex-1 (no
+    // basis-full), action cluster is display:contents on desktop / nested flex
+    // row on mobile.
+    const nameInput = header.querySelector('input[placeholder="script_name"]');
     if (!(nameInput instanceof HTMLInputElement)) throw new Error("name input missing");
     expect(nameInput.classList.contains("max-md:basis-full")).toBe(false);
     expect(nameInput.classList.contains("flex-1")).toBe(true);
-    // The action cluster is a display:contents group on desktop (flat row)
-    // and a nested flex row on mobile — the deterministic two-row split.
-    const pill = container.querySelector("span.cursor-help");
+    const pill = header.querySelector("span.cursor-help");
     if (!(pill instanceof HTMLElement)) throw new Error("status pill missing");
     const cluster = pill.closest("div");
     if (!(cluster instanceof HTMLElement)) throw new Error("action cluster missing");
@@ -1655,21 +1673,66 @@ describe("ExperienceEditor", () => {
     expect(cluster.classList.contains("max-md:flex-wrap")).toBe(true);
 
     // The save-state label stays hidden on mobile; the save button is an
-    // icon-only floppy (round 3): a fixed 36px touch square instead of the
-    // old flex-1 filler, so [pill][toggle][save][dup][del] fit one row.
+    // icon-only floppy (36px touch square).
     const stateLabel = await findByText("saved_state");
     expect(stateLabel.classList.contains("max-md:hidden")).toBe(true);
-    const saveBtn = container.querySelector('button[aria-label="Сохранить"], button[aria-label="save"]');
+    const saveBtn = header.querySelector('button[aria-label="Сохранить"], button[aria-label="save"]');
     if (!(saveBtn instanceof HTMLElement)) throw new Error("save button missing");
     expect(saveBtn.classList.contains("h-9")).toBe(true);
     expect(saveBtn.classList.contains("w-9")).toBe(true);
-    expect(saveBtn.classList.contains("min-w-[124px]")).toBe(false);
     expect(saveBtn.querySelector("svg")).toBeTruthy();
 
-    const dupBtn = container.querySelector('button[aria-label="experience_editor_duplicate"]');
+    const dupBtn = header.querySelector('button[aria-label="experience_editor_duplicate"]');
     if (!(dupBtn instanceof HTMLElement)) throw new Error("duplicate button missing");
     expect(dupBtn.classList.contains("max-md:h-9")).toBe(true);
-    expect(dupBtn.classList.contains("max-md:w-9")).toBe(true);
+
+    // The desktop back TEXT button is absent on mobile (no node carries the
+    // label as text anywhere in the tree).
+    expect(container.textContent).not.toContain("experience_editor_back");
+
+    // The chevron navigates back to the picker without the Правка detour.
+    fireEvent.click(chevron);
+    expect(await findByText("experience_editor_create_new")).toBeTruthy();
+  });
+
+  it("E6 mobile: the Правка tab badges while the draft is dirty (dot + one-shot pulse, no auto-switch)", async () => {
+    serverScripts = [{ ...baseScript }];
+    mobileMocks.mobile = true;
+    const { container, findByText, findByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+
+    const editTab = await findByRole("tab", { name: "experience_copilot_tab_edit" });
+    // Clean draft → no dot, and the surface stays on Чат (no auto-switch).
+    expect(editTab.querySelector("span[aria-hidden]")).toBeNull();
+    expect(container.querySelector('[data-testid="copilot-pane-chat"]')?.classList.contains("hidden")).toBe(false);
+
+    // Edit the name (the input lives in the hidden edit pane — dispatching on
+    // hidden DOM is fine): the draft turns dirty → the dot appears on Правка,
+    // the one-shot pulse class is set, and the surface REMAINS on Чат.
+    const nameInput = container.querySelector('input[placeholder="script_name"]');
+    if (!(nameInput instanceof HTMLInputElement)) throw new Error("name input missing");
+    fireEvent.change(nameInput, { target: { value: "renamed" } });
+    expect(editTab.querySelector("span[aria-hidden]")).not.toBeNull();
+    expect(editTab.className).toContain("coauthor-tab-pulse");
+    expect(container.querySelector('[data-testid="copilot-pane-chat"]')?.classList.contains("hidden")).toBe(false);
+
+    // Saving clears the dot.
+    fireEvent.click(container.querySelector('button[aria-label="save"]') as HTMLElement);
+    await waitFor(() => expect(editTab.querySelector("span[aria-hidden]")).toBeNull());
+  });
+
+  it("E6 desktop: the top bar keeps back + management cluster; no mobile-only surfaces render", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+
+    expect(await findByText("experience_editor_back")).toBeTruthy();
+    const nameInput = container.querySelector('input[placeholder="script_name"]');
+    if (!(nameInput instanceof HTMLInputElement)) throw new Error("name input missing");
+    // The cluster is NOT in the mobile edit-tab slot; no chevron either.
+    expect(nameInput.closest('[data-testid="copilot-edit-tab-header"]')).toBeNull();
+    expect(container.querySelector('[data-testid="copilot-edit-tab-header"]')).toBeNull();
+    expect(container.querySelector('[data-testid="copilot-mobile-back"]')).toBeNull();
   });
 
   it("visual toolbar: rows wrap on mobile, save button takes a full row, chips are touch-tall (4a defect 4/5)", async () => {
