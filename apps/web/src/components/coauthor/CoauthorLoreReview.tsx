@@ -34,8 +34,7 @@ export interface CoauthorLoreReviewLabels {
   entriesFew: string;
   entriesMany: string;
   /** Scope badge value labels. */
-  scopeCharacter: string;
-  scopePersona: string;
+  scopeEntity: string;
   scopeGlobal: string;
   scopeChat: string;
   noContent: string;
@@ -61,8 +60,7 @@ function entriesLabel(n: number, labels: CoauthorLoreReviewLabels): string {
 }
 
 const SCOPE_LABEL: Record<string, keyof CoauthorLoreReviewLabels> = {
-  character: "scopeCharacter",
-  persona: "scopePersona",
+  entity: "scopeEntity",
   global: "scopeGlobal",
   chat: "scopeChat",
 };

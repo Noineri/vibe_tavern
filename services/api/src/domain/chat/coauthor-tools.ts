@@ -587,9 +587,9 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
         name: z.string().describe("The lorebook's display name, e.g. 'World Lore' or 'Castle Anvil'."),
         description: z.string().optional().describe("A short description of what this lorebook covers."),
         scopeType: z
-          .enum(["global", "character", "persona", "chat"])
+          .enum(["global", "entity", "chat"])
           .optional()
-          .describe("Where this lorebook is scoped. 'character' (default) attaches it to the current character."),
+          .describe("Where this lorebook is scoped. 'entity' (default) attaches it to the current character."),
         enabled: z.boolean().optional().describe("Whether the lorebook is active. Defaults to true."),
         scanDepth: z.number().int().optional().describe("Activation: how many recent messages to scan for key matches. Default 10."),
         tokenBudget: z.number().int().optional().describe("Activation: max tokens this lorebook may inject per turn. Default 1000."),
@@ -653,7 +653,7 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
         lorebookId: z.string().describe("The id of the lorebook to edit — a create_lorebook id from this turn, or a persisted lorebook id."),
         name: z.string().optional().describe("New display name for the lorebook."),
         description: z.string().optional().describe("New short description."),
-        scopeType: z.enum(["global", "character", "persona", "chat"]).optional().describe("New scope.",),
+        scopeType: z.enum(["global", "entity", "chat"]).optional().describe("New scope.",),
         enabled: z.boolean().optional().describe("Whether the lorebook is active."),
         scanDepth: z.number().int().optional().describe("Activation: how many recent messages to scan for key matches."),
         tokenBudget: z.number().int().optional().describe("Activation: max tokens this lorebook may inject per turn."),

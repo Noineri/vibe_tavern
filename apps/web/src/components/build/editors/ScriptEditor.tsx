@@ -140,8 +140,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   // ── Queries (replaced with local state + async fetch) ────
   const scopeId = (() => {
-    if (scope === "character") return characterId;
-    if (scope === "persona") return personaId ?? undefined;
+    // Entity scope: the owner resolves from the current context — a persona
+    // context (personaId set) owns the view, otherwise the character does.
+    if (scope === "entity") return personaId ?? characterId;
     if (scope === "chat") return chatId ?? undefined;
     return undefined;
   })();
@@ -322,7 +323,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     : null;
 
   const handleImportScript = async (code: string) => {
-    const imported = await importScript({ format: "js", code, scopeType: scope, characterId: scope === "character" ? characterId : undefined, personaId: scope === "persona" ? personaId ?? undefined : undefined, chatId: scope === "chat" ? chatId ?? undefined : undefined });
+    const imported = await importScript({ format: "js", code, scopeType: scope, ...(scope === "entity" ? (personaId ? { personaId } : { characterId }) : {}), chatId: scope === "chat" ? chatId ?? undefined : undefined });
     setScripts((prev) => [...prev, imported]);
     ensureDraft(imported);
     setActiveScriptId(imported.id);
@@ -334,10 +335,14 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // "all" — overview mode with no specific owner; creating/importing scripts
   // is disabled there (CTAs are hidden in LorebookEditor), the fallback is purely defensive.
   const scopeBody = () => {
-    const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "character" : scope;
+    const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "entity" : scope;
     const base: Record<string, string | undefined> = { scopeType: effectiveScope };
-    if (effectiveScope === "character") base.characterId = characterId;
-    if (effectiveScope === "persona") base.personaId = personaId ?? undefined;
+    // Entity home FK resolves from the current context: a persona context owns
+    // the script, otherwise the character does (exactly one typed FK).
+    if (effectiveScope === "entity") {
+      if (personaId) base.personaId = personaId;
+      else base.characterId = characterId;
+    }
     if (effectiveScope === "chat") base.chatId = chatId ?? undefined;
     return base;
   };
@@ -600,9 +605,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       </div>
 
       {activeScript.scriptKind === "dice" ? (
-        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
       ) : (
-        <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+        <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
       )}
     </div>
   ) : (

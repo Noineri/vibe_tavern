@@ -651,7 +651,7 @@ export async function importSillyTavernDirectory(
 			} else {
 				const cardOwner = candidates.map((c) => cardWorldToCharacterId.get(c)).find((v) => v !== undefined);
 				if (cardOwner !== undefined) {
-					scopeType = "character";
+					scopeType = "entity";
 					characterId = cardOwner;
 					enabled = true;
 				} else {

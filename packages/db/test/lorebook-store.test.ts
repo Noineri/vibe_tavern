@@ -50,11 +50,11 @@ describe("LorebookStore.listLorebooksByScope", () => {
       { targetType: "persona", targetId: "persona_active" },
     ]);
 
-    const activePersonaLorebooks = await store.listLorebooksByScope("persona", "persona_active");
+    const activePersonaLorebooks = await store.listLorebooksByScope("entity", "persona_active");
     expect(activePersonaLorebooks.map((lb) => lb.id)).toContain(linked.id);
     expect(activePersonaLorebooks.map((lb) => lb.id)).not.toContain(unrelated.id);
 
-    const otherPersonaLorebooks = await store.listLorebooksByScope("persona", "persona_other");
+    const otherPersonaLorebooks = await store.listLorebooksByScope("entity", "persona_other");
     expect(otherPersonaLorebooks.map((lb) => lb.id)).not.toContain(linked.id);
   });
 });
@@ -362,7 +362,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
   function sampleBundle() {
     return {
       lorebooks: [
-        { id: "lorebook_draft1", name: "World Lore", description: "d", scopeType: "character" as const, enabled: true },
+        { id: "lorebook_draft1", name: "World Lore", description: "d", scopeType: "entity" as const, enabled: true },
       ],
       entries: [
         { id: "lore_entry_draft1", lorebookId: "lorebook_draft1", title: "Castle", content: "Anvil keep.", keys: ["anvil"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
@@ -406,7 +406,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     // An updated field on re-Apply is written (upsert), not a new row.
     const updated = {
       ...sampleBundle(),
-      lorebooks: [{ id: "lorebook_draft1", name: "World Lore v2", description: "d", scopeType: "character" as const, enabled: true }],
+      lorebooks: [{ id: "lorebook_draft1", name: "World Lore v2", description: "d", scopeType: "entity" as const, enabled: true }],
     };
     await store.applyCoauthorLoreDraft("char_1", updated);
     const lb = await store.getLorebook("lorebook_draft1");
@@ -420,7 +420,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
       lorebooks: [
         // A valid book alongside the orphan entry — it must NOT be persisted
         // either; the bundle is rejected as a whole, not partially applied.
-        { id: "lb_valid", name: "Valid", description: "", scopeType: "character" as const, enabled: true },
+        { id: "lb_valid", name: "Valid", description: "", scopeType: "entity" as const, enabled: true },
       ],
       entries: [
         { id: "lore_entry_orphan", lorebookId: "ghost_book", title: "x", content: "y", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
@@ -437,8 +437,8 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const store = await mkStoreWithChar();
     const bundle = {
       lorebooks: [
-        { id: "lb_a", name: "A", description: "", scopeType: "character" as const, enabled: true },
-        { id: "lb_b", name: "B", description: "", scopeType: "character" as const, enabled: true },
+        { id: "lb_a", name: "A", description: "", scopeType: "entity" as const, enabled: true },
+        { id: "lb_b", name: "B", description: "", scopeType: "entity" as const, enabled: true },
       ],
       entries: [
         { id: "le_a1", lorebookId: "lb_a", title: "a1", content: "c", keys: ["k"], secondaryKeys: [], constant: true, position: "before_char", depth: 4, enabled: true },
@@ -457,7 +457,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const store = await mkStoreWithChar();
     const bundle = {
       lorebooks: [
-        { id: "lb_params", name: "Tuned", description: "", scopeType: "character" as const, enabled: true, scanDepth: 25, tokenBudget: 2048, recursiveScanning: true },
+        { id: "lb_params", name: "Tuned", description: "", scopeType: "entity" as const, enabled: true, scanDepth: 25, tokenBudget: 2048, recursiveScanning: true },
       ],
       entries: [],
     };
@@ -484,7 +484,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const store = await mkStoreWithChar();
     const bundle = {
       lorebooks: [
-        { id: "lb_gs", name: "Scoring book", description: "", scopeType: "character" as const, enabled: true, useGroupScoring: true },
+        { id: "lb_gs", name: "Scoring book", description: "", scopeType: "entity" as const, enabled: true, useGroupScoring: true },
       ],
       entries: [],
     };
@@ -553,7 +553,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const store = await mkStoreWithChar();
     const bundle = (logic: string, editing = false) => ({
       lorebooks: [
-        { id: "lb_logic", name: "L", description: "", scopeType: "character" as const, enabled: true, ...(editing ? { mode: "edit" as const } : {}) },
+        { id: "lb_logic", name: "L", description: "", scopeType: "entity" as const, enabled: true, ...(editing ? { mode: "edit" as const } : {}) },
       ],
       entries: [
         { id: "le_logic", lorebookId: "lb_logic", title: "t", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, logic, enabled: true, ...(editing ? { mode: "edit" as const } : {}) },

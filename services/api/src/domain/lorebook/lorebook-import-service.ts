@@ -60,7 +60,7 @@ export async function importLorebook(
 	},
 ): Promise<LorebookImportResult> {
 	const parsed = await parseLorebook(body.format, body.data, {
-		scopeType: (body.scopeType as LoreScopeType | undefined) ?? "character",
+		scopeType: (body.scopeType as LoreScopeType | undefined) ?? "entity",
 		fallbackName: body.fallbackName,
 		globalUseGroupScoring: body.globalUseGroupScoring,
 	});
@@ -71,7 +71,7 @@ export async function importLorebook(
 		const created = await stores.lorebooks.createLorebook({
 			name: parsed.lorebook.name,
 			description: parsed.lorebook.description,
-			scopeType: (body.scopeType as LoreScopeType) ?? "character",
+			scopeType: (body.scopeType as LoreScopeType) ?? "entity",
 			scanDepth: parsed.lorebook.scanDepth,
 			tokenBudget: parsed.lorebook.tokenBudget,
 			recursiveScanning: parsed.lorebook.recursiveScanning,

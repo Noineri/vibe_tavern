@@ -17,11 +17,11 @@ import {
 describe("lore-entity-lookup mappers (CE-B1)", () => {
 	it("lorebookToDraft projects the draft-relevant fields and stamps no mode", () => {
 		const draft = lorebookToDraft({
-			id: "lb_1", name: "N", description: "d", scopeType: "character",
+			id: "lb_1", name: "N", description: "d", scopeType: "entity",
 			scanDepth: 7, tokenBudget: 500, recursiveScanning: true, enabled: false,
 		});
 		expect(draft).toEqual({
-			id: "lb_1", name: "N", description: "d", scopeType: "character",
+			id: "lb_1", name: "N", description: "d", scopeType: "entity",
 			scanDepth: 7, tokenBudget: 500, recursiveScanning: true, enabled: false,
 		});
 		// No mode here — LoreDraftState.importLorebook stamps mode:"edit".
@@ -47,7 +47,7 @@ describe("createLoreEntityLookup (CE-B1)", () => {
 		return {
 			getLorebook: async (id) =>
 				id === "lb_1"
-					? { id: "lb_1", name: "N", description: "", scopeType: "character", scanDepth: 10, tokenBudget: 1000, recursiveScanning: false, enabled: true }
+					? { id: "lb_1", name: "N", description: "", scopeType: "entity", scanDepth: 10, tokenBudget: 1000, recursiveScanning: false, enabled: true }
 					: null,
 			getEntry: async (id) =>
 				id === "le_1"

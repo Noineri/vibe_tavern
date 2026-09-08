@@ -9,7 +9,7 @@ single source of truth for the draft engine and Apply.
 
 | Field | Default | Range / values | When to deviate |
 |---|---|---|---|
-| `scopeType` | `character` | `global` \| `character` \| `persona` \| `chat` | `character` attaches the book to the current character (the common case). `global` for world every character shares. `persona` / `chat` are rare — only when the book is truly persona- or chat-scoped. |
+| `scopeType` | `entity` | `global` \| `entity` \| `chat` | `entity` attaches the book to the current character (the common case). `global` for world every character shares. `chat` is rare — only when the book is truly chat-scoped. |
 | `enabled` | `true` | bool | Set `false` to draft a book that stays dormant until the author enables it. |
 | `scanDepth` | `10` | positive int | How many recent messages the engine scans for key matches. Raise (15–20) for a slow-burn book whose triggers appear across a longer window; lower (5) for a tight, fast-triggering book. Most books: leave at 10. |
 | `tokenBudget` | `1000` | positive int | Max tokens this book may inject per turn (fixed-budget mode, when `tokenBudgetPercent` is null). Raise for dense reference books the RP leans on; lower for terse flavor books. |

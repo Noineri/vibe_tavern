@@ -91,7 +91,7 @@ async function setup(
   // Character-scoped lorebook with one keyed entry.
   const lorebook = await stores.lorebooks.createLorebook({
     name: "RX-9 lore",
-    scopeType: "character",
+    scopeType: "entity",
     characterId: character.id,
   });
   const entry = await stores.lorebooks.createEntry(lorebook.id, {

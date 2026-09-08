@@ -138,7 +138,7 @@ export const importLorebookSchema = z.object({
   // `data?: unknown` this schema has always produced.
   data: z.unknown().optional(),
   mode: z.enum(["merge", "replace", "new"]).optional().default("new"),
-  scopeType: z.string().optional().default("character"),
+  scopeType: z.string().optional().default("entity"),
   characterId: z.string().optional(),
   personaId: z.string().optional(),
   chatId: z.string().optional(),

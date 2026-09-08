@@ -206,7 +206,7 @@ function makeLorebook(over: Partial<LorebookRecord> = {}): LorebookRecord {
     id: LB_ID,
     name: "Bestiary",
     description: "",
-    scopeType: "character",
+    scopeType: "entity",
     characterId: CHARACTER_ID,
     personaId: null,
     chatId: null,
@@ -353,10 +353,33 @@ describe("LorebookEditor (characterization)", () => {
     setViewport(375);
     const { getByText } = await renderAtList();
 
-    fireEvent.click(getByText("scope_char"));
+    // Sidebar contract: exactly 3 scopes + the "all" overview — the character/
+    // persona split is gone (scope_char stays a live key only for the
+    // LinkBindingPopover target-type section labels, not the scope list).
+    expect(getByText("scope_all")).toBeTruthy();
+    expect(getByText("scope_global")).toBeTruthy();
+    expect(getByText("scope_entity")).toBeTruthy();
+    expect(getByText("scope_chat")).toBeTruthy();
+    expect(() => getByText("scope_char")).toThrow();
+    expect(() => getByText("scope_persona")).toThrow();
+
+    fireEvent.click(getByText("scope_entity"));
 
     await waitFor(() => {
-      expect(listLorebooks).toHaveBeenCalledWith("character", CHARACTER_ID);
+      // Entity owner resolves from the context: no persona context here, so
+      // the character owns the entity view.
+      expect(listLorebooks).toHaveBeenCalledWith("entity", CHARACTER_ID);
+    });
+  });
+
+  it("data-loading: the entity scope's owner resolves to the persona when a persona context is active", async () => {
+    setViewport(375);
+    const { getByText } = await renderAtList({ personaId: "persona-9" });
+
+    fireEvent.click(getByText("scope_entity"));
+
+    await waitFor(() => {
+      expect(listLorebooks).toHaveBeenCalledWith("entity", "persona-9");
     });
   });
 

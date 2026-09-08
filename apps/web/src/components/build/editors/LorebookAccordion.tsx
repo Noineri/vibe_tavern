@@ -45,21 +45,23 @@ function formatTokenCount(n: number): string {
 /**
  * Derive a single binding icon for a lorebook row, showing what it is bound to.
  * Uses the primary-owner FK columns (not the multi-bind `lorebook_links` rows):
- * precedence is chat → character → persona, since chat is the most specific
- * scope. Global lorebooks return null (no binding icon — they are unbound by
+ * precedence is chat → entity (character or persona FK — one home owner per
+ * book). Global lorebooks return null (no binding icon — they are unbound by
  * definition). Multi-bind surface is a follow-up.
+ *
+ * Exported for its colocated test (the pure scope→icon mapping is pinned
+ * directly; the rendered tooltip is hover-gated in happy-dom).
  */
-function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tooltipKey: keyof Resources["en"] } | null {
+export function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tooltipKey: keyof Resources["en"] } | null {
   if (lb.scopeType === "global") return null;
   if (lb.chatId) return { icon: <Ic.chat />, tooltipKey: "scope_chat" };
-  if (lb.characterId) return { icon: <Ic.book />, tooltipKey: "scope_char" };
-  if (lb.personaId) return { icon: <Ic.user />, tooltipKey: "scope_persona" };
+  if (lb.characterId || lb.personaId) return { icon: <Ic.book />, tooltipKey: "scope_entity" };
   return null;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-export type Scope = "global" | "character" | "persona" | "chat" | "all";
+export type Scope = "global" | "entity" | "chat" | "all";
 
 interface LorebookAccordionProps {
   lorebook: LorebookRecord;
@@ -279,8 +281,7 @@ export function LorebookAccordion({
               value={editLbScope}
               options={[
                 { value: "global", label: t("scope_global") },
-                { value: "character", label: t("scope_char") },
-                { value: "persona", label: t("scope_persona") },
+                { value: "entity", label: t("scope_entity") },
                 { value: "chat", label: t("scope_chat") },
               ]}
               onChange={onEditLbScope}

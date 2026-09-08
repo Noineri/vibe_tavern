@@ -130,7 +130,7 @@ export function importJanitorLorebookJson(
     id: lorebookId,
     name,
     description: "",
-    scopeType: options.scopeType ?? "character",
+    scopeType: options.scopeType ?? "entity",
     scanDepth: 10,
     tokenBudget: 1000,
     tokenBudgetPercent: null,

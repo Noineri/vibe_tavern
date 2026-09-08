@@ -80,7 +80,7 @@ describe("lorebook-import-service — enabled threading (L1a)", () => {
       format: "st",
       data: ST_BOOK,
       mode: "new",
-      scopeType: "character",
+      scopeType: "entity",
       fallbackName: "SvcWorld",
     });
 

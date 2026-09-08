@@ -56,7 +56,7 @@ function expectSuccessData<T>(result: z.ZodSafeParseResult<T>): T {
 // --- factories --------------------------------------------------------------
 
 function validCreateLorebook() {
-  return { name: "World Lore", scopeType: "character" };
+  return { name: "World Lore", scopeType: "entity" };
 }
 
 // --- testActivationSchema ---------------------------------------------------
@@ -83,11 +83,11 @@ describe("createLorebookSchema", () => {
   });
 
   it("rejects a payload missing the required name", () => {
-    expectReject(createLorebookSchema.safeParse({ scopeType: "character" }));
+    expectReject(createLorebookSchema.safeParse({ scopeType: "entity" }));
   });
 
   it("rejects an empty name (min(1))", () => {
-    expectReject(createLorebookSchema.safeParse({ name: "", scopeType: "character" }));
+    expectReject(createLorebookSchema.safeParse({ name: "", scopeType: "entity" }));
   });
 
   it("rejects a payload missing the required scopeType", () => {
@@ -320,7 +320,7 @@ describe("importLorebookSchema", () => {
       const data = result.data as Record<string, unknown>;
       expect(data.format).toBe("st");
       expect(data.mode).toBe("new");
-      expect(data.scopeType).toBe("character");
+      expect(data.scopeType).toBe("entity");
     }
   });
 
@@ -464,7 +464,7 @@ describe("duplicateLorebookSchema", () => {
     expect(
       duplicateLorebookSchema.safeParse({
         name: "Copy",
-        scopeType: "character",
+        scopeType: "entity",
         characterId: "c1",
         personaId: "p1",
       }).success,

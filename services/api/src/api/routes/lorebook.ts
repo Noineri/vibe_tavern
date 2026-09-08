@@ -9,7 +9,7 @@ export function createLorebookRoutes(runtime: LorebookRuntimeApi) {
       return c.json(await runtime.listAllLorebooks());
     })
     .get("/api/lorebooks", async (c) => {
-      const scopeType = c.req.query("scopeType") ?? "character";
+      const scopeType = c.req.query("scopeType") ?? "entity";
       const ownerId = c.req.query("ownerId") ?? undefined;
       return c.json(await runtime.listLorebooks(scopeType, ownerId));
     })

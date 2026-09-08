@@ -194,7 +194,7 @@ export function importStLorebookJson(
     id: lorebookId,
     name: normalized.name,
     description: normalized.description,
-    scopeType: options.scopeType ?? "character",
+    scopeType: options.scopeType ?? "entity",
     scanDepth: normalized.scanDepth,
     tokenBudget: normalized.tokenBudget,
     tokenBudgetPercent: normalized.tokenBudgetPercent,

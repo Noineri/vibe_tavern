@@ -95,8 +95,7 @@ export type CardFormat = typeof CARD_FORMAT[keyof typeof CARD_FORMAT];
 
 export const LORE_SCOPE_TYPE = {
   global: "global",
-  character: "character",
-  persona: "persona",
+  entity: "entity",
   chat: "chat",
 } as const;
 

@@ -5,7 +5,7 @@
  * `scope` (which includes `"all"`) is translated into a valid create body whose
  * `scopeType` is NEVER `"all"`. This is the pure logic that `handleAddLorebook`
  * delegates to; the regression it guards is "creating a lorebook from the `all`
- * filter must produce a concrete-scoped body (default `character`), not `all`
+ * filter must produce a concrete-scoped body (default `entity`), not `all`
  * and not a no-op" — the exact failure mode the scope/list-filter separation
  * fixed (see vibe_tavern_plan/reports/LOREBOOK_SCOPE_SEPARATION.md).
  *
@@ -35,24 +35,32 @@ const IDS_NO_CHAT = {
 };
 
 describe("buildLorebookCreateBody", () => {
-	it("coerces the `all` filter to a `character` scopeType (the regression)", () => {
-		const body = buildLorebookCreateBody("all", IDS, "New lorebook");
+	it("coerces the `all` filter to an `entity` scopeType (the regression)", () => {
+		const body = buildLorebookCreateBody("all", IDS_NO_PERSONA, "New lorebook");
 		// The whole point of the fix: "all" is a display filter, never a scopeType.
 		expect(body.scopeType).not.toBe("all");
-		expect(body.scopeType).toBe("character");
-		// characterId is always present (character context is required for the editor).
+		expect(body.scopeType).toBe("entity");
+		// An entity home always carries exactly one typed owner FK.
 		expect(body.characterId).toBe("char_1");
-		// No foreign owner ids leak in.
 		expect(body.personaId).toBeUndefined();
 		expect(body.chatId).toBeUndefined();
 		expect(body.name).toBe("New lorebook");
 	});
 
-	it("builds a character-scoped body for the `character` filter", () => {
-		const body = buildLorebookCreateBody("character", IDS, "n");
-		expect(body.scopeType).toBe("character");
+	it("builds an entity body homed to the character when no persona context is active", () => {
+		const body = buildLorebookCreateBody("entity", IDS_NO_PERSONA, "n");
+		expect(body.scopeType).toBe("entity");
 		expect(body.characterId).toBe("char_1");
 		expect(body.personaId).toBeUndefined();
+		expect(body.chatId).toBeUndefined();
+	});
+
+	it("builds an entity body homed to the persona when a persona context is active", () => {
+		const body = buildLorebookCreateBody("entity", IDS, "n");
+		expect(body.scopeType).toBe("entity");
+		expect(body.personaId).toBe("persona_1");
+		// Exactly one typed owner FK — the character FK must stay empty.
+		expect(body.characterId).toBeUndefined();
 		expect(body.chatId).toBeUndefined();
 	});
 
@@ -62,20 +70,6 @@ describe("buildLorebookCreateBody", () => {
 		expect(body.characterId).toBeUndefined();
 		expect(body.personaId).toBeUndefined();
 		expect(body.chatId).toBeUndefined();
-	});
-
-	it("builds a persona-scoped body when personaId is present", () => {
-		const body = buildLorebookCreateBody("persona", IDS, "n");
-		expect(body.scopeType).toBe("persona");
-		expect(body.personaId).toBe("persona_1");
-		expect(body.characterId).toBeUndefined();
-		expect(body.chatId).toBeUndefined();
-	});
-
-	it("omits personaId when personaId is null (no owner rather than empty)", () => {
-		const body = buildLorebookCreateBody("persona", IDS_NO_PERSONA, "n");
-		expect(body.scopeType).toBe("persona");
-		expect(body.personaId).toBeUndefined();
 	});
 
 	it("builds a chat-scoped body when chatId is present", () => {
@@ -93,7 +87,7 @@ describe("buildLorebookCreateBody", () => {
 	});
 
 	it("never returns scopeType `all` for any filter value (exhaustive guard)", () => {
-		const allScopes: Scope[] = ["all", "global", "character", "persona", "chat"];
+		const allScopes: Scope[] = ["all", "global", "entity", "chat"];
 		for (const scope of allScopes) {
 			const body = buildLorebookCreateBody(scope, IDS, "n");
 			expect(body.scopeType).not.toBe("all");

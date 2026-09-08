@@ -25,7 +25,7 @@ export async function updateScript(scriptId: string, body: { name?: string; desc
 }
 
 /** Reassign a script's scope atomically (PR-6 binding). `ownerId` is null/omitted for 'global'. */
-export async function setScriptScope(scriptId: string, scopeType: "global" | "character" | "persona" | "chat", ownerId?: string | null): Promise<ScriptRecord> {
+export async function setScriptScope(scriptId: string, scopeType: "global" | "entity" | "chat", ownerId?: string | null): Promise<ScriptRecord> {
   const response = await client.api.scripts[":scriptId"].scope.$patch({ param: { scriptId }, json: { scopeType, ownerId: ownerId ?? null } });
   return unwrapRpc<ScriptRecord>(response);
 }

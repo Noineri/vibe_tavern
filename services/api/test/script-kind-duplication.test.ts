@@ -70,8 +70,8 @@ describe("DICE-B3 — character duplication preserves scriptKind", () => {
 
 	it("copies each character-scoped script with its kind intact (prompt + dice)", async () => {
 		// Seed one prompt-kind and one dice-kind character-scoped script.
-		await stores.scripts.create({ name: "char-prompt", scopeType: "character", characterId, scriptKind: "prompt", enabled: true });
-		await stores.scripts.create({ name: "char-dice", scopeType: "character", characterId, scriptKind: "dice", enabled: true });
+		await stores.scripts.create({ name: "char-prompt", scopeType: "entity", characterId, scriptKind: "prompt", enabled: true });
+		await stores.scripts.create({ name: "char-dice", scopeType: "entity", characterId, scriptKind: "dice", enabled: true });
 
 		const dup = await runtime.character.duplicate(characterId as never);
 		// The duplicate's new character id is reachable via its seeded chat snapshot.
@@ -79,7 +79,7 @@ describe("DICE-B3 — character duplication preserves scriptKind", () => {
 		const newCharacterId = dupSnapshot.character!.id;
 		expect(newCharacterId).not.toBe(characterId);
 
-		const copied = await stores.scripts.listByScope("character", newCharacterId);
+		const copied = await stores.scripts.listByScope("entity", newCharacterId);
 		const byName = new Map(copied.map((s) => [s.name, s]));
 		expect(byName.has("char-prompt")).toBe(true);
 		expect(byName.has("char-dice")).toBe(true);
@@ -107,12 +107,12 @@ describe("DICE-B3 — persona duplication preserves scriptKind", () => {
 		expect(persona).not.toBeNull();
 		const personaId = persona!.id;
 
-		await stores.scripts.create({ name: "persona-prompt", scopeType: "persona", personaId, scriptKind: "prompt", enabled: true });
-		await stores.scripts.create({ name: "persona-dice", scopeType: "persona", personaId, scriptKind: "dice", enabled: true });
+		await stores.scripts.create({ name: "persona-prompt", scopeType: "entity", personaId, scriptKind: "prompt", enabled: true });
+		await stores.scripts.create({ name: "persona-dice", scopeType: "entity", personaId, scriptKind: "dice", enabled: true });
 
 		const dup = await runtime.persona.duplicate(personaId);
 		// PersonaRuntime.duplicate returns the new persona record.
-		const copied = await stores.scripts.listByScope("persona", dup.id);
+		const copied = await stores.scripts.listByScope("entity", dup.id);
 		const byName = new Map(copied.map((s) => [s.name, s]));
 		expect(byName.has("persona-prompt")).toBe(true);
 		expect(byName.has("persona-dice")).toBe(true);

@@ -193,7 +193,7 @@ beforeEach(() => {
 });
 
 function Harness() {
-  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "character" });
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity" });
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 

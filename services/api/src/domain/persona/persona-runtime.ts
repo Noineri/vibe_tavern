@@ -266,14 +266,14 @@ export class PersonaRuntime {
 			}
 		}
 
-		// Duplicate persona-scoped lorebooks
-		const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("persona", personaId);
+		// Duplicate persona-scoped lorebooks (entity scope, persona FK)
+		const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("entity", personaId);
 		for (const lb of sourceLorebooks) {
 			const entries = await this.deps.stores.lorebooks.listEntries(lb.id);
 			const newLb = await this.deps.stores.lorebooks.createLorebook({
 				name: lb.name,
 				description: lb.description,
-				scopeType: "persona",
+				scopeType: "entity",
 				personaId: persona.id,
 				scanDepth: lb.scanDepth,
 				recursiveScanning: lb.recursiveScanning,
@@ -306,14 +306,14 @@ export class PersonaRuntime {
 		}
 
 		// Duplicate persona-scoped scripts
-		const sourceScripts = await this.deps.stores.scripts.listByScope("persona", personaId);
+		const sourceScripts = await this.deps.stores.scripts.listByScope("entity", personaId);
 		for (const sc of sourceScripts) {
 			await this.deps.stores.scripts.create({
 				name: sc.name,
 				description: sc.description,
 				code: sc.code,
 				scriptKind: sc.scriptKind,
-				scopeType: "persona",
+				scopeType: "entity",
 				personaId: persona.id,
 				enabled: sc.enabled,
 				sortOrder: sc.sortOrder,

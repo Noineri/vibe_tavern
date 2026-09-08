@@ -20,7 +20,7 @@ function makeScript(overrides: Partial<Script> & { id: string; code: string }): 
     code: overrides.code,
     scriptKind: overrides.scriptKind ?? "prompt",
     enabled: overrides.enabled ?? true,
-    scopeType: overrides.scopeType ?? "character",
+    scopeType: overrides.scopeType ?? "entity",
     sortOrder: overrides.sortOrder ?? 0,
     characterId: overrides.characterId ?? "character_1",
     personaId: overrides.personaId ?? null,

@@ -18,7 +18,7 @@ function basePersonas(): import("../src/domain/context/context-search-service.js
 }
 function baseLorebooks(): import("../src/domain/context/context-search-service.js").ContextSearchLorebookView[] {
   return [
-    { id: "lb_world", name: "World Lore", description: "Geography and factions.", scopeType: "character", characterId: "ch_aria", personaId: null, chatId: null },
+    { id: "lb_world", name: "World Lore", description: "Geography and factions.", scopeType: "entity", characterId: "ch_aria", personaId: null, chatId: null },
     { id: "lb_global", name: "Global Encyclopedia", description: "Universal facts.", scopeType: "global", characterId: null, personaId: null, chatId: null },
   ];
 }
@@ -33,7 +33,7 @@ function baseEntries(lorebookId: string): import("../src/domain/context/context-
 }
 function baseScripts(): import("../src/domain/context/context-search-service.js").ContextSearchScriptView[] {
   return [
-    { id: "sc_dice", name: "Dice Roller", description: "Rolls polyhedral dice.", code: "console.log('roll')", scopeType: "character", characterId: "ch_aria", personaId: null },
+    { id: "sc_dice", name: "Dice Roller", description: "Rolls polyhedral dice.", code: "console.log('roll')", scopeType: "entity", characterId: "ch_aria", personaId: null },
   ];
 }
 function baseSkills(): import("../src/domain/context/context-search-service.js").ContextSearchSkillView[] {

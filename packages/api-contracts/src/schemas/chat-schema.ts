@@ -144,7 +144,7 @@ export const coauthorDraftLorebookSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  scopeType: z.enum(["global", "character", "persona", "chat"]),
+  scopeType: z.enum(["global", "entity", "chat"]),
   enabled: z.boolean(),
   /** Activation: how many recent messages to scan for key matches (CE-A1). Optional — the draft engine fills `LOREBOOK_DEFAULTS`; Apply honors the co-author's choice. */
   scanDepth: z.number().int().optional(),

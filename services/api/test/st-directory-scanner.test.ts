@@ -621,7 +621,7 @@ describe("ST directory scanner — ownership-aware lorebook import (L1)", () => 
 
 		// CardTome: card extensions.world only → character+enabled, bound to Card Char.
 		const card = byName("CardTome");
-		expect(card.scopeType).toBe("character");
+		expect(card.scopeType).toBe("entity");
 		expect(card.enabled).toBe(true);
 		expect(card.characterId).toBe(charId("Card Char"));
 		expect(card.chatId).toBeNull();
@@ -635,7 +635,7 @@ describe("ST directory scanner — ownership-aware lorebook import (L1)", () => 
 
 		// BothTome: card AND chat → character wins (card > chat).
 		const both = byName("BothTome");
-		expect(both.scopeType).toBe("character");
+		expect(both.scopeType).toBe("entity");
 		expect(both.enabled).toBe(true);
 		expect(both.characterId).toBe(charId("Both Char"));
 		expect(both.chatId).toBeNull();

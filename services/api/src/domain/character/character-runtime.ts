@@ -474,13 +474,13 @@ export class CharacterRuntime {
     }
 
     // Duplicate character-scoped lorebooks
-    const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("character", characterId);
+    const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("entity", characterId);
     for (const lb of sourceLorebooks) {
       const entries = await this.deps.stores.lorebooks.listEntries(lb.id);
       const newLb = await this.deps.stores.lorebooks.createLorebook({
         name: lb.name,
         description: lb.description,
-        scopeType: "character",
+        scopeType: "entity",
         characterId: newCharacterId,
         scanDepth: lb.scanDepth,
         recursiveScanning: lb.recursiveScanning,
@@ -513,14 +513,14 @@ export class CharacterRuntime {
     }
 
     // Duplicate character-scoped scripts
-    const sourceScripts = await this.deps.stores.scripts.listByScope("character", characterId);
+    const sourceScripts = await this.deps.stores.scripts.listByScope("entity", characterId);
     for (const sc of sourceScripts) {
       await this.deps.stores.scripts.create({
         name: sc.name,
         description: sc.description,
         code: sc.code,
         scriptKind: sc.scriptKind,
-        scopeType: "character",
+        scopeType: "entity",
         characterId: newCharacterId,
         enabled: sc.enabled,
         sortOrder: sc.sortOrder,

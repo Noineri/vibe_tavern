@@ -35,7 +35,7 @@ export interface LoreDraftDeps {
 	idGen: LoreDraftIdGen;
 }
 
-export type LoreDraftScopeType = "global" | "character" | "persona" | "chat";
+export type LoreDraftScopeType = "global" | "entity" | "chat";
 
 export interface CreateLorebookInput {
 	name: string;
@@ -118,7 +118,7 @@ export interface EditLoreEntryInput {
 }
 
 /** Defaults for a newly drafted lorebook (scopeType mirrors lorebook routes). */
-const DEFAULT_LOREBOOK_SCOPE: LoreDraftScopeType = "character";
+const DEFAULT_LOREBOOK_SCOPE: LoreDraftScopeType = "entity";
 
 /** Defaults for a newly drafted entry — SillyTavern's common new-entry values. */
 const DEFAULT_ENTRY_POSITION = "before_char";

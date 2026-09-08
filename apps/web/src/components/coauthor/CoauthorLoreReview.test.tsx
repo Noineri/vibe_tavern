@@ -37,8 +37,7 @@ const labels: CoauthorLoreReviewLabels = {
 	entriesOne: "entry",
 	entriesFew: "entries",
 	entriesMany: "entries",
-	scopeCharacter: "character",
-	scopePersona: "persona",
+	scopeEntity: "entity",
 	scopeGlobal: "global",
 	scopeChat: "chat",
 	noContent: "No content.",
@@ -48,7 +47,7 @@ function bundle(): CoauthorLoreBundle {
 	return {
 		lorebooks: [
 			{ id: "lb1", name: "World Lore", description: "Setting canon.", scopeType: "global", enabled: true },
-			{ id: "lb2", name: "Char Lore", description: "", scopeType: "character", enabled: true },
+			{ id: "lb2", name: "Char Lore", description: "", scopeType: "entity", enabled: true },
 		],
 		entries: [
 			{ id: "e1", lorebookId: "lb1", title: "Eldoria", content: "An ancient city.", keys: ["Eldoria", "city"], secondaryKeys: ["ruins"], constant: false, position: "before_char", depth: 4, enabled: true },
@@ -88,7 +87,7 @@ describe("CoauthorLoreReview — rendering (CTX-L3)", () => {
 		expect(getByText("Setting canon.")).toBeTruthy();
 		expect(getByText("global")).toBeTruthy();
 		expect(getByText("Char Lore")).toBeTruthy();
-		expect(getByText("character")).toBeTruthy();
+		expect(getByText("entity")).toBeTruthy();
 	});
 
 	it("renders entry title, content, primary + secondary key chips, and the constant badge", () => {
@@ -198,8 +197,8 @@ describe("CoauthorLoreReview — edit badge (CE-B2)", () => {
 	it("shows the editing badge on mode:'edit' lorebooks and entries, not on create nodes", () => {
 		const b: CoauthorLoreBundle = {
 			lorebooks: [
-				{ id: "lbNew", name: "New Book", description: "", scopeType: "character", enabled: true },
-				{ id: "lbEdit", name: "Existing Book", description: "", scopeType: "character", enabled: true, mode: "edit" },
+				{ id: "lbNew", name: "New Book", description: "", scopeType: "entity", enabled: true },
+				{ id: "lbEdit", name: "Existing Book", description: "", scopeType: "entity", enabled: true, mode: "edit" },
 			],
 			entries: [
 				{ id: "eNew", lorebookId: "lbNew", title: "Fresh", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },

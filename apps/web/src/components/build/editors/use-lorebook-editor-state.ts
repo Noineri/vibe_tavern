@@ -6,7 +6,7 @@
  * that are pure data/navigation and have no render shape of their own:
  *
  *   - Navigation: view (pick → list → editor), tab (lorebooks / scripts),
- *     scope (all / global / character / persona / chat) + the sticky-tab
+ *     scope (all / global / entity / chat) + the sticky-tab
  *     sessionStorage persistence.
  *   - Active entry: which lorebook's entry is open in the editor, with
  *     ref-mirrored setters so the autosave flush reads non-stale ids.
@@ -215,8 +215,9 @@ export function useLorebookEditorState({
   // ── Scope → ownerId ──
   const getOwnerId = useCallback(
     (s: Scope): string | undefined => {
-      if (s === "character") return characterId;
-      if (s === "persona") return personaId ?? undefined;
+      // Entity scope: the owner resolves from the current context — a persona
+      // context (personaId set) owns the view, otherwise the character does.
+      if (s === "entity") return personaId ?? characterId;
       if (s === "chat") return chatId ?? undefined;
       return undefined;
     },

@@ -540,7 +540,7 @@ describe("CoauthorCharacterForm", () => {
 			loreBundle: {
 				lorebooks: [
 					{ id: "lb1", name: "World Lore", description: "", scopeType: "global", enabled: true },
-					{ id: "lb2", name: "Char Lore", description: "", scopeType: "character", enabled: true },
+					{ id: "lb2", name: "Char Lore", description: "", scopeType: "entity", enabled: true },
 				],
 				entries: [
 					{ id: "e1", lorebookId: "lb1", title: "Eldoria", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },

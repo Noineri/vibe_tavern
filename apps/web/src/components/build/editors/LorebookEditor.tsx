@@ -3,7 +3,7 @@
  *
  * Responsible for:
  *   - Navigation between views: pick → list → editor
- *   - Scope selection (global / character / persona / chat)
+ *   - Scope selection (global / entity / chat)
  *   - Switching between lorebooks / scripts tabs
  *   - Lorebook CRUD (create, meta update, delete)
  *   - Entry CRUD (create, autosave, delete)
@@ -198,7 +198,7 @@ export function LorebookEditor({
     null
   );
   const [editLbName, setEditLbName] = useState("");
-  const [editLbScope, setEditLbScope] = useState<Scope>("character");
+  const [editLbScope, setEditLbScope] = useState<Scope>("entity");
   const [createdDraftLorebookId, setCreatedDraftLorebookId] = useState<string | null>(null);
 
   // ── Mobile context menu ──
@@ -460,13 +460,12 @@ export function LorebookEditor({
 
   // ── Scope column (desktop: vertical with icons) ──
   // The "all" label depends on the active tab — "All lorebooks" / "All scripts".
-  // Other scope names (Global/Character/...) are invariant across tabs.
+  // Other scope names (Global/Entity/...) are invariant across tabs.
   const allLabel = tab === "lorebooks" ? t("scope_all") : t("scope_all_scripts");
   const scopeItems: { id: Scope; icon: ReactNode; label: string }[] = [
     { id: "all", icon: <Ic.stack />, label: allLabel },
     { id: "global", icon: <Ic.globe />, label: t("scope_global") },
-    { id: "character", icon: <Ic.book />, label: t("scope_char") },
-    { id: "persona", icon: <Ic.user />, label: t("scope_persona") },
+    { id: "entity", icon: <Ic.book />, label: t("scope_entity") },
     { id: "chat", icon: <Ic.chat />, label: t("scope_chat") },
   ];
 

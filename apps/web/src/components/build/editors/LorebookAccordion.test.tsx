@@ -164,16 +164,24 @@ const ENTRIES: LoreEntryRecord[] = [
 ];
 
 function renderAccordion(
-  overrides: Partial<{ lorebook: LorebookRecord; onUpdateMeta: (body: Parameters<NonNullable<Parameters<typeof LorebookAccordion>[0]["onUpdateMeta"]>>[0]) => void }> = {},
+  overrides: Partial<{
+    lorebook: LorebookRecord;
+    onUpdateMeta: (body: Parameters<NonNullable<Parameters<typeof LorebookAccordion>[0]["onUpdateMeta"]>>[0]) => void;
+    editing: boolean;
+    editLbName: string;
+    editLbScope: string;
+    onEditLbScope: (scope: string) => void;
+    onSaveEdit: () => void;
+  }> = {},
 ) {
   return render(
     <LorebookAccordion
       lorebook={overrides.lorebook ?? LOREBOOK}
       links={[]}
       expanded={true}
-      editing={false}
-      editLbName=""
-      editLbScope="global"
+      editing={overrides.editing ?? false}
+      editLbName={overrides.editLbName ?? ""}
+      editLbScope={overrides.editLbScope ?? "global"}
       activeEntryId={null}
       isMobile={false}
       actionMenuOpen={false}
@@ -184,7 +192,7 @@ function renderAccordion(
       onSaveEdit={() => {}}
       onCancelEdit={() => {}}
       onEditLbName={() => {}}
-      onEditLbScope={() => {}}
+      onEditLbScope={overrides.onEditLbScope ?? (() => {})}
       onDelete={() => {}}
       onAddEntry={() => {}}
       onEntryClick={() => {}}
@@ -326,4 +334,48 @@ describe("LorebookAccordion book-level group scoring (LG-7)", () => {
     fireEvent.click(await r2.findByText("lore_book_group_scoring"));
     expect(on).toHaveBeenCalledWith({ useGroupScoring: false });
   });
+});
+
+// ── Scope taxonomy collapse 4 → 3 (entity) ──────────────────────────────
+//
+// The inline edit form's scope picker and the row binding icon reflect the
+// merged taxonomy: global / entity / chat — the character/persona split is
+// gone. `scope_char`/`scope_persona` remain LIVE i18n keys only for the
+// LinkBindingPopover target-type section labels, so absence here must be
+// asserted against the rendered DOM, not the key registry.
+
+describe("LorebookAccordion scope collapse (entity)", () => {
+	it("inline edit renders exactly 3 scope options (global / entity / chat)", async () => {
+		const { getByText, queryByText } = renderAccordion({ editing: true });
+		expect(getByText("scope_global")).toBeTruthy();
+		expect(getByText("scope_entity")).toBeTruthy();
+		expect(getByText("scope_chat")).toBeTruthy();
+		expect(queryByText("scope_char")).toBeNull();
+		expect(queryByText("scope_persona")).toBeNull();
+	});
+
+	it("picking the entity option reports scopeType 'entity'", async () => {
+		const onEditLbScope = mock();
+		const { getByText } = renderAccordion({ editing: true, onEditLbScope });
+		fireEvent.click(getByText("scope_entity"));
+		expect(onEditLbScope).toHaveBeenCalledWith("entity");
+	});
+
+	it("entity-homed books (character OR persona FK) map to the ONE entity binding icon", async () => {
+		const { lorebookBindingIcon } = await import("./LorebookAccordion.js");
+		const charHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "entity", characterId: "char-1" });
+		expect(charHomed?.tooltipKey).toBe("scope_entity");
+		const personaHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "entity", personaId: "persona-9" });
+		// The persona FK maps to the SAME single entity icon — no separate
+		// persona tooltip, no user icon.
+		expect(personaHomed?.tooltipKey).toBe("scope_entity");
+		expect(personaHomed).toEqual(charHomed);
+	});
+
+	it("global books map to no binding icon; chat-homed books keep the chat icon", async () => {
+		const { lorebookBindingIcon } = await import("./LorebookAccordion.js");
+		expect(lorebookBindingIcon(LOREBOOK)).toBeNull();
+		const chatHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "chat", chatId: "chat-1" });
+		expect(chatHomed?.tooltipKey).toBe("scope_chat");
+	});
 });

@@ -43,7 +43,7 @@ const EXISTING: LorebookRecord = {
   id: "lb-existing",
   name: "Existing Book",
   description: "",
-  scopeType: "character",
+  scopeType: "entity",
   characterId: "char-1",
   personaId: null,
   chatId: null,
@@ -68,9 +68,28 @@ function renderModal(lorebooks: LorebookRecord[] = []) {
     <LorebookImportModal
       open
       lorebooks={lorebooks}
-      scope="character"
+      scope="entity"
       characterId="char-1"
       personaId={null}
+      chatId={null}
+      onClose={() => {}}
+      onImportComplete={onImportComplete}
+      t={(k) => k as string}
+    />,
+  );
+  return { view, onImportComplete };
+}
+
+/** Same modal, opened from a persona build context (personaId set). */
+function renderModalPersonaContext(lorebooks: LorebookRecord[] = []) {
+  const onImportComplete = mock(() => {});
+  const view = render(
+    <LorebookImportModal
+      open
+      lorebooks={lorebooks}
+      scope="entity"
+      characterId="char-1"
+      personaId="persona-9"
       chatId={null}
       onClose={() => {}}
       onImportComplete={onImportComplete}
@@ -117,9 +136,24 @@ describe("LorebookImportModal — disabled-on-arrival (L1e)", () => {
     expect(body.mode).toBe("new");
     expect(body.enabled).toBe(false);
     // The scope it lands in stays the surface's current selection.
-    expect(body.scopeType).toBe("character");
+    expect(body.scopeType).toBe("entity");
     expect(body.characterId).toBe("char-1");
     expect(body.fallbackName).toBe("world");
+  });
+
+  it("mode:new from a persona context lands entity homed to the persona", async () => {
+    const { view } = renderModalPersonaContext();
+    await importNewFile(view, "world.json", ST_FILE);
+
+    expect(importLorebookEntries).toHaveBeenCalledTimes(1);
+    const [, body] = importLorebookEntries.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(body.scopeType).toBe("entity");
+    // Exactly one typed owner FK — the persona context owns the import.
+    expect(body.personaId).toBe("persona-9");
+    expect(body.characterId).toBeUndefined();
   });
 
   it("merge into an existing book sends no enabled flag", async () => {
