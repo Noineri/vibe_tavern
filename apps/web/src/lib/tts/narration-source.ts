@@ -15,12 +15,13 @@ export interface VoicedVariantSource {
   text: string;
   variantId: string;
   variantIndex: number;
-  /** First two lines of the voiced text (owner decision, playlist rows). */
+  /** First three lines of the voiced text (owner decision 2026-09-08, playlist rows). */
   snippet: string;
 }
 
-export function firstTwoLines(text: string): string {
-  return text.split("\n").slice(0, 2).join("\n");
+/** RD-live-fix: first THREE source lines of the voiced text (owner decision 2026-09-08: «да, можно три строки» — the RD-9 worker changed only the CSS clamp and left this cut at two, so even fresh rows stored 2-line snippets). Splitting is by SOURCE newlines, not visual lines: a long unbroken paragraph still counts as one line and the CSS line-clamp does the visual truncation. */
+export function firstThreeLines(text: string): string {
+  return text.split("\n").slice(0, 3).join("\n");
 }
 
 export function voicedVariantSource(
@@ -54,6 +55,6 @@ export function voicedVariantSource(
     text,
     variantId: selected ? String(selected.id) : "",
     variantIndex: selected?.variantIndex ?? 0,
-    snippet: firstTwoLines(text),
+    snippet: firstThreeLines(text),
   };
 }

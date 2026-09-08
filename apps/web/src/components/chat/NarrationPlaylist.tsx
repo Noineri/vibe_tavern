@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AppMessage } from "../../api/types.js";
 import { useT } from "../../i18n/context.js";
-import { firstTwoLines } from "../../lib/tts/narration-source.js";
+import { firstThreeLines } from "../../lib/tts/narration-source.js";
 import type { NarrationPlaylistEntry } from "../../lib/tts/narration-cache.js";
 import type { NarrationProgress, NarrationState } from "../../lib/tts/tts-orchestrator.js";
 import { cn } from "../../lib/cn.js";
@@ -29,7 +29,8 @@ export function formatPlaybackTime(totalSeconds: number): string {
 export interface PlaylistRowModel {
   messageId: string;
   /** What's shown: the live narration text while synthesizing/playing,
-   *  else the indexed two-line snippet (owner decision). */
+   *  else the indexed snippet (owner decision; three source lines since
+   *  2026-09-08 — old rows indexed at two lines stay two until re-voiced). */
   snippet: string;
   variantIndex: number;
   variantCount: number;
@@ -87,9 +88,9 @@ export function buildPlaylistRows(
         ? message.selectedVariantIndex
         : undefined) ??
       variants.findIndex((variant) => variant.isSelected);
-    // Live text is the full narration input — cut the two-line snippet
-    // here (owner decision); indexed rows already store the snippet.
-    const liveSnippet = liveState ? firstTwoLines(liveTextById(message.id) ?? entry?.snippet ?? "") : null;
+    // Live text is the full narration input — cut the three-line snippet
+    // here (owner decision 2026-09-08); indexed rows already store the snippet.
+    const liveSnippet = liveState ? firstThreeLines(liveTextById(message.id) ?? entry?.snippet ?? "") : null;
     const row: PlaylistRowModel = {
       messageId: message.id,
       snippet: liveSnippet ?? entry?.snippet ?? "",
@@ -710,15 +711,25 @@ function PlaylistRow(input: {
           )}
         </div>
       </div>
-      {/* RD-9 zone D — playback status, live rows only: the TPE-18b
-        PLAYBACK position bar (range + clock), moved up into the center
-        stack (owner: text → badges → generation → playback). Visually
-        distinct from the FETCH mini-bar in zone B (accent fill +
-        n/total). Unknown total: seeks over the known prefix; unknown
-        segments are slivers, never estimates. */}
-      {row.live !== null && (
+      {/* RD-9 zone D — playback status: the TPE-18b PLAYBACK position
+        bar (range + clock), moved up into the center stack (owner: text →
+        badges → generation → playback). Visually distinct from the FETCH
+        mini-bar in zone B (accent fill + n/total). Unknown total: seeks
+        over the known prefix; unknown segments are slivers, never
+        estimates.
+        Owner live-fix 2026-09-08 (height jump between playing and
+        settled states): the zone renders on EVERY row — live rows get
+        the seek + clock, settled rows get a static neutral rail in the
+        SAME slot (no thumb, no clock) so the card height never changes
+        when a lane starts or settles. The slot mirrors the slider's
+        28px (44px coarse-pointer) hit area. */}
+      {row.live !== null ? (
         <div data-testid="playlist-row-zone-playback">
           <SeekBar progress={input.progress} onSeek={input.onSeek} />
+        </div>
+      ) : (
+        <div data-testid="playlist-row-zone-playback" className="flex h-7 items-center [@media(pointer:coarse)]:h-11">
+          <span data-testid="playlist-row-zone-playback-idle" className="block h-[3px] w-full rounded-full bg-s3" />
         </div>
       )}
         {/* FS-3: partial rows carry an explicit continue-generation

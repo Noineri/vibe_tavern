@@ -8,7 +8,7 @@ import { replaceUiMacros } from "../../lib/macros.js";
 import { resolveNarrationProfile } from "../../lib/tts/voice-map.js";
 import { prepareNarrationTextPreservingTags, narrationTextOptionsForMode } from "../../lib/tts/narration-text.js";
 import { readTtsNarrationMode } from "../../lib/local-storage.js";
-import { firstTwoLines, voicedVariantSource } from "../../lib/tts/narration-source.js";
+import { firstThreeLines, voicedVariantSource } from "../../lib/tts/narration-source.js";
 import { useVoiceMapData } from "../../lib/tts/voice-map-data.js";
 
 export function useMessageNarration(
@@ -85,7 +85,7 @@ export function useMessageNarration(
             branchId: activeBranchId,
             variantId: source.variantId,
             variantIndex: source.variantIndex,
-            snippet: firstTwoLines(text),
+            snippet: firstThreeLines(text),
           }
         : undefined;
     void startNarration(messageId, text, resolution.profile, meta);

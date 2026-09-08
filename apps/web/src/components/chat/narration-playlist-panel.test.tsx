@@ -1719,7 +1719,12 @@ describe("narration playlist card layout (RD-1)", () => {
     // right column under the magnifier; transport rides the left.
     const transport = zone(row, "playlist-row-zone-transport");
     const actions = zone(row, "playlist-row-zone-actions");
-    expect(queryByTestId("playlist-row-zone-playback")).toBeNull();
+    // Owner live-fix 2026-09-08: the playback zone renders on EVERY row
+    // (height stability between playing and settled states) — settled
+    // rows carry the idle placeholder rail, live rows the seek input.
+    expect(queryByTestId("playlist-row-zone-playback")).not.toBeNull();
+    expect(queryByTestId("playlist-seek")).toBeNull();
+    expect(queryByTestId("playlist-row-zone-playback-idle")).not.toBeNull();
     // Head: the three-line snippet clamps (RD-9); no magnifier here.
     const snippet = head.querySelector("p");
     expect(snippet?.getAttribute("class") ?? "").toContain("line-clamp-3");
@@ -1802,7 +1807,12 @@ describe("narration playlist card layout (RD-1)", () => {
     const actions = zone(row, "playlist-row-zone-actions");
     expect(zone(row, "playlist-row-zone-head")).toBeDefined();
     expect(zone(row, "playlist-row-zone-chunk")).toBeDefined();
-    expect(queryByTestId("playlist-row-zone-playback")).toBeNull();
+    // Owner live-fix 2026-09-08: the playback zone renders on EVERY row
+    // (height stability between playing and settled states) — settled
+    // rows carry the idle placeholder rail, live rows the seek input.
+    expect(queryByTestId("playlist-row-zone-playback")).not.toBeNull();
+    expect(queryByTestId("playlist-seek")).toBeNull();
+    expect(queryByTestId("playlist-row-zone-playback-idle")).not.toBeNull();
     // RD-9: continue rides the center stack (full-width text button —
     // it cannot fit the icon-sized actions column); drop-cache rides
     // the actions column. No save on partials (FS-3).
@@ -1830,7 +1840,12 @@ describe("narration playlist card layout (RD-1)", () => {
     expect(actions.querySelector('[data-testid="playlist-row-reveal"]')).not.toBeNull();
     expect(actions.querySelector('[data-testid="playlist-row-drop"]')).not.toBeNull();
     expect(queryByTestId("playlist-row-revoice")).toBeNull();
-    expect(queryByTestId("playlist-row-zone-playback")).toBeNull();
+    // Owner live-fix 2026-09-08: the playback zone renders on EVERY row
+    // (height stability between playing and settled states) — settled
+    // rows carry the idle placeholder rail, live rows the seek input.
+    expect(queryByTestId("playlist-row-zone-playback")).not.toBeNull();
+    expect(queryByTestId("playlist-seek")).toBeNull();
+    expect(queryByTestId("playlist-row-zone-playback-idle")).not.toBeNull();
   });
 });
 
