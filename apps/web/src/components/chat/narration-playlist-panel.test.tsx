@@ -7,7 +7,7 @@ import type { TtsProfileRecord } from "../../api/tts-api.js";
 import type { NarrationPlayer } from "../../lib/tts/narration-player.js";
 import type { NarrationPlaylistEntry, NarrationPlaylistIndex, NarrationSegmentCache } from "../../lib/tts/narration-cache.js";
 import { useTtsPlaybackStore, __setTtsPlaybackDepsForTests } from "../../stores/tts-playback-store.js";
-import { PlaylistVolumeSlider } from "./playlist-volume-slider.js";
+import { PlaylistVolumeRail } from "./playlist-volume-rail.js";
 import en from "../../i18n/locales/en.json";
 import ru from "../../i18n/locales/ru.json";
 
@@ -670,7 +670,7 @@ describe("narration playlist player controls (TPE-18b)", () => {
     });
   });
 
-  it("volume slider persists globally and reaches the lane player", async () => {
+  it("volume rail persists globally and reaches the lane player", async () => {
     const lane = installDeferredLane();
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     // Do NOT await the narration inside act — the deferred play parks it.
@@ -689,7 +689,38 @@ describe("narration playlist player controls (TPE-18b)", () => {
     expect(lane.volumeCalls).toContain(0.5);
   });
 
-  it("FS-5a: percent box shows 0–100 and round-trips to the 0..1 lane", async () => {
+  it("RD-4a: percent shows above the rail only while interacting — no numeric input anywhere", async () => {
+    const lane = installDeferredLane();
+    const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
+    let started: Promise<void> | null = null;
+    act(() => {
+      started = useTtsPlaybackStore.getState().startNarration("m1", "First line", profile(), playlistMeta());
+    });
+    await waitFor(() => { expect(lane.plays).toHaveLength(1); });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    const rail = await waitFor(() => getByTestId("playlist-volume"));
+    // The FS-5 percent number box is gone: no numeric input in the panel.
+    expect(queryByTestId("playlist-volume-number")).toBeNull();
+    expect(document.querySelector('input[inputmode="numeric"]')).toBeNull();
+    // Idle: the reserved slot renders blank — never a number.
+    expect(getByTestId("playlist-volume-percent").textContent).toBe("");
+    await act(async () => { fireEvent.mouseDown(rail); });
+    // Default full volume renders as percent, not 0..1 — while held.
+    expect(getByTestId("playlist-volume-percent").textContent).toBe("100%");
+    await act(async () => { fireEvent.change(rail, { target: { value: "0.5" } }); });
+    expect(getByTestId("playlist-volume-percent").textContent).toBe("50%");
+    // Internal contract unchanged: store + persistence + lane stay 0..1.
+    expect(useTtsPlaybackStore.getState().volume).toBe(0.5);
+    expect(localStorage.getItem("vt.tts.narration-volume")).toBe("0.5");
+    expect(lane.volumeCalls).toContain(0.5);
+    // The hard-stop fill follows the value via the --p custom property.
+    expect(rail.getAttribute("style") ?? "").toContain("--p: 50%");
+    await act(async () => { fireEvent.mouseUp(rail); });
+    expect(getByTestId("playlist-volume-percent").textContent).toBe("");
+  });
+
+  it("RD-4b: mute writes 0 and unmute restores the pre-mute volume", async () => {
     const lane = installDeferredLane();
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     let started: Promise<void> | null = null;
@@ -699,22 +730,37 @@ describe("narration playlist player controls (TPE-18b)", () => {
     await waitFor(() => { expect(lane.plays).toHaveLength(1); });
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
-    const number = await waitFor(() => getByTestId("playlist-volume-number"));
-    // Default full volume renders as percent, not 0..1.
-    expect((number as HTMLInputElement).value).toBe("100");
-    await act(async () => {
-      fireEvent.change(number, { target: { value: "50" } });
-      fireEvent.blur(number);
-    });
-    // Internal contract unchanged: store + persistence + lane stay 0..1.
+    const rail = await waitFor(() => getByTestId("playlist-volume"));
+    await act(async () => { fireEvent.change(rail, { target: { value: "0.5" } }); });
+    const mute = getByTestId("playlist-volume-mute");
+    await act(async () => { fireEvent.click(mute); });
+    expect(useTtsPlaybackStore.getState().volume).toBe(0);
+    expect(localStorage.getItem("vt.tts.narration-volume")).toBe("0");
+    expect(lane.volumeCalls).toContain(0);
+    await act(async () => { fireEvent.click(mute); });
     expect(useTtsPlaybackStore.getState().volume).toBe(0.5);
     expect(localStorage.getItem("vt.tts.narration-volume")).toBe("0.5");
-    expect(lane.volumeCalls).toContain(0.5);
-    // The hard-stop fill follows the value via the --p custom property.
-    expect(getByTestId("playlist-volume").getAttribute("style") ?? "").toContain("--p: 50%");
   });
 
-  it("FS-5b: volume and seek render the playlist-local slider family", async () => {
+  it("RD-4c: arrow keys adjust the rail volume", async () => {
+    installDeferredLane();
+    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    let started: Promise<void> | null = null;
+    act(() => {
+      started = useTtsPlaybackStore.getState().startNarration("m1", "First line", profile(), playlistMeta());
+    });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    const rail = await waitFor(() => getByTestId("playlist-volume"));
+    await act(async () => { fireEvent.change(rail, { target: { value: "0.5" } }); });
+    await act(async () => { fireEvent.keyDown(rail, { key: "ArrowUp" }); });
+    expect(useTtsPlaybackStore.getState().volume).toBe(0.55);
+    await act(async () => { fireEvent.keyDown(rail, { key: "ArrowDown" }); });
+    await act(async () => { fireEvent.keyDown(rail, { key: "ArrowDown" }); });
+    expect(useTtsPlaybackStore.getState().volume).toBe(0.45);
+  });
+
+  it("RD-4d: rail and seek render the playlist-local slider family (vertical rail density)", async () => {
     const lane = installDeferredLane();
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     let started: Promise<void> | null = null;
@@ -726,18 +772,19 @@ describe("narration playlist player controls (TPE-18b)", () => {
     await act(async () => { fireEvent.click(pill); });
     const volume = await waitFor(() => getByTestId("playlist-volume"));
     expect(volume.getAttribute("class") ?? "").toContain("playlist-slider");
+    expect(volume.getAttribute("class") ?? "").toContain("playlist-slider--vertical");
     expect(volume.getAttribute("class") ?? "").not.toContain("playlist-slider--seek");
     // The live row's playback bar joins the same family at seek density.
     const seek = await waitFor(() => getByTestId("playlist-seek"));
     expect(seek.getAttribute("class") ?? "").toContain("playlist-slider--seek");
   });
 
-  it("FS-5c: disabled volume control renders inert", () => {
+  it("RD-4e: disabled rail renders inert", () => {
     const { getByTestId } = render(
-      <PlaylistVolumeSlider label="Volume" value={0.5} onChange={() => {}} disabled rangeTestId="t-range" numberTestId="t-number" />,
+      <PlaylistVolumeRail value={0.5} onChange={() => {}} disabled rangeTestId="t-range" muteTestId="t-mute" percentTestId="t-percent" />,
     );
     expect((getByTestId("t-range") as HTMLInputElement).disabled).toBe(true);
-    expect((getByTestId("t-number") as HTMLInputElement).disabled).toBe(true);
+    expect((getByTestId("t-mute") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("formats the seek clock as m:ss", async () => {

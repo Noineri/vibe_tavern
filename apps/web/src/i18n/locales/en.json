@@ -415,6 +415,8 @@
   "narration_playlist_pause": "Pause",
   "narration_playlist_resume": "Resume",
   "narration_playlist_volume": "Narration volume",
+  "narration_playlist_mute": "Mute narration",
+  "narration_playlist_unmute": "Unmute narration",
   "narration_playlist_seek": "Seek narration position",
   "narration_playlist_continuous": "Continuous",
   "narration_playlist_continuous_hint": "Play the playlist in order until messages run out",

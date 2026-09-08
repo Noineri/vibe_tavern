@@ -419,6 +419,8 @@
   "narration_playlist_pause": "Пауза",
   "narration_playlist_resume": "Продолжить",
   "narration_playlist_volume": "Громкость озвучки",
+  "narration_playlist_mute": "Отключить звук",
+  "narration_playlist_unmute": "Включить звук",
   "narration_playlist_seek": "Перемотать озвучку",
   "narration_playlist_continuous": "Непрерывное",
   "narration_playlist_continuous_hint": "Озвучить плейлист по порядку, пока не кончатся сообщения",

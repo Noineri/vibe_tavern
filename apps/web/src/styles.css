@@ -387,6 +387,18 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .playlist-slider--seek::-moz-range-track{height:3px}
 .playlist-slider--seek::-moz-range-progress{height:3px}
 .playlist-slider--seek::-moz-range-thumb{width:10px;height:10px}
+/* ── Narration playlist vertical volume rail (RD-4) — same s3/accent
+   family, rotated: writing-mode:vertical-lr stacks the value bottom→top
+   (direction:rtl puts min at the bottom); the webkit fill gradient runs
+   to top instead of to right. Same 4px rail / 12px thumb density as the
+   old horizontal volume slider. Pixels are live-checked by the owner. */
+.playlist-slider--vertical{width:28px;height:auto}
+@media (pointer:coarse){.playlist-slider--vertical{width:44px}}
+.playlist-slider--vertical::-webkit-slider-runnable-track{width:4px;height:100%;border-radius:9999px;background:linear-gradient(to top,var(--accent) 0 var(--p,50%),var(--s3) var(--p,50%) 100%)}
+.playlist-slider--vertical::-webkit-slider-thumb{width:12px;height:12px;margin-left:-4px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
+.playlist-slider--vertical::-moz-range-track{width:4px;border-radius:9999px;background:var(--s3)}
+.playlist-slider--vertical::-moz-range-progress{width:4px;border-radius:9999px;background:var(--accent)}
+.playlist-slider--vertical::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
 
 /* ── Summary message-range dual slider (DualRangeSlider) ──
    Two full-width range inputs stacked on one track. Making each *thumb* its own

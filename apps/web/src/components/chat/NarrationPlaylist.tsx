@@ -8,7 +8,7 @@ import { cn } from "../../lib/cn.js";
 import { Ic } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { EmptyState } from "../shared/empty-state.js";
-import { PlaylistVolumeSlider } from "./playlist-volume-slider.js";
+import { PlaylistVolumeRail } from "./playlist-volume-rail.js";
 import { Toggle } from "../shared/Toggle.js";
 
 /** TPE-18a: the playlist body (DiceTray twin) — rows for everything
@@ -215,7 +215,11 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
   const rows = buildPlaylistRows(input.messages, input.entries, input.narrations, input.liveTextById);
 
   return (
-    <div className="flex max-h-[min(28rem,calc(100dvh-12rem))] flex-col">
+    <div className="flex max-h-[min(28rem,calc(100dvh-12rem))]">
+      {/* RD-4: left content column (title + rows + transport footer) —
+        min-w-0 flex-1, the only shrinker; the volume rail owns the
+        fixed w-11 right edge. */}
+      <div className="flex min-w-0 flex-1 flex-col">
       {input.showTitle && (
         <div className="flex items-center gap-2 border-b border-border2 px-3 py-2">
           <Ic.speaker />
@@ -309,20 +313,19 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
           </label>
         </CustomTooltip>
       </div>
-      {/* FS-5: global volume as its own footer row — the playlist-local
-        PlaylistVolumeSlider (label + range + percent box), NOT the shared
-        SliderField (settings keep it). Label on its own line + flex track
-        as the only shrinker: full width fits any RU label (see the width
-        arithmetic in playlist-volume-slider.tsx). */}
-      <div className="border-t border-border2 px-3 py-2">
-        <PlaylistVolumeSlider
-          label={t("narration_playlist_volume")}
-          value={input.volume}
-          onChange={input.onVolume}
-          rangeTestId="playlist-volume"
-          numberTestId="playlist-volume-number"
-        />
+      {/* FS-5's horizontal volume block (label + range + percent box) is
+        GONE — RD-4 replaces it with the right-edge vertical rail below
+        (owner: «без ввода цифр вообще»). The footer keeps only the
+        transport row (stop/pause/rate/continuous); the bar reshuffle is
+        RD-5's unit. */}
       </div>
+      <PlaylistVolumeRail
+        value={input.volume}
+        onChange={input.onVolume}
+        rangeTestId="playlist-volume"
+        muteTestId="playlist-volume-mute"
+        percentTestId="playlist-volume-percent"
+      />
     </div>
   );
 }
