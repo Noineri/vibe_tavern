@@ -1450,6 +1450,8 @@ export default interface Resources {
     "narration_playlist_resume": "Resume",
     "narration_playlist_reveal_file": "Show file",
     "narration_playlist_revoice": "Re-voice",
+    "narration_playlist_revoice_title": "Re-voice this message?",
+    "narration_playlist_revoice_body": "Cached audio for this message will be dropped and synthesized fresh.",
     "narration_playlist_revoice_all": "Re-voice all",
     "narration_playlist_revoice_all_body": "Cached audio for all playlist tracks ({count}) will be dropped and synthesized fresh, in order with Continuous on. Saved library files are not touched.",
     "narration_playlist_revoice_all_body_one": "Cached audio for all playlist tracks ({count}) will be dropped and synthesized fresh, in order with Continuous on. Saved library files are not touched.",

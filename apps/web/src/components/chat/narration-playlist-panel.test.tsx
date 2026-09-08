@@ -1071,11 +1071,17 @@ describe("narration playlist re-voice (FS-6)", () => {
     expect(beforeKeys.length).toBeGreaterThan(0);
     const baselineSynthCalls = synthCalls.length;
     const deletedKeys = trackCacheDeletes();
-    const { getByTestId } = render(<NarrationPlaylistPanel docked />);
+    const { getByTestId, getByText } = render(<NarrationPlaylistPanel docked />);
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
     await waitFor(() => getByTestId("playlist-row-revoice"));
     await act(async () => { fireEvent.click(getByTestId("playlist-row-revoice")); });
+    // RD-6: the button only opens the confirm — nothing is dropped yet.
+    expect(getByText("narration_playlist_revoice_title")).toBeDefined();
+    expect(getByText("narration_playlist_revoice_body")).toBeDefined();
+    expect(synthCalls).toHaveLength(baselineSynthCalls);
+    expect(deletedKeys).toHaveLength(0);
+    await act(async () => { fireEvent.click(getByText("narration_playlist_revoice")); });
     await waitFor(() => {
       expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
     });
@@ -1158,6 +1164,61 @@ describe("narration playlist re-voice (FS-6)", () => {
     expect(libraryRevealed).toEqual([]);
     expect(en["narration_playlist_revoice"]).toBe("Re-voice");
     expect(ru["narration_playlist_revoice"]).toBe("Переозвучить");
+  });
+
+  it("RD-6a: cancelling the row confirm leaves the cache and synthesis untouched", async () => {
+    mocks.messages = [revoiceMessage("m1", FULL_TEXT)];
+    await act(async () => {
+      await useTtsPlaybackStore.getState().startNarration("m1", FULL_TEXT, profile(), revoiceMeta("m1"));
+    });
+    const beforeEntry = playlistEntry("m1");
+    if (!beforeEntry) throw new Error("m1 was not indexed before re-voice");
+    const beforeKeys = [...beforeEntry.cacheKeys];
+    expect(beforeKeys.length).toBeGreaterThan(0);
+    const baselineSynthCalls = synthCalls.length;
+    const { getByTestId, getByText, queryByText } = render(<NarrationPlaylistPanel docked />);
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("playlist-row-revoice"));
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-revoice")); });
+    expect(getByText("narration_playlist_revoice_title")).toBeDefined();
+    expect(getByText("narration_playlist_revoice_body")).toBeDefined();
+    await act(async () => { fireEvent.click(getByText("cancel")); });
+    expect(queryByText("narration_playlist_revoice_title")).toBeNull();
+    expect(synthCalls).toHaveLength(baselineSynthCalls);
+    expect([...(playlistEntry("m1")?.cacheKeys ?? [])].sort()).toEqual([...beforeKeys].sort());
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+  });
+
+  it("RD-6b: a partial row also confirms before re-voicing, then synthesizes fresh", async () => {
+    const lane = parkLane();
+    mocks.messages = [revoiceMessage("m1", FULL_TEXT)];
+    const { getByTestId, getByText, queryByText } = render(<NarrationPlaylistPanel docked />);
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", FULL_TEXT, profile(), revoiceMeta("m1"));
+    });
+    const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
+    await act(async () => { fireEvent.click(pill); });
+    await waitFor(() => getByTestId("narration-playlist-row"));
+    await act(async () => { fireEvent.click(getByTestId("playlist-stop")); });
+    // The stopped lane settles as a partial cache row with a re-voice offer.
+    await waitFor(() => getByTestId("playlist-row-continue"));
+    await waitFor(() => getByTestId("playlist-row-revoice"));
+    await act(async () => { fireEvent.click(getByTestId("playlist-row-revoice")); });
+    expect(getByText("narration_playlist_revoice_title")).toBeDefined();
+    const playsBefore = lane.plays.length;
+    await act(async () => { fireEvent.click(getByText("narration_playlist_revoice")); });
+    expect(queryByText("narration_playlist_revoice_title")).toBeNull();
+    // The re-voiced chain (two fresh segments) plays through the
+    // parked stub: resolve each pending play in turn.
+    await waitFor(() => { expect(lane.plays.length).toBeGreaterThan(playsBefore); });
+    act(() => { lane.resolveCurrent(); });
+    await waitFor(() => { expect(lane.plays.length).toBeGreaterThan(playsBefore + 1); });
+    act(() => { lane.resolveCurrent(); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+    expect(playlistEntry("m1")?.partial).toBeFalsy();
   });
 });
 

@@ -408,6 +408,8 @@
   "narration_playlist_drop_file": "Remove saved file",
   "narration_playlist_drop_cached": "Drop cached audio",
   "narration_playlist_revoice": "Re-voice",
+  "narration_playlist_revoice_title": "Re-voice this message?",
+  "narration_playlist_revoice_body": "Cached audio for this message will be dropped and synthesized fresh.",
   "narration_playlist_continue": "Continue generation",
   "narration_playlist_swipe": "Swipe {current} of {total}",
   "narration_playlist_fetching": "{received} of {total} received",

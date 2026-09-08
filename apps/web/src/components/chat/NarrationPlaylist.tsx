@@ -460,6 +460,14 @@ function PlaylistRow(input: {
   const { t } = useT();
   const { row } = input;
   const live = row.live !== null;
+  // RD-6: row-level re-voice confirm (owner: «на переозвучку повесить
+  // конфирм») — local pending flag; the shared modal fires the
+  // existing input.onRevoice (FS-6 drop+fresh chain), cancel leaves
+  // the cache untouched. Two modal instances, not one shared: the
+  // RD-5 bulk modal's pending state (string[] | null) and
+  // count-parameterized copy are settled code — merging them into a
+  // union state would churn RD-5 for zero behavioral gain.
+  const [revoicePending, setRevoicePending] = useState(false);
   // RD-2: this row owns the lane's transport icon — pause only while
   // its own narration is playing, resume offer while it is parked.
   const rowPlaying = row.live?.status === "playing";
@@ -665,19 +673,35 @@ function PlaylistRow(input: {
         </CustomTooltip>
       )}
       {/* FS-6: re-voice for cache-only settled rows (drop plus fresh
-        narration). Library rows omit it to preserve the saved file. */}
+        narration). RD-6: the button only OPENS the confirm — confirm
+        fires input.onRevoice (same FS-6 chain), cancel drops nothing.
+        Library rows omit it to preserve the saved file. */}
       {!live && !row.inLibrary && (
-        <CustomTooltip content={t("narration_playlist_revoice")}>
-          <button
-            type="button"
-            aria-label={t("narration_playlist_revoice")}
-            data-testid="playlist-row-revoice"
-            onClick={input.onRevoice}
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
-          >
-            <Ic.regen />
-          </button>
-        </CustomTooltip>
+        <>
+          <CustomTooltip content={t("narration_playlist_revoice")}>
+            <button
+              type="button"
+              aria-label={t("narration_playlist_revoice")}
+              data-testid="playlist-row-revoice"
+              onClick={() => setRevoicePending(true)}
+              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5"
+            >
+              <Ic.regen />
+            </button>
+          </CustomTooltip>
+          {revoicePending && (
+            <DestructiveConfirmModal
+              title={t("narration_playlist_revoice_title")}
+              body={t("narration_playlist_revoice_body")}
+              confirmLabel={t("narration_playlist_revoice")}
+              onConfirm={() => {
+                setRevoicePending(false);
+                input.onRevoice();
+              }}
+              onCancel={() => setRevoicePending(false)}
+            />
+          )}
+        </>
       )}
         </div>
         {/* FS-3: partial rows carry an explicit continue-generation
