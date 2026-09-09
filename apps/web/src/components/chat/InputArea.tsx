@@ -12,6 +12,7 @@ import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { MobileInputArea } from "./MobileInputArea.js";
+import { PerSendPrefillStrip } from "./PerSendPrefillStrip.js";
 import { QuotaIndicator } from "./QuotaIndicator.js";
 import { useInputArea } from "./use-input-area.js";
 
@@ -77,6 +78,9 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {/* LS-4b: per-send prefill strip — one-shot override over the input
+            area; visibility gated on local-backend prefill capability. */}
+        <PerSendPrefillStrip supported={data.perSendPrefillSupported} />
         <div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
           {showGenerateMore && (
             <div className="absolute right-2 top-2 z-20">

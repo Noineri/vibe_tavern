@@ -64,6 +64,9 @@ export interface MessageShellActions {
   onRegenerate: () => void;
   onResend: () => void;
   onAiEdit: () => void;
+  /** LS-4a: continue generation from this reply's selected variant. Optional
+   *  — sibling shells (pending/coauthor) don't offer it. */
+  onContinue?: () => void;
   /** TPE-14: greeting-only entry into annotate mode. Optional — sibling
    *  shells (pending/coauthor) don't offer it. */
   onAiAnnotate?: () => void;
@@ -99,6 +102,9 @@ export interface MessageShellProps {
   canRegenerate: boolean;
   /** Whether user can resend from this message. */
   canResend: boolean;
+  /** LS-4a: whether the Continue affordance (icon next to Edit, last AI reply
+   *  only) is shown. Gated upstream by the provider's prefill capability. */
+  canContinue?: boolean;
   /** Whether the message AI editor (Sparkles) affordance is shown. MAE-52. */
   canAiEdit: boolean;
   /** TPE-14: whether the greeting-only "prepare for narration" affordance
@@ -152,6 +158,7 @@ export function MessageShell(props: MessageShellProps) {
     canBranch,
     canRegenerate,
     canResend,
+    canContinue,
     canAiEdit,
     canAiAnnotate,
     selectedVariantIndex,
@@ -190,6 +197,7 @@ export function MessageShell(props: MessageShellProps) {
   const regenLabel = t("regen");
   const deleteLabel = t("delete");
   const resendLabel = t("resend");
+  const continueLabel = t("continue_tooltip");
 
   // Resolve slots for each position
   const slotsAfterReasoning = resolveMessageSlots("after_reasoning", slotCtx);
@@ -319,6 +327,19 @@ export function MessageShell(props: MessageShellProps) {
                   label: editLabel,
                   action: actions.onEdit,
                 },
+                // LS-4a: Continue lives next to Edit. The mobile three-dot
+                // menu is a labeled ActionSheet (icon-only isn't representable
+                // there) — the owner's icon-only/no-label spec is the desktop
+                // row shape.
+                ...(canContinue && actions.onContinue
+                  ? [
+                      {
+                        icon: <Icons.fastForward />,
+                        label: continueLabel,
+                        action: actions.onContinue,
+                      } as ActionSheetItem,
+                    ]
+                  : []),
                 {
                   icon: <Icons.Trash />,
                   label: deleteLabel,
@@ -373,11 +394,13 @@ export function MessageShell(props: MessageShellProps) {
               canBranch={canBranch}
               canRegenerate={canRegenerate}
               canResend={canResend}
+              canContinue={canContinue}
               canSwitchVariant={canSwitchVariant}
               copied={copied}
               copiedLabel={t("copied")}
               copyLabel={copyLabel}
               editLabel={editLabel}
+              continueTooltip={continueLabel}
               hiddenVariantControls={!!variantControlsOverlay}
               isBusy={isBusy}
               isBranching={isBranching}
@@ -391,6 +414,7 @@ export function MessageShell(props: MessageShellProps) {
               onAiEdit={actions.onAiEdit}
               onAiAnnotate={actions.onAiAnnotate}
               onBranch={actions.onBranch}
+              onContinue={actions.onContinue}
               onCopy={actions.onCopy}
               onDelete={actions.onDelete}
               onEdit={actions.onEdit}
@@ -505,6 +529,8 @@ function DesktopMessageActions(props: {
   canBranch: boolean;
   canRegenerate: boolean;
   canResend: boolean;
+  canContinue?: boolean;
+  continueTooltip?: string;
   canSwitchVariant: boolean;
   copied: boolean;
   copiedLabel: string;
@@ -524,6 +550,7 @@ function DesktopMessageActions(props: {
   onAiEdit: () => void;
   onAiAnnotate?: () => void;
   onBranch: () => void;
+  onContinue?: () => void;
   onCopy: () => void;
   onDelete: () => void;
   onEdit: () => void;
@@ -536,12 +563,12 @@ function DesktopMessageActions(props: {
 }) {
   const {
     aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
-    branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
+    branchLabel, canBranch, canRegenerate, canResend, canContinue, continueTooltip, canSwitchVariant,
     copied, copiedLabel, copyLabel, editLabel, hiddenVariantControls,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControlsRef, variantCount,
     variantControls,
-    onAiEdit, onAiAnnotate, onBranch, onCopy, onDelete, onEdit, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
+    onAiEdit, onAiAnnotate, onBranch, onContinue, onCopy, onDelete, onEdit, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
   } = props;
 
   return (
@@ -558,6 +585,24 @@ function DesktopMessageActions(props: {
         className={desktopActionClass}
         onClick={() => { if (!isBusy) onEdit(); }}
       ><Icons.Edit />{editLabel}</span>
+
+      {/* LS-4a: Continue — icon-only, directly next to Edit, last AI reply
+          only (canContinue is gated upstream in MessageBlock), tooltip on
+          hover per the owner spec («перемотка >>, без подписи, подсветка
+          тултипом»). */}
+      {canContinue && onContinue && (
+        <CustomTooltip content={continueTooltip ?? ""}>
+          <button
+            type="button"
+            aria-label={continueTooltip}
+            aria-disabled={isBusy}
+            disabled={isBusy}
+            data-testid="desktop-continue-btn"
+            className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
+            onClick={() => { if (!isBusy) onContinue(); }}
+          ><Icons.fastForward /></button>
+        </CustomTooltip>
+      )}
 
       {onNarrate && (
         <CustomTooltip content={narrating ? narrateStopTooltip : narrateTooltip}>

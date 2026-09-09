@@ -65,6 +65,7 @@ mock.module("../../hooks/use-chat-controller.js", () => ({
     handleDeleteVariant: mocks.deleteVariant,
     handleFork: noopAsync,
     handleRegenerateMessage: noopAsync,
+    handleContinueMessage: noopAsync,
     handleResend: noopAsync,
     handleSelectMessageVariant: noopAsync,
     handleSend: noopAsync,

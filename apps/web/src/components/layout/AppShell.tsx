@@ -6,7 +6,7 @@ import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { GENERATION_MODE, resolveAutoTemplateSource, resolveTextCompletionSupport } from "@vibe-tavern/domain";
+import { GENERATION_MODE, resolveAssistantPrefillSupport, resolveAutoTemplateSource, resolveTextCompletionSupport } from "@vibe-tavern/domain";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
@@ -474,7 +474,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         onCreate={preset.handleCreatePromptPreset} onUpdate={preset.handleUpdatePromptPreset}
         onDelete={preset.handleDeletePromptPreset} onReorder={preset.handleReorderPromptPresets}
         providerProfiles={provider.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
-        prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(provider.activeProviderProfile?.providerPreset ?? '')}
+        prefillSupported={resolveAssistantPrefillSupport(provider.activeProviderProfile?.providerPreset).supported}
         tcTemplateSource={tcTemplateSource}
         tcProfile={tcGenerationProfile ? { id: tcGenerationProfile.id, stopSequences: tcGenerationProfile.stopSequences } : null}
         characterFields={activeCharacter ? {

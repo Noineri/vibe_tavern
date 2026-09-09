@@ -116,6 +116,10 @@ export const Ic = {
   // Counterclockwise curved arrow — the copilot editor's «Отменить изменения»
   // (revert to turn-start snapshot). Lucide undo-2 geometry scaled to 16.
   undo:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9.33 2.67 6 6 2.67"/><path d="M2.67 6h7a3.67 3.67 0 0 1 0 7.33H7.33"/></svg>,
+  // Fast-forward «>>» — the Continue-generation action (LS-4a): two right
+  // triangles, the owner's «перемотка» glyph, stroke-outline to match the
+  // action-row icon language (copy/edit/regen).
+  fastForward:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M2.5 3.5v9L9 8z"/><path d="M8.5 3.5v9L15 8z"/></svg>,
   // Lucide `Volume2` — speaker for TTS narration; stroke 2 for toolbar legibility.
   speaker: (props?: { className?: string }) => <Volume2 size={13} strokeWidth={2} {...props} />,
   // Lucide `VolumeX` — muted twin of `speaker` for the playlist volume rail (RD-4).

@@ -13,8 +13,10 @@ import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-ta
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
-import { effectiveContextBudget } from "@vibe-tavern/domain";
+import { effectiveContextBudget, normalizeProviderType } from "@vibe-tavern/domain";
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
+import { resolveProtocol } from "../providers/protocol-registry.js";
+import { validation } from "../../shared/errors.js";
 
 /** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
 export interface RegexHookContext {
@@ -79,6 +81,31 @@ export class LiveChatOrchestrator {
       : await this.regexHooks.onAiOutput(text, { chatId, hook });
   }
 
+  /**
+   * LS-4 prefill capability gate: prefill only rides when the resolved
+   * protocol actually supports it (`capabilities.prefill`, the same gate
+   * `prepareSdkMessages` uses to decide whether to PUSH the assistant
+   * message). Without this, a prefill from a capability-less provider would
+   * never reach the model — yet `ensurePrefillInResponse` would still PREPEND
+   * it to the stored reply, silently corrupting the variant with text the
+   * model never wrote. Dropping the prefill here keeps the echo seam
+   * symmetric on every generation path.
+   */
+  private resolveEffectivePrefill(profile: StoredProviderProfileRecord, candidate: string | undefined): string | undefined {
+    if (candidate === undefined) return undefined;
+    if (!resolveProtocol(normalizeProviderType(profile.providerPreset)).capabilities.prefill) return undefined;
+    return candidate;
+  }
+
+  /** LS-4a: Continue is a PREFILL of the existing text — refuse instead of
+   *  silently generating a fresh reply that would masquerade as a
+   *  continuation variant. */
+  private requirePrefillCapability(profile: StoredProviderProfileRecord): void {
+    if (!resolveProtocol(normalizeProviderType(profile.providerPreset)).capabilities.prefill) {
+      throw validation("The active provider does not support assistant prefill, which continuing a reply requires.");
+    }
+  }
+
   // ─── Non-streaming methods ────────────────────────────────────────────
 
   /** Non-streaming send: prepare → execute → append reply → return snapshot. */
@@ -124,7 +151,9 @@ export class LiveChatOrchestrator {
     });
     const startedAt = Date.now();
     logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
-    const prefill = prepared.prompt.prefill ?? undefined;
+    // LS-4: the per-send override (input.prefill) wins over the preset value;
+    // both are dropped on protocols without the prefill capability.
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
     let reply: string;
     let reasoning: string | undefined;
     let toolCalls: ExtractedToolCall[] | undefined;
@@ -215,7 +244,7 @@ export class LiveChatOrchestrator {
         responseReserve: provider.profile.maxTokens,
       }),
     );
-    const prefill = prompt.prefill ?? undefined;
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const startedAt = Date.now();
     let reply: string;
     let reasoning: string | undefined;
@@ -306,7 +335,8 @@ export class LiveChatOrchestrator {
       messageId: input.messageId,
       promptMessageCount: countPromptMessages(prompt),
     });
-    const prefill = prompt.prefill ?? undefined;
+    // LS-4 capability gate: drop the preset prefill on non-capable protocols.
+    const prefill = this.resolveEffectivePrefill(provider.profile, prompt.prefill ?? undefined);
     const startedAt = Date.now();
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     let reply: string;
@@ -390,7 +420,7 @@ export class LiveChatOrchestrator {
       this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
     );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
-    const prefill = prepared.prompt.prefill ?? undefined;
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
       ? async (descriptions: Array<{ attachmentId: string; description: string }>) => {
           await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
@@ -460,7 +490,9 @@ export class LiveChatOrchestrator {
         responseReserve: provider.profile.maxTokens,
       }),
     );
-    const prefill = prompt.prefill ?? undefined;
+    // Resolved again here for drainStream's echo seam; startStream applies the
+    // same gate to the executor input (LS-4).
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
@@ -530,7 +562,9 @@ export class LiveChatOrchestrator {
         presetId: input.presetId,
       }),
     );
-    const prefill = prompt.prefill ?? undefined;
+    // Resolved again here for drainStream's echo seam; startStream applies the
+    // same gate to the executor input (LS-4).
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
@@ -575,6 +609,159 @@ export class LiveChatOrchestrator {
           toolResults,
         });
         logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
+        return snapshot;
+      },
+    });
+  }
+
+  /** Non-streaming continue (LS-4a): the target assistant variant's text IS
+   *  the continuation point. The prompt excludes the target message (so the
+   *  variant text is not in the history twice) and the variant text rides as
+   *  the executor prefill — `prepareSdkMessages` pushes it as the trailing
+   *  assistant message (the LS-2/LS-3 continuation-point seam: the TC
+   *  completion renderer treats a trailing assistant as the continuation,
+   *  chat-capable providers continue the pushed turn). The reply (echo
+   *  asymmetry handled by `ensurePrefillInResponse`) APPENDS as a NEW variant
+   *  of the target message — the same fork regenerate uses. */
+  async continueMessage(input: {
+    chatId: string;
+    messageId: string;
+    /** The selected variant's text — resolved server-side by the adapter. */
+    continuationText: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+    transport?: CoauthorTransport;
+    signal?: AbortSignal;
+  }): Promise<{
+    promptMessageCount: number;
+    reply: string;
+    snapshot: MessageResponse;
+  }> {
+    const provider = await this.resolveProvider(input);
+    this.requirePrefillCapability(provider.profile);
+    logSendDebug("live.continue.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        excludeMessageId: brandId<MessageId>(input.messageId),
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+      }),
+    );
+    const prefill = input.continuationText;
+    // Trace honesty: the pending draft's `prefill` records what actually rode
+    // as the pushed assistant message — the continuation text, not the preset.
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { prefill });
+    const startedAt = Date.now();
+    let reply: string;
+    let reasoning: string | undefined;
+    try {
+      const result = await this.executeNonstreaming({
+        profile: provider.profile,
+        model: provider.model,
+        transport: input.transport,
+        prompt,
+        signal: input.signal,
+        prefill,
+        tools: prompt.tools,
+        maxSteps: prompt.maxSteps,
+      });
+      reply = ensurePrefillInResponse(result.text, prefill);
+      reasoning = result.reasoning;
+      this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+        ...(result.sentConfig ? { sentConfig: result.sentConfig } : {}),
+        providerResponse: result.providerResponse,
+      });
+    } catch (err) {
+      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      throw err;
+    }
+
+    // Extract thinking tags from content (some models embed <thinking> in text)
+    const { mainContent: contText, reasoning: contReasoning } = extractThinkingTags(reply, reasoning);
+    reply = contText;
+    reasoning = contReasoning;
+    // RX-10 regex seam: REASONING transform (persist-mode presets, reasoning only; guarded so undefined/empty never fires the hook).
+    if (reasoning) reasoning = await this.applyRegexLayer("REASONING", input.chatId, reasoning);
+
+    const latencyMs = Date.now() - startedAt;
+    logSendDebug("live.continue.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
+    // RX-8 regex seam: AI_OUTPUT transform (persist-mode presets, main content only). The variant is created already-transformed.
+    reply = await this.applyRegexLayer("AI_OUTPUT", input.chatId, reply);
+    const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+      content: reply,
+      latencyMs,
+      reasoning,
+    });
+    logSendDebug("live.continue.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
+
+    return {
+      promptMessageCount: countPromptMessages(prompt),
+      reply,
+      snapshot,
+    };
+  }
+
+  /** Streaming continue (LS-4a): same seam as {@link continueMessage} — the
+   *  variant text rides as the executor prefill; deltas stream the raw
+   *  continuation (the same echo asymmetry the preset-prefill send path
+   *  shows), and the full text appends as a new variant on finalize. */
+  async *continueMessageStream(input: {
+    chatId: string;
+    messageId: string;
+    continuationText: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+    transport?: CoauthorTransport;
+    signal?: AbortSignal;
+  }): AsyncGenerator<{ event: string; data: string }> {
+    const provider = await this.resolveProvider(input);
+    this.requirePrefillCapability(provider.profile);
+    logSendDebug("live.continue-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        excludeMessageId: brandId<MessageId>(input.messageId),
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+      }),
+    );
+    const prefill = input.continuationText;
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { prefill });
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, prefill, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+      ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
+      providerResponse: streamResult.providerResponse,
+    });
+
+    yield* this.drainStream({
+      chatId: input.chatId,
+      streamResult,
+      signal: input.signal,
+      startedAt,
+      debugLabel: "live.continue-stream",
+      omitMessageCountInFinish: true,
+      prefill,
+      onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+        if (text) {
+          await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+            content: text,
+            latencyMs,
+            reasoning: reasoning || undefined,
+            reasoningDurationMs,
+          });
+        }
+      },
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
+        const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+          content: text,
+          latencyMs,
+          reasoning,
+          reasoningDurationMs,
+          toolCalls,
+          toolResults,
+        });
+        logSendDebug("live.continue-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
         return snapshot;
       },
     });
@@ -648,7 +835,8 @@ export class LiveChatOrchestrator {
         transport: input.transport,
         prompt,
         signal: input.signal,
-        prefill: input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined,
+        // LS-4 capability gate: same rule as the non-stream paths.
+        prefill: this.resolveEffectivePrefill(input.profile, input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined),
         tools: input.tools,
         maxSteps: input.maxSteps,
         cachedModels: input.visionAssets?.cachedModels,

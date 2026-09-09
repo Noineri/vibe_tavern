@@ -11,6 +11,7 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useIsSending } from "../../stores/index.js";
+import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
 import type { MessageBlockProps } from "../play/play-mode-types.js";
@@ -18,7 +19,7 @@ import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
-import { brandId, REGEX_PLACEMENT, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
+import { brandId, REGEX_PLACEMENT, resolveAssistantPrefillSupport, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
 import {
   applyRegexLayer,
   createValueEscapingMacroSource,
@@ -75,6 +76,11 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const editingDraft = useChatStore(s => s.editingDraft);
   const isSending = useIsSending();
   const messageActionId = useChatStore(s => s.messageActionId);
+  // LS-4a: Continue rides the SAME prefill capability the backend registry
+  // resolves per protocol (a continuation IS a prefill of the existing text).
+  // Narrow primitive selector — no re-render on unrelated profile mutations.
+  const activeProfilePreset = useProviderDataStore((s) => s.profiles.find((p) => p.isActive)?.providerPreset ?? null);
+  const canContinueByCapability = resolveAssistantPrefillSupport(activeProfilePreset).supported;
   const isCoauthorMode = useSnapshotStore(s => s.activeChat?.mode === "coauthor");
   // Narrow primitive selector — only the active chat's pending user content.
   // Replaces reading it off the whole activeGen object (which mutated every tick).
@@ -275,6 +281,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const canBranch = !isGreeting && !isCoauthorMode;
   const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
+  // LS-4a: same last-message gate as regenerate (owner: Continue lives on the
+  // LAST AI reply) + the shared prefill capability gate. Coauthor chats are
+  // excluded alongside the other row actions.
+  const canContinue = canRegenerate && canContinueByCapability;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
   const canSwitchVariant = isLast && !isCoauthorMode;
   const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
@@ -567,6 +577,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canBranch={canBranch}
       canRegenerate={canRegenerate}
       canResend={canResend}
+      canContinue={canContinue}
       canAiEdit={canAiEdit}
       canAiAnnotate={canAiAnnotate}
       selectedVariantIndex={selectedVariantIndex}
@@ -595,6 +606,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         onDelete: () => setDeleteConfirmOpen(true),
         onBranch: () => void chat.handleFork(msg.id),
         onRegenerate: () => void chat.handleRegenerateMessage(msg.id),
+        onContinue: () => void chat.handleContinueMessage(msg.id),
         onResend: () => void chat.handleResend(),
         ...(msg.role === "assistant" && narrationHook.available ? { onNarrate: narrationHook.onNarrate } : {}),
       }}

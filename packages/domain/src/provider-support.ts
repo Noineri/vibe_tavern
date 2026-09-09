@@ -149,6 +149,75 @@ export function resolveTextCompletionSupport(providerPreset: string | null | und
 
 // ─── Auto generation-format template source (LOCAL_SUPPORT_PLAN LS-3c) ─────
 
+// ─── Assistant prefill (LOCAL_SUPPORT_PLAN LS-4) ─────────────────────────
+
+/**
+ * Presets where assistant prefill is NOT supported. Mirrors the backend
+ * per-protocol `capabilities.prefill` flags (protocol-registry — the canonical
+ * source): `anthropic` and `google*` have no prefill channel in VT, and
+ * `koboldcpp`'s native adapter builds the flat prompt itself (a pushed trailing
+ * assistant message would never reach the model). Everything else — the
+ * OpenAI-compat family (clouds AND local backends), `llamacpp`, `ollama`,
+ * `unsloth` — pushes the prefill as the trailing assistant message, which is
+ * exactly the continuation-point seam (LS-2/LS-3).
+ */
+const ASSISTANT_PREFILL_DISABLED_PRESETS = new Set<string>([
+  PROVIDER_TYPE.anthropic,
+  PROVIDER_TYPE.google,
+  PROVIDER_TYPE.googleInteractions,
+  PROVIDER_TYPE.koboldCpp,
+]);
+
+/** Fail-closed assistant-prefill gate, shared web + API (same contract as
+ *  {@link resolveTextCompletionSupport}). Gates BOTH LS-4 surfaces: the
+ *  per-send prefill strip's base gate and the Continue button (a continuation
+ *  IS a prefill of the existing text — providers that cannot accept a
+ *  pushed assistant message cannot continue one). */
+export function resolveAssistantPrefillSupport(providerPreset: string | null | undefined): { supported: boolean; reason: string } {
+  const preset = (providerPreset ?? "").trim();
+  if (ASSISTANT_PREFILL_DISABLED_PRESETS.has(preset)) {
+    return { supported: false, reason: "provider_has_no_prefill_channel" };
+  }
+  return { supported: true, reason: "provider_pushes_trailing_assistant_message" };
+}
+
+/**
+ * The LOCAL-only gate for the per-send prefill strip (LS-4b, owner decision
+ * 2026-09-09: cloud prefill stays preset-field-only, never surfaced as a
+ * per-send control). Local preset ids gate directly; the generic
+ * `openai_compat` preset id is ambiguous (a custom profile can point at a
+ * local LM Studio-style server or at a cloud host), so it is resolved by
+ * ENDPOINT — localhost/127.0.0.1 = local backend, anything else = cloud →
+ * no strip (same endpoint inference {@link resolveLogitBiasSupport} uses).
+ * Always fails closed for unknown ids.
+ */
+const LOCAL_PER_SEND_PREFILL_PRESETS = new Set([
+  PROVIDER_TYPE.ollama,
+  PROVIDER_TYPE.llamaCpp,
+  PROVIDER_TYPE.unsloth,
+  "vllm",
+  "ooba",
+  "tabby",
+  "aphrodite",
+  "lmstudio",
+]);
+
+export function resolvePerSendPrefillSupport(providerPreset: string | null | undefined, endpoint?: string | null): { supported: boolean; reason: string } {
+  const preset = (providerPreset ?? "").trim();
+  // Capability first, so the diagnostic reason is always accurate (e.g.
+  // koboldcpp: no prefill channel, not "cloud").
+  const prefill = resolveAssistantPrefillSupport(preset);
+  if (!prefill.supported) return prefill;
+  if (LOCAL_PER_SEND_PREFILL_PRESETS.has(preset)) {
+    return { supported: true, reason: "local_prefill_provider" };
+  }
+  const inferred = preset === PROVIDER_TYPE.openaiCompat ? inferPresetFromEndpoint(endpoint) : null;
+  if (inferred === "local") {
+    return { supported: true, reason: "local_endpoint_openai_compat" };
+  }
+  return { supported: false, reason: "cloud_prefill_not_surfaced_per_send" };
+}
+
 /**
  * Where the AUTO generation-format mode takes its glue for a provider preset
  * in TC mode:

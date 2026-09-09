@@ -26,6 +26,8 @@ const regenerateChatMessage = mock();
 const sendChatMessageStream = mock();
 const fetchChat = mock();
 const sendChatMessageAction = mock();
+// LS-4a: the non-stream continue entry handleContinueMessage calls.
+const continueMessageAction = mock();
 
 const realAppClient = await import("../app-client.js");
 const realChatActions = await import("../stores/api-actions/chat-actions.js");
@@ -36,9 +38,10 @@ mock.module("../app-client.js", () => {
 
 // sendChatMessageAction (chat-actions) is the non-stream send entry handleSend
 // calls; stubbed separately so the non-stream dice path can be exercised end
-// to end while all unrelated exports remain real.
+// to end while all unrelated exports remain real. continueMessageAction is
+// stubbed for the same reason (LS-4a).
 mock.module("../stores/api-actions/chat-actions.js", () => {
-	return { ...realChatActions, sendChatMessageAction };
+	return { ...realChatActions, sendChatMessageAction, continueMessageAction };
 });
 
 // getT() without initI18n — translations are irrelevant to state cleanup.
@@ -52,6 +55,7 @@ const { ProviderStreamError } = await import("../api/provider-stream-error.js");
 const { DiceApiError } = await import("../api/dice-api.js");
 const { useDiceStore } = await import("../stores/dice-store.js");
 const { useChatStore } = await import("../stores/chat-store.js");
+const { usePerSendPrefillStore } = await import("../stores/per-send-prefill-store.js");
 const { useProviderStore } = await import("../stores/provider-store.js");
 const { useProviderDataStore } = await import("../stores/provider-data-store.js");
 const { useSnapshotStore } = await import("../stores/snapshot-store.js");
@@ -76,6 +80,7 @@ function rejectOnAbort(_chatId: ChatId, _messageId: string, opts?: { signal?: Ab
 beforeEach(() => {
   regenerateChatMessage.mockReset();
   sendChatMessageStream.mockReset();
+  continueMessageAction.mockReset();
   fetchChat.mockReset();
   // ingestSnapshot preserves absent fields, so an empty snapshot is a safe
   // no-op refresh for the post-abort / post-error refetch.
@@ -144,6 +149,88 @@ describe("useChatController — handleRegenerateMessage (non-stream)", () => {
 
     expect(useChatStore.getState().messageActionId).toBeNull();
     expect(useChatStore.getState().generations[CHAT]?.isSending).toBe(false);
+  });
+});
+
+describe("useChatController — per-send prefill one-shot (LS-4b)", () => {
+  beforeEach(() => {
+    // The file-level beforeEach only resets the three mocks it owns; this
+    // suite owns the send-action mock + the override store.
+    sendChatMessageAction.mockClear();
+    usePerSendPrefillStore.getState().clear();
+  });
+
+  test("handleSend threads the armed override into the send body and clears it", async () => {
+    usePerSendPrefillStore.getState().setValue("Whisper softly:");
+    useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
+    sendChatMessageAction.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    expect(sendChatMessageAction).toHaveBeenCalledTimes(1);
+    // 7th positional arg: the one-shot prefill override rides the send params.
+    expect(sendChatMessageAction.mock.calls[0]![6]).toBe("Whisper softly:");
+    // One-shot: consumed by this send — nothing armed afterwards.
+    expect(usePerSendPrefillStore.getState().value).toBeNull();
+  });
+
+  test("a blocked send never burns the override", async () => {
+    usePerSendPrefillStore.getState().setValue("Whisper softly:");
+    // No draft + no attachments → handleSend returns at the first guard.
+    useChatStore.setState({ activeChatId: CHAT, draft: "", draftAttachments: [], generations: {}, messageActionId: null });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    expect(sendChatMessageAction).not.toHaveBeenCalled();
+    expect(usePerSendPrefillStore.getState().value).toBe("Whisper softly:");
+  });
+
+  test("no armed value ⇒ the send body carries no prefill field", async () => {
+    useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
+    sendChatMessageAction.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    expect(sendChatMessageAction).toHaveBeenCalledTimes(1);
+    expect(sendChatMessageAction.mock.calls[0]![6]).toBeUndefined();
+  });
+});
+
+describe("useChatController — handleContinueMessage (LS-4a, non-stream)", () => {
+  test("success calls the continue action and clears messageActionId + isSending", async () => {
+    continueMessageAction.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => {
+      await result.current.handleContinueMessage(MSG);
+    });
+
+    expect(continueMessageAction).toHaveBeenCalledTimes(1);
+    expect(continueMessageAction.mock.calls[0]![0]).toBe(CHAT);
+    expect(continueMessageAction.mock.calls[0]![1]).toBe(MSG);
+    expect(useChatStore.getState().messageActionId).toBeNull();
+    expect(useChatStore.getState().generations[CHAT]?.isSending).toBe(false);
+  });
+
+  test("no active profile ⇒ toast + early return, continue action untouched", async () => {
+    useProviderDataStore.setState({ profiles: [] });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => {
+      await result.current.handleContinueMessage(MSG);
+    });
+
+    expect(continueMessageAction).not.toHaveBeenCalled();
+    expect(useChatStore.getState().messageActionId).toBeNull();
   });
 });
 

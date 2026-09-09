@@ -90,7 +90,7 @@ export async function streamChatEndpoint(
 /** Convenience: send message stream */
 export const sendStream = (
   chatId: string,
-  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
+  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string },
   opts: StreamOpts,
 ) => streamChatEndpoint(`/api/chats/${chatId}/messages/stream`, input, opts);
 
@@ -108,3 +108,11 @@ export const generateReplyStream = (
   chatId: string,
   opts: StreamOpts,
 ) => streamChatEndpoint(`/api/chats/${chatId}/generate-reply/stream`, {}, opts);
+
+/** Convenience: continue message stream (LS-4a) — no body; the continuation
+ *  text resolves server-side from the target message's selected variant. */
+export const continueStream = (
+  chatId: string,
+  messageId: string,
+  opts: StreamOpts,
+) => streamChatEndpoint(`/api/chats/${chatId}/messages/${messageId}/continue/stream`, {}, opts);

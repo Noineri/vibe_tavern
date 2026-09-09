@@ -5,6 +5,7 @@ import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
 import {
   generateReplyStream,
+  continueChatMessageStream,
   regenerateChatMessageStream,
   sendChatMessageStream,
   type AppMessage,
@@ -27,6 +28,7 @@ import {
   fetchChatAction,
   sendChatMessageAction,
   regenerateMessageAction,
+  continueMessageAction,
   generateReplyAction,
   editMessageAction,
   deleteMessageAction,
@@ -39,6 +41,7 @@ import {
   renameBranchAction,
 } from "../stores/api-actions/chat-actions.js";
 import { useDiceStore } from "../stores/dice-store.js";
+import { usePerSendPrefillStore } from "../stores/per-send-prefill-store.js";
 import { useExperienceStore } from "../stores/experience-store.js";
 import { DiceApiError } from "../api/dice-api.js";
 import type { DiceLaneState, DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
@@ -272,6 +275,9 @@ export interface ChatControllerActions {
   handleDeleteMessage: (messageId: string) => Promise<void>;
   handleDeleteVariant: (messageId: string, variantIndex: number) => Promise<void>;
   handleRegenerateMessage: (messageId: string) => Promise<void>;
+  /** LS-4a: continue the LAST assistant reply from its selected variant's
+   *  text; the continuation appends as a new variant of that message. */
+  handleContinueMessage: (messageId: string) => Promise<void>;
   handleSelectMessageVariant: (messageId: string, variantIndex: number) => Promise<void>;
   handleResend: () => Promise<void>;
   handleFork: (messageId?: string) => Promise<void>;
@@ -689,12 +695,18 @@ export function useChatController(): ChatControllerActions {
     // closed instead of capturing the wrong chat's intent.
     const exp = readExperienceSendState(activeChatId);
 
+    // LS-4b: one-shot per-send prefill — consumed HERE (read + clear) so the
+    // override applies to exactly the next send and the preset value stays
+    // the persistent default. Guards above already returned, so a blocked
+    // send never burns the override.
+    const perSendPrefill = usePerSendPrefillStore.getState().consume() ?? undefined;
+
     if (streamResponseRef.current) {
       const currentAttachments = [...csStore.draftAttachments];
       csStore.clearDraftAttachments();
       const outcome = await executeStreamAction(
         activeChatId,
-        (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined, ...dice.commitIntent, ...exp.commitIntent }, opts),
+        (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined, ...dice.commitIntent, ...exp.commitIntent, ...(perSendPrefill !== undefined ? { prefill: perSendPrefill } : {}) }, opts),
         draft,
         currentAttachments,
       );
@@ -709,7 +721,7 @@ export function useChatController(): ChatControllerActions {
       // treats abort as a settled "cancelled" outcome without invoking onError.
       const outcome = await executeNonStreamAction(
         activeChatId,
-        (signal) => sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, dice.commitIntent, signal, exp.commitIntent),
+        (signal) => sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, dice.commitIntent, signal, exp.commitIntent, perSendPrefill),
         {
           pendingUserContent: draft,
           pendingAttachments: currentAttachments,
@@ -904,6 +916,49 @@ export function useChatController(): ChatControllerActions {
     }
   }
 
+  /** LS-4a: continue the LAST assistant reply from its selected variant's
+   *  text. Mirrors handleRegenerateMessage's lifecycle exactly (messageActionId
+   *  bracket + stream/non-stream branch), but the backend endpoint differs:
+   *  the continuation prompt ends with the variant's content as the assistant
+   *  continuation point, and the result APPENDS as a new variant of the same
+   *  message instead of replacing the generation. */
+  async function handleContinueMessage(messageId: string): Promise<void> {
+    const activeChatId = getActiveChatId();
+    if (!activeChatId) return;
+
+    if (!canSendRef.current) {
+      toast.error(getT()("continue_unavailable_no_provider"));
+      return;
+    }
+
+    useChatStore.getState().setMessageActionId(messageId);
+    try {
+      if (streamResponseRef.current) {
+        await executeStreamAction(
+          activeChatId,
+          (opts) => continueChatMessageStream(activeChatId, messageId, opts),
+          undefined,
+          undefined,
+          messageId,
+        );
+      } else {
+        await executeNonStreamAction(
+          activeChatId,
+          (signal) => continueMessageAction(activeChatId, messageId, signal),
+          {
+            streamingMessageId: messageId,
+            onError: async (error) => {
+              await refreshChatSnapshotCache(activeChatId);
+              toast.error(error instanceof Error ? error.message : getT()("continue_failed"));
+            },
+          },
+        );
+      }
+    } finally {
+      useChatStore.getState().setMessageActionId(null);
+    }
+  }
+
   async function handleSelectMessageVariant(messageId: string, variantIndex: number): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId || variantIndex < 0) return;
@@ -1017,6 +1072,7 @@ export function useChatController(): ChatControllerActions {
     handleDeleteMessage,
     handleDeleteVariant,
     handleRegenerateMessage,
+    handleContinueMessage,
     handleSelectMessageVariant,
     handleResend,
     handleFork,

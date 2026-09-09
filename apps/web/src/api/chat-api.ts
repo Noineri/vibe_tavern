@@ -5,7 +5,7 @@ import { client } from "./client.js";
 import { unwrapRpc, unwrapError, type RpcResponse } from "./unwrap.js";
 import { DiceApiError } from "./dice-api.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
-import { sendStream, regenerateStream, generateReplyStream, type StreamOpts } from "./stream.js";
+import { sendStream, regenerateStream, generateReplyStream, continueStream, type StreamOpts } from "./stream.js";
 import type { attachmentSchema } from "@vibe-tavern/api-contracts";
 import type { z } from "zod";
 
@@ -132,7 +132,7 @@ export async function setChatPromptPreset(chatId: ChatId, promptPresetId: string
 
 export async function sendChatMessage(
   chatId: ChatId,
-  input: { content: string; attachments?: WireAttachment[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
+  input: { content: string; attachments?: WireAttachment[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages.$post(
@@ -185,6 +185,21 @@ export async function generateReply(
 ): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["generate-reply"].$post(
     { param: { chatId } },
+    { init: { signal: options?.signal } },
+  );
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
+export async function continueChatMessage(
+  chatId: ChatId,
+  messageId: string,
+  options?: { signal?: AbortSignal },
+): Promise<AppSnapshot> {
+  // LS-4a: no body — the continuation text resolves server-side from the
+  // target message's selected variant.
+  const response = await client.api.chats[":chatId"].messages[":messageId"].continue.$post(
+    { param: { chatId, messageId } },
     { init: { signal: options?.signal } },
   );
   const data = await unwrapRpc<AppSnapshot>(response);
@@ -309,7 +324,7 @@ export async function regenerateAttachmentDescription(
 
 // ─── Streams ────────────────────────────────────────────────────────────
 
-export { sendStream as sendChatMessageStream, regenerateStream as regenerateChatMessageStream, generateReplyStream as generateReplyStream };
+export { sendStream as sendChatMessageStream, regenerateStream as regenerateChatMessageStream, generateReplyStream as generateReplyStream, continueStream as continueChatMessageStream };
 export type { StreamOpts };
 
 // ─── Branches ───────────────────────────────────────────────────────────

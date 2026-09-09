@@ -197,6 +197,24 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const gen = runtime.regenerateMessageStream(chatId, messageId, override, abortBridge.signal);
       return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
     })
+    .post("/api/chats/:chatId/messages/:messageId/continue", async (c) => {
+      // LS-4a: continue the last assistant reply from its selected variant's
+      // text — the variant rides as the pushed-assistant continuation point
+      // and the result appends as a new variant of the target message. No
+      // body: the continuation text resolves server-side.
+      const chatId = c.req.param("chatId");
+      const messageId = c.req.param("messageId");
+      logSendDebug("api.route.continue.start", { chatId, messageId });
+      return c.json(await runtime.continueMessage(chatId, messageId, c.req.raw.signal));
+    })
+    .post("/api/chats/:chatId/messages/:messageId/continue/stream", async (c) => {
+      const chatId = c.req.param("chatId");
+      const messageId = c.req.param("messageId");
+      logSendDebug("api.route.continue-stream.start", { chatId, messageId });
+      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.continue-stream", { chatId, messageId });
+      const gen = runtime.continueMessageStream(chatId, messageId, abortBridge.signal);
+      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
+    })
     .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {
       return c.json(
         await runtime.selectVariant(

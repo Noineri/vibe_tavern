@@ -50,6 +50,8 @@ import {
   saveChatSummary,
   summarizeChat,
   regenerateChatMessage,
+  continueChatMessage,
+  continueChatMessageStream,
   renameChat,
   setGreetingIndex,
   setCoauthorContextLinks,
@@ -224,14 +226,22 @@ export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string |
   syncSnapshot(snapshot);
 }
 
-export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: WireAttachment[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal, experienceCommit?: ExperienceSendCommitIntent): Promise<void> {
+export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: WireAttachment[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal, experienceCommit?: ExperienceSendCommitIntent, prefill?: string): Promise<void> {
   useCoauthorTurnStore.getState().clearTurn(chatId);
   // Spread the optional commit intents into the wire body; absent ⇒ a plain
   // send, byte-identical to before. DICE-F3 (dice) + IR-51 (experience).
-  const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit, ...experienceCommit }, { signal });
+  // LS-4b: `prefill` is the one-shot per-send override; absent ⇒ the preset
+  // prefill cascade is untouched.
+  const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit, ...experienceCommit, ...(prefill !== undefined ? { prefill } : {}) }, { signal });
   syncSnapshot(snapshot);
   syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
+}
+
+export async function continueMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal): Promise<void> {
+  const snapshot = await continueChatMessage(chatId, messageId, { signal });
+  syncSnapshot(snapshot);
+  syncCommittedCoauthorTurn(chatId);
 }
 
 export async function regenerateMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal, override?: { model?: string; promptPresetId?: string }): Promise<void> {

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChangeEvent, ClipboardEvent } from "react";
 import { toast } from "sonner";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
-import { effectiveContextBudget } from "@vibe-tavern/domain";
+import { effectiveContextBudget, resolvePerSendPrefillSupport } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useChatController, diceSendBlockReason } from "../../hooks/use-chat-controller.js";
@@ -205,7 +205,6 @@ export function useInputArea() {
 
   // --- Token counting from backend prompt trace layers ---
   const TEMPORARY_TYPES = new Set(["chat_history", "compaction"]);
-
   const buckets = useMemo(() => {
     const layers: PromptLayerDto[] = activePromptTrace?.layers ?? [];
     let system = 0, character = 0, persona = 0, lore = 0, memory = 0, tools = 0, history = 0;
@@ -242,6 +241,12 @@ export function useInputArea() {
     fileInputRef, draftAttachments, handleFileSelected, handleVoiceRecorded, onFileInputChange, handlePaste,
     canSend, buckets, inputTokens,
     showGenerateMore, handleGenerateMore,
+    // LS-4b: local-only per-send prefill strip gate (shared fail-closed
+    // resolution in @vibe-tavern/domain — no cloud surfacing, owner decision).
+    perSendPrefillSupported: resolvePerSendPrefillSupport(
+      provider.activeProviderProfile?.providerPreset,
+      provider.activeProviderProfile?.endpoint,
+    ).supported,
   };
 }
 

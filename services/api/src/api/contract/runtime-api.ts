@@ -146,10 +146,15 @@ export interface ChatRuntimeApi {
 	renameBranch: (chatId: string, branchId: string, label: string) => Promise<BranchMetaResponse>;
 
 	// Messages
-	sendMessage: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => Promise<MessageResponse>;
-	sendMessageStream: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+	sendMessage: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; prefill?: string }, signal?: AbortSignal) => Promise<MessageResponse>;
+	sendMessageStream: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; prefill?: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	regenerateMessage: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => Promise<MessageResponse>;
 	regenerateMessageStream: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+	/** LS-4a: continue the last assistant reply from its selected variant's text
+	 *  (the variant text rides as the pushed-assistant continuation point); the
+	 *  result appends as a NEW variant of the target message. */
+	continueMessage: (chatId: string, messageId: string, signal?: AbortSignal) => Promise<MessageResponse>;
+	continueMessageStream: (chatId: string, messageId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
 	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;

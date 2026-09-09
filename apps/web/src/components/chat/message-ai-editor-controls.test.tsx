@@ -47,6 +47,7 @@ const STABLE_CONTROLLER = {
   handleDeleteMessage: NOOP_ASYNC,
   handleDeleteVariant: NOOP_ASYNC,
   handleRegenerateMessage: NOOP_ASYNC,
+  handleContinueMessage: NOOP_ASYNC,
   handleSelectMessageVariant: NOOP_ASYNC,
   handleResend: NOOP_ASYNC,
   handleFork: NOOP_ASYNC,
@@ -212,7 +213,11 @@ describe("MAE-52 message AI editor controls", () => {
     const sparklesIdx = groupChildren.indexOf(sparklesBtn!);
     expect(editIdx, "Edit must be in the group children").toBeGreaterThanOrEqual(0);
     expect(sparklesIdx, "Sparkles must be in the group children").toBeGreaterThan(editIdx);
-    expect(sparklesIdx - editIdx, "Sparkles must immediately follow Edit (DOM adjacency)").toBe(1);
+    // LS-4a: the ONLY element allowed between Edit and Sparkles is the optional
+    // icon-only Continue button (prefill-capable providers, last AI reply).
+    const between = groupChildren.slice(editIdx + 1, sparklesIdx);
+    expect(between.every(c => c.getAttribute("data-testid") === "desktop-continue-btn"),
+      "Sparkles must immediately follow Edit, allowing only the optional Continue button between").toBe(true);
 
     expect(sparklesBtn!.getAttribute("title") === TOOLTIP_KEY || sparklesBtn!.querySelector("svg"), "icon-only sparkles glyph present").toBeTruthy();
   });

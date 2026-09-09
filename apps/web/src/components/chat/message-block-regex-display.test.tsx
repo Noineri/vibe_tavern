@@ -34,6 +34,7 @@ const STABLE_CONTROLLER = {
   handleDeleteMessage: async () => {},
   handleDeleteVariant: async () => {},
   handleRegenerateMessage: async () => {},
+  handleContinueMessage: async () => {},
   handleSelectMessageVariant: async () => {},
   handleResend: async () => {},
   handleFork: async () => {},

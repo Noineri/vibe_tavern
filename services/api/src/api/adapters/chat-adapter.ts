@@ -137,7 +137,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		};
 	}
 
-	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
+	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -156,6 +156,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			// LS-4b: the one-shot per-send prefill override (validated by
+			// sendMessageSchema). Absent ⇒ the preset prefill cascade unchanged.
+			prefill: body.prefill,
 			diceCommit: resolveDiceCommit(body),
 			experienceCommit: resolveExperienceCommit(body),
 			visionAssets: {
@@ -175,7 +178,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string }, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -186,6 +189,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 				model: profile.defaultModel,
 				transport,
 				signal,
+				// LS-4b: the one-shot per-send prefill override. See sendMessage.
+				prefill: body.prefill,
 				diceCommit: resolveDiceCommit(body),
 				experienceCommit: resolveExperienceCommit(body),
 				visionAssets: {
@@ -232,6 +237,62 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
+			signal,
+		});
+	};
+
+	/** LS-4a: continue the target assistant message from its SELECTED variant's
+	 *  text. The variant text resolves server-side (message.content IS the
+	 *  selected variant's content — see MessageStore.mapRowMessage) so the
+	 *  client never ships it. Prefill capability is the same registry gate the
+	 *  executor pushes under; a capability-less provider cannot accept a
+	 *  continuation, so the request fails honestly instead of silently
+	 *  generating a fresh reply. */
+	continueMessage = async (chatId: string, messageId: string, signal?: AbortSignal) => {
+		const message = await this.stores.messages.getMessageById(messageId);
+		if (!message || message.chatId !== chatId) {
+			throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
+		}
+		if (message.role !== "assistant") {
+			throw validation("Only assistant messages can be continued.");
+		}
+		const continuationText = message.content;
+		if (!continuationText.trim()) {
+			throw validation("The selected variant has no content to continue from.");
+		}
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
+		const result = await this.liveChatOrchestrator.continueMessage({
+			chatId,
+			messageId,
+			continuationText,
+			profile,
+			model: profile.defaultModel,
+			transport,
+			signal,
+		});
+		return result.snapshot;
+	};
+
+	continueMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, signal?: AbortSignal) {
+		const message = await this.stores.messages.getMessageById(messageId);
+		if (!message || message.chatId !== chatId) {
+			throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
+		}
+		if (message.role !== "assistant") {
+			throw validation("Only assistant messages can be continued.");
+		}
+		const continuationText = message.content;
+		if (!continuationText.trim()) {
+			throw validation("The selected variant has no content to continue from.");
+		}
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
+		yield* this.liveChatOrchestrator.continueMessageStream({
+			chatId,
+			messageId,
+			continuationText,
+			profile,
+			model: profile.defaultModel,
+			transport,
 			signal,
 		});
 	};

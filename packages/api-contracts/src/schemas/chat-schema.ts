@@ -54,6 +54,16 @@ export const sendMessageSchema = z.object({
   experienceAttachmentId: z.string().min(1).optional(),
   experienceQueueRevision: z.number().int().nonnegative().optional(),
   experienceSessionRevision: z.number().int().nonnegative().optional(),
+  /**
+   * LS-4b (per-send prefill strip): a ONE-SHOT prefill override for THIS send.
+   * When present it replaces the preset's `prefill` for this turn only — the
+   * orchestrator threads it to the executor in place of the assembled prompt's
+   * prefill, and the preset value stays untouched. Absent ⇒ the preset
+   * prefill cascade behaves byte-for-byte as before. The backend still honors
+   * the protocol's `capabilities.prefill` gate (no push on non-capable
+   * providers), so this field is inert where prefill is unsupported.
+   */
+  prefill: z.string().min(1).optional(),
 }).refine(
   (data) => (data.diceMode === undefined) === (data.pendingRevision === undefined),
   { message: "diceMode and pendingRevision must both be present or both absent" },

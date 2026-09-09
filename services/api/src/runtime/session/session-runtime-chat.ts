@@ -182,15 +182,20 @@ export class ChatRuntime {
     this.pendingPromptTraceByChat.delete(chatId);
   }
 
-  /** Patch the pending prompt trace with executor-level request/response data. */
+  /** Patch the pending prompt trace with executor-level request/response data.
+   *  `prefill` (LS-4a) records what actually rode as the pushed assistant
+   *  message — the Continue path's continuation text replaces the draft's
+   *  preset prefill so the trace stays honest about the prompt that was sent. */
   patchPendingTrace(chatId: ChatId, patch: {
     sentConfig?: AssemblePromptResponse["sentConfig"];
     providerResponse?: ProviderResponseTrace;
+    prefill?: string;
   }): void {
     const pending = this.pendingPromptTraceByChat.get(chatId);
     if (!pending) return;
     if (patch.sentConfig) pending.draft.sentConfig = patch.sentConfig;
     if (patch.providerResponse) pending.draft.providerResponse = patch.providerResponse;
+    if (patch.prefill !== undefined) pending.draft.prefill = patch.prefill;
   }
 
   async appendAssistantReply(
