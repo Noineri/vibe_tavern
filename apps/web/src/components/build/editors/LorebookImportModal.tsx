@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { cn } from "../../../lib/cn.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import {
@@ -388,27 +389,23 @@ export function LorebookImportModal({
                     {t("import_step3_desc")}
                   </div>
                   <div className="mb-4 flex flex-col gap-2">
-                    <label className="flex items-center gap-2 text-[13px] text-t1">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        checked={mode === "merge"}
-                        onChange={() => setMode("merge")}
-                      />{" "}
-                      {t("import_merge")}
-                    </label>
+                    {/* R-2b: import-mode radios are the shared SegmentedControl
+                        (regex-tab idiom: wrap + mobileFill + mobileSelect).
+                        Per-mode descriptions stay below, unchanged. */}
+                    <SegmentedControl
+                      value={mode}
+                      onChange={(v) => setMode(v)}
+                      wrap
+                      mobileFill
+                      mobileSelect
+                      options={[
+                        { value: "merge", label: t("import_merge") },
+                        { value: "replace", label: t("import_replace") },
+                      ]}
+                    />
                     <div className="ml-6 text-xs text-t3">
                       {t("import_merge_desc")}
                     </div>
-                    <label className="flex items-center gap-2 text-[13px] text-t1">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        checked={mode === "replace"}
-                        onChange={() => setMode("replace")}
-                      />{" "}
-                      {t("import_replace")}
-                    </label>
                     <div className="ml-6 text-xs text-t3">
                       {t("import_replace_desc")}
                     </div>

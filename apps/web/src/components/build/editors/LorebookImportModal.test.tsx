@@ -181,4 +181,34 @@ describe("LorebookImportModal — disabled-on-arrival (L1e)", () => {
     expect(body.mode).toBe("merge");
     expect("enabled" in body).toBe(false);
   });
+
+  it("switching the mode segmented control to replace sends mode:'replace'", async () => {
+    // R-2b pin: the import-mode control is the shared SegmentedControl
+    // (Radix radio items, same query idiom as the regex-tab tests).
+    const { view } = renderModal([EXISTING]);
+    const input = view.container.querySelector("input[type='file']");
+    if (!(input instanceof HTMLInputElement)) throw new Error("file input missing");
+    const file = new File([ST_FILE], "world.json", { type: "application/json" });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    fireEvent.change(input);
+
+    await view.findByText("import_next");
+    // Pick the existing book → switches to merge mode.
+    fireEvent.click(view.getByText("Existing Book"));
+    fireEvent.click(view.getByText("import_next"));
+    await view.findByText("import_btn");
+    // No native radios remain; click the replace segment instead.
+    expect(view.container.querySelectorAll("input[type='radio']").length).toBe(0);
+    const replaceSeg = view
+      .getAllByRole("radio")
+      .find((r) => r.getAttribute("value") === "replace");
+    if (!replaceSeg) throw new Error("replace segment missing");
+    fireEvent.click(replaceSeg);
+    fireEvent.click(view.getByText("import_btn"));
+    await view.findByText("import_btn");
+
+    expect(importLorebookEntries).toHaveBeenCalledTimes(1);
+    const body = importLorebookEntries.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.mode).toBe("replace");
+  });
 });
