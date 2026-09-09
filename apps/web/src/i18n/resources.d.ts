@@ -1570,6 +1570,7 @@ export default interface Resources {
     "or_import_from_st": "Or import from SillyTavern folder →",
     "or_import_from_st_chat": "Or import from SillyTavern folder →",
     "parsed_preview": "Parsed preview",
+    "per_send_prefill_chip_label": "Prefill",
     "per_send_prefill_chip_tooltip": "Prefill the next reply",
     "per_send_prefill_clear": "Clear",
     "per_send_prefill_enable": "One-shot prefill at the input",

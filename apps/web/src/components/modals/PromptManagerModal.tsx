@@ -1371,6 +1371,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   loreAnchorLoadState={loreAnchorLoadState}
                   summaryEntries={summaryEntries}
                   summaryLoadState={summaryLoadState}
+                  prefillSupported={input.prefillSupported}
                 />
               </div>
             )}

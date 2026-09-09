@@ -4,7 +4,7 @@ import { TokenCounter } from "../../shared/TokenCounter.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { PrefillField } from "./PrefillField.js";
-import { Toggle } from "../../shared/Toggle.js";
+import { PerSendPrefillToggle } from "./PerSendPrefillToggle.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
@@ -85,22 +85,6 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
 
   return (
     <div className="flex min-w-0 flex-col gap-6 scroll-smooth">
-      {/* LS-8: per-send prefill entry-point toggle — available in BOTH editor
-          modes (beside the prefill field in simple, standalone in advanced).
-          Off = the chip/bubble/strip render nowhere. The preset's persistent
-          prefill value is not touched by this toggle. */}
-      <div className="flex items-center gap-3">
-        <Toggle
-          checked={draft?.perSendPrefillEnabled ?? false}
-          onChange={(v) => onUpdateField("perSendPrefillEnabled", v)}
-          disabled={disabled}
-          className="!mb-0 !inline-flex"
-        />
-        <div className="min-w-0">
-          <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("per_send_prefill_enable")}</div>
-          <div className="font-ui text-[11px] text-t3">{t("per_send_prefill_enable_hint")}</div>
-        </div>
-      </div>
       {!hideChatPrompts && (
         <>
           <SectionHeader title={t("prompt_section_chat")} />
@@ -119,6 +103,19 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
             disabled={disabled}
             prefillSupported={prefillSupported}
           />
+
+          {/* LS-8: per-send prefill entry-point toggle — beside the prefill
+              field in the simple editor (advanced mode nests it inside the
+              prefill accordion card in the canvas). Off = the chip/bubble/
+              strip render nowhere; the preset's persistent prefill value is
+              not touched. Rendered only for prefill-capable providers. */}
+          {prefillSupported && (
+            <PerSendPrefillToggle
+              checked={draft?.perSendPrefillEnabled ?? false}
+              onChange={(v) => onUpdateField("perSendPrefillEnabled", v)}
+              disabled={disabled}
+            />
+          )}
 
           <div>
             <div className="mb-[7px] flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

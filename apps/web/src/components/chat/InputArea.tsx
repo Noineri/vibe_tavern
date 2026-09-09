@@ -13,7 +13,6 @@ import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { MobileInputArea } from "./MobileInputArea.js";
-import { PerSendPrefillStrip } from "./PerSendPrefillStrip.js";
 import { QuotaIndicator } from "./QuotaIndicator.js";
 import { useInputArea } from "./use-input-area.js";
 
@@ -36,10 +35,11 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
   } = data;
 
   const [isDragOver, setIsDragOver] = useState(false);
-  // ── Per-send prefill (LS-8, owner design): a human-icon chip in the chip row
-  // opens the one-shot prefill input as a BUBBLE inside the input frame, above
-  // the chat line (sandwich: bubble → chat line → chip row). Sending consumes
-  // the store value (one-shot); any transition to disarmed collapses the bubble.
+  // ── Per-send prefill (LS-8, owner design): a labeled chip (human icon +
+  // «префилл») in the chip row opens the one-shot prefill input as a BUBBLE
+  // inside the input frame, DIRECTLY ABOVE the chip row (owner correction
+  // 2026-09-09: chat line → bubble → chip row). Sending consumes the store
+  // value (one-shot); any transition to disarmed collapses the bubble.
   const [prefillOpen, setPrefillOpen] = useState(false);
   const prefillValue = usePerSendPrefillStore((s) => s.value);
   const setPrefillValue = usePerSendPrefillStore((s) => s.setValue);
@@ -92,7 +92,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* LS-8: per-send prefill renders as a chip + in-frame bubble (below);
+          {/* LS-8: per-send prefill renders as a chip + in-frame bubble (below);
             the desktop LS-4b strip is retired. Both gated upstream on the
             capability AND the active preset's opt-in toggle. */}
         <div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
@@ -118,9 +118,31 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
           )}
           <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif,audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/mp3,audio/wav,audio/flac" onChange={onFileInputChange} />
 
+          {/* LS-8: the one-shot prefill bubble lives below (directly above the
+              chip row — owner design 2026-09-09). */}
+
+          <AutoTextarea
+            className="w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
+            maxRows={12}
+            minRows={3}
+            placeholder={t("placeholder")}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onPaste={handlePaste}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (canSend) void chat.handleSend();
+              }
+            }}
+          />
+
+          {draftAttachments.length > 0 && <AttachmentPreview />}
+
           {/* LS-8: the one-shot prefill bubble — a text-entry bubble INSIDE
-              the input frame, above the chat line. Smooth grid-rows collapse;
-              ✕ closes without clearing (the armed dot stays on the chip). */}
+              the input frame, DIRECTLY ABOVE the chip row (owner design
+              2026-09-09: chat line → bubble → chip row). Smooth grid-rows
+              collapse; ✕ closes without clearing (the armed dot stays). */}
           {data.perSendPrefillSupported && (
             <div
               className="grid px-3 pt-2 transition-[grid-template-rows,opacity] duration-200 ease-out"
@@ -154,40 +176,23 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
             </div>
           )}
 
-          <AutoTextarea
-            className="w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
-            maxRows={12}
-            minRows={3}
-            placeholder={t("placeholder")}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onPaste={handlePaste}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (canSend) void chat.handleSend();
-              }
-            }}
-          />
-
-          {draftAttachments.length > 0 && <AttachmentPreview />}
-
           <div className="relative flex items-center gap-[7px] pt-1.5 pb-[9px] pl-3 pr-[135px]">
-            {/* LS-8: the per-send prefill chip (human icon) — replaces the
-                retired «Говорить как» text label; the stale multi-persona
+            {/* LS-8: the per-send prefill chip (human icon + label) — replaces
+                the retired «Говорить как» text label; the stale multi-persona
                 tooltip (a mode VT does not have) goes with it. The persona
                 button itself is untouched. */}
             {data.perSendPrefillSupported && (
               <CustomTooltip content={t("per_send_prefill_chip_tooltip")}>
                 <button
                   type="button"
-                  className="relative flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1"
+                  className="relative flex h-[26px] shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-t3 transition-colors hover:bg-s2 hover:text-t1"
                   onClick={() => setPrefillOpen((v) => !v)}
                   aria-expanded={prefillOpen}
                   aria-label={t("per_send_prefill_chip_tooltip")}
                   data-testid="per-send-prefill-chip"
                 >
                   <Icons.user />
+                  <span className="font-ui text-[12px]">{t("per_send_prefill_chip_label")}</span>
                   {prefillArmed && <span aria-hidden className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-accent" />}
                 </button>
               </CustomTooltip>

@@ -102,6 +102,10 @@ export interface CanvasCardProps {
    *  anchor's bound lore-entries list — Wave 4). */
   expandedLeading?: ReactNode;
 
+  /** Extra nodes rendered inside the body, after the textarea (e.g. the
+   *  per-send prefill toggle under the prefill editor — LS-8). */
+  expandedTrailing?: ReactNode;
+
   className?: string;
 }
 
@@ -129,6 +133,7 @@ export function CanvasCard({
   nonExpandable = false,
   defaultExpanded = false,
   expandedLeading,
+  expandedTrailing,
   editableName,
   className,
 }: CanvasCardProps) {
@@ -319,6 +324,7 @@ export function CanvasCard({
               />
             </MobileExpandTextarea>
           )}
+          {expandedTrailing}
         </AnimatedDisclosure>
       )}
     </div>

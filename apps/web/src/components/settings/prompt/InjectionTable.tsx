@@ -60,6 +60,9 @@ interface InjectionTableProps {
   /** Chat-summary memory blocks injected at the `chatSummary` anchor. */
   summaryEntries?: CanvasSummaryEntry[];
   summaryLoadState?: SummaryLoadState;
+  /** Active provider supports the assistant-prefill channel (LS-8) — gates
+   *  the per-send prefill toggle inside the prefill accordion. */
+  prefillSupported?: boolean;
   promptOrder?: PromptOrderEntry[];
   onPromptOrderChange?: (promptOrder: PromptOrderEntry[]) => void;
 }
@@ -163,6 +166,7 @@ export function PromptOrderCanvas({
   loreAnchorLoadState,
   summaryEntries,
   summaryLoadState,
+  prefillSupported,
   promptOrder = [],
   onPromptOrderChange,
 }: InjectionTableProps) {
@@ -303,6 +307,7 @@ export function PromptOrderCanvas({
     loreAnchorLoadState,
     summaryEntries,
     summaryLoadState,
+    prefillSupported,
     slotEnabled,
     togglePromptSlot,
     slotLabelFor,

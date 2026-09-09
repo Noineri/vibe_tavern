@@ -144,26 +144,36 @@ describe("PromptFields — chat prompt fields", () => {
     expect(view.baseElement.querySelectorAll("textarea").length).toBe(0);
   });
 
-  // ── LS-8: per-send prefill toggle — present in BOTH editor modes ──
+  // ── LS-8: per-send prefill toggle — beside the prefill field (simple editor) ──
 
-  it("renders the per-send prefill toggle reflecting the draft (simple mode)", () => {
-    const view = render(<PromptFields {...baseProps()} />);
+  it("renders the per-send prefill toggle reflecting the draft (simple mode, capable provider)", () => {
+    const view = render(<PromptFields {...baseProps({ prefillSupported: true })} />);
     const q = within(view.baseElement);
     // The shared Radix Toggle carries no accessible name (label text is a
     // sibling, not an association) — it is also the ONLY switch in this block.
     const toggle = q.getByRole("switch");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
+    // It sits beside the prefill field it gates (LS-8 owner design 2026-09-09).
+    expect(q.getByText("per_send_prefill_enable")).toBeTruthy();
   });
 
-  it("renders the per-send prefill toggle in advanced mode too (hideChatPrompts)", () => {
-    const view = render(<PromptFields {...baseProps({ hideChatPrompts: true, draft: baseDraft({ perSendPrefillEnabled: true }) })} />);
-    const toggle = within(view.baseElement).getByRole("switch");
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+  it("renders NO per-send toggle when the provider has no prefill channel", () => {
+    const view = render(<PromptFields {...baseProps()} />);
+    expect(within(view.baseElement).queryByRole("switch")).toBeNull();
+  });
+
+  it("renders no per-send toggle in advanced mode (hideChatPrompts) — its advanced home is the prefill accordion in the canvas", () => {
+    const view = render(<PromptFields {...baseProps({ hideChatPrompts: true, prefillSupported: true, draft: baseDraft({ perSendPrefillEnabled: true }) })} />);
+    const q = within(view.baseElement);
+    expect(q.queryByRole("switch")).toBeNull();
+    expect(q.queryByText("per_send_prefill_enable")).toBeNull();
+    // Pinned at its new home: InjectionTable.test.tsx renders the prefill
+    // canvas card and asserts the toggle INSIDE it (same boundary, moved).
   });
 
   it("emits perSendPrefillEnabled through onUpdateField on toggle", async () => {
     const onUpdateField = mock();
-    const view = render(<PromptFields {...baseProps({ onUpdateField })} />);
+    const view = render(<PromptFields {...baseProps({ prefillSupported: true, onUpdateField })} />);
     const user = userEvent.setup();
     await user.click(within(view.baseElement).getByRole("switch"));
     expect(onUpdateField).toHaveBeenLastCalledWith("perSendPrefillEnabled", true);

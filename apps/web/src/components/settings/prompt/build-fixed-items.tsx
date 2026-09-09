@@ -22,6 +22,7 @@ import { coerceRole } from "./canvas-shared.js";
 import { LoreAnchorList, type LoreAnchorLoadState } from "./LoreAnchorList.js";
 import { SummaryList, type SummaryLoadState } from "./SummaryList.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
+import { PerSendPrefillToggle } from "./PerSendPrefillToggle.js";
 
 /** Dependencies the fixed-items list closes over. Grouped into one object so
  *  the call site is a named spread rather than a 10-arg positional list. */
@@ -41,6 +42,9 @@ export interface FixedItemCtx {
   /** Chat-summary memory blocks injected at the `chatSummary` anchor. */
   summaryEntries?: CanvasSummaryEntry[];
   summaryLoadState?: SummaryLoadState;
+  /** Active provider supports the assistant-prefill channel — gates the
+   *  per-send prefill toggle inside the prefill accordion (LS-8). */
+  prefillSupported?: boolean;
   slotEnabled: (identifier: string) => boolean;
   togglePromptSlot: (identifier: string) => void;
   slotLabelFor: (identifier: string) => string | null;
@@ -191,7 +195,16 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
       <CanvasCard identifier="assistantPrefill" category="standard" label={t("prefill_assistant")}
         {...toggleFor("assistantPrefill", ctx)}
         role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")}
-        disabled={disabled} onChange={(v) => onUpdateField?.("prefill", v)} draggable={false} />
+        disabled={disabled} onChange={(v) => onUpdateField?.("prefill", v)} draggable={false}
+        expandedTrailing={ctx.prefillSupported ? (
+          <div className="mt-2 border-t border-border2 pt-2">
+            <PerSendPrefillToggle
+              checked={draft?.perSendPrefillEnabled ?? false}
+              onChange={(v) => onUpdateField?.("perSendPrefillEnabled", v)}
+              disabled={disabled}
+            />
+          </div>
+        ) : undefined} />
     ) },
 
     // Character V3 overrides — only shown when the character has these fields

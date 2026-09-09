@@ -34,6 +34,8 @@ export type PromptCanvasDraft = {
   system: string;
   jailbreak: string;
   prefill: string;
+  /** Per-send prefill entry point (LS-8) — the toggle lives inside the prefill accordion card. */
+  perSendPrefillEnabled?: boolean;
   authorsNote: string;
   authorsNoteDepth: number;
   authorsNotePosition: string;
