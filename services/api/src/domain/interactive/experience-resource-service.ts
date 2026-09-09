@@ -316,8 +316,17 @@ export class ExperienceResourceService {
 
   // ─── Chat configuration ───────────────────────────────────────────────────
 
-  async getConfig(chatId: string): Promise<ExperienceChatConfigRow> {
-    return this.stores.experienceResources.getOrCreateConfigForChat(chatId);
+  async getConfig(chatId: string): Promise<ExperienceResult<ExperienceChatConfigRow>> {
+    // Same existence guard as resolveEffectiveSetup/updateConfig: a missing
+    // chat must surface as a clean chat_not_found, never as an insert attempt
+    // against a dangling chatId (FK violation → opaque 500). Owner incident
+    // 2026-09-09: the frontend's stale-scope poller kept hitting a deleted
+    // chat and every request logged "[unhandled] Failed to create…".
+    const chat = await this.stores.chats.getById(chatId);
+    if (chat === null) {
+      return err({ status: 404, code: "chat_not_found", message: `Chat '${chatId}' not found` });
+    }
+    return ok(await this.stores.experienceResources.getOrCreateConfigForChat(chatId));
   }
 
   async updateConfig(chatId: string, input: UpdateConfigInput): Promise<ExperienceResult<ExperienceChatConfigRow>> {
