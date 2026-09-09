@@ -148,7 +148,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   return (
     <Modal open={true} onClose={onClose}>
 
-      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[90vh] w-[600px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+      <div className={cn("glass-blur-under flex flex-col overflow-hidden", isMobile ? "w-full h-full" : "max-h-[90vh] w-[600px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
         {/* Header */}
         <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-4")}>
           <div className="flex items-start justify-between">
