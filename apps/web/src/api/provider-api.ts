@@ -52,6 +52,7 @@ export async function saveProviderProfile(input: {
   repetitionPenalty?: number;
   maxTokens?: number;
   stopSequences?: string[];
+  bannedStrings?: string[];
   logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed?: string | null;
   reasoningEffort?: string;
@@ -105,6 +106,7 @@ export async function updateProviderProfile(
     repetitionPenalty?: number;
     maxTokens?: number;
     stopSequences?: string[];
+    bannedStrings?: string[];
     logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
     seed?: string | null;
     reasoningEffort?: string;

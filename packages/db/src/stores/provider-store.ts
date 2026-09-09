@@ -89,6 +89,7 @@ export interface CreateProviderData {
   presencePenalty?: number;
   repetitionPenalty?: number;
   stopSequences?: string[];
+  bannedStrings?: string[];
   logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed?: string | null;
   reasoningEffort?: string;
@@ -208,6 +209,7 @@ export class ProviderStore {
         presencePenalty: data.presencePenalty ?? 0,
         repetitionPenalty: data.repetitionPenalty ?? 1.0,
         stopSequencesJson: data.stopSequences ? JSON.stringify(data.stopSequences) : null,
+        bannedStringsJson: data.bannedStrings?.length ? JSON.stringify(data.bannedStrings) : null,
         logitBiasJson: data.logitBias?.length ? JSON.stringify(data.logitBias) : null,
         seed: data.seed ?? null,
         reasoningEffort: data.reasoningEffort ?? 'auto',
@@ -271,6 +273,7 @@ export class ProviderStore {
     if (data.presencePenalty !== undefined) values.presencePenalty = data.presencePenalty;
     if (data.repetitionPenalty !== undefined) values.repetitionPenalty = data.repetitionPenalty;
     if (data.stopSequences !== undefined) values.stopSequencesJson = JSON.stringify(data.stopSequences);
+    if (data.bannedStrings !== undefined) values.bannedStringsJson = data.bannedStrings.length ? JSON.stringify(data.bannedStrings) : null;
     if (data.logitBias !== undefined) values.logitBiasJson = data.logitBias.length ? JSON.stringify(data.logitBias) : null;
     if (data.seed !== undefined) values.seed = data.seed;
     if (data.reasoningEffort !== undefined) values.reasoningEffort = data.reasoningEffort;
@@ -381,6 +384,7 @@ export class ProviderStore {
         presencePenalty: original.presencePenalty,
         repetitionPenalty: original.repetitionPenalty,
         stopSequencesJson: original.stopSequencesJson,
+        bannedStringsJson: original.bannedStringsJson,
         logitBiasJson: original.logitBiasJson,
         seed: original.seed,
         reasoningEffort: original.reasoningEffort,
@@ -667,6 +671,7 @@ export class ProviderStore {
       presencePenalty: row.presencePenalty,
       repetitionPenalty: row.repetitionPenalty,
       stopSequences: row.stopSequencesJson ? JSON.parse(row.stopSequencesJson) : [],
+      bannedStrings: safeParseJson<string[]>(row.bannedStringsJson),
       logitBias: safeParseJson<Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>>(row.logitBiasJson),
       seed: row.seed,
       reasoningEffort: row.reasoningEffort,

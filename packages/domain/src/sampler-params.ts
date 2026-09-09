@@ -27,6 +27,7 @@ export type SamplerFieldId =
   | "dryAllowedLength"
   | "drySequenceBreakers"
   | "dryPenaltyLastN"
+  | "bannedStrings"
   | "xtcThreshold"
   | "xtcProbability"
   | "frequencyPenalty"
@@ -115,6 +116,7 @@ const NONE: SamplerCapabilityFlags = {
   dryAllowedLength: false,
   drySequenceBreakers: false,
   dryPenaltyLastN: false,
+  bannedStrings: false,
   xtcThreshold: false,
   xtcProbability: false,
   frequencyPenalty: false,
@@ -325,7 +327,9 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
 
   // ── Outlier: KoboldCPP ──────────────────────────────────────────────────
   // topA + minP + repPen but NO freqPen/presPen. Full local surface + adaptive-p
-  // (native `adaptive_target`/`adaptive_decay` request fields, V1-verified).
+  // (native `adaptive_target`/`adaptive_decay` request fields, V1-verified) +
+  // antislop phrase banning (`bannedStrings` → native `banned_strings` request
+  // field, V1-verified exact-match semantics; LOCAL_SAMPLERS_ADDITION_REPORT B3).
   koboldcpp_native: set(
     "temperature",
     "topP",
@@ -344,6 +348,7 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "dryBase",
     "dryAllowedLength",
     "drySequenceBreakers",
+    "bannedStrings",
     "xtcThreshold",
     "xtcProbability",
     "repetitionPenalty",

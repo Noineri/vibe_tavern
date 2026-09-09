@@ -79,6 +79,8 @@ export interface StoredProviderProfileRecord {
   drySequenceBreakers: string[];
   /** DRY penalty window (llama-server); −1 = disabled (field omitted from the request — llama-server rejects −1), 0 = zero window (DRY inert), > 0 = real window. */
   dryPenaltyLastN: number;
+  /** Antislop phrase banning (KoboldCPP only, native `banned_strings` request field). Exact-match strings; leading/trailing spaces are significant (" purr" ≠ "purr"). Empty = nothing sent. */
+  bannedStrings: string[];
   xtcThreshold: number;
   xtcProbability: number;
   frequencyPenalty: number;
@@ -143,6 +145,7 @@ export type ModelSettingsOverlay = Partial<
     | 'dryAllowedLength'
     | 'drySequenceBreakers'
     | 'dryPenaltyLastN'
+    | 'bannedStrings'
     | 'xtcThreshold'
     | 'xtcProbability'
     | 'frequencyPenalty'
@@ -164,8 +167,9 @@ export type ModelSettingsOverlay = Partial<
  * Returns `base` unchanged (same reference) when `overlay` is `null`/`undefined`
  * — so callers with no overlay pay nothing. When an overlay is present, returns
  * a NEW profile object with every present overlay field overriding the base;
- * arrays/objects (`stopSequences`, `logitBias`, `drySequenceBreakers`) are
- * replaced wholesale (NOT deep-merged) — the overlay owns them entirely.
+ * arrays/objects (`stopSequences`, `logitBias`, `drySequenceBreakers`,
+ * `bannedStrings`) are replaced wholesale (NOT deep-merged) — the overlay owns
+ * them entirely.
  *
  * Contract: an ABSENT field means "inherit base" (NOT an explicit `undefined`
  * field). The settingsJson round-trip via JSON.stringify/parse guarantees this

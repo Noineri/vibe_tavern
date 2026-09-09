@@ -47,6 +47,7 @@ const samplerFieldSchemas = {
   presencePenalty: z.number().optional(),
   repetitionPenalty: z.number().optional(),
   stopSequences: z.array(z.string()).optional(),
+  bannedStrings: z.array(z.string()).optional(),
   logitBias: z.array(z.object({
     tokenId: z.number().int(),
     bias: z.number().min(-100).max(100),

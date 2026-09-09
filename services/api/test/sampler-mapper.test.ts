@@ -38,6 +38,7 @@ function profile(
     dryAllowedLength: 3,
     dryPenaltyLastN: -1,
     drySequenceBreakers: ["\n", ":", "\""],
+    bannedStrings: [],
     xtcThreshold: 0.12,
     xtcProbability: 0.4,
     frequencyPenalty: 0.5,
@@ -574,6 +575,32 @@ describe("buildSamplerConfig", () => {
       const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
       expect(opts.adaptive_target).toBeUndefined();
       expect(opts.adaptive_decay).toBeUndefined();
+    });
+
+    it("emits banned_strings (antislop) verbatim — exact-match, leading spaces significant (B3)", () => {
+      const config = buildSamplerConfig(profile("koboldcpp", {
+        bannedStrings: [" finger", " purr", "moan"],
+      }));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      // V1b probe: phrases are exact-match strings — the leading spaces must
+      // survive untouched (" purr" ≠ "purr").
+      expect(opts.banned_strings).toEqual([" finger", " purr", "moan"]);
+    });
+
+    it("omits banned_strings when the list is empty", () => {
+      const config = buildSamplerConfig(profile("koboldcpp", { bannedStrings: [] }));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      expect(opts.banned_strings).toBeUndefined();
+    });
+
+    it("never emits banned_strings outside koboldcpp_native (antislop is KoboldCPP-only)", () => {
+      const banned = { bannedStrings: [" finger"] };
+      const llamacpp = buildSamplerConfig(profile("llamacpp", banned));
+      expect((llamacpp.providerOptions?.llamacpp as Record<string, unknown> | undefined)?.banned_strings).toBeUndefined();
+      const unsloth = buildSamplerConfig(profile("unsloth", banned));
+      expect((unsloth.providerOptions?.unsloth as Record<string, unknown> | undefined)?.banned_strings).toBeUndefined();
+      const vllm = buildSamplerConfig(profile("vllm", banned));
+      expect((vllm.providerOptions?.openai_compat as Record<string, unknown> | undefined)?.banned_strings).toBeUndefined();
     });
 
     it("never emits the B2 llama-server numeric tail (llamacpp_native-only fields)", () => {

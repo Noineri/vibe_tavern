@@ -210,6 +210,7 @@ export function createProviderProfileService(providers: ProviderStore, proxies: 
         dryAllowedLength: profile.dryAllowedLength,
         dryPenaltyLastN: profile.dryPenaltyLastN,
         drySequenceBreakers: profile.drySequenceBreakers,
+        bannedStrings: profile.bannedStrings,
         xtcThreshold: profile.xtcThreshold,
         xtcProbability: profile.xtcProbability,
         frequencyPenalty: profile.frequencyPenalty,

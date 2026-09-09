@@ -162,6 +162,7 @@ describe("sampler params", () => {
     expect(ollamaCaps.topNSigma).toBe(false);
     expect(ollamaCaps.smoothingFactor).toBe(false);
     expect(ollamaCaps.dryPenaltyLastN).toBe(false);
+    expect(ollamaCaps.bannedStrings).toBe(false);
 
     const koboldCaps = resolveSamplerCapabilities("koboldcpp", PROVIDER_TYPE.koboldCpp);
     expect(koboldCaps.topA).toBe(true);
@@ -172,6 +173,8 @@ describe("sampler params", () => {
     // KoboldCPP native supports adaptive-p (V1-verified request fields)
     expect(koboldCaps.adaptiveTarget).toBe(true);
     expect(koboldCaps.adaptiveDecay).toBe(true);
+    // …and antislop phrase banning (B3, V1-verified `banned_strings`)
+    expect(koboldCaps.bannedStrings).toBe(true);
     // The B2 llama-server numeric tail is llama-server-only — NOT in koboldcpp_native
     expect(koboldCaps.dynatempRange).toBe(false);
     expect(koboldCaps.topNSigma).toBe(false);
@@ -217,5 +220,14 @@ describe("sampler params", () => {
     expect(vllmCaps.topNSigma).toBe(false);
     expect(vllmCaps.smoothingFactor).toBe(false);
     expect(vllmCaps.dryPenaltyLastN).toBe(false);
+  });
+
+  it("keeps bannedStrings (antislop) exclusive to koboldcpp_native (B3)", () => {
+    expect(resolveSamplerCapabilities("koboldcpp", PROVIDER_TYPE.koboldCpp).bannedStrings).toBe(true);
+    // llama-server surface and the shared openai_local set have no upstream equivalent
+    expect(resolveSamplerCapabilities(null, PROVIDER_TYPE.llamaCpp).bannedStrings).toBe(false);
+    expect(resolveSamplerCapabilities(null, PROVIDER_TYPE.unsloth).bannedStrings).toBe(false);
+    expect(resolveSamplerCapabilities("ollama", PROVIDER_TYPE.ollama).bannedStrings).toBe(false);
+    expect(resolveSamplerCapabilities("vllm", PROVIDER_TYPE.openaiCompat).bannedStrings).toBe(false);
   });
 });

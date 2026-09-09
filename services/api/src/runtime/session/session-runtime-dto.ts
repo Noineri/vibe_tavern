@@ -169,6 +169,7 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     dryBase: profile.dryBase,
     dryAllowedLength: profile.dryAllowedLength,
     drySequenceBreakers: profile.drySequenceBreakers,
+    bannedStrings: profile.bannedStrings,
     dryPenaltyLastN: profile.dryPenaltyLastN,
     xtcThreshold: profile.xtcThreshold,
     xtcProbability: profile.xtcProbability,

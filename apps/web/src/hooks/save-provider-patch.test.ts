@@ -11,7 +11,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     model: "gpt-4o", visionModel: "gpt-4o-mini",
     temperature: 0.8, topP: 0.95, minP: 0.05, topK: 40, topA: 0.1,
     typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, dynatempRange: 0, dynatempExponent: 1, topNSigma: 0, smoothingFactor: 0, repeatLastN: 64, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-    dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: ["\n"],
+    dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: ["\n"], bannedStrings: [" finger"],
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
     pinContextBudget: false, bindPerModel: false,

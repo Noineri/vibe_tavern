@@ -139,6 +139,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     dryBase: 1.75,
     dryAllowedLength: 2,
     drySequenceBreakers: [],
+    bannedStrings: [],
     dryPenaltyLastN: -1,
     xtcThreshold: 0.1,
     xtcProbability: 0,

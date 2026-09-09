@@ -86,6 +86,7 @@ export interface FormState {
    *  "Editing: <model>" badge. Not persisted on the profile — UI-only state. */
   editingModelId: string | null;
   stopSequences: string[];
+  bannedStrings: string[];
   logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
   reasoningEffort: string;
@@ -166,6 +167,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     modelGroupByOwner: p.modelGroupByOwner ?? false,
     editingModelId: null,
     stopSequences: p.stopSequences,
+    bannedStrings: p.bannedStrings ?? [],
     logitBias: p.logitBias ?? [],
     seed: p.seed ?? null, showReasoning: p.showReasoning,
     reasoningEffort: p.reasoningEffort,
@@ -525,6 +527,7 @@ export function ProviderModal({
       contextBudget: baseProfile.contextBudget,
       pinContextBudget: baseProfile.pinContextBudget,
       stopSequences: baseProfile.stopSequences,
+      bannedStrings: baseProfile.bannedStrings,
       logitBias: baseProfile.logitBias,
       seed: baseProfile.seed,
       reasoningEffort: baseProfile.reasoningEffort,
@@ -568,6 +571,7 @@ export function ProviderModal({
         contextBudget: pick("contextBudget") ?? 16000,
         pinContextBudget: pick("pinContextBudget") ?? false,
         stopSequences: pick("stopSequences"),
+        bannedStrings: pick("bannedStrings") ?? [],
         logitBias: pick("logitBias") ?? [],
         seed: pick("seed") ?? null,
         reasoningEffort: pick("reasoningEffort"),

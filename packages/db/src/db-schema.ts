@@ -870,6 +870,10 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   presencePenalty: real('presence_penalty').notNull().default(0),
   repetitionPenalty: real('repetition_penalty').notNull().default(1.0),
   stopSequencesJson: text('stop_sequences_json'),
+  // KoboldCPP antislop phrase list (LOCAL_SAMPLERS_ADDITION_REPORT B3) — native
+  // `banned_strings` request field; exact-match phrases, leading spaces
+  // significant. Same JSON-array pattern as stop_sequences_json.
+  bannedStringsJson: text('banned_strings_json'),
   logitBiasJson: text('logit_bias_json'),
   seed: text('seed'),
   reasoningEffort: text('reasoning_effort').notNull().default('auto'),

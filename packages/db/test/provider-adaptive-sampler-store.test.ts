@@ -162,3 +162,57 @@ describe("provider_profiles numeric-tail columns (B2)", () => {
     expect(copy.dryPenaltyLastN).toBe(512);
   });
 });
+
+// LOCAL_SAMPLERS_ADDITION_REPORT B3 — KoboldCPP antislop phrase list on the
+// same boundary (provider_profiles persistence). Same JSON-array pattern as
+// stop_sequences_json: null default (nothing stored → nothing emitted),
+// create round-trip, update, duplicate.
+describe("provider_profiles bannedStrings columns (B3)", () => {
+  test("defaults to null (empty list — nothing emitted)", async () => {
+    const profile = await store.create({
+      name: "kobold",
+      providerPreset: "koboldcpp",
+      endpoint: "http://localhost:5001",
+    });
+    expect(profile.bannedStrings).toEqual([]);
+  });
+
+  test("create round-trips explicit bannedStrings (leading spaces preserved)", async () => {
+    const profile = await store.create({
+      name: "kobold",
+      providerPreset: "koboldcpp",
+      endpoint: "http://localhost:5001",
+      bannedStrings: [" finger", " purr", "moan"],
+    });
+    // V1b probe: phrases are exact-match; leading spaces are significant and
+    // must survive the JSON round-trip untouched.
+    expect(profile.bannedStrings).toEqual([" finger", " purr", "moan"]);
+
+    const fetched = await store.getById(profile.id);
+    expect(fetched?.bannedStrings).toEqual([" finger", " purr", "moan"]);
+  });
+
+  test("update rewrites the bannedStrings list (including clearing it)", async () => {
+    const profile = await store.create({
+      name: "kobold",
+      providerPreset: "koboldcpp",
+      endpoint: "http://localhost:5001",
+      bannedStrings: [" finger"],
+    });
+    const updated = await store.update(profile.id, { bannedStrings: [" hand", " palm"] });
+    expect(updated.bannedStrings).toEqual([" hand", " palm"]);
+    const cleared = await store.update(profile.id, { bannedStrings: [] });
+    expect(cleared.bannedStrings).toEqual([]);
+  });
+
+  test("duplicate carries the bannedStrings list over", async () => {
+    const profile = await store.create({
+      name: "kobold",
+      providerPreset: "koboldcpp",
+      endpoint: "http://localhost:5001",
+      bannedStrings: [" finger", " purr"],
+    });
+    const copy = await store.duplicate(profile.id);
+    expect(copy.bannedStrings).toEqual([" finger", " purr"]);
+  });
+});

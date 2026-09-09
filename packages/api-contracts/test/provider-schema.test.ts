@@ -394,6 +394,7 @@ describe("modelSettingsOverlaySchema", () => {
     const parsed = modelSettingsOverlaySchema.parse({
       stopSequences: ["\n\nUser:"],
       drySequenceBreakers: ["\n"],
+      bannedStrings: [" finger"],
       logitBias: [{ tokenId: 1, bias: 5 }],
     });
     expect(parsed.stopSequences).toEqual(["\n\nUser:"]);
@@ -457,8 +458,8 @@ describe("sampler single-source invariant (ERA-1)", () => {
   // Pin the documented count so a duplicate or accidental union shrink is
   // caught loudly. Update this number only when SamplerFieldId genuinely gains
   // or loses a field.
-  it("SAMPLER_FIELDS has the expected cardinality (31)", () => {
-    expect(SAMPLER_FIELDS.length).toBe(31);
+  it("SAMPLER_FIELDS has the expected cardinality (32)", () => {
+    expect(SAMPLER_FIELDS.length).toBe(32);
     expect(new Set(SAMPLER_FIELDS).size).toBe(SAMPLER_FIELDS.length); // no dupes
   });
 
@@ -488,6 +489,7 @@ describe("sampler single-source invariant (ERA-1)", () => {
       dryAllowedLength: 3,
       dryPenaltyLastN: 512,
       drySequenceBreakers: ["\\n"],
+      bannedStrings: [" finger"],
       xtcThreshold: 0.13,
       xtcProbability: 0.05,
       frequencyPenalty: 0.2,

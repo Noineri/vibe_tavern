@@ -65,6 +65,7 @@ function form(): FormState {
     dryBase: 1.75,
     dryAllowedLength: 2,
     drySequenceBreakers: [],
+    bannedStrings: [],
     xtcThreshold: 0.1,
     xtcProbability: 0,
     frequencyPenalty: 0,
@@ -129,5 +130,30 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     expect(query2("sampler_top_n_sigma")).toBeNull();
     expect(query2("sampler_smoothing_factor")).toBeNull();
     expect(query2("sampler_dry_penalty_last_n")).toBeNull();
+  });
+
+  it("shows bannedStrings (antislop) only where koboldcpp_native applies (B3)", async () => {
+    const { resolveSamplerCapabilities } = await import("@vibe-tavern/domain");
+    const koboldCaps = resolveSamplerCapabilities("koboldcpp", "koboldcpp");
+    const { getByText, queryByText, unmount } = render(
+      <ProviderSamplerPanel form={form()} updateForm={mock()} capabilities={{ samplers: koboldCaps }} />,
+    );
+    fireEvent.click(getByText("samplers_advanced"));
+    expect(getByText("sampler_banned_strings")).toBeTruthy();
+    unmount();
+
+    // Not in the llama-server surface and not in the shared openai_local set
+    for (const caps of [
+      resolveSamplerCapabilities(null, "llamacpp"),
+      resolveSamplerCapabilities("openai", "openai_compat"),
+      resolveSamplerCapabilities("vllm", "openai_compat"),
+    ]) {
+      const { getByText: get, queryByText: query, unmount: un } = render(
+        <ProviderSamplerPanel form={form()} updateForm={mock()} capabilities={{ samplers: caps }} />,
+      );
+      fireEvent.click(get("samplers_advanced"));
+      expect(query("sampler_banned_strings")).toBeNull();
+      un();
+    }
   });
 });

@@ -306,6 +306,11 @@ export function buildSamplerConfig(
       if (can("dryBase") && profile.dryBase != null) providerOpts.dry_base = profile.dryBase;
       if (can("dryAllowedLength") && profile.dryAllowedLength != null) providerOpts.dry_allowed_length = profile.dryAllowedLength;
       if (can("drySequenceBreakers") && profile.drySequenceBreakers?.length) providerOpts.dry_sequence_breakers = profile.drySequenceBreakers;
+      // Antislop phrase banning (LOCAL_SAMPLERS_ADDITION_REPORT B3, V1-probe
+      // verified on KoboldCPP 1.120): exact-match strings where leading spaces
+      // are significant (" purr" ≠ "purr"). Omitted when empty; only in
+      // koboldcpp_native, so `can` gates it off everywhere else.
+      if (can("bannedStrings") && profile.bannedStrings?.length) providerOpts.banned_strings = profile.bannedStrings;
       if (can("xtcThreshold") && profile.xtcThreshold != null) providerOpts.xtc_threshold = profile.xtcThreshold;
       if (can("xtcProbability") && profile.xtcProbability != null) providerOpts.xtc_probability = profile.xtcProbability;
       if (can("mirostat") && profile.mirostat != null) providerOpts.mirostat = profile.mirostat;

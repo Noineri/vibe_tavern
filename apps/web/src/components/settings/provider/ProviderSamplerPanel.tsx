@@ -157,6 +157,7 @@ const CUSTOM_SAMPLER_DEFAULTS = {
   dryAllowedLength: 2,
   dryPenaltyLastN: -1,
   drySequenceBreakers: [] as string[],
+  bannedStrings: [] as string[],
   xtcThreshold: 0.1,
   xtcProbability: 0,
   frequencyPenalty: 0,
@@ -201,6 +202,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
       updateForm('dryBase', CUSTOM_SAMPLER_DEFAULTS.dryBase);
       updateForm('dryAllowedLength', CUSTOM_SAMPLER_DEFAULTS.dryAllowedLength);
       updateForm('drySequenceBreakers', CUSTOM_SAMPLER_DEFAULTS.drySequenceBreakers);
+      updateForm('bannedStrings', CUSTOM_SAMPLER_DEFAULTS.bannedStrings);
       updateForm('dryPenaltyLastN', CUSTOM_SAMPLER_DEFAULTS.dryPenaltyLastN);
       updateForm('xtcThreshold', CUSTOM_SAMPLER_DEFAULTS.xtcThreshold);
       updateForm('xtcProbability', CUSTOM_SAMPLER_DEFAULTS.xtcProbability);
@@ -732,6 +734,26 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   disabled={disabled}
                   showPresets={false}
                   tooltip={t("sampler_dry_sequence_breakers_hint")}
+                />
+              </div>
+            )}
+
+            {/* Banned Strings — KoboldCPP antislop phrase banning (B3); same chip-list shape as DRY breakers */}
+            {supports('bannedStrings') && (
+              <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
+                <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+                  <span>{t("sampler_banned_strings")}</span>
+                  <CustomTooltip content={t("sampler_banned_strings_hint")} side="top" align="start">
+                    <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+                  </CustomTooltip>
+                </label>
+                <ChipInput
+                  values={form.bannedStrings}
+                  onChange={(v) => updateForm('bannedStrings', v)}
+                  placeholder={t("sampler_banned_strings_placeholder")}
+                  disabled={disabled}
+                  showPresets={false}
+                  tooltip={t("sampler_banned_strings_hint")}
                 />
               </div>
             )}

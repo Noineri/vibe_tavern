@@ -13,7 +13,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     model: "gpt-4o", visionModel: "gpt-4o-mini",
     temperature: 0.8, topP: 0.95, minP: 0.05, topK: 40, topA: 0.1,
     typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, dynatempRange: 0, dynatempExponent: 1, topNSigma: 0, smoothingFactor: 0, repeatLastN: 64, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-    dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: ["\n"],
+    dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: ["\n"], bannedStrings: [" finger"],
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
     pinContextBudget: false, bindPerModel: false,
@@ -99,6 +99,17 @@ describe("sampler clipboard round-trip", () => {
     expect(target.topNSigma).toBe(0.95);
     expect(target.smoothingFactor).toBe(0.7);
     expect(target.dryPenaltyLastN).toBe(512);
+  });
+
+  test("bannedStrings round-trip through the clipboard (B3, leading spaces kept)", () => {
+    const original = makeForm({ bannedStrings: [" finger", " purr"] });
+    const payload = computeOverlayPatch(original);
+    const parsed = samplerPresetPayloadSchema.safeParse(JSON.parse(JSON.stringify(payload)));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const { updater, form: target } = recordingUpdater(makeForm());
+    applySamplerPresetFields(parsed.data as Partial<ModelSettingsOverlay>, updater);
+    expect(target.bannedStrings).toEqual([" finger", " purr"]);
   });
 
   test("malformed JSON is rejected before reaching the schema", () => {

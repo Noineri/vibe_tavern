@@ -88,6 +88,8 @@ export interface ClientProviderProfileRecord {
 	presencePenalty: number;
 	repetitionPenalty: number;
 	stopSequences: string[];
+	/** Antislop phrase banning (KoboldCPP only, native `banned_strings` request field); exact-match phrases, leading/trailing spaces significant. */
+	bannedStrings: string[];
 	logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
 	seed: string | null;
 	reasoningEffort: string;

@@ -70,6 +70,7 @@ export function applySamplerPresetFields(
   if (fields.contextBudget !== undefined) updateForm("contextBudget", fields.contextBudget ?? 0);
   if (fields.pinContextBudget != null) updateForm("pinContextBudget", fields.pinContextBudget);
   if (fields.stopSequences != null) updateForm("stopSequences", fields.stopSequences);
+  if (fields.bannedStrings != null) updateForm("bannedStrings", fields.bannedStrings);
   if (fields.logitBias != null) updateForm("logitBias", fields.logitBias);
   if (fields.seed !== undefined) updateForm("seed", fields.seed);
   if (fields.reasoningEffort != null) updateForm("reasoningEffort", fields.reasoningEffort);

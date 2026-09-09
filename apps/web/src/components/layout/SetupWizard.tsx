@@ -169,6 +169,7 @@ function ProviderStep({
     modelGroupByOwner: existingProfile?.modelGroupByOwner ?? false,
     editingModelId: null,
     stopSequences: existingProfile?.stopSequences ?? [],
+    bannedStrings: existingProfile?.bannedStrings ?? [],
     logitBias: existingProfile?.logitBias ?? [],
     seed: existingProfile?.seed ?? null,
     reasoningEffort: existingProfile?.reasoningEffort ?? "",

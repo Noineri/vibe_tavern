@@ -5,6 +5,7 @@
  * - Enter / Tab / comma commits a chip
  * - Backspace on empty input removes last chip
  * - Each chip shows a remove button on hover
+ * - Pasting an ST-style JSON array of strings commits it as many deduped chips
  * - Special character rendering: \n → ⏎, \t → ⇥, trailing space → ␣
  */
 
@@ -66,6 +67,30 @@ function parseEscapeSequences(input: string): string {
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, "\t")
     .replace(/\\\\/g, "\\");
+}
+
+/**
+ * ST-style JSON array paste detection (LOCAL_SAMPLERS_ADDITION_REPORT B3):
+ * a clipboard payload that is a JSON array of strings (e.g. `[" finger", " moan"]`)
+ * is committed as MANY chips instead of one literal chip — ST migrants paste
+ * their existing antislop/stop lists verbatim instead of re-typing them.
+ * Values are taken verbatim from the parsed JSON (JSON unescaping already
+ * applied); leading/trailing spaces stay significant. Returns null for
+ * anything that is not an array of strings (plain text → normal paste).
+ */
+function parseJsonStringArray(text: string): string[] | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const items = parsed as unknown[];
+  if (!items.every((item): item is string => typeof item === "string")) return null;
+  return items;
 }
 
 // ── Preset buttons ─────────────────────────────────────────────────
@@ -193,6 +218,28 @@ export function ChipInput({
     if (inputValue.length > 0) addChip(inputValue);
   }, [inputValue, addChip]);
 
+  // Paste interceptor: an ST-style JSON array (e.g. `[" finger", " moan"]`)
+  // is committed as many deduped chips; anything else falls through to the
+  // normal paste path (single chip via the usual Enter/blur commit).
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLInputElement>) => {
+      const text = e.clipboardData.getData("text/plain");
+      if (!text) return;
+      const chips = parseJsonStringArray(text);
+      if (!chips) return;
+      e.preventDefault();
+      const seen = new Set(values);
+      const fresh: string[] = [];
+      for (const chip of chips) {
+        if (chip.length === 0 || seen.has(chip)) continue;
+        seen.add(chip);
+        fresh.push(chip);
+      }
+      if (fresh.length > 0) onChange([...values, ...fresh]);
+    },
+    [values, onChange],
+  );
+
   const insertPreset = useCallback(
     (preset: SpecialCharPreset) => {
       const input = inputRef.current;
@@ -253,6 +300,7 @@ export function ChipInput({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onBlur={handleBlur}
           disabled={disabled}
           placeholder={values.length === 0 ? placeholder : ""}

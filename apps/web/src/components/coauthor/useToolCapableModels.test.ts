@@ -61,6 +61,7 @@ function makeProfile(overrides: Partial<ProviderProfileRecord> & { id: string })
     dryBase: 0,
     dryAllowedLength: 0,
     drySequenceBreakers: [],
+    bannedStrings: [],
     dryPenaltyLastN: -1,
     xtcThreshold: 0,
     xtcProbability: 0,

@@ -63,6 +63,7 @@ export interface ProviderSavePatch {
   repetitionPenalty: number;
   maxTokens: number;
   stopSequences: string[];
+  bannedStrings: string[];
   logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
   reasoningEffort: string;
@@ -124,6 +125,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     repetitionPenalty: form.repetitionPenalty,
     maxTokens: form.maxTokens,
     stopSequences: form.stopSequences,
+    bannedStrings: form.bannedStrings,
     logitBias: form.logitBias,
     seed: form.seed,
     reasoningEffort: form.reasoningEffort,
@@ -207,6 +209,7 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
     stopSequences: form.stopSequences,
+    bannedStrings: form.bannedStrings,
     logitBias: form.logitBias,
     seed: form.seed,
     reasoningEffort: form.reasoningEffort,
@@ -268,6 +271,7 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     repetitionPenalty: conn.repetitionPenalty,
     maxTokens: conn.maxTokens,
     stopSequences: conn.stopSequences,
+    bannedStrings: [],
     logitBias: [],
     seed: conn.seed,
     reasoningEffort: conn.reasoningEffort,
