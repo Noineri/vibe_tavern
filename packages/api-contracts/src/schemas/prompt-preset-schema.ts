@@ -48,6 +48,8 @@ const promptPresetCoreSchema = z.object({
     role: z.enum(["system", "user", "assistant"]).optional(),
   })).optional(),
   advancedMode: z.boolean().optional(),
+  /** Per-send prefill entry point (LS-8). Default false. */
+  perSendPrefillEnabled: z.boolean().optional(),
   mergeConsecutiveRoles: z.boolean().optional(),
   scriptAiSystemPrompt: z.string().optional(),
   aiAssistantPrompts: z.string().optional(),

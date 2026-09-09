@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PersonaQuickSwitch } from "../modals/PersonaQuickSwitch.js";
 import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
 import { ToolbarSelect } from "../shared/ToolbarSelect.js";
@@ -6,6 +6,7 @@ import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
+import { usePerSendPrefillStore } from "../../stores/per-send-prefill-store.js";
 
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
@@ -35,6 +36,19 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
   } = data;
 
   const [isDragOver, setIsDragOver] = useState(false);
+  // ── Per-send prefill (LS-8, owner design): a human-icon chip in the chip row
+  // opens the one-shot prefill input as a BUBBLE inside the input frame, above
+  // the chat line (sandwich: bubble → chat line → chip row). Sending consumes
+  // the store value (one-shot); any transition to disarmed collapses the bubble.
+  const [prefillOpen, setPrefillOpen] = useState(false);
+  const prefillValue = usePerSendPrefillStore((s) => s.value);
+  const setPrefillValue = usePerSendPrefillStore((s) => s.setValue);
+  const prefillWasArmedRef = useRef(false);
+  const prefillArmed = prefillValue !== null;
+  useEffect(() => {
+    if (prefillOpen && prefillArmed === false && prefillWasArmedRef.current) setPrefillOpen(false);
+    prefillWasArmedRef.current = prefillArmed;
+  }, [prefillArmed, prefillOpen]);
   // --- Drag-and-drop image attach (desktop only) ---
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -78,9 +92,9 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* LS-4b: per-send prefill strip — one-shot override over the input
-            area; visibility gated on local-backend prefill capability. */}
-        <PerSendPrefillStrip supported={data.perSendPrefillSupported} />
+        {/* LS-8: per-send prefill renders as a chip + in-frame bubble (below);
+            the desktop LS-4b strip is retired. Both gated upstream on the
+            capability AND the active preset's opt-in toggle. */}
         <div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
           {showGenerateMore && (
             <div className="absolute right-2 top-2 z-20">
@@ -104,6 +118,42 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
           )}
           <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif,audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/mp3,audio/wav,audio/flac" onChange={onFileInputChange} />
 
+          {/* LS-8: the one-shot prefill bubble — a text-entry bubble INSIDE
+              the input frame, above the chat line. Smooth grid-rows collapse;
+              ✕ closes without clearing (the armed dot stays on the chip). */}
+          {data.perSendPrefillSupported && (
+            <div
+              className="grid px-3 pt-2 transition-[grid-template-rows,opacity] duration-200 ease-out"
+              style={{ gridTemplateRows: prefillOpen ? "1fr" : "0fr", opacity: prefillOpen ? 1 : 0 }}
+              aria-hidden={!prefillOpen}
+              data-testid="per-send-prefill-bubble"
+            >
+              <div className="overflow-hidden">
+                <div className="flex items-start gap-1.5 rounded-lg border border-border bg-s2 px-2.5 py-1.5">
+                  <Icons.user aria-hidden />
+                  <AutoTextarea
+                    className="min-w-0 flex-1 resize-none border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
+                    minRows={1}
+                    maxRows={6}
+                    value={prefillValue ?? ""}
+                    onChange={(e) => setPrefillValue(e.target.value)}
+                    placeholder={t("prefill_placeholder")}
+                    aria-label={t("per_send_prefill_chip_tooltip")}
+                    data-testid="per-send-prefill-input"
+                  />
+                  <button
+                    type="button"
+                    className="mt-0.5 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1"
+                    onClick={() => setPrefillOpen(false)}
+                    aria-label={t("close")}
+                  >
+                    <Icons.close />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <AutoTextarea
             className="w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
             maxRows={12}
@@ -123,11 +173,25 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
           {draftAttachments.length > 0 && <AttachmentPreview />}
 
           <div className="relative flex items-center gap-[7px] pt-1.5 pb-[9px] pl-3 pr-[135px]">
-            <CustomTooltip content={t("multi_persona_tooltip")}>
-              <div className="speaker-row multi-persona">
-                <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">{t("speak_as")}</span>
-              </div>
-            </CustomTooltip>
+            {/* LS-8: the per-send prefill chip (human icon) — replaces the
+                retired «Говорить как» text label; the stale multi-persona
+                tooltip (a mode VT does not have) goes with it. The persona
+                button itself is untouched. */}
+            {data.perSendPrefillSupported && (
+              <CustomTooltip content={t("per_send_prefill_chip_tooltip")}>
+                <button
+                  type="button"
+                  className="relative flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1"
+                  onClick={() => setPrefillOpen((v) => !v)}
+                  aria-expanded={prefillOpen}
+                  aria-label={t("per_send_prefill_chip_tooltip")}
+                  data-testid="per-send-prefill-chip"
+                >
+                  <Icons.user />
+                  {prefillArmed && <span aria-hidden className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-accent" />}
+                </button>
+              </CustomTooltip>
+            )}
             <PersonaQuickSwitch personas={personas} activePersonaId={activePersonaId} onSelect={character.handleSetChatPersona} />
             {activeChatId && (
               <ChatImpersonateAiPill

@@ -5,7 +5,7 @@ import { validation, notFound, conflict, isDomainError } from "../../shared/erro
 type AuthorsNotePosition = "in_prompt" | "in_chat" | "after_chat";
 type AuthorsNoteRole = "system" | "user" | "assistant";
 
-function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjections: CustomInjection[]; promptOrder: PromptOrderEntry[]; advancedMode?: boolean | number | null; mergeConsecutiveRoles?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; generationFormat?: GenerationFormat; createdAt: string; updatedAt: string; }): PromptPresetDto {
+function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjections: CustomInjection[]; promptOrder: PromptOrderEntry[]; advancedMode?: boolean | number | null; mergeConsecutiveRoles?: boolean | number | null; perSendPrefillEnabled?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; generationFormat?: GenerationFormat; createdAt: string; updatedAt: string; }): PromptPresetDto {
   return {
     id: p.id,
     name: p.name,
@@ -24,6 +24,7 @@ function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; syste
     promptOrder: p.promptOrder,
     advancedMode: Boolean(p.advancedMode),
     mergeConsecutiveRoles: Boolean(p.mergeConsecutiveRoles),
+    perSendPrefillEnabled: Boolean(p.perSendPrefillEnabled),
     scriptAiSystemPrompt: p.scriptAiSystemPrompt ?? "",
     aiAssistantPrompts: p.aiAssistantPrompts ?? "{}",
     // Generation format (LS-3a). Absent = auto — spread only when present so
@@ -69,6 +70,8 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
   mergeConsecutiveRoles?: boolean;
+  /** Per-send prefill entry point (LS-8). Default false. */
+  perSendPrefillEnabled?: boolean;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
   /** Generation format (LS-3a). Undefined = absent = auto. */
@@ -95,6 +98,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     promptOrder: input.promptOrder,
     advancedMode: input.advancedMode ?? false,
     mergeConsecutiveRoles: input.mergeConsecutiveRoles ?? false,
+    perSendPrefillEnabled: input.perSendPrefillEnabled ?? false,
     scriptAiSystemPrompt: input.scriptAiSystemPrompt ?? "",
     aiAssistantPrompts: input.aiAssistantPrompts ?? "{}",
     generationFormat: input.generationFormat,
@@ -119,6 +123,8 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
   mergeConsecutiveRoles?: boolean;
+  /** Per-send prefill entry point (LS-8). Default false. */
+  perSendPrefillEnabled?: boolean;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
   /** Generation format (LS-3a). `null` clears back to auto; undefined = untouched. */
@@ -142,6 +148,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       promptOrder: patch.promptOrder,
       advancedMode: patch.advancedMode,
       mergeConsecutiveRoles: patch.mergeConsecutiveRoles,
+      perSendPrefillEnabled: patch.perSendPrefillEnabled,
       scriptAiSystemPrompt: patch.scriptAiSystemPrompt,
       aiAssistantPrompts: patch.aiAssistantPrompts,
       generationFormat: patch.generationFormat,

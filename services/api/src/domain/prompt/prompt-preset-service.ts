@@ -44,6 +44,8 @@ export class PromptPresetService {
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
     mergeConsecutiveRoles?: boolean;
+    /** Per-send prefill entry point (LS-8). Default false. */
+    perSendPrefillEnabled?: boolean;
     scriptAiSystemPrompt?: string;
     /** Generation format (LS-3a). Undefined = absent = auto. */
     generationFormat?: GenerationFormat;
@@ -68,6 +70,8 @@ export class PromptPresetService {
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
     mergeConsecutiveRoles?: boolean;
+    /** Per-send prefill entry point (LS-8). Default false. */
+    perSendPrefillEnabled?: boolean;
     scriptAiSystemPrompt?: string;
     /** Generation format (LS-3a). `null` clears back to auto; undefined = untouched. */
     generationFormat?: GenerationFormat | null;

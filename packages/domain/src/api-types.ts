@@ -104,6 +104,9 @@ export interface PromptPresetDto {
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   mergeConsecutiveRoles: boolean;
+  /** Per-send prefill entry point (LOCAL_SUPPORT_PLAN LS-8): when true, the
+   *  chat input surfaces the one-shot prefill chip/bubble (capability-gated). */
+  perSendPrefillEnabled: boolean;
   scriptAiSystemPrompt: string;
   aiAssistantPrompts: string;
   /** Generation format (LOCAL_SUPPORT_PLAN LS-3a): the TC string-shape glue.

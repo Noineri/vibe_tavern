@@ -52,6 +52,9 @@ export interface CreatePresetData {
   promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
   mergeConsecutiveRoles?: boolean;
+  /** Per-send prefill entry point (LS-8): surfaces the chat input's one-shot
+ *  prefill chip/bubble when the active preset enables it. Default false. */
+  perSendPrefillEnabled?: boolean;
   /** Generation format (LS-3a). Undefined = absent = auto; `null` in an update clears back to auto. */
   generationFormat?: GenerationFormat | null;
 }
@@ -84,6 +87,8 @@ export interface PromptPreset {
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   mergeConsecutiveRoles: boolean;
+  /** Per-send prefill entry point (LS-8). Default false. */
+  perSendPrefillEnabled: boolean;
   /** Generation format (LS-3a). Absent = auto. */
   generationFormat?: GenerationFormat;
   createdAt: string;
@@ -171,6 +176,7 @@ export class PresetStore {
         generationFormatJson: data.generationFormat ? JSON.stringify(data.generationFormat) : '',
         advancedMode: data.advancedMode ? 1 : 0,
         mergeConsecutiveRoles: data.mergeConsecutiveRoles ? 1 : 0,
+        perSendPrefillEnabled: data.perSendPrefillEnabled ?? false,
         createdAt: now,
         updatedAt: now,
       })
@@ -216,6 +222,7 @@ export class PresetStore {
     if (data.generationFormat !== undefined) values.generationFormatJson = data.generationFormat ? JSON.stringify(data.generationFormat) : '';
     if (data.advancedMode !== undefined) values.advancedMode = data.advancedMode ? 1 : 0;
     if (data.mergeConsecutiveRoles !== undefined) values.mergeConsecutiveRoles = data.mergeConsecutiveRoles ? 1 : 0;
+    if (data.perSendPrefillEnabled !== undefined) values.perSendPrefillEnabled = data.perSendPrefillEnabled;
 
     const [row] = await this.db
       .update(promptPresets)
@@ -455,6 +462,7 @@ export class PresetStore {
       generationFormat: preset.generationFormat,
       advancedMode: preset.advancedMode,
       mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
+      perSendPrefillEnabled: preset.perSendPrefillEnabled,
     };
   }
 
@@ -501,6 +509,7 @@ export class PresetStore {
       promptOrder,
       advancedMode: Boolean(row.advancedMode),
       mergeConsecutiveRoles: Boolean(row.mergeConsecutiveRoles),
+      perSendPrefillEnabled: Boolean(row.perSendPrefillEnabled),
       ...(generationFormat ? { generationFormat } : {}),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

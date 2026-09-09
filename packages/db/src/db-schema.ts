@@ -781,6 +781,10 @@ export const promptPresets = sqliteTable('prompt_presets', {
   generationFormatJson: text('generation_format_json').notNull().default(''),
   advancedMode: integer('advanced_mode').notNull().default(0),
   mergeConsecutiveRoles: integer('merge_consecutive_roles').notNull().default(0),
+  // Per-send prefill entry point (LOCAL_SUPPORT_PLAN LS-8): when true, the
+  // chat input surfaces the one-shot prefill chip/bubble (capability-gated).
+  // The preset's persistent prefill value is untouched by it.
+  perSendPrefillEnabled: integer('per_send_prefill_enabled', { mode: 'boolean' }).notNull().default(false),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),

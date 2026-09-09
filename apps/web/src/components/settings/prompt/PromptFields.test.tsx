@@ -75,6 +75,7 @@ function baseDraft(overrides: Partial<DraftData> = {}): DraftData {
     authorsNoteDepth: 4,
     authorsNotePosition: "in_chat",
     authorsNoteRole: "system",
+    perSendPrefillEnabled: false,
     ...overrides,
   };
 }
@@ -141,5 +142,30 @@ describe("PromptFields — chat prompt fields", () => {
     const view = render(<PromptFields {...baseProps({ hideChatPrompts: true })} />);
     expect(within(view.baseElement).queryByText("prompt_section_chat")).toBeNull();
     expect(view.baseElement.querySelectorAll("textarea").length).toBe(0);
+  });
+
+  // ── LS-8: per-send prefill toggle — present in BOTH editor modes ──
+
+  it("renders the per-send prefill toggle reflecting the draft (simple mode)", () => {
+    const view = render(<PromptFields {...baseProps()} />);
+    const q = within(view.baseElement);
+    // The shared Radix Toggle carries no accessible name (label text is a
+    // sibling, not an association) — it is also the ONLY switch in this block.
+    const toggle = q.getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("renders the per-send prefill toggle in advanced mode too (hideChatPrompts)", () => {
+    const view = render(<PromptFields {...baseProps({ hideChatPrompts: true, draft: baseDraft({ perSendPrefillEnabled: true }) })} />);
+    const toggle = within(view.baseElement).getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("emits perSendPrefillEnabled through onUpdateField on toggle", async () => {
+    const onUpdateField = mock();
+    const view = render(<PromptFields {...baseProps({ onUpdateField })} />);
+    const user = userEvent.setup();
+    await user.click(within(view.baseElement).getByRole("switch"));
+    expect(onUpdateField).toHaveBeenLastCalledWith("perSendPrefillEnabled", true);
   });
 });

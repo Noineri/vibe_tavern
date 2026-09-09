@@ -109,6 +109,8 @@ export type DraftData = {
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   mergeConsecutiveRoles: boolean;
+  /** Per-send prefill entry point (LS-8): gates the chat input's one-shot prefill UI. */
+  perSendPrefillEnabled: boolean;
   /** Generation format (LS-3a). Null = never configured (= auto). */
   generationFormat: GenerationFormat | null;
 };
@@ -184,6 +186,7 @@ const emptyDraft: DraftData = {
   promptOrder: [],
   advancedMode: false,
   mergeConsecutiveRoles: false,
+  perSendPrefillEnabled: false,
   generationFormat: null,
 };
 
@@ -936,6 +939,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         promptOrder: activePreset.promptOrder ?? [],
         advancedMode: activePreset.advancedMode ?? false,
         mergeConsecutiveRoles: activePreset.mergeConsecutiveRoles ?? false,
+        perSendPrefillEnabled: activePreset.perSendPrefillEnabled ?? false,
         generationFormat: activePreset.generationFormat ?? null,
       });
     } else {
@@ -1120,6 +1124,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           promptOrder: ext.promptOrder,
           advancedMode: ext.advancedMode,
           mergeConsecutiveRoles: ext.mergeConsecutiveRoles ?? false,
+          perSendPrefillEnabled: ext.perSendPrefillEnabled ?? false,
           generationFormat: ext.generationFormat ?? null,
         });
         setDirty(true);

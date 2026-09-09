@@ -241,12 +241,14 @@ export function useInputArea() {
     fileInputRef, draftAttachments, handleFileSelected, handleVoiceRecorded, onFileInputChange, handlePaste,
     canSend, buckets, inputTokens,
     showGenerateMore, handleGenerateMore,
-    // LS-4b: local-only per-send prefill strip gate (shared fail-closed
-    // resolution in @vibe-tavern/domain — no cloud surfacing, owner decision).
+    // LS-4b/LS-8: the per-send prefill entry point renders only when BOTH
+    // gates pass — the shared fail-closed capability resolution in
+    // @vibe-tavern/domain (local backends only, no cloud surfacing) AND the
+    // active prompt preset's opt-in toggle (perSendPrefillEnabled, LS-8).
     perSendPrefillSupported: resolvePerSendPrefillSupport(
       provider.activeProviderProfile?.providerPreset,
       provider.activeProviderProfile?.endpoint,
-    ).supported,
+    ).supported && (promptPresets.find((p) => p.id === activePromptPresetId)?.perSendPrefillEnabled ?? false),
   };
 }
 
