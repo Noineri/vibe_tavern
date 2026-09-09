@@ -7,7 +7,7 @@
  */
 
 import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
-import { COAUTHOR_TRANSPORT, GENERATION_MODE, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type GenerationMode, type ProviderType, log } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, PROVIDER_TYPE, normalizeProviderType, resolveNativeTextCompletion, type CoauthorTransport, type GenerationMode, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
 import type { CompletionFormatHandoff } from "../../domain/providers/protocol-types.js";
@@ -112,10 +112,12 @@ export function resolveModel(
  * template on llama-server, documented default elsewhere).
  */
 export function resolveCompletionFormatHandoff(
-  profile: { generationMode?: GenerationMode },
+  profile: { providerPreset?: string | null; generationMode?: GenerationMode },
   completionFormat: GenerationFormat | null | undefined,
 ): CompletionFormatHandoff | undefined {
-  if (profile.generationMode !== GENERATION_MODE.completion) return undefined;
+  // LS-6a: native-TC presets (koboldcpp) are ALWAYS text completion — the
+  // preset's format threads even though no generation-mode flip exists there.
+  if (profile.generationMode !== GENERATION_MODE.completion && !resolveNativeTextCompletion(profile.providerPreset).supported) return undefined;
   if (completionFormat?.mode === "manual") {
     return { completionFormat: { kind: "manual", template: generationFormatToTemplate(completionFormat) } };
   }

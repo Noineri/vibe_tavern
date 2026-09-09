@@ -1,9 +1,12 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterAll } from "bun:test";
+import { streamText } from "ai";
 import {
   createKoboldCppModel,
   fetchKoboldModel,
   tokenizeKoboldCpp,
+  koboldCppProtocol,
 } from "../src/domain/providers/koboldcpp-adapter.js";
+import { generationFormatToTemplate } from "../src/domain/providers/completion-prompt.js";
 
 // ─── Mock fetch ──────────────────────────────────────────────────────────
 
@@ -40,6 +43,14 @@ function setupMockSSEStream(tokens: string[], doneText = "full text") {
 }
 
 beforeEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+// Files in packages/* + services/api share ONE bun process: a mock left
+// installed after the file's last test poisons every later network test
+// (skill: vibe-tavern-testing). beforeEach restores BETWEEN tests only —
+// this afterAll also restores AFTER the last one.
+afterAll(() => {
   globalThis.fetch = originalFetch;
 });
 
@@ -219,16 +230,53 @@ describe("KoboldCPP adapter — doStream", () => {
       parts.push(part);
     }
 
-    // Should have text-delta parts + finish
-    const textParts = parts.filter((p: any) => p.type === "text-delta");
-    const finishParts = parts.filter((p: any) => p.type === "finish");
+    // Full protocol sequence (LS-6d): stream-start, text-start, 3 deltas,
+    // text-end, finish — in that order.
+    expect(parts[0]).toEqual({ type: "stream-start", warnings: [] });
+    expect(parts[1]).toEqual({ type: "text-start", id: "0" });
+    expect(parts[2]).toEqual({ type: "text-delta", id: "0", delta: "Hello" });
+    expect(parts[3]).toEqual({ type: "text-delta", id: "0", delta: " world" });
+    expect(parts[4]).toEqual({ type: "text-delta", id: "0", delta: "!" });
+    expect(parts[5]).toEqual({ type: "text-end", id: "0" });
+    expect(parts[6]?.type).toBe("finish");
+    expect((parts[6] as { finishReason: { unified: string } }).finishReason.unified).toBe("stop");
+  });
 
-    expect(textParts).toHaveLength(3);
-    expect(textParts[0]).toEqual({ type: "text-delta", id: "0", delta: "Hello" });
-    expect(textParts[1]).toEqual({ type: "text-delta", id: "0", delta: " world" });
-    expect(textParts[2]).toEqual({ type: "text-delta", id: "0", delta: "!" });
-    expect(finishParts).toHaveLength(1);
-    expect((finishParts[0] as any).finishReason.unified).toBe("stop");
+  it("streams through the REAL streamText recorder without protocol errors (LS-6d)", async () => {
+    // Pins the recorder boundary: ai@7's streamText rejects bare text-deltas
+    // ("text part 0 not found" — shipped to the owner on KoboldCPP streaming).
+    // Raw-parts assertions above cannot catch this; consuming via streamText
+    // is the boundary the fix must hold at.
+    setupMockSSEStream(["Hello", " world", "!"]);
+
+    const model = createKoboldCppModel({
+      baseURL: "http://localhost:5001",
+      modelId: "test",
+    });
+
+    const result = streamText({ model, prompt: "go" });
+    const errors: unknown[] = [];
+    let text = "";
+    for await (const chunk of result.fullStream) {
+      if (chunk.type === "error") errors.push(chunk.error);
+      if (chunk.type === "text-delta") text += chunk.text;
+    }
+
+    expect(errors).toEqual([]);
+    expect(text).toBe("Hello world!");
+    expect((await result.text) === "Hello world!").toBe(true);
+  });
+
+  it("an empty stream still opens and closes the protocol (stream-start + finish, no dangling text)", async () => {
+    setupMockSSEStream([]);
+
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+    const result = streamText({ model, prompt: "go" });
+    const errors: unknown[] = [];
+    for await (const chunk of result.fullStream) {
+      if (chunk.type === "error") errors.push(chunk.error);
+    }
+    expect(errors).toEqual([]);
   });
 
   it("sends request to /api/extra/generate/stream", async () => {
@@ -445,5 +493,117 @@ describe("KoboldCPP adapter — V3 interface", () => {
     expect(model.specificationVersion).toBe("v3");
     expect(model.provider).toBe("koboldcpp");
     expect(model.modelId).toBe("my-model");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LS-6b — Generation-format template through the kobold serializer
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("KoboldCPP adapter — LS-6b generation-format template", () => {
+  it("auto (no handoff) renders the historical role-prefixed bytes exactly", async () => {
+    setupMockFetch([{ ok: true, status: 200, json: { results: [{ text: "ok" }] } }]);
+
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+    await model.doGenerate({
+      prompt: [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: [{ type: "text", text: "Hi" }] },
+      ],
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    // Byte-exact golden: the shared seam's DEFAULT template = the pre-LS-6
+    // hardcoded serializer (trailing bare "Assistant:" continuation prefix).
+    expect(body.prompt).toBe("System: You are helpful.\nUser: Hi\nAssistant:");
+  });
+
+  it("auto with a trailing assistant line: the line IS the continuation point (LS-3 seam semantics, no bare trailer)", async () => {
+    setupMockFetch([{ ok: true, status: 200, json: { results: [{ text: "ok" }] } }]);
+
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+    await model.doGenerate({
+      prompt: [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: [{ type: "text", text: "Hi" }] },
+        { role: "assistant", content: [{ type: "text", text: "Sure, I" }] },
+      ],
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    // Documented deviation from the pre-LS-6 bytes: a trailing assistant line
+    // is the continuation point — no extra bare "Assistant:" trailer (the
+    // model continues that line, an appended trailer would inject a turn break).
+    expect(body.prompt).toBe("System: You are helpful.\nUser: Hi\nAssistant: Sure, I");
+  });
+
+  it("manual template from the preset renders the user sequences at the adapter boundary (resolveModel handoff)", async () => {
+    setupMockFetch([{ ok: true, status: 200, json: { results: [{ text: "ok" }] } }]);
+
+    const model = koboldCppProtocol.resolveModel(
+      { providerPreset: "koboldcpp", endpoint: "http://localhost:5001", apiKey: null },
+      "test",
+      undefined,
+      {
+        completionFormat: {
+          kind: "manual",
+          template: generationFormatToTemplate({
+            mode: "manual",
+            systemSequence: "<|sys|>",
+            inputSequence: "<|user|>",
+            outputSequence: "<|assistant|>",
+            inputSuffix: "\n",
+            outputSuffix: "\n",
+            systemSuffix: "\n",
+            wrap: true,
+          }),
+        },
+      },
+    );
+    if (model.specificationVersion !== "v3") throw new Error("expected a V3 model");
+    await model.doGenerate({
+      prompt: [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: [{ type: "text", text: "Hi" }] },
+        { role: "assistant", content: [{ type: "text", text: "Let me" }] },
+      ],
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    // ST formatInstructModeChat semantics through the shared seam: wrapped
+    // prefixes (wrap joins prefix and content with \n), per-message suffixes,
+    // and the trailing assistant line as the continuation point (suffix
+    // dropped, no trailer) — concatenated lines (extended path).
+    expect(body.prompt).toBe("<|sys|>\nYou are helpful.\n<|user|>\nHi\n<|assistant|>\nLet me");
+  });
+
+  it("the stream path threads the manual template too", async () => {
+    setupMockSSEStream(["ok"]);
+
+    const model = koboldCppProtocol.resolveModel(
+      { providerPreset: "koboldcpp", endpoint: "http://localhost:5001", apiKey: null },
+      "test",
+      undefined,
+      {
+        completionFormat: {
+          kind: "manual",
+          template: generationFormatToTemplate({
+            mode: "manual",
+            inputSequence: "<u> ",
+            outputSequence: "<a> ",
+          }),
+        },
+      },
+    );
+    if (model.specificationVersion !== "v3") throw new Error("expected a V3 model");
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+    });
+    for await (const _part of result.stream) void _part; // drain
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    // Minimal (no-extensions) template: role-prefixed lines + bare assistant
+    // trailer (trimmed) — the manual sequences replace the default labels.
+    expect(body.prompt).toBe("<u> Hi\n<a>");
   });
 });

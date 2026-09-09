@@ -1,4 +1,5 @@
 import { PROVIDER_TYPE, type ProviderType } from "./platform-constants.js";
+import { GENERATION_MODE, type GenerationMode } from "./provider-profile.js";
 
 /**
  * Provider preset IDs used by the UI plus canonical ProviderType values used by
@@ -145,6 +146,37 @@ export function resolveTextCompletionSupport(providerPreset: string | null | und
     return { supported: false, reason: "koboldcpp_is_native_text_completion" };
   }
   return { supported: false, reason: "provider_has_no_completion_endpoint" };
+}
+
+/**
+ * Native-TC presets (LOCAL_SUPPORT_PLAN LS-6a): providers whose adapter builds
+ * the flat completion prompt ITSELF — always text completion, no generation
+ * mode, no toggle (owner 2026-09-09: a mode flip is meaningless there). Today:
+ * KoboldCPP only ({@link resolveAutoTemplateSource} → "native"). Shared web +
+ * API so the AppShell pane gate and the executor format handoff fail closed
+ * identically.
+ */
+const NATIVE_TC_PRESETS = new Set<string>([PROVIDER_TYPE.koboldCpp]);
+
+export function resolveNativeTextCompletion(providerPreset: string | null | undefined): { supported: boolean; reason: string } {
+  const preset = (providerPreset ?? "").trim();
+  if (NATIVE_TC_PRESETS.has(preset)) {
+    return { supported: true, reason: "provider_is_native_text_completion" };
+  }
+  return { supported: false, reason: "provider_has_a_generation_mode" };
+}
+
+/**
+ * Whether the Generation-format tab is LIVE for the active provider profile
+ * (LOCAL_SUPPORT_PLAN LS-3d gate + LS-6a fix): TC-mode profiles (the toggle
+ * presets in completion mode) qualify, AND the native-TC presets qualify
+ * unconditionally — before LS-6a the one always-TC provider got a permanently
+ * greyed tab. Shared web + API, fail-closed.
+ */
+export function resolveTcPaneActive(providerPreset: string | null | undefined, generationMode: GenerationMode | null | undefined): boolean {
+  if (resolveNativeTextCompletion(providerPreset).supported) return true;
+  if (!resolveTextCompletionSupport(providerPreset).supported) return false;
+  return generationMode === GENERATION_MODE.completion;
 }
 
 // ─── Auto generation-format template source (LOCAL_SUPPORT_PLAN LS-3c) ─────

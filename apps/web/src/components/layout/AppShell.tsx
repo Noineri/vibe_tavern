@@ -6,7 +6,7 @@ import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { GENERATION_MODE, resolveAssistantPrefillSupport, resolveAutoTemplateSource, resolveTextCompletionSupport } from "@vibe-tavern/domain";
+import { resolveAssistantPrefillSupport, resolveAutoTemplateSource, resolveTcPaneActive } from "@vibe-tavern/domain";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
@@ -213,15 +213,15 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const resolvedActiveChatId = activeChatId ?? activeChat?.id ?? null;
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
-  // LS-3d: the generation-format tab is live only when the ACTIVE provider
-  // profile serves raw text completion; the AUTO template source then comes
-  // from the protocol (backend /apply-template on llama-server, documented
-  // default elsewhere, native no-op on KoboldCPP).
+  // LS-3d: the generation-format tab is live when the ACTIVE provider profile
+  // serves the raw text-completion path. LS-6a: native-TC presets (koboldcpp)
+  // qualify unconditionally — the pane activates with the "native" status.
+  // The AUTO template source comes from the protocol (backend /apply-template
+  // on llama-server, documented default elsewhere, native on KoboldCPP).
   const tcGenerationProfile = (() => {
     const profile = provider.activeProviderProfile;
     if (!profile) return null;
-    if (!resolveTextCompletionSupport(profile.providerPreset).supported) return null;
-    if (profile.generationMode !== GENERATION_MODE.completion) return null;
+    if (!resolveTcPaneActive(profile.providerPreset, profile.generationMode)) return null;
     return profile;
   })();
   const tcTemplateSource = tcGenerationProfile ? resolveAutoTemplateSource(tcGenerationProfile.providerPreset) : null;

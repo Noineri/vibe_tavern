@@ -29,10 +29,19 @@
  * native adapter's serializer, which this module mirrors in shape).
  */
 
-import type {
-	LanguageModelV4Prompt,
-} from "@ai-sdk/provider";
 import type { GenerationFormat } from "@vibe-tavern/domain";
+
+/**
+ * Structural prompt-message shape satisfied by BOTH `LanguageModelV3Prompt`
+ * and `LanguageModelV4Prompt` (LS-6b): the ONE serializer serves the
+ * openai-compat completion seam AND the KoboldCPP native adapter. Tool
+ * messages and non-text parts are skipped (no tool channel in raw completion
+ * — same choice as before the structural widening).
+ */
+export interface CompletionPromptMessage {
+	role: "system" | "user" | "assistant" | "tool";
+	content: string | ReadonlyArray<{ type: string; text?: string }>;
+}
 
 /**
  * The completion-mode template: the glue that turns the assembled prompt
@@ -83,7 +92,7 @@ export const DEFAULT_COMPLETION_TEMPLATE: CompletionFormatTemplate = {
 } as const satisfies CompletionFormatTemplate;
 
 /** Extract the concatenated text of a message's content parts. */
-function textOf(content: string | Array<{ type: string; text?: string }>): string {
+function textOf(content: string | ReadonlyArray<{ type: string; text?: string }>): string {
 	if (typeof content === "string") return content;
 	return content
 		.filter((part) => part.type === "text" && typeof part.text === "string")
@@ -121,7 +130,7 @@ export interface SerializeCompletionOptions {
  * the model continues the assistant turn.
  */
 export function serializeCompletionPrompt(
-	prompt: LanguageModelV4Prompt,
+	prompt: ReadonlyArray<CompletionPromptMessage>,
 	options: SerializeCompletionOptions = {},
 ): string {
 	const tpl = options.template ?? DEFAULT_COMPLETION_TEMPLATE;
@@ -158,7 +167,7 @@ export function serializeCompletionPrompt(
 			case "system": {
 				const line = renderMessage(
 					tpl.systemPrefix,
-					message.content,
+					textOf(message.content),
 					suffixFor(tpl, "system"),
 					tpl.wrap === true,
 				);
@@ -201,7 +210,7 @@ export function serializeCompletionPrompt(
 
 /** Find the last index matching a predicate (Array.prototype.findLastIndex is
  *  ES2023; kept explicit so the target stays conservative). */
-function findLastIndex(prompt: LanguageModelV4Prompt, predicate: (m: LanguageModelV4Prompt[number]) => boolean): number {
+function findLastIndex(prompt: ReadonlyArray<CompletionPromptMessage>, predicate: (m: CompletionPromptMessage) => boolean): number {
 	for (let i = prompt.length - 1; i >= 0; i--) {
 		if (predicate(prompt[i]!)) return i;
 	}
