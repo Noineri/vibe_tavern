@@ -10,6 +10,10 @@ import { z } from "zod";
  */
 const generationFormatSchema = z.object({
   mode: z.enum(["auto", "manual"]),
+  /** LS-10: which template applies in auto mode (provider-side format block):
+   *  "backend" | "builtin:<id>" | "custom:<template-id>". Absent on presets
+   *  (presets never carry a selection — the provider format block owns it). */
+  selection: z.string().optional(),
   inputSequence: z.string().optional(),
   outputSequence: z.string().optional(),
   firstOutputSequence: z.string().optional(),
@@ -23,6 +27,11 @@ const generationFormatSchema = z.object({
   wrap: z.boolean().optional(),
   namesBehavior: z.enum(["force", "always", "never"]).optional(),
 });
+
+/** Exported for the LS-10 provider-side format shape + format-template
+ *  payloads (same ST instruct DSL — one shape everywhere). */
+export { generationFormatSchema };
+export type GenerationFormatWire = z.infer<typeof generationFormatSchema>;
 
 const promptPresetCoreSchema = z.object({
   name: z.string(),

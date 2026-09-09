@@ -6,7 +6,7 @@ import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { resolveAssistantPrefillSupport, resolveAutoTemplateSource, resolveTcPaneActive } from "@vibe-tavern/domain";
+import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
@@ -213,18 +213,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const resolvedActiveChatId = activeChatId ?? activeChat?.id ?? null;
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
-  // LS-3d: the generation-format tab is live when the ACTIVE provider profile
-  // serves the raw text-completion path. LS-6a: native-TC presets (koboldcpp)
-  // qualify unconditionally — the pane activates with the "native" status.
-  // The AUTO template source comes from the protocol (backend /apply-template
-  // on llama-server, documented default elsewhere, native on KoboldCPP).
-  const tcGenerationProfile = (() => {
-    const profile = provider.activeProviderProfile;
-    if (!profile) return null;
-    if (!resolveTcPaneActive(profile.providerPreset, profile.generationMode)) return null;
-    return profile;
-  })();
-  const tcTemplateSource = tcGenerationProfile ? resolveAutoTemplateSource(tcGenerationProfile.providerPreset) : null;
+  // LS-10: the generation-format surface moved to the provider settings (the
+  // format block under the Чат/Текст switch) — the prompt-manager tab and its
+  // AppShell activation gate retired. No tc* derivations remain here.
 
   // Shell dispatch via the chat-mode registry (SURFACE_REGISTRY step 2):
   // chatMode drives the package, navMode contributes only the play/build axis,
@@ -475,8 +466,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         onDelete={preset.handleDeletePromptPreset} onReorder={preset.handleReorderPromptPresets}
         providerProfiles={provider.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
         prefillSupported={resolveAssistantPrefillSupport(provider.activeProviderProfile?.providerPreset).supported}
-        tcTemplateSource={tcTemplateSource}
-        tcProfile={tcGenerationProfile ? { id: tcGenerationProfile.id, stopSequences: tcGenerationProfile.stopSequences } : null}
         characterFields={activeCharacter ? {
           systemPrompt: activeCharacter.systemPrompt ?? null,
           postHistoryInstructions: activeCharacter.postHistoryInstructions ?? null,

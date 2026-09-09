@@ -22,6 +22,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     reasoningEffort: "auto", showReasoning: false, streamResponse: true, customSamplers: false,
     proxyMode: "inherit", proxyId: null,
     samplerSetId: null,
+    generationFormat: null,
     ...over,
   };
 }

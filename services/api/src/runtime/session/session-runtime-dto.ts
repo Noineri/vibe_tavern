@@ -188,6 +188,7 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     proxyMode: profile.proxyMode,
     proxyId: profile.proxyId,
     samplerSetId: profile.samplerSetId,
+    generationFormat: profile.generationFormat ?? null,
     hasStoredApiKey: !!profile.apiKey,
     isActive: profile.isActive,
     createdAt: profile.createdAt,

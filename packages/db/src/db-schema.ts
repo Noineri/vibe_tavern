@@ -840,6 +840,24 @@ export const samplerSets = sqliteTable('sampler_sets', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── formatTemplates ─────────────────────────────────────────────────────
+
+/**
+ * Named custom format templates (LOCAL_SUPPORT_PLAN LS-10) — the format-block
+ * counterpart of the sampler-set library (same small-resource shape): a
+ * user-saved sequence bundle selectable in the provider format block's auto
+ * dropdown. The payload is the ST instruct DSL shape (generationFormatSchema).
+ */
+export const formatTemplates = sqliteTable('format_templates', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** Stringified generationFormatSchema JSON (mode stored as "manual"). */
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── providerProfiles ──────────────────────────────────────────────────────────
 
 export const providerProfiles = sqliteTable('provider_profiles', {
@@ -853,6 +871,11 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   // 'completion' (OpenAI-style /completions). The flip is silent — only how
   // FUTURE generations are sent changes; nothing is rewritten or migrated.
   generationMode: text('generation_mode').$type<GenerationMode>().notNull().default('chat'),
+  // LS-10: the provider-side generation format (the format block in provider
+  // settings). Empty string = unset = the active preset's format keeps
+  // applying as the fallback source (supervisor decision (c) 2026-09-09 —
+  // preset formats are NOT migrated; the fallback preserves them).
+  generationFormatJson: text('generation_format_json').notNull().default(''),
   endpoint: text('endpoint').notNull(),
   apiKey: text('api_key'),
   defaultModel: text('default_model'),

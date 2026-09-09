@@ -15,7 +15,7 @@
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { PROVIDER_TYPE, GENERATION_MODE, type GenerationMode, type ModelSettingsOverlay, type ProviderProxyMode, tag } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, GENERATION_MODE, type GenerationMode, type ModelSettingsOverlay, type ProviderProxyMode, type ProviderGenerationFormat, tag } from "@vibe-tavern/domain";
 
 const saveLog = tag("save");
 
@@ -82,6 +82,10 @@ export interface ProviderSavePatch {
    *  must not wipe the pointer — omitted fields are untouched by the partial
    *  PATCH). null clears the pointer ("no set"). */
   samplerSetId?: string | null;
+  /** LS-10: the provider-side generation format (the format block). Same
+   *  omission rule as samplerSetId — a legacy connection save must not wipe
+   *  it. null clears back to the preset fallback. */
+  generationFormat?: ProviderGenerationFormat | null;
 }
 
 // ─── Pure computation ─────────────────────────────────────────────────────────
@@ -147,6 +151,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     proxyMode: form.proxyMode ?? "inherit",
     proxyId: form.proxyMode === "proxy" ? form.proxyId ?? null : null,
     samplerSetId: form.samplerSetId,
+    generationFormat: form.generationFormat,
   };
 
   saveLog.debug("computeSavePatch:", {

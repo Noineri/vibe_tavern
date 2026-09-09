@@ -134,6 +134,7 @@ function form(): FormState {
     proxyMode: "inherit",
     proxyId: null,
     samplerSetId: null,
+    generationFormat: null,
   };
 }
 

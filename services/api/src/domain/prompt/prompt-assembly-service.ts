@@ -1,4 +1,4 @@
-import { brandId, parseStoredAttachments, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig, resolveEffectiveGenerationFormat, CUSTOM_TEMPLATE_SELECTION_PREFIX, GENERATION_FORMAT_MODE, log, type ProviderGenerationFormat } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
   CustomInjection,
@@ -160,6 +160,12 @@ export interface AssemblePromptForChatInput {
    * global default). This is the queue's per-job preset key (frozen at enqueue).
    */
   presetId?: PromptPresetId;
+  /** LS-10: the ACTIVE provider profile's stored generation format (the
+   *  format block in provider settings), threaded by the session runtime. The
+   *  decision-(c) resolution applies — see resolveEffectiveGenerationFormat:
+   *  the profile format wins when set, otherwise the preset's format (the
+   *  fallback) stays in force. */
+  providerGenerationFormat?: ProviderGenerationFormat | null;
 }
 
 export type PromptTraceDraft = Omit<PromptTrace, "id" | "messageId" | "createdAt" | "presetName"> & {
@@ -393,6 +399,38 @@ export class PromptAssemblyService {
     };
   }
 
+  /**
+   * LS-10 decision (c): the effective generation format for one assembly —
+   * the ACTIVE profile's stored format when set (option A ownership: any
+   * interaction with the provider format block adopts it), otherwise the
+   * preset's format (the fallback — imported preset-borne templates keep
+   * applying until the user touches the new UI; nothing is migrated or
+   * dropped). Custom-template selections are inlined into concrete sequences
+   * here (this service owns the stores); a missing/deleted custom degrades
+   * to plain auto with a warning — never a broken generation.
+   */
+  private async resolveEffectiveFormat(
+    profileFormat: ProviderGenerationFormat | null | undefined,
+    presetFormat: GenerationFormat | null | undefined,
+  ): Promise<GenerationFormat | null> {
+    // Custom selections need the STORE (this service owns it — the executors
+    // stay store-free): inline the payload, keep the selection marker. A
+    // missing/deleted custom degrades to plain auto with a warning — never a
+    // broken generation. Everything else delegates to the pure domain
+    // resolver (the decision-(c) rule + builtin materialization, pinned there).
+    if (profileFormat && profileFormat.mode === "auto" && profileFormat.selection?.startsWith(CUSTOM_TEMPLATE_SELECTION_PREFIX)) {
+      const customId = profileFormat.selection.slice(CUSTOM_TEMPLATE_SELECTION_PREFIX.length);
+      const row = await this.stores.formatTemplates.getById(customId);
+      if (row) {
+        const parsed = sanitizeTemplatePayload(row.payload);
+        if (parsed) return { ...parsed, selection: profileFormat.selection };
+      }
+      log.tag("assembly").warn("format selection '%s' points at a missing custom template — falling back to auto", profileFormat.selection);
+      return { mode: GENERATION_FORMAT_MODE.auto };
+    }
+    return resolveEffectiveGenerationFormat(profileFormat, presetFormat);
+  }
+
   async buildPipelineContext(input: AssemblePromptForChatInput): Promise<BuiltPipelineContext> {
     const chat = await this.stores.chats.getById(input.chatId);
     if (!chat) {
@@ -620,7 +658,13 @@ export class PromptAssemblyService {
             enhanceDefinitions: promptPreset.enhanceDefinitions,
             advancedMode: promptPreset.advancedMode,
             mergeConsecutiveRoles: promptPreset.mergeConsecutiveRoles,
-            generationFormat: promptPreset.generationFormat,
+            // LS-10 decision (c): the profile's format WINS when set; otherwise
+            // the preset's format keeps applying (the fallback — no silent
+            // behavior change for existing preset-borne templates). Custom
+            // selections are inlined HERE (the store lookup lives in this
+            // service — the executors stay store-free); a missing custom
+            // degrades to plain auto + a warning, never to a broken generation.
+            generationFormat: (await this.resolveEffectiveFormat(input.providerGenerationFormat, promptPreset.generationFormat)) ?? undefined,
             customInjections: promptPreset.customInjections,
             promptOrder: promptPreset.promptOrder,
           }
@@ -730,4 +774,27 @@ function mapPromptLayerDto(layer: {
     injectionDepth: layer.injectionDepth,
     modes: layer.modes,
   };
+}
+
+/** Structural validation of a stored format-template payload (the loose JSON
+ *  record from the format-templates store) into a GenerationFormat — string
+ *  fields stay strings, everything else is dropped. A malformed payload
+ *  degrades to null (the caller falls back to auto), never throws. */
+function sanitizeTemplatePayload(payload: Record<string, unknown>): GenerationFormat | null {
+  const mode = payload["mode"];
+  if (mode !== "manual" && mode !== "auto") return null;
+  const out: GenerationFormat = { mode };
+  for (const key of [
+    "inputSequence", "outputSequence", "firstOutputSequence", "lastOutputSequence",
+    "systemSequence", "systemSequencePrefix", "systemSequenceSuffix",
+    "inputSuffix", "outputSuffix", "systemSuffix", "selection",
+  ] as const) {
+    const value = payload[key];
+    if (typeof value === "string") out[key] = value;
+  }
+  if (typeof payload.wrap === "boolean") out.wrap = payload.wrap;
+  if (payload.namesBehavior === "force" || payload.namesBehavior === "always" || payload.namesBehavior === "never") {
+    out.namesBehavior = payload.namesBehavior;
+  }
+  return out;
 }

@@ -3,8 +3,8 @@ import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { pickContextSourceModelId, shouldAutoFillContextBudget } from "../../lib/context-autofill.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord, ProxyRecord } from "../../app-client.js";
-import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
-import type { ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
+import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveAutoTemplateSource, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
+import type { ProviderGenerationFormat, ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
@@ -107,6 +107,10 @@ export interface FormState {
    *  panel's dropdown pre-selection + dirty-dot baseline. Profile-level: never
    *  routes to a model overlay. null = "no set". */
   samplerSetId: string | null;
+  /** LS-10: the provider-side generation format (the format block under the
+   *  Чат/Текст switch). Null = unset — the active preset's format keeps
+   *  applying as the fallback source (supervisor decision (c)). */
+  generationFormat: ProviderGenerationFormat | null;
 }
 
 interface ModelOption {
@@ -190,6 +194,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     proxyMode: p.proxyMode ?? "inherit",
     proxyId: p.proxyId ?? null,
     samplerSetId: p.samplerSetId ?? null,
+    generationFormat: p.generationFormat ?? null,
   };
 }
 
@@ -852,8 +857,9 @@ export function ProviderModal({
 
                   <ProviderCapabilityPanel capabilities={capabilities} />
 
-                  {/* Generation format (LS-2a) — visible only for TC-capable presets. */}
-                  <ProviderGenerationModePanel form={form} updateForm={autoSaveField} />
+                  {/* Generation format (LS-2a) + the LS-10 format block (under the
+                      switch; always for native-TC KoboldCPP). */}
+                  <ProviderGenerationModePanel form={form} updateForm={autoSaveField} tcTemplateSource={resolveAutoTemplateSource(form.providerPreset)} />
 
                   {showVisionFallback && (
                     <div className="mt-4 border-t border-border2 pt-2">

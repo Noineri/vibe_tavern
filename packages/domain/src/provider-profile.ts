@@ -1,4 +1,5 @@
 import type { CoauthorTransport } from "./coauthor-transport-capabilities.js";
+import type { ProviderGenerationFormat } from "./generation-format.js";
 
 /** Generation mode (LOCAL_SUPPORT_PLAN LS-2a): how the server talks to the
  *  provider backend for this profile's generations.
@@ -133,6 +134,11 @@ export interface StoredProviderProfileRecord {
    *  applied. Set deletion clears the pointer (copy-on-select — the values live
    *  on the profile, the set is an inert template). */
   samplerSetId: string | null;
+  /** LS-10: the provider-side generation format (the format block in provider
+   *  settings). Null = unset — the active preset's format keeps applying as the
+   *  fallback source (supervisor decision (c) 2026-09-09; preset formats are
+   *  NOT migrated). */
+  generationFormat: ProviderGenerationFormat | null;
   createdAt: string;
   updatedAt: string;
 }

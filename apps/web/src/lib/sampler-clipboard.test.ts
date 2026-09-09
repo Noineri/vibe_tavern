@@ -26,6 +26,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     proxyMode: over.proxyMode ?? "inherit",
     proxyId: over.proxyId ?? null,
     samplerSetId: null,
+    generationFormat: null,
   };
 }
 

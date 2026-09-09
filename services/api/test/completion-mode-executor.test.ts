@@ -456,4 +456,66 @@ describe("implied stop hygiene (LS-9)", () => {
     const body = JSON.parse(String(completionCall.init.body)) as { stop?: string[] };
     expect(body.stop).toEqual(["MINE"]);
   });
+
+  it("LS-10 auto + builtin selection: THAT template's markers ride body.stop (the vt bucket)", async () => {
+    installFetchStub(() => new Response(JSON.stringify(COMPLETION_JSON), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+
+    // A builtin selection materializes its sequences (the assembly resolver
+    // does it live) — here the ChatML builtin shape inlined onto the format.
+    await nonstreamingProviderExecute(
+      makeInput({
+        profile: makeProfile({ stopSequences: ["MINE"] }),
+        prompt: makePrompt({
+          mode: "auto",
+          selection: "builtin:chatml",
+          inputSequence: "<|im_start|>user",
+          outputSequence: "<|im_start|>assistant",
+          systemSequence: "<|im_start|>system",
+          inputSuffix: "<|im_end|>\n",
+          outputSuffix: "<|im_end|>\n",
+          systemSuffix: "<|im_end|>\n",
+          wrap: true,
+        }),
+      }),
+    );
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as { stop?: string[]; prompt?: string };
+    expect(body.stop).toEqual(["MINE", "<|im_start|>system", "<|im_start|>user", "<|im_start|>assistant"]);
+    // The template rendered through the seam (not the default glue).
+    expect(body.prompt).toContain("<|im_start|>system");
+  });
+
+  it("LS-10 auto + builtin selection on a BACKEND-TEMPLATE profile (llama-server): vt markers STILL stop (the render path takes the seam, so applyTemplateUrl must not mute them)", async () => {
+    installFetchStub(() => new Response(JSON.stringify(COMPLETION_JSON), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+
+    await nonstreamingProviderExecute(
+      makeInput({
+        profile: makeLlamaCppProfile({ stopSequences: ["MINE"] }),
+        prompt: makePrompt({
+          mode: "auto",
+          selection: "builtin:chatml",
+          inputSequence: "<|im_start|>user",
+          outputSequence: "<|im_start|>assistant",
+          systemSequence: "<|im_start|>system",
+          inputSuffix: "<|im_end|>\n",
+          outputSuffix: "<|im_end|>\n",
+          systemSuffix: "<|im_end|>\n",
+          wrap: true,
+        }),
+      }),
+    );
+
+    // The vt-template short-circuits BEFORE the backend-template branch —
+    // no /apply-template round-trip happens at all.
+    expect(calls.some((c) => c.url.endsWith("/apply-template"))).toBe(false);
+    const body = JSON.parse(String(calls[0]!.init.body)) as { stop?: string[]; prompt?: string };
+    // The seam-authored markers ride stop alongside the user's own —
+    // a backend-template profile must not mute them (runaway regression).
+    expect(body.stop).toEqual(["MINE", "<|im_start|>system", "<|im_start|>user", "<|im_start|>assistant"]);
+    expect(body.prompt).toContain("<|im_start|>system");
+  });
 });

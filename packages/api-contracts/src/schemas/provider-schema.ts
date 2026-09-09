@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { COAUTHOR_TRANSPORT, GENERATION_MODE, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
 import { providerProxyModeSchema } from "./proxy-schema.js";
+import { generationFormatSchema as generationFormatSchemaRef } from "./prompt-preset-schema.js";
 
 /**
  * Per-sampler-field zod schema — the single source of the sampler wire surface.
@@ -101,6 +102,17 @@ const providerCoreSchema = z.object({
   visionModel: z.string().nullable().optional(),
   /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a). Nullable — null = "no set". */
   samplerSetId: z.string().nullable().optional(),
+  /** LS-10: the provider-side generation format (the format block in provider
+   *  settings). Nullable — null = unset (the active preset's format keeps
+   *  applying as the fallback source, supervisor decision (c) 2026-09-09). */
+  generationFormat: z
+    .object({
+      mode: z.enum(["auto", "manual"]),
+      selection: z.string().optional(),
+      format: generationFormatSchemaRef.optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const saveProviderDraftSchema = providerCoreSchema.extend({

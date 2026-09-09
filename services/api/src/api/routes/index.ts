@@ -24,6 +24,7 @@ import { createCoauthorSkillRoutes } from "./coauthor-skill.js";
 import { createCopilotSkillRoutes } from "./copilot-skill.js";
 import { createCopilotProfileRoutes } from "./copilot-profile.js";
 import { createSamplerSetRoutes } from "./sampler-set.js";
+import { createFormatTemplateRoutes } from "./format-template.js";
 import { createDiceRoutes } from "./dice.js";
 import { createExperienceRoutes } from "./experience.js";
 import { createExperienceCopilotRoutes } from "./experience-copilot.js";
@@ -59,6 +60,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createCopilotSkillRoutes(runtime.copilotSkills))
     .route("/", createCopilotProfileRoutes(runtime.copilotProfiles))
     .route("/", createSamplerSetRoutes(runtime.samplerSets))
+    .route("/", createFormatTemplateRoutes(runtime.formatTemplates))
   ;
 }
 

@@ -498,6 +498,13 @@
       "when": 1788964254297,
       "tag": "0070_cheerful_mother_askani",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1788967492762,
+      "tag": "0071_outstanding_rick_jones",
+      "breakpoints": true
     }
   ]
 }

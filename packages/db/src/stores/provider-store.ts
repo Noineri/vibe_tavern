@@ -1,4 +1,4 @@
-import { COAUTHOR_TRANSPORT, GENERATION_MODE, type CoauthorTransport, type GenerationMode, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay } from '@vibe-tavern/domain';
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, type CoauthorTransport, type GenerationMode, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay, type ProviderGenerationFormat } from '@vibe-tavern/domain';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -110,6 +110,8 @@ export interface CreateProviderData {
   visionModel?: string | null;
   /** Last-applied sampler set (LOCAL_SUPPORT_PLAN LS-5a). Nullable — null clears the pointer ("no set"). */
   samplerSetId?: string | null;
+  /** LS-10: the provider-side generation format (the format block). Nullable — null clears back to the preset fallback. */
+  generationFormat?: ProviderGenerationFormat | null;
   /** Per-provider proxy selection policy. */
   proxyMode?: ProviderProxyMode;
   proxyId?: string | null;
@@ -232,6 +234,7 @@ export class ProviderStore {
         proxyId: data.proxyId ?? null,
         visionModel: data.visionModel ?? null,
         samplerSetId: data.samplerSetId ?? null,
+        generationFormatJson: data.generationFormat ? JSON.stringify(data.generationFormat) : '',
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -299,6 +302,7 @@ export class ProviderStore {
     if (data.proxyId !== undefined) values.proxyId = data.proxyId;
     if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
     if (data.samplerSetId !== undefined) values.samplerSetId = data.samplerSetId ?? null;
+    if (data.generationFormat !== undefined) values.generationFormatJson = data.generationFormat ? JSON.stringify(data.generationFormat) : '';
 
     const [row] = await this.db
       .update(providerProfiles)
@@ -424,6 +428,7 @@ export class ProviderStore {
         proxyId: original.proxyId,
         visionModel: original.visionModel,
         samplerSetId: original.samplerSetId,
+        generationFormatJson: original.generationFormatJson,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -711,6 +716,7 @@ export class ProviderStore {
       isActive: row.isActive === 1,
       visionModel: row.visionModel ?? null,
       samplerSetId: row.samplerSetId ?? null,
+      generationFormat: parseGenerationFormat(row.generationFormatJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -743,5 +749,20 @@ export class ProviderStore {
       contextLength: row.contextLength,
       createdAt: row.createdAt,
     };
+  }
+}
+
+/** Parse the LS-10 provider generation-format JSON column, defending against
+ *  malformed rows (empty string = unset = the preset fallback applies). */
+function parseGenerationFormat(text: string): ProviderGenerationFormat | null {
+  if (!text) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const record = parsed as { mode?: unknown };
+    if (record.mode !== 'auto' && record.mode !== 'manual') return null;
+    return parsed as ProviderGenerationFormat;
+  } catch {
+    return null;
   }
 }

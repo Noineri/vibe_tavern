@@ -51,6 +51,10 @@ export type NamesBehavior = (typeof NAMES_BEHAVIOR)[keyof typeof NAMES_BEHAVIOR]
  */
 export interface GenerationFormat {
 	mode: GenerationFormatMode;
+	/** LS-10: which template applies in auto mode (provider-side format
+	 *  block): "backend" | "builtin:<id>" | "custom:<id>". Absent on plain
+	 *  presets — only the provider format block's auto mode sets it. */
+	selection?: FormatTemplateSelection;
 	/** Prefix for user messages (ST `input_sequence`, e.g. `<|im_start|>user`). */
 	inputSequence?: string;
 	/** Prefix for assistant messages (ST `output_sequence`). */
@@ -77,4 +81,149 @@ export interface GenerationFormat {
 	/** ST `names_behavior` near 1:1 (see {@link NAMES_BEHAVIOR} for the current
 	 *  rendering semantics). */
 	namesBehavior?: NamesBehavior;
+}
+
+/**
+ * LS-10: WHICH template applies when the format mode is `auto`. Stored on the
+ * provider profile (the format block lives in provider settings, owner option
+ * A 2026-09-09):
+ *
+ *  - `"backend"` (or absent) — the backend's own glue: llama-server's Jinja
+ *    via `/apply-template`, the documented default template elsewhere, and
+ *    the native serializer on KoboldCPP (today's `auto` semantics).
+ *  - `"builtin:<id>"` — a VT-curated built-in ({@link BUILTIN_FORMAT_TEMPLATES})
+ *    applied without opening the manual editor (owner: the template dropdown
+ *    is available already in auto).
+ *  - `"custom:<id>"` — a user-saved template from the format-template library
+ *    (the LS-5 sampler-set pattern). The ASSEMBLY resolves the id into the
+ *    concrete sequences before the handoff (the executors stay store-free).
+ */
+export type FormatTemplateSelection = string;
+
+/**
+ * The provider-side generation format (LOCAL_SUPPORT_PLAN LS-10): the format
+ * block's stored shape on a provider profile. Decision (c) fallback semantics
+ * live in {@link resolveEffectiveGenerationFormat} — this shape is ONLY what
+ * the pane persists.
+ */
+export interface ProviderGenerationFormat {
+	mode: GenerationFormatMode;
+	/** Auto-mode template selection (see {@link FormatTemplateSelection}). */
+	selection?: FormatTemplateSelection;
+	/** Manual-mode sequences (the same shape a preset stores; the inner mode
+	 *  is redundant-but-harmless and kept for schema reuse). */
+	format?: GenerationFormat;
+}
+
+/**
+ * VT-curated built-in format templates (LS-10 dropdown, selectable in auto).
+ * Sequences VERIFIED against authoritative sources — noted per entry; a wrong
+ * builtin silently mangles prompts, so a template without a verified source
+ * is deliberately NOT shipped. Mistral note: NO system role in any Mistral
+ * instruct version — the system prompt rides unprefixed above the first user
+ * turn (ST `system_same_as_user`); V1 differs only in leading spaces, so the
+ * current V2/V3 shape ships (the current-generation standard).
+ */
+export const BUILTIN_FORMAT_TEMPLATES: ReadonlyArray<{
+	id: string;
+	label: string;
+	format: GenerationFormat;
+	/** Where the sequences come from — rendered into the UI note + tests. */
+	source: string;
+}> = [
+	{
+		id: "chatml",
+		label: "ChatML",
+		source: "ST instruct/ChatML.json (owner install, 2026-09-09); cross-checked against the live Qwen jinja via llama-server /props",
+		format: {
+			mode: GENERATION_FORMAT_MODE.manual,
+			inputSequence: "<|im_start|>user",
+			outputSequence: "<|im_start|>assistant",
+			systemSequence: "<|im_start|>system",
+			inputSuffix: "<|im_end|>\n",
+			outputSuffix: "<|im_end|>\n",
+			systemSuffix: "<|im_end|>\n",
+			firstOutputSequence: "",
+			lastOutputSequence: "",
+			systemSequencePrefix: "",
+			systemSequenceSuffix: "",
+			wrap: true,
+			namesBehavior: NAMES_BEHAVIOR.always,
+		},
+	},
+	{
+		id: "llama3",
+		label: "Llama 3 Instruct",
+		source: "ST instruct/Llama 3 Instruct.json (owner install, 2026-09-09)",
+		format: {
+			mode: GENERATION_FORMAT_MODE.manual,
+			inputSequence: "<|start_header_id|>user<|end_header_id|>\n\n",
+			outputSequence: "<|start_header_id|>assistant<|end_header_id|>\n\n",
+			systemSequence: "<|start_header_id|>system<|end_header_id|>\n\n",
+			inputSuffix: "<|eot_id|>",
+			outputSuffix: "<|eot_id|>",
+			systemSuffix: "<|eot_id|>",
+			firstOutputSequence: "",
+			lastOutputSequence: "",
+			wrap: false,
+			namesBehavior: NAMES_BEHAVIOR.always,
+		},
+	},
+	{
+		id: "mistral",
+		label: "Mistral (V2/V3)",
+		source: "ST instruct/Mistral V2 & V3.json (owner's SillyTavern install, 2026-09-09); cross-checked against Mistral's documented format — [INST] … [/INST] … </s>, no system role (the system prompt rides unprefixed above the first user turn)",
+		format: {
+			mode: GENERATION_FORMAT_MODE.manual,
+			inputSequence: "[INST] ",
+			outputSequence: "[/INST] ",
+			lastOutputSequence: "[/INST]",
+			systemSequence: "",
+			outputSuffix: "</s>",
+			wrap: false,
+			namesBehavior: NAMES_BEHAVIOR.always,
+		},
+	},
+];
+
+/** Prefix of a custom-template selection pointing at the format-template library. */
+export const CUSTOM_TEMPLATE_SELECTION_PREFIX = "custom:";
+
+/** Parse a selection into its built-in, when it selects one. */
+export function builtinFormatTemplateBySelection(selection: string | null | undefined): (typeof BUILTIN_FORMAT_TEMPLATES)[number] | null {
+	if (!selection?.startsWith("builtin:")) return null;
+	const id = selection.slice("builtin:".length);
+	return BUILTIN_FORMAT_TEMPLATES.find((tpl) => tpl.id === id) ?? null;
+}
+
+/**
+ * LS-10 decision (c) — the effective generation format (supervisor-approved
+ * 2026-09-09): the PROFILE's format wins when set (option A ownership — the
+ * moment anything is set here it takes over); otherwise the ACTIVE PRESET's
+ * format keeps applying (the pre-LS-10 behavior — an imported preset-borne
+ * template keeps shaping generations until the user touches the new UI; no
+ * silent behavior change). Pure so both the assembly service and tests pin
+ * the exact rule.
+ */
+export function resolveEffectiveGenerationFormat(
+	profileFormat: ProviderGenerationFormat | null | undefined,
+	presetFormat: GenerationFormat | null | undefined,
+): GenerationFormat | null {
+	if (profileFormat) {
+		if (profileFormat.mode === GENERATION_FORMAT_MODE.manual) {
+			return profileFormat.format ?? { mode: GENERATION_FORMAT_MODE.auto };
+		}
+		// Auto: materialize the selected built-in's sequences onto the format so
+		// the handoff builder sees a self-contained object. Backend selection (or
+		// absent) carries no sequences — the adapters keep their auto semantics.
+		// Custom selections stay UNRESOLVED here (the store lookup lives in
+		// PromptAssemblyService, which owns the stores); the service inlines the
+		// payload and keeps the selection marker.
+		const selection = profileFormat.selection ?? "backend";
+		if (selection === "backend") return { mode: GENERATION_FORMAT_MODE.auto };
+		const builtin = builtinFormatTemplateBySelection(selection);
+		if (builtin) return { ...builtin.format, selection };
+		return { mode: GENERATION_FORMAT_MODE.auto, selection };
+	}
+	return presetFormat ?? null;
 }

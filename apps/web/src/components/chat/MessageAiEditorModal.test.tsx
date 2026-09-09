@@ -147,6 +147,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     customSamplers: false, isActive: false,
     proxyMode: "inherit", proxyId: null,
     samplerSetId: null,
+    generationFormat: null,
     createdAt: "2026-01-01", updatedAt: "2026-01-01",
     hasStoredApiKey: true,
     ...over,

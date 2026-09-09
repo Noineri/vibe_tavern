@@ -48,7 +48,7 @@ function form(over: Partial<FormState> = {}): FormState {
 describe("ProviderGenerationModePanel (LS-2a «Формат генерации»)", () => {
   it("renders for a TC-capable preset (lmstudio) with both options and the chat default selected", () => {
     const { getByText, getByRole } = render(
-      <ProviderGenerationModePanel form={form()} updateForm={mock()} />,
+      <ProviderGenerationModePanel form={form()} updateForm={mock()} tcTemplateSource="default" />,
     );
     expect(getByText("generation_format")).toBeTruthy();
     const chat = getByRole("radio", { name: "generation_mode_chat" });
@@ -58,22 +58,27 @@ describe("ProviderGenerationModePanel (LS-2a «Формат генерации»
 
   it("is hidden for presets without a completion endpoint (cloud openai preset — owner: toggle is local-only)", () => {
     const { queryByText } = render(
-      <ProviderGenerationModePanel form={form({ providerPreset: "openai" })} updateForm={mock()} />,
+      <ProviderGenerationModePanel form={form({ providerPreset: "openai" })} updateForm={mock()} tcTemplateSource="default" />,
     );
     expect(queryByText("generation_format")).toBeNull();
   });
 
-  it("is hidden for koboldcpp (always native text completion — a toggle is meaningless there)", () => {
-    const { queryByText } = render(
-      <ProviderGenerationModePanel form={form({ providerPreset: "koboldcpp" })} updateForm={mock()} />,
+  // LS-10: the mode switch stays hidden for koboldcpp (native TC — a toggle
+  // is meaningless), but the FORMAT BLOCK now renders ALWAYS there (owner
+  // option A — the one always-TC provider gets a live format surface).
+
+  it("renders the format block (not the switch) for koboldcpp — native TC, always visible (LS-10)", () => {
+    const { queryByText, getByTestId } = render(
+      <ProviderGenerationModePanel form={form({ providerPreset: "koboldcpp" })} updateForm={mock()} tcTemplateSource="native" />,
     );
     expect(queryByText("generation_format")).toBeNull();
+    expect(getByTestId("provider-format-panel")).toBeTruthy();
   });
 
   it("switching to Text completion writes the mode through updateForm (the silent flip)", () => {
     const updateForm = mock(<K extends keyof FormState>(k: K, v: FormState[K]) => {});
     const { getByRole } = render(
-      <ProviderGenerationModePanel form={form()} updateForm={updateForm} />,
+      <ProviderGenerationModePanel form={form()} updateForm={updateForm} tcTemplateSource="default" />,
     );
     fireEvent.click(getByRole("radio", { name: "generation_mode_completion" }));
     expect(updateForm).toHaveBeenCalledWith("generationMode", GENERATION_MODE.completion);

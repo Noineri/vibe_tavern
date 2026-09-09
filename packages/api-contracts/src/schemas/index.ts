@@ -77,6 +77,18 @@ export type {
   SamplerSetImport,
 } from "./sampler-set-schema.js";
 export {
+  formatTemplateSchema,
+  formatTemplateListSchema,
+  createFormatTemplateSchema,
+  updateFormatTemplateSchema,
+} from "./format-template-schema.js";
+export type {
+  FormatTemplate,
+  FormatTemplateList,
+  FormatTemplateCreate,
+  FormatTemplateUpdate,
+} from "./format-template-schema.js";
+export {
   providerProxyModeSchema,
   saveProxySchema,
   updateProxySchema,

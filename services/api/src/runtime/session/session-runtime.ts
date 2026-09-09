@@ -905,6 +905,10 @@ export function pickBootstrapChatId<T extends string>(
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,
 			priorSummaries: options?.priorSummaries,
+			// LS-10: the ACTIVE profile's stored generation format — the assembly
+			// applies the decision-(c) resolution (profile wins when set, else the
+			// preset fallback) and inlines custom-template selections.
+			providerGenerationFormat: profile?.generationFormat ?? null,
 		});
 	}
 

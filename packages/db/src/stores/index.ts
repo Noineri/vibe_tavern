@@ -154,3 +154,10 @@ export type {
   QuotaSnapshotRecord,
   UpsertQuotaSnapshotData,
 } from './quota-store.js';
+export { FormatTemplateStore } from './format-template-store.js';
+export type {
+  FormatTemplateRow,
+  FormatTemplatePayload,
+  CreateFormatTemplateData,
+  UpdateFormatTemplateData,
+} from './format-template-store.js';

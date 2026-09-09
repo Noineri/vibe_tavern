@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderGenerationFormat, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -107,6 +107,10 @@ export interface ClientProviderProfileRecord {
 	isActive: boolean;
 	/** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a) — panel dropdown pre-selection + dirty-dot baseline. */
 	samplerSetId: string | null;
+	/** LS-10: the provider-side generation format (the format block in provider
+	 *  settings). Null = unset — the active preset's format keeps applying as
+	 *  the fallback source (supervisor decision (c) 2026-09-09). */
+	generationFormat: ProviderGenerationFormat | null;
 	createdAt: string;
 	updatedAt: string;
 	hasStoredApiKey: boolean;

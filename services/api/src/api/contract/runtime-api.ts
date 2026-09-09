@@ -1009,6 +1009,16 @@ export interface SamplerSetRuntimeApi {
 	importSamplerSet: (input: import("@vibe-tavern/api-contracts").SamplerSetImport) => Promise<{ set: import("@vibe-tavern/api-contracts").SamplerSet; notes: string[] }>;
 }
 
+/** Named custom format templates (LOCAL_SUPPORT_PLAN LS-10) — the small-resource
+ *  CRUD pattern (SamplerSetRuntimeApi minus the import endpoint; ST instruct
+ *  import lands through the pane's own file picker, not a raw-JSON route). */
+export interface FormatTemplateRuntimeApi {
+	listFormatTemplates: () => Promise<import("@vibe-tavern/api-contracts").FormatTemplateList>;
+	createFormatTemplate: (input: import("@vibe-tavern/api-contracts").FormatTemplateCreate) => Promise<import("@vibe-tavern/api-contracts").FormatTemplate>;
+	updateFormatTemplate: (id: string, input: import("@vibe-tavern/api-contracts").FormatTemplateUpdate) => Promise<import("@vibe-tavern/api-contracts").FormatTemplate>;
+	deleteFormatTemplate: (id: string) => Promise<void>;
+}
+
 export interface SttRuntimeApi {
 	listSttProfiles: () => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord[]>;
 	getSttProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
@@ -1066,4 +1076,5 @@ export interface RuntimeApi {
 	experienceCopilot: ExperienceCopilotRuntimeApi;
 	copilotProfiles: CopilotProfileRuntimeApi;
 	samplerSets: SamplerSetRuntimeApi;
+	formatTemplates: FormatTemplateRuntimeApi;
 }

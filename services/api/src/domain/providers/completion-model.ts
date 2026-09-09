@@ -73,9 +73,13 @@ interface PendingPromptHolder {
 }
 
 /**
- * The template SOURCE for the flat string (LOCAL_SUPPORT_PLAN LS-3b/c):
- * - `manual` — the preset's manual sequences (Generation Format tab), rendered
- *   by the serialization seam.
+ * The template SOURCE for the flat string (LOCAL_SUPPORT_PLAN LS-3b/c + LS-10):
+ * - `manual` — the user's own sequences (preset fallback or a profile manual
+ *   format), rendered by the serialization seam. Implied stops: NONE (the
+ *   user authors the template — owner rule, LS-9).
+ * - `vt-template` — a VT-curated template (a builtin from the dropdown or a
+ *   saved custom, LS-10) applied WITHOUT opening the manual editor. Implied
+ *   stops: THAT template's markers (the auto bucket — owner rule).
  * - `auto`   — resolved per provider capability: the backend's own chat
  *   template when the protocol exposes one (llama-server `/apply-template`,
  *   verified live on b10786), else the documented default template.
@@ -83,6 +87,7 @@ interface PendingPromptHolder {
  */
 export type CompletionFormatSource =
 	| { kind: "manual"; template: CompletionFormatTemplate }
+	| { kind: "vt-template"; template: CompletionFormatTemplate }
 	| { kind: "auto" };
 
 /** Timeout for the backend template render (LS-3c) — the render is a local
@@ -148,9 +153,9 @@ async function renderBackendTemplate(
 	}
 }
 
-/** Resolve the flat string for a call per the template source (LS-3b/c):
- *  manual preset sequences → seam renderer; auto → backend template when the
- *  protocol exposes one, else the documented default template. */
+/** Resolve the flat string for a call per the template source (LS-3b/c +
+ *  LS-10): manual or a VT-curated template → seam renderer; auto → backend
+ *  template when the protocol exposes one, else the documented default. */
 async function renderFlatPrompt(
 	prompt: LanguageModelV4CallOptions["prompt"],
 	format: CompletionFormatSource | undefined,
@@ -158,6 +163,9 @@ async function renderFlatPrompt(
 	transport: ProviderFetch,
 ): Promise<string> {
 	if (format?.kind === "manual") {
+		return serializeCompletionPrompt(prompt, { template: format.template });
+	}
+	if (format?.kind === "vt-template") {
 		return serializeCompletionPrompt(prompt, { template: format.template });
 	}
 	if (applyTemplateUrl) {
@@ -300,16 +308,24 @@ export function resolveOpenAiCompatLanguageModel(options: OpenAiCompatModelOptio
 	// splicing fetch (reader, at request-send time). Single-flight: one model
 	// instance is created per resolveModel call, one generation per instance.
 	const pending: PendingPromptHolder = { prompt: null };
-	// LS-9 (owner rule): on the seam's OWN default template (auto without a
-	// backend template) the role markers are VT-authored — they become implied
-	// stops. MANUAL = the user's template, nothing injected; backendTemplate =
-	// the model's own Jinja renders the turn markers and the model's trained
-	// EOS ends the turn there (why llama-server never ran away) — no
-	// client-side markers exist to add.
+	// LS-9/LS-10 (owner rule): implied stops depend on WHO authored the format.
+	//  - vt-template (a builtin/custom selected in auto) → THAT template's
+	//    markers — REGARDLESS of applyTemplateUrl: the render path serializes
+	//    vt-template through the seam BEFORE the backend-template branch, so
+	//    the markers in the flat string are VT-authored and must stop.
+	//  - manual → nothing injected (the user owns the template);
+	//  - auto + backendTemplate capability → the model's own Jinja renders the
+	//    turn markers and its trained EOS ends the turn — no client-side
+	//    markers exist to add;
+	//  - auto on the seam's own default template → the default template's
+	//    role markers.
+	const source = options.completionFormat;
 	const impliedStops =
-		options.completionFormat?.kind === "manual" || options.applyTemplateUrl !== undefined
-			? []
-			: templateStopMarkers(DEFAULT_COMPLETION_TEMPLATE);
+		source?.kind === "vt-template"
+			? templateStopMarkers(source.template)
+			: source?.kind === "manual" || options.applyTemplateUrl !== undefined
+				? []
+				: templateStopMarkers(DEFAULT_COMPLETION_TEMPLATE);
 	const splicingFetch: ProviderFetch = createSplicingFetch(pending, options.fetch ?? fetch, impliedStops);
 	const completionProvider = createOpenAICompatible({ ...shared, fetch: splicingFetch });
 
