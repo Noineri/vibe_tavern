@@ -222,6 +222,22 @@ describe("sampler params", () => {
     expect(vllmCaps.dryPenaltyLastN).toBe(false);
   });
 
+  it("resolves openai_local for the LM Studio preset (B4, local pass-through)", () => {
+    expect(resolveSamplerSet("lmstudio", PROVIDER_TYPE.openaiCompat)).toBe("openai_local");
+    const caps = resolveSamplerCapabilities("lmstudio", PROVIDER_TYPE.openaiCompat);
+    // The full local surface applies unchanged — no new set, no adapter work
+    expect(caps.topK).toBe(true);
+    expect(caps.minP).toBe(true);
+    expect(caps.dryMultiplier).toBe(true);
+    expect(caps.xtcProbability).toBe(true);
+    expect(caps.logitBias).toBe(true);
+    // B1/B2 llama-server-specific fields stay out until a live probe confirms
+    // acceptance (same policy as Ollama)
+    expect(caps.adaptiveTarget).toBe(false);
+    expect(caps.topNSigma).toBe(false);
+    expect(caps.dryPenaltyLastN).toBe(false);
+  });
+
   it("keeps bannedStrings (antislop) exclusive to koboldcpp_native (B3)", () => {
     expect(resolveSamplerCapabilities("koboldcpp", PROVIDER_TYPE.koboldCpp).bannedStrings).toBe(true);
     // llama-server surface and the shared openai_local set have no upstream equivalent

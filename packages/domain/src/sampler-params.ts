@@ -401,6 +401,10 @@ const LOCAL_OPENAI_COMPAT_PRESETS = new Set([
   "ooba",
   "tabby",
   "aphrodite",
+  // LM Studio (LOCAL_SAMPLERS_ADDITION_REPORT B4): its /v1 API is a pass-through
+  // to the GGUF engine — OpenAI-standard samplers plus the llama.cpp extras are
+  // forwarded, unknown fields ignored (V1 probe on 0.4.23: DRY applied live).
+  "lmstudio",
 ]);
 
 /**

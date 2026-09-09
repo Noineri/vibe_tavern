@@ -38,6 +38,7 @@ const PRESET_TO_PROVIDER_TYPE: Record<string, ProviderType> = {
   ooba: PROVIDER_TYPE.openaiCompat,
   tabby: PROVIDER_TYPE.openaiCompat,
   aphrodite: PROVIDER_TYPE.openaiCompat,
+  lmstudio: PROVIDER_TYPE.openaiCompat,
 };
 
 export function normalizeProviderType(raw: string): ProviderType {
@@ -173,7 +174,7 @@ export function resolveLogitBiasSupport(
       : { supported: false, reason: "zai_model_not_recognized" };
   }
 
-  if (["ollama", "llamacpp", "vllm", "ooba", "tabby", "aphrodite", "local"].includes(inferredPreset)) {
+  if (["ollama", "llamacpp", "vllm", "ooba", "tabby", "aphrodite", "lmstudio", "local"].includes(inferredPreset)) {
     return { supported: true, reason: "local_known_tokenizer", tokenizerHint };
   }
 

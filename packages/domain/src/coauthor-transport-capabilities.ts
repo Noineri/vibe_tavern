@@ -33,6 +33,7 @@ export const PROVIDER_PRESET_ID = {
   ooba: "ooba",
   tabby: "tabby",
   aphrodite: "aphrodite",
+  lmstudio: "lmstudio",
 } as const;
 
 export type ProviderPresetId = typeof PROVIDER_PRESET_ID[keyof typeof PROVIDER_PRESET_ID];
@@ -139,6 +140,7 @@ export const COAUTHOR_TRANSPORT_CAPABILITIES = {
     caveat: COAUTHOR_TRANSPORT_CAVEAT.tabbyToolsUnsupported,
   },
   aphrodite: chatCompletions,
+  lmstudio: chatCompletions,
 } as const satisfies Record<ProviderPresetId, CoauthorTransportCapability>;
 
 export function getCoauthorTransportCapability(presetId: string): CoauthorTransportCapability | null {
