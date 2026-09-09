@@ -70,6 +70,7 @@ Before changing architecture, read the relevant doc — each one explains *why* 
 | API routes & contracts | [`docs/architecture/api-reference.md`](./docs/architecture/api-reference.md) |
 | Prompt assembly | [`docs/architecture/prompt-pipeline.md`](./docs/architecture/prompt-pipeline.md) |
 | Lorebooks & activation | [`docs/architecture/lorebooks.md`](./docs/architecture/lorebooks.md) |
+| Provider sampler support (sets, emission rules, probes) | [`docs/architecture/provider-sampler-research.md`](./docs/architecture/provider-sampler-research.md) |
 | Scene Tracker (schema DSL, JSON/XML injection, AI-gen, rendering, header matrix) | [`docs/architecture/scene-tracker.md`](./docs/architecture/scene-tracker.md) |
 | Experience Copilot (authoring assistant: tools, ask split-turn, todo, skills, profiles) | [`docs/architecture/experience-copilot.md`](./docs/architecture/experience-copilot.md) |
 | Scripts (sandbox, lifecycle, templates) | [`docs/architecture/scripts.md`](./docs/architecture/scripts.md) |
