@@ -8,6 +8,7 @@ import {
 	type ActiveLoreEntry,
 	type RetrievedMemoryHit,
 	type CustomInjection,
+	type GenerationFormat,
 	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
@@ -66,6 +67,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		/** Whether this preset is in advanced (canvas) mode. */
 		advancedMode: boolean;
 		mergeConsecutiveRoles: boolean;
+		/** Generation format (LOCAL_SUPPORT_PLAN LS-3a). Absent = auto. */
+		generationFormat?: GenerationFormat;
 		customInjections: CustomInjection[];
 		promptOrder: PromptOrderEntry[];
 	} | null> {
@@ -87,6 +90,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			enhanceDefinitions: preset.enhanceDefinitionsPrompt,
 			advancedMode: preset.advancedMode,
 			mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
+			generationFormat: preset.generationFormat,
 			customInjections: preset.customInjections,
 			promptOrder: preset.promptOrder,
 		};

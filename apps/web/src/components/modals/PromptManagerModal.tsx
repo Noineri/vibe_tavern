@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import type { AutoTemplateSource, CustomInjection, GenerationFormat, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
@@ -10,7 +10,7 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
-import { serializeStPreset, type VibeTavernPresetExtension, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
+import { serializeStPreset, type VibeTavernPresetExtension, parseStandaloneRegexJson, serializeStandaloneRegexJson, detectStFileKind, parseStInstruct, parseStContext, parseStSysprompt } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
 import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
@@ -25,6 +25,7 @@ import {
   type CanvasSummaryEntry,
 } from "../../lib/prompt-canvas-summary.js";
 import { RegexPresetList } from "../settings/prompt/RegexPresetList.js";
+import { GenerationFormatPane } from "../settings/prompt/GenerationFormatPane.js";
 import { RegexPresetEditor, regexDraftFromRecord, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/RegexPresetEditor.js";
 import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
 import {
@@ -45,6 +46,7 @@ import {
 import { invalidateActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
 import { downloadTextFile } from "../../lib/download.js";
+import { updateProviderProfileAction } from "../../stores/api-actions/provider-actions.js";
 import { applyTargetFlags, type RegexPlacement, type RegexSubstituteMode } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 
@@ -86,7 +88,7 @@ export async function importStandaloneRegexText(
   return created;
 }
 
-type PromptManagerTab = "presets" | "regex" | "service";
+type PromptManagerTab = "presets" | "format" | "regex" | "service";
 
 export type DraftData = {
   name: string;
@@ -107,6 +109,8 @@ export type DraftData = {
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   mergeConsecutiveRoles: boolean;
+  /** Generation format (LS-3a). Null = never configured (= auto). */
+  generationFormat: GenerationFormat | null;
 };
 
 interface PromptManagerModalProps {
@@ -122,6 +126,15 @@ interface PromptManagerModalProps {
   onReorder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<boolean>;
   providerProfiles?: Array<{ id: string; name: string }>;
   prefillSupported?: boolean;
+  /** Where the ACTIVE provider profile's AUTO generation format takes its
+   *  template when TC mode is on (`resolveAutoTemplateSource`). Null = TC
+   *  mode is not active — the format tab renders greyed with a hint
+   *  (LOCAL_SUPPORT_PLAN LS-3d, owner decision 2026-09-09). */
+  tcTemplateSource?: AutoTemplateSource | null;
+  /** The TC-active provider profile — instruct imports append the ST
+   *  `stop_sequence` values here (the EXISTING provider stop-sequences
+   *  setting; owner correction 2026-09-09 — no duplicate control). */
+  tcProfile?: { id: string; stopSequences: string[] } | null;
   characterFields?: {
     systemPrompt: string | null;
     postHistoryInstructions: string | null;
@@ -171,6 +184,7 @@ const emptyDraft: DraftData = {
   promptOrder: [],
   advancedMode: false,
   mergeConsecutiveRoles: false,
+  generationFormat: null,
 };
 
 /**
@@ -184,9 +198,12 @@ const emptyDraft: DraftData = {
  * (PRESET_COPY_DELETE_CORRUPTION bug 1). */
 export function buildDuplicatePayload(draft: DraftData, fallbackName: string) {
   const copy = structuredClone(draft);
+  // A null format (= auto) is absent on the wire — strip it from the clone.
+  const { generationFormat, ...copyFields } = copy;
   return {
-    ...copy,
+    ...copyFields,
     aiAssistantPrompts: JSON.stringify(copy.aiAssistantPrompts),
+    ...(generationFormat ? { generationFormat } : {}),
     name: `${draft.name || fallbackName} (copy)`,
   };
 }
@@ -365,6 +382,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
   const [profileConfirmDeleteId, setProfileConfirmDeleteId] = useState<string | null>(null);
   const regexImportInputRef = useRef<HTMLInputElement>(null);
+  // LS-3d/e: a second hidden input for ST format/library imports (instruct /
+  // context / sysprompt) — kind detection is shape-based (detectStFileKind).
+  const formatImportInputRef = useRef<HTMLInputElement>(null);
   // R-7 list badge («Не применяется»): link counts for non-global presets —
   // a bind-mode preset with zero links applies in no chat. Fetched lazily per
   // unknown id; undefined = not loaded yet (badge withheld until known), so
@@ -584,6 +604,68 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   // reads text → the pure helper parses + creates (all disabled) → the list
   // refreshes and the display-regex cache is invalidated so a newly-created
   // preset is picked up immediately.
+  /** LS-3e point import: one file picker, kind detected by shape.
+   *  instruct → the preset's manual generation format (+ its stop_sequence
+   *  values appended to the ACTIVE TC provider profile's EXISTING
+   *  stop-sequences setting — owner correction, no duplicate control);
+   *  context → the mapped canvas order merged into the draft (+ import notes
+   *  surfaced as toasts, never silent); sysprompt → the main system field.
+   *  OpenAI Settings / VT exports keep their own presets-tab import. */
+  async function handleFormatImportFile(file: File) {
+    if (!input.activePresetId) {
+      toast.error(t("promptManager.format.importNoPreset"));
+      return;
+    }
+    try {
+      const text = await file.text();
+      const kind = detectStFileKind(JSON.parse(text));
+      if (kind === "instruct") {
+        const parsed = parseStInstruct(text);
+        updateDraft("generationFormat", parsed.format);
+        if (parsed.stopSequences.length > 0) {
+          if (input.tcProfile) {
+            const merged = [...input.tcProfile.stopSequences];
+            for (const stop of parsed.stopSequences) {
+              if (!merged.includes(stop)) merged.push(stop);
+            }
+            try {
+              await updateProviderProfileAction(input.tcProfile.id, { stopSequences: merged });
+              toast.success(t("promptManager.format.importStopsApplied", { n: String(parsed.stopSequences.length) }));
+            } catch {
+              toast.error(t("promptManager.format.importStopsFailed"));
+            }
+          } else {
+            toast.warning(t("promptManager.format.importStopsNoProfile"));
+          }
+        }
+        toast.success(t("promptManager.format.importedInstruct", { name: parsed.name }));
+      } else if (kind === "context") {
+        const parsed = parseStContext(text);
+        setDraft((d) => ({
+          ...d,
+          promptOrder: mergePromptOrder(d.promptOrder, parsed.promptOrder),
+          advancedMode: true,
+        }));
+        setDirty(true);
+        setSaveState("idle");
+        for (const note of parsed.notes) {
+          toast.info(note);
+        }
+        toast.success(t("promptManager.format.importedContext", { name: parsed.name }));
+      } else if (kind === "sysprompt") {
+        const parsed = parseStSysprompt(text);
+        updateDraft("system", parsed.content);
+        toast.success(t("promptManager.format.importedSysprompt", { name: parsed.name }));
+      } else if (kind === "openai_preset" || kind === "vt_export") {
+        toast.error(t("promptManager.format.importWrongTab"));
+      } else {
+        toast.error(t("promptManager.format.importUnknown"));
+      }
+    } catch {
+      toast.error(t("promptManager.format.importFailed"));
+    }
+  }
+
   function handleRegexImportFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -854,6 +936,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         promptOrder: activePreset.promptOrder ?? [],
         advancedMode: activePreset.advancedMode ?? false,
         mergeConsecutiveRoles: activePreset.mergeConsecutiveRoles ?? false,
+        generationFormat: activePreset.generationFormat ?? null,
       });
     } else {
       setDraft({ ...emptyDraft });
@@ -881,9 +964,14 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const handleSave = () => {
     if (!input.activePresetId || !dirty) return;
     setSaveState("saving");
+    const { generationFormat, ...draftFields } = draft;
     const patch = {
-      ...draft,
+      ...draftFields,
       aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
+      // LS-3a: null = the preset has no stored format — omit (absent = auto);
+      // a stored {mode:"auto"} object persists the explicit auto choice while
+      // keeping the manual fields for a future switch-back.
+      ...(generationFormat ? { generationFormat } : {}),
     };
     void input.onUpdate(input.activePresetId, patch).then(async (ok) => {
       if (!ok) {
@@ -1032,6 +1120,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           promptOrder: ext.promptOrder,
           advancedMode: ext.advancedMode,
           mergeConsecutiveRoles: ext.mergeConsecutiveRoles ?? false,
+          generationFormat: ext.generationFormat ?? null,
         });
         setDirty(true);
         setSaveState("idle");
@@ -1159,6 +1248,19 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         }}
       />
 
+      {/* LS-3d/e: hidden file input for ST format/library point import. */}
+      <input
+        ref={formatImportInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleFormatImportFile(file);
+          e.target.value = "";
+        }}
+      />
+
       <ServicePromptsPane
         active={activeTab === "service"}
         renderRowDrillDown={(id, selectRow) => (
@@ -1173,7 +1275,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         onClose={handleClose}
         title={t("prompt_manager_title")}
         subtitle={t("prompt_manager_sub")}
-        detailTitle={activeTab === "presets" ? t("prompt_manager_title") : activeTab === "regex" ? t("promptManager.regex.tabLabel") : t("promptManager.servicePrompts.tabLabel")}
+        detailTitle={activeTab === "presets" ? t("prompt_manager_title") : activeTab === "format" ? t("promptManager.format.tabLabel") : activeTab === "regex" ? t("promptManager.regex.tabLabel") : t("promptManager.servicePrompts.tabLabel")}
         dirty={activeTab === "service" ? slots.dirty : activeTab === "regex" ? regexDirty : dirty}
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
         detailClassName="p-3 sm:p-5"
@@ -1182,6 +1284,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         tabs={{
           items: [
             { value: "presets", label: t("promptManager.tabPresets") },
+            { value: "format", label: t("promptManager.format.tabLabel") },
             { value: "regex", label: t("promptManager.regex.tabLabel") },
             { value: "service", label: t("promptManager.servicePrompts.tabLabel") },
           ],
@@ -1262,6 +1365,18 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         detailContent={
           activeTab === "service"
             ? slots.detail
+            : activeTab === "format"
+              ? (
+                <div className={cn("py-1", isMobile ? "px-3" : "mx-5")}>
+                  <GenerationFormatPane
+                    hasPreset={activePreset != null}
+                    format={activePreset ? draft.generationFormat : null}
+                    onFormatChange={(next) => updateDraft("generationFormat", next)}
+                    tcTemplateSource={input.tcTemplateSource ?? null}
+                    onImportClick={() => formatImportInputRef.current?.click()}
+                  />
+                </div>
+              )
             : activeTab === "regex"
               ? (
             activeRegexProfile ? (

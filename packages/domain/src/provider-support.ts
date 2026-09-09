@@ -147,6 +147,31 @@ export function resolveTextCompletionSupport(providerPreset: string | null | und
   return { supported: false, reason: "provider_has_no_completion_endpoint" };
 }
 
+// ─── Auto generation-format template source (LOCAL_SUPPORT_PLAN LS-3c) ─────
+
+/**
+ * Where the AUTO generation-format mode takes its glue for a provider preset
+ * in TC mode:
+ * - `backend`  — llama-server's `POST /apply-template` offloads the model's
+ *   own Jinja chat template (verified live on llama-server b10786, 2026-09-09:
+ *   endpoint present, renders trailing assistant continuation exactly).
+ * - `default`  — the documented default template (VT's role-prefixed
+ *   serialization; the provider exposes no template API — LM Studio, ooba,
+ *   TabbyAPI, Aphrodite, vLLM, generic openai_compat).
+ * - `native`   — KoboldCPP builds its own prompt in its adapter; auto is a
+ *   no-op there.
+ * - `none`     — not a TC provider at all.
+ */
+export type AutoTemplateSource = "backend" | "default" | "native" | "none";
+
+export function resolveAutoTemplateSource(providerPreset: string | null | undefined): AutoTemplateSource {
+  const preset = (providerPreset ?? "").trim();
+  if (preset === PROVIDER_TYPE.koboldCpp) return "native";
+  if (preset === PROVIDER_TYPE.llamaCpp) return "backend";
+  if (TEXT_COMPLETION_PRESETS.has(preset)) return "default";
+  return "none";
+}
+
 export function resolveKnownTokenizerHint(model?: string | null): TokenizerHint | null {
   const m = (model ?? "").trim().toLowerCase();
   if (!m) return null;

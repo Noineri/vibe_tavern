@@ -182,16 +182,17 @@ function baseDraft(): DraftData {
     promptOrder: [{ identifier: "main", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "built_in" }],
     advancedMode: false,
     mergeConsecutiveRoles: false,
+    generationFormat: null,
   };
 }
 
 function advancedPreset(): PromptPresetDto {
-  const draft = baseDraft();
+  const { generationFormat, ...fields } = baseDraft();
   return {
-    ...draft,
+    ...fields,
     id: "preset-1",
     advancedMode: true,
-    aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
+    aiAssistantPrompts: JSON.stringify(fields.aiAssistantPrompts),
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
   };

@@ -634,6 +634,10 @@ export const ollamaProtocol: ProtocolAdapter = {
     logitBias: true,
     samplers: SAMPLER_SETS.openai_local,
     textCompletion: false,
+    // LS-3c: no backend template application on this protocol (see
+    // ProviderCapabilityFlags.backendTemplate) — AUTO falls to the documented
+    // default template inside the completion seam.
+    backendTemplate: false,
   },
   resolveModel(profile, model, fetch?: ProviderFetch) {
     const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:11434";

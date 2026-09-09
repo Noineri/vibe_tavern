@@ -89,6 +89,20 @@ describe("protocol registry", () => {
 			}
 		});
 
+		it("declares backendTemplate ONLY on llama-server (LOCAL_SUPPORT_PLAN LS-3c)", () => {
+			// AUTO generation-format template source: llama-server offloads the
+			// model's Jinja chat template via POST /apply-template (verified live
+			// on b10786, 2026-09-09). openai_compat backends expose no template
+			// API (AUTO falls to the documented default template); koboldcpp is
+			// native (its adapter builds the prompt itself); every other protocol
+			// has no TC surface at all.
+			expect(PROTOCOL_CAPABILITIES.llamacpp.backendTemplate).toBe(true);
+			for (const type of ALL_TYPES) {
+				if (type === "llamacpp") continue;
+				expect(PROTOCOL_CAPABILITIES[type].backendTemplate).toBe(false);
+			}
+		});
+
 		it("declares streaming + abortSignal true for every protocol (baseline contract)", () => {
 			for (const type of ALL_TYPES) {
 				const caps = PROTOCOL_CAPABILITIES[type];

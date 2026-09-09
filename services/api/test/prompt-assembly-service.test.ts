@@ -29,6 +29,10 @@ function createMockStores(overrides?: Partial<StoreContainer["chats"]>): StoreCo
       ],
       ...overrides,
     },
+    messages: { getMessages: async () => [] },
+    presets: { listAll: async () => [] },
+    chatSummaries: { listByChatBranch: async () => [] },
+    characterAssets: { listByCharacter: async () => [] },
     personas: {
       listAll: async () => [{ id: "persona_1", name: "User", description: "A user.", defaultForNewChats: true }],
     },
@@ -66,6 +70,13 @@ const mockResolver: PromptAssemblyResolver = {
   }),
   listActiveLoreEntries: async () => [],
   listRetrievedMemories: async () => [],
+  executeScripts: async () => ({
+    character: { personality: "", scenario: "" },
+    injectedMessages: [],
+    updatedScriptState: {},
+    errors: [],
+    scriptRuns: [],
+  }),
   getToolInstructions: () => null,
 };
 
@@ -76,6 +87,28 @@ const mockFileStore = {
   writeJson: async () => {},
   asyncWriteJson: async () => {},
 };
+
+describe("PromptAssemblyService — completionFormat export (LS-3b)", () => {
+  it("the preset's generationFormat rides the assembled prompt DTO", async () => {
+    const format = { mode: "manual" as const, inputSequence: "<|im_start|>user", outputSequence: "<|im_start|>assistant", wrap: true };
+    const withFormat: PromptAssemblyResolver = {
+      ...mockResolver,
+      getPromptPreset: (async () => ({
+        ...await mockResolver.getPromptPreset("preset_1"),
+        generationFormat: format,
+      })) as PromptAssemblyResolver["getPromptPreset"],
+    };
+    const service = new PromptAssemblyService(createMockStores(), withFormat, mockFileStore);
+    const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
+    expect(result.prompt.completionFormat).toEqual(format);
+  });
+
+  it("a preset without a generationFormat exports null (auto)", async () => {
+    const service = new PromptAssemblyService(createMockStores(), mockResolver, mockFileStore);
+    const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
+    expect(result.prompt.completionFormat).toBeNull();
+  });
+});
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 

@@ -582,6 +582,10 @@ export const koboldCppProtocol: ProtocolAdapter = {
     logitBias: false,
     samplers: SAMPLER_SETS.koboldcpp_native,
     textCompletion: false,
+    // LS-3c: KoboldCPP is NATIVE text completion — its own adapter builds the
+    // flat prompt, so AUTO is a no-op here (no backend template, no seam
+    // serialization). See ProviderCapabilityFlags.backendTemplate.
+    backendTemplate: false,
   },
   resolveModel(profile, model, fetch?: ProviderFetch) {
     const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:5001";

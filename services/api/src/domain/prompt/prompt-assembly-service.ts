@@ -2,6 +2,7 @@ import { brandId, parseStoredAttachments, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS,
 import type {
   AssemblePromptResponse,
   CustomInjection,
+  GenerationFormat,
   PromptLayerDto,
   PromptOrderEntry,
 } from "@vibe-tavern/domain";
@@ -82,6 +83,8 @@ export interface PromptAssemblyResolver {
       /** Whether this preset is in advanced (canvas) mode. */
       advancedMode: boolean;
       mergeConsecutiveRoles: boolean;
+      /** Generation format (LOCAL_SUPPORT_PLAN LS-3a). Absent = auto. */
+      generationFormat?: GenerationFormat;
       customInjections: CustomInjection[];
       promptOrder: PromptOrderEntry[];
     } | null>;
@@ -310,6 +313,9 @@ export class PromptAssemblyService {
         })),
         finalPayload: result.finalPayload,
         prefill: result.prefill,
+        // LS-3b: the preset's TC string-shape glue, exported like `prefill` so
+        // the execution boundary can thread it to the completion seam.
+        completionFormat: result.completionFormat,
       },
       promptTraceDraft: {
         chatId: built.chatId,
@@ -614,6 +620,7 @@ export class PromptAssemblyService {
             enhanceDefinitions: promptPreset.enhanceDefinitions,
             advancedMode: promptPreset.advancedMode,
             mergeConsecutiveRoles: promptPreset.mergeConsecutiveRoles,
+            generationFormat: promptPreset.generationFormat,
             customInjections: promptPreset.customInjections,
             promptOrder: promptPreset.promptOrder,
           }

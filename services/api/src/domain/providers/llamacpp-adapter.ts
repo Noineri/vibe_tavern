@@ -9,10 +9,10 @@
  * Extracted from protocol-registry.ts (AD-019).
  */
 
-import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
+import { GENERATION_MODE, PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import { normalizeLocalOpenAiCompatibleBaseUrl, TOKENIZE_TIMEOUT_MS } from "./provider-transport.js";
 import { resolveOpenAiCompatLanguageModel } from "./completion-model.js";
-import type { ProtocolAdapter, TokenizeInput } from "./protocol-types.js";
+import type { ProtocolAdapter, CompletionFormatHandoff, TokenizeInput } from "./protocol-types.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	probeOpenAiCompatibleConnection,
@@ -81,10 +81,20 @@ export const llamaCppProtocol: ProtocolAdapter = {
 		// LS-2e: llama-server serves OpenAI-style /completions, so the profile's
 		// TC generation mode resolves a raw completion model (see resolveModel).
 		textCompletion: true,
+		// LS-3c: llama-server offloads the model's own Jinja chat template via
+		// `POST /apply-template` (verified live on b10786, 2026-09-09) — TC-mode
+		// AUTO format renders server-side; a failure falls back to the default
+		// template inside the completion seam.
+		backendTemplate: true,
 	},
-	resolveModel(profile, model, fetch?: ProviderFetch) {
+	resolveModel(profile, model, fetch?: ProviderFetch, format?: CompletionFormatHandoff) {
 		// LS-2b: chat by default; generationMode "completion" serves the raw
 		// /completions model (flat prompt via the LS-2c serialization seam).
+		const isCompletion = profile.generationMode === GENERATION_MODE.completion;
+		// LS-3c: the native /apply-template endpoint lives at the server ROOT
+		// (next to /v1, NOT under it). Only set it when a root is derivable — an
+		// empty endpoint falls back to the default template via the seam.
+		const templateRoot = llamaCppRoot(profile.endpoint);
 		return resolveOpenAiCompatLanguageModel({
 			name: "llamacpp",
 			baseURL: normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint),
@@ -92,6 +102,14 @@ export const llamaCppProtocol: ProtocolAdapter = {
 			model,
 			...(fetch ? { fetch } : {}),
 			generationMode: profile.generationMode,
+			...(isCompletion
+				? {
+						// LS-3b: the preset's manual sequences render through the seam.
+						...(format?.completionFormat ? { completionFormat: format.completionFormat } : {}),
+						// LS-3c: AUTO renders through the backend's own template.
+						...(templateRoot ? { applyTemplateUrl: `${templateRoot}/apply-template` } : {}),
+					}
+				: {}),
 		});
 	},
 	limitations: [

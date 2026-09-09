@@ -20,7 +20,7 @@
  * adapter's fixture tests. No `mock.module`.
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, GenerationFormat, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { GENERATION_MODE } from "@vibe-tavern/domain";
 import { resetProviderFetchFactory } from "../src/domain/providers/provider-fetch-factory.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
@@ -70,11 +70,12 @@ const PROMPT_MESSAGES = [
 ];
 
 /** Minimal assembled prompt — the executors read `finalPayload.messages`. */
-function makePrompt(): AssemblePromptResponse {
+function makePrompt(completionFormat?: GenerationFormat | null): AssemblePromptResponse {
   return {
     layers: [], tokenAccounting: {}, activatedLoreEntries: [],
     scriptInjections: [], retrievedMemories: [],
     finalPayload: { messages: PROMPT_MESSAGES },
+    ...(completionFormat !== undefined ? { completionFormat } : {}),
   } as AssemblePromptResponse;
 }
 
@@ -188,6 +189,159 @@ describe("completion mode — nonstreamingProviderExecute", () => {
     expect(Array.isArray(body.messages)).toBe(true);
     expect(body.prompt).toBeUndefined();
     expect(result.text).toBe("Hello!");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// LS-3b/c: the generation format reaches the seam at request time
+// ═══════════════════════════════════════════════════════════════════════
+
+// ChatML-shaped manual format (the owner's ST instruct/ChatML.json through
+// parseStInstruct — the same fixture the seam-level golden pins).
+const CHATML_FORMAT: GenerationFormat = {
+  mode: "manual",
+  inputSequence: "<|im_start|>user",
+  outputSequence: "<|im_start|>assistant",
+  systemSequence: "<|im_start|>system",
+  inputSuffix: "<|im_end|>\n",
+  outputSuffix: "<|im_end|>\n",
+  systemSuffix: "<|im_end|>\n",
+  wrap: true,
+  namesBehavior: "always",
+};
+
+// LIVE PROBE CAPTURE (llama-server b10786, http://127.0.0.1:8801, probed
+// 2026-09-09 — LOCAL_SUPPORT_PLAN LS-3c): POST /apply-template with these
+// exact messages returned this exact prompt. The trailing assistant message
+// renders WITHOUT its <|im_end|> stop marker — it IS the continuation point.
+const APPLY_TEMPLATE_REQUEST_MESSAGES = [
+  { role: "system", content: "You are a storyteller." },
+  { role: "user", content: "Begin the tale." },
+  { role: "assistant", content: "Once upon a time" },
+];
+const APPLY_TEMPLATE_CAPTURED_PROMPT =
+  "<|im_start|>system\nYou are a storyteller.<|im_end|>\n<|im_start|>user\nBegin the tale.<|im_end|>\n<|im_start|>assistant\nOnce upon a time";
+
+/** llama.cpp profile (endpoint at the server root — /apply-template lives
+ *  next to /v1, NOT under it, mirroring the /tokenize seam). */
+function makeLlamaCppProfile(over: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
+  return makeProfile({
+    providerPreset: "llamacpp",
+    endpoint: `http://127.0.0.1:${FIXTURE_PORT}`,
+    ...over,
+  });
+}
+
+describe("generation format handoff (LS-3b/c)", () => {
+  it("a MANUAL preset format renders its sequences through the seam at the executor boundary", async () => {
+    installFetchStub(() => new Response(JSON.stringify(COMPLETION_JSON), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+
+    await nonstreamingProviderExecute(makeInput({ prompt: makePrompt(CHATML_FORMAT) }));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(`http://127.0.0.1:${FIXTURE_PORT}/v1/completions`);
+    const body = JSON.parse(String(calls[0]!.init.body)) as Record<string, unknown>;
+    // Golden: ChatML glue over the executor's standardized prompt; the last
+    // assistant message IS the continuation point — suffix dropped.
+    expect(body.prompt).toBe(
+      "<|im_start|>system\nYou are a storyteller.<|im_end|>\n" +
+      "<|im_start|>user\nBegin the tale.<|im_end|>\n" +
+      "<|im_start|>assistant\nOnce upon a time",
+    );
+  });
+
+  it("AUTO on llama-server renders through the LIVE /apply-template capture (verbatim fixture)", async () => {
+    installFetchStub((url) => {
+      if (url.endsWith("/apply-template")) {
+        return new Response(JSON.stringify({ prompt: APPLY_TEMPLATE_CAPTURED_PROMPT }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(COMPLETION_JSON), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await nonstreamingProviderExecute(makeInput({
+      profile: makeLlamaCppProfile(),
+      prompt: makePrompt(null), // absent format = auto
+    }));
+
+    // First call: the backend template render at the server ROOT (not /v1).
+    const applyCall = calls.find((c) => c.url.endsWith("/apply-template"));
+    expect(applyCall).toBeTruthy();
+    expect(JSON.parse(String(applyCall!.init.body))).toEqual({ messages: APPLY_TEMPLATE_REQUEST_MESSAGES });
+    // Second call: /completions carries the BACKEND's rendered prompt verbatim.
+    const completionBody = JSON.parse(String(calls[calls.length - 1]!.init.body)) as Record<string, unknown>;
+    expect(calls[calls.length - 1]!.url).toBe(`http://127.0.0.1:${FIXTURE_PORT}/v1/completions`);
+    expect(completionBody.prompt).toBe(APPLY_TEMPLATE_CAPTURED_PROMPT);
+  });
+
+  it("a failed backend template render falls back to the documented default template", async () => {
+    installFetchStub((url) => {
+      if (url.endsWith("/apply-template")) return new Response("boom", { status: 500 });
+      return new Response(JSON.stringify(COMPLETION_JSON), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await nonstreamingProviderExecute(makeInput({
+      profile: makeLlamaCppProfile(),
+      prompt: makePrompt(null),
+    }));
+
+    const completionBody = JSON.parse(String(calls[calls.length - 1]!.init.body)) as Record<string, unknown>;
+    expect(completionBody.prompt).toBe(EXPECTED_PROMPT);
+  });
+
+  it("a MANUAL format beats the backend template (manual wins over auto capability)", async () => {
+    installFetchStub(() => new Response(JSON.stringify(COMPLETION_JSON), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+
+    await nonstreamingProviderExecute(makeInput({
+      profile: makeLlamaCppProfile(),
+      prompt: makePrompt(CHATML_FORMAT),
+    }));
+
+    // No /apply-template round-trip when the preset owns the glue.
+    expect(calls.some((c) => c.url.endsWith("/apply-template"))).toBe(false);
+    const body = JSON.parse(String(calls[0]!.init.body)) as Record<string, unknown>;
+    expect(body.prompt).toContain("<|im_start|>user\nBegin the tale.");
+  });
+
+  it("chat-mode profiles ignore the generation format entirely (no apply-template, no flat string)", async () => {
+    installFetchStub(() => new Response(JSON.stringify({
+      id: "chatcmpl-fixture", object: "chat.completion", model: "qwen-local",
+      choices: [{ index: 0, message: { role: "assistant", content: "Hello!" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await nonstreamingProviderExecute(makeInput({
+      profile: makeLlamaCppProfile({ generationMode: GENERATION_MODE.chat }),
+      prompt: makePrompt(CHATML_FORMAT),
+    }));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(`http://127.0.0.1:${FIXTURE_PORT}/v1/chat/completions`);
+    const body = JSON.parse(String(calls[0]!.init.body)) as Record<string, unknown>;
+    expect(Array.isArray(body.messages)).toBe(true);
+  });
+
+  it("the STREAMING path honors the manual format too (same seam both transports)", async () => {
+    installFetchStub(() => sseResponse(STREAM_CHUNKS));
+
+    const result = await streamProviderExecutor(makeInput({ prompt: makePrompt(CHATML_FORMAT) }));
+    const deltas: string[] = [];
+    for await (const chunk of result.stream) {
+      if (chunk.type === "text-delta") deltas.push(chunk.delta);
+    }
+    expect(deltas.join("")).toBe(" there lived a wizard.");
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as Record<string, unknown>;
+    expect(body.prompt).toContain("<|im_start|>system\nYou are a storyteller.");
   });
 });
 

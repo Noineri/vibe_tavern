@@ -10,7 +10,7 @@ import { generateText, isStepCount } from "ai";
 import type { ProviderMetadata } from "ai";
 import type { ExtractedToolCall, ExtractedToolResult, GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
-import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
+import { resolveModel, resolveCompletionFormatHandoff, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { COAUTHOR_TRANSPORT, normalizeProviderType } from "@vibe-tavern/domain";
 import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
@@ -109,7 +109,11 @@ export async function nonstreamingProviderExecute(
 ): Promise<GenerationResult> {
   try {
     const providerFetch = await resolveProviderFetchForProfile(input.profile);
-    const model = resolveModel(input.profile, input.model, input.transport, providerFetch);
+    // LS-3b/c: thread the preset's generation format (TC mode only) to the
+    // completion seam — manual sequences render through it; auto resolves per
+    // protocol capability (backend template on llama-server, default else).
+    const format = resolveCompletionFormatHandoff(input.profile, input.prompt.completionFormat);
+    const model = resolveModel(input.profile, input.model, input.transport, providerFetch, format);
     let messages = toSdkMessages(input.prompt);
     const activeModel = input.cachedModels?.find((m) => m.modelSlug === input.model);
     const hasVision = activeModel?.capabilities?.vision ?? false;

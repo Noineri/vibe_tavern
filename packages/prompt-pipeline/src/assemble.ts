@@ -1314,6 +1314,9 @@ function finalizeAssembly(
     droppedLayers,
     finalPayload: { messages: finalMessages },
     prefill: (context.preset?.prefill && resolver.enabled("assistantPrefill")) ? context.preset.prefill : null,
+    // LS-3b: the preset's TC string-shape glue rides the result like `prefill`
+    // so the orchestrator can thread it to the completion seam. Null = auto.
+    completionFormat: context.preset?.generationFormat ?? null,
     compactionSummary: compactionSummary ?? null,
   };
 }

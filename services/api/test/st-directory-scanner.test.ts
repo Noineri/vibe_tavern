@@ -448,7 +448,7 @@ describe("ST directory scanner — streaming progress events", () => {
 		// Every phase has exactly one `phase` start event, and it precedes that
 		// phase's `progress` events. Phases fire in fixed import order.
 		const phaseStarts = events.filter((e) => e.type === "phase").map((e) => e.phase);
-		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "personas"]);
+		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "formats", "personas"]);
 
 		// Granular counts: one progress per imported item, current strictly
 		// increasing, never exceeding the done count for that surface.
@@ -820,5 +820,110 @@ describe("ST directory scanner — filesystem characterization", () => {
 		expect(scan.characters).toEqual([]);
 		expect(scan.chats).toEqual([]);
 		expect(scan.errors).toEqual([]);
+	});
+});
+
+// ─── LS-3e: format/library files (instruct / context / sysprompt) ──────────
+// LOCAL_SUPPORT_PLAN LS-3e storage map kinds 3/4/5: instruct/*.json → a
+// preset carrying the manual generation format; context/*.json → a preset
+// with the mapped canvas order (partial story_string mapping, notes as
+// warnings); sysprompt/*.json → a preset whose main system field carries the
+// content. TextGen Settings/ is deliberately NOT scanned here (LS-5's
+// sampler-set surface).
+
+describe("ST directory scanner — format/library files (LS-3e)", () => {
+	let env: Env;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	async function buildFormatsDir(root: string) {
+		await mkdir(join(root, "instruct"), { recursive: true });
+		await mkdir(join(root, "context"), { recursive: true });
+		await mkdir(join(root, "sysprompt"), { recursive: true });
+		// instruct: ChatML-shaped (matches the owner's real ST install).
+		await Bun.write(
+			join(root, "instruct", "TestInstruct.json"),
+			JSON.stringify({
+				name: "Test Instruct",
+				input_sequence: "<|im_start|>user",
+				output_sequence: "<|im_start|>assistant",
+				system_sequence: "<|im_start|>system",
+				stop_sequence: "<|im_end|>",
+				wrap: true,
+				names_behavior: "always",
+				input_suffix: "<|im_end|>\n",
+				output_suffix: "<|im_end|>\n",
+				system_suffix: "<|im_end|>\n",
+			}),
+		);
+		// context: Default-shaped story_string (all mapped slots + literal glue
+		// text — "'s personality: " is unrepresentable in the layer pipeline and
+		// must be reported, never silent).
+		await Bun.write(
+			join(root, "context", "TestContext.json"),
+			JSON.stringify({
+				name: "Test Context",
+				story_string: "{{#if system}}{{system}}\n{{/if}}{{#if description}}{{description}}\n{{/if}}{{#if personality}}{{char}}'s personality: {{personality}}\n{{/if}}{{#if persona}}{{persona}}\n{{/if}}",
+				name2: "unused",
+			}),
+		);
+		// sysprompt: one entry.
+		await Bun.write(
+			join(root, "sysprompt", "TestSysprompt.json"),
+			JSON.stringify({ name: "Test Sysprompt", content: "Stay in character." }),
+		);
+		// A non-format JSON in the instruct folder is skipped silently.
+		await Bun.write(join(root, "instruct", "NotAFormat.json"), JSON.stringify({ hello: "world" }));
+		return root;
+	}
+
+	it("scan previews the three kinds with import notes (context literal glue, instruct stops)", async () => {
+		env = await createRuntime();
+		const stDir = await buildFormatsDir(join(env.tmpDir, "st-formats"));
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+		expect(scan.formats.length).toBe(3);
+		const instruct = scan.formats.find((f) => f.kind === "instruct");
+		const context = scan.formats.find((f) => f.kind === "context");
+		const sysprompt = scan.formats.find((f) => f.kind === "sysprompt");
+		expect(instruct?.name).toBe("Test Instruct");
+		// Instruct stops are reported for the provider's EXISTING stop-sequences
+		// setting — mass import has no profile context to write them to.
+		expect(instruct?.warnings.some((w) => w.includes("stop sequences"))).toBe(true);
+		expect(context?.warnings.some((w) => w.includes("literal_text"))).toBe(true);
+		expect(sysprompt?.warnings).toEqual([]);
+	});
+
+	it("import writes all three kinds as presets (format / canvas order / system field)", async () => {
+		const presetBefore = (await env.stores.presets.listAll()).length;
+		const result = await env.runtime.importSillyTavernDirectory(join(env.tmpDir, "st-formats"));
+
+		expect(result.errors).toEqual([]);
+		expect(result.formats).toBe(3);
+
+		const presets = await env.stores.presets.listAll();
+		expect(presets.length).toBe(presetBefore + 3);
+
+		const instructPreset = presets.find((p) => p.name === "Test Instruct");
+		expect(instructPreset?.generationFormat).toEqual({
+			mode: "manual",
+			inputSequence: "<|im_start|>user",
+			outputSequence: "<|im_start|>assistant",
+			systemSequence: "<|im_start|>system",
+			inputSuffix: "<|im_end|>\n",
+			outputSuffix: "<|im_end|>\n",
+			systemSuffix: "<|im_end|>\n",
+			wrap: true,
+			namesBehavior: "always",
+		});
+
+		const contextPreset = presets.find((p) => p.name === "Test Context");
+		expect(contextPreset?.promptOrder.map((e) => e.identifier)).toEqual([
+			"charSystemPrompt", "charDescription", "charPersonality", "personaDescription", "chatHistory",
+		]);
+		expect(contextPreset?.advancedMode).toBe(true);
+
+		const syspromptPreset = presets.find((p) => p.name === "Test Sysprompt");
+		expect(syspromptPreset?.systemPrompt).toBe("Stay in character.");
 	});
 });

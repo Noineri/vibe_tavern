@@ -7,9 +7,12 @@
  */
 
 import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
-import { COAUTHOR_TRANSPORT, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type GenerationMode, type ProviderType, log } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type GenerationMode, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
+import type { CompletionFormatHandoff } from "../../domain/providers/protocol-types.js";
+import { generationFormatToTemplate } from "../../domain/providers/completion-prompt.js";
+import type { GenerationFormat } from "@vibe-tavern/domain";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { VisionGateConfig } from "./vision-gate.js";
 import { resolveMultimodalContent } from "./vision-gate.js";
@@ -83,6 +86,7 @@ export function resolveModel(
   model: string,
   transport: CoauthorTransport = COAUTHOR_TRANSPORT.chatCompletions,
   fetch?: ProviderFetch,
+  format?: CompletionFormatHandoff,
 ): LanguageModel {
   const providerType = normalizeProviderType(profile.providerPreset);
   if (transport === COAUTHOR_TRANSPORT.responses) {
@@ -91,7 +95,31 @@ export function resolveModel(
     }
     return resolveResponsesModel(profile, model, fetch);
   }
-  return resolveProtocol(providerType).resolveModel(profile, model, fetch);
+  return resolveProtocol(providerType).resolveModel(profile, model, fetch, format);
+}
+
+// ---------------------------------------------------------------------------
+// Completion format handoff (LS-3b/c)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the LS-3 completion-format handoff for one generation call: the
+ * preset's generation format (threaded from assembly via
+ * `AssemblePromptResponse.completionFormat`) mapped onto the seam's template
+ * source. Chat-mode profiles get `undefined` — the chat model ignores the
+ * format entirely. Manual mode maps onto the ST-instruct template; auto (or
+ * absent) resolves per protocol capability inside the adapters (backend
+ * template on llama-server, documented default elsewhere).
+ */
+export function resolveCompletionFormatHandoff(
+  profile: { generationMode?: GenerationMode },
+  completionFormat: GenerationFormat | null | undefined,
+): CompletionFormatHandoff | undefined {
+  if (profile.generationMode !== GENERATION_MODE.completion) return undefined;
+  if (completionFormat?.mode === "manual") {
+    return { completionFormat: { kind: "manual", template: generationFormatToTemplate(completionFormat) } };
+  }
+  return { completionFormat: { kind: "auto" } };
 }
 
 // ---------------------------------------------------------------------------

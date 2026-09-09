@@ -13,6 +13,7 @@
 import { resolveVendor, buildDefaultModelsUrl, type OpenAiModelsResponse } from "./vendor-registry.js";
 import { resolveOpenAiCompatLanguageModel } from "./completion-model.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
+import type { CompletionFormatHandoff } from "./protocol-types.js";
 import {
 	PROBE_TIMEOUT_MS,
 	MODEL_LIST_TIMEOUT_MS,
@@ -235,8 +236,11 @@ export const openaiCompatProtocol: ProtocolAdapter = {
 		// Cloud presets on this protocol keep the mode hidden in the UI
 		// (resolveTextCompletionSupport) — the toggle is local-only.
 		textCompletion: true,
+		// LS-3c: these backends expose no template-application API — AUTO falls
+		// to the documented default template inside the completion seam.
+		backendTemplate: false,
 	},
-	resolveModel(profile, model, fetch?: ProviderFetch) {
+	resolveModel(profile, model, fetch?: ProviderFetch, format?: CompletionFormatHandoff) {
 		// LS-2b: chat by default; generationMode "completion" serves the raw
 		// /completions model (flat prompt via the LS-2c serialization seam).
 		// `openai_compat` is intentionally broad: in this app it covers
@@ -255,6 +259,12 @@ export const openaiCompatProtocol: ProtocolAdapter = {
 			supportsStructuredOutputs: true,
 			...(fetch ? { fetch } : {}),
 			generationMode: profile.generationMode,
+			// LS-3b: the preset's manual sequences render through the seam when TC
+			// mode is active; AUTO stays on the default template (no backend
+			// template API on this protocol).
+			...(profile.generationMode === "completion" && format?.completionFormat
+				? { completionFormat: format.completionFormat }
+				: {}),
 		});
 	},
 	limitations: [],

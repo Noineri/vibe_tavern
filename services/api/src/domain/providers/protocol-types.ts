@@ -19,6 +19,7 @@ import type {
 	TestChatResult,
 } from "./provider-transport.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
+import type { CompletionFormatSource } from "./completion-model.js";
 
 // ---------------------------------------------------------------------------
 // Capability flags (canonical type — source of truth lives here)
@@ -50,6 +51,16 @@ export interface ProviderCapabilityFlags {
 	 * and `ollama`/`unsloth` have no OpenAI-compat completion surface.
 	 */
 	textCompletion: boolean;
+	/**
+	 * Whether this protocol's backend can render its OWN chat template for a
+	 * raw completion prompt (LOCAL_SUPPORT_PLAN LS-3c): llama-server exposes
+	 * `POST /apply-template` (verified live on b10786, 2026-09-09), so TC-mode
+	 * AUTO format offloads the Jinja render to the server. When false, auto
+	 * falls to the documented default template (VT's role-prefixed shape).
+	 * KoboldCPP is `false` here by design — it is `native` (its adapter builds
+	 * the prompt itself; auto is a no-op), not backend-rendered.
+	 */
+	backendTemplate: boolean;
 }
 
 export interface ProviderProfileInput {
@@ -92,6 +103,18 @@ export interface TokenizeInput {
 	fetch?: ProviderFetch;
 }
 
+/**
+ * LS-3b/c handoff: the generation format resolved for THIS generation call,
+ * threaded from the assembled prompt (`AssemblePromptResponse.completionFormat`)
+ * through the executors into the protocol adapters. Absent behaves like auto.
+ */
+export interface CompletionFormatHandoff {
+	/** The preset's format: `manual` renders the preset's sequences; auto/absent
+	 *  uses the backend template when the protocol declares `backendTemplate`.
+	 */
+	completionFormat?: CompletionFormatSource;
+}
+
 export interface ProtocolAdapter {
 	id: ProviderType;
 	capabilities: ProviderCapabilityFlags;
@@ -106,8 +129,12 @@ export interface ProtocolAdapter {
 	 * The optional {@link ProviderFetch} is injected into the AI SDK provider
 	 * factory's custom-`fetch` option so generation honors the profile's proxy
 	 * policy; when omitted the SDK's default (direct) fetch is used.
+	 *
+	 * The optional {@link CompletionFormatHandoff} (LS-3b/c) reaches only the
+	 * OpenAI-compat-backed protocols that serve the raw completion model;
+	 * protocols without a completion endpoint ignore it entirely.
 	 */
-	resolveModel(profile: ProviderProfileInput, model: string, fetch?: ProviderFetch): LanguageModel;
+	resolveModel(profile: ProviderProfileInput, model: string, fetch?: ProviderFetch, format?: CompletionFormatHandoff): LanguageModel;
 	/** Human-readable limitations surfaced to the UI. */
 	limitations: string[];
 	/** Connectivity probe (hit a models/tags endpoint, return success + count). */

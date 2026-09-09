@@ -17,6 +17,10 @@ import {
 	parseStPreset,
 	parseStPersonas,
 	parseSillyTavernChat,
+	parseStInstruct,
+	parseStContext,
+	parseStSysprompt,
+	detectStFileKind,
 	stBlockToCanvasEntry,
 	synthesizeCanvasEntry,
 } from "@vibe-tavern/import-export";
@@ -27,13 +31,25 @@ import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { CharacterId, ChatId, CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────
+
+/** The three ST format/library folders (LOCAL_SUPPORT_PLAN LS-3e storage map,
+ *  kinds 3/4/5). `TextGen Settings/` is deliberately ABSENT — its sampler-set
+ *  import is LS-5's surface, not this scanner's. */
+const FORMAT_FOLDERS: Array<[folder: string, kind: "instruct" | "context" | "sysprompt"]> = [
+	["instruct", "instruct"],
+	["context", "context"],
+	["sysprompt", "sysprompt"],
+];
 
 export interface StDirectoryScanResult {
 	characters: StScannedCharacter[];
 	chats: StScannedChat[];
 	lorebooks: StScannedLorebook[];
 	presets: StScannedPreset[];
+	/** ST format/library files (LOCAL_SUPPORT_PLAN LS-3e): instruct/*.json,
+	 *  context/*.json, sysprompt/*.json — the storage map's kinds 3/4/5. */
+	formats: StScannedFormat[];
 	persona: StScannedPersona | null;
 	errors: StScanError[];
 }
@@ -68,6 +84,17 @@ export interface StScannedPreset {
 	imported: boolean;
 }
 
+/** A scanned ST format/library file (LS-3e storage map kinds 3/4/5). */
+export interface StScannedFormat {
+	fileName: string;
+	name: string;
+	kind: "instruct" | "context" | "sysprompt";
+	imported: boolean;
+	/** Partial-mapping notes (context) / not-applied warnings (instruct stops
+	 *  in mass import — no provider profile context to write them to). */
+	warnings: string[];
+}
+
 export interface StScannedPersona {
 	/** Number of persona entries detected in settings.json. */
 	count: number;
@@ -100,6 +127,7 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 		chats: [],
 		lorebooks: [],
 		presets: [],
+		formats: [],
 		persona: null,
 		errors: [],
 	};
@@ -209,6 +237,49 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 		}
 	}
 
+	// ── Scan the three format/library folders (LS-3e storage map) ──
+	// instruct/ + context/ + sysprompt/. Only files whose SHAPE matches the
+	// storage map count (detectStFileKind); other JSON in those folders is
+	// skipped silently, like the OpenAI Settings scan above.
+	for (const [folder, kind] of FORMAT_FOLDERS) {
+		const dir = join(resolved, folder);
+		const files = await scanOptionalGlob(dir, "*.[jJ][sS][oO][nN]");
+		for (const relativePath of files) {
+			const fileName = basename(relativePath);
+			const filePath = join(dir, relativePath);
+			try {
+				const text = await Bun.file(filePath).text();
+				const parsed: unknown = JSON.parse(text);
+				const detected = detectStFileKind(parsed);
+				if (detected !== kind) continue;
+				const raw = parsed as Record<string, unknown>;
+				const name = (typeof raw.name === "string" && raw.name) || basename(fileName, ".json");
+				const warnings: string[] = [];
+				if (kind === "instruct") {
+					const parsedInstruct = parseStInstruct(text);
+					if (parsedInstruct.stopSequences.length > 0) {
+						// Owner correction 2026-09-09: stops land in the provider's
+						// EXISTING stop-sequences setting — mass import has no profile
+						// context, so they are reported, never silently dropped.
+						warnings.push(
+							`stop sequences (${parsedInstruct.stopSequences.join(" | ")}) must be added to the provider's stop-sequences setting`,
+						);
+					}
+				} else if (kind === "context") {
+					const parsedContext = parseStContext(text);
+					warnings.push(...parsedContext.notes);
+				}
+				result.formats.push({ fileName, name, kind, imported: false, warnings });
+			} catch (err) {
+				result.errors.push({
+					file: filePath,
+					stage: "parse",
+					message: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+	}
+
 	// ── Scan settings.json (personas) ──
 	const settingsPath = join(resolved, "settings.json");
 	const settingsFiles = await scanOptionalGlob(resolved, "settings.json");
@@ -242,6 +313,10 @@ export interface StDirectoryImportResult {
 	chats: number;
 	lorebooks: number;
 	presets: number;
+	/** Imported ST format/library files (LS-3e): instruct → presets with a
+	 *  manual generation format, context → presets with the mapped canvas
+	 *  order, sysprompt → presets carrying the system prompt. */
+	formats: number;
 	personas: number;
 	errors: StScanError[];
 	/** ID of the last imported character's chat — can be used to navigate UI. */
@@ -254,7 +329,7 @@ export interface StDirectoryImportResult {
 // (onProgress omitted); the streaming route awaits each emission so the event
 // is flushed to the wire before the scanner proceeds — giving the browser a
 // live counter instead of a frozen spinner for the whole duration.
-export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "personas";
+export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "formats" | "personas";
 export type ImportProgressEvent =
 	| { type: "phase"; phase: ImportPhase }
 	| { type: "progress"; phase: ImportPhase; current: number };
@@ -290,6 +365,7 @@ export async function importSillyTavernDirectory(
 		chats: 0,
 		lorebooks: 0,
 		presets: 0,
+		formats: 0,
 		personas: 0,
 		errors: [],
 		lastActiveChatId: null,
@@ -792,6 +868,59 @@ export async function importSillyTavernDirectory(
 	}
 	console.log(`${ti()} presets: ${((performance.now() - presetsPhaseStart) / 1000).toFixed(2)}s (${result.presets} imported)`);
 
+	// ── Import format/library files (LS-3e storage map kinds 3/4/5) ──
+	await onProgress?.({ type: "phase", phase: "formats" });
+	const formatsPhaseStart = performance.now();
+	// instruct → a prompt preset carrying the manual generation format (the
+	// sequences DSL near 1:1; stop sequences are NOT applied — no provider
+	// profile context in a mass import, the scan preview reports them).
+	// context → a preset with the mapped canvas order (partial story_string
+	// mapping; unrepresentable parts were reported in the scan preview).
+	// sysprompt → a preset whose main system field carries the entry content.
+	for (const [folder, kind] of FORMAT_FOLDERS) {
+		const dir = join(resolved, folder);
+		const files = await scanOptionalGlob(dir, "*.[jJ][sS][oO][nN]");
+		for (const relativePath of files) {
+			const fileName = basename(relativePath);
+			const filePath = join(dir, relativePath);
+			try {
+				const text = await Bun.file(filePath).text();
+				const parsed: unknown = JSON.parse(text);
+				if (detectStFileKind(parsed) !== kind) continue;
+				const raw = parsed as Record<string, unknown>;
+				const name = (typeof raw.name === "string" && raw.name) || fileName.replace(/\.json$/i, "");
+				if (kind === "instruct") {
+					const { format } = parseStInstruct(text);
+					await createPromptPreset(
+						{ presets: deps.stores.presets, chats: deps.stores.chats },
+						{ name, generationFormat: format },
+					);
+				} else if (kind === "context") {
+					const { promptOrder } = parseStContext(text);
+					await createPromptPreset(
+						{ presets: deps.stores.presets, chats: deps.stores.chats },
+						{ name, promptOrder, advancedMode: true },
+					);
+				} else {
+					const { content } = parseStSysprompt(text);
+					await createPromptPreset(
+						{ presets: deps.stores.presets, chats: deps.stores.chats },
+						{ name, system: content },
+					);
+				}
+				result.formats++;
+				await onProgress?.({ type: "progress", phase: "formats", current: result.formats });
+			} catch (err) {
+				result.errors.push({
+					file: filePath,
+					stage: "import",
+					message: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+	}
+	console.log(`${ti()} formats: ${((performance.now() - formatsPhaseStart) / 1000).toFixed(2)}s (${result.formats} imported)`);
+
 	// ── Import personas (settings.json + User Avatars/) ──
 	await onProgress?.({ type: "phase", phase: "personas" });
 	const personasPhaseStart = performance.now();
@@ -865,7 +994,7 @@ export async function importSillyTavernDirectory(
 	console.log(
 		`${ti()} DONE — total ${((performance.now() - T0) / 1000).toFixed(2)}s |`
 		+ ` chars=${result.characters} chats=${result.chats} lore=${result.lorebooks}`
-		+ ` presets=${result.presets} personas=${result.personas}`
+		+ ` presets=${result.presets} formats=${result.formats} personas=${result.personas}`
 		+ ` errors=${result.errors.length}`,
 	);
 

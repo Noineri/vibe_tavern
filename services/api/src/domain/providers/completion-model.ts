@@ -39,9 +39,12 @@ import type {
 	LanguageModelV4GenerateResult,
 	LanguageModelV4StreamResult,
 } from "@ai-sdk/provider";
-import { GENERATION_MODE, type GenerationMode } from "@vibe-tavern/domain";
+import { GENERATION_MODE, type GenerationMode, log } from "@vibe-tavern/domain";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
-import { serializeCompletionPrompt } from "./completion-prompt.js";
+import {
+	serializeCompletionPrompt,
+	type CompletionFormatTemplate,
+} from "./completion-prompt.js";
 
 /**
  * The stop sequence the SDK's built-in completion converter injects on its own
@@ -66,21 +69,116 @@ interface PendingPromptHolder {
 	prompt: string | null;
 }
 
+/**
+ * The template SOURCE for the flat string (LOCAL_SUPPORT_PLAN LS-3b/c):
+ * - `manual` — the preset's manual sequences (Generation Format tab), rendered
+ *   by the serialization seam.
+ * - `auto`   — resolved per provider capability: the backend's own chat
+ *   template when the protocol exposes one (llama-server `/apply-template`,
+ *   verified live on b10786), else the documented default template.
+ * Absent behaves like `auto` (pre-LS-3 behavior).
+ */
+export type CompletionFormatSource =
+	| { kind: "manual"; template: CompletionFormatTemplate }
+	| { kind: "auto" };
+
+/** Timeout for the backend template render (LS-3c) — the render is a local
+ *  Jinja evaluation; anything slower is a stuck server, not a slow model. */
+const APPLY_TEMPLATE_TIMEOUT_MS = 10_000;
+
 /** A single empty user message — a conversion input the SDK cannot throw on. */
 const SANITIZED_PROMPT: LanguageModelV4CallOptions["prompt"] = [
 	{ role: "user", content: [{ type: "text", text: "" }] },
 ];
 
+/** Map a standardized (V4) prompt to the messages shape `/apply-template`
+ *  consumes. Same channel rules as the seam: tool messages and non-text parts
+ *  are skipped (no tool channel in raw completion). */
+function toApplyTemplateMessages(prompt: LanguageModelV4CallOptions["prompt"]): Array<{ role: string; content: string }> {
+	const messages: Array<{ role: string; content: string }> = [];
+	for (const message of prompt) {
+		if (message.role === "tool") continue;
+		const content =
+			message.role === "system"
+				? message.content
+				: message.content
+					.filter((part) => part.type === "text" && typeof part.text === "string")
+					.map((part) => (part as { text: string }).text)
+					.join("");
+		messages.push({ role: message.role, content });
+	}
+	return messages;
+}
+
+/**
+ * Render the flat prompt through the BACKEND's own chat template (LS-3c):
+ * llama-server's `POST /apply-template` offloads the model's Jinja template
+ * (verified live on b10786, 2026-09-09 — multi-turn and the trailing
+ * assistant continuation render exactly). A failure falls back to the
+ * documented default template with a warning — a template hiccup must not
+ * take a generation down when the default glue is one keystroke away.
+ */
+async function renderBackendTemplate(
+	prompt: LanguageModelV4CallOptions["prompt"],
+	applyTemplateUrl: string,
+	transport: ProviderFetch,
+): Promise<string> {
+	try {
+		const response = await transport(applyTemplateUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+			body: JSON.stringify({ messages: toApplyTemplateMessages(prompt) }),
+			signal: AbortSignal.timeout(APPLY_TEMPLATE_TIMEOUT_MS),
+		});
+		if (!response.ok) {
+			throw new Error(`apply-template failed (${response.status})`);
+		}
+		const payload = (await response.json()) as { prompt?: unknown };
+		if (typeof payload.prompt !== "string") {
+			throw new Error("apply-template: unexpected response shape (missing prompt string).");
+		}
+		return payload.prompt;
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		log.tag("completion").warn("backend template render failed (%s) — falling back to the default template", detail);
+		return serializeCompletionPrompt(prompt);
+	}
+}
+
+/** Resolve the flat string for a call per the template source (LS-3b/c):
+ *  manual preset sequences → seam renderer; auto → backend template when the
+ *  protocol exposes one, else the documented default template. */
+async function renderFlatPrompt(
+	prompt: LanguageModelV4CallOptions["prompt"],
+	format: CompletionFormatSource | undefined,
+	applyTemplateUrl: string | undefined,
+	transport: ProviderFetch,
+): Promise<string> {
+	if (format?.kind === "manual") {
+		return serializeCompletionPrompt(prompt, { template: format.template });
+	}
+	if (applyTemplateUrl) {
+		return renderBackendTemplate(prompt, applyTemplateUrl, transport);
+	}
+	return serializeCompletionPrompt(prompt);
+}
+
 /**
  * Wrap an SDK completion model so its outgoing request body carries the SEAM's
  * flat prompt string instead of the built-in conversion's output.
  */
-function withFlatPrompt(base: FlatPromptBase, pending: PendingPromptHolder): LanguageModelV4 {
+function withFlatPrompt(
+	base: FlatPromptBase,
+	pending: PendingPromptHolder,
+	format: CompletionFormatSource | undefined,
+	applyTemplateUrl: string | undefined,
+	transport: ProviderFetch,
+): LanguageModelV4 {
 	const run = async <R>(
 		callOptions: LanguageModelV4CallOptions,
 		op: (o: LanguageModelV4CallOptions) => PromiseLike<R>,
 	): Promise<R> => {
-		pending.prompt = serializeCompletionPrompt(callOptions.prompt);
+		pending.prompt = await renderFlatPrompt(callOptions.prompt, format, applyTemplateUrl, transport);
 		try {
 			return await op({ ...callOptions, prompt: SANITIZED_PROMPT });
 		} finally {
@@ -145,6 +243,15 @@ export interface OpenAiCompatModelOptions {
 	supportsStructuredOutputs?: boolean;
 	/** Profile generation mode — `completion` serves the raw completion model. */
 	generationMode?: GenerationMode;
+	/** LS-3b/c: the preset's generation format, threaded from assembly through
+	 *  the executor. `manual` renders the preset's sequences; `auto` (or absent)
+	 *  uses the backend template when {@link applyTemplateUrl} is set, else the
+	 *  documented default template. */
+	completionFormat?: CompletionFormatSource;
+	/** LS-3c: the backend's template-application endpoint (llama-server's
+	 *  `POST /apply-template`). Set only when the protocol's `backendTemplate`
+	 *  capability is on AND the profile runs TC mode. */
+	applyTemplateUrl?: string;
 }
 
 /**
@@ -172,5 +279,11 @@ export function resolveOpenAiCompatLanguageModel(options: OpenAiCompatModelOptio
 	const splicingFetch: ProviderFetch = createSplicingFetch(pending, options.fetch ?? fetch);
 	const completionProvider = createOpenAICompatible({ ...shared, fetch: splicingFetch });
 
-	return withFlatPrompt(completionProvider.completionModel(options.model), pending);
+	return withFlatPrompt(
+		completionProvider.completionModel(options.model),
+		pending,
+		options.completionFormat,
+		options.applyTemplateUrl,
+		options.fetch ?? fetch,
+	);
 }

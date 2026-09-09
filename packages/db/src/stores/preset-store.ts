@@ -5,7 +5,7 @@ import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS } from '../file-store.js';
-import { type CustomInjection, type PromptOrderEntry, normalizePresetCanvas, log } from '@vibe-tavern/domain';
+import { type CustomInjection, type GenerationFormat, type PromptOrderEntry, normalizePresetCanvas, log } from '@vibe-tavern/domain';
 
 const logger = log.tag('preset-db');
 
@@ -52,6 +52,8 @@ export interface CreatePresetData {
   promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
   mergeConsecutiveRoles?: boolean;
+  /** Generation format (LS-3a). Undefined = absent = auto; `null` in an update clears back to auto. */
+  generationFormat?: GenerationFormat | null;
 }
 
 export type UpdatePresetData = Partial<CreatePresetData>;
@@ -82,6 +84,8 @@ export interface PromptPreset {
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   mergeConsecutiveRoles: boolean;
+  /** Generation format (LS-3a). Absent = auto. */
+  generationFormat?: GenerationFormat;
   createdAt: string;
   updatedAt: string;
 }
@@ -164,6 +168,7 @@ export class PresetStore {
         aiAssistantPrompts: data.aiAssistantPrompts ?? '{}',
         customInjectionsJson: JSON.stringify(data.customInjections ?? []),
         promptOrderJson: JSON.stringify(data.promptOrder ?? []),
+        generationFormatJson: data.generationFormat ? JSON.stringify(data.generationFormat) : '',
         advancedMode: data.advancedMode ? 1 : 0,
         mergeConsecutiveRoles: data.mergeConsecutiveRoles ? 1 : 0,
         createdAt: now,
@@ -208,6 +213,7 @@ export class PresetStore {
     if (data.aiAssistantPrompts !== undefined) values.aiAssistantPrompts = data.aiAssistantPrompts;
     if (data.customInjections !== undefined) values.customInjectionsJson = JSON.stringify(data.customInjections);
     if (data.promptOrder !== undefined) values.promptOrderJson = JSON.stringify(data.promptOrder);
+    if (data.generationFormat !== undefined) values.generationFormatJson = data.generationFormat ? JSON.stringify(data.generationFormat) : '';
     if (data.advancedMode !== undefined) values.advancedMode = data.advancedMode ? 1 : 0;
     if (data.mergeConsecutiveRoles !== undefined) values.mergeConsecutiveRoles = data.mergeConsecutiveRoles ? 1 : 0;
 
@@ -348,6 +354,7 @@ export class PresetStore {
         aiAssistantPrompts: original.aiAssistantPrompts ?? '{}',
         customInjectionsJson: original.customInjectionsJson,
         promptOrderJson: original.promptOrderJson,
+        generationFormatJson: original.generationFormatJson,
         advancedMode: original.advancedMode,
         mergeConsecutiveRoles: original.mergeConsecutiveRoles,
         createdAt: now,
@@ -445,6 +452,7 @@ export class PresetStore {
       aiAssistantPrompts: preset.aiAssistantPrompts,
       customInjections: preset.customInjections,
       promptOrder: preset.promptOrder,
+      generationFormat: preset.generationFormat,
       advancedMode: preset.advancedMode,
       mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
     };
@@ -458,6 +466,20 @@ export class PresetStore {
     const rawInjections = JSON.parse(row.customInjectionsJson || '[]');
     const rawOrder = JSON.parse(row.promptOrderJson || '[]');
     const { customInjections, promptOrder } = normalizePresetCanvas(rawInjections, rawOrder);
+    // Generation format: empty column = absent = auto. A malformed payload
+    // (never expected — only this store writes it) degrades to auto rather
+    // than failing every preset read.
+    let generationFormat: GenerationFormat | undefined;
+    if (row.generationFormatJson) {
+      try {
+        const parsed = JSON.parse(row.generationFormatJson) as GenerationFormat;
+        if (parsed && typeof parsed === 'object' && (parsed.mode === 'auto' || parsed.mode === 'manual')) {
+          generationFormat = parsed;
+        }
+      } catch (err) {
+        logger.warn('preset %s: malformed generation_format_json ignored (%s)', row.id, err instanceof Error ? err.message : String(err));
+      }
+    }
     return {
       id: row.id,
       name: row.name,
@@ -479,6 +501,7 @@ export class PresetStore {
       promptOrder,
       advancedMode: Boolean(row.advancedMode),
       mergeConsecutiveRoles: Boolean(row.mergeConsecutiveRoles),
+      ...(generationFormat ? { generationFormat } : {}),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

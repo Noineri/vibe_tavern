@@ -1,11 +1,11 @@
 import type { PresetStore } from "@vibe-tavern/db";
-import type { CustomInjection, PromptOrderEntry, PromptPresetId, PromptPresetDto } from "@vibe-tavern/domain";
+import type { CustomInjection, GenerationFormat, PromptOrderEntry, PromptPresetId, PromptPresetDto } from "@vibe-tavern/domain";
 import { validation, notFound, conflict, isDomainError } from "../../shared/errors.js";
 
 type AuthorsNotePosition = "in_prompt" | "in_chat" | "after_chat";
 type AuthorsNoteRole = "system" | "user" | "assistant";
 
-function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjections: CustomInjection[]; promptOrder: PromptOrderEntry[]; advancedMode?: boolean | number | null; mergeConsecutiveRoles?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
+function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjections: CustomInjection[]; promptOrder: PromptOrderEntry[]; advancedMode?: boolean | number | null; mergeConsecutiveRoles?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; generationFormat?: GenerationFormat; createdAt: string; updatedAt: string; }): PromptPresetDto {
   return {
     id: p.id,
     name: p.name,
@@ -26,6 +26,9 @@ function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; syste
     mergeConsecutiveRoles: Boolean(p.mergeConsecutiveRoles),
     scriptAiSystemPrompt: p.scriptAiSystemPrompt ?? "",
     aiAssistantPrompts: p.aiAssistantPrompts ?? "{}",
+    // Generation format (LS-3a). Absent = auto — spread only when present so
+    // the wire shape keeps matching pre-LS-3 presets byte-for-byte.
+    ...(p.generationFormat ? { generationFormat: p.generationFormat } : {}),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -68,6 +71,8 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   mergeConsecutiveRoles?: boolean;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
+  /** Generation format (LS-3a). Undefined = absent = auto. */
+  generationFormat?: GenerationFormat;
 }): Promise<PromptPresetDto> {
   const trimmed = (input.name ?? "").trim();
   if (!trimmed) {
@@ -92,6 +97,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     mergeConsecutiveRoles: input.mergeConsecutiveRoles ?? false,
     scriptAiSystemPrompt: input.scriptAiSystemPrompt ?? "",
     aiAssistantPrompts: input.aiAssistantPrompts ?? "{}",
+    generationFormat: input.generationFormat,
   });
   return mapPresetToDto(created);
 }
@@ -115,6 +121,8 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   mergeConsecutiveRoles?: boolean;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
+  /** Generation format (LS-3a). `null` clears back to auto; undefined = untouched. */
+  generationFormat?: GenerationFormat | null;
 }): Promise<PromptPresetDto> {
   try {
     const updated = await deps.presets.update(presetId as PromptPresetId, {
@@ -136,6 +144,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       mergeConsecutiveRoles: patch.mergeConsecutiveRoles,
       scriptAiSystemPrompt: patch.scriptAiSystemPrompt,
       aiAssistantPrompts: patch.aiAssistantPrompts,
+      generationFormat: patch.generationFormat,
     });
     return mapPresetToDto(updated);
   } catch (error) {

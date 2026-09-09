@@ -114,6 +114,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
         result.chats.length +
         result.lorebooks.length +
         result.presets.length +
+        result.formats.length +
         (result.persona?.count ?? 0);
       if (totalImportable === 0 && result.errors.length === 0) {
         setError(t("st_no_files"));
@@ -153,6 +154,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
         chats: result.chats,
         lorebooks: result.lorebooks,
         presets: result.presets,
+        formats: result.formats,
         personas: result.personas,
       });
       toast.success(msg);
@@ -180,6 +182,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       scanResult.chats.length +
       scanResult.lorebooks.length +
       scanResult.presets.length +
+      scanResult.formats.length +
       (scanResult.persona?.count ?? 0)
     : 0;
 
@@ -245,6 +248,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
               characters: scanResult.characters.length,
               chats: scanResult.chats.length,
               presets: scanResult.presets.length,
+              formats: scanResult.formats.length,
               lorebooks: scanResult.lorebooks.length,
             })}
           </div>
@@ -292,6 +296,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
               chats: importResult.chats,
               lorebooks: importResult.lorebooks,
               presets: importResult.presets,
+              formats: importResult.formats,
               personas: importResult.personas,
             })}
           </div>
@@ -518,7 +523,7 @@ function BusyLine(props: { label: string }) {
 }
 
 // Fixed import order (matches the scanner's phase sequence).
-const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "lorebooks", "presets", "personas"];
+const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "lorebooks", "presets", "formats", "personas"];
 
 /** Per-phase progress breakdown for a streaming ST directory import. Reuses
  *  the old bar visual (animated accent dots + width:% fill) but drives it from
@@ -535,6 +540,7 @@ function StImportProgress(props: {
     chats: props.scanResult.chats.length,
     lorebooks: props.scanResult.lorebooks.length,
     presets: props.scanResult.presets.length,
+    formats: props.scanResult.formats.length,
     personas: props.scanResult.persona?.count ?? 0,
   };
   const activeIdx = props.progress.activePhase ? IMPORT_PHASES.indexOf(props.progress.activePhase) : -1;

@@ -775,6 +775,10 @@ export const promptPresets = sqliteTable('prompt_presets', {
   aiAssistantPrompts: text('ai_assistant_prompts').notNull().default('{}'),
   customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
   promptOrderJson: text('prompt_order_json').notNull().default('[]'),
+  // Generation format (LOCAL_SUPPORT_PLAN LS-3a): the TC string-shape glue,
+  // stored as a JSON GenerationFormat object. Empty string = absent = auto
+  // (backward-compatible with pre-LS-3 presets).
+  generationFormatJson: text('generation_format_json').notNull().default(''),
   advancedMode: integer('advanced_mode').notNull().default(0),
   mergeConsecutiveRoles: integer('merge_consecutive_roles').notNull().default(0),
   contentHash: text('content_hash'),

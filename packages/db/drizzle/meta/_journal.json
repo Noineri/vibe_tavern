@@ -477,6 +477,13 @@
       "when": 1788923319554,
       "tag": "0067_chemical_phantom_reporter",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1788927133042,
+      "tag": "0068_boring_mad_thinker",
+      "breakpoints": true
     }
   ]
 }

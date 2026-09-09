@@ -13,6 +13,7 @@ export * from "./dice.js";
 export * from "./entities.js";
 export * from "./event-bus.js";
 export * from "./extract-thinking-tags.js";
+export * from "./generation-format.js";
 export * from "./experience-helpers.js";
 export * from "./experience-payload-schema.js";
 export * from "./experience-random.js";

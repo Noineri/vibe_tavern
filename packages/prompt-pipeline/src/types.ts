@@ -1,4 +1,4 @@
-import type { DiceRollSnapshot, ExperienceReportSnapshot, PromptLayerPosition, PronounForms, RegexPreset } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, ExperienceReportSnapshot, GenerationFormat, PromptLayerPosition, PronounForms, RegexPreset } from "@vibe-tavern/domain";
 
 export type { PromptLayerPosition };
 
@@ -150,6 +150,10 @@ export interface PromptAssemblyContext {
       role: string;
     }>;
     promptOrder?: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom"; zone?: "before_chat" | "in_chat" | "after_chat"; depth?: number | null }>;
+    /** Generation format (LOCAL_SUPPORT_PLAN LS-3a): the TC string-shape glue.
+     *  Passed through untouched (no macros apply — sequences are template
+     *  syntax, not prose). Absent = auto. */
+    generationFormat?: GenerationFormat;
   } | null;
   /** AI assistant context. Only used when mode is "ai_assistant". */
   aiAssistant?: {
@@ -254,6 +258,10 @@ export interface PromptAssemblyResult {
   finalPayload: Record<string, unknown>;
   /** Assistant prefill text, passed through from preset for executor use. */
   prefill?: string | null;
+  /** Generation format of the preset assembly (LOCAL_SUPPORT_PLAN LS-3b) —
+   *  exported like `prefill` so the orchestrator can thread it to the TC
+   *  completion seam. Null/absent = auto (or no preset resolved). */
+  completionFormat?: GenerationFormat | null;
   /** Human-readable compaction summary for the trace UI. Not sent to the model. */
   compactionSummary?: string | null;
 }
