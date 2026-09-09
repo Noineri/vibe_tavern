@@ -156,6 +156,12 @@ describe("sampler params", () => {
     // separate llamacpp_native set, so Ollama/vLLM presets never receive them)
     expect(ollamaCaps.adaptiveTarget).toBe(false);
     expect(ollamaCaps.adaptiveDecay).toBe(false);
+    // …and without the B2 llama-server numeric tail
+    expect(ollamaCaps.dynatempRange).toBe(false);
+    expect(ollamaCaps.dynatempExponent).toBe(false);
+    expect(ollamaCaps.topNSigma).toBe(false);
+    expect(ollamaCaps.smoothingFactor).toBe(false);
+    expect(ollamaCaps.dryPenaltyLastN).toBe(false);
 
     const koboldCaps = resolveSamplerCapabilities("koboldcpp", PROVIDER_TYPE.koboldCpp);
     expect(koboldCaps.topA).toBe(true);
@@ -166,6 +172,11 @@ describe("sampler params", () => {
     // KoboldCPP native supports adaptive-p (V1-verified request fields)
     expect(koboldCaps.adaptiveTarget).toBe(true);
     expect(koboldCaps.adaptiveDecay).toBe(true);
+    // The B2 llama-server numeric tail is llama-server-only — NOT in koboldcpp_native
+    expect(koboldCaps.dynatempRange).toBe(false);
+    expect(koboldCaps.topNSigma).toBe(false);
+    expect(koboldCaps.smoothingFactor).toBe(false);
+    expect(koboldCaps.dryPenaltyLastN).toBe(false);
   });
 
   it("resolves llamacpp_native for llama.cpp and Unsloth (openai_local + adaptive-p)", () => {
@@ -183,16 +194,28 @@ describe("sampler params", () => {
     // …plus adaptive-p
     expect(llamaCaps.adaptiveTarget).toBe(true);
     expect(llamaCaps.adaptiveDecay).toBe(true);
+    // …plus the llama-server numeric tail (B2)
+    expect(llamaCaps.dynatempRange).toBe(true);
+    expect(llamaCaps.dynatempExponent).toBe(true);
+    expect(llamaCaps.topNSigma).toBe(true);
+    expect(llamaCaps.smoothingFactor).toBe(true);
+    expect(llamaCaps.dryPenaltyLastN).toBe(true);
 
     const unslothCaps = resolveSamplerCapabilities(null, PROVIDER_TYPE.unsloth);
     expect(unslothCaps.adaptiveTarget).toBe(true);
     expect(unslothCaps.adaptiveDecay).toBe(true);
     expect(unslothCaps.dryMultiplier).toBe(true);
+    expect(unslothCaps.dynatempRange).toBe(true);
+    expect(unslothCaps.dryPenaltyLastN).toBe(true);
 
     // The shared openai_local set (Ollama / vLLM-family presets) is untouched
     const vllmCaps = resolveSamplerCapabilities("vllm", PROVIDER_TYPE.openaiCompat);
     expect(resolveSamplerSet("vllm", PROVIDER_TYPE.openaiCompat)).toBe("openai_local");
     expect(vllmCaps.adaptiveTarget).toBe(false);
     expect(vllmCaps.adaptiveDecay).toBe(false);
+    expect(vllmCaps.dynatempRange).toBe(false);
+    expect(vllmCaps.topNSigma).toBe(false);
+    expect(vllmCaps.smoothingFactor).toBe(false);
+    expect(vllmCaps.dryPenaltyLastN).toBe(false);
   });
 });

@@ -81,3 +81,84 @@ describe("provider_profiles adaptive-p columns (B1)", () => {
     expect(copy.adaptiveDecay).toBe(0.75);
   });
 });
+
+// LOCAL_SAMPLERS_ADDITION_REPORT B2 — llama-server numeric tail columns on the
+// same boundary (provider_profiles persistence). Pins the migration defaults
+// (dynatemp 0/1, top_n_sigma 0, smoothing_factor 0, dry_penalty_last_n −1 =
+// disabled), create round-trip, update, and duplicate.
+describe("provider_profiles numeric-tail columns (B2)", () => {
+  test("defaults are disabled per upstream: dynatemp 0/1, top_n_sigma 0, smoothing 0, dry window −1", async () => {
+    const profile = await store.create({
+      name: "llama-server",
+      providerPreset: "llamacpp",
+      endpoint: "http://localhost:8080/v1",
+    });
+    expect(profile.dynatempRange).toBe(0);
+    expect(profile.dynatempExponent).toBe(1);
+    expect(profile.topNSigma).toBe(0);
+    expect(profile.smoothingFactor).toBe(0);
+    // −1 = disabled: the mapper omits dry_penalty_last_n entirely (llama-server
+    // rejects −1 with HTTP 400; 0 would be a zero window = DRY inert).
+    expect(profile.dryPenaltyLastN).toBe(-1);
+  });
+
+  test("create round-trips explicit numeric-tail values", async () => {
+    const profile = await store.create({
+      name: "llama-server",
+      providerPreset: "llamacpp",
+      endpoint: "http://localhost:8080/v1",
+      dynatempRange: 1.5,
+      dynatempExponent: 0.8,
+      topNSigma: 0.95,
+      smoothingFactor: 0.7,
+      dryPenaltyLastN: 512,
+    });
+    expect(profile.dynatempRange).toBe(1.5);
+    expect(profile.dynatempExponent).toBe(0.8);
+    expect(profile.topNSigma).toBe(0.95);
+    expect(profile.smoothingFactor).toBe(0.7);
+    expect(profile.dryPenaltyLastN).toBe(512);
+
+    const fetched = await store.getById(profile.id);
+    expect(fetched?.dynatempRange).toBe(1.5);
+    expect(fetched?.dynatempExponent).toBe(0.8);
+    expect(fetched?.topNSigma).toBe(0.95);
+    expect(fetched?.smoothingFactor).toBe(0.7);
+    expect(fetched?.dryPenaltyLastN).toBe(512);
+  });
+
+  test("update rewrites the numeric-tail fields", async () => {
+    const profile = await store.create({
+      name: "llama-server",
+      providerPreset: "llamacpp",
+      endpoint: "http://localhost:8080/v1",
+    });
+    const updated = await store.update(profile.id, {
+      dynatempRange: 0.5,
+      dynatempExponent: 1.3,
+      topNSigma: 0.4,
+      smoothingFactor: 0.9,
+      dryPenaltyLastN: 1024,
+    });
+    expect(updated.dynatempRange).toBe(0.5);
+    expect(updated.dynatempExponent).toBe(1.3);
+    expect(updated.topNSigma).toBe(0.4);
+    expect(updated.smoothingFactor).toBe(0.9);
+    expect(updated.dryPenaltyLastN).toBe(1024);
+  });
+
+  test("duplicate carries the numeric-tail fields over", async () => {
+    const profile = await store.create({
+      name: "llama-server",
+      providerPreset: "llamacpp",
+      endpoint: "http://localhost:8080/v1",
+      dynatempRange: 1.5,
+      smoothingFactor: 0.7,
+      dryPenaltyLastN: 512,
+    });
+    const copy = await store.duplicate(profile.id);
+    expect(copy.dynatempRange).toBe(1.5);
+    expect(copy.smoothingFactor).toBe(0.7);
+    expect(copy.dryPenaltyLastN).toBe(512);
+  });
+});

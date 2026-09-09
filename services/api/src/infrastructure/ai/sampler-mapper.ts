@@ -46,19 +46,24 @@ export interface SamplerConfig {
 // ---------------------------------------------------------------------------
 
 /**
- * llama.cpp sampler chain sent with adaptive-p (LOCAL_SAMPLERS_ADDITION_REPORT
- * B1, V1 probe on llama-server b10786): on the /v1/chat endpoint exotic
- * samplers are accepted but ONLY applied when listed in the `samplers` JSON
- * array — providing the chain replaces the server's default chain, so it must
- * carry the full default order or previously-applied samplers (temperature,
- * penalties, top_k/top_p/min_p, dry, xtc) would be silently dropped.
- * `adaptive_p` is listed LAST: it is a token-selecting sampler (replaces
- * `dist`) and llama.cpp always appends it at the very end of the chain. Names
- * are llama.cpp's canonical sampler names (common_sampler_types_from_names);
- * the V1 probe confirmed `adaptive` alone does NOT match — `adaptive_p` does.
+ * llama.cpp sampler chain emitted for llama-server-backed providers
+ * (LOCAL_SAMPLERS_ADDITION_REPORT B1/B2, V1 probe on llama-server b10786): on
+ * the /v1/chat endpoint exotic samplers are accepted but ONLY applied when
+ * listed in the `samplers` JSON array — providing the chain replaces the
+ * server's default chain, so it must carry the full default order or
+ * previously-applied samplers (temperature, penalties, top_k/top_p/min_p, dry,
+ * xtc) would be silently dropped. Names are llama.cpp's canonical sampler
+ * names (common_sampler_types_from_names); the V1 probe confirmed `adaptive`
+ * alone does NOT match — `adaptive_p` does. `top_n_sigma` and `dry` are part
+ * of the same chain, so the B2 numeric tail (top_n_sigma, DRY window) rides
+ * this emission without new entries; dynatemp_* and smoothing_factor are
+ * parameters consumed by the listed temperature/top_p samplers.
+ * `adaptive_p` is listed LAST and only when adaptive-p itself is enabled: it
+ * is a token-selecting sampler (replaces `dist`) and llama.cpp always appends
+ * it at the very end of the chain.
  * KoboldCPP's native path needs no chain (its request fields are standalone).
  */
-const LLAMACPP_SAMPLER_CHAIN = [
+const LLAMACPP_SAMPLER_CHAIN_BASE = [
   "penalties",
   "dry",
   "top_n_sigma",
@@ -68,25 +73,70 @@ const LLAMACPP_SAMPLER_CHAIN = [
   "min_p",
   "xtc",
   "temperature",
-  "adaptive_p",
 ] as const;
 
+const LLAMACPP_SAMPLER_CHAIN = [...LLAMACPP_SAMPLER_CHAIN_BASE, "adaptive_p"] as const;
+
 /** Emit the adaptive-p request fields for one provider bag. Shared by the
- *  llama.cpp/unsloth (llama-server, also emits the `samplers` chain) and
- *  koboldcpp (native request fields, no chain) branches. `adaptiveTarget`
- *  values < 0 mean disabled (llama.cpp's default −1) — nothing is emitted. */
+ *  llama.cpp/unsloth (llama-server) and koboldcpp (native request fields)
+ *  branches. `adaptiveTarget` values < 0 mean disabled (llama.cpp's default
+ *  −1) — nothing is emitted. The `samplers` chain is emitted separately by
+ *  the llama-server branch (see emitLlamaSamplerChain). */
 function emitAdaptivePOptions(
   providerOpts: Record<string, JSONValue>,
   can: (field: SamplerFieldId) => boolean,
   profile: StoredProviderProfileRecord,
-  includeChain: boolean,
 ): void {
   if (!(can("adaptiveTarget") && profile.adaptiveTarget != null && profile.adaptiveTarget >= 0)) return;
   providerOpts.adaptive_target = profile.adaptiveTarget;
   if (can("adaptiveDecay") && profile.adaptiveDecay != null) {
     providerOpts.adaptive_decay = profile.adaptiveDecay;
   }
-  if (includeChain) providerOpts.samplers = [...LLAMACPP_SAMPLER_CHAIN];
+}
+
+/** Whether any of the llama-server-only exotic samplers that REQUIRE a chain
+ *  entry (adaptive-p, top_n_sigma, DRY) is active for this profile.
+ *  dynatemp_* / smoothing_factor are temperature/top_p modifiers and do not
+ *  force the chain on their own, but they are covered whenever the chain IS
+ *  emitted (they ride the same request fields). */
+function isLlamaChainActive(
+  can: (field: SamplerFieldId) => boolean,
+  profile: StoredProviderProfileRecord,
+): boolean {
+  const adaptiveOn = can("adaptiveTarget") && profile.adaptiveTarget != null && profile.adaptiveTarget >= 0;
+  if (adaptiveOn) return true;
+  if (can("topNSigma") && profile.topNSigma != null && profile.topNSigma > 0) return true;
+  if (can("dryPenaltyLastN") && profile.dryPenaltyLastN != null && profile.dryPenaltyLastN > 0) return true;
+  return false;
+}
+
+/** Emit the llama-server numeric tail (LOCAL_SAMPLERS_ADDITION_REPORT B2).
+ *  Off semantics follow upstream defaults: dynatemp_range / top_n_sigma /
+ *  smoothing_factor 0 = disabled (nothing emitted), dynatemp_exponent only
+ *  rides an enabled range. `dry_penalty_last_n` (V1 probe): llama-server
+ *  REJECTS −1 with HTTP 400 and 0 means a zero window (DRY inert), so the
+ *  disabled sentinel (−1, the column default) and 0 are both omitted — only a
+ *  real window (> 0, recommended 512) is ever emitted. */
+function emitLlamaNumericTailOptions(
+  providerOpts: Record<string, JSONValue>,
+  can: (field: SamplerFieldId) => boolean,
+  profile: StoredProviderProfileRecord,
+): void {
+  if (can("topNSigma") && profile.topNSigma != null && profile.topNSigma > 0) {
+    providerOpts.top_n_sigma = profile.topNSigma;
+  }
+  if (can("dynatempRange") && profile.dynatempRange != null && profile.dynatempRange > 0) {
+    providerOpts.dynatemp_range = profile.dynatempRange;
+    if (can("dynatempExponent") && profile.dynatempExponent != null) {
+      providerOpts.dynatemp_exponent = profile.dynatempExponent;
+    }
+  }
+  if (can("smoothingFactor") && profile.smoothingFactor != null && profile.smoothingFactor > 0) {
+    providerOpts.smoothing_factor = profile.smoothingFactor;
+  }
+  if (can("dryPenaltyLastN") && profile.dryPenaltyLastN != null && profile.dryPenaltyLastN > 0) {
+    providerOpts.dry_penalty_last_n = profile.dryPenaltyLastN;
+  }
 }
 
 /**
@@ -166,7 +216,15 @@ export function buildSamplerConfig(
       if (can("tfsZ") && profile.tfsZ != null) providerOpts.tfs_z = profile.tfsZ;
       // adaptive-p — only applied on /v1/chat when listed in the `samplers`
       // chain (V1 probe); the chain emission is what makes it take effect.
-      emitAdaptivePOptions(providerOpts, can, profile, true);
+      emitAdaptivePOptions(providerOpts, can, profile);
+      // llama-server numeric tail (B2). The chain is emitted when adaptive-p
+      // OR any chain-gated exotic (top_n_sigma, DRY window) is active — the
+      // tail params are inert without it.
+      emitLlamaNumericTailOptions(providerOpts, can, profile);
+      if (isLlamaChainActive(can, profile)) {
+        const adaptiveOn = can("adaptiveTarget") && profile.adaptiveTarget != null && profile.adaptiveTarget >= 0;
+        providerOpts.samplers = adaptiveOn ? [...LLAMACPP_SAMPLER_CHAIN] : [...LLAMACPP_SAMPLER_CHAIN_BASE];
+      }
       if (can("repeatLastN") && profile.repeatLastN != null) providerOpts.repeat_last_n = profile.repeatLastN;
       if (can("mirostat") && profile.mirostat != null) providerOpts.mirostat = profile.mirostat;
       if (can("mirostatTau") && profile.mirostatTau != null) providerOpts.mirostat_tau = profile.mirostatTau;
@@ -241,7 +299,7 @@ export function buildSamplerConfig(
       if (can("typicalP") && profile.typicalP != null) providerOpts.typical = profile.typicalP;
       if (can("tfsZ") && profile.tfsZ != null) providerOpts.tfs = profile.tfsZ;
       // adaptive-p (KoboldCPP native request fields; no chain needed).
-      emitAdaptivePOptions(providerOpts, can, profile, false);
+      emitAdaptivePOptions(providerOpts, can, profile);
       if (can("repeatLastN") && profile.repeatLastN != null) providerOpts.rep_pen_range = profile.repeatLastN;
       if (can("repetitionPenalty") && profile.repetitionPenalty != null) providerOpts.rep_pen = profile.repetitionPenalty;
       if (can("dryMultiplier") && profile.dryMultiplier != null) providerOpts.dry_multiplier = profile.dryMultiplier;

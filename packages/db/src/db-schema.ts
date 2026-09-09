@@ -845,6 +845,16 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   // adaptive_target −1 = disabled (llama.cpp default), 0.0–1.0 active.
   adaptiveTarget: real('adaptive_target').notNull().default(-1),
   adaptiveDecay: real('adaptive_decay').notNull().default(0.9),
+  // llama-server numeric tail (LOCAL_SAMPLERS_ADDITION_REPORT B2). Off
+  // defaults read like upstream: dynatemp_range 0 / top_n_sigma 0 /
+  // smoothing_factor 0 = disabled, dynatemp_exponent 1 = upstream default
+  // (applies only when range > 0). dry_penalty_last_n −1 = disabled: the
+  // mapper omits the field entirely (llama-server rejects −1 with HTTP 400
+  // and 0 means a zero window — DRY inert), > 0 is a real window.
+  dynatempRange: real('dynatemp_range').notNull().default(0),
+  dynatempExponent: real('dynatemp_exponent').notNull().default(1.0),
+  topNSigma: real('top_n_sigma').notNull().default(0),
+  smoothingFactor: real('smoothing_factor').notNull().default(0),
   repeatLastN: integer('repeat_last_n').notNull().default(0),
   mirostat: integer('mirostat').notNull().default(0),
   mirostatTau: real('mirostat_tau').notNull().default(5.0),
@@ -852,6 +862,7 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   dryMultiplier: real('dry_multiplier').notNull().default(0),
   dryBase: real('dry_base').notNull().default(1.75),
   dryAllowedLength: integer('dry_allowed_length').notNull().default(2),
+  dryPenaltyLastN: integer('dry_penalty_last_n').notNull().default(-1),
   drySequenceBreakersJson: text('dry_sequence_breakers_json'),
   xtcThreshold: real('xtc_threshold').notNull().default(0.1),
   xtcProbability: real('xtc_probability').notNull().default(0),

@@ -53,6 +53,10 @@ export interface FormState {
   tfsZ: number;
   adaptiveTarget: number;
   adaptiveDecay: number;
+  dynatempRange: number;
+  dynatempExponent: number;
+  topNSigma: number;
+  smoothingFactor: number;
   repeatLastN: number;
   mirostat: number;
   mirostatTau: number;
@@ -61,6 +65,7 @@ export interface FormState {
   dryBase: number;
   dryAllowedLength: number;
   drySequenceBreakers: string[];
+  dryPenaltyLastN: number;
   xtcThreshold: number;
   xtcProbability: number;
   frequencyPenalty: number;
@@ -137,7 +142,12 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     tfsZ: p.tfsZ ?? 1,
     adaptiveTarget: p.adaptiveTarget ?? -1,
     adaptiveDecay: p.adaptiveDecay ?? 0.9,
+    dynatempRange: p.dynatempRange ?? 0,
+    dynatempExponent: p.dynatempExponent ?? 1,
+    topNSigma: p.topNSigma ?? 0,
+    smoothingFactor: p.smoothingFactor ?? 0,
     repeatLastN: p.repeatLastN ?? 0,
+    dryPenaltyLastN: p.dryPenaltyLastN ?? -1,
     mirostat: p.mirostat ?? 0,
     mirostatTau: p.mirostatTau ?? 5,
     mirostatEta: p.mirostatEta ?? 0.1,
@@ -493,7 +503,12 @@ export function ProviderModal({
       tfsZ: baseProfile.tfsZ,
       adaptiveTarget: baseProfile.adaptiveTarget,
       adaptiveDecay: baseProfile.adaptiveDecay,
+      dynatempRange: baseProfile.dynatempRange,
+      dynatempExponent: baseProfile.dynatempExponent,
+      topNSigma: baseProfile.topNSigma,
+      smoothingFactor: baseProfile.smoothingFactor,
       repeatLastN: baseProfile.repeatLastN,
+      dryPenaltyLastN: baseProfile.dryPenaltyLastN,
       mirostat: baseProfile.mirostat,
       mirostatTau: baseProfile.mirostatTau,
       mirostatEta: baseProfile.mirostatEta,
@@ -531,7 +546,12 @@ export function ProviderModal({
         tfsZ: pick("tfsZ") ?? 1,
         adaptiveTarget: pick("adaptiveTarget") ?? -1,
         adaptiveDecay: pick("adaptiveDecay") ?? 0.9,
+        dynatempRange: pick("dynatempRange") ?? 0,
+        dynatempExponent: pick("dynatempExponent") ?? 1,
+        topNSigma: pick("topNSigma") ?? 0,
+        smoothingFactor: pick("smoothingFactor") ?? 0,
         repeatLastN: pick("repeatLastN") ?? 0,
+        dryPenaltyLastN: pick("dryPenaltyLastN") ?? -1,
         mirostat: pick("mirostat") ?? 0,
         mirostatTau: pick("mirostatTau") ?? 5,
         mirostatEta: pick("mirostatEta") ?? 0.1,

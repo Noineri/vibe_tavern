@@ -14,6 +14,10 @@ export type SamplerFieldId =
   | "tfsZ"
   | "adaptiveTarget"
   | "adaptiveDecay"
+  | "dynatempRange"
+  | "dynatempExponent"
+  | "topNSigma"
+  | "smoothingFactor"
   | "repeatLastN"
   | "mirostat"
   | "mirostatTau"
@@ -22,6 +26,7 @@ export type SamplerFieldId =
   | "dryBase"
   | "dryAllowedLength"
   | "drySequenceBreakers"
+  | "dryPenaltyLastN"
   | "xtcThreshold"
   | "xtcProbability"
   | "frequencyPenalty"
@@ -59,8 +64,11 @@ export type SamplerSetId =
   // openai_local + adaptive-p, see LOCAL_SAMPLERS_ADDITION_REPORT B1).
   | "openai_local"
   // llama.cpp / Unsloth Studio — llama-server surface: openai_local +
-  // adaptive-p (`adaptiveTarget`/`adaptiveDecay`). Separate set so the shared
-  // openai_local set (Ollama, vLLM-family presets) stays untouched.
+  // adaptive-p (`adaptiveTarget`/`adaptiveDecay`) + the llama-server numeric
+  // tail (`dynatempRange`, `dynatempExponent`, `topNSigma`, `smoothingFactor`,
+  // `dryPenaltyLastN`). Separate set so the shared openai_local set (Ollama,
+  // vLLM-family presets) stays untouched. See LOCAL_SAMPLERS_ADDITION_REPORT
+  // B1/B2.
   | "llamacpp_native"
   // Group C — Minimal samplers + reasoning control
   | "minimal_reasoning"
@@ -94,6 +102,10 @@ const NONE: SamplerCapabilityFlags = {
   tfsZ: false,
   adaptiveTarget: false,
   adaptiveDecay: false,
+  dynatempRange: false,
+  dynatempExponent: false,
+  topNSigma: false,
+  smoothingFactor: false,
   repeatLastN: false,
   mirostat: false,
   mirostatTau: false,
@@ -102,6 +114,7 @@ const NONE: SamplerCapabilityFlags = {
   dryBase: false,
   dryAllowedLength: false,
   drySequenceBreakers: false,
+  dryPenaltyLastN: false,
   xtcThreshold: false,
   xtcProbability: false,
   frequencyPenalty: false,
@@ -201,8 +214,14 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
   ),
 
   // ── llama.cpp / Unsloth Studio ───────────────────────────────────────────
-  // llama-server (OpenAI-compat /v1): full local surface + adaptive-p.
+  // llama-server (OpenAI-compat /v1): full local surface + adaptive-p + the
+  // llama-server numeric tail (LOCAL_SAMPLERS_ADDITION_REPORT B2).
   // `adaptiveTarget` −1 = disabled (llama.cpp default); 0.0–1.0 active.
+  // Numeric-tail off defaults per upstream: dynatemp_range 0 (off),
+  // dynatemp_exponent 1 (applies only when range > 0), top_n_sigma 0 (off),
+  // smoothing_factor 0 (off); `dryPenaltyLastN` −1 = disabled (the field is
+  // omitted from the request — llama-server rejects −1 with HTTP 400 and 0
+  // means a zero window, DRY inert).
   llamacpp_native: set(
     "temperature",
     "topP",
@@ -212,6 +231,10 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "tfsZ",
     "adaptiveTarget",
     "adaptiveDecay",
+    "dynatempRange",
+    "dynatempExponent",
+    "topNSigma",
+    "smoothingFactor",
     "repeatLastN",
     "mirostat",
     "mirostatTau",
@@ -220,6 +243,7 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "dryBase",
     "dryAllowedLength",
     "drySequenceBreakers",
+    "dryPenaltyLastN",
     "xtcThreshold",
     "xtcProbability",
     "frequencyPenalty",

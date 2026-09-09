@@ -144,6 +144,10 @@ const CUSTOM_SAMPLER_DEFAULTS = {
   tfsZ: 1.0,
   adaptiveTarget: -1,
   adaptiveDecay: 0.9,
+  dynatempRange: 0,
+  dynatempExponent: 1,
+  topNSigma: 0,
+  smoothingFactor: 0,
   repeatLastN: 0,
   mirostat: 0,
   mirostatTau: 5.0,
@@ -151,6 +155,7 @@ const CUSTOM_SAMPLER_DEFAULTS = {
   dryMultiplier: 0,
   dryBase: 1.75,
   dryAllowedLength: 2,
+  dryPenaltyLastN: -1,
   drySequenceBreakers: [] as string[],
   xtcThreshold: 0.1,
   xtcProbability: 0,
@@ -184,6 +189,10 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
       updateForm('tfsZ', CUSTOM_SAMPLER_DEFAULTS.tfsZ);
       updateForm('adaptiveTarget', CUSTOM_SAMPLER_DEFAULTS.adaptiveTarget);
       updateForm('adaptiveDecay', CUSTOM_SAMPLER_DEFAULTS.adaptiveDecay);
+      updateForm('dynatempRange', CUSTOM_SAMPLER_DEFAULTS.dynatempRange);
+      updateForm('dynatempExponent', CUSTOM_SAMPLER_DEFAULTS.dynatempExponent);
+      updateForm('topNSigma', CUSTOM_SAMPLER_DEFAULTS.topNSigma);
+      updateForm('smoothingFactor', CUSTOM_SAMPLER_DEFAULTS.smoothingFactor);
       updateForm('repeatLastN', CUSTOM_SAMPLER_DEFAULTS.repeatLastN);
       updateForm('mirostat', CUSTOM_SAMPLER_DEFAULTS.mirostat);
       updateForm('mirostatTau', CUSTOM_SAMPLER_DEFAULTS.mirostatTau);
@@ -192,6 +201,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
       updateForm('dryBase', CUSTOM_SAMPLER_DEFAULTS.dryBase);
       updateForm('dryAllowedLength', CUSTOM_SAMPLER_DEFAULTS.dryAllowedLength);
       updateForm('drySequenceBreakers', CUSTOM_SAMPLER_DEFAULTS.drySequenceBreakers);
+      updateForm('dryPenaltyLastN', CUSTOM_SAMPLER_DEFAULTS.dryPenaltyLastN);
       updateForm('xtcThreshold', CUSTOM_SAMPLER_DEFAULTS.xtcThreshold);
       updateForm('xtcProbability', CUSTOM_SAMPLER_DEFAULTS.xtcProbability);
       updateForm('frequencyPenalty', CUSTOM_SAMPLER_DEFAULTS.frequencyPenalty);
@@ -533,6 +543,54 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   disabled={disabled}
                 />
               )}
+              {supports('dynatempRange') && (
+                <SamplerField
+                  label={t("sampler_dynatemp_range")}
+                  tooltip={t("sampler_dynatemp_range_hint")}
+                  min={0}
+                  max={10}
+                  step={0.1}
+                  value={form.dynatempRange}
+                  onChange={(v) => updateForm('dynatempRange', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('dynatempExponent') && (
+                <SamplerField
+                  label={t("sampler_dynatemp_exponent")}
+                  tooltip={t("sampler_dynatemp_exponent_hint")}
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  value={form.dynatempExponent}
+                  onChange={(v) => updateForm('dynatempExponent', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('topNSigma') && (
+                <SamplerField
+                  label={t("sampler_top_n_sigma")}
+                  tooltip={t("sampler_top_n_sigma_hint")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={form.topNSigma}
+                  onChange={(v) => updateForm('topNSigma', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('smoothingFactor') && (
+                <SamplerField
+                  label={t("sampler_smoothing_factor")}
+                  tooltip={t("sampler_smoothing_factor_hint")}
+                  min={0}
+                  max={1.5}
+                  step={0.05}
+                  value={form.smoothingFactor}
+                  onChange={(v) => updateForm('smoothingFactor', v)}
+                  disabled={disabled}
+                />
+              )}
               {supports('repeatLastN') && (
                 <SamplerField
                   label={t("sampler_repeat_last_n")}
@@ -617,6 +675,19 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   isInteger={true}
                   value={form.dryAllowedLength}
                   onChange={(v) => updateForm('dryAllowedLength', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('dryPenaltyLastN') && (
+                <SamplerField
+                  label={t("sampler_dry_penalty_last_n")}
+                  tooltip={t("sampler_dry_penalty_last_n_hint")}
+                  min={-1}
+                  max={4096}
+                  step={1}
+                  isInteger={true}
+                  value={form.dryPenaltyLastN}
+                  onChange={(v) => updateForm('dryPenaltyLastN', v)}
                   disabled={disabled}
                 />
               )}

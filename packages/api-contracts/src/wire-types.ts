@@ -64,6 +64,14 @@ export interface ClientProviderProfileRecord {
 	adaptiveTarget: number;
 	/** Adaptive-p decay rate (0.0–0.99); applies only when adaptiveTarget ≥ 0. */
 	adaptiveDecay: number;
+	/** DynaTemp range (llama-server); 0 = disabled (upstream default). */
+	dynatempRange: number;
+	/** DynaTemp exponent (llama-server); applies only when dynatempRange > 0. */
+	dynatempExponent: number;
+	/** Top n-sigma (llama-server); 0 = disabled (upstream default). */
+	topNSigma: number;
+	/** Smoothing factor (llama-server); 0 = disabled (upstream default). */
+	smoothingFactor: number;
 	repeatLastN: number;
 	mirostat: number;
 	mirostatTau: number;
@@ -72,6 +80,8 @@ export interface ClientProviderProfileRecord {
 	dryBase: number;
 	dryAllowedLength: number;
 	drySequenceBreakers: string[];
+	/** DRY penalty window (llama-server); −1 = disabled (field omitted — llama-server rejects −1), 0 = zero window (DRY inert), > 0 = real window. */
+	dryPenaltyLastN: number;
 	xtcThreshold: number;
 	xtcProbability: number;
 	frequencyPenalty: number;

@@ -70,6 +70,10 @@ export interface CreateProviderData {
   tfsZ?: number;
   adaptiveTarget?: number;
   adaptiveDecay?: number;
+  dynatempRange?: number;
+  dynatempExponent?: number;
+  topNSigma?: number;
+  smoothingFactor?: number;
   repeatLastN?: number;
   mirostat?: number;
   mirostatTau?: number;
@@ -77,6 +81,7 @@ export interface CreateProviderData {
   dryMultiplier?: number;
   dryBase?: number;
   dryAllowedLength?: number;
+  dryPenaltyLastN?: number;
   drySequenceBreakers?: string[];
   xtcThreshold?: number;
   xtcProbability?: number;
@@ -184,6 +189,10 @@ export class ProviderStore {
         tfsZ: data.tfsZ ?? 1.0,
         adaptiveTarget: data.adaptiveTarget ?? -1,
         adaptiveDecay: data.adaptiveDecay ?? 0.9,
+        dynatempRange: data.dynatempRange ?? 0,
+        dynatempExponent: data.dynatempExponent ?? 1.0,
+        topNSigma: data.topNSigma ?? 0,
+        smoothingFactor: data.smoothingFactor ?? 0,
         repeatLastN: data.repeatLastN ?? 0,
         mirostat: data.mirostat ?? 0,
         mirostatTau: data.mirostatTau ?? 5.0,
@@ -191,6 +200,7 @@ export class ProviderStore {
         dryMultiplier: data.dryMultiplier ?? 0,
         dryBase: data.dryBase ?? 1.75,
         dryAllowedLength: data.dryAllowedLength ?? 2,
+        dryPenaltyLastN: data.dryPenaltyLastN ?? -1,
         drySequenceBreakersJson: data.drySequenceBreakers?.length ? JSON.stringify(data.drySequenceBreakers) : null,
         xtcThreshold: data.xtcThreshold ?? 0.1,
         xtcProbability: data.xtcProbability ?? 0,
@@ -242,6 +252,10 @@ export class ProviderStore {
     if (data.tfsZ !== undefined) values.tfsZ = data.tfsZ;
     if (data.adaptiveTarget !== undefined) values.adaptiveTarget = data.adaptiveTarget;
     if (data.adaptiveDecay !== undefined) values.adaptiveDecay = data.adaptiveDecay;
+    if (data.dynatempRange !== undefined) values.dynatempRange = data.dynatempRange;
+    if (data.dynatempExponent !== undefined) values.dynatempExponent = data.dynatempExponent;
+    if (data.topNSigma !== undefined) values.topNSigma = data.topNSigma;
+    if (data.smoothingFactor !== undefined) values.smoothingFactor = data.smoothingFactor;
     if (data.repeatLastN !== undefined) values.repeatLastN = data.repeatLastN;
     if (data.mirostat !== undefined) values.mirostat = data.mirostat;
     if (data.mirostatTau !== undefined) values.mirostatTau = data.mirostatTau;
@@ -249,6 +263,7 @@ export class ProviderStore {
     if (data.dryMultiplier !== undefined) values.dryMultiplier = data.dryMultiplier;
     if (data.dryBase !== undefined) values.dryBase = data.dryBase;
     if (data.dryAllowedLength !== undefined) values.dryAllowedLength = data.dryAllowedLength;
+    if (data.dryPenaltyLastN !== undefined) values.dryPenaltyLastN = data.dryPenaltyLastN;
     if (data.drySequenceBreakers !== undefined) values.drySequenceBreakersJson = data.drySequenceBreakers.length ? JSON.stringify(data.drySequenceBreakers) : null;
     if (data.xtcThreshold !== undefined) values.xtcThreshold = data.xtcThreshold;
     if (data.xtcProbability !== undefined) values.xtcProbability = data.xtcProbability;
@@ -347,6 +362,10 @@ export class ProviderStore {
         tfsZ: original.tfsZ,
         adaptiveTarget: original.adaptiveTarget,
         adaptiveDecay: original.adaptiveDecay,
+        dynatempRange: original.dynatempRange,
+        dynatempExponent: original.dynatempExponent,
+        topNSigma: original.topNSigma,
+        smoothingFactor: original.smoothingFactor,
         repeatLastN: original.repeatLastN,
         mirostat: original.mirostat,
         mirostatTau: original.mirostatTau,
@@ -354,6 +373,7 @@ export class ProviderStore {
         dryMultiplier: original.dryMultiplier,
         dryBase: original.dryBase,
         dryAllowedLength: original.dryAllowedLength,
+        dryPenaltyLastN: original.dryPenaltyLastN,
         drySequenceBreakersJson: original.drySequenceBreakersJson,
         xtcThreshold: original.xtcThreshold,
         xtcProbability: original.xtcProbability,
@@ -628,6 +648,10 @@ export class ProviderStore {
       tfsZ: row.tfsZ,
       adaptiveTarget: row.adaptiveTarget,
       adaptiveDecay: row.adaptiveDecay,
+      dynatempRange: row.dynatempRange,
+      dynatempExponent: row.dynatempExponent,
+      topNSigma: row.topNSigma,
+      smoothingFactor: row.smoothingFactor,
       repeatLastN: row.repeatLastN,
       mirostat: row.mirostat,
       mirostatTau: row.mirostatTau,
@@ -635,6 +659,7 @@ export class ProviderStore {
       dryMultiplier: row.dryMultiplier,
       dryBase: row.dryBase,
       dryAllowedLength: row.dryAllowedLength,
+      dryPenaltyLastN: row.dryPenaltyLastN,
       drySequenceBreakers: safeParseJson<string[]>(row.drySequenceBreakersJson),
       xtcThreshold: row.xtcThreshold,
       xtcProbability: row.xtcProbability,

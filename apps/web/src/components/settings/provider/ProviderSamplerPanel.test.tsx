@@ -52,7 +52,12 @@ function form(): FormState {
     tfsZ: 1,
     adaptiveTarget: -1,
     adaptiveDecay: 0.9,
+    dynatempRange: 0,
+    dynatempExponent: 1,
+    topNSigma: 0,
+    smoothingFactor: 0,
     repeatLastN: -1,
+    dryPenaltyLastN: -1,
     mirostat: 0,
     mirostatTau: 5,
     mirostatEta: 0.1,
@@ -105,6 +110,12 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     fireEvent.click(getByText("samplers_advanced"));
     expect(getByText("sampler_adaptive_target")).toBeTruthy();
     expect(getByText("sampler_adaptive_decay")).toBeTruthy();
+    // B2 llama-server numeric tail
+    expect(getByText("sampler_dynatemp_range")).toBeTruthy();
+    expect(getByText("sampler_dynatemp_exponent")).toBeTruthy();
+    expect(getByText("sampler_top_n_sigma")).toBeTruthy();
+    expect(getByText("sampler_smoothing_factor")).toBeTruthy();
+    expect(getByText("sampler_dry_penalty_last_n")).toBeTruthy();
     unmount();
 
     const openaiCaps = resolveSamplerCapabilities("openai", "openai_compat");
@@ -114,5 +125,9 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     fireEvent.click(get2("samplers_advanced"));
     expect(query2("sampler_adaptive_target")).toBeNull();
     expect(query2("sampler_adaptive_decay")).toBeNull();
+    expect(query2("sampler_dynatemp_range")).toBeNull();
+    expect(query2("sampler_top_n_sigma")).toBeNull();
+    expect(query2("sampler_smoothing_factor")).toBeNull();
+    expect(query2("sampler_dry_penalty_last_n")).toBeNull();
   });
 });

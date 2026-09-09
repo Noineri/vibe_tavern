@@ -33,6 +33,10 @@ export async function saveProviderProfile(input: {
   tfsZ?: number;
   adaptiveTarget?: number;
   adaptiveDecay?: number;
+  dynatempRange?: number;
+  dynatempExponent?: number;
+  topNSigma?: number;
+  smoothingFactor?: number;
   repeatLastN?: number;
   mirostat?: number;
   mirostatTau?: number;
@@ -82,6 +86,10 @@ export async function updateProviderProfile(
     tfsZ?: number;
     adaptiveTarget?: number;
     adaptiveDecay?: number;
+    dynatempRange?: number;
+    dynatempExponent?: number;
+    topNSigma?: number;
+    smoothingFactor?: number;
     repeatLastN?: number;
     mirostat?: number;
     mirostatTau?: number;

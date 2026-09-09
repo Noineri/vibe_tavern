@@ -43,6 +43,10 @@ export interface ProviderSavePatch {
   tfsZ: number;
   adaptiveTarget: number;
   adaptiveDecay: number;
+  dynatempRange: number;
+  dynatempExponent: number;
+  topNSigma: number;
+  smoothingFactor: number;
   repeatLastN: number;
   mirostat: number;
   mirostatTau: number;
@@ -51,6 +55,7 @@ export interface ProviderSavePatch {
   dryBase: number;
   dryAllowedLength: number;
   drySequenceBreakers: string[];
+  dryPenaltyLastN: number;
   xtcThreshold: number;
   xtcProbability: number;
   frequencyPenalty: number;
@@ -99,6 +104,10 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     tfsZ: form.tfsZ,
     adaptiveTarget: form.adaptiveTarget,
     adaptiveDecay: form.adaptiveDecay,
+    dynatempRange: form.dynatempRange,
+    dynatempExponent: form.dynatempExponent,
+    topNSigma: form.topNSigma,
+    smoothingFactor: form.smoothingFactor,
     repeatLastN: form.repeatLastN,
     mirostat: form.mirostat,
     mirostatTau: form.mirostatTau,
@@ -107,6 +116,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     dryBase: form.dryBase,
     dryAllowedLength: form.dryAllowedLength,
     drySequenceBreakers: form.drySequenceBreakers,
+    dryPenaltyLastN: form.dryPenaltyLastN,
     xtcThreshold: form.xtcThreshold,
     xtcProbability: form.xtcProbability,
     frequencyPenalty: form.frequencyPenalty,
@@ -175,6 +185,10 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     tfsZ: form.tfsZ,
     adaptiveTarget: form.adaptiveTarget,
     adaptiveDecay: form.adaptiveDecay,
+    dynatempRange: form.dynatempRange,
+    dynatempExponent: form.dynatempExponent,
+    topNSigma: form.topNSigma,
+    smoothingFactor: form.smoothingFactor,
     repeatLastN: form.repeatLastN,
     mirostat: form.mirostat,
     mirostatTau: form.mirostatTau,
@@ -183,6 +197,7 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     dryBase: form.dryBase,
     dryAllowedLength: form.dryAllowedLength,
     drySequenceBreakers: form.drySequenceBreakers,
+    dryPenaltyLastN: form.dryPenaltyLastN,
     xtcThreshold: form.xtcThreshold,
     xtcProbability: form.xtcProbability,
     frequencyPenalty: form.frequencyPenalty,
@@ -233,6 +248,10 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     tfsZ: 1,
     adaptiveTarget: -1,
     adaptiveDecay: 0.9,
+    dynatempRange: 0,
+    dynatempExponent: 1,
+    topNSigma: 0,
+    smoothingFactor: 0,
     repeatLastN: 0,
     mirostat: 0,
     mirostatTau: 5,
@@ -240,6 +259,7 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     dryMultiplier: 0,
     dryBase: 1.75,
     dryAllowedLength: 2,
+    dryPenaltyLastN: -1,
     drySequenceBreakers: [],
     xtcThreshold: 0.1,
     xtcProbability: 0,
