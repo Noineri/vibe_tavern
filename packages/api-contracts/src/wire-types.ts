@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -51,6 +51,9 @@ export interface ClientProviderProfileRecord {
 	/** Token padding (LS-1d): safety margin subtracted from the context budget.
 	 *  Profile-level — see `effectiveContextBudget` in @vibe-tavern/domain. */
 	tokenPadding: number;
+	/** Generation mode (LS-2a): `chat` (default) vs raw text `completion`.
+	 *  Profile-level — see `GENERATION_MODE` in @vibe-tavern/domain. */
+	generationMode: GenerationMode;
 	bindPerModel: boolean;
 	/** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, round-trip like bindPerModel. */
 	modelFreeOnly: boolean;

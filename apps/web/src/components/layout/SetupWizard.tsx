@@ -165,6 +165,7 @@ function ProviderStep({
     contextBudget: existingProfile?.contextBudget ?? 16000,
     pinContextBudget: existingProfile?.pinContextBudget ?? false,
     tokenPadding: existingProfile?.tokenPadding ?? 0,
+    generationMode: existingProfile?.generationMode ?? "chat",
     bindPerModel: existingProfile?.bindPerModel ?? false,
     modelFreeOnly: existingProfile?.modelFreeOnly ?? false,
     modelGroupByOwner: existingProfile?.modelGroupByOwner ?? false,

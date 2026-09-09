@@ -101,6 +101,52 @@ function inferPresetFromEndpoint(endpoint?: string | null): string | null {
   return null;
 }
 
+// ─── Text-completion generation mode (LOCAL_SUPPORT_PLAN LS-2a/e) ──────────
+
+/** Whether a provider preset exposes the text-completion generation-mode
+ *  toggle. Mirrors {@link LogitBiasSupport} (fail-closed, shared web + API). */
+export interface TextCompletionSupport {
+  supported: boolean;
+  reason: string;
+}
+
+/**
+ * Presets whose backends serve an OpenAI-style `/completions` endpoint the TC
+ * generation mode can target: the llama.cpp protocol and the LOCAL OpenAI
+ * -compat presets (vLLM, ooba, TabbyAPI, Aphrodite, LM Studio) plus the
+ * generic `openai_compat` preset id (legacy/custom profiles on the same
+ * protocol). DELIBERATELY excluded (owner 2026-09-09):
+ * - cloud presets (`openai`, `openrouter`, … — they normalize onto the same
+ *   openai_compat protocol, but the toggle is local-only);
+ * - `koboldcpp` — already ALWAYS text completion natively, a toggle is
+ *   meaningless there;
+ * - `ollama`, `unsloth`, `anthropic`, `google*` — no `/completions` surface.
+ *
+ * UI-visibility gate. The backend execution gate is the per-protocol
+ * `capabilities.textCompletion` flag (protocol-registry): a profile that
+ * carries `completion` on a protocol without the flag silently stays on chat.
+ */
+const TEXT_COMPLETION_PRESETS = new Set([
+  PROVIDER_TYPE.llamaCpp,
+  PROVIDER_TYPE.openaiCompat,
+  "vllm",
+  "ooba",
+  "tabby",
+  "aphrodite",
+  "lmstudio",
+]);
+
+export function resolveTextCompletionSupport(providerPreset: string | null | undefined): TextCompletionSupport {
+  const preset = (providerPreset ?? "").trim();
+  if (TEXT_COMPLETION_PRESETS.has(preset)) {
+    return { supported: true, reason: "provider_serves_openai_completion_endpoint" };
+  }
+  if (preset === "koboldcpp") {
+    return { supported: false, reason: "koboldcpp_is_native_text_completion" };
+  }
+  return { supported: false, reason: "provider_has_no_completion_endpoint" };
+}
+
 export function resolveKnownTokenizerHint(model?: string | null): TokenizerHint | null {
   const m = (model ?? "").trim().toLowerCase();
   if (!m) return null;

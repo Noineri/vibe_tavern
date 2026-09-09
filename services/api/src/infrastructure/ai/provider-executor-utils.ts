@@ -7,7 +7,7 @@
  */
 
 import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
-import { COAUTHOR_TRANSPORT, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type ProviderType, log } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type GenerationMode, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -79,7 +79,7 @@ function resolveResponsesModel(
  * reaches the Responses resolver.
  */
 export function resolveModel(
-  profile: { providerPreset: string; endpoint: string; apiKey: string | null },
+  profile: { providerPreset: string; endpoint: string; apiKey: string | null; generationMode?: GenerationMode },
   model: string,
   transport: CoauthorTransport = COAUTHOR_TRANSPORT.chatCompletions,
   fetch?: ProviderFetch,

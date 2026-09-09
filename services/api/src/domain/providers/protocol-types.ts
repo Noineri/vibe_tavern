@@ -11,7 +11,7 @@
  */
 
 import type { LanguageModel } from "ai";
-import type { ProviderType, SamplerCapabilityFlags } from "@vibe-tavern/domain";
+import type { GenerationMode, ProviderType, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import type {
 	ProviderConnectionInput,
 	ProviderModelOption,
@@ -38,13 +38,16 @@ export interface ProviderCapabilityFlags {
 	/** Granular sampler controls supported by this provider type. */
 	samplers: SamplerCapabilityFlags;
 	/**
-	 * Whether this protocol can serve a raw text-completion request
-	 * (`/v1/completions` or a native equivalent like KoboldCPP `/api/v1/generate`),
-	 * as required by Novel Mode's flat-prompt assembler.
+	 * Whether this protocol serves the OPT-IN text-completion generation mode
+	 * (LOCAL_SUPPORT_PLAN LS-2): a profile with `generationMode: "completion"`
+	 * resolves to the protocol's OpenAI-style `/completions` model instead of
+	 * its chat model. Protocols without such an endpoint (clouds other than
+	 * the OpenAI-compat family, google, anthropic) stay `false` — a profile
+	 * that somehow carries `completion` there silently resolves chat.
 	 *
-	 * Refactor plan §5.3.3. Default false everywhere until Novel Mode's
-	 * text-completion wiring lands; flipping a flag here is the only change
-	 * needed to opt a protocol in.
+	 * Deliberate exclusions: `koboldcpp` is ALWAYS text completion natively
+	 * (its adapter serializes the flat prompt itself — no toggle to expose),
+	 * and `ollama`/`unsloth` have no OpenAI-compat completion surface.
 	 */
 	textCompletion: boolean;
 }
@@ -53,6 +56,10 @@ export interface ProviderProfileInput {
 	providerPreset: string;
 	endpoint: string;
 	apiKey: string | null;
+	/** Generation mode (LS-2a). Optional so call sites holding partial profile
+	 *  shapes stay valid; absent/undefined resolves the CHAT model (the
+	 *  historical behavior — the flip is silent and backward-compatible). */
+	generationMode?: GenerationMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,10 +96,12 @@ export interface ProtocolAdapter {
 	id: ProviderType;
 	capabilities: ProviderCapabilityFlags;
 	/**
-	 * Resolve a Vercel AI SDK chat {@link LanguageModel} for this protocol.
+	 * Resolve a Vercel AI SDK {@link LanguageModel} for this protocol.
 	 *
-	 * (Text-completion mode lands with §5.3.3; for now every protocol resolves
-	 * a chat model.)
+	 * The profile's `generationMode` (LS-2b) selects which model flavor the
+	 * OpenAI-compat-backed protocols resolve: `"completion"` → the raw
+	 * text-completion model (`/completions`), anything else → the chat model.
+	 * Protocols without a completion endpoint ignore the mode entirely.
 	 *
 	 * The optional {@link ProviderFetch} is injected into the AI SDK provider
 	 * factory's custom-`fetch` option so generation honors the profile's proxy

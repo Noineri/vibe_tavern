@@ -1,5 +1,24 @@
 import type { CoauthorTransport } from "./coauthor-transport-capabilities.js";
 
+/** Generation mode (LOCAL_SUPPORT_PLAN LS-2a): how the server talks to the
+ *  provider backend for this profile's generations.
+ *  - `chat`       — chat-completions messages (default; every protocol).
+ *  - `completion` — raw text completion: one flat prompt string to the
+ *    OpenAI-style `/completions` endpoint (llama-server, LM Studio,
+ *    ooba/TabbyAPI/Aphrodite via the generic openai_compat protocol).
+ *
+ *  The flip is SILENT and fully backward-compatible (owner 2026-09-09):
+ *  switching modes changes only how FUTURE generations are sent — chat
+ *  history, messages, presets, settings are never rewritten or migrated,
+ *  and flipping back is instant. KoboldCPP native is always text completion
+ *  (its own adapter serializes the flat prompt) and carries no toggle. */
+export const GENERATION_MODE = {
+  chat: "chat",
+  completion: "completion",
+} as const;
+
+export type GenerationMode = typeof GENERATION_MODE[keyof typeof GENERATION_MODE];
+
 /**
  * Canonical provider profile type — single source of truth.
  *
@@ -36,6 +55,10 @@ export interface StoredProviderProfileRecord {
   providerPreset: string;
   /** Co-Author-only OpenAI-compatible transport preference; RP ignores this field. */
   coauthorTransport: CoauthorTransport;
+  /** Generation mode (LS-2a) — see {@link GENERATION_MODE}. Profile-level
+   *  (never a per-model overlay field): the mode is a property of the
+   *  connection, not of a bound model. */
+  generationMode: GenerationMode;
   endpoint: string;
   apiKey: string | null;
   defaultModel: string | null;

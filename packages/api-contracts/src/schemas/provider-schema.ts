@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { COAUTHOR_TRANSPORT, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
 import { providerProxyModeSchema } from "./proxy-schema.js";
 
 /**
@@ -82,6 +82,10 @@ const providerCoreSchema = z.object({
   /** Token padding (LS-1d): safety margin subtracted from the context budget.
    *  Profile-level (not a per-model overlay field) — see effectiveContextBudget. */
   tokenPadding: z.number().optional(),
+  /** Generation mode (LS-2a): `chat` (default) vs raw text `completion`.
+   *  Profile-level (not a per-model overlay field) — see GENERATION_MODE.
+   *  The flip is silent: only how FUTURE generations are sent changes. */
+  generationMode: z.enum([GENERATION_MODE.chat, GENERATION_MODE.completion]).optional(),
   /** When true, sampler/context edits route to a per-model overlay (see modelSettingsOverlaySchema). */
   bindPerModel: z.boolean().optional(),
   modelFreeOnly: z.boolean().optional(),

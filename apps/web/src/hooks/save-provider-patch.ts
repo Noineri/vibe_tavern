@@ -15,7 +15,7 @@
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { PROVIDER_TYPE, type ModelSettingsOverlay, type ProviderProxyMode, tag } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, GENERATION_MODE, type GenerationMode, type ModelSettingsOverlay, type ProviderProxyMode, tag } from "@vibe-tavern/domain";
 
 const saveLog = tag("save");
 
@@ -33,6 +33,8 @@ export interface ProviderSavePatch {
   pinContextBudget: boolean;
   /** Token padding (LS-1d) — safety margin subtracted from the context budget. */
   tokenPadding: number;
+  /** Generation mode (LS-2a): chat (default) vs raw text completion. */
+  generationMode: GenerationMode;
   bindPerModel: boolean;
   modelFreeOnly: boolean;
   modelGroupByOwner: boolean;
@@ -96,6 +98,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
     tokenPadding: form.tokenPadding,
+    generationMode: form.generationMode,
     bindPerModel: form.bindPerModel,
     modelFreeOnly: form.modelFreeOnly,
     modelGroupByOwner: form.modelGroupByOwner,
@@ -243,6 +246,7 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     contextBudget: conn.maxTokens || null,
     pinContextBudget: false,  // not in ConnectionState yet
     tokenPadding: 0,  // not in ConnectionState yet — padding is modal-only
+    generationMode: GENERATION_MODE.chat,  // not in ConnectionState — the TC flip is modal-only
     bindPerModel: false,  // not in ConnectionState yet
     modelFreeOnly: false,  // not in ConnectionState yet
     modelGroupByOwner: false,  // not in ConnectionState yet

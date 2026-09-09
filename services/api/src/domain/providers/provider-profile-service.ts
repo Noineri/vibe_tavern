@@ -183,6 +183,7 @@ export function createProviderProfileService(providers: ProviderStore, proxies: 
         name: profile.name ?? "New Provider",
         providerPreset,
         coauthorTransport,
+        generationMode: profile.generationMode,
         endpoint: profile.endpoint ?? "",
         apiKey,
         defaultModel: profile.defaultModel,

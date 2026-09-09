@@ -10,8 +10,8 @@
  * Extracted from protocol-registry.ts (AD-019, colocation at protocol granularity).
  */
 
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { resolveVendor, buildDefaultModelsUrl, type OpenAiModelsResponse } from "./vendor-registry.js";
+import { resolveOpenAiCompatLanguageModel } from "./completion-model.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	PROBE_TIMEOUT_MS,
@@ -229,28 +229,33 @@ export const openaiCompatProtocol: ProtocolAdapter = {
 		prefill: true,
 		logitBias: true,
 		samplers: SAMPLER_SETS.openai_compat_minimal,
-		textCompletion: false,
+		// LS-2e: OpenAI-compat backends (LM Studio, ooba/TabbyAPI/Aphrodite/vLLM
+		// presets, generic profiles) serve /completions, so the profile's TC
+		// generation mode resolves a raw completion model (see resolveModel).
+		// Cloud presets on this protocol keep the mode hidden in the UI
+		// (resolveTextCompletionSupport) — the toggle is local-only.
+		textCompletion: true,
 	},
 	resolveModel(profile, model, fetch?: ProviderFetch) {
-		const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
-		const apiKey = profile.apiKey ?? "";
+		// LS-2b: chat by default; generationMode "completion" serves the raw
+		// /completions model (flat prompt via the LS-2c serialization seam).
 		// `openai_compat` is intentionally broad: in this app it covers
 		// aggregators and non-OpenAI model-family providers, not only the real
 		// OpenAI Chat API. The stricter OpenAI-only sampler surface is selected
 		// elsewhere by preset-level resolveSamplerCapabilities("openai", ...).
-		const provider = createOpenAICompatible({
+		return resolveOpenAiCompatLanguageModel({
 			name: "openai_compat",
-			apiKey: apiKey || "not-needed",
-			baseURL: endpoint || "https://api.openai.com/v1",
+			baseURL: (profile.endpoint || "").replace(/\/+$/, "") || "https://api.openai.com/v1",
+			apiKey: profile.apiKey,
+			model,
 			// Many OpenAI-compatible aggregators/models support response_format:
 			// json_schema, but the generic provider defaults this capability to
-			// false unless declared.
+			// false unless declared (chat models only — the completion model is
+			// unaffected).
 			supportsStructuredOutputs: true,
-			// Inject the proxy-aware fetch so generation honors the profile's
-			// proxy policy; omit when direct to keep the SDK's default fetch.
 			...(fetch ? { fetch } : {}),
+			generationMode: profile.generationMode,
 		});
-		return provider.chatModel(model);
 	},
 	limitations: [],
 	probe: probeOpenAiCompatibleConnection,

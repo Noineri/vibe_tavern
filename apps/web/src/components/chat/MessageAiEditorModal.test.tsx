@@ -130,6 +130,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     id, name,
     providerPreset: "openaiCompat",
     coauthorTransport: "chat_completions",
+    generationMode: "chat",
     endpoint: "https://api.test/v1",
     defaultModel: null, visionModel: null,
     contextBudget: null, pinContextBudget: false, tokenPadding: 0, bindPerModel: false,

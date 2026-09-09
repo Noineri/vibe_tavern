@@ -9,9 +9,9 @@
  * Extracted from protocol-registry.ts (AD-019).
  */
 
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { normalizeLocalOpenAiCompatibleBaseUrl, TOKENIZE_TIMEOUT_MS } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
+import { normalizeLocalOpenAiCompatibleBaseUrl, TOKENIZE_TIMEOUT_MS } from "./provider-transport.js";
+import { resolveOpenAiCompatLanguageModel } from "./completion-model.js";
 import type { ProtocolAdapter, TokenizeInput } from "./protocol-types.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
@@ -78,18 +78,21 @@ export const llamaCppProtocol: ProtocolAdapter = {
 		prefill: true,
 		logitBias: true,
 		samplers: SAMPLER_SETS.llamacpp_native,
-		textCompletion: false,
+		// LS-2e: llama-server serves OpenAI-style /completions, so the profile's
+		// TC generation mode resolves a raw completion model (see resolveModel).
+		textCompletion: true,
 	},
 	resolveModel(profile, model, fetch?: ProviderFetch) {
-		const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint);
-		const apiKey = profile.apiKey ?? "";
-		const provider = createOpenAICompatible({
+		// LS-2b: chat by default; generationMode "completion" serves the raw
+		// /completions model (flat prompt via the LS-2c serialization seam).
+		return resolveOpenAiCompatLanguageModel({
 			name: "llamacpp",
-			apiKey: apiKey || "not-needed",
-			baseURL: endpoint,
+			baseURL: normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint),
+			apiKey: profile.apiKey,
+			model,
 			...(fetch ? { fetch } : {}),
+			generationMode: profile.generationMode,
 		});
-		return provider.chatModel(model);
 	},
 	limitations: [
 		"Uses llama.cpp server's OpenAI-compatible /v1 endpoint for generation.",

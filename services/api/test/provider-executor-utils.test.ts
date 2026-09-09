@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, afterEach } from "bun:test";
-import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, GENERATION_MODE } from "@vibe-tavern/domain";
 import {
   resolveModel,
   toSdkMessages,
@@ -285,9 +285,9 @@ describe("prepareSdkMessages", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// resolveModel — transport routing (CAP-42)
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// resolveModel — transport routing (CAP-42) + completion mode (LS-2b)
+// ═══════════════════════════════════════════════════════════════════
 
 describe("resolveModel", () => {
   const baseProfile = {
@@ -317,6 +317,44 @@ describe("resolveModel", () => {
     }, "custom-model", COAUTHOR_TRANSPORT.responses);
     expect(model.provider).toBe("openai.responses");
     expect(model.modelId).toBe("custom-model");
+  });
+
+  it("resolves the raw completion model when the profile's generationMode is completion (LS-2b)", () => {
+    const model = resolveModel({ ...baseProfile, generationMode: GENERATION_MODE.completion }, "gpt-4o");
+    expect(model.provider).toBe("openai_compat.completion");
+    expect(model.modelId).toBe("gpt-4o");
+
+    const llama = resolveModel({
+      providerPreset: "llamacpp",
+      endpoint: "http://127.0.0.1:8080/v1",
+      apiKey: null,
+      generationMode: GENERATION_MODE.completion,
+    }, "local-model");
+    expect(llama.provider).toBe("llamacpp.completion");
+  });
+
+  it("chat stays the default when generationMode is absent or 'chat' (silent backward compat)", () => {
+    expect(resolveModel(baseProfile, "gpt-4o").provider).toBe("openai_compat.chat");
+    expect(resolveModel({ ...baseProfile, generationMode: GENERATION_MODE.chat }, "gpt-4o").provider).toBe("openai_compat.chat");
+    expect(resolveModel({ ...baseProfile, generationMode: undefined }, "gpt-4o").provider).toBe("openai_compat.chat");
+  });
+
+  it("a completion mode on a protocol WITHOUT a /completions capability silently resolves chat", () => {
+    // koboldcpp is ALWAYS text completion natively (its own flat-prompt
+    // serializer) and carries no toggle; anthropic/google have no completion
+    // surface — the profile flag must not change what they resolve.
+    expect(resolveModel({
+      providerPreset: "koboldcpp",
+      endpoint: "http://127.0.0.1:5001",
+      apiKey: null,
+      generationMode: GENERATION_MODE.completion,
+    }, "kob").provider).toBe("koboldcpp");
+    expect(resolveModel({
+      providerPreset: "anthropic",
+      endpoint: "https://api.anthropic.com/v1",
+      apiKey: "k",
+      generationMode: GENERATION_MODE.completion,
+    }, "claude").provider).toBe("anthropic.messages");
   });
 
   it("rejects Responses for native provider protocols instead of silently falling back", () => {

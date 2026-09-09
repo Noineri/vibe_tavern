@@ -1,4 +1,4 @@
-import { COAUTHOR_TRANSPORT, type CoauthorTransport, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay } from '@vibe-tavern/domain';
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, type CoauthorTransport, type GenerationMode, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay } from '@vibe-tavern/domain';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -56,6 +56,8 @@ export interface CreateProviderData {
   name: string;
   providerPreset: string;
   coauthorTransport?: CoauthorTransport;
+  /** Generation mode (LS-2a) — see StoredProviderProfileRecord. Defaults to 'chat'. */
+  generationMode?: GenerationMode;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -178,6 +180,7 @@ export class ProviderStore {
         sortOrder: nextSortOrder,
         providerPreset: data.providerPreset,
         coauthorTransport: data.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions,
+        generationMode: data.generationMode ?? GENERATION_MODE.chat,
         endpoint: data.endpoint,
         apiKey: data.apiKey ?? null,
         defaultModel: data.defaultModel ?? null,
@@ -243,6 +246,7 @@ export class ProviderStore {
     if (data.name !== undefined) values.name = data.name;
     if (data.providerPreset !== undefined) values.providerPreset = data.providerPreset;
     if (data.coauthorTransport !== undefined) values.coauthorTransport = data.coauthorTransport;
+    if (data.generationMode !== undefined) values.generationMode = data.generationMode;
     if (data.endpoint !== undefined) values.endpoint = data.endpoint;
     if (data.apiKey !== undefined) values.apiKey = data.apiKey;
     if (data.defaultModel !== undefined) values.defaultModel = data.defaultModel;
@@ -355,6 +359,7 @@ export class ProviderStore {
         sortOrder: nextSortOrder,
         providerPreset: original.providerPreset,
         coauthorTransport: original.coauthorTransport,
+        generationMode: original.generationMode,
         endpoint: original.endpoint,
         apiKey: original.apiKey,
         defaultModel: original.defaultModel,
@@ -639,6 +644,7 @@ export class ProviderStore {
       name: row.name,
       providerPreset: row.providerPreset,
       coauthorTransport: row.coauthorTransport,
+      generationMode: row.generationMode,
       endpoint: row.endpoint,
       apiKey: row.apiKey,
       defaultModel: row.defaultModel,

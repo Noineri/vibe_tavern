@@ -75,6 +75,7 @@ function form(): FormState {
     contextBudget: 8192,
     pinContextBudget: false,
     tokenPadding: 0,
+    generationMode: "chat",
     bindPerModel: false,
     modelFreeOnly: false,
     modelGroupByOwner: false,

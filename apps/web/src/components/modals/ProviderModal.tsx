@@ -7,6 +7,8 @@ import type { ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags }
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
+import { GENERATION_MODE } from "@vibe-tavern/domain";
+import type { GenerationMode } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
 import {
   ProviderProfileList,
@@ -14,6 +16,7 @@ import {
   ProviderViewHeader,
   ProviderModelSelector,
   ProviderCapabilityPanel,
+  ProviderGenerationModePanel,
   ProviderSamplerPanel,
   ProviderBindingPanel,
   ProviderQuotaPanel,
@@ -76,6 +79,8 @@ export interface FormState {
   pinContextBudget: boolean;
   /** Token padding (LS-1d) — safety margin subtracted from the context budget. */
   tokenPadding: number;
+  /** Generation mode (LS-2a): chat (default) vs raw text completion. Profile-level. */
+  generationMode: GenerationMode;
   /** Profile-level toggle: when true, the binding dropdown (Wave 5) is enabled
    *  and saves route sampler writes to the selected model's overlay instead of
    *  the profile base. Persisted on the profile (Wave 1 column). */
@@ -165,6 +170,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     repetitionPenalty: p.repetitionPenalty,
     maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000, pinContextBudget: p.pinContextBudget ?? false,
     tokenPadding: p.tokenPadding ?? 0,
+    generationMode: p.generationMode ?? GENERATION_MODE.chat,
     bindPerModel: p.bindPerModel ?? false,
     modelFreeOnly: p.modelFreeOnly ?? false,
     modelGroupByOwner: p.modelGroupByOwner ?? false,
@@ -821,6 +827,9 @@ export function ProviderModal({
                   )}
 
                   <ProviderCapabilityPanel capabilities={capabilities} />
+
+                  {/* Generation format (LS-2a) — visible only for TC-capable presets. */}
+                  <ProviderGenerationModePanel form={form} updateForm={autoSaveField} />
 
                   {showVisionFallback && (
                     <div className="mt-4 border-t border-border2 pt-2">

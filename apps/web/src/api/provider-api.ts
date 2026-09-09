@@ -1,5 +1,5 @@
 import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse } from "./types.js";
-import type { CoauthorTransport, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { CoauthorTransport, GenerationMode, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay, ProviderProxyMode } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -18,6 +18,8 @@ export async function saveProviderProfile(input: {
   name: string;
   providerPreset: string;
   coauthorTransport?: CoauthorTransport;
+  /** Generation mode (LS-2a): chat (default) vs raw text completion. */
+  generationMode?: GenerationMode;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -73,6 +75,8 @@ export async function updateProviderProfile(
     name?: string;
     providerPreset?: string;
     coauthorTransport?: CoauthorTransport;
+    /** Generation mode (LS-2a): chat (default) vs raw text completion. */
+    generationMode?: GenerationMode;
     endpoint?: string;
     apiKey?: string | null;
     defaultModel?: string | null;

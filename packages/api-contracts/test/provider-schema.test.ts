@@ -366,6 +366,29 @@ describe("pinContextBudget + bindPerModel survive zod validation", () => {
   });
 });
 
+// ── Generation mode (LOCAL_SUPPORT_PLAN LS-2a) ───────────────────────────
+
+describe("generationMode survives zod validation (LS-2a)", () => {
+  it("updateProviderProfileSchema preserves generationMode and rejects unknown values", () => {
+    const parsed = updateProviderProfileSchema.parse({ generationMode: "completion" });
+    expect(parsed.generationMode).toBe("completion");
+    expectReject(updateProviderProfileSchema.safeParse({ generationMode: "raw" }));
+  });
+
+  it("saveProviderDraftSchema preserves generationMode (default 'chat' is the store's, not the schema's)", () => {
+    const parsed = saveProviderDraftSchema.parse({
+      name: "x", providerPreset: "y", endpoint: "z",
+      generationMode: "completion",
+    });
+    expect(parsed.generationMode).toBe("completion");
+  });
+
+  it("the per-model overlay does NOT carry generationMode (profile-level, never a per-model field)", () => {
+    const parsed = modelSettingsOverlaySchema.parse({ generationMode: "completion" } as unknown);
+    expect(parsed).not.toHaveProperty("generationMode");
+  });
+});
+
 // ── Per-model overlay + clipboard payload ─────────────────────────────────
 
 describe("modelSettingsOverlaySchema", () => {

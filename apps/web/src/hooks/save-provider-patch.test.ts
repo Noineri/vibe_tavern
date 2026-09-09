@@ -15,6 +15,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
     pinContextBudget: false, tokenPadding: 0, bindPerModel: false,
+    generationMode: "chat",
     modelFreeOnly: false, modelGroupByOwner: false,
     editingModelId: null,
     stopSequences: ["<end>"], logitBias: [], seed: null,
@@ -138,6 +139,11 @@ describe("computeSavePatch", () => {
     expect(patch.tokenPadding).toBe(250);
   });
 
+  test("carries generationMode into the base patch (LS-2a — profile-level, the silent flip)", () => {
+    expect(computeSavePatch(makeForm()).generationMode).toBe("chat");
+    expect(computeSavePatch(makeForm({ generationMode: "completion" })).generationMode).toBe("completion");
+  });
+
   test("pinContextBudget still in the base patch (Wave 0 strip-gap regression)", () => {
     const form = makeForm({ pinContextBudget: true });
     const patch = computeSavePatch(form);
@@ -223,6 +229,9 @@ describe("computeOverlayPatch", () => {
     // compensates for is a property of the connection, not the model — so it
     // must NEVER route into a per-model overlay.
     expect(overlay).not.toHaveProperty("tokenPadding");
+    // generationMode (LS-2a) is likewise profile-level — the connection's
+    // mode, not a bound model's.
+    expect(overlay).not.toHaveProperty("generationMode");
     expect(overlay).not.toHaveProperty("bindPerModel");
   });
 

@@ -31,6 +31,7 @@ function makeProfile(overrides: Partial<ProviderProfileRecord> & { id: string })
     name: "Prof",
     providerPreset: "openai",
     coauthorTransport: "chat_completions",
+    generationMode: "chat",
     endpoint: "https://x",
     defaultModel: null,
     visionModel: null,

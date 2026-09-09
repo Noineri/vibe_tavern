@@ -1,5 +1,6 @@
 import type {
   CoauthorTransport,
+  GenerationMode,
   ProviderProxyMode,
   ProviderQuotaErrorKind,
   ProviderQuotaEvent,
@@ -821,6 +822,10 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   sortOrder: integer('sort_order').notNull().default(0),
   providerPreset: text('provider_preset').notNull(),
   coauthorTransport: text('coauthor_transport').$type<CoauthorTransport>().notNull().default('chat_completions'),
+  // Generation mode (LOCAL_SUPPORT_PLAN LS-2a): 'chat' (default) vs raw text
+  // 'completion' (OpenAI-style /completions). The flip is silent — only how
+  // FUTURE generations are sent changes; nothing is rewritten or migrated.
+  generationMode: text('generation_mode').$type<GenerationMode>().notNull().default('chat'),
   endpoint: text('endpoint').notNull(),
   apiKey: text('api_key'),
   defaultModel: text('default_model'),

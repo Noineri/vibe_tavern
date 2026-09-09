@@ -19,7 +19,7 @@ afterAll(() => useModalStore.setState({ isProviderModalOpen: false }));
 
 function profile(): ProviderProfileRecord {
   return {
-    id: "provider_1", name: "Primary", providerPreset: "openai", coauthorTransport: "chat_completions", endpoint: "https://api.example/v1",
+    id: "provider_1", name: "Primary", providerPreset: "openai", coauthorTransport: "chat_completions", generationMode: "chat", endpoint: "https://api.example/v1",
     defaultModel: "model_1", visionModel: null, temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
     typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, dynatempRange: 0, dynatempExponent: 1, topNSigma: 0, smoothingFactor: 0, repeatLastN: 0, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
     dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: [], bannedStrings: [], xtcThreshold: 0.1,

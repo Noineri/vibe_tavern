@@ -72,12 +72,19 @@ describe("protocol registry", () => {
 			}
 		});
 
-		it("defaults textCompletion to false everywhere (Novel Mode starting state)", () => {
-			// The textCompletion flag is the Novel Mode axis (plan §5.3.3). It
-			// landed as a home for the flag with no protocol opted in yet; the
-			// mode dispatch is Novel Mode's wiring step. This test pins that
-			// starting state so an accidental flip is caught.
+		it("opts ONLY the /completions-capable protocols into textCompletion (LOCAL_SUPPORT_PLAN LS-2e)", () => {
+			// The flag now means "serves the opt-in TC generation mode": a profile
+			// with generationMode "completion" resolves a raw completion model
+			// HERE, and stays chat everywhere else (silent fallback). openai_compat
+			// (LM Studio / ooba / TabbyAPI / Aphrodite / vLLM / generic) and
+			// llamacpp (llama-server) carry /completions; koboldcpp is ALWAYS
+			// text completion natively (its own serializer — no toggle to expose),
+			// and the clouds + google + anthropic + ollama + unsloth have no
+			// OpenAI-style completion surface.
+			expect(PROTOCOL_CAPABILITIES.openai_compat.textCompletion).toBe(true);
+			expect(PROTOCOL_CAPABILITIES.llamacpp.textCompletion).toBe(true);
 			for (const type of ALL_TYPES) {
+				if (type === "openai_compat" || type === "llamacpp") continue;
 				expect(PROTOCOL_CAPABILITIES[type].textCompletion).toBe(false);
 			}
 		});
