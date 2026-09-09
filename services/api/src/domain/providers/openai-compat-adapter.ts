@@ -188,8 +188,11 @@ export async function listOpenAiCompatModels(input: ListModelsInput): Promise<Pr
 				label: (record.name ?? "").trim() || id,
 			};
 
-			// Context length — try all known field names
+			// Context length — try all known field names (LM Studio reports
+			// max_context_length per model in /v1/models; OpenRouter & co. use
+			// the variants below).
 			const contextLength = record.context_length
+				?? record.max_context_length
 				?? record.context_length_total
 				?? record.tokens
 				?? record.top_provider?.context_length;

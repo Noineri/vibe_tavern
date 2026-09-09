@@ -10,15 +10,67 @@
  */
 
 import { GENERATION_MODE, PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
-import { normalizeLocalOpenAiCompatibleBaseUrl, TOKENIZE_TIMEOUT_MS } from "./provider-transport.js";
+import { normalizeLocalOpenAiCompatibleBaseUrl, TOKENIZE_TIMEOUT_MS, type ProviderConnectionInput, type ProviderModelOption } from "./provider-transport.js";
 import { resolveOpenAiCompatLanguageModel } from "./completion-model.js";
-import type { ProtocolAdapter, CompletionFormatHandoff, TokenizeInput } from "./protocol-types.js";
+import type { ProtocolAdapter, CompletionFormatHandoff, TokenizeInput, ListModelsInput } from "./protocol-types.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	probeOpenAiCompatibleConnection,
 	testOpenAiCompatChat,
 	listOpenAiCompatModels,
 } from "./openai-compat-adapter.js";
+
+// ─── Model list + server context (LS-7) ──────────────────────────────────
+
+/** llama-server GET /props response — only the field LS-7 consumes. */
+interface LlamaCppPropsResponse {
+	default_generation_settings?: {
+		n_ctx?: unknown;
+	};
+}
+
+/** Timeout for the /props enrichment call — model lists must stay snappy. */
+const PROPS_TIMEOUT_MS = 5_000;
+
+/**
+ * List models from llama-server, enriching each option with the server's
+ * launch-time context. llama-server's /v1/models carries no context field,
+ * but GET /props reports the actual `-c` the server was started with
+ * (`default_generation_settings.n_ctx` — live-verified). Failure of /props
+ * (non-llama OpenAI-compat backend on this preset, older build) is graceful:
+ * models are returned without context and the context-budget auto-fill just
+ * doesn't fire for them.
+ */
+export async function listLlamaCppModels(input: ListModelsInput): Promise<ProviderModelOption[]> {
+	const models = await listOpenAiCompatModels({
+		...input,
+		baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl),
+	});
+
+	try {
+		// /props lives at the server root, not under /v1.
+		const base = normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl).replace(/\/v1$/, "");
+		const doFetch: ProviderFetch = input.fetch ?? fetch;
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), PROPS_TIMEOUT_MS);
+		try {
+			const response = await doFetch(`${base}/props`, { method: "GET", signal: controller.signal });
+			if (response.ok) {
+				const props = (await response.json()) as LlamaCppPropsResponse;
+				const raw = props.default_generation_settings?.n_ctx;
+				if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+					return models.map((m) => ({ ...m, contextLength: m.contextLength ?? raw }));
+				}
+			}
+		} finally {
+			clearTimeout(timer);
+		}
+	} catch {
+		// Graceful: no /props → no context enrichment. The models list itself
+		// already succeeded, so surface it as-is.
+	}
+	return models;
+}
 
 // ─── Tokenize (LS-1a) ────────────────────────────────────────────────────
 
@@ -125,9 +177,6 @@ export const llamaCppProtocol: ProtocolAdapter = {
 		...input,
 		baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl),
 	}),
-	listModels: (input) => listOpenAiCompatModels({
-		...input,
-		baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl),
-	}),
+	listModels: (input) => listLlamaCppModels(input),
 	tokenize: tokenizeLlamaCpp,
 };

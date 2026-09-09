@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { PROVIDER_TYPE } from '@vibe-tavern/domain';
 import { useT } from '../../../i18n/context.js';
 import type { FormState } from '../../modals/ProviderModal.js';
 import { ChipInput } from '../../shared/ChipInput.js';
@@ -499,6 +500,9 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               </button>
             </CustomTooltip>
           </div>
+          {form.providerPreset === PROVIDER_TYPE.koboldCpp && (
+            <div className="mt-1 font-ui text-[11px] text-t3 italic">{t("context_kobold_hint")}</div>
+          )}
         </div>
 
         {/* Token padding (LS-1d): safety margin subtracted from the context

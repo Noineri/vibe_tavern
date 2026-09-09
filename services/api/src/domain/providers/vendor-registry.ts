@@ -49,6 +49,8 @@ export interface OpenAiModelRecord {
 	owned_by?: string;
 	category?: string;
 	context_length?: number;
+	/** LM Studio /v1/models reports the per-model context limit under this name. */
+	max_context_length?: number;
 	context_length_total?: number;
 	tokens?: number;
 	top_provider?: { context_length?: number };

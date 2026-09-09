@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
+import { pickContextSourceModelId, shouldAutoFillContextBudget } from "../../lib/context-autofill.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord, ProxyRecord } from "../../app-client.js";
 import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
 import type { ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
@@ -277,18 +278,35 @@ export function ProviderModal({
     if (!profileId) return;
 
     // 1. Try cached models from the profile object first (instant, no network)
-    const profile = providerProfiles.find((p) => p.id === profileId);
+    const profile = providerProfiles.find((p) => p.id == profileId);
     const cached = profile?.cachedModels?.models;
     if (cached && cached.length > 0) {
       setModels(cached);
+      autoFillContextBudget(cached);
       return;
     }
 
     // 2. Fall back to live fetch only when cache is empty
     try {
       const c = await onFetchModelsForProfile(profileId);
-      if (c.length > 0) setModels(c);
+      if (c.length > 0) { setModels(c); autoFillContextBudget(c); }
     } catch { /* ignore */ }
+  };
+
+  // ── Context-budget auto-fill (LS-7) ──
+  // When the model list populates, fill the context budget from the selected
+  // model's real backend context — but ONLY while the field is untouched
+  // (still showing the 16 000 default) and unpinned. Never rewrites a
+  // deliberate user value; the pin is the override marker.
+  const autoFillContextBudget = (fetched: ModelOption[]) => {
+    if (!form || fetched.length === 0) return;
+    if (!shouldAutoFillContextBudget({ pinned: form.pinContextBudget, formValue: form.contextBudget })) return;
+    const sourceId = pickContextSourceModelId(form.model || undefined, fetched);
+    if (!sourceId) return;
+    const ctx = fetched.find((m) => m.id === sourceId)?.contextLength;
+    if (ctx != null && Number.isFinite(ctx) && ctx > 0 && ctx !== form.contextBudget) {
+      autoSaveField("contextBudget", ctx);
+    }
   };
 
   // ── Init on open ──
@@ -636,6 +654,7 @@ export function ProviderModal({
       setTestOk(fetched.length > 0);
       setModels(fetched);
       if (fetched.length && (!form.model || !fetched.find((m) => m.id === form.model))) autoSaveField("model", fetched[0].id);
+      autoFillContextBudget(fetched);
       const fetchedVisionModels = fetched.filter((m) => m.capabilities?.vision);
       if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < fetched.length && !form.visionModel) {
         autoSaveField("visionModel", fetchedVisionModels[0].id);
