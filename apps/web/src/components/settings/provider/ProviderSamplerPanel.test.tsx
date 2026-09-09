@@ -50,6 +50,8 @@ function form(): FormState {
     topA: 0,
     typicalP: 1,
     tfsZ: 1,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
     repeatLastN: -1,
     mirostat: 0,
     mirostatTau: 5,
@@ -92,5 +94,25 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     fireEvent.click(getByText("samplers_advanced"));
 
     expect(getByText("sampler_top_p")).toBeTruthy();
+  });
+
+  it("shows adaptive-p fields only for providers whose sampler set includes them (llamacpp_native / koboldcpp_native)", async () => {
+    const { resolveSamplerCapabilities } = await import("@vibe-tavern/domain");
+    const llamaCaps = resolveSamplerCapabilities(null, "llamacpp");
+    const { getByText, queryByText, unmount } = render(
+      <ProviderSamplerPanel form={form()} updateForm={mock()} capabilities={{ samplers: llamaCaps }} />,
+    );
+    fireEvent.click(getByText("samplers_advanced"));
+    expect(getByText("sampler_adaptive_target")).toBeTruthy();
+    expect(getByText("sampler_adaptive_decay")).toBeTruthy();
+    unmount();
+
+    const openaiCaps = resolveSamplerCapabilities("openai", "openai_compat");
+    const { getByText: get2, queryByText: query2 } = render(
+      <ProviderSamplerPanel form={form()} updateForm={mock()} capabilities={{ samplers: openaiCaps }} />,
+    );
+    fireEvent.click(get2("samplers_advanced"));
+    expect(query2("sampler_adaptive_target")).toBeNull();
+    expect(query2("sampler_adaptive_decay")).toBeNull();
   });
 });

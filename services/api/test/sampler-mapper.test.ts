@@ -23,6 +23,8 @@ function profile(
     topA: 0.4,
     typicalP: 0.97,
     tfsZ: 0.9,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
     repeatLastN: 256,
     mirostat: 2,
     mirostatTau: 6,
@@ -314,6 +316,89 @@ describe("buildSamplerConfig", () => {
     });
   });
 
+  // ─── llama.cpp (llamacpp_native — openai_local + adaptive-p) ──────────
+
+  describe("llamacpp (llamacpp_native)", () => {
+    it("does not emit adaptive-p fields or a chain when adaptive-p is disabled (−1)", () => {
+      const config = buildSamplerConfig(profile("llamacpp"));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      expect(opts.adaptive_target).toBeUndefined();
+      expect(opts.adaptive_decay).toBeUndefined();
+      expect(opts.samplers).toBeUndefined();
+    });
+
+    it("emits adaptive_target + adaptive_decay and the full samplers chain (adaptive_p last) when enabled", () => {
+      const config = buildSamplerConfig(profile("llamacpp", {
+        adaptiveTarget: 0.55,
+        adaptiveDecay: 0.9,
+      }));
+      expect(config.providerOptions!.llamacpp).toEqual({
+        top_k: 80,
+        min_p: 0.05,
+        typical_p: 0.97,
+        tfs_z: 0.9,
+        adaptive_target: 0.55,
+        adaptive_decay: 0.9,
+        repeat_last_n: 256,
+        mirostat: 2,
+        mirostat_tau: 6,
+        mirostat_eta: 0.2,
+        dry_multiplier: 0.8,
+        dry_base: 1.75,
+        dry_allowed_length: 3,
+        dry_sequence_breakers: ["\n", ":", "\""],
+        xtc_threshold: 0.12,
+        xtc_probability: 0.4,
+        repetition_penalty: 1.15,
+        samplers: [
+          "penalties",
+          "dry",
+          "top_n_sigma",
+          "top_k",
+          "typ_p",
+          "top_p",
+          "min_p",
+          "xtc",
+          "temperature",
+          "adaptive_p",
+        ],
+      });
+      const samplers = (config.providerOptions!.llamacpp as Record<string, unknown>).samplers as string[];
+      expect(samplers[samplers.length - 1]).toBe("adaptive_p");
+    });
+
+    it("does not emit the chain when adaptive-p target is null (field absent)", () => {
+      const config = buildSamplerConfig(profile("llamacpp", { adaptiveTarget: undefined }));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      expect(opts.samplers).toBeUndefined();
+    });
+  });
+
+  // ─── Unsloth Studio (llamacpp_native — rides llama-server) ────────────
+
+  describe("unsloth (llamacpp_native)", () => {
+    it("emits adaptive-p + the samplers chain via providerOptions.unsloth", () => {
+      const config = buildSamplerConfig(profile("unsloth", {
+        adaptiveTarget: 0.55,
+        adaptiveDecay: 0.9,
+        showReasoning: true,
+        reasoningEffort: "high",
+      }));
+      const opts = config.providerOptions!.unsloth as Record<string, unknown>;
+      expect(opts.adaptive_target).toBe(0.55);
+      expect(opts.adaptive_decay).toBe(0.9);
+      const samplers = opts.samplers as string[];
+      expect(samplers[samplers.length - 1]).toBe("adaptive_p");
+    });
+
+    it("emits no chain and no adaptive fields when adaptive-p is disabled", () => {
+      const config = buildSamplerConfig(profile("unsloth"));
+      const opts = config.providerOptions!.unsloth as Record<string, unknown>;
+      expect(opts.adaptive_target).toBeUndefined();
+      expect(opts.samplers).toBeUndefined();
+    });
+  });
+
   // ─── Anthropic ─────────────────────────────────────────────────────────
 
   describe("anthropic", () => {
@@ -374,6 +459,24 @@ describe("buildSamplerConfig", () => {
         mirostat_tau: 6,
         mirostat_eta: 0.2,
       });
+    });
+
+    it("emits native adaptive_target/adaptive_decay and NO samplers chain when adaptive-p is enabled", () => {
+      const config = buildSamplerConfig(profile("koboldcpp", {
+        adaptiveTarget: 0.55,
+        adaptiveDecay: 0.9,
+      }));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      expect(opts.adaptive_target).toBe(0.55);
+      expect(opts.adaptive_decay).toBe(0.9);
+      expect(opts.samplers).toBeUndefined(); // koboldcpp native path needs no chain
+    });
+
+    it("omits adaptive fields when adaptive-p is disabled (−1)", () => {
+      const config = buildSamplerConfig(profile("koboldcpp"));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      expect(opts.adaptive_target).toBeUndefined();
+      expect(opts.adaptive_decay).toBeUndefined();
     });
 
     it("does NOT set native frequencyPenalty, presencePenalty, seed", () => {

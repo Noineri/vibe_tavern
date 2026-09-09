@@ -457,8 +457,8 @@ describe("sampler single-source invariant (ERA-1)", () => {
   // Pin the documented count so a duplicate or accidental union shrink is
   // caught loudly. Update this number only when SamplerFieldId genuinely gains
   // or loses a field.
-  it("SAMPLER_FIELDS has the expected cardinality (24)", () => {
-    expect(SAMPLER_FIELDS.length).toBe(24);
+  it("SAMPLER_FIELDS has the expected cardinality (26)", () => {
+    expect(SAMPLER_FIELDS.length).toBe(26);
     expect(new Set(SAMPLER_FIELDS).size).toBe(SAMPLER_FIELDS.length); // no dupes
   });
 
@@ -473,6 +473,8 @@ describe("sampler single-source invariant (ERA-1)", () => {
       minP: 0.05,
       typicalP: 0.88,
       tfsZ: 0.97,
+      adaptiveTarget: 0.55,
+      adaptiveDecay: 0.9,
       repeatLastN: 64,
       mirostat: 2,
       mirostatTau: 5.5,

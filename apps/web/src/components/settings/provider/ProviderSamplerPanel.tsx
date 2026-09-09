@@ -142,6 +142,8 @@ const CUSTOM_SAMPLER_DEFAULTS = {
   minP: 0,
   typicalP: 1.0,
   tfsZ: 1.0,
+  adaptiveTarget: -1,
+  adaptiveDecay: 0.9,
   repeatLastN: 0,
   mirostat: 0,
   mirostatTau: 5.0,
@@ -180,6 +182,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
       updateForm('minP', CUSTOM_SAMPLER_DEFAULTS.minP);
       updateForm('typicalP', CUSTOM_SAMPLER_DEFAULTS.typicalP);
       updateForm('tfsZ', CUSTOM_SAMPLER_DEFAULTS.tfsZ);
+      updateForm('adaptiveTarget', CUSTOM_SAMPLER_DEFAULTS.adaptiveTarget);
+      updateForm('adaptiveDecay', CUSTOM_SAMPLER_DEFAULTS.adaptiveDecay);
       updateForm('repeatLastN', CUSTOM_SAMPLER_DEFAULTS.repeatLastN);
       updateForm('mirostat', CUSTOM_SAMPLER_DEFAULTS.mirostat);
       updateForm('mirostatTau', CUSTOM_SAMPLER_DEFAULTS.mirostatTau);
@@ -502,6 +506,30 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   step={0.01}
                   value={form.tfsZ}
                   onChange={(v) => updateForm('tfsZ', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('adaptiveTarget') && (
+                <SamplerField
+                  label={t("sampler_adaptive_target")}
+                  tooltip={t("sampler_adaptive_target_hint")}
+                  min={-1}
+                  max={1}
+                  step={0.01}
+                  value={form.adaptiveTarget}
+                  onChange={(v) => updateForm('adaptiveTarget', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('adaptiveDecay') && (
+                <SamplerField
+                  label={t("sampler_adaptive_decay")}
+                  tooltip={t("sampler_adaptive_decay_hint")}
+                  min={0}
+                  max={0.99}
+                  step={0.01}
+                  value={form.adaptiveDecay}
+                  onChange={(v) => updateForm('adaptiveDecay', v)}
                   disabled={disabled}
                 />
               )}

@@ -12,7 +12,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     baseUrl: "http://localhost", apiKey: "sk-test", hasStoredApiKey: true,
     model: "gpt-4o", visionModel: "gpt-4o-mini",
     temperature: 0.8, topP: 0.95, minP: 0.05, topK: 40, topA: 0.1,
-    typicalP: 1, tfsZ: 1, repeatLastN: 64, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
+    typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, repeatLastN: 64, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
     dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, drySequenceBreakers: ["\n"],
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
@@ -72,6 +72,18 @@ describe("sampler clipboard round-trip", () => {
     expect(target.frequencyPenalty).toBe(0.3);
     expect(target.reasoningEffort).toBe("high");
     expect(target.showReasoning).toBe(true);
+  });
+
+  test("adaptive-p fields round-trip through the clipboard (copy → schema → apply)", () => {
+    const original = makeForm({ adaptiveTarget: 0.55, adaptiveDecay: 0.75 });
+    const payload = computeOverlayPatch(original);
+    const parsed = samplerPresetPayloadSchema.safeParse(JSON.parse(JSON.stringify(payload)));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const { updater, form: target } = recordingUpdater(makeForm());
+    applySamplerPresetFields(parsed.data as Partial<ModelSettingsOverlay>, updater);
+    expect(target.adaptiveTarget).toBe(0.55);
+    expect(target.adaptiveDecay).toBe(0.75);
   });
 
   test("malformed JSON is rejected before reaching the schema", () => {

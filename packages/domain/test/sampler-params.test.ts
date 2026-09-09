@@ -152,6 +152,10 @@ describe("sampler params", () => {
     expect(ollamaCaps.mirostat).toBe(true);
     expect(ollamaCaps.dryMultiplier).toBe(true);
     expect(ollamaCaps.xtcProbability).toBe(true);
+    // openai_local stays WITHOUT the adaptive-p fields (LOCAL_SAMPLERS_ADDITION_REPORT:
+    // separate llamacpp_native set, so Ollama/vLLM presets never receive them)
+    expect(ollamaCaps.adaptiveTarget).toBe(false);
+    expect(ollamaCaps.adaptiveDecay).toBe(false);
 
     const koboldCaps = resolveSamplerCapabilities("koboldcpp", PROVIDER_TYPE.koboldCpp);
     expect(koboldCaps.topA).toBe(true);
@@ -159,5 +163,36 @@ describe("sampler params", () => {
     expect(koboldCaps.dryMultiplier).toBe(true);
     expect(koboldCaps.xtcProbability).toBe(true);
     expect(koboldCaps.frequencyPenalty).toBe(false);
+    // KoboldCPP native supports adaptive-p (V1-verified request fields)
+    expect(koboldCaps.adaptiveTarget).toBe(true);
+    expect(koboldCaps.adaptiveDecay).toBe(true);
+  });
+
+  it("resolves llamacpp_native for llama.cpp and Unsloth (openai_local + adaptive-p)", () => {
+    expect(resolveSamplerSet(null, PROVIDER_TYPE.llamaCpp)).toBe("llamacpp_native");
+    expect(resolveSamplerSet(null, PROVIDER_TYPE.unsloth)).toBe("llamacpp_native");
+
+    const llamaCaps = resolveSamplerCapabilities(null, PROVIDER_TYPE.llamaCpp);
+    // Same full local surface as openai_local…
+    expect(llamaCaps.minP).toBe(true);
+    expect(llamaCaps.typicalP).toBe(true);
+    expect(llamaCaps.dryMultiplier).toBe(true);
+    expect(llamaCaps.xtcProbability).toBe(true);
+    expect(llamaCaps.mirostat).toBe(true);
+    expect(llamaCaps.logitBias).toBe(true);
+    // …plus adaptive-p
+    expect(llamaCaps.adaptiveTarget).toBe(true);
+    expect(llamaCaps.adaptiveDecay).toBe(true);
+
+    const unslothCaps = resolveSamplerCapabilities(null, PROVIDER_TYPE.unsloth);
+    expect(unslothCaps.adaptiveTarget).toBe(true);
+    expect(unslothCaps.adaptiveDecay).toBe(true);
+    expect(unslothCaps.dryMultiplier).toBe(true);
+
+    // The shared openai_local set (Ollama / vLLM-family presets) is untouched
+    const vllmCaps = resolveSamplerCapabilities("vllm", PROVIDER_TYPE.openaiCompat);
+    expect(resolveSamplerSet("vllm", PROVIDER_TYPE.openaiCompat)).toBe("openai_local");
+    expect(vllmCaps.adaptiveTarget).toBe(false);
+    expect(vllmCaps.adaptiveDecay).toBe(false);
   });
 });

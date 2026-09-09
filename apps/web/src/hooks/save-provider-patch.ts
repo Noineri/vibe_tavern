@@ -41,6 +41,8 @@ export interface ProviderSavePatch {
   topA: number;
   typicalP: number;
   tfsZ: number;
+  adaptiveTarget: number;
+  adaptiveDecay: number;
   repeatLastN: number;
   mirostat: number;
   mirostatTau: number;
@@ -95,6 +97,8 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     topA: form.topA,
     typicalP: form.typicalP,
     tfsZ: form.tfsZ,
+    adaptiveTarget: form.adaptiveTarget,
+    adaptiveDecay: form.adaptiveDecay,
     repeatLastN: form.repeatLastN,
     mirostat: form.mirostat,
     mirostatTau: form.mirostatTau,
@@ -169,6 +173,8 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     topA: form.topA,
     typicalP: form.typicalP,
     tfsZ: form.tfsZ,
+    adaptiveTarget: form.adaptiveTarget,
+    adaptiveDecay: form.adaptiveDecay,
     repeatLastN: form.repeatLastN,
     mirostat: form.mirostat,
     mirostatTau: form.mirostatTau,
@@ -225,6 +231,8 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     topA: conn.topA ?? 0,
     typicalP: 1,
     tfsZ: 1,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
     repeatLastN: 0,
     mirostat: 0,
     mirostatTau: 5,

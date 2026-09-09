@@ -31,6 +31,8 @@ export async function saveProviderProfile(input: {
   topA?: number;
   typicalP?: number;
   tfsZ?: number;
+  adaptiveTarget?: number;
+  adaptiveDecay?: number;
   repeatLastN?: number;
   mirostat?: number;
   mirostatTau?: number;
@@ -78,6 +80,8 @@ export async function updateProviderProfile(
     topA?: number;
     typicalP?: number;
     tfsZ?: number;
+    adaptiveTarget?: number;
+    adaptiveDecay?: number;
     repeatLastN?: number;
     mirostat?: number;
     mirostatTau?: number;

@@ -195,6 +195,8 @@ export function createProviderProfileService(providers: ProviderStore, proxies: 
         topA: profile.topA,
         typicalP: profile.typicalP,
         tfsZ: profile.tfsZ,
+        adaptiveTarget: profile.adaptiveTarget,
+        adaptiveDecay: profile.adaptiveDecay,
         repeatLastN: profile.repeatLastN,
         mirostat: profile.mirostat,
         mirostatTau: profile.mirostatTau,

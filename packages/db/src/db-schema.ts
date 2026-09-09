@@ -841,6 +841,10 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   topA: real('top_a').notNull().default(0),
   typicalP: real('typical_p').notNull().default(1.0),
   tfsZ: real('tfs_z').notNull().default(1.0),
+  // Adaptive-p (llama.cpp/KoboldCPP, LOCAL_SAMPLERS_ADDITION_REPORT B1).
+  // adaptive_target −1 = disabled (llama.cpp default), 0.0–1.0 active.
+  adaptiveTarget: real('adaptive_target').notNull().default(-1),
+  adaptiveDecay: real('adaptive_decay').notNull().default(0.9),
   repeatLastN: integer('repeat_last_n').notNull().default(0),
   mirostat: integer('mirostat').notNull().default(0),
   mirostatTau: real('mirostat_tau').notNull().default(5.0),

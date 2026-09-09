@@ -46,6 +46,8 @@ export function applySamplerPresetFields(
   if (fields.topA != null) updateForm("topA", fields.topA);
   if (fields.typicalP != null) updateForm("typicalP", fields.typicalP);
   if (fields.tfsZ != null) updateForm("tfsZ", fields.tfsZ);
+  if (fields.adaptiveTarget != null) updateForm("adaptiveTarget", fields.adaptiveTarget);
+  if (fields.adaptiveDecay != null) updateForm("adaptiveDecay", fields.adaptiveDecay);
   if (fields.repeatLastN != null) updateForm("repeatLastN", fields.repeatLastN);
   if (fields.mirostat != null) updateForm("mirostat", fields.mirostat);
   if (fields.mirostatTau != null) updateForm("mirostatTau", fields.mirostatTau);

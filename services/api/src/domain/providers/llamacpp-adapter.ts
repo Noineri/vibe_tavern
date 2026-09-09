@@ -28,7 +28,7 @@ export const llamaCppProtocol: ProtocolAdapter = {
 		streaming: true,
 		prefill: true,
 		logitBias: true,
-		samplers: SAMPLER_SETS.openai_local,
+		samplers: SAMPLER_SETS.llamacpp_native,
 		textCompletion: false,
 	},
 	resolveModel(profile, model, fetch?: ProviderFetch) {
@@ -44,7 +44,7 @@ export const llamaCppProtocol: ProtocolAdapter = {
 	},
 	limitations: [
 		"Uses llama.cpp server's OpenAI-compatible /v1 endpoint for generation.",
-		"Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
+		"Sampling parameters are forwarded as JSON body fields; exotic samplers (dry, xtc, adaptive-p) are applied only when the mapper also sends the `samplers` chain.",
 		"Model selection is limited to the single loaded model on the llama.cpp server.",
 	],
 	probe: (input) => probeOpenAiCompatibleConnection({

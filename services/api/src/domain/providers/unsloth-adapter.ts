@@ -30,7 +30,7 @@ export const unslothProtocol: ProtocolAdapter = {
 		streaming: true,
 		prefill: true,
 		logitBias: true,
-		samplers: SAMPLER_SETS.openai_local,
+		samplers: SAMPLER_SETS.llamacpp_native,
 		textCompletion: false,
 	},
 	resolveModel(profile, model, fetch?: ProviderFetch) {

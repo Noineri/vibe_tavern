@@ -135,7 +135,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     contextBudget: null, pinContextBudget: false, bindPerModel: false,
     modelFreeOnly: false, modelGroupByOwner: false,
     maxTokens: 4096, temperature: 0.7, topP: 1, topK: 0, minP: 0,
-    topA: 0, typicalP: 1, tfsZ: 1, repeatLastN: -1,
+    topA: 0, typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, repeatLastN: -1,
     mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
     dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, drySequenceBreakers: [],
     xtcThreshold: 0.1, xtcProbability: 0,

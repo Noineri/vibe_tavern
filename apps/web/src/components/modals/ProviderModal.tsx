@@ -51,6 +51,8 @@ export interface FormState {
   topA: number;
   typicalP: number;
   tfsZ: number;
+  adaptiveTarget: number;
+  adaptiveDecay: number;
   repeatLastN: number;
   mirostat: number;
   mirostatTau: number;
@@ -133,6 +135,8 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     minP: p.minP, topK: p.topK, topA: p.topA,
     typicalP: p.typicalP ?? 1,
     tfsZ: p.tfsZ ?? 1,
+    adaptiveTarget: p.adaptiveTarget ?? -1,
+    adaptiveDecay: p.adaptiveDecay ?? 0.9,
     repeatLastN: p.repeatLastN ?? 0,
     mirostat: p.mirostat ?? 0,
     mirostatTau: p.mirostatTau ?? 5,
@@ -487,6 +491,8 @@ export function ProviderModal({
       topA: baseProfile.topA,
       typicalP: baseProfile.typicalP,
       tfsZ: baseProfile.tfsZ,
+      adaptiveTarget: baseProfile.adaptiveTarget,
+      adaptiveDecay: baseProfile.adaptiveDecay,
       repeatLastN: baseProfile.repeatLastN,
       mirostat: baseProfile.mirostat,
       mirostatTau: baseProfile.mirostatTau,
@@ -523,6 +529,8 @@ export function ProviderModal({
         topA: pick("topA"),
         typicalP: pick("typicalP") ?? 1,
         tfsZ: pick("tfsZ") ?? 1,
+        adaptiveTarget: pick("adaptiveTarget") ?? -1,
+        adaptiveDecay: pick("adaptiveDecay") ?? 0.9,
         repeatLastN: pick("repeatLastN") ?? 0,
         mirostat: pick("mirostat") ?? 0,
         mirostatTau: pick("mirostatTau") ?? 5,

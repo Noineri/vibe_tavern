@@ -57,6 +57,10 @@ export interface StoredProviderProfileRecord {
   topA: number;
   typicalP: number;
   tfsZ: number;
+  /** Adaptive-p (llama.cpp/KoboldCPP): target probability; −1 = disabled. */
+  adaptiveTarget: number;
+  /** Adaptive-p decay rate (0.0–0.99); applies only when adaptiveTarget ≥ 0. */
+  adaptiveDecay: number;
   repeatLastN: number;
   mirostat: number;
   mirostatTau: number;
@@ -114,6 +118,8 @@ export type ModelSettingsOverlay = Partial<
     | 'topA'
     | 'typicalP'
     | 'tfsZ'
+    | 'adaptiveTarget'
+    | 'adaptiveDecay'
     | 'repeatLastN'
     | 'mirostat'
     | 'mirostatTau'

@@ -10,7 +10,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     baseUrl: "http://localhost", apiKey: "sk-test", hasStoredApiKey: true,
     model: "gpt-4o", visionModel: "gpt-4o-mini",
     temperature: 0.8, topP: 0.95, minP: 0.05, topK: 40, topA: 0.1,
-    typicalP: 1, tfsZ: 1, repeatLastN: 64, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
+    typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, repeatLastN: 64, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
     dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, drySequenceBreakers: ["\n"],
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
@@ -103,6 +103,13 @@ describe("buildFavoriteModelSwitchPatch", () => {
 // ===========================================================================
 
 describe("computeSavePatch", () => {
+  test("carries adaptive-p fields into the save patch (B1: llama.cpp/KoboldCPP)", () => {
+    const form = makeForm({ adaptiveTarget: 0.55, adaptiveDecay: 0.75 });
+    const patch = computeSavePatch(form);
+    expect(patch.adaptiveTarget).toBe(0.55);
+    expect(patch.adaptiveDecay).toBe(0.75);
+  });
+
   test("includes bindPerModel in the base patch (Wave 1 column)", () => {
     const form = makeForm({ bindPerModel: true });
     const patch = computeSavePatch(form);
@@ -172,11 +179,13 @@ describe("connectionToSavePatch", () => {
 
 describe("computeOverlayPatch", () => {
   test("includes sampler/context fields", () => {
-    const form = makeForm({ temperature: 0.3, contextBudget: 8000, maxTokens: 8192 });
+    const form = makeForm({ temperature: 0.3, contextBudget: 8000, maxTokens: 8192, adaptiveTarget: 0.6, adaptiveDecay: 0.8 });
     const overlay = computeOverlayPatch(form);
     expect(overlay.temperature).toBe(0.3);
     expect(overlay.contextBudget).toBe(8000);
     expect(overlay.maxTokens).toBe(8192);
+    expect(overlay.adaptiveTarget).toBe(0.6);
+    expect(overlay.adaptiveDecay).toBe(0.8);
   });
 
   test("NEVER includes identity fields (name/endpoint/apiKey/defaultModel/visionModel)", () => {

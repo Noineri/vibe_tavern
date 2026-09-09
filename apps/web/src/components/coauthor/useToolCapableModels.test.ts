@@ -47,6 +47,8 @@ function makeProfile(overrides: Partial<ProviderProfileRecord> & { id: string })
     topA: 0,
     typicalP: 1,
     tfsZ: 1,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
     repeatLastN: 0,
     mirostat: 0,
     mirostatTau: 0,

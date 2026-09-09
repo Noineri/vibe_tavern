@@ -141,6 +141,8 @@ function ProviderStep({
     topA: existingProfile?.topA ?? 0,
     typicalP: existingProfile?.typicalP ?? 1,
     tfsZ: existingProfile?.tfsZ ?? 1,
+    adaptiveTarget: existingProfile?.adaptiveTarget ?? -1,
+    adaptiveDecay: existingProfile?.adaptiveDecay ?? 0.9,
     repeatLastN: existingProfile?.repeatLastN ?? 0,
     mirostat: existingProfile?.mirostat ?? 0,
     mirostatTau: existingProfile?.mirostatTau ?? 5,

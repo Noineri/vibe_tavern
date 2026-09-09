@@ -26,6 +26,8 @@ const samplerFieldSchemas = {
   minP: z.number().optional(),
   typicalP: z.number().optional(),
   tfsZ: z.number().optional(),
+  adaptiveTarget: z.number().optional(),
+  adaptiveDecay: z.number().optional(),
   repeatLastN: z.number().optional(),
   mirostat: z.number().optional(),
   mirostatTau: z.number().optional(),

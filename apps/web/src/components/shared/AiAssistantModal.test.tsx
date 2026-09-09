@@ -125,6 +125,8 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     topA: 0,
     typicalP: 1,
     tfsZ: 1,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
     repeatLastN: -1,
     mirostat: 0,
     mirostatTau: 5,

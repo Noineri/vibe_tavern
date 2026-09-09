@@ -68,6 +68,8 @@ export interface CreateProviderData {
   topA?: number;
   typicalP?: number;
   tfsZ?: number;
+  adaptiveTarget?: number;
+  adaptiveDecay?: number;
   repeatLastN?: number;
   mirostat?: number;
   mirostatTau?: number;
@@ -180,6 +182,8 @@ export class ProviderStore {
         topA: data.topA ?? 0,
         typicalP: data.typicalP ?? 1.0,
         tfsZ: data.tfsZ ?? 1.0,
+        adaptiveTarget: data.adaptiveTarget ?? -1,
+        adaptiveDecay: data.adaptiveDecay ?? 0.9,
         repeatLastN: data.repeatLastN ?? 0,
         mirostat: data.mirostat ?? 0,
         mirostatTau: data.mirostatTau ?? 5.0,
@@ -236,6 +240,8 @@ export class ProviderStore {
     if (data.topA !== undefined) values.topA = data.topA;
     if (data.typicalP !== undefined) values.typicalP = data.typicalP;
     if (data.tfsZ !== undefined) values.tfsZ = data.tfsZ;
+    if (data.adaptiveTarget !== undefined) values.adaptiveTarget = data.adaptiveTarget;
+    if (data.adaptiveDecay !== undefined) values.adaptiveDecay = data.adaptiveDecay;
     if (data.repeatLastN !== undefined) values.repeatLastN = data.repeatLastN;
     if (data.mirostat !== undefined) values.mirostat = data.mirostat;
     if (data.mirostatTau !== undefined) values.mirostatTau = data.mirostatTau;
@@ -339,6 +345,8 @@ export class ProviderStore {
         topA: original.topA,
         typicalP: original.typicalP,
         tfsZ: original.tfsZ,
+        adaptiveTarget: original.adaptiveTarget,
+        adaptiveDecay: original.adaptiveDecay,
         repeatLastN: original.repeatLastN,
         mirostat: original.mirostat,
         mirostatTau: original.mirostatTau,
@@ -618,6 +626,8 @@ export class ProviderStore {
       topA: row.topA,
       typicalP: row.typicalP,
       tfsZ: row.tfsZ,
+      adaptiveTarget: row.adaptiveTarget,
+      adaptiveDecay: row.adaptiveDecay,
       repeatLastN: row.repeatLastN,
       mirostat: row.mirostat,
       mirostatTau: row.mirostatTau,

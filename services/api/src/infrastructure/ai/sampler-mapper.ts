@@ -46,6 +46,50 @@ export interface SamplerConfig {
 // ---------------------------------------------------------------------------
 
 /**
+ * llama.cpp sampler chain sent with adaptive-p (LOCAL_SAMPLERS_ADDITION_REPORT
+ * B1, V1 probe on llama-server b10786): on the /v1/chat endpoint exotic
+ * samplers are accepted but ONLY applied when listed in the `samplers` JSON
+ * array — providing the chain replaces the server's default chain, so it must
+ * carry the full default order or previously-applied samplers (temperature,
+ * penalties, top_k/top_p/min_p, dry, xtc) would be silently dropped.
+ * `adaptive_p` is listed LAST: it is a token-selecting sampler (replaces
+ * `dist`) and llama.cpp always appends it at the very end of the chain. Names
+ * are llama.cpp's canonical sampler names (common_sampler_types_from_names);
+ * the V1 probe confirmed `adaptive` alone does NOT match — `adaptive_p` does.
+ * KoboldCPP's native path needs no chain (its request fields are standalone).
+ */
+const LLAMACPP_SAMPLER_CHAIN = [
+  "penalties",
+  "dry",
+  "top_n_sigma",
+  "top_k",
+  "typ_p",
+  "top_p",
+  "min_p",
+  "xtc",
+  "temperature",
+  "adaptive_p",
+] as const;
+
+/** Emit the adaptive-p request fields for one provider bag. Shared by the
+ *  llama.cpp/unsloth (llama-server, also emits the `samplers` chain) and
+ *  koboldcpp (native request fields, no chain) branches. `adaptiveTarget`
+ *  values < 0 mean disabled (llama.cpp's default −1) — nothing is emitted. */
+function emitAdaptivePOptions(
+  providerOpts: Record<string, JSONValue>,
+  can: (field: SamplerFieldId) => boolean,
+  profile: StoredProviderProfileRecord,
+  includeChain: boolean,
+): void {
+  if (!(can("adaptiveTarget") && profile.adaptiveTarget != null && profile.adaptiveTarget >= 0)) return;
+  providerOpts.adaptive_target = profile.adaptiveTarget;
+  if (can("adaptiveDecay") && profile.adaptiveDecay != null) {
+    providerOpts.adaptive_decay = profile.adaptiveDecay;
+  }
+  if (includeChain) providerOpts.samplers = [...LLAMACPP_SAMPLER_CHAIN];
+}
+
+/**
  * Build the sampler config for a given provider profile.
  *
  * Returns an object that can be spread directly into generateText() / streamText().
@@ -120,6 +164,9 @@ export function buildSamplerConfig(
       if (can("minP") && profile.minP != null) providerOpts.min_p = profile.minP;
       if (can("typicalP") && profile.typicalP != null) providerOpts.typical_p = profile.typicalP;
       if (can("tfsZ") && profile.tfsZ != null) providerOpts.tfs_z = profile.tfsZ;
+      // adaptive-p — only applied on /v1/chat when listed in the `samplers`
+      // chain (V1 probe); the chain emission is what makes it take effect.
+      emitAdaptivePOptions(providerOpts, can, profile, true);
       if (can("repeatLastN") && profile.repeatLastN != null) providerOpts.repeat_last_n = profile.repeatLastN;
       if (can("mirostat") && profile.mirostat != null) providerOpts.mirostat = profile.mirostat;
       if (can("mirostatTau") && profile.mirostatTau != null) providerOpts.mirostat_tau = profile.mirostatTau;
@@ -193,6 +240,8 @@ export function buildSamplerConfig(
       if (can("minP") && profile.minP != null) providerOpts.min_p = profile.minP;
       if (can("typicalP") && profile.typicalP != null) providerOpts.typical = profile.typicalP;
       if (can("tfsZ") && profile.tfsZ != null) providerOpts.tfs = profile.tfsZ;
+      // adaptive-p (KoboldCPP native request fields; no chain needed).
+      emitAdaptivePOptions(providerOpts, can, profile, false);
       if (can("repeatLastN") && profile.repeatLastN != null) providerOpts.rep_pen_range = profile.repeatLastN;
       if (can("repetitionPenalty") && profile.repetitionPenalty != null) providerOpts.rep_pen = profile.repetitionPenalty;
       if (can("dryMultiplier") && profile.dryMultiplier != null) providerOpts.dry_multiplier = profile.dryMultiplier;

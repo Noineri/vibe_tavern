@@ -155,6 +155,8 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     topA: profile.topA,
     typicalP: profile.typicalP,
     tfsZ: profile.tfsZ,
+    adaptiveTarget: profile.adaptiveTarget,
+    adaptiveDecay: profile.adaptiveDecay,
     repeatLastN: profile.repeatLastN,
     mirostat: profile.mirostat,
     mirostatTau: profile.mirostatTau,
