@@ -23,10 +23,6 @@ interface PresetListProps {
    *  sort order. Driven by `useReorderableList` (optimistic + rollback). */
   onReorder: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
   onImportPreset?: () => void;
-  /** LS-10: ST context/sysprompt import (the format tab retired — instruct
-   *  imports live in the provider format block now; this picker keeps the
-   *  PRESET-side kinds reachable). */
-  onImportStFormat?: () => void;
 }
 
 // A single preset row, sortable via `useSortable`. The drag affordance is a
@@ -100,7 +96,7 @@ const SortablePresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEd
   prev.p.name === next.p.name &&
   prev.dndDisabled === next.dndDisabled);
 
-export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename, onReorder, onImportPreset, onImportStFormat }: PresetListProps) {
+export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename, onReorder, onImportPreset }: PresetListProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const { openDetail } = useMasterDetail();
@@ -311,16 +307,6 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
             type="button"
           >
             <Icons.Import /> {t("import_preset_btn")}
-          </button>
-        )}
-        {onImportStFormat && (
-          <button
-            onClick={onImportStFormat}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-            type="button"
-            data-testid="preset-import-st-format"
-          >
-            <Icons.Import /> {t("promptManager.format.importStFormat")}
           </button>
         )}
       </div>

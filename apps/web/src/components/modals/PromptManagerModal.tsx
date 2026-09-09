@@ -10,7 +10,7 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
-import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson, detectStFileKind, parseStContext, parseStSysprompt } from "@vibe-tavern/import-export";
+import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
 import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
@@ -374,9 +374,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
   const [profileConfirmDeleteId, setProfileConfirmDeleteId] = useState<string | null>(null);
   const regexImportInputRef = useRef<HTMLInputElement>(null);
-  // LS-3d/e: a second hidden input for ST format/library imports (instruct /
-  // context / sysprompt) — kind detection is shape-based (detectStFileKind).
-  const formatImportInputRef = useRef<HTMLInputElement>(null);
   // R-7 list badge («Не применяется»): link counts for non-global presets —
   // a bind-mode preset with zero links applies in no chat. Fetched lazily per
   // unknown id; undefined = not loaded yet (badge withheld until known), so
@@ -596,58 +593,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   // reads text → the pure helper parses + creates (all disabled) → the list
   // refreshes and the display-regex cache is invalidated so a newly-created
   // preset is picked up immediately.
-  /** LS-3e point import: one file picker, kind detected by shape.
-   *  instruct → the preset's manual generation format (+ its stop_sequence
-   *  values appended to the ACTIVE TC provider profile's EXISTING
-   *  stop-sequences setting — owner correction, no duplicate control);
-   *  context → the mapped canvas order merged into the draft (+ import notes
-   *  surfaced as toasts, never silent); sysprompt → the main system field.
-   *  OpenAI Settings / VT exports keep their own presets-tab import. */
-  /** ST point import, PRESET-side kinds only (LS-10: the format tab retired —
-   *  instruct imports live in the provider format block now; context/sysprompt
-   *  still edit THE PRESET, so their picker stays here).
-   *  context → the mapped canvas order merged into the draft (+ import notes
-   *  surfaced as toasts, never silent); sysprompt → the main system field;
-   *  instruct → a redirect toast (the provider format block owns it now). */
-  async function handleFormatImportFile(file: File) {
-    if (!input.activePresetId) {
-      toast.error(t("promptManager.format.importNoPreset"));
-      return;
-    }
-    try {
-      const text = await file.text();
-      const kind = detectStFileKind(JSON.parse(text));
-      if (kind === "instruct") {
-        // LS-10 retarget: instruct templates land in the provider settings'
-        // format block now (profile-side format + its stop sequences).
-        toast.info(t("providerFormat.importMovedToProvider"));
-      } else if (kind === "context") {
-        const parsed = parseStContext(text);
-        setDraft((d) => ({
-          ...d,
-          promptOrder: mergePromptOrder(d.promptOrder, parsed.promptOrder),
-          advancedMode: true,
-        }));
-        setDirty(true);
-        setSaveState("idle");
-        for (const note of parsed.notes) {
-          toast.info(note);
-        }
-        toast.success(t("promptManager.format.importedContext", { name: parsed.name }));
-      } else if (kind === "sysprompt") {
-        const parsed = parseStSysprompt(text);
-        updateDraft("system", parsed.content);
-        toast.success(t("promptManager.format.importedSysprompt", { name: parsed.name }));
-      } else if (kind === "openai_preset" || kind === "vt_export") {
-        toast.error(t("promptManager.format.importWrongTab"));
-      } else {
-        toast.error(t("promptManager.format.importUnknown"));
-      }
-    } catch {
-      toast.error(t("promptManager.format.importFailed"));
-    }
-  }
-
   function handleRegexImportFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -1232,18 +1177,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         }}
       />
 
-      {/* LS-3d/e: hidden file input for ST format/library point import. */}
-      <input
-        ref={formatImportInputRef}
-        type="file"
-        accept=".json,application/json"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void handleFormatImportFile(file);
-          e.target.value = "";
-        }}
-      />
+      {/* LS-3d/e hidden file input removed with the format-tab import picker
+          (owner 2026-09-09): instruct imports live in the provider format
+          block; preset-side ST kinds await PresetImportModal compatibility. */}
 
       <ServicePromptsPane
         active={activeTab === "service"}
@@ -1341,7 +1277,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onAdd={handleAdd}
                   onRename={handleRename}
                   onImportPreset={() => setImportModalOpen(true)}
-                  onImportStFormat={() => formatImportInputRef.current?.click()}
                   onReorder={input.onReorder}
                 />
               )
