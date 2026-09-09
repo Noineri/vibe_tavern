@@ -145,14 +145,13 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               collapse; ✕ closes without clearing (the armed dot stays). */}
           {data.perSendPrefillSupported && (
             <div
-              className="grid px-3 pt-2 transition-[grid-template-rows,opacity] duration-200 ease-out"
+              className="grid pl-3 pr-[135px] pt-2 transition-[grid-template-rows,opacity] duration-200 ease-out"
               style={{ gridTemplateRows: prefillOpen ? "1fr" : "0fr", opacity: prefillOpen ? 1 : 0 }}
               aria-hidden={!prefillOpen}
               data-testid="per-send-prefill-bubble"
             >
-              <div className="overflow-hidden">
+              <div className="overflow-hidden pb-1.5">
                 <div className="flex items-start gap-1.5 rounded-lg border border-border bg-s2 px-2.5 py-1.5">
-                  <Icons.user aria-hidden />
                   <AutoTextarea
                     className="min-w-0 flex-1 resize-none border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
                     minRows={1}
