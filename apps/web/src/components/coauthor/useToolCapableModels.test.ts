@@ -82,6 +82,7 @@ function makeProfile(overrides: Partial<ProviderProfileRecord> & { id: string })
     updatedAt: "",
     proxyMode: "inherit",
     proxyId: null,
+    samplerSetId: null,
     hasStoredApiKey: false,
     ...overrides,
   };

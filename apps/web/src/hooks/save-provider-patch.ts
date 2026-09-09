@@ -76,6 +76,12 @@ export interface ProviderSavePatch {
   customSamplers: boolean;
   proxyMode?: ProviderProxyMode;
   proxyId?: string | null;
+  /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a). Profile-level —
+   *  never routes to a model overlay. Optional: computeSavePatch always sets it
+   *  (from the form), connectionToSavePatch OMITS it (a legacy connection save
+   *  must not wipe the pointer — omitted fields are untouched by the partial
+   *  PATCH). null clears the pointer ("no set"). */
+  samplerSetId?: string | null;
 }
 
 // ─── Pure computation ─────────────────────────────────────────────────────────
@@ -140,6 +146,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     customSamplers: form.customSamplers,
     proxyMode: form.proxyMode ?? "inherit",
     proxyId: form.proxyMode === "proxy" ? form.proxyId ?? null : null,
+    samplerSetId: form.samplerSetId,
   };
 
   saveLog.debug("computeSavePatch:", {
@@ -243,6 +250,8 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
     defaultModel: conn.model.trim() || null,
     visionModel: conn.visionModel.trim() || null,
+    // samplerSetId deliberately OMITTED — the legacy connection-based save
+    // path must not touch the sampler-set pointer (partial PATCH semantics).
     contextBudget: conn.maxTokens || null,
     pinContextBudget: false,  // not in ConnectionState yet
     tokenPadding: 0,  // not in ConnectionState yet — padding is modal-only

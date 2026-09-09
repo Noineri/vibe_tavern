@@ -128,6 +128,11 @@ export interface StoredProviderProfileRecord {
   isActive: boolean;
   /** Optional vision model slug from the same provider profile, used for image description fallback. */
   visionModel: string | null;
+  /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a): the provider
+   *  sampler panel's dropdown pre-selection + dirty-dot baseline. Null = no set
+   *  applied. Set deletion clears the pointer (copy-on-select — the values live
+   *  on the profile, the set is an inert template). */
+  samplerSetId: string | null;
   createdAt: string;
   updatedAt: string;
 }

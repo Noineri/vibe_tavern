@@ -484,6 +484,13 @@
       "when": 1788927133042,
       "tag": "0068_boring_mad_thinker",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1788933406340,
+      "tag": "0069_gigantic_ares",
+      "breakpoints": true
     }
   ]
 }

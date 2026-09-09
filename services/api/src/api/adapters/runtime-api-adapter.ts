@@ -31,6 +31,7 @@ import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
 import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
+import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { ServicePromptAdapter } from "./service-prompt-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
@@ -75,6 +76,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly coauthorSkills: CoauthorSkillAdapter;
 	readonly copilotSkills: CopilotSkillAdapter;
 	readonly copilotProfiles: CopilotProfileAdapter;
+	readonly samplerSets: SamplerSetAdapter;
 	readonly dice: DiceAdapter;
 	readonly experience: ExperienceAdapter;
 	readonly experienceCopilot: ExperienceCopilotAdapter;
@@ -138,6 +140,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
 		this.copilotSkills = new CopilotSkillAdapter(copilotSkillService);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
+		this.samplerSets = new SamplerSetAdapter(stores);
 		this.dice = new DiceAdapter(diceService);
 		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService, providerProfileService);
 		this.experienceCopilot = new ExperienceCopilotAdapter(stores, providerProfileService, copilotSkillService);

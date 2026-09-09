@@ -63,6 +63,20 @@ export {
   reorderProviderProfilesSchema,
 } from "./provider-schema.js";
 export {
+  samplerSetSchema,
+  samplerSetListSchema,
+  createSamplerSetSchema,
+  updateSamplerSetSchema,
+  importSamplerSetSchema,
+} from "./sampler-set-schema.js";
+export type {
+  SamplerSet,
+  SamplerSetList,
+  SamplerSetCreate,
+  SamplerSetUpdate,
+  SamplerSetImport,
+} from "./sampler-set-schema.js";
+export {
   providerProxyModeSchema,
   saveProxySchema,
   updateProxySchema,

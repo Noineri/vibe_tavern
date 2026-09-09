@@ -108,6 +108,8 @@ export interface CreateProviderData {
   modelGroupByOwner?: boolean;
   /** Optional vision model for image description fallback. */
   visionModel?: string | null;
+  /** Last-applied sampler set (LOCAL_SUPPORT_PLAN LS-5a). Nullable — null clears the pointer ("no set"). */
+  samplerSetId?: string | null;
   /** Per-provider proxy selection policy. */
   proxyMode?: ProviderProxyMode;
   proxyId?: string | null;
@@ -229,6 +231,7 @@ export class ProviderStore {
         proxyMode: data.proxyMode ?? 'inherit',
         proxyId: data.proxyId ?? null,
         visionModel: data.visionModel ?? null,
+        samplerSetId: data.samplerSetId ?? null,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -295,6 +298,7 @@ export class ProviderStore {
     if (data.proxyMode !== undefined) values.proxyMode = data.proxyMode;
     if (data.proxyId !== undefined) values.proxyId = data.proxyId;
     if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
+    if (data.samplerSetId !== undefined) values.samplerSetId = data.samplerSetId ?? null;
 
     const [row] = await this.db
       .update(providerProfiles)
@@ -310,6 +314,17 @@ export class ProviderStore {
 
   async delete(id: string): Promise<void> {
     await this.db.delete(providerProfiles).where(eq(providerProfiles.id, id)).run();
+  }
+
+  /** Null out `sampler_set_id` on every profile pointing at the given set
+   *  (LOCAL_SUPPORT_PLAN LS-5e): the sampler-set delete path clears dangling
+   *  references BEFORE removing the set row (plain column, no FK — see the
+   *  samplerSetId comment in db-schema). Idempotent. */
+  async clearSamplerSetReference(setId: string): Promise<void> {
+    await this.db.update(providerProfiles)
+      .set({ samplerSetId: null })
+      .where(eq(providerProfiles.samplerSetId, setId))
+      .run();
   }
 
   async activate(id: string): Promise<void> {
@@ -408,6 +423,7 @@ export class ProviderStore {
         proxyMode: original.proxyMode,
         proxyId: original.proxyId,
         visionModel: original.visionModel,
+        samplerSetId: original.samplerSetId,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -694,6 +710,7 @@ export class ProviderStore {
       proxyId: row.proxyId ?? null,
       isActive: row.isActive === 1,
       visionModel: row.visionModel ?? null,
+      samplerSetId: row.samplerSetId ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { samplerPresetPayloadSchema } from "@vibe-tavern/api-contracts";
 import { computeOverlayPatch } from "../hooks/save-provider-patch.js";
-import { applySamplerPresetFields, type FormUpdater } from "./sampler-clipboard.js";
+import { applySamplerPresetFields, filterOverlayByCapabilities, overlayDivergesFromSet, type FormUpdater } from "./sampler-clipboard.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
 
@@ -25,6 +25,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     ...over,
     proxyMode: over.proxyMode ?? "inherit",
     proxyId: over.proxyId ?? null,
+    samplerSetId: null,
   };
 }
 
@@ -163,5 +164,106 @@ describe("sampler clipboard round-trip", () => {
     applySamplerPresetFields({ seed: null, contextBudget: null }, updater);
     expect(target.seed).toBeNull();
     expect(target.contextBudget).toBe(0); // form's contextBudget is number; null→0 fallback
+  });
+});
+
+// ── Sampler-set engine semantics (LOCAL_SUPPORT_PLAN LS-5e/f) ─────────────────
+// The clipboard trio IS the set engine: these tests pin the two helpers the
+// set row added on top of the copy/paste boundary — per-protocol capability
+// filtering ON APPLY (unsupported values never enter the form) and the dirty-
+// dot divergence check (applied baseline vs the current extract).
+
+describe("filterOverlayByCapabilities (LS-5f apply filtering)", () => {
+  test("drops sampler fields the protocol does not support, keeps the rest", async () => {
+    const { resolveSamplerCapabilities } = await import("@vibe-tavern/domain");
+    const openaiCaps = resolveSamplerCapabilities("openai", "openai_compat");
+    // The openai_compat surface has no DRY / mirostat / adaptive-p / dynatemp.
+    const filtered = filterOverlayByCapabilities(
+      {
+        temperature: 0.9,
+        topP: 0.8,
+        dryMultiplier: 0.8,
+        drySequenceBreakers: ["\\n"],
+        mirostat: 2,
+        adaptiveTarget: 0.5,
+        dynatempRange: 1.5,
+      },
+      (field) => openaiCaps[field],
+    );
+    expect(filtered.temperature).toBe(0.9);
+    expect(filtered.topP).toBe(0.8);
+    expect(filtered.dryMultiplier).toBeUndefined();
+    expect(filtered.drySequenceBreakers).toBeUndefined();
+    expect(filtered.mirostat).toBeUndefined();
+    expect(filtered.adaptiveTarget).toBeUndefined();
+    expect(filtered.dynatempRange).toBeUndefined();
+  });
+
+  test("passes through non-capability overlay keys untouched (contextBudget, maxTokens, pinContextBudget)", async () => {
+    // A supports() that rejects EVERYTHING still must not swallow the keys
+    // that render on every protocol (anything in SamplerFieldId — including
+    // seed and stopSequences — is capability-gated; these are not).
+    const filtered = filterOverlayByCapabilities(
+      { contextBudget: 32000, maxTokens: 8192, pinContextBudget: true, seed: "123", temperature: 0.5 },
+      () => false,
+    );
+    expect(filtered.contextBudget).toBe(32000);
+    expect(filtered.maxTokens).toBe(8192);
+    expect(filtered.pinContextBudget).toBe(true);
+    expect(filtered.seed).toBeUndefined();
+    expect(filtered.temperature).toBeUndefined();
+  });
+
+  test("an all-capable protocol passes the payload through unchanged", async () => {
+    const payload = { temperature: 1.31, topK: 49, drySequenceBreakers: ["\\n"], bannedStrings: [" finger"] };
+    const filtered = filterOverlayByCapabilities(payload, () => true);
+    expect(filtered).toEqual(payload);
+  });
+});
+
+describe("overlayDivergesFromSet (LS-5 dirty dot)", () => {
+  test("equal values → not dirty; any diverged baseline field → dirty", () => {
+    const baseline = { temperature: 1.31, topK: 49 };
+    expect(overlayDivergesFromSet(baseline, { temperature: 1.31, topK: 49 })).toBe(false);
+    expect(overlayDivergesFromSet(baseline, { temperature: 0.9, topK: 49 })).toBe(true);
+    expect(overlayDivergesFromSet(baseline, { temperature: 1.31, topK: 55 })).toBe(true);
+  });
+
+  test("fields the set never carried do not count as divergence", () => {
+    // The user tweaked a knob the set doesn't store — the dot must NOT light.
+    expect(overlayDivergesFromSet({ temperature: 1.31 }, { temperature: 1.31, topK: 49, topP: 0.3 })).toBe(false);
+  });
+
+  test("undefined baseline field vs a defined current value counts as divergence (revert case)", () => {
+    // 💾 stores the full overlay extract; a baseline field that is undefined
+    // while the form carries a value means the user changed it away from the
+    // (capability-filtered) set value.
+    expect(overlayDivergesFromSet({ topK: undefined }, { topK: 40 })).toBe(true);
+  });
+
+  test("array fields compare element-wise, order-sensitive (drySequenceBreakers)", () => {
+    expect(overlayDivergesFromSet({ drySequenceBreakers: ["\\n", ":"] }, { drySequenceBreakers: ["\\n", ":"] })).toBe(false);
+    expect(overlayDivergesFromSet({ drySequenceBreakers: ["\\n", ":"] }, { drySequenceBreakers: [":", "\\n"] })).toBe(true);
+  });
+
+  test("the panel round-trip: apply → diverge → re-apply clears the dot", async () => {
+    const { samplerPresetPayloadSchema } = await import("@vibe-tavern/api-contracts");
+    const payload = { temperature: 1.31, topP: 0.14, topK: 49 };
+    const parsed = samplerPresetPayloadSchema.safeParse(payload);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const { updater, form: target } = recordingUpdater(makeForm());
+    // Apply (copy-on-select).
+    applySamplerPresetFields(parsed.data as Partial<ModelSettingsOverlay>, updater);
+    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target as unknown as ModelSettingsOverlay)).toBe(false);
+
+    // The user nudges a knob → dirty.
+    target.temperature = 0.5;
+    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target as unknown as ModelSettingsOverlay)).toBe(true);
+
+    // Re-select / 🔄 (re-apply) → the dot clears.
+    target.temperature = 1.31;
+    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target as unknown as ModelSettingsOverlay)).toBe(false);
   });
 });

@@ -6,4 +6,5 @@ export * from "./chats/st-chat.js";
 export * from "./presets/st-preset.js";
 export * from "./presets/st-format.js";
 export * from "./presets/standalone-regex.js";
+export * from "./samplers/st-textgen.js";
 export * from "./personas/st-persona.js";

@@ -817,6 +817,25 @@ export const proxySettings = sqliteTable('proxy_settings', {
   singletonIdCheck: check('proxy_settings_singleton_id_check', sql`${table.id} = 'default'`),
 }));
 
+// ─── samplerSets ──────────────────────────────────────────────────────────────
+// Named sampler sets (LOCAL_SUPPORT_PLAN LS-5a): a global library of inert
+// sampler value bundles the provider sampler panel applies copy-on-select.
+// The payload is a serialized ModelSettingsOverlay (the same bundle the
+// sampler clipboard carried — the clipboard trio IS the set engine; only the
+// copy/paste buttons were replaced by the set row). Sets are inert templates:
+// applying one writes the values into the profile/overlay; editing the set
+// later never rewrites profiles that already applied it. Named-library
+// precedent: regex_profiles / tts_profiles (no links, no enabled flag).
+export const samplerSets = sqliteTable('sampler_sets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** Stringified samplerPresetPayloadSchema JSON (a partial ModelSettingsOverlay). */
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── providerProfiles ──────────────────────────────────────────────────────────
 
 export const providerProfiles = sqliteTable('provider_profiles', {
@@ -900,6 +919,14 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   proxyMode: text('proxy_mode').$type<ProviderProxyMode>().notNull().default('inherit'),
   proxyId: text('proxy_id').references(() => proxyProfiles.id, { onDelete: 'set null' }),
   visionModel: text('vision_model'),
+  /** Last-applied sampler set (LOCAL_SUPPORT_PLAN LS-5a): drives the panel's
+   *  dropdown pre-selection + dirty-dot computation across sessions. Deliberately
+   *  a PLAIN column (no FK): drizzle-kit 0.31 emits no ON DELETE clause on
+   *  ALTER ADD COLUMN, and FK enforcement is ON at runtime — an FK here would
+   *  make set deletion throw instead of clearing. The clearing is app-level:
+   *  SamplerSetStore.delete callers clear dangling references first
+   *  (ProviderStore.clearSamplerSetReference, LOCAL_SUPPORT_PLAN LS-5e). */
+  samplerSetId: text('sampler_set_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({

@@ -115,6 +115,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
         result.lorebooks.length +
         result.presets.length +
         result.formats.length +
+        result.samplerSets.length +
         (result.persona?.count ?? 0);
       if (totalImportable === 0 && result.errors.length === 0) {
         setError(t("st_no_files"));
@@ -155,6 +156,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
         lorebooks: result.lorebooks,
         presets: result.presets,
         formats: result.formats,
+        samplerSets: result.samplerSets,
         personas: result.personas,
       });
       toast.success(msg);
@@ -183,6 +185,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       scanResult.lorebooks.length +
       scanResult.presets.length +
       scanResult.formats.length +
+      scanResult.samplerSets.length +
       (scanResult.persona?.count ?? 0)
     : 0;
 
@@ -201,6 +204,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
           <div>SillyTavern/data/default-user/characters <span className="text-t4">← {t("st_hint_characters")}</span></div>
           <div>SillyTavern/data/default-user/chats <span className="text-t4">← {t("st_hint_chats")}</span></div>
           <div>SillyTavern/data/default-user/worlds <span className="text-t4">← {t("st_hint_worlds")}</span></div>
+          <div>SillyTavern/data/default-user/TextGen Settings <span className="text-t4">← {t("st_hint_samplers")}</span></div>
         </div>
       </details>
 
@@ -249,6 +253,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
               chats: scanResult.chats.length,
               presets: scanResult.presets.length,
               formats: scanResult.formats.length,
+              samplerSets: scanResult.samplerSets.length,
               lorebooks: scanResult.lorebooks.length,
             })}
           </div>
@@ -297,6 +302,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
               lorebooks: importResult.lorebooks,
               presets: importResult.presets,
               formats: importResult.formats,
+              samplerSets: importResult.samplerSets,
               personas: importResult.personas,
             })}
           </div>
@@ -523,7 +529,7 @@ function BusyLine(props: { label: string }) {
 }
 
 // Fixed import order (matches the scanner's phase sequence).
-const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "lorebooks", "presets", "formats", "personas"];
+const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "lorebooks", "presets", "formats", "samplerSets", "personas"];
 
 /** Per-phase progress breakdown for a streaming ST directory import. Reuses
  *  the old bar visual (animated accent dots + width:% fill) but drives it from
@@ -541,6 +547,7 @@ function StImportProgress(props: {
     lorebooks: props.scanResult.lorebooks.length,
     presets: props.scanResult.presets.length,
     formats: props.scanResult.formats.length,
+    samplerSets: props.scanResult.samplerSets.length,
     personas: props.scanResult.persona?.count ?? 0,
   };
   const activeIdx = props.progress.activePhase ? IMPORT_PHASES.indexOf(props.progress.activePhase) : -1;

@@ -180,6 +180,7 @@ function ProviderStep({
     customSamplers: existingProfile?.customSamplers ?? false,
     proxyMode: existingProfile?.proxyMode ?? "inherit",
     proxyId: existingProfile?.proxyId ?? null,
+    samplerSetId: existingProfile?.samplerSetId ?? null,
   }));
 
   const [testOk, setTestOk] = useState<boolean | null>(alreadyHasProfile ? true : null);

@@ -11,9 +11,19 @@ import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
 import { NumberInput } from '../../shared/NumberInput.js';
 import { AnimatedDisclosure } from '../../shared/AnimatedDisclosure.js';
-import { samplerPresetPayloadSchema } from '@vibe-tavern/api-contracts';
+import { samplerPresetPayloadSchema, type SamplerSet } from '@vibe-tavern/api-contracts';
 import { computeOverlayPatch } from '../../../hooks/save-provider-patch.js';
-import { applySamplerPresetFields } from '../../../lib/sampler-clipboard.js';
+import { applySamplerPresetFields, filterOverlayByCapabilities, overlayDivergesFromSet } from '../../../lib/sampler-clipboard.js';
+import {
+  createSamplerSet,
+  deleteSamplerSet,
+  importSamplerSet,
+  listSamplerSets,
+  updateSamplerSet,
+} from '../../../api/sampler-set-api.js';
+import { DropdownSelect } from '../../shared/DropdownSelect.js';
+import { DestructiveConfirmModal } from '../../shared/destructive-confirm-modal.js';
+import type { ModelSettingsOverlay } from '@vibe-tavern/domain';
 
 /* ── SamplerField sub-component ────────────────────────────────────── */
 
@@ -215,50 +225,227 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
     }
   };
 
-  // ── Sampler preset clipboard (Wave 6) ──
-  // Copy: form → overlay payload → JSON → clipboard. Paste: clipboard → JSON →
-  // schema-safeParse → applySamplerPresetFields. Routing (overlay vs base) is
-  // automatic — updateForm (= lazyAutoSaveField in the modal) routes based on
-  // form.bindPerModel && editingModelId (Wave 4).
-  const handleCopySampler = async () => {
+  // ── Named sampler-set library (LOCAL_SUPPORT_PLAN LS-5) ──
+  // The clipboard copy/paste buttons are REPLACED by the set row: a bounded
+  // inline DropdownSelect + 7 icon-only actions (+ / 💾 / ✏ / 🔄 / 🗑 / ⬆ / ⬇).
+  // The clipboard trio (schema + apply + extract) IS the set engine —
+  // applySamplerPresetFields/computeOverlayPatch keep their clipboards-era
+  // boundary (their tests stay); only the clipboard I/O went away.
+  //
+  // Semantics (LS-5e, owner-confirmed):
+  //  - Apply (select / re-select / 🔄) = safeParse → filter by the panel's
+  //    per-protocol capability set (LS-5f — unsupported values never enter the
+  //    form) → applySamplerPresetFields (overlay-vs-base routing is free).
+  //  - 💾 = computeOverlayPatch(form) → update the selected set's payload.
+  //  - «+» = the same payload under the morph-entered name.
+  //  - Profile.samplerSetId rides updateForm on apply/💾/+; cleared by delete
+  //    of that set and by picking "no set".
+  //  - Dirty dot: the applied (capability-filtered) payload vs the current
+  //    extract, field-wise deep compare; cleared by 💾 and by re-applying.
+  const [sets, setSets] = useState<SamplerSet[]>([]);
+  const [setsLoaded, setSetsLoaded] = useState(false);
+  /** Morph state: the dropdown is replaced by a name input (input + ✓ + ✕,
+   *  lorebook-accordion inline-rename clone). "new" = the «+» save-as-new flow;
+   *  "rename" = the pencil flow, prefilled with the set's current name. */
+  const [morph, setMorph] = useState<null | { intent: 'new' | 'rename'; value: string }>(null);
+  /** Server-side name-collision rejection (the inline warning shows for both
+   *  the client-side check and a raced 409). Cleared on any name edit. */
+  const [morphConflict, setMorphConflict] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  /** The payload currently considered APPLIED (capability-filtered): the
+   *  dirty-dot baseline. Filled by apply/💾/+; back-filled from the profile's
+   *  pre-selected set on first load (no re-apply — the values already live on
+   *  the profile from a previous session). */
+  const appliedRef = useRef<{ setId: string; baseline: Partial<ModelSettingsOverlay> } | null>(null);
+  const [, forceRender] = useState(0);
+  const bumpApplied = () => forceRender((n) => n + 1);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listSamplerSets()
+      .then((list) => {
+        if (cancelled) return;
+        setSets(list);
+        setSetsLoaded(true);
+      })
+      .catch(() => {
+        // Library fetch failure leaves the row in its no-set state — the panel
+        // itself (knobs + autosave) keeps working. A retry happens on remount.
+        if (!cancelled) setSetsLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const selected = sets.find((s) => s.id === form.samplerSetId) ?? null;
+
+  // Back-fill the dirty-dot baseline from the profile's pre-selected set once
+  // the library arrives (previous-session pre-selection — no re-apply).
+  useEffect(() => {
+    if (!setsLoaded || !form.samplerSetId) return;
+    if (appliedRef.current?.setId === form.samplerSetId) return;
+    const set = sets.find((s) => s.id === form.samplerSetId);
+    if (!set) return;
+    const parsed = samplerPresetPayloadSchema.safeParse(set.payload);
+    if (!parsed.success) return;
+    appliedRef.current = { setId: set.id, baseline: filterOverlayByCapabilities(parsed.data, supports) };
+    bumpApplied();
+  });
+
+  const isDirty = Boolean(
+    selected &&
+      appliedRef.current?.setId === selected.id &&
+      overlayDivergesFromSet(appliedRef.current.baseline, computeOverlayPatch(form)),
+  );
+
+  const applySet = (set: SamplerSet) => {
+    const parsed = samplerPresetPayloadSchema.safeParse(set.payload);
+    if (!parsed.success) {
+      toast.error(t('sampler_set_invalid'));
+      return;
+    }
+    // Per-protocol filtering ON APPLY (LS-5f): unsupported values never enter
+    // the form, so they can't persist invisibly onto the profile.
+    const filtered = filterOverlayByCapabilities(parsed.data, supports);
+    applySamplerPresetFields(filtered, updateForm);
+    appliedRef.current = { setId: set.id, baseline: filtered };
+    bumpApplied();
+    updateForm('samplerSetId', set.id);
+    toast.success(t('sampler_set_applied', { name: set.name }));
+  };
+
+  const handleSelectSet = (id: string) => {
+    if (!id) {
+      // Explicit "no set": clear the pointer, keep the panel's current values.
+      updateForm('samplerSetId', null);
+      appliedRef.current = null;
+      bumpApplied();
+      return;
+    }
+    const set = sets.find((s) => s.id === id);
+    if (set) applySet(set);
+  };
+
+  const handleSaveIntoSet = async () => {
+    if (!selected) return;
     const payload = computeOverlayPatch(form);
     try {
-      await navigator.clipboard.writeText(JSON.stringify(payload));
-      toast.success(t("sampler_copy_done"));
-    } catch {
-      // clipboard.writeText can fail in non-secure contexts or when the
-      // clipboard API is unavailable. VT runs on localhost (secure) so this is
-      // rare — no fallback per plan §115.
+      const updated = await updateSamplerSet(selected.id, { payload });
+      setSets((list) => list.map((s) => (s.id === updated.id ? updated : s)));
+      appliedRef.current = { setId: updated.id, baseline: filterOverlayByCapabilities(payload, supports) };
+      bumpApplied();
+      updateForm('samplerSetId', updated.id);
+      toast.success(t('sampler_set_saved'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('sampler_set_action_failed'));
     }
   };
 
-  const handlePasteSampler = async () => {
-    let text: string;
+  const handleMorphConfirm = async () => {
+    if (!morph) return;
+    const name = morph.value.trim();
+    if (!name) return;
+    if (morph.intent === 'new') {
+      try {
+        const created = await createSamplerSet({ name, payload: computeOverlayPatch(form) });
+        setSets((list) => [...list, created]);
+        appliedRef.current = { setId: created.id, baseline: filterOverlayByCapabilities(created.payload, supports) };
+        bumpApplied();
+        updateForm('samplerSetId', created.id);
+        setMorph(null);
+        setMorphConflict(false);
+        toast.success(t('sampler_set_created'));
+      } catch (error) {
+        // A raced name collision (someone else created the name) shows the
+        // same inline warning as the client-side check.
+        setMorphConflict(true);
+        toast.error(error instanceof Error ? error.message : t('sampler_set_action_failed'));
+      }
+      return;
+    }
+    if (!selected) return;
     try {
-      text = await navigator.clipboard.readText();
-    } catch {
-      toast.error(t("sampler_paste_invalid"));
-      return;
+      const updated = await updateSamplerSet(selected.id, { name });
+      setSets((list) => list.map((s) => (s.id === updated.id ? updated : s)));
+      setMorph(null);
+      setMorphConflict(false);
+      toast.success(t('sampler_set_renamed'));
+    } catch (error) {
+      setMorphConflict(true);
+      toast.error(error instanceof Error ? error.message : t('sampler_set_action_failed'));
     }
-    if (!text.trim()) {
-      toast.error(t("sampler_paste_empty"));
-      return;
-    }
-    let parsedJson: unknown;
-    try {
-      parsedJson = JSON.parse(text);
-    } catch {
-      toast.error(t("sampler_paste_invalid"));
-      return;
-    }
-    const result = samplerPresetPayloadSchema.safeParse(parsedJson);
-    if (!result.success) {
-      toast.error(t("sampler_paste_invalid"));
-      return;
-    }
-    applySamplerPresetFields(result.data, updateForm);
-    toast.success(t("sampler_paste_done"));
   };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDeleteId) return;
+    const target = sets.find((s) => s.id === confirmDeleteId);
+    try {
+      await deleteSamplerSet(confirmDeleteId);
+      setSets((list) => list.filter((s) => s.id !== confirmDeleteId));
+      if (form.samplerSetId === confirmDeleteId) {
+        // Deleting a set never touches profiles that already applied it
+        // (copy-on-select) — only the pointer clears.
+        updateForm('samplerSetId', null);
+      }
+      if (appliedRef.current?.setId === confirmDeleteId) {
+        appliedRef.current = null;
+        bumpApplied();
+      }
+      setConfirmDeleteId(null);
+      if (target) toast.success(t('sampler_set_deleted'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('sampler_set_action_failed'));
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await file.text());
+    } catch {
+      toast.error(t('sampler_set_import_failed'));
+      return;
+    }
+    const name = file.name.replace(/\.json$/i, '').trim() || t('sampler_set_import_default_name');
+    try {
+      const { set, notes } = await importSamplerSet({ name, raw });
+      setSets((list) => [...list.filter((s) => s.id !== set.id), set]);
+      if (notes.length > 0) toast.warning(notes.join(' · '));
+      toast.success(t('sampler_set_imported', { name: set.name }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('sampler_set_import_failed'));
+    }
+  };
+
+  const handleExportSet = () => {
+    if (!selected) return;
+    // VT-native set JSON = the raw payload (a valid samplerPresetPayloadSchema
+    // object): re-uploading it via the import endpoint round-trips losslessly.
+    // VT carries fields ST lacks (adaptive-p, DRY tail), so a 1:1 ST-compatible
+    // export is not promised (LS-5 edge case 6).
+    const payloadJson = JSON.stringify(selected.payload, null, 2);
+    const blob = new Blob([payloadJson], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${selected.name.replace(/[/\\:*?"<>|]/g, '_')}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  };
+
+  // Inline collision check (ProviderEditHeader duplicateNameWarning clone):
+  // trim + case-insensitive, excluding the renamed set itself.
+  const morphName = morph?.value.trim() ?? '';
+  const morphSelfId = morph?.intent === 'rename' ? selected?.id : null;
+  const morphClientConflict =
+    morphName.length > 0 &&
+    sets.some(
+      (s) => s.id !== morphSelfId && s.name.trim().toLowerCase() === morphName.toLowerCase(),
+    );
+  const morphShowConflict = morphClientConflict || morphConflict;
+  const morphConfirmDisabled = morphName.length === 0 || morphShowConflict;
 
   return (
     <div className="mb-4">
@@ -394,31 +581,192 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
             </span>
             {t("samplers_advanced")}
           </span>
-          {/* Copy/paste sampler preset (Wave 6) + toggle switch */}
-          <div className="flex items-center gap-1.5">
-            <CustomTooltip content={t("sampler_copy")}>
+          {/* Named sampler-set row (LS-5): bounded inline dropdown + 7 icon
+              actions + the customSamplers toggle switch. Icon-only per the
+              owner's final decision — no labels, tooltips only. */}
+          <div className="flex items-center gap-1">
+            {morph ? (
+              /* ── Morph state: dropdown → name input (lorebook-accordion
+                  inline-rename clone: input + ✓ + ✕, Enter = save, autofocus) ── */
+              <div className="flex min-w-0 items-center gap-1">
+                <div className="flex min-w-0 flex-col">
+                  <input
+                    type="text"
+                    data-testid="sampler-set-name-input"
+                    className={cn(
+                      "h-7 w-[180px] rounded border bg-bg px-2 text-[12px] text-t1 outline-none",
+                      morphShowConflict ? "border-danger" : "border-accent",
+                    )}
+                    value={morph.value}
+                    onChange={(e) => {
+                      setMorph({ ...morph, value: e.target.value });
+                      setMorphConflict(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleMorphConfirm();
+                      if (e.key === 'Escape') setMorph(null);
+                    }}
+                    placeholder={t('sampler_set_name_placeholder')}
+                    autoFocus
+                  />
+                  {morphShowConflict && (
+                    <div className="mt-0.5 flex items-center gap-1 text-[10px] text-warning">
+                      <span className="[&_svg]:h-[10px] [&_svg]:w-[10px]"><Icons.Alert /></span>
+                      {t('sampler_set_name_exists')}
+                    </div>
+                  )}
+                </div>
+                <CustomTooltip content={t('confirm')}>
+                  <button
+                    type="button"
+                    data-testid="sampler-set-morph-confirm"
+                    disabled={morphConfirmDisabled}
+                    onClick={(e) => { e.stopPropagation(); void handleMorphConfirm(); }}
+                    className="flex h-7 w-7 items-center justify-center rounded text-accent-t transition-colors hover:bg-[var(--border)] disabled:pointer-events-none disabled:opacity-40"
+                    aria-label={t('confirm')}
+                  >
+                    <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Check /></span>
+                  </button>
+                </CustomTooltip>
+                <CustomTooltip content={t('cancel')}>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setMorph(null); }}
+                    className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1"
+                    aria-label={t('cancel')}
+                  >
+                    <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Close /></span>
+                  </button>
+                </CustomTooltip>
+              </div>
+            ) : (
+              <div className="flex min-w-0 items-center">
+                <DropdownSelect
+                  value={form.samplerSetId ?? ''}
+                  options={sets.map((s) => ({ id: s.id, label: s.name }))}
+                  defaultOption={t('sampler_set_none')}
+                  placeholder={t('sampler_set_placeholder')}
+                  onChange={handleSelectSet}
+                  /* Inline slot (AGENTS.md inline-row gotcha): bounded auto
+                     width, NO form-fill trigger, NO detail in the collapsed
+                     trigger; the popup gets its own fixed width. */
+                  triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[12px] hover:border-accent"
+                  triggerDetail={false}
+                  contentWidth={260}
+                  triggerLeading={
+                    isDirty ? (
+                      /* Dirty dot (owner): values diverged from the set.
+                         Cleared by 💾 and by re-applying/re-selecting. */
+                      <span
+                        data-testid="sampler-set-dirty-dot"
+                        className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent"
+                      />
+                    ) : undefined
+                  }
+                  triggerTestId="sampler-set-trigger"
+                />
+              </div>
+            )}
+            {/* Icon-only action row. Pencil/refresh/trash/download act on the
+                selected set — disabled when none is selected (same rule as
+                diskette/refresh; no target = no action). */}
+            <CustomTooltip content={t('sampler_set_new')}>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); void handleCopySampler(); }}
+                data-testid="sampler-set-new"
+                onClick={(e) => { e.stopPropagation(); setMorph({ intent: 'new', value: '' }); }}
                 className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1"
-                aria-label={t("sampler_copy")}
+                aria-label={t('sampler_set_new')}
               >
-                <span className="[&_svg]:h-[13px] [&_svg]:w-[13px]"><Icons.Copy /></span>
+                <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Plus /></span>
               </button>
             </CustomTooltip>
-            <CustomTooltip content={t("sampler_paste")}>
+            <CustomTooltip content={t('sampler_set_save')}>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); void handlePasteSampler(); }}
+                data-testid="sampler-set-save"
+                disabled={!selected}
+                onClick={(e) => { e.stopPropagation(); void handleSaveIntoSet(); }}
+                className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1 disabled:pointer-events-none disabled:opacity-40"
+                aria-label={t('sampler_set_save')}
+              >
+                <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Floppy /></span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip content={t('sampler_set_rename')}>
+              <button
+                type="button"
+                data-testid="sampler-set-rename"
+                disabled={!selected}
+                onClick={(e) => { e.stopPropagation(); setMorph({ intent: 'rename', value: selected?.name ?? '' }); }}
+                className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1 disabled:pointer-events-none disabled:opacity-40"
+                aria-label={t('sampler_set_rename')}
+              >
+                <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Edit /></span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip content={t('sampler_set_revert')}>
+              <button
+                type="button"
+                data-testid="sampler-set-revert"
+                disabled={!selected}
+                onClick={(e) => { e.stopPropagation(); if (selected) applySet(selected); }}
+                className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1 disabled:pointer-events-none disabled:opacity-40"
+                aria-label={t('sampler_set_revert')}
+              >
+                <span className="[&_svg]:h-[11px] [&_svg]:w-[11px]"><Icons.Regen /></span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip content={t('sampler_set_delete')}>
+              <button
+                type="button"
+                data-testid="sampler-set-delete"
+                disabled={!selected}
+                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(selected?.id ?? null); }}
+                className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-danger disabled:pointer-events-none disabled:opacity-40"
+                aria-label={t('sampler_set_delete')}
+              >
+                <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Trash /></span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip content={t('sampler_set_import')}>
+              <button
+                type="button"
+                data-testid="sampler-set-import"
+                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
                 className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1"
-                aria-label={t("sampler_paste")}
+                aria-label={t('sampler_set_import')}
+              >
+                <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Import /></span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip content={t('sampler_set_export')}>
+              <button
+                type="button"
+                data-testid="sampler-set-export"
+                disabled={!selected}
+                onClick={(e) => { e.stopPropagation(); handleExportSet(); }}
+                className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1 disabled:pointer-events-none disabled:opacity-40"
+                aria-label={t('sampler_set_export')}
               >
                 <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Download /></span>
               </button>
             </CustomTooltip>
+            {/* Hidden file input for the point-import (upload icon). */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void handleImportFile(file);
+              }}
+            />
             {/* Toggle switch right in the accordion header */}
             <div
-              className={cn("relative h-5 w-9 rounded-full transition-colors cursor-pointer shrink-0", form.customSamplers ? "bg-accent" : "bg-s3")}
+              className={cn("relative ml-1 h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors", form.customSamplers ? "bg-accent" : "bg-s3")}
               onClick={(e) => { e.stopPropagation(); handleToggleCustomSamplers(!form.customSamplers); }}
             >
               <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", form.customSamplers ? "translate-x-[18px]" : "translate-x-0.5")} />
@@ -805,6 +1153,17 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               />
             )}
         </AnimatedDisclosure>
+
+        {/* Destructive confirm for set deletion (LS-5 edge case 5): deleting a
+            set never touches profiles that already applied it (copy-on-select). */}
+        {confirmDeleteId && (
+          <DestructiveConfirmModal
+            title={t('sampler_set_delete_title')}
+            body={t('sampler_set_delete_body', { name: sets.find((s) => s.id === confirmDeleteId)?.name ?? '' })}
+            onConfirm={() => { void handleConfirmDelete(); }}
+            onCancel={() => setConfirmDeleteId(null)}
+          />
+        )}
       </div>
     </div>
   );

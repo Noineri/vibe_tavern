@@ -21,6 +21,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     stopSequences: ["<end>"], logitBias: [], seed: null,
     reasoningEffort: "auto", showReasoning: false, streamResponse: true, customSamplers: false,
     proxyMode: "inherit", proxyId: null,
+    samplerSetId: null,
     ...over,
   };
 }

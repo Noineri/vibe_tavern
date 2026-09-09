@@ -448,7 +448,9 @@ describe("ST directory scanner — streaming progress events", () => {
 		// Every phase has exactly one `phase` start event, and it precedes that
 		// phase's `progress` events. Phases fire in fixed import order.
 		const phaseStarts = events.filter((e) => e.type === "phase").map((e) => e.phase);
-		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "formats", "personas"]);
+		// LS-5g adds the samplerSets phase between formats and personas (this
+		// fixture has no TextGen Settings/ folder, so it emits no progress events).
+		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "formats", "samplerSets", "personas"]);
 
 		// Granular counts: one progress per imported item, current strictly
 		// increasing, never exceeding the done count for that surface.
@@ -925,5 +927,108 @@ describe("ST directory scanner — format/library files (LS-3e)", () => {
 
 		const syspromptPreset = presets.find((p) => p.name === "Test Sysprompt");
 		expect(syspromptPreset?.systemPrompt).toBe("Stay in character.");
+	});
+});
+
+// ─── LS-5g: TextGen Settings/ mass phase (named sampler sets) ───────────────
+// ST TextGen Settings/*.json are pure sampler presets — parseStTextgen maps
+// the ooba spellings onto VT's sampler-set payload; the set name defaults to
+// the file name. Only files with ST TextGen shape count (other JSON in the
+// folder is skipped silently, like the OpenAI Settings scan), and a set whose
+// name already exists in the library is SKIPPED with an import error — mass
+// import never overwrites existing library entries.
+
+/** Divine Intellect-shaped ooba preset (real spellings; see the parser
+ *  fixtures in packages/import-export/test/st-textgen.test.ts). */
+function stTextgenPreset(): string {
+	return JSON.stringify({
+		temp: 1.31,
+		top_p: 0.14,
+		top_k: 49,
+		min_p: 0,
+		rep_pen: 1.17,
+		dry_sequence_breakers: '["\\n", ":", "\\\"", "*"]',
+		sampler_order: [6, 0, 1, 3, 4, 2, 5],
+	});
+}
+
+async function buildTextgenDir(root: string): Promise<string> {
+	await mkdir(join(root, "TextGen Settings"), { recursive: true });
+	await Bun.write(join(root, "TextGen Settings", "Divine Intellect.json"), stTextgenPreset());
+	// Not TextGen-shaped → silently skipped by BOTH phases.
+	await Bun.write(join(root, "TextGen Settings", "NotATextgen.json"), JSON.stringify({ hello: "world" }));
+	// Malformed → reported as a parse error.
+	await Bun.write(join(root, "TextGen Settings", "broken.json"), "{not-json");
+	return root;
+}
+
+describe("ST directory scanner — TextGen Settings sampler sets (LS-5g)", () => {
+	let env: Env;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("scan previews TextGen-shaped files with import notes, skips the rest", async () => {
+		env = await createRuntime();
+		const stDir = await buildTextgenDir(join(env.tmpDir, "st-textgen"));
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+
+		expect(scan.samplerSets.length).toBe(1);
+		expect(scan.samplerSets[0]?.fileName).toBe("Divine Intellect.json");
+		expect(scan.samplerSets[0]?.name).toBe("Divine Intellect");
+		expect(scan.samplerSets[0]?.imported).toBe(false);
+		// sampler_order carries a value the mapping can't land — surfaced, never silent.
+		expect(scan.samplerSets[0]?.warnings.some((w) => w.startsWith("sampler_order"))).toBe(true);
+
+		// Malformed JSON is reported; the non-TextGen JSON is silently skipped.
+		expect(scan.errors.map((e) => e.file)).toEqual([
+			join(stDir, "TextGen Settings", "broken.json"),
+		]);
+		expect(scan.errors.every((e) => e.stage === "parse")).toBe(true);
+	});
+
+	it("import writes the set with the mapped payload, named after the file", async () => {
+		env = await createRuntime();
+		const stDir = await buildTextgenDir(join(env.tmpDir, "st-textgen-import"));
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		// Only the parse error (broken.json) — not the skipped non-TextGen file.
+		expect(result.errors.map((e) => e.file)).toEqual([
+			join(stDir, "TextGen Settings", "broken.json"),
+		]);
+		expect(result.samplerSets).toBe(1);
+
+		const sets = await env.stores.samplerSets.list();
+		expect(sets.map((s) => s.name)).toEqual(["Divine Intellect"]);
+		expect(sets[0]?.payload).toEqual({
+			temperature: 1.31,
+			topP: 0.14,
+			topK: 49,
+			minP: 0,
+			repetitionPenalty: 1.17,
+			drySequenceBreakers: ["\n", ":", '"', "*"],
+		});
+	});
+
+	it("re-import skips an existing set name with an import error, never overwrites", async () => {
+		env = await createRuntime();
+		const stDir = await buildTextgenDir(join(env.tmpDir, "st-textgen-twice"));
+
+		const first = await env.runtime.importSillyTavernDirectory(stDir);
+		// broken.json fails at the import loop's own JSON.parse (stage "import",
+		// unlike the scan phase's "parse") - filter it out; it must not affect
+		// the set counter.
+		expect(first.errors.filter((e) => e.message.includes("already exists"))).toEqual([]);
+		expect(first.samplerSets).toBe(1);
+
+		const second = await env.runtime.importSillyTavernDirectory(stDir);
+		expect(second.samplerSets).toBe(0);
+		expect(second.errors.some((e) => e.message.includes("already exists"))).toBe(true);
+
+		// The stored payload is still the FIRST import's — no overwrite.
+		const sets = await env.stores.samplerSets.list();
+		expect(sets).toHaveLength(1);
+		expect(sets[0]?.payload.topP).toBe(0.14);
 	});
 });

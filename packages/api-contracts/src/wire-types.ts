@@ -105,6 +105,8 @@ export interface ClientProviderProfileRecord {
 	proxyMode: ProviderProxyMode;
 	proxyId: string | null;
 	isActive: boolean;
+	/** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a) — panel dropdown pre-selection + dirty-dot baseline. */
+	samplerSetId: string | null;
 	createdAt: string;
 	updatedAt: string;
 	hasStoredApiKey: boolean;

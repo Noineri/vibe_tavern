@@ -160,6 +160,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     updatedAt: "2026-01-01",
     proxyMode: "inherit",
     proxyId: null,
+    samplerSetId: null,
     hasStoredApiKey: true,
     ...over,
   };

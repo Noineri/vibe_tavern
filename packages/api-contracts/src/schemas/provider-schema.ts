@@ -99,6 +99,8 @@ const providerCoreSchema = z.object({
   proxyMode: providerProxyModeSchema.optional(),
   proxyId: z.string().nullable().optional(),
   visionModel: z.string().nullable().optional(),
+  /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a). Nullable — null = "no set". */
+  samplerSetId: z.string().nullable().optional(),
 });
 
 export const saveProviderDraftSchema = providerCoreSchema.extend({

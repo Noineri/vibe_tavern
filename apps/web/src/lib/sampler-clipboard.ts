@@ -17,7 +17,8 @@
  * mode naturally writes the bound model's overlay; in base mode, the base.
  */
 
-import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { ModelSettingsOverlay, SamplerFieldId } from "@vibe-tavern/domain";
+import { SAMPLER_FIELDS } from "@vibe-tavern/domain";
 import type { FormState } from "../components/modals/ProviderModal.js";
 
 /** The form-update callback shape (matches lazyAutoSaveField / autoSaveField). */
@@ -77,4 +78,70 @@ export function applySamplerPresetFields(
   if (fields.showReasoning != null) updateForm("showReasoning", fields.showReasoning);
   if (fields.streamResponse != null) updateForm("streamResponse", fields.streamResponse);
   if (fields.customSamplers != null) updateForm("customSamplers", fields.customSamplers);
+}
+
+// ── Sampler-set engine (LOCAL_SUPPORT_PLAN LS-5e/f) ──────────────────────────
+// The clipboard trio (schema + apply + extract) IS the set engine; only the
+// copy/paste buttons were replaced by the set row. These two helpers carry the
+// set semantics the buttons didn't need:
+
+const SAMPLER_FIELD_SET = new Set<string>(SAMPLER_FIELDS);
+
+/**
+ * Filter a set payload by the panel's per-protocol capability set (LS-5f — the
+ * PREFERRED apply semantics): unsupported sampler values never enter the form,
+ * so they can't ride the profile invisibly. Non-capability overlay keys
+ * (contextBudget, maxTokens, seed, stopSequences… are capability-gated too —
+ * anything in `SamplerFieldId` is; `contextBudget`/`pinContextBudget`/
+ * `maxTokens`/`showReasoning`/`streamResponse`/`customSamplers` are not) pass
+ * through unchanged — they render on every protocol.
+ */
+export function filterOverlayByCapabilities(
+  payload: Partial<ModelSettingsOverlay>,
+  supports: (field: SamplerFieldId) => boolean,
+): Partial<ModelSettingsOverlay> {
+  const filtered: Partial<ModelSettingsOverlay> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    if (SAMPLER_FIELD_SET.has(key) && !supports(key as SamplerFieldId)) continue;
+    (filtered as Record<string, unknown>)[key] = value;
+  }
+  return filtered;
+}
+
+/** Structural deep-equality for overlay field values (numbers, strings,
+ *  booleans, null, string arrays, logit-bias entry arrays). */
+function overlayValueEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || a === undefined || b === undefined) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => overlayValueEqual(v, b[i]));
+  }
+  if (typeof a === "object" && typeof b === "object") {
+    const ao = a as Record<string, unknown>;
+    const bo = b as Record<string, unknown>;
+    const aKeys = Object.keys(ao);
+    const bKeys = Object.keys(bo);
+    return aKeys.length === bKeys.length && aKeys.every((k) => overlayValueEqual(ao[k], bo[k]));
+  }
+  return false;
+}
+
+/**
+ * Dirty-dot check (LOCAL_SUPPORT_PLAN LS-5, owner decision): true when the
+ * panel's current overlay extract diverges from the APPLIED set payload
+ * (field-wise deep compare over the baseline's own keys — fields the set never
+ * carried don't count; the baseline is the capability-FILTERED payload, so
+ * values the protocol silently dropped never show as divergence). Cleared by
+ * the 💾 save and by re-applying/re-selecting the set — never by the profile's
+ * own autosave (the set is a separate entity).
+ */
+export function overlayDivergesFromSet(
+  baseline: Partial<ModelSettingsOverlay>,
+  current: ModelSettingsOverlay,
+): boolean {
+  const currentRecord = current as unknown as Record<string, unknown>;
+  return Object.entries(baseline).some(
+    ([key, value]) => !overlayValueEqual(value, currentRecord[key]),
+  );
 }

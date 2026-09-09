@@ -95,6 +95,15 @@ export interface StScanFormat {
   warnings: string[];
 }
 
+/** Mirrors `StScannedSamplerSet` from the backend scanner (LOCAL_SUPPORT_PLAN
+ *  LS-5g: ST TextGen Settings/*.json → named sampler sets). */
+export interface StScanSamplerSet {
+	fileName: string;
+	name: string;
+	imported: boolean;
+	warnings: string[];
+}
+
 /** Mirrors `StScannedPersona` from the backend scanner. */
 export interface StScanPersona {
   /** Number of persona entries detected in settings.json. */
@@ -118,6 +127,7 @@ export interface StScanResult {
   lorebooks: StScanLorebook[];
   presets: StScanPreset[];
   formats: StScanFormat[];
+  samplerSets: StScanSamplerSet[];
   persona: StScanPersona | null;
   errors: StScanError[];
 }
@@ -129,6 +139,7 @@ export interface StImportResult {
   lorebooks: number;
   presets: number;
   formats: number;
+  samplerSets: number;
   personas: number;
   errors: StScanError[];
   /** ID of the last imported character's chat — can be used to navigate UI. */
@@ -171,7 +182,7 @@ export async function importStDirectory(path: string): Promise<StImportResult> {
 // emits one SSE message per event keyed by `type` (phase / progress / done /
 // error); the frontend pairs each `current` against its own scanResult totals
 // (the scan step always runs first, so the per-phase denominator is known).
-export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "formats" | "personas";
+export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "formats" | "samplerSets" | "personas";
 /** Non-terminal stream events delivered to the `onEvent` callback. The terminal
  *  `done`/`error` are NOT passed to the callback — they resolve or reject the
  *  returned promise instead. */

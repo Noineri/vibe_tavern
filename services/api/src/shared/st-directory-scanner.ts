@@ -20,6 +20,7 @@ import {
 	parseStInstruct,
 	parseStContext,
 	parseStSysprompt,
+	parseStTextgen,
 	detectStFileKind,
 	stBlockToCanvasEntry,
 	synthesizeCanvasEntry,
@@ -34,8 +35,9 @@ import { brandId } from "@vibe-tavern/domain";
 // ─── Types ──────────────────────────────────────────────────────────────
 
 /** The three ST format/library folders (LOCAL_SUPPORT_PLAN LS-3e storage map,
- *  kinds 3/4/5). `TextGen Settings/` is deliberately ABSENT — its sampler-set
- *  import is LS-5's surface, not this scanner's. */
+ *  kinds 3/4/5). `TextGen Settings/` is NOT here — its sampler-set import is
+ *  this scanner's OWN phase (LOCAL_SUPPORT_PLAN LS-5g), scanned below with the
+ *  same optional-glob pattern. */
 const FORMAT_FOLDERS: Array<[folder: string, kind: "instruct" | "context" | "sysprompt"]> = [
 	["instruct", "instruct"],
 	["context", "context"],
@@ -50,6 +52,10 @@ export interface StDirectoryScanResult {
 	/** ST format/library files (LOCAL_SUPPORT_PLAN LS-3e): instruct/*.json,
 	 *  context/*.json, sysprompt/*.json — the storage map's kinds 3/4/5. */
 	formats: StScannedFormat[];
+	/** ST TextGen Settings/*.json → named sampler sets (LOCAL_SUPPORT_PLAN LS-5g):
+	 *  only files with ST TextGen shape (isStTextgenShape) count; other JSON in
+	 *  the folder is skipped silently, like the OpenAI Settings scan above. */
+	samplerSets: StScannedSamplerSet[];
 	persona: StScannedPersona | null;
 	errors: StScanError[];
 }
@@ -95,6 +101,16 @@ export interface StScannedFormat {
 	warnings: string[];
 }
 
+/** A scanned ST TextGen Settings file (LS-5g): imports as a named sampler set. */
+export interface StScannedSamplerSet {
+	fileName: string;
+	name: string;
+	imported: boolean;
+	/** Skipped-with-note fields from the ST mapping (sampler_order, banned_tokens,
+	 *  grammar_string, json_schema) — surfaced to the user, never silent. */
+	warnings: string[];
+}
+
 export interface StScannedPersona {
 	/** Number of persona entries detected in settings.json. */
 	count: number;
@@ -128,6 +144,7 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 		lorebooks: [],
 		presets: [],
 		formats: [],
+		samplerSets: [],
 		persona: null,
 		errors: [],
 	};
@@ -280,6 +297,34 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 		}
 	}
 
+	// ── Scan TextGen Settings/ (named sampler sets — LOCAL_SUPPORT_PLAN LS-5g) ──
+	// Only files with ST TextGen shape (isStTextgenShape) count; other JSON in
+	// this folder is skipped silently, like the OpenAI Settings scan above.
+	const samplersDir = join(resolved, "TextGen Settings");
+	const samplerFiles = await scanOptionalGlob(samplersDir, "*.[jJ][sS][oO][nN]");
+	for (const relativePath of samplerFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(samplersDir, relativePath);
+		try {
+			const content = await Bun.file(filePath).text();
+			const parsed: unknown = JSON.parse(content);
+			const parsedSet = parseStTextgen(parsed);
+			if (!parsedSet) continue;
+			result.samplerSets.push({
+				fileName,
+				name: basename(fileName, ".json"),
+				imported: false,
+				warnings: parsedSet.notes,
+			});
+		} catch (err) {
+			result.errors.push({
+				file: filePath,
+				stage: "parse",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
 	// ── Scan settings.json (personas) ──
 	const settingsPath = join(resolved, "settings.json");
 	const settingsFiles = await scanOptionalGlob(resolved, "settings.json");
@@ -317,6 +362,8 @@ export interface StDirectoryImportResult {
 	 *  manual generation format, context → presets with the mapped canvas
 	 *  order, sysprompt → presets carrying the system prompt. */
 	formats: number;
+	/** Imported ST TextGen Settings files as named sampler sets (LS-5g). */
+	samplerSets: number;
 	personas: number;
 	errors: StScanError[];
 	/** ID of the last imported character's chat — can be used to navigate UI. */
@@ -329,7 +376,7 @@ export interface StDirectoryImportResult {
 // (onProgress omitted); the streaming route awaits each emission so the event
 // is flushed to the wire before the scanner proceeds — giving the browser a
 // live counter instead of a frozen spinner for the whole duration.
-export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "formats" | "personas";
+export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "formats" | "samplerSets" | "personas";
 export type ImportProgressEvent =
 	| { type: "phase"; phase: ImportPhase }
 	| { type: "progress"; phase: ImportPhase; current: number };
@@ -366,6 +413,7 @@ export async function importSillyTavernDirectory(
 		lorebooks: 0,
 		presets: 0,
 		formats: 0,
+		samplerSets: 0,
 		personas: 0,
 		errors: [],
 		lastActiveChatId: null,
@@ -921,6 +969,47 @@ export async function importSillyTavernDirectory(
 	}
 	console.log(`${ti()} formats: ${((performance.now() - formatsPhaseStart) / 1000).toFixed(2)}s (${result.formats} imported)`);
 
+	// ── Import TextGen Settings/ as named sampler sets (LOCAL_SUPPORT_PLAN LS-5g) ──
+	await onProgress?.({ type: "phase", phase: "samplerSets" });
+	const samplerSetsPhaseStart = performance.now();
+	// ST TextGen files are pure sampler presets — parseStTextgen maps the ooba
+	// spellings onto VT's sampler overlay payload. Name = the file name (LS-5:
+	// set names default to file names). A set with the SAME name already in the
+	// library is skipped and reported as an import error — mass import never
+	// overwrites existing library entries.
+	const samplersDir = join(resolved, "TextGen Settings");
+	const samplerFiles = await scanOptionalGlob(samplersDir, "*.[jJ][sS][oO][nN]");
+	for (const relativePath of samplerFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(samplersDir, relativePath);
+		try {
+			const text = await Bun.file(filePath).text();
+			const parsed: unknown = JSON.parse(text);
+			const parsedSet = parseStTextgen(parsed);
+			if (!parsedSet) continue;
+			const name = basename(fileName, ".json");
+			const existing = await deps.stores.samplerSets.getByName(name);
+			if (existing) {
+				result.errors.push({
+					file: filePath,
+					stage: "import",
+					message: `sampler set '${name}' already exists — skipped`,
+				});
+				continue;
+			}
+			await deps.stores.samplerSets.create({ name, payload: parsedSet.payload });
+			result.samplerSets++;
+			await onProgress?.({ type: "progress", phase: "samplerSets", current: result.samplerSets });
+		} catch (err) {
+			result.errors.push({
+				file: filePath,
+				stage: "import",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+	console.log(`${ti()} samplerSets: ${((performance.now() - samplerSetsPhaseStart) / 1000).toFixed(2)}s (${result.samplerSets} imported)`);
+
 	// ── Import personas (settings.json + User Avatars/) ──
 	await onProgress?.({ type: "phase", phase: "personas" });
 	const personasPhaseStart = performance.now();
@@ -994,7 +1083,7 @@ export async function importSillyTavernDirectory(
 	console.log(
 		`${ti()} DONE — total ${((performance.now() - T0) / 1000).toFixed(2)}s |`
 		+ ` chars=${result.characters} chats=${result.chats} lore=${result.lorebooks}`
-		+ ` presets=${result.presets} formats=${result.formats} personas=${result.personas}`
+		+ ` presets=${result.presets} formats=${result.formats} samplerSets=${result.samplerSets} personas=${result.personas}`
 		+ ` errors=${result.errors.length}`,
 	);
 

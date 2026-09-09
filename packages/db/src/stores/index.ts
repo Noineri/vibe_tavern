@@ -91,6 +91,13 @@ export type {
 } from './coauthor-module-store.js';
 
 export { CopilotProfileStore } from './copilot-profile-store.js';
+export { SamplerSetStore } from './sampler-set-store.js';
+export type {
+  SamplerSetRow,
+  SamplerSetPayload,
+  CreateSamplerSetData,
+  UpdateSamplerSetData,
+} from './sampler-set-store.js';
 export type {
   CopilotProfileRow,
   CreateCopilotProfileData,

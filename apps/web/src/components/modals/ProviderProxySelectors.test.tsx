@@ -26,7 +26,7 @@ function profile(): ProviderProfileRecord {
     xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, maxTokens: 2048,
     contextBudget: 16000, pinContextBudget: false, tokenPadding: 0, bindPerModel: false, modelFreeOnly: false, modelGroupByOwner: false,
     stopSequences: [], logitBias: [], seed: null, reasoningEffort: "auto", showReasoning: false, streamResponse: true,
-    customSamplers: false, proxyMode: "inherit", proxyId: null, isActive: true, hasStoredApiKey: true,
+    customSamplers: false, proxyMode: "inherit", proxyId: null, samplerSetId: null, isActive: true, hasStoredApiKey: true,
     createdAt: "2026-01-01", updatedAt: "2026-01-01",
   };
 }

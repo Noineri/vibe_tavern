@@ -102,6 +102,10 @@ export interface FormState {
   customSamplers: boolean;
   proxyMode: ProviderProxyMode;
   proxyId: string | null;
+  /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a) — the sampler
+   *  panel's dropdown pre-selection + dirty-dot baseline. Profile-level: never
+   *  routes to a model overlay. null = "no set". */
+  samplerSetId: string | null;
 }
 
 interface ModelOption {
@@ -184,6 +188,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     customSamplers: p.customSamplers ?? false,
     proxyMode: p.proxyMode ?? "inherit",
     proxyId: p.proxyId ?? null,
+    samplerSetId: p.samplerSetId ?? null,
   };
 }
 

@@ -992,6 +992,23 @@ export interface CopilotProfileRuntimeApi {
 	deleteCopilotProfile: (id: string) => Promise<void>;
 }
 
+/** Named sampler-set library CRUD (LOCAL_SUPPORT_PLAN LS-5b) — the small-resource
+ *  pattern (CopilotProfileRuntimeApi) with an import endpoint: the backend
+ *  sniffs VT-native vs ST TextGen shape and pre-maps the payload. Delete also
+ *  clears the deleted set's provider_profiles.sampler_set_id references
+ *  (LS-5e — plain column, no FK, app-level clearing). */
+export interface SamplerSetRuntimeApi {
+	listSamplerSets: () => Promise<import("@vibe-tavern/api-contracts").SamplerSetList>;
+	createSamplerSet: (input: import("@vibe-tavern/api-contracts").SamplerSetCreate) => Promise<import("@vibe-tavern/api-contracts").SamplerSet>;
+	updateSamplerSet: (id: string, input: import("@vibe-tavern/api-contracts").SamplerSetUpdate) => Promise<import("@vibe-tavern/api-contracts").SamplerSet>;
+	deleteSamplerSet: (id: string) => Promise<void>;
+	/** Point import (upload button): name + RAW parsed JSON (VT-native set JSON
+	 *  or an ST TextGen Settings file). Returns the created set + the import
+	 *  notes from the ST mapping (skipped fields). Throws Validation (400) when
+	 *  the raw shape is neither VT-native nor ST TextGen. */
+	importSamplerSet: (input: import("@vibe-tavern/api-contracts").SamplerSetImport) => Promise<{ set: import("@vibe-tavern/api-contracts").SamplerSet; notes: string[] }>;
+}
+
 export interface SttRuntimeApi {
 	listSttProfiles: () => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord[]>;
 	getSttProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
@@ -1048,4 +1065,5 @@ export interface RuntimeApi {
 	experience: ExperienceRuntimeApi;
 	experienceCopilot: ExperienceCopilotRuntimeApi;
 	copilotProfiles: CopilotProfileRuntimeApi;
+	samplerSets: SamplerSetRuntimeApi;
 }
