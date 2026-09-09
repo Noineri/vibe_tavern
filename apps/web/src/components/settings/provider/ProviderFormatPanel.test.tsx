@@ -98,13 +98,19 @@ describe("ProviderFormatPanel (LS-10)", () => {
 		expect(queryByTestId("provider-format-stops-empty-hint")).toBeNull();
 	});
 
-	it("MANUAL: the flat editor + the LS-9 empty-stops hint appear (no accordion wrapper)", () => {
+	it("MANUAL: the accordion editor + seed dropdown + preview INSIDE it + the LS-9 empty-stops hint", () => {
 		const form = makeForm({
 			generationFormat: { mode: "manual", format: { mode: "manual", inputSequence: "User: " } },
 		});
 		const { getByTestId, queryByText } = render(<ProviderFormatPanel form={form} updateForm={mock()} tcTemplateSource="default" />);
 		expect(getByTestId("provider-format-sequences-toggle")).toBeTruthy();
-		expect(getByTestId("provider-format-preview-toggle")).toBeTruthy();
+		// The seed dropdown lives INSIDE the manual accordion (owner 2026-09-09,
+		// the sampler-set pattern) — no "backend" entry, a "none" default.
+		expect(getByTestId("provider-format-seed-template")).toBeTruthy();
+		// The preview is INSIDE the same accordion — not a separate section
+		// (owner 2026-09-09: it must not live outside the manual settings).
+		const sequences = getByTestId("provider-format-sequences");
+		expect(sequences!.querySelector('[data-testid="provider-format-preview"]')).toBeTruthy();
 		expect(getByTestId("provider-format-stops-empty-hint")).toBeTruthy();
 		// The fallback note is AUTO-only (the profile is now the source).
 		expect(queryByText("providerFormat.fallbackNote")).toBeNull();
@@ -167,5 +173,52 @@ describe("ProviderFormatPanel (LS-10)", () => {
 	it("native-TC (kobold) status reads native", () => {
 		const { getByText } = render(<ProviderFormatPanel form={makeForm()} updateForm={mock()} tcTemplateSource="native" />);
 		expect(getByText("providerFormat.statusNative")).toBeTruthy();
+	});
+
+	it("MANUAL seed dropdown: picking a builtin writes its sequences into the editor (sampler-set pattern), staying manual", async () => {
+		const updates: Array<{ k: keyof FormState; v: unknown }> = [];
+		const updateForm = mock(<K extends keyof FormState>(k: K, v: FormState[K]) => {
+			updates.push({ k, v });
+		});
+		const form = makeForm({
+			generationFormat: { mode: "manual", format: { mode: "manual", inputSequence: "User: " } },
+		});
+		const { getByTestId } = render(<ProviderFormatPanel form={form} updateForm={updateForm} tcTemplateSource="default" />);
+		// Open the accordion (its body is inert while collapsed), open the seed
+		// dropdown, pick the ChatML builtin.
+		fireEvent.click(getByTestId("provider-format-sequences-toggle"));
+		fireEvent.click(getByTestId("provider-format-seed-template"));
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		// cmdk renders options in a portal — search the whole document.
+		const option = Array.from(document.querySelectorAll("[cmdk-item]")).find((el) => el.textContent?.includes("ChatML"));
+		expect(option).toBeTruthy();
+		fireEvent.click(option!);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		const last = updates.filter((u) => u.k === "generationFormat").at(-1) as { v: ProviderGenerationFormat } | undefined;
+		expect(last?.v.mode).toBe("manual");
+		expect((last?.v.format?.inputSequence ?? "").includes("<|im_start|>")).toBe(true);
+	});
+
+	it("round trip AUTO→MANUAL→AUTO restores the selected template, never a silent backend (owner 2026-09-09)", async () => {
+		const updates: Array<{ k: keyof FormState; v: unknown }> = [];
+		const updateForm = mock(<K extends keyof FormState>(k: K, v: FormState[K]) => {
+			updates.push({ k, v });
+		});
+		const autoForm = makeForm({
+			generationFormat: { mode: "auto", selection: "builtin:chatml" },
+		});
+		const view = render(<ProviderFormatPanel form={autoForm} updateForm={updateForm} tcTemplateSource="default" />);
+		// AUTO → MANUAL: the stored manual shape RIDES the selection along.
+		fireEvent.click(view.getByText("providerFormat.modeManual"));
+		const manualStored = updates.filter((u) => u.k === "generationFormat").at(-1) as { v: ProviderGenerationFormat } | undefined;
+		expect(manualStored?.v.mode).toBe("manual");
+		expect(manualStored?.v.selection).toBe("builtin:chatml");
+		// MANUAL → AUTO (re-render with the manual stored state, as the modal
+		// would): the dropdown restores ChatML — not "backend".
+		view.rerender(<ProviderFormatPanel form={makeForm({ generationFormat: manualStored!.v })} updateForm={updateForm} tcTemplateSource="default" />);
+		fireEvent.click(view.getByText("providerFormat.modeAuto"));
+		const autoStored = updates.filter((u) => u.k === "generationFormat").at(-1) as { v: ProviderGenerationFormat } | undefined;
+		expect(autoStored?.v.mode).toBe("auto");
+		expect(autoStored?.v.selection).toBe("builtin:chatml");
 	});
 });

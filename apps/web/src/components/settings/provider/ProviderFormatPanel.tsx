@@ -87,7 +87,7 @@ function FramedSection(props: {
 	testId?: string;
 }) {
 	return (
-		<div className="overflow-hidden rounded-lg border border-border2">
+		<div data-testid={props.testId} className="overflow-hidden rounded-lg border border-border2">
 			<button
 				type="button"
 				onClick={props.onToggle}
@@ -116,7 +116,10 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 	const stored = form.generationFormat ?? null;
 	const [templates, setTemplates] = useState<FormatTemplate[]>([]);
 	const [sequencesOpen, setSequencesOpen] = useState(false);
-	const [previewOpen, setPreviewOpen] = useState(false);
+	// The seed dropdown's shown value inside the manual accordion ("" = none —
+	// keep the current sequences untouched). Mirrors the sampler-set row: pick
+	// a template → its sequences land in the editor as the starting point.
+	const [seedSelection, setSeedSelection] = useState("");
 	// The save-as-new morph (LS-5 pattern): the action row morphs into a name
 	// input while active; a collision shows the inline warning line.
 	const [namingOpen, setNamingOpen] = useState(false);
@@ -149,13 +152,18 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 		if (mode === "manual") {
 			// Seed the editor from the currently-effective template so tweaking a
 			// selected builtin/custom starts from its sequences (not from empty).
+			// `selection` RIDES ALONG into the manual shape (the schema allows it)
+			// so the auto→manual→auto round trip restores the chosen template —
+			// owner 2026-09-09: ChatML → manual → ChatML, never a silent backend.
 			const selection = stored?.mode === "auto" ? stored.selection : undefined;
 			const seed = stored?.format ?? (selection && selection !== "backend" ? effectiveTemplateSequences(selection, templates) : null);
-			setStored({ mode: GENERATION_FORMAT_MODE.manual, format: seed ?? { mode: GENERATION_FORMAT_MODE.manual } });
+			setSeedSelection(selection && selection !== "backend" ? selection : "");
+			setStored({ mode: GENERATION_FORMAT_MODE.manual, ...(selection !== undefined ? { selection } : {}), format: seed ?? { mode: GENERATION_FORMAT_MODE.manual } });
 			setSequencesOpen(true);
 			return;
 		}
-		// Manual → auto: keep the last selection if there was one, else backend.
+		// Manual → auto: restore the selection remembered across the manual
+		// detour (the "none" default stays backend).
 		setStored({ mode: GENERATION_FORMAT_MODE.auto, selection: stored?.selection ?? "backend" });
 	};
 
@@ -165,7 +173,23 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 
 	const updateManual = (patch: Partial<GenerationFormat>) => {
 		const next: GenerationFormat = { ...manualFormat, ...patch, mode: GENERATION_FORMAT_MODE.manual };
-		setStored({ mode: GENERATION_FORMAT_MODE.manual, format: next });
+		setStored({ mode: GENERATION_FORMAT_MODE.manual, ...(stored?.selection !== undefined ? { selection: stored.selection } : {}), format: next });
+	};
+
+	/** Apply a template INTO the manual editor (the sampler-set pattern, owner
+	 *  2026-09-09): picking a builtin/custom writes its sequences into the
+	 *  fields below as the starting point; the pane stays in manual mode. The
+	 *  "none" option keeps the current sequences untouched. */
+	const applySeedTemplate = (id: string) => {
+		if (!id) {
+			setSeedSelection("");
+			return;
+		}
+		const sequences = effectiveTemplateSequences(id, templates);
+		if (sequences) {
+			setStored({ mode: GENERATION_FORMAT_MODE.manual, ...(stored?.selection !== undefined ? { selection: stored.selection } : {}), format: { ...sequences, mode: GENERATION_FORMAT_MODE.manual } });
+		}
+		setSeedSelection(id);
 	};
 
 	/** Save-as-new (the LS-5 flow): the current manual sequences persist as a
@@ -213,7 +237,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 				return;
 			}
 			const parsed = parseStInstruct(text);
-			setStored({ mode: GENERATION_FORMAT_MODE.manual, format: parsed.format });
+			setStored({ mode: GENERATION_FORMAT_MODE.manual, ...(stored?.selection !== undefined ? { selection: stored.selection } : {}), format: parsed.format });
 			setSequencesOpen(true);
 			if (parsed.stopSequences.length > 0) {
 				const merged = [...form.stopSequences];
@@ -386,6 +410,34 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 						testId="provider-format-sequences"
 					>
 						<div className="flex flex-col gap-4">
+						{/* Seed dropdown (owner 2026-09-09, the sampler-set pattern): pick a
+						    template → its sequences land in the fields below; "none" keeps the
+						    current values. Builtins grouped, customs deletable — same shape as
+						    the auto dropdown, minus the meaningless "backend" entry. */}
+						<div>
+							<label className={lblCls}>{t("providerFormat.template")}</label>
+							<DropdownSelect
+								value={seedSelection}
+								defaultOption={t("providerFormat.seedNone")}
+								onChange={applySeedTemplate}
+								options={templates.map((tpl) => ({
+									id: `${CUSTOM_TEMPLATE_SELECTION_PREFIX}${tpl.id}`,
+									label: tpl.name,
+									onDelete: () => void handleDeleteTemplate(tpl.id),
+								}))}
+								groups={[
+									{
+										id: "builtin",
+										label: t("providerFormat.builtinGroup"),
+										options: BUILTIN_FORMAT_TEMPLATES.map((tpl) => ({ id: `builtin:${tpl.id}`, label: tpl.label })),
+									},
+								]}
+								triggerTestId="provider-format-seed-template"
+							/>
+							<div className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 italic">
+								{t("providerFormat.seedHint")}
+							</div>
+						</div>
 							{/* Main three up top with plain-language hints; the rest in a
 							    clean group below (owner: NO "rare fields" branding). */}
 							<div className="flex flex-col gap-4">
@@ -438,33 +490,30 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 									<div className="font-ui text-[11px] text-t3">{t("providerFormat.stopsEmptyHint")}</div>
 								</div>
 							)}
-						</div>
-					</FramedSection>
 
-					<FramedSection
-						title={t("providerFormat.previewTitle")}
-						open={previewOpen}
-						onToggle={() => setPreviewOpen((v) => !v)}
-						testId="provider-format-preview"
-					>
-						<div className="break-all whitespace-pre-wrap overflow-x-auto rounded-md border border-border bg-s2 p-3 font-mono text-xs leading-relaxed">
-							{buildFormatPreviewSegments(manualFormat, {
-								system: t("providerFormat.previewDemoSystem"),
-								user: t("providerFormat.previewDemoUser"),
-								assistant: t("providerFormat.previewDemoAssistant"),
-							}).map((segment, index) => (
-								<span
-									key={index}
-									className={cn(
-										segment.kind === "seq" && "rounded bg-s3 px-0.5 text-accent",
-										segment.kind === "suffix" && "text-t3",
-									)}
-								>
-									{segment.text}
-								</span>
-							))}
+							{/* Preview — INSIDE the manual accordion (owner 2026-09-09: it must
+							    not live as a separate section outside the manual settings). */}
+							<div data-testid="provider-format-preview">
+								<div className="break-all whitespace-pre-wrap overflow-x-auto rounded-md border border-border bg-s2 p-3 font-mono text-xs leading-relaxed">
+									{buildFormatPreviewSegments(manualFormat, {
+										system: t("providerFormat.previewDemoSystem"),
+										user: t("providerFormat.previewDemoUser"),
+										assistant: t("providerFormat.previewDemoAssistant"),
+									}).map((segment, index) => (
+										<span
+											key={index}
+											className={cn(
+												segment.kind === "seq" && "rounded bg-s3 px-0.5 text-accent",
+												segment.kind === "suffix" && "text-t3",
+											)}
+										>
+											{segment.text}
+										</span>
+									))}
+								</div>
+								<div className="mt-2 font-ui text-[11px] text-t3">{t("providerFormat.previewLegend")}</div>
+							</div>
 						</div>
-						<div className="mt-2 font-ui text-[11px] text-t3">{t("providerFormat.previewLegend")}</div>
 					</FramedSection>
 				</div>
 			)}
