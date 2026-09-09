@@ -12,6 +12,8 @@ import { describe, it, expect } from "bun:test";
 import {
 	serializeCompletionPrompt,
 	DEFAULT_COMPLETION_TEMPLATE,
+	templateStopMarkers,
+	unionStopSequences,
 } from "../src/domain/providers/completion-prompt.js";
 import type { LanguageModelV4Prompt } from "@ai-sdk/provider";
 
@@ -79,5 +81,35 @@ describe("serializeCompletionPrompt (LS-2c seam)", () => {
 		expect(DEFAULT_COMPLETION_TEMPLATE.userPrefix).toBe("User: ");
 		expect(DEFAULT_COMPLETION_TEMPLATE.assistantPrefix).toBe("Assistant: ");
 		expect(DEFAULT_COMPLETION_TEMPLATE.lineSeparator).toBe("\n");
+	});
+});
+
+describe("LS-9 implied stop markers", () => {
+	it("the default template implies the three trimmed role markers", () => {
+		expect(templateStopMarkers(DEFAULT_COMPLETION_TEMPLATE)).toEqual(["System:", "User:", "Assistant:"]);
+	});
+
+	it("extended templates dedupe repeated first/last assistant prefixes and drop empties", () => {
+		const markers = templateStopMarkers({
+			systemPrefix: "",
+			userPrefix: "<u> ",
+			assistantPrefix: "<a> ",
+			firstAssistantPrefix: "<a> ",
+			lastAssistantPrefix: "<a>",
+			lineSeparator: "\n",
+		});
+		expect(markers).toEqual(["<u>", "<a>"]);
+	});
+
+	it("union keeps user stops first, appends implied deduped, and stays undefined when both sides are empty", () => {
+		expect(unionStopSequences(["MINE", "User:"], ["User:", "System:", "Assistant:"])).toEqual([
+			"MINE",
+			"User:",
+			"System:",
+			"Assistant:",
+		]);
+		expect(unionStopSequences(undefined, [])).toBeUndefined();
+		expect(unionStopSequences([], [])).toBeUndefined();
+		expect(unionStopSequences(undefined, ["User:"])).toEqual(["User:"]);
 	});
 });

@@ -267,3 +267,46 @@ export function generationFormatToTemplate(format: GenerationFormat): Completion
 		...(format.wrap !== undefined ? { wrap: format.wrap } : {}),
 	};
 }
+
+/**
+ * LS-9 (kobold stop hygiene): the role-marker stop strings a template's
+ * prefixes imply. Trimmed of trailing whitespace ("User: " → "User:") so they
+ * match as bare substrings of the GENERATED text, deduped, empty prefixes
+ * filtered. These are the markers the format ITSELF writes into the prompt —
+ * a model continuing the dialog writes the NEXT turn's marker ("User:" …)
+ * and rambles on exactly there when nothing stops it (the owner's live catch:
+ * a 9217-char runaway reply). Owner rule: AUTO format = VT owns the markers
+ * and stops them silently; MANUAL = the user authors the template and VT
+ * injects NOTHING (their stop sequences ride alone; the empty-stops hint is
+ * the format pane's job, LS-10).
+ */
+export function templateStopMarkers(tpl: CompletionFormatTemplate): string[] {
+	const markers = [
+		tpl.systemPrefix,
+		tpl.userPrefix,
+		tpl.assistantPrefix,
+		tpl.firstAssistantPrefix,
+		tpl.lastAssistantPrefix,
+	]
+		.map((marker) => (marker ?? "").trimEnd())
+		.filter((marker) => marker.length > 0);
+	return [...new Set(markers)];
+}
+
+/**
+ * LS-9 union: the USER's stop sequences always ride FIRST (never dropped,
+ * never reordered by us); the implied markers follow, deduped against both
+ * the user stops and each other. `undefined` when both sides are empty — the
+ * outgoing body stays byte-identical to the pre-LS-9 shape when there is
+ * nothing to stop on.
+ */
+export function unionStopSequences(
+	userStops: ReadonlyArray<string> | undefined,
+	impliedMarkers: ReadonlyArray<string>,
+): string[] | undefined {
+	const merged: string[] = [...(userStops ?? [])];
+	for (const marker of impliedMarkers) {
+		if (!merged.includes(marker)) merged.push(marker);
+	}
+	return merged.length > 0 ? merged : undefined;
+}

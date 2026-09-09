@@ -387,3 +387,73 @@ describe("completion mode — streamProviderExecutor", () => {
     expect(await result.text).toBe("");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// LS-9: implied stop hygiene at the executor boundary (owner rule — auto =
+// VT's markers stopped silently; manual/backend = the user's stops only)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("implied stop hygiene (LS-9)", () => {
+  it("AUTO default template: profile stops ride FIRST, the seam's role markers follow (no \\nuser: artifact)", async () => {
+    installFetchStub(() => new Response(JSON.stringify(COMPLETION_JSON), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+
+    await nonstreamingProviderExecute(makeInput({ profile: makeProfile({ stopSequences: ["MINE"] }) }));
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as { stop?: string[] };
+    expect(body.stop).toEqual(["MINE", "System:", "User:", "Assistant:"]);
+  });
+
+  it("AUTO with no profile stops: markers only, no \\nuser: artifact", async () => {
+    installFetchStub(() => new Response(JSON.stringify(COMPLETION_JSON), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+
+    await nonstreamingProviderExecute(makeInput());
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as { stop?: string[] };
+    expect(body.stop).toEqual(["System:", "User:", "Assistant:"]);
+  });
+
+  it("MANUAL format: only the profile's stops — the user owns the template, nothing injected", async () => {
+    installFetchStub(() => new Response(JSON.stringify(COMPLETION_JSON), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+
+    await nonstreamingProviderExecute(
+      makeInput({
+        profile: makeProfile({ stopSequences: ["MINE"] }),
+        prompt: makePrompt(CHATML_FORMAT),
+      }),
+    );
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as { stop?: string[] };
+    expect(body.stop).toEqual(["MINE"]);
+  });
+
+  it("backendTemplate auto (llama-server): no client-side markers — the model's EOS ends the turn", async () => {
+    installFetchStub((url) => {
+      if (url.endsWith("/apply-template")) {
+        return new Response(JSON.stringify({ prompt: APPLY_TEMPLATE_CAPTURED_PROMPT }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(COMPLETION_JSON), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await nonstreamingProviderExecute(
+      makeInput({
+        profile: makeLlamaCppProfile({ stopSequences: ["MINE"] }),
+        prompt: makePrompt(null),
+      }),
+    );
+
+    const completionCall = calls[calls.length - 1]!;
+    expect(completionCall.url).toBe(`http://127.0.0.1:${FIXTURE_PORT}/v1/completions`);
+    const body = JSON.parse(String(completionCall.init.body)) as { stop?: string[] };
+    expect(body.stop).toEqual(["MINE"]);
+  });
+});

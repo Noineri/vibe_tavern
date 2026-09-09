@@ -38,7 +38,7 @@ import {
 } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput, CompletionFormatHandoff } from "./protocol-types.js";
-import { serializeCompletionPrompt, type CompletionFormatTemplate } from "./completion-prompt.js";
+import { serializeCompletionPrompt, DEFAULT_COMPLETION_TEMPLATE, templateStopMarkers, unionStopSequences, type CompletionFormatTemplate } from "./completion-prompt.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -133,6 +133,19 @@ function serializePrompt(
   return serializeCompletionPrompt(prompt, { template });
 }
 
+/**
+ * LS-9 implied stops for this model instance (owner rule, 2026-09-09): in
+ * AUTO the native serializer owns the role markers — they ride into
+ * `stop_sequence` alongside the user's own stops (a model continuing the
+ * dialog writes "User:" and rambles otherwise; the owner's live runaway
+ * catch). A MANUAL template means the user authors the format — NOTHING is
+ * injected, their stops ride alone (the empty-stops hint is the format
+ * pane's job, LS-10).
+ */
+function impliedStopsFor(template: CompletionFormatTemplate | undefined): string[] {
+  return template ? [] : templateStopMarkers(DEFAULT_COMPLETION_TEMPLATE);
+}
+
 // ─── Adapter ─────────────────────────────────────────────────────────────
 
 /**
@@ -142,6 +155,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
   const { baseURL, modelId, fetch: customFetch, template } = options;
   const base = baseURL.replace(/\/+$/, "");
   const doFetch: typeof fetch = customFetch ?? fetch;
+  const impliedStops = impliedStopsFor(template);
 
   return {
     specificationVersion: "v3",
@@ -158,7 +172,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
         temperature: callOptions.temperature ?? 1.0,
         top_p: callOptions.topP,
         top_k: callOptions.topK,
-        stop_sequence: callOptions.stopSequences,
+        stop_sequence: unionStopSequences(callOptions.stopSequences, impliedStops),
         seed: callOptions.seed,
         // Pass through providerOptions as KoboldCPP native sampler params
         ...(callOptions.providerOptions?.koboldcpp ?? {}),
@@ -201,7 +215,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
         temperature: callOptions.temperature ?? 1.0,
         top_p: callOptions.topP,
         top_k: callOptions.topK,
-        stop_sequence: callOptions.stopSequences,
+        stop_sequence: unionStopSequences(callOptions.stopSequences, impliedStops),
         seed: callOptions.seed,
         ...(callOptions.providerOptions?.koboldcpp ?? {}),
       };

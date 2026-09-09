@@ -43,6 +43,9 @@ import { GENERATION_MODE, type GenerationMode, log } from "@vibe-tavern/domain";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	serializeCompletionPrompt,
+	DEFAULT_COMPLETION_TEMPLATE,
+	templateStopMarkers,
+	unionStopSequences,
 	type CompletionFormatTemplate,
 } from "./completion-prompt.js";
 
@@ -200,19 +203,40 @@ function withFlatPrompt(
  * Splice the pending flat prompt into the outgoing JSON request body. A JSON
  * body that fails to parse is passed through untouched — the SDK's own error
  * handling owns malformed request bodies, not this hook.
+ *
+ * LS-9: the profile's stop sequences (riding `stop` from the SDK, merged with
+ * the built-in converter's `\nuser:` artifact — stripped here) are UNIONED
+ * with the seam's implied role markers (see {@link impliedStopsFor} — empty
+ * for MANUAL and backendTemplate formats per the owner rule), user stops
+ * first, deduped.
  */
-function createSplicingFetch(pending: PendingPromptHolder, transport: ProviderFetch): ProviderFetch {
+function createSplicingFetch(
+	pending: PendingPromptHolder,
+	transport: ProviderFetch,
+	impliedStops: ReadonlyArray<string>,
+): ProviderFetch {
 	const splicing: ProviderFetch = (input, init) => {
 		const flat = pending.prompt;
 		if (flat === null || typeof init?.body !== "string") return transport(input, init);
 		try {
 			const args = JSON.parse(init.body) as Record<string, unknown>;
-			const stop = Array.isArray(args.stop) ? args.stop.filter((s) => s !== BUILTIN_CONVERTER_STOP) : args.stop;
-			const filteredStop = Array.isArray(stop) && stop.length > 0 ? stop : undefined;
+			const rawStop: unknown = args.stop;
+			const isStopArray = Array.isArray(rawStop);
+			const userStops = isStopArray
+				? (rawStop as unknown[]).filter((s): s is string => typeof s === "string" && s !== BUILTIN_CONVERTER_STOP)
+				: undefined;
+			const merged = unionStopSequences(userStops, impliedStops);
 			const body = JSON.stringify({
 				...args,
 				prompt: flat,
-				...(filteredStop !== undefined ? { stop: filteredStop } : {}),
+				// A non-array stop (not produced by the SDK today) forwards verbatim
+				// when there is nothing to merge — unknown shapes are never silently
+				// reshaped.
+				...(merged !== undefined
+					? { stop: merged }
+					: !isStopArray && rawStop !== undefined
+						? { stop: rawStop }
+						: {}),
 			});
 			return transport(input, { ...init, body });
 		} catch (error) {
@@ -276,7 +300,17 @@ export function resolveOpenAiCompatLanguageModel(options: OpenAiCompatModelOptio
 	// splicing fetch (reader, at request-send time). Single-flight: one model
 	// instance is created per resolveModel call, one generation per instance.
 	const pending: PendingPromptHolder = { prompt: null };
-	const splicingFetch: ProviderFetch = createSplicingFetch(pending, options.fetch ?? fetch);
+	// LS-9 (owner rule): on the seam's OWN default template (auto without a
+	// backend template) the role markers are VT-authored — they become implied
+	// stops. MANUAL = the user's template, nothing injected; backendTemplate =
+	// the model's own Jinja renders the turn markers and the model's trained
+	// EOS ends the turn there (why llama-server never ran away) — no
+	// client-side markers exist to add.
+	const impliedStops =
+		options.completionFormat?.kind === "manual" || options.applyTemplateUrl !== undefined
+			? []
+			: templateStopMarkers(DEFAULT_COMPLETION_TEMPLATE);
+	const splicingFetch: ProviderFetch = createSplicingFetch(pending, options.fetch ?? fetch, impliedStops);
 	const completionProvider = createOpenAICompatible({ ...shared, fetch: splicingFetch });
 
 	return withFlatPrompt(

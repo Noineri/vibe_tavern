@@ -144,7 +144,7 @@ describe("KoboldCPP adapter — doGenerate", () => {
     expect(body.rep_pen).toBe(1.2);
   });
 
-  it("passes stop sequences", async () => {
+  it("passes stop sequences (user stops ride FIRST, implied markers follow — LS-9 auto union)", async () => {
     setupMockFetch([{
       ok: true,
       status: 200,
@@ -162,7 +162,7 @@ describe("KoboldCPP adapter — doGenerate", () => {
     });
 
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.stop_sequence).toEqual(["\\n", "STOP"]);
+    expect(body.stop_sequence).toEqual(["\\n", "STOP", "System:", "User:", "Assistant:"]);
   });
 
   it("handles empty generation result", async () => {
@@ -605,5 +605,93 @@ describe("KoboldCPP adapter — LS-6b generation-format template", () => {
     // Minimal (no-extensions) template: role-prefixed lines + bare assistant
     // trailer (trimmed) — the manual sequences replace the default labels.
     expect(body.prompt).toBe("<u> Hi\n<a>");
+  });
+});
+
+describe("KoboldCPP adapter — LS-9 implied stop hygiene", () => {
+  it("AUTO with no user stops: the implied role markers ride alone (no empty array — body byte-parity)", async () => {
+    setupMockFetch([{ ok: true, status: 200, json: { results: [{ text: "ok" }] } }]);
+
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+    await model.doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.stop_sequence).toEqual(["System:", "User:", "Assistant:"]);
+  });
+
+  it("a user stop equal to a marker is deduped, not doubled", async () => {
+    setupMockFetch([{ ok: true, status: 200, json: { results: [{ text: "ok" }] } }]);
+
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+    await model.doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      stopSequences: ["User:"],
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.stop_sequence).toEqual(["User:", "System:", "Assistant:"]);
+  });
+
+  it("MANUAL template: the user's stops ride ALONE — nothing injected (owner rule)", async () => {
+    setupMockFetch([{ ok: true, status: 200, json: { results: [{ text: "ok" }] } }]);
+
+    const model = koboldCppProtocol.resolveModel(
+      { providerPreset: "koboldcpp", endpoint: "http://localhost:5001", apiKey: null },
+      "test",
+      undefined,
+      {
+        completionFormat: {
+          kind: "manual",
+          template: generationFormatToTemplate({ mode: "manual", inputSequence: "<u> ", outputSequence: "<a> " }),
+        },
+      },
+    );
+    if (model.specificationVersion !== "v3") throw new Error("expected a V3 model");
+    await model.doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      stopSequences: ["MINE"],
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.stop_sequence).toEqual(["MINE"]);
+  });
+
+  it("MANUAL with no user stops: no stop key at all (byte-parity with pre-LS-9 manual)", async () => {
+    setupMockFetch([{ ok: true, status: 200, json: { results: [{ text: "ok" }] } }]);
+
+    const model = koboldCppProtocol.resolveModel(
+      { providerPreset: "koboldcpp", endpoint: "http://localhost:5001", apiKey: null },
+      "test",
+      undefined,
+      {
+        completionFormat: {
+          kind: "manual",
+          template: generationFormatToTemplate({ mode: "manual", inputSequence: "<u> ", outputSequence: "<a> " }),
+        },
+      },
+    );
+    if (model.specificationVersion !== "v3") throw new Error("expected a V3 model");
+    await model.doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    });
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.stop_sequence).toBeUndefined();
+  });
+
+  it("the STREAM path unions the implied markers too (same owner rule both transports)", async () => {
+    setupMockSSEStream(["ok"]);
+
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      stopSequences: ["MINE"],
+    });
+    for await (const _part of result.stream) void _part; // drain
+
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.stop_sequence).toEqual(["MINE", "System:", "User:", "Assistant:"]);
   });
 });
