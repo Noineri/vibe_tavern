@@ -48,6 +48,9 @@ export interface ClientProviderProfileRecord {
 	visionModel: string | null;
 	contextBudget: number | null;
 	pinContextBudget: boolean;
+	/** Token padding (LS-1d): safety margin subtracted from the context budget.
+	 *  Profile-level — see `effectiveContextBudget` in @vibe-tavern/domain. */
+	tokenPadding: number;
 	bindPerModel: boolean;
 	/** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, round-trip like bindPerModel. */
 	modelFreeOnly: boolean;

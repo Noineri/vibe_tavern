@@ -24,7 +24,7 @@ function profile(): ProviderProfileRecord {
     typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, dynatempRange: 0, dynatempExponent: 1, topNSigma: 0, smoothingFactor: 0, repeatLastN: 0, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
     dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: [], bannedStrings: [], xtcThreshold: 0.1,
     xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, maxTokens: 2048,
-    contextBudget: 16000, pinContextBudget: false, bindPerModel: false, modelFreeOnly: false, modelGroupByOwner: false,
+    contextBudget: 16000, pinContextBudget: false, tokenPadding: 0, bindPerModel: false, modelFreeOnly: false, modelGroupByOwner: false,
     stopSequences: [], logitBias: [], seed: null, reasoningEffort: "auto", showReasoning: false, streamResponse: true,
     customSamplers: false, proxyMode: "inherit", proxyId: null, isActive: true, hasStoredApiKey: true,
     createdAt: "2026-01-01", updatedAt: "2026-01-01",

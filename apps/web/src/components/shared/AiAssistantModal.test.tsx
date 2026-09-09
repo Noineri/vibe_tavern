@@ -114,6 +114,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     visionModel: null,
     contextBudget: null,
     pinContextBudget: false,
+    tokenPadding: 0,
     bindPerModel: false,
     modelFreeOnly: false,
     modelGroupByOwner: false,

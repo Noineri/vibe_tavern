@@ -70,6 +70,21 @@ export interface ProbeInput {
 /** Input for a model list request (no model required). */
 export type ListModelsInput = Omit<ProviderConnectionInput, "model">;
 
+/** Input for a backend tokenize request (LOCAL_SUPPORT_PLAN LS-1a — exact token counting). */
+export interface TokenizeInput {
+	baseUrl: string;
+	apiKey: string | null;
+	text: string;
+	/**
+	 * Model id. Optional in the interface only because most tokenize endpoints
+	 * tokenize with the server's loaded model; Ollama's /api/tokenize names the
+	 * model in the request body, so callers pass it when the context has one.
+	 */
+	modelId?: string;
+	/** Optional proxy-aware fetch. Omitted/undefined → global fetch (direct). */
+	fetch?: ProviderFetch;
+}
+
 export interface ProtocolAdapter {
 	id: ProviderType;
 	capabilities: ProviderCapabilityFlags;
@@ -92,4 +107,13 @@ export interface ProtocolAdapter {
 	testChat(input: ProviderConnectionInput): Promise<TestChatResult>;
 	/** List available models from the provider's models/tags endpoint. */
 	listModels(input: ListModelsInput): Promise<ProviderModelOption[]>;
+	/**
+	 * Count tokens exactly via the backend's tokenize endpoint
+	 * (LOCAL_SUPPORT_PLAN LS-1a). OPTIONAL — protocols without a public tokenize
+	 * route (LM Studio's OpenAI-compat surface, cloud providers) omit it; the
+	 * counting layer then stays on the local tokenizer ladder
+	 * (family tokenizer → cl100k). Throws on transport/HTTP/shape errors;
+	 * callers must catch and fall back — never propagate into prompt assembly.
+	 */
+	tokenize?(input: TokenizeInput): Promise<number>;
 }

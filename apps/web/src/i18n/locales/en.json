@@ -745,6 +745,8 @@
   "context_auto": "Auto",
   "context_pin_locked": "Context size is pinned — won't change when switching models",
   "context_pin_unlocked": "Pin context size",
+  "token_padding": "Token Padding",
+  "token_padding_hint": "Safety margin subtracted from the context size — compensates chat-template tokens the counter can't see.",
   "sampler_temperature": "Temperature",
   "sampler_temperature_hint": "Randomness. Lower is steadier; higher is more creative. Recommended: 0.6–0.9 for RP, 1.0+ for chaos.",
   "reasoning_effort": "Reasoning Effort",

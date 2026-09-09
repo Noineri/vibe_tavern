@@ -188,6 +188,7 @@ export function createProviderProfileService(providers: ProviderStore, proxies: 
         defaultModel: profile.defaultModel,
         visionModel: profile.visionModel,
         contextBudget: profile.contextBudget,
+        tokenPadding: profile.tokenPadding,
         temperature: profile.temperature,
         topP: profile.topP,
         minP: profile.minP,

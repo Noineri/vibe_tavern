@@ -2,6 +2,7 @@ import { describe, it, expect, mock, beforeEach } from "bun:test";
 import {
   createKoboldCppModel,
   fetchKoboldModel,
+  tokenizeKoboldCpp,
 } from "../src/domain/providers/koboldcpp-adapter.js";
 
 // ─── Mock fetch ──────────────────────────────────────────────────────────
@@ -286,6 +287,112 @@ describe("KoboldCPP adapter — doStream", () => {
     } catch (err) {
       expect((err as Error).message).toContain("503");
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// tokenizeKoboldCpp — V1f fixtures (LOCAL_SUPPORT_PLAN LS-1a/LS-1e)
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface TokenizeCapture { url: string; body: { prompt: string } }
+
+function tokenizeFetch(
+  calls: TokenizeCapture[],
+  respond: (body: { prompt: string }) => { status: number; json?: unknown },
+): typeof fetch {
+  return (async (url: string | URL | Request, init?: RequestInit) => {
+    const urlText = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+    const body = JSON.parse(String(init?.body ?? "{}")) as { prompt: string };
+    calls.push({ url: urlText, body });
+    const r = respond(body);
+    return new Response(r.json !== undefined ? JSON.stringify(r.json) : "error", {
+      status: r.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+}
+
+describe("KoboldCPP adapter — tokenize (V1f normalization)", () => {
+  it("subtracts the empty-prompt specials baseline from ids (Qwen 151643 V1f capture)", async () => {
+    const calls: TokenizeCapture[] = [];
+    const text = "The quiet forest held its breath.";
+    // V1f capture shape: ids carry a LEADING special token (Qwen2.5 BOS 151643
+    // `</s>`) that Kobold prepends itself, so `value` (= ids.length) overcounts
+    // by 1 vs the exact content count. The empty-prompt probe returns exactly
+    // that prepended special as ids — the baseline.
+    const contentIds = Array.from({ length: 25 }, (_, i) => 10_000 + i);
+    const count = await tokenizeKoboldCpp({
+      baseUrl: "http://127.0.0.1:9501",
+      apiKey: null,
+      text,
+      fetch: tokenizeFetch(calls, ({ prompt }) =>
+        prompt === ""
+          ? { status: 200, json: { value: 1, ids: [151643] } }
+          : { status: 200, json: { value: 26, ids: [151643, ...contentIds] } },
+      ),
+    });
+
+    expect(count).toBe(25); // ids.length (26) minus the detected leading special (1) — NOT value (26).
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.url).toBe("http://127.0.0.1:9501/api/extra/tokencount");
+    expect(calls[0]!.body.prompt).toBe(""); // baseline probe
+    expect(calls[1]!.body.prompt).toBe(text); // body field is `prompt`, not `text` (V1f correction)
+  });
+
+  it("keeps the full ids.length for a model with no BOS (baseline 0)", async () => {
+    const calls: TokenizeCapture[] = [];
+    const count = await tokenizeKoboldCpp({
+      baseUrl: "http://127.0.0.1:9502",
+      apiKey: null,
+      text: "no specials here",
+      fetch: tokenizeFetch(calls, ({ prompt }) =>
+        prompt === ""
+          ? { status: 200, json: { value: 0, ids: [] } }
+          : { status: 200, json: { value: 3, ids: [7, 8, 9] } },
+      ),
+    });
+    expect(count).toBe(3);
+  });
+
+  it("falls back to value when the baseline probe fails", async () => {
+    const calls: TokenizeCapture[] = [];
+    const count = await tokenizeKoboldCpp({
+      baseUrl: "http://127.0.0.1:9503",
+      apiKey: null,
+      text: "hello",
+      fetch: tokenizeFetch(calls, ({ prompt }) =>
+        prompt === ""
+          ? { status: 404 } // no tokencount probe support — fall back
+          : { status: 200, json: { value: 6, ids: [151643, 1, 2, 3, 4, 5] } },
+      ),
+    });
+    // Baseline unknown → value (V1f: off by at most one special) instead of a
+    // nonsensical ids.length - 0.
+    expect(count).toBe(6);
+  });
+
+  it("throws on HTTP error for the count call (counting layer falls back to the ladder)", async () => {
+    const err = await tokenizeKoboldCpp({
+      baseUrl: "http://127.0.0.1:9504",
+      apiKey: null,
+      text: "hello",
+      fetch: tokenizeFetch([], () => ({ status: 500 })),
+    }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it("is cached per endpoint: a second call on the same base does not re-probe the baseline", async () => {
+    const calls: TokenizeCapture[] = [];
+    const fetchFn = tokenizeFetch(calls, ({ prompt }) =>
+      prompt === ""
+        ? { status: 200, json: { value: 1, ids: [151643] } }
+        : { status: 200, json: { value: 2, ids: [151643, 42] } },
+    );
+    const first = await tokenizeKoboldCpp({ baseUrl: "http://127.0.0.1:9505", apiKey: null, text: "a", fetch: fetchFn });
+    const second = await tokenizeKoboldCpp({ baseUrl: "http://127.0.0.1:9505", apiKey: null, text: "b", fetch: fetchFn });
+    expect(first).toBe(1);
+    expect(second).toBe(1);
+    expect(calls.filter((c) => c.body.prompt === "")).toHaveLength(1); // baseline probed once
   });
 });
 

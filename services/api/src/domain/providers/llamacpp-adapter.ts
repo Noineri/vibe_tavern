@@ -10,15 +10,64 @@
  */
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { normalizeLocalOpenAiCompatibleBaseUrl } from "./provider-transport.js";
+import { normalizeLocalOpenAiCompatibleBaseUrl, TOKENIZE_TIMEOUT_MS } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
-import type { ProtocolAdapter } from "./protocol-types.js";
+import type { ProtocolAdapter, TokenizeInput } from "./protocol-types.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	probeOpenAiCompatibleConnection,
 	testOpenAiCompatChat,
 	listOpenAiCompatModels,
 } from "./openai-compat-adapter.js";
+
+// ─── Tokenize (LS-1a) ────────────────────────────────────────────────────
+
+/** llama-server response for POST /tokenize. */
+interface LlamaCppTokenizeResponse {
+	tokens?: unknown;
+}
+
+/**
+ * Derive the llama-server ROOT url for native endpoints (`/tokenize` is served
+ * at the server root, next to /v1 — NOT under it). The profile stores either
+ * the bare root or an OpenAI-compat /v1 URL; strip a trailing /v1 when present.
+ */
+function llamaCppRoot(baseUrl: string): string {
+	return baseUrl.replace(/\/+$/, "").replace(/\/v1\/?$/, "");
+}
+
+/**
+ * Exact token count via llama-server's native `POST /tokenize`
+ * (V1f-probed shape: `{"content"}` → `{"tokens": [...]}` — no special tokens).
+ * Throws on transport/HTTP/shape errors; the counting layer falls back to the
+ * local tokenizer ladder.
+ */
+export async function tokenizeLlamaCpp(input: TokenizeInput): Promise<number> {
+	const root = llamaCppRoot(input.baseUrl);
+	if (!root) throw new Error("llama.cpp tokenize: provider endpoint is required.");
+	const doFetch: typeof fetch = input.fetch ?? fetch;
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), TOKENIZE_TIMEOUT_MS);
+	try {
+		const response = await doFetch(`${root}/tokenize`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+			body: JSON.stringify({ content: input.text }),
+			signal: controller.signal,
+		});
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => "");
+			throw new Error(`llama.cpp tokenize failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+		}
+		const payload = (await response.json()) as LlamaCppTokenizeResponse;
+		if (!Array.isArray(payload.tokens)) {
+			throw new Error("llama.cpp tokenize: unexpected response shape (missing tokens array).");
+		}
+		return payload.tokens.length;
+	} finally {
+		clearTimeout(timer);
+	}
+}
 
 export const llamaCppProtocol: ProtocolAdapter = {
 	id: PROVIDER_TYPE.llamaCpp,
@@ -59,4 +108,5 @@ export const llamaCppProtocol: ProtocolAdapter = {
 		...input,
 		baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl),
 	}),
+	tokenize: tokenizeLlamaCpp,
 };

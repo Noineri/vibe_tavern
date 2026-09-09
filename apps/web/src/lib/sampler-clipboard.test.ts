@@ -16,7 +16,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: ["\n"], bannedStrings: [" finger"],
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
-    pinContextBudget: false, bindPerModel: false,
+    pinContextBudget: false, tokenPadding: 0, bindPerModel: false,
     modelFreeOnly: false, modelGroupByOwner: false,
     editingModelId: null,
     stopSequences: ["<end>"], logitBias: [], seed: null,

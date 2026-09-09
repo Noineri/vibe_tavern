@@ -74,6 +74,8 @@ export interface FormState {
   maxTokens: number;
   contextBudget: number;
   pinContextBudget: boolean;
+  /** Token padding (LS-1d) — safety margin subtracted from the context budget. */
+  tokenPadding: number;
   /** Profile-level toggle: when true, the binding dropdown (Wave 5) is enabled
    *  and saves route sampler writes to the selected model's overlay instead of
    *  the profile base. Persisted on the profile (Wave 1 column). */
@@ -162,6 +164,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     presencePenalty: p.presencePenalty,
     repetitionPenalty: p.repetitionPenalty,
     maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000, pinContextBudget: p.pinContextBudget ?? false,
+    tokenPadding: p.tokenPadding ?? 0,
     bindPerModel: p.bindPerModel ?? false,
     modelFreeOnly: p.modelFreeOnly ?? false,
     modelGroupByOwner: p.modelGroupByOwner ?? false,
@@ -570,6 +573,9 @@ export function ProviderModal({
         maxTokens: pick("maxTokens"),
         contextBudget: pick("contextBudget") ?? 16000,
         pinContextBudget: pick("pinContextBudget") ?? false,
+        // Token padding (LS-1d) is profile-level — never overridden by the
+        // per-model overlay — so it reads straight from the base profile.
+        tokenPadding: baseProfile.tokenPadding,
         stopSequences: pick("stopSequences"),
         bannedStrings: pick("bannedStrings") ?? [],
         logitBias: pick("logitBias") ?? [],

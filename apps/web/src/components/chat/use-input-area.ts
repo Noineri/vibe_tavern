@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChangeEvent, ClipboardEvent } from "react";
 import { toast } from "sonner";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
+import { effectiveContextBudget } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useChatController, diceSendBlockReason } from "../../hooks/use-chat-controller.js";
@@ -52,7 +53,10 @@ export function useInputArea() {
   const activePersonaId = chatMeta?.persona?.id ?? null;
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const activePromptPresetId = chatMeta?.activeChat.promptPresetId ?? null;
-  const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
+  // LS-1d: the effective context size mirrors the server's compaction budget
+  // (contextBudget minus the tokenPadding safety margin), so meter percentages
+  // match generation-time trimming.
+  const contextSize = effectiveContextBudget(provider.activeProviderProfile?.contextBudget, provider.activeProviderProfile?.tokenPadding) ?? 0;
   const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
   const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
   const activeModelId = provider.activeProviderProfile?.defaultModel ?? connection.model ?? null;

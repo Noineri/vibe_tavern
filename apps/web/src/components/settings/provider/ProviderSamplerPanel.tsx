@@ -314,6 +314,23 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
           </div>
         </div>
 
+        {/* Token padding (LS-1d): safety margin subtracted from the context
+            budget — compensates chat-template overhead the estimator can't
+            see (local backends). Profile-level, consumed server-side via
+            effectiveContextBudget. */}
+        <div>
+          <CustomTooltip content={t("token_padding_hint")}>
+            <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+              {t("token_padding")}
+            </label>
+          </CustomTooltip>
+          <InlineNumField
+            value={form.tokenPadding}
+            placeholder="0"
+            onBlur={(v) => updateForm('tokenPadding', Math.max(0, Math.round(v)))}
+          />
+        </div>
+
         {/* Temperature */}
         {supports('temperature') && (
           <SamplerField

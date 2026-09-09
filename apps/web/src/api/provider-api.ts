@@ -24,6 +24,7 @@ export async function saveProviderProfile(input: {
   visionModel?: string | null;
   contextBudget?: number | null;
   pinContextBudget?: boolean;
+  tokenPadding?: number;
   temperature?: number;
   topP?: number;
   minP?: number;
@@ -78,6 +79,7 @@ export async function updateProviderProfile(
     visionModel?: string | null;
     contextBudget?: number | null;
     pinContextBudget?: boolean;
+    tokenPadding?: number;
     temperature?: number;
     topP?: number;
     minP?: number;

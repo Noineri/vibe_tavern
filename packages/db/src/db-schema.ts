@@ -826,6 +826,9 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   defaultModel: text('default_model'),
   contextBudget: integer('context_budget'),
   pinContextBudget: integer('pin_context_budget', { mode: 'boolean' }).notNull().default(false),
+  // Token padding (LOCAL_SUPPORT_PLAN LS-1d): safety margin subtracted from the
+  // context budget at generation time (effectiveContextBudget). Profile-level.
+  tokenPadding: integer('token_padding').notNull().default(0),
   /** When true, sampler/context edits in the modal write to a per-model overlay
    *  (providerModelSettings) instead of the profile base. See resolveEffectiveSettings. */
   bindPerModel: integer('bind_per_model', { mode: 'boolean' }).notNull().default(false),

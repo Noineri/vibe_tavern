@@ -132,7 +132,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     coauthorTransport: "chat_completions",
     endpoint: "https://api.test/v1",
     defaultModel: null, visionModel: null,
-    contextBudget: null, pinContextBudget: false, bindPerModel: false,
+    contextBudget: null, pinContextBudget: false, tokenPadding: 0, bindPerModel: false,
     modelFreeOnly: false, modelGroupByOwner: false,
     maxTokens: 4096, temperature: 0.7, topP: 1, topK: 0, minP: 0,
     topA: 0, typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, dynatempRange: 0, dynatempExponent: 1, topNSigma: 0, smoothingFactor: 0, repeatLastN: -1,

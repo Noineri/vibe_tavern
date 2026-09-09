@@ -144,6 +144,7 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     visionModel: profile.visionModel,
     contextBudget: profile.contextBudget,
     pinContextBudget: profile.pinContextBudget,
+    tokenPadding: profile.tokenPadding,
     bindPerModel: profile.bindPerModel,
     modelFreeOnly: profile.modelFreeOnly,
     modelGroupByOwner: profile.modelGroupByOwner,

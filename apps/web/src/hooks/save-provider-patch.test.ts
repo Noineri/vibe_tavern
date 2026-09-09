@@ -14,7 +14,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: ["\n"], bannedStrings: [" finger"],
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
-    pinContextBudget: false, bindPerModel: false,
+    pinContextBudget: false, tokenPadding: 0, bindPerModel: false,
     modelFreeOnly: false, modelGroupByOwner: false,
     editingModelId: null,
     stopSequences: ["<end>"], logitBias: [], seed: null,
@@ -132,6 +132,12 @@ describe("computeSavePatch", () => {
     expect(patch.bindPerModel).toBe(false);
   });
 
+  test("carries tokenPadding into the base patch (LS-1d — profile-level knob)", () => {
+    const form = makeForm({ tokenPadding: 250 });
+    const patch = computeSavePatch(form);
+    expect(patch.tokenPadding).toBe(250);
+  });
+
   test("pinContextBudget still in the base patch (Wave 0 strip-gap regression)", () => {
     const form = makeForm({ pinContextBudget: true });
     const patch = computeSavePatch(form);
@@ -213,6 +219,10 @@ describe("computeOverlayPatch", () => {
     expect(overlay).not.toHaveProperty("defaultModel");
     expect(overlay).not.toHaveProperty("visionModel");
     expect(overlay).not.toHaveProperty("providerPreset");
+    // tokenPadding (LS-1d) is profile-level — the chat-template overhead it
+    // compensates for is a property of the connection, not the model — so it
+    // must NEVER route into a per-model overlay.
+    expect(overlay).not.toHaveProperty("tokenPadding");
     expect(overlay).not.toHaveProperty("bindPerModel");
   });
 

@@ -31,6 +31,8 @@ export interface ProviderSavePatch {
   visionModel: string | null;
   contextBudget: number | null;
   pinContextBudget: boolean;
+  /** Token padding (LS-1d) — safety margin subtracted from the context budget. */
+  tokenPadding: number;
   bindPerModel: boolean;
   modelFreeOnly: boolean;
   modelGroupByOwner: boolean;
@@ -93,6 +95,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     visionModel: form.visionModel.trim() || null,
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
+    tokenPadding: form.tokenPadding,
     bindPerModel: form.bindPerModel,
     modelFreeOnly: form.modelFreeOnly,
     modelGroupByOwner: form.modelGroupByOwner,
@@ -239,6 +242,7 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     visionModel: conn.visionModel.trim() || null,
     contextBudget: conn.maxTokens || null,
     pinContextBudget: false,  // not in ConnectionState yet
+    tokenPadding: 0,  // not in ConnectionState yet — padding is modal-only
     bindPerModel: false,  // not in ConnectionState yet
     modelFreeOnly: false,  // not in ConnectionState yet
     modelGroupByOwner: false,  // not in ConnectionState yet

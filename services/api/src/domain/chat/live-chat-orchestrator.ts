@@ -13,6 +13,8 @@ import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-ta
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
+import { effectiveContextBudget } from "@vibe-tavern/domain";
+import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
 
 /** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
 export interface RegexHookContext {
@@ -111,7 +113,9 @@ export class LiveChatOrchestrator {
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
     // RX-8 regex seam: USER_INPUT transform (persist-mode presets only).
     const transformedContent = await this.applyRegexLayer("USER_INPUT", input.chatId, input.content);
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
+    const prepared = await this.withTokenContext(provider, () =>
+      this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
+    );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
@@ -204,11 +208,13 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply.start", { chatId: input.chatId, model: provider.model });
-    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      model: provider.model,
-      contextBudget: provider.profile.contextBudget,
-      responseReserve: provider.profile.maxTokens,
-    });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+      }),
+    );
     const prefill = prompt.prefill ?? undefined;
     const startedAt = Date.now();
     let reply: string;
@@ -286,13 +292,15 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
-    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      excludeMessageId: brandId<MessageId>(input.messageId),
-      model: provider.model,
-      contextBudget: provider.profile.contextBudget,
-      responseReserve: provider.profile.maxTokens,
-      presetId: input.presetId,
-    });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        excludeMessageId: brandId<MessageId>(input.messageId),
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+        presetId: input.presetId,
+      }),
+    );
     logSendDebug("live.regenerate.prompt.ready", {
       chatId: input.chatId,
       messageId: input.messageId,
@@ -378,7 +386,9 @@ export class LiveChatOrchestrator {
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
     // RX-8 regex seam: USER_INPUT transform (persist-mode presets only).
     const transformedContent = await this.applyRegexLayer("USER_INPUT", input.chatId, input.content);
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
+    const prepared = await this.withTokenContext(provider, () =>
+      this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
+    );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
@@ -443,11 +453,13 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: provider.model });
-    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      model: provider.model,
-      contextBudget: provider.profile.contextBudget,
-      responseReserve: provider.profile.maxTokens,
-    });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+      }),
+    );
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
@@ -509,13 +521,15 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.regenerate-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
-    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      excludeMessageId: brandId<MessageId>(input.messageId),
-      model: provider.model,
-      contextBudget: provider.profile.contextBudget,
-      responseReserve: provider.profile.maxTokens,
-      presetId: input.presetId,
-    });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        excludeMessageId: brandId<MessageId>(input.messageId),
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+        presetId: input.presetId,
+      }),
+    );
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
@@ -591,6 +605,24 @@ export class LiveChatOrchestrator {
       role: "user",
       content: message.content,
     });
+  }
+
+  /**
+   * LS-1c: run a prompt-assembly-scoped operation with the send profile's
+   * token context in scope (LOCAL_SUPPORT_PLAN). While in scope, every
+   * `countTokens` inside reads the provider-exact LRU (`token-count-cache.ts`)
+   * and schedules bounded background warm fetches on misses — the assembly
+   * itself never awaits a tokenize round-trip. Null context (cloud protocols,
+   * unresolved model) → pure local ladder, byte-identical behavior.
+   */
+  private withTokenContext<T>(
+    provider: { profile: StoredProviderProfileRecord; model: string },
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return runWithProviderTokenContext(
+      providerTokenContextFromProfile(provider.profile, provider.model),
+      fn,
+    );
   }
 
   private notifyAssistantAppended(chatId: string, branchId: ChatBranchId, messageId: MessageId): void {

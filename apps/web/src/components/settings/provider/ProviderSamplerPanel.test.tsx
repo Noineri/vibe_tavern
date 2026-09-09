@@ -74,6 +74,7 @@ function form(): FormState {
     maxTokens: 4096,
     contextBudget: 8192,
     pinContextBudget: false,
+    tokenPadding: 0,
     bindPerModel: false,
     modelFreeOnly: false,
     modelGroupByOwner: false,

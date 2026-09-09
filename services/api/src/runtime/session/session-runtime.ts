@@ -1,5 +1,7 @@
 import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings, type DiceRoll } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
+import { effectiveContextBudget } from "@vibe-tavern/domain";
+import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
 import {
 	type CharacterId,
 	type ChatBranchId,
@@ -315,10 +317,17 @@ export function pickBootstrapChatId<T extends string>(
 		}
 		try {
 			const profile = await this.getActiveProviderProfile();
-			const assembled = await this.assemblePrompt(chatId, branchId, {
-				contextBudget: profile?.contextBudget ?? null,
-				responseReserve: profile?.maxTokens ?? 0,
-			});
+			// LS-1c mirror: the preview assembles under the active profile's token
+			// context (exact-count cache + warm scheduling) and its PADDED budget —
+			// the same effective budget the send orchestrator compacts against, so
+			// the meter percentages match generation-time trimming.
+			const tokenCtx = profile ? providerTokenContextFromProfile(profile, profile.defaultModel) : null;
+			const assembled = await runWithProviderTokenContext(tokenCtx, () =>
+				this.assemblePrompt(chatId, branchId, {
+					contextBudget: effectiveContextBudget(profile?.contextBudget ?? null, profile?.tokenPadding),
+					responseReserve: profile?.maxTokens ?? 0,
+				}),
+			);
 			return {
 				layers: assembled.promptTraceDraft.assembledLayers as import("@vibe-tavern/domain").PromptLayerDto[],
 				tokenAccounting: assembled.promptTraceDraft.tokenAccounting,

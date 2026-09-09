@@ -41,6 +41,11 @@ export interface StoredProviderProfileRecord {
   defaultModel: string | null;
   contextBudget: number | null;
   pinContextBudget: boolean;
+  /** Token padding (LOCAL_SUPPORT_PLAN LS-1d): tokens subtracted from the
+   *  effective context budget as a safety margin for chat-template overhead
+   *  the estimator cannot see. 0 = disabled. Consumed via
+   *  {@link effectiveContextBudget}. */
+  tokenPadding: number;
   /** When true, the modal routes sampler/context edits to a per-model overlay
    *  (see {@link ModelSettingsSettings}) instead of the profile base. The active
    *  model's overlay merges over the base at generation time via
@@ -102,6 +107,22 @@ export interface StoredProviderProfileRecord {
   visionModel: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Effective context budget for generation: the profile's `contextBudget` minus
+ * its `tokenPadding` (LS-1d), floored at 0. Null budget passes through as null
+ * ("auto" — the backend's model context length rules). Padding is a
+ * profile-level knob (NOT a per-model overlay field): the chat template
+ * overhead it compensates for is a property of the connection, not the model.
+ */
+export function effectiveContextBudget(
+  contextBudget: number | null | undefined,
+  tokenPadding: number | null | undefined,
+): number | null {
+  if (contextBudget == null) return null;
+  const padding = tokenPadding ?? 0;
+  return Math.max(0, contextBudget - (Number.isFinite(padding) ? padding : 0));
 }
 
 // ─── Per-model settings overlay ───────────────────────────────────────────────

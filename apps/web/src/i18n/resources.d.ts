@@ -2573,6 +2573,8 @@ export default interface Resources {
     "test_connection": "Test Connection",
     "test_hi_btn": "Test \"Hi\"",
     "testing": "Testing...",
+    "token_padding": "Token Padding",
+    "token_padding_hint": "Safety margin subtracted from the context size — compensates chat-template tokens the counter can't see.",
     "tokens_label": "tokens",
     "topbar_autonarrate_off": "Auto-narrate: off",
     "topbar_autonarrate_on": "Auto-narrate: on — new AI replies are read aloud",

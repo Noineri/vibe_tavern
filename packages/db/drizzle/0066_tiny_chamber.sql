@@ -1,0 +1,1 @@
+ALTER TABLE `provider_profiles` ADD `token_padding` integer DEFAULT 0 NOT NULL;

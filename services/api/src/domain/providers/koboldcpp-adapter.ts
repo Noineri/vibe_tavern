@@ -27,6 +27,7 @@ import type {
 import {
   MODEL_LIST_TIMEOUT_MS,
   TEST_CHAT_TIMEOUT_MS,
+  TOKENIZE_TIMEOUT_MS,
   normalizeKoboldCppBaseUrl,
   tryParseUrl,
   wrapProviderNetworkError,
@@ -36,7 +37,7 @@ import {
   type TestChatResult,
 } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
-import type { ProtocolAdapter, ProbeInput, ListModelsInput } from "./protocol-types.js";
+import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput } from "./protocol-types.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -362,6 +363,101 @@ function mapSSEEventToStreamParts(
   return [];
 }
 
+// ─── Tokenize (LS-1a) ───────────────────────────────────────────────────
+
+/** KoboldCPP `/api/extra/tokencount` response (V1f-probed shape). */
+interface KoboldTokenCountResponse {
+  value?: unknown;
+  ids?: unknown;
+}
+
+/**
+ * Per-base-url cache of the LEADING-SPECIALS BASELINE for `/api/extra/tokencount`.
+ *
+ * V1f probe finding (LOCAL_SAMPLERS_ADDITION_REPORT): KoboldCPP prepends the
+ * model's BOS/special token to every tokencount response's `ids` (Qwen2.5 →
+ * id 151643 `</s>`), so `value` (= ids.length) overcounts by 1 vs the exact
+ * content count (llama-server /tokenize). The special is model-dependent and
+ * invisible from a single response — but an EMPTY-prompt probe returns exactly
+ * the prepended specials as `ids`, which detects it for any model. One probe
+ * per backend, cached for the process lifetime.
+ */
+const koboldSpecialBaseline = new Map<string, number | null>();
+
+async function probeKoboldSpecialBaseline(
+  base: string,
+  doFetch: typeof fetch,
+  signal: AbortSignal,
+): Promise<number | null> {
+  const cached = koboldSpecialBaseline.get(base);
+  if (cached !== undefined) return cached;
+  try {
+    const response = await doFetch(`${base}/api/extra/tokencount`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ prompt: "" }),
+      signal,
+    });
+    if (!response.ok) throw new Error(`status ${response.status}`);
+    const payload = (await response.json()) as KoboldTokenCountResponse;
+    if (!Array.isArray(payload.ids)) throw new Error("missing ids array");
+    // ids for an empty prompt ARE the prepended specials (empty array = none).
+    koboldSpecialBaseline.set(base, payload.ids.length);
+    return payload.ids.length;
+  } catch {
+    // Remember the failure so every warm call doesn't re-probe a dead endpoint;
+    // the count then falls back to `value` (V1f: overcounts by at most 1).
+    koboldSpecialBaseline.set(base, null);
+    return null;
+  }
+}
+
+/**
+ * Exact token count via KoboldCPP's native `POST /api/extra/tokencount`
+ * (body field is `prompt`, NOT `text` — V1f correction).
+ *
+ * Normalization heuristic (pinned by fixture tests): prefer `ids.length` minus
+ * the detected leading-specials baseline (empty-prompt probe) over `value`.
+ * When the baseline probe fails, fall back to `value` — still far more accurate
+ * than the local tokenizer ladder, off by at most 1 special token.
+ */
+export async function tokenizeKoboldCpp(input: TokenizeInput): Promise<number> {
+  const base = normalizeKoboldCppBaseUrl(input.baseUrl);
+  if (!base) throw new Error("KoboldCPP tokenize: provider endpoint is required.");
+  const doFetch: typeof fetch = input.fetch ?? fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TOKENIZE_TIMEOUT_MS);
+  try {
+    const baseline = await probeKoboldSpecialBaseline(base, doFetch, controller.signal);
+
+    const response = await doFetch(`${base}/api/extra/tokencount`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ prompt: input.text }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(`KoboldCPP tokencount failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+    }
+    const payload = (await response.json()) as KoboldTokenCountResponse;
+    const ids = Array.isArray(payload.ids) ? (payload.ids as unknown[]).length : null;
+    const value = typeof payload.value === "number" ? payload.value : null;
+    if (ids === null && value === null) {
+      throw new Error("KoboldCPP tokencount: unexpected response shape (missing value and ids).");
+    }
+    // Exact: ids.length minus the detected leading specials. Guard against a
+    // nonsensical baseline (≥ ids) by falling back to value.
+    if (ids !== null && baseline !== null && baseline < ids) {
+      return ids - baseline;
+    }
+    if (value !== null) return value;
+    return ids ?? 0;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Model listing ───────────────────────────────────────────────────────
 
 export interface KoboldModelInfo {
@@ -499,4 +595,5 @@ export const koboldCppProtocol: ProtocolAdapter = {
   probe: probeKoboldCppConnection,
   testChat: testKoboldCppChat,
   listModels: listKoboldCppModels,
+  tokenize: tokenizeKoboldCpp,
 };

@@ -36,6 +36,7 @@ function makeProfile(overrides: Partial<ProviderProfileRecord> & { id: string })
     visionModel: null,
     contextBudget: null,
     pinContextBudget: false,
+    tokenPadding: 0,
     bindPerModel: false,
     modelFreeOnly: false,
     modelGroupByOwner: false,

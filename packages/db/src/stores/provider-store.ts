@@ -97,6 +97,8 @@ export interface CreateProviderData {
   streamResponse?: boolean;
   customSamplers?: boolean;
   pinContextBudget?: boolean;
+  /** Token padding (LS-1d) — see StoredProviderProfileRecord. */
+  tokenPadding?: number;
   /** Per-model binding toggle — when true, sampler/context edits route to a per-model overlay. */
   bindPerModel?: boolean;
   /** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, no backend logic. */
@@ -217,6 +219,7 @@ export class ProviderStore {
         streamResponse: data.streamResponse !== undefined ? (data.streamResponse ? 1 : 0) : 1,
         customSamplers: data.customSamplers ? 1 : 0,
         pinContextBudget: data.pinContextBudget ?? false,
+        tokenPadding: data.tokenPadding ?? 0,
         bindPerModel: data.bindPerModel ?? false,
         modelFreeOnly: data.modelFreeOnly ?? false,
         modelGroupByOwner: data.modelGroupByOwner ?? false,
@@ -281,6 +284,7 @@ export class ProviderStore {
     if (data.streamResponse !== undefined) values.streamResponse = data.streamResponse ? 1 : 0;
     if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
     if (data.pinContextBudget !== undefined) values.pinContextBudget = data.pinContextBudget;
+    if (data.tokenPadding !== undefined) values.tokenPadding = data.tokenPadding;
     if (data.bindPerModel !== undefined) values.bindPerModel = data.bindPerModel;
     if (data.modelFreeOnly !== undefined) values.modelFreeOnly = data.modelFreeOnly;
     if (data.modelGroupByOwner !== undefined) values.modelGroupByOwner = data.modelGroupByOwner;
@@ -392,6 +396,7 @@ export class ProviderStore {
         streamResponse: original.streamResponse,
         customSamplers: original.customSamplers,
         pinContextBudget: original.pinContextBudget,
+        tokenPadding: original.tokenPadding,
         bindPerModel: original.bindPerModel,
         modelFreeOnly: original.modelFreeOnly,
         modelGroupByOwner: original.modelGroupByOwner,
@@ -639,6 +644,7 @@ export class ProviderStore {
       defaultModel: row.defaultModel,
       contextBudget: row.contextBudget,
       pinContextBudget: row.pinContextBudget,
+      tokenPadding: row.tokenPadding,
       bindPerModel: row.bindPerModel,
       modelFreeOnly: row.modelFreeOnly,
       modelGroupByOwner: row.modelGroupByOwner,

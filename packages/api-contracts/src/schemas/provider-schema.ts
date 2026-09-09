@@ -79,6 +79,9 @@ const providerCoreSchema = z.object({
   defaultModel: z.string().nullable().optional(),
   contextBudget: z.number().nullable().optional(),
   pinContextBudget: z.boolean().optional(),
+  /** Token padding (LS-1d): safety margin subtracted from the context budget.
+   *  Profile-level (not a per-model overlay field) — see effectiveContextBudget. */
+  tokenPadding: z.number().optional(),
   /** When true, sampler/context edits route to a per-model overlay (see modelSettingsOverlaySchema). */
   bindPerModel: z.boolean().optional(),
   modelFreeOnly: z.boolean().optional(),
