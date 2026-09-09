@@ -19,6 +19,16 @@ mock.module("../../../i18n/context.js", () => ({
   }),
 }));
 
+// The format block (always-rendered for kobold) carries CustomTooltip
+// actions; the app root provides the provider at runtime — bare panel renders
+// mock the module (the ProviderSamplerPanel.test pattern).
+const realTooltip = await import("../../shared/Tooltip.js");
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
 let ProviderGenerationModePanel: typeof import("./ProviderGenerationModePanel.js").ProviderGenerationModePanel;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
