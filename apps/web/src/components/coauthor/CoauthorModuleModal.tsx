@@ -740,11 +740,11 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 			</Field>
 
 			<Field label={t("coauthor.module.max_steps")} hint={t("coauthor.module.max_steps_hint")}>
-				<input
+				<TextInput
 					type="number"
 					min={COAUTHOR_MAX_STEPS_MIN}
 					max={COAUTHOR_MAX_STEPS_MAX}
-					className="w-20 rounded border border-border bg-bg px-2 py-1.5 font-mono text-[13px] text-t1 outline-none focus:border-accent"
+					className="!w-20"
 					value={draft.maxSteps}
 					onChange={(e) => onUpdate("maxSteps", Math.max(COAUTHOR_MAX_STEPS_MIN, Math.min(COAUTHOR_MAX_STEPS_MAX, Number(e.target.value) || COAUTHOR_MAX_STEPS_MIN)))}
 				/>

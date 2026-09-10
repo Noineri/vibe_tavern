@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import { codeQuoteCls } from "../../../lib/field-tokens.js";
+import { codeQuoteCls, textareaCls, monoMod } from "../../../lib/field-tokens.js";
 import { testScript } from "../../../app-client.js";
 import type { PromptScriptTestResult } from "@vibe-tavern/api-contracts";
 
@@ -136,26 +137,26 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 					<div className="mt-2 space-y-2 rounded-md border border-border bg-bg" style={{ padding: 10 }}>
 						<div>
 							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_name")}</label>
-							<input className="h-8 w-full rounded-md border border-border bg-s2 px-2 font-ui text-[12px] text-t1 outline-none focus:border-accent" value={testCharName} onChange={(e) => setTestCharName(e.target.value)} />
+							<TextInput value={testCharName} onChange={(e) => setTestCharName(e.target.value)} />
 						</div>
 						<div>
 							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_personality")}</label>
-							<textarea className="w-full min-h-[60px] resize-y rounded-md border border-border bg-s2 px-2 py-1 font-mono text-[11px] text-t1 outline-none focus:border-accent" value={testCharPersonality} onChange={(e) => setTestCharPersonality(e.target.value)} />
+							<AutoTextarea className={cn(textareaCls, monoMod)} value={testCharPersonality} onChange={(e) => setTestCharPersonality(e.target.value)} minRows={3} maxRows={12} />
 						</div>
 						<div>
 							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_scenario")}</label>
-							<textarea className="w-full min-h-[60px] resize-y rounded-md border border-border bg-s2 px-2 py-1 font-mono text-[11px] text-t1 outline-none focus:border-accent" value={testCharScenario} onChange={(e) => setTestCharScenario(e.target.value)} />
+							<AutoTextarea className={cn(textareaCls, monoMod)} value={testCharScenario} onChange={(e) => setTestCharScenario(e.target.value)} minRows={3} maxRows={12} />
 						</div>
 						<div className="border-t border-border pt-2">
 							<div className="mb-1 font-ui text-[11px] font-medium text-t2">{t("script_test_persona_fields")}</div>
 							<div className="space-y-2">
 								<div>
 									<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_persona_name")}</label>
-									<input className="h-8 w-full rounded-md border border-border bg-s2 px-2 font-ui text-[12px] text-t1 outline-none focus:border-accent" value={testPersonaName} onChange={(e) => setTestPersonaName(e.target.value)} />
+									<TextInput value={testPersonaName} onChange={(e) => setTestPersonaName(e.target.value)} />
 								</div>
 								<div>
 									<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_persona_desc")}</label>
-									<textarea className="w-full min-h-[60px] resize-y rounded-md border border-border bg-s2 px-2 py-1 font-mono text-[11px] text-t1 outline-none focus:border-accent" value={testPersonaDesc} onChange={(e) => setTestPersonaDesc(e.target.value)} />
+									<AutoTextarea className={cn(textareaCls, monoMod)} value={testPersonaDesc} onChange={(e) => setTestPersonaDesc(e.target.value)} minRows={3} maxRows={12} />
 								</div>
 							</div>
 						</div>

@@ -10,6 +10,8 @@ import { useIsMobile } from '../../hooks/use-mobile.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
 import { useT } from '../../i18n/context.js';
 import { AutoTextarea } from '../shared/auto-textarea.js';
+import { TextInput } from '../shared/text-input.js';
+import { lblCls } from '../../lib/field-tokens.js';
 import { MobileExpandTextarea } from '../shared/MobileExpandTextarea.js';
 import { AvatarCropModal } from '../shared/AvatarCropModal.js';
 import type { AvatarCropResult } from '../shared/AvatarCropModal.js';
@@ -199,11 +201,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               />
             )}
             <div className="flex-1">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_name_label")}</label>
-              <input
-                type="text"
-                className={cn("w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent", isMobile && "text-base min-h-[44px]")}
-                {...register('name')}
+              <label className={lblCls}>{t("ws_name_label")}</label>
+              <TextInput
+                register={register('name')}
                 autoFocus
               />
               {errors.name && (
@@ -376,10 +376,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* Tags */}
           <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_tags_label")}</label>
-            <input
-              type="text"
-              className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+            <label className={lblCls}>{t("char_tags_label")}</label>
+            <TextInput
               value={tagInput}
               onChange={e => setTagInput(e.target.value)}
               onKeyDown={handleTagKey}

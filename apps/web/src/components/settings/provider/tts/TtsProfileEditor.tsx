@@ -666,12 +666,10 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
                * static catalog. */
               <div className="my-4">
                 <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">{t(modelSpec.labelKey)}</div>
-                <input
-                  type="text"
+                <TextInput
                   data-testid="tts-field-model"
                   value={configString(form.config, modelSpec.key)}
                   onChange={(event) => updateConfigField(tts, form, modelSpec.key, event.target.value)}
-                  className="h-[38px] w-full rounded-[6px] border border-border bg-s2 px-[13px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent"
                 />
                 {modelSpec.docsUrl !== undefined && (
                   <a

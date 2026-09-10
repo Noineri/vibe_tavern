@@ -29,6 +29,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../../../../i18n/context.js";
 import { cn } from "../../../../lib/cn.js";
+import { textareaCls, monoMod } from "../../../../lib/field-tokens.js";
 import { Ic } from "../../../shared/icons.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { TokenCounter } from "../../../shared/TokenCounter.js";
@@ -313,8 +314,7 @@ export function CanvasCard({
               label={editableName?.value || (typeof label === "string" ? label : undefined)}
             >
               <AutoTextarea
-                className="canvas-card-editor w-full resize-none rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
-                style={{}}
+                className={cn(textareaCls, monoMod, "leading-[1.6] disabled:opacity-60", "canvas-card-editor")}
                 minRows={5}
                 value={value ?? ""}
                 placeholder={placeholder}

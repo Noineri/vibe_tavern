@@ -14,7 +14,8 @@ import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
-import { textareaCls, monoMod } from "../../../lib/field-tokens.js";
+import { lblCls, textareaCls, monoMod } from "../../../lib/field-tokens.js";
+import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
@@ -526,7 +527,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       {/* Header: name + toggle + delete */}
       <div className="flex flex-col gap-3" style={{ marginBottom: 16 }}>
         <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
+          <div className="min-w-0 flex-1"><TextInput value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
           <Toggle checked={activeScript.enabled} onChange={(enabled) => updateDraft({ enabled })} />
           <CustomTooltip content={t("delete_script_confirm")}>
             <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
@@ -546,8 +547,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
       {/* Description */}
       <div style={{ marginBottom: 16 }}>
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
-        <input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent" value={activeScript.description ?? ""} onChange={(e) => updateDraft({ description: e.target.value })} placeholder={t("script_desc_placeholder")} />
+        <label className={lblCls}>{t("script_desc_label")}</label>
+        <TextInput value={activeScript.description ?? ""} onChange={(e) => updateDraft({ description: e.target.value })} placeholder={t("script_desc_placeholder")} />
       </div>
 
       {/* Link binding (forward): bind this script to additional characters/personas */}

@@ -27,6 +27,8 @@ import { FieldLabel } from "../fields/field-label.js";
 import { useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
 import { Ic, Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
+import { TextInput } from "../../shared/text-input.js";
+import { textareaCls } from "../../../lib/field-tokens.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { Checkbox } from "../../shared/Checkbox.js";
@@ -134,11 +136,10 @@ export function LoreEntryEditor({
       <div className="mx-auto max-w-[860px] flex flex-col gap-6">
         {/* ── Header: name + enabled toggle + delete ── */}
         <div className="flex items-center gap-3">
-          <input
-            className="flex-1 rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent"
-            type="text"
+          <TextInput
+            className="flex-1"
             placeholder={t("lore_entry_title")}
-            {...form.register("title")}
+            register={form.register("title")}
           />
           <ControlledField name="enabled">
             {(field) => (
@@ -264,8 +265,8 @@ export function LoreEntryEditor({
                 label={t("lore_entry_content")}
               >
                 <AutoTextarea
-                  className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[13px] text-t1 outline-none focus:border-accent leading-[1.6]"
-                  style={{}}
+                  className={cn(textareaCls, "leading-[1.6]")}
+                  minRows={8}
                   maxRows={25}
                   value={field.value}
                   onChange={field.onChange}
@@ -538,10 +539,8 @@ export function LoreEntryEditor({
                       {t("lore_group_name")}
                     </FieldLabel>
                   </CustomTooltip>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="text"
-                    {...form.register("groupName")}
+                  <TextInput
+                    register={form.register("groupName")}
                   />
                 </div>
                 <div className="min-w-[100px]">
