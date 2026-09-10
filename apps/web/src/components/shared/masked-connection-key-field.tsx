@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { monoCls } from "../build/fields/field-styles.js";
 import { Ic } from "./icons.js";
+import { TextInput } from "./text-input.js";
 
 interface MaskedConnectionKeyFieldProps {
   value: string;
@@ -25,7 +25,13 @@ interface MaskedConnectionKeyFieldProps {
  * line. Callers resolve their existing localized strings and test ids; the
  * DOM contract is unchanged. The LLM header keeps its plain password field
  * because it has neither the toggle nor the stored-status line — unifying it
- * would change its markup, not share it. */
+ * would change its markup, not share it.
+ *
+ * Built on `TextInput` (mono variant) since FS-2: the canonical single-line
+ * shape with fixed height, replacing the retired textarea-shaped mono token.
+ * `!pr-10` (important — the established override convention) reserves the
+ * eye-toggle gutter; the label above carries the spacing (lblCls mb), so the
+ * old `mt-1` container smear is gone. */
 export function MaskedConnectionKeyField({
   value,
   onChange,
@@ -42,14 +48,15 @@ export function MaskedConnectionKeyField({
   const [visible, setVisible] = useState(false);
   const emptyStored = value === "" && stored;
   return (
-    <div className="relative mt-1">
-      <input
+    <div className="relative">
+      <TextInput
         data-testid={fieldTestId}
         type={visible ? "text" : "password"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={emptyStored ? storedPlaceholder : placeholder}
-        className={monoCls + " w-full pr-10"}
+        mono
+        className="!pr-10"
       />
       <button
         type="button"

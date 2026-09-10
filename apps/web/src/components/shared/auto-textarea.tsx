@@ -11,6 +11,13 @@ import {
   useMacroAutocompleteStore,
 } from "./macro-autocomplete-store.js";
 
+/** The canonical auto-grow field class (see `lib/field-tokens.ts`)
+ *  when the caller passes none. `className` is an optional EXTENSION today
+ *  (a passed className fully replaces the base during the FS-2..FS-8
+ *  migration window); the end state is bare-or-non-conflicting extension. */
+import { cn, } from "../../lib/cn.js";
+import { monoMod, textareaCls } from "../../lib/field-tokens.js";
+
 /** Native HTML textarea attributes that AutoTextarea doesn't consume itself. */
 export type AutoTextareaPassthrough = Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
@@ -20,7 +27,11 @@ export type AutoTextareaPassthrough = Omit<
 >;
 
 export interface AutoTextareaProps extends AutoTextareaPassthrough {
-  className: string;
+  /** Optional — a bare AutoTextarea IS the canonical field (textareaCls,
+   *  lib/field-tokens.ts). During the FS-2..FS-8 migration window a passed
+   *  className fully replaces the base (no class races on legacy callers);
+   *  the end state is bare or non-conflicting extension. */
+  className?: string;
   /** Inline styles. NOTE: `minHeight` / `maxHeight` / `height` are NOT supported
    *  here — the underlying library owns element height and throws at runtime if
    *  they appear in `style`. Use `minRows` / `maxRows` for size control. */
@@ -45,6 +56,11 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
    *  Macros resolve harmlessly at chat time, so the picker is on everywhere;
    *  surfaces where `{{` is literal (rare) can opt out. */
   macroAutocomplete?: boolean;
+  /** Mono variant for opaque technical content (regex patterns, DSL,
+   *  template sequences) — composes the canon base with `monoMod`. The mono
+   *  style NEVER carries its own size (the `text-xs` mono of the retired
+   *  build tokens is dead — see lib/field-tokens.ts). */
+  mono?: boolean;
 }
 
 /** The native `value` setter on HTMLTextAreaElement, used to programmatically
@@ -90,6 +106,7 @@ const textareaValueSetter = typeof window === "undefined"
  */
 export function AutoTextarea({
   className,
+  mono,
   style,
   disabled,
   placeholder,
@@ -271,7 +288,7 @@ export function AutoTextarea({
         {...rest}
         {...(register ? { name: register.name } : {})}
         ref={setRef}
-        className={className}
+        className={className ?? (mono ? cn(textareaCls, monoMod) : textareaCls)}
         style={style as TextareaAutosizeProps["style"]}
         disabled={disabled}
         placeholder={placeholder}
