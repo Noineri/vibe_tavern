@@ -11,10 +11,19 @@
  */
 import type { CharacterAsset } from "@vibe-tavern/domain";
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { appendTokenQuery } from "../lib/mobile-token.js";
 
-/** Absolute serve URL for a gallery image (`/api/characters/:id/assets/:rowId`). */
+/** Absolute serve URL for a gallery image (`/api/characters/:id/assets/:rowId`).
+ *
+ * Token-appended: unlike legacy flat `/api/assets/*` reads (public by design so
+ * `<img>` works), these folder-resident routes go through the mobile/LAN auth
+ * gate, and an `<img>` cannot send an Authorization header — the same reason
+ * `resolveEntityAvatarUrl` wraps its URLs. Without the token every gallery
+ * image 401s on mobile (loopback desktop is exempt and kept working). */
 export function serveCharacterAssetUrl(characterId: string, rowId: string): string {
-  return `${getGatewayBaseUrl()}/api/characters/${characterId}/assets/${rowId}`;
+  return appendTokenQuery(
+    `${getGatewayBaseUrl()}/api/characters/${characterId}/assets/${rowId}`,
+  );
 }
 
 // ─── internal fetch helpers ─────────────────────────────────────────────
