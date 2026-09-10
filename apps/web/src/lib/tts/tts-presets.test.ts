@@ -11,11 +11,11 @@ import {
 } from "./tts-presets.js";
 
 describe("tts-presets", () => {
-  test("has exactly 17 entries with unique ids", () => {
-    expect(TTS_PRESETS.length).toBe(17);
+  test("has exactly 19 entries with unique ids", () => {
+    expect(TTS_PRESETS.length).toBe(19);
     const ids = TTS_PRESETS.map((p) => p.id);
-    expect(new Set(ids).size).toBe(17);
-    expect(ids).toEqual(["openai", "openrouter", "groq", "siliconflow", "nanogpt", "electronhub", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud"]);
+    expect(new Set(ids).size).toBe(19);
+    expect(ids).toEqual(["openai", "openrouter", "groq", "siliconflow", "nanogpt", "electronhub", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud", "xai", "mistral"]);
   });
 
   test("every openai-compat entry has a baseUrl", () => {
@@ -48,7 +48,7 @@ describe("tts-presets", () => {
     }
   });
 
-  test("group split mirrors the LLM-tab taxonomy (SPE-8): 6 cloud transports + 11 native wires", () => {
+  test("group split mirrors the LLM-tab taxonomy (SPE-8): 6 cloud transports + 13 native wires", () => {
     // Cloud = the OpenAI-compatible transport rows; native = own-wire
     // backends (the group the level-1 segment renders).
     expect(getTtsPresetGroup("openai")).toBe("cloud");
@@ -63,7 +63,7 @@ describe("tts-presets", () => {
     expect(getPresetGroup("unknown")).toBeNull();
 
     const visible = getVisibleTtsPresets();
-    expect(visible.length).toBe(17);
+    expect(visible.length).toBe(19);
     expect(visible.filter((p) => p.group === "cloud").map((p) => p.id)).toEqual([
       "openai",
       "openrouter",
@@ -72,15 +72,15 @@ describe("tts-presets", () => {
       "nanogpt",
       "electronhub",
     ]);
-    expect(visible.filter((p) => p.group === "native").length).toBe(11);
+    expect(visible.filter((p) => p.group === "native").length).toBe(13);
     // Native rows ride their own backend slugs — never openai-compat.
     for (const p of visible.filter((p) => p.group === "native")) {
       expect(p.backend).not.toBe("openai-compat");
     }
 
     const visibleWithFlag = getVisibleTtsPresets(true);
-    expect(visibleWithFlag.length).toBe(17);
-    expect(getVisibleProviderPresets(false).length).toBe(17);
+    expect(visibleWithFlag.length).toBe(19);
+    expect(getVisibleProviderPresets(false).length).toBe(19);
 
     const groups = getVisibleTtsPresetGroups();
     expect(groups.map((g) => g.id)).toEqual(["cloud", "native"]);
