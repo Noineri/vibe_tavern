@@ -25,7 +25,7 @@
  * sizes via scrollHeight, irrelevant to the logic under test).
  */
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, KeyboardEvent } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -68,8 +68,8 @@ mock.module("../../../app-client.js", () => ({
 // is 0 and irrelevant to the logic under test, so stub it to a plain textarea.
 mock.module("../../shared/auto-textarea.js", () => ({
 	...realAutoTextarea,
-	AutoTextarea: ({ value, onChange, readOnly }: { value?: string; onChange?: (e: ChangeEvent<HTMLTextAreaElement>) => void; readOnly?: boolean }) => (
-		<textarea data-testid="auto-textarea" value={value} onChange={onChange} readOnly={readOnly} />
+	AutoTextarea: ({ value, onChange, readOnly, placeholder, className, onKeyDown }: { value?: string; onChange?: (e: ChangeEvent<HTMLTextAreaElement>) => void; readOnly?: boolean; placeholder?: string; className?: string; onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void }) => (
+		<textarea data-testid="auto-textarea" value={value} onChange={onChange} readOnly={readOnly} placeholder={placeholder} className={className} onKeyDown={onKeyDown} />
 	),
 }));
 

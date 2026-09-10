@@ -14,6 +14,7 @@ import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
+import { textareaCls, monoMod } from "../../../lib/field-tokens.js";
 import { useT } from "../../../i18n/context.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
@@ -399,7 +400,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
               <div className="mb-3 text-[13px] text-t2">{t("script_import_paste")}</div>
               <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
-                <AutoTextarea className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent" style={{}} maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
+                <AutoTextarea className={cn(textareaCls, monoMod, "leading-[1.6]")} maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
               </MobileExpandTextarea>
               {importCode.trim() && (
                 <div className="mt-2 text-[11px] text-accent-t">

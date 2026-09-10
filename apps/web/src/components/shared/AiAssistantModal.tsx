@@ -6,6 +6,7 @@ import { Ic } from "./icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "./MobileExpandTextarea.js";
 import { AutoTextarea } from "./auto-textarea.js";
+import { lblCls, textareaCls, monoMod } from "../../lib/field-tokens.js";
 import { DropdownSelect } from "./DropdownSelect.js";
 import { Checkbox } from "./Checkbox.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "./LinkBindingPopover.js";
@@ -534,10 +535,10 @@ export function AiAssistantModal({
 
                   {/* Paste area */}
                   <div style={{ marginBottom: 16 }}>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("import_md_paste_label")}</label>
+                    <label className={lblCls}>{t("import_md_paste_label")}</label>
                     <MobileExpandTextarea value={mdContent} onChange={setMdContent} label={t("import_md_paste_label")}>
                       <AutoTextarea
-                        className="w-full rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-mono text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none"
+                        className={cn(textareaCls, monoMod)}
                         maxRows={15}
                         minRows={6}
                         placeholder={t("import_md_paste_placeholder")}
@@ -690,9 +691,9 @@ export function AiAssistantModal({
                   </div>
 
                   <div style={{ marginBottom: 16 }}>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t(promptLabelKey)}</label>
+                    <label className={lblCls}>{t(promptLabelKey)}</label>
                     <MobileExpandTextarea value={prompt} onChange={setPrompt} label={t("script_ai_helper")}>
-                      <AutoTextarea className="w-full rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" maxRows={15} minRows={5} placeholder={t(promptPlaceholderKey)} value={prompt} onChange={e => setPrompt(e.target.value)} />
+                      <AutoTextarea maxRows={15} minRows={5} placeholder={t(promptPlaceholderKey)} value={prompt} onChange={e => setPrompt(e.target.value)} />
                     </MobileExpandTextarea>
                     <div className="mt-1 flex items-center justify-between gap-3">
                       <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t(promptHintKey)}</div>

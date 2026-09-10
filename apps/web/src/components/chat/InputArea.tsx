@@ -5,6 +5,8 @@ import { ToolbarSelect } from "../shared/ToolbarSelect.js";
 import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { cn } from "../../lib/cn.js";
+import { composerCls } from "../../lib/field-tokens.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { usePerSendPrefillStore } from "../../stores/per-send-prefill-store.js";
 
@@ -122,7 +124,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               chip row — owner design 2026-09-09). */}
 
           <AutoTextarea
-            className="w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
+            className={cn(composerCls, "w-full !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
             maxRows={12}
             minRows={3}
             placeholder={t("placeholder")}

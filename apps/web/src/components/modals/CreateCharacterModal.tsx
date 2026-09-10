@@ -279,10 +279,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                   }}
                 >
                   <AutoTextarea
-                    className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-                    style={{}}
-                    maxRows={20}
                     minRows={6}
+                    maxRows={20}
                     value={alternateGreetings[altGreetIdx] || ''}
                     onChange={e => {
                       const next = [...alternateGreetings];

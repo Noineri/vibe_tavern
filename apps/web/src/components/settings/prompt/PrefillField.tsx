@@ -1,6 +1,8 @@
 import { useT } from "../../../i18n/context.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { cn } from "../../../lib/cn.js";
+import { lblCls, textareaCls } from "../../../lib/field-tokens.js";
 
 interface PrefillFieldProps {
   prefill: string;
@@ -9,14 +11,12 @@ interface PrefillFieldProps {
   prefillSupported?: boolean;
 }
 
-const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none disabled:opacity-60";
-
 export function PrefillField({ prefill, onUpdate, disabled, prefillSupported }: PrefillFieldProps) {
   const { t } = useT();
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
-        <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+        <label className={cn(lblCls, "!mb-0")}>
           {t("prefill_assistant")}
         </label>
         {prefillSupported && (
@@ -30,7 +30,7 @@ export function PrefillField({ prefill, onUpdate, disabled, prefillSupported }: 
       </div>
       <MobileExpandTextarea value={prefill} onChange={onUpdate} label={t("prefill_assistant")}>
         <AutoTextarea
-          className={textareaCls + " px-[13px] py-[9px]"}
+          className={cn(textareaCls, "disabled:opacity-60")}
           maxRows={15}
           minRows={3}
           value={prefill}

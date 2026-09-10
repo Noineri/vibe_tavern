@@ -55,6 +55,7 @@ import { useAiAssistantRunner } from "../shared/ai-assistant/use-ai-assistant-ru
 import { useDebouncedTokenCount } from "../shared/ai-assistant/use-debounced-token-count.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { useMessageAiEditorStore, type MessageAiEditorMode } from "../../stores/message-ai-editor-store.js";
@@ -774,7 +775,7 @@ export function MessageAiEditorModal() {
                 </div>
               ) : (
                 <div className="mb-4">
-                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
+                  <label className={lblCls}>
                     {tDynamic("message_ai_editor_instruction_label")}
                   </label>
                   <MobileExpandTextarea
@@ -783,7 +784,6 @@ export function MessageAiEditorModal() {
                     label={tDynamic("message_ai_editor_instruction_label")}
                   >
                     <AutoTextarea
-                      className="w-full resize-none rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent"
                       maxRows={12}
                       minRows={4}
                       placeholder={tDynamic("message_ai_editor_instruction_placeholder")}

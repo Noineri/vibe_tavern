@@ -1,6 +1,7 @@
 import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
+import { textareaCls } from "../../lib/field-tokens.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
@@ -396,8 +397,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         label={t("edit")}
       >
         <AutoTextarea
-          className="w-full resize-none overflow-y-auto rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
-          style={{}}
+          className={cn(textareaCls, "!border-accent !px-3.5 !py-3 !font-body !text-[length:var(--mfs)] !text-msg-t1 leading-[1.65]")}
           minRows={7}
           value={editingDraft}
           onChange={e => useChatStore.getState().setEditingDraft(e.target.value)}
