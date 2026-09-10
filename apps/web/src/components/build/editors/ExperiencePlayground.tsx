@@ -54,7 +54,8 @@ import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
+import { TextInput } from "../../shared/text-input.js";
+import { lblCls, textareaCls, monoMod } from "../../../lib/field-tokens.js";
 import { cn } from "../../../lib/cn.js";
 import { parseOptionalJsonDiagnosed } from "../../../lib/json-parse-diagnostic.js";
 import { useT } from "../../../i18n/context.js";
@@ -1457,7 +1458,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   // (no declared fields / non-object JSON — the pre-LOBBY-A fallback).
   const settingsJsonTextarea = (
     <AutoTextarea
-      className={cn(monoCls, "mt-1.5 min-h-[34px]")}
+      className={cn(textareaCls, monoMod, "mt-1.5 min-h-[34px]")}
       value={settingsJson}
       onChange={(e) => {
         setSettingsTouched(true);
@@ -1567,8 +1568,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   >
                     {seatInitial(seat)}
                   </div>
-                  <input
-                    className={cn(inputCls, "min-w-[7rem] flex-1")}
+                  <TextInput
+                    className="min-w-[7rem] flex-1"
                     value={seat.label}
                     placeholder={t("experience_setup_participant_name_placeholder")}
                     aria-label={t("experience_playground_participant_name")}
@@ -1602,9 +1603,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-10">
                   {editingIdIndex === index ? (
-                    <input
+                    <TextInput
                       autoFocus
-                      className={cn(inputCls, "w-32")}
+                      className="w-32"
                       value={seat.id}
                       aria-label={t("experience_playground_participant_id")}
                       onChange={(e) => updateSeatId(index, e.target.value)}
@@ -1706,8 +1707,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
                 </span>
               </div>
-              <input
-                className={cn(inputCls, "mt-1.5 w-full h-[34px]", randomStart && "opacity-60")}
+              <TextInput
+                className={cn("mt-1.5 w-full !h-[34px]", randomStart && "opacity-60")}
                 value={randomStart ? lastUsedSeed : seed}
                 placeholder={t(randomStart ? "experience_playground_seed_random_on" : "experience_tester_seed_placeholder")}
                 disabled={randomStart}
@@ -2158,8 +2159,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
 
                     {/* Custom action form (type/participant/payload/requestId/expectedRevision) */}
                     <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        className={cn(inputCls, "w-40")}
+                      <TextInput
+                        className="w-40"
                         value={actionType}
                         placeholder={t("experience_tester_action_type_placeholder")}
                         onChange={(e) => setActionType(e.target.value)}
@@ -2174,14 +2175,14 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                           onChange={setActionParticipantId}
                         />
                       </div>
-                      <input
-                        className={cn(inputCls, "w-32")}
+                      <TextInput
+                        className="w-32"
                         value={requestId}
                         aria-label={t("experience_tester_action_request_id")}
                         onChange={(e) => setRequestId(e.target.value)}
                       />
-                      <input
-                        className={cn(inputCls, "w-24")}
+                      <TextInput
+                        className="w-24"
                         value={expectedRevision}
                         aria-label={t("experience_tester_action_expected_revision")}
                         onChange={(e) => setExpectedRevision(e.target.value)}
@@ -2197,7 +2198,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                     </div>
                     <div>
                       <AutoTextarea
-                        className={monoCls}
+                        mono
                         value={payloadJson}
                         onChange={(e) => setPayloadJson(e.target.value)}
                         placeholder={t("experience_tester_action_payload_label")}

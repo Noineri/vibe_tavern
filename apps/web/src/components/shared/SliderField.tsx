@@ -1,6 +1,6 @@
 import { cn } from "../../lib/cn.js";
 import { NumberInput } from "./NumberInput.js";
-import { lblCls } from "../build/fields/field-styles.js";
+import { lblCls } from "../../lib/field-tokens.js";
 
 export interface SliderFieldProps {
   label: string;

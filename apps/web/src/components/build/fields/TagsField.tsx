@@ -15,8 +15,8 @@ import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 
 import { useT } from "../../../i18n/context.js";
-import { useIsMobile } from "../../../hooks/use-mobile.js";
-import { inputCls, lblCls } from "./field-styles.js";
+import { TextInput } from "../../shared/text-input.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 
 export interface TagsFieldProps {
   /** The react-hook-form instance (shared with the parent form). */
@@ -30,8 +30,6 @@ export function TagsField({ form, isSaving }: TagsFieldProps) {
   const { t } = useT();
   const { watch, setValue } = form;
   const [tagInput, setTagInput] = useState("");
-  const isMobile = useIsMobile();
-  const mInput = isMobile ? " text-base" : "";
   const tags = watch("tags") || [];
 
   function toggleTag(tag: string) {
@@ -50,9 +48,7 @@ export function TagsField({ form, isSaving }: TagsFieldProps) {
   return (
     <div>
       <label className={lblCls}>{t("char_tags_label")}</label>
-      <input
-        type="text"
-        className={inputCls + mInput}
+      <TextInput
         value={tagInput}
         disabled={isSaving}
         onChange={(e) => setTagInput(e.target.value)}

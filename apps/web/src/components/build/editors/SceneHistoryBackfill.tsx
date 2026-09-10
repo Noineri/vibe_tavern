@@ -40,7 +40,7 @@ import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
-import { lblCls } from "../fields/field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { useT } from "../../../i18n/context.js";
 import { SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
 

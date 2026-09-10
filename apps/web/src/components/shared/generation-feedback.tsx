@@ -340,7 +340,7 @@ export function GenerationSurface({
 	const resolvedHasExisting = hasExistingValue ?? value.trim().length > 0;
 	const childDisabled = disabled || generating;
 	const controlClassName = cn(
-		"transition-[border-color,box-shadow] duration-200",
+		"!transition-[border-color,box-shadow] !duration-200",
 		justArrived && "border-accent/60 shadow-[0_0_0_2px_var(--accent-dim)]",
 	);
 

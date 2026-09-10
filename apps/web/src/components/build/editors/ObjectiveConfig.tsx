@@ -8,7 +8,8 @@ import { EmptyState } from "../../shared/empty-state.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
-import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
+import { TextInput } from "../../shared/text-input.js";
+import { lblCls, textareaCls } from "../../../lib/field-tokens.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
@@ -136,7 +137,6 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
         <div>
           <label className={lblCls}>{t("obj_description_label")}</label>
           <AutoTextarea
-            className={inputCls}
             defaultValue={state.objectiveDescription}
             placeholder={t("obj_description_placeholder")}
             minRows={2}
@@ -244,7 +244,7 @@ function LongTermGoalEditor({ chatId, goal }: { chatId: ChatId; goal: ObjectiveL
         {goal ? <StatusDot status={goal.status} onClick={() => void cycleStatus()} title={t("obj_cycle_status")} /> : <span className="mt-1 text-accent"><Ic.target /></span>}
         <AutoTextarea
           key={goal?.description ?? "empty-long-term"}
-          className={inputCls + " flex-1"}
+          className={cn(textareaCls, "flex-1")}
           defaultValue={goal?.description ?? ""}
           placeholder={t("obj_long_term_placeholder")}
           minRows={2}
@@ -289,8 +289,8 @@ function ShortTermGoals({ chatId, goals }: { chatId: ChatId; goals: ObjectiveSho
         </ul>
       )}
       <div className="mt-2 flex gap-1.5">
-        <input
-          className={inputCls + " flex-1"}
+        <TextInput
+          className="flex-1"
           value={draft}
           placeholder={t("obj_add_short_placeholder")}
           onChange={(e) => setDraft(e.target.value)}
@@ -350,10 +350,10 @@ function ShortTermGoalRow({ chatId, goal }: { chatId: ChatId; goal: ObjectiveSho
     <li className="group flex items-center gap-2 rounded-md border border-border bg-s2 px-2 py-1.5">
       <StatusDot status={goal.status} onClick={() => void cycleStatus()} title={t("obj_cycle_status")} />
       {editing ? (
-        <input
+        <TextInput
           autoFocus
           defaultValue={goal.description}
-          className={inputCls + " flex-1"}
+          className="flex-1"
           onBlur={(e) => void saveDescription(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(false); }}
         />
@@ -439,8 +439,8 @@ function TaskRoute({ chatId, tasks }: { chatId: ChatId; tasks: ObjectiveTask[] }
         </ol>
       )}
       <div className="mt-2 flex gap-1.5">
-        <input
-          className={inputCls + " flex-1"}
+        <TextInput
+          className="flex-1"
           value={draft}
           placeholder={t("obj_add_task_placeholder")}
           onChange={(e) => setDraft(e.target.value)}
@@ -499,10 +499,10 @@ function TaskRow({ chatId, index, task, taskCount, onMove }: { chatId: ChatId; i
       <span className="w-5 shrink-0 text-center font-mono text-[10px] text-t4">{index + 1}</span>
       <StatusDot status={task.status} onClick={() => void cycleStatus()} title={t("obj_cycle_status")} />
       {editing ? (
-        <input
+        <TextInput
           autoFocus
           defaultValue={task.description}
-          className={inputCls + " flex-1"}
+          className="flex-1"
           onBlur={(e) => void saveDescription(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === "Escape") setEditing(false); }}
         />
@@ -687,33 +687,30 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
           <label className={lblCls}>{t("obj_frequency_label")}</label>
-          <input
+          <TextInput
             type="number"
             min={0}
             defaultValue={state.autoCheckFrequency}
-            className={inputCls}
             onBlur={(e) => saveNumber("autoCheckFrequency", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_frequency_hint")}</p>
         </div>
         <div>
           <label className={lblCls}>{t("obj_context_window_label")}</label>
-          <input
+          <TextInput
             type="number"
             min={1}
             defaultValue={state.contextWindow}
-            className={inputCls}
             onBlur={(e) => saveNumber("contextWindow", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_context_window_hint")}</p>
         </div>
         <div>
           <label className={lblCls}>{t("obj_depth_label")}</label>
-          <input
+          <TextInput
             type="number"
             min={1}
             defaultValue={state.injectionDepth}
-            className={inputCls}
             onBlur={(e) => saveNumber("injectionDepth", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_depth_hint")}</p>
@@ -746,7 +743,7 @@ function PromptField({ label, hint, defaultValue, onSave }: { label: string; hin
     <div>
       <label className={lblCls}>{label}</label>
       <AutoTextarea
-        className={monoCls}
+        mono
         defaultValue={defaultValue}
         placeholder={hint}
         minRows={2}

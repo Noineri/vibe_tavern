@@ -3,8 +3,7 @@ import { NumberInput } from "../NumberInput.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { useT } from "../../../i18n/context.js";
-
-const lblCls = "mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
+import { lblCls } from "../../../lib/field-tokens.js";
 
 /** SUM-5: the shared optional sampler-override shape for secondary-model
  *  contexts (summary / message-editor / ai-assistant). Every slot is

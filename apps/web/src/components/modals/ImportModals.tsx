@@ -9,7 +9,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { loadPromptPresetsAction } from "../../stores/api-actions/preset-actions.js";
-import { inputCls } from "../build/fields/field-styles.js";
+import { TextInput } from "../shared/text-input.js";
 import {
   openNativeDialog,
   scanStDirectory,
@@ -210,9 +210,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
 
       {/* Path row: editable text input + native-picker Browse button. */}
       <div className="mb-2 flex gap-2">
-        <input
-          type="text"
-          className={inputCls + " h-[38px] px-3 font-ui text-[calc(var(--ui-fs)-2px)]"}
+        <TextInput
           placeholder={t("st_path_placeholder")}
           value={path}
           onChange={(e) => setPath(e.target.value)}

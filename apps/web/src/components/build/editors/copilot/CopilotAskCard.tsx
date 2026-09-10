@@ -29,8 +29,8 @@ import { useState } from "react";
 import type { CopilotAskState } from "../../../../stores/experience-copilot-turn-store.js";
 import type { CopilotAskAnswerInput } from "../../../../api/experience-copilot-api.js";
 import { cn } from "../../../../lib/cn.js";
-import { inputCls } from "../../fields/field-styles.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
+import { textareaCls } from "../../../../lib/field-tokens.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { Ic } from "../../../shared/icons.js";
 import { useT } from "../../../../i18n/context.js";
@@ -120,7 +120,7 @@ export function CopilotAskCard({ ask, interactive, onSubmit }: CopilotAskCardPro
           )}
           <div className="flex items-end gap-1.5">
             <AutoTextarea
-              className={cn(inputCls, "text-[12px]")}
+              className={cn(textareaCls, "!text-[12px]")}
               minRows={1}
               maxRows={4}
               macroAutocomplete={false}

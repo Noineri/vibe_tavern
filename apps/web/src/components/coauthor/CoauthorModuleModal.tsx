@@ -3,8 +3,9 @@ import { MasterDetailModal, MasterDetailMobileDrillDown } from "../shared/Master
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { EmptyState } from "../shared/empty-state.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { TextInput } from "../shared/text-input.js";
 import { Icons } from "../shared/icons.js";
-import { inputCls, monoCls, lblCls } from "../build/fields/field-styles.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
@@ -634,10 +635,8 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 		<div className="flex flex-col gap-4" data-testid="module-editor">
 			<div className="flex flex-col">
 				<label className={lblCls}>{t("coauthor.module.name_label")}</label>
-				<input
-					type="text"
+				<TextInput
 					data-testid="module-name-input"
-					className={inputCls}
 					placeholder={t("coauthor.module.name_placeholder")}
 					value={draft.name}
 					onChange={(e) => onUpdate("name", e.target.value)}
@@ -647,7 +646,6 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 			<div className="flex flex-col">
 				<label className={lblCls}>{t("coauthor.module.description_label")}</label>
 				<AutoTextarea
-					className={inputCls}
 					minRows={2}
 					placeholder={t("coauthor.module.description_placeholder")}
 					value={draft.description}
@@ -658,7 +656,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 			<div className="flex flex-col">
 				<label className={lblCls}>{t("coauthor.module.base_prompt")}</label>
 				<AutoTextarea
-					className={monoCls}
+					mono
 					minRows={6}
 					value={draft.basePrompt}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}
@@ -669,7 +667,6 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 			<div className="flex flex-col">
 				<label className={lblCls}>{t("coauthor.module.opening_message_label")}</label>
 				<AutoTextarea
-					className={inputCls}
 					minRows={3}
 					placeholder={t("coauthor.module.opening_message_placeholder")}
 					value={draft.openingMessage}

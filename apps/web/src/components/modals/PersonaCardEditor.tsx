@@ -5,6 +5,7 @@ import { cn } from "../../lib/cn.js";
 import { Ic } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { TextInput } from "../shared/text-input.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { BoundResourcesField } from "../shared/BoundResourcesField.js";
@@ -143,8 +144,7 @@ export function PersonaCardEditor({
             avatar); D-3: bound lorebooks sit directly under this row — the
             character-card order (name → resources → description). */}
         <div className={cn("flex-1 min-w-0", isMobile && "w-full")}>
-          <input
-            className="w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none focus:border-accent"
+          <TextInput
             value={editName}
             onChange={(e) => form.setValue("name", e.target.value, { shouldDirty: true })}
             placeholder={t("persona_name_placeholder")}
@@ -170,8 +170,7 @@ export function PersonaCardEditor({
               {PRONOUN_FORM_FIELDS.map((f) => (
                 <label key={f.key} className="block">
                   <span className="mb-0.5 block font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{f.label}</span>
-                  <input
-                    className="w-full rounded border border-border bg-s2 py-1.5 px-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none focus:border-accent"
+                  <TextInput
                     value={f.value}
                     onChange={(e) => form.setValue(f.key, e.target.value, { shouldDirty: true })}
                     placeholder={f.placeholder}
@@ -200,8 +199,6 @@ export function PersonaCardEditor({
           label={t("persona_desc_placeholder")}
         >
           <AutoTextarea
-            className="w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none resize-none focus:border-accent"
-            style={{}}
             minRows={3}
             value={editDescription}
             onChange={(e) => form.setValue("description", e.target.value, { shouldDirty: true })}

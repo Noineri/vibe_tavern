@@ -13,14 +13,14 @@
  * (the caller owns the error UX), leaving the prior valid record untouched.
  *
  * Reuses shared primitives: `Toggle`, `NumberInput`, `AutoTextarea` and the
- * `inputCls`/`lblCls` field styles. No bespoke input chrome — see AGENTS.md §9.
+ * canon field tokens (`lib/field-tokens.ts`). No bespoke input chrome — see AGENTS.md §9.
  */
 import { useState, type ReactNode } from "react";
 import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import { Toggle } from "../../shared/Toggle.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
-import { inputCls, lblCls } from "../../build/fields/field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import type { TFunc } from "../../../i18n/context.js";
 
 export function SceneEditorBody({ schema, initial, onSave, onCancel, t }: {
@@ -115,7 +115,6 @@ function LeafInput({ node, value, onChange }: { node: Extract<SceneTrackerSchema
       maxLength={4000}
       onChange={(e) => onChange(e.target.value)}
       minRows={1}
-      className={inputCls}
     />
   );
 }

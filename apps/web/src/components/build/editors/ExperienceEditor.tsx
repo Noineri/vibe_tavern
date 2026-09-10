@@ -47,7 +47,7 @@ import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
-import { inputCls } from "../fields/field-styles.js";
+import { TextInput } from "../../shared/text-input.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import {
@@ -163,8 +163,8 @@ function ExperienceManagementControls({
   const { t } = useT();
   return (
     <>
-      <input
-        className={cn(inputCls, "min-w-0 max-md:w-auto flex-1 text-[15px] font-semibold")}
+      <TextInput
+        className="min-w-0 max-md:w-auto flex-1 !text-[15px] font-semibold"
         type="text"
         value={name}
         onChange={(e) => onNameChange(e.target.value)}
@@ -1142,8 +1142,7 @@ export function ExperienceEditor() {
                 </div>
               )}
               <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
-              <input
-                className={inputCls}
+              <TextInput
                 value={activeScript.description}
                 onChange={(e) => updateScriptDraft({ description: e.target.value })}
                 placeholder={t("script_desc_placeholder")}
@@ -1313,8 +1312,8 @@ export function ExperienceEditor() {
               {activeVisual ? (
                 <>
                   <div className="flex max-md:flex-wrap items-center gap-2">
-                    <input
-                      className={cn(inputCls, "min-w-0 flex-1")}
+                    <TextInput
+                      className="min-w-0 flex-1"
                       type="text"
                       value={activeVisual.name}
                       onChange={(e) => updateVisualDraft({ name: e.target.value })}

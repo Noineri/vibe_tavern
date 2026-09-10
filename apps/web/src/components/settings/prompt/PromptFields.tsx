@@ -8,6 +8,9 @@ import { PerSendPrefillToggle } from "./PerSendPrefillToggle.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
+import { lblCls, textareaCls } from "../../../lib/field-tokens.js";
+
+type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "authorsNoteRole">;
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -45,12 +48,6 @@ interface PromptFieldsProps {
   hideChatPrompts?: boolean;
 }
 
-const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none overflow-hidden disabled:opacity-60";
-const labelCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
-const labelAccentCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-accent";
-
-type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "authorsNoteRole">;
-
 function FieldSection({ label, labelClassName, token, children }: {
   label: string;
   labelClassName?: string;
@@ -59,7 +56,7 @@ function FieldSection({ label, labelClassName, token, children }: {
 }) {
   return (
     <div>
-      <label className={labelClassName || labelCls}>{label}</label>
+      <label className={labelClassName || lblCls}>{label}</label>
       {children}
       <TokenCounter text={token} />
     </div>
@@ -73,7 +70,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
   const ta = useCallback((key: TextDraftKey, placeholder: string, minRows = 5, labelKey?: string) => (
     <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? tDynamic(labelKey) : undefined}>
     <AutoTextarea
-      className={cn(textareaCls, "px-[13px] py-[9px]")}
+      className={cn(textareaCls, "disabled:opacity-60")}
       minRows={minRows}
       value={String(draft?.[key] ?? "")}
       placeholder={placeholder}
@@ -89,7 +86,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
         <>
           <SectionHeader title={t("prompt_section_chat")} />
 
-          <FieldSection label={t("system_prompt")} labelClassName={labelAccentCls} token={draft?.system ?? ""}>
+          <FieldSection label={t("system_prompt")} labelClassName={cn(lblCls, "!text-accent")} token={draft?.system ?? ""}>
             {ta("system", t("system_prompt_placeholder"), 12)}
           </FieldSection>
 
@@ -119,7 +116,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
 
           <div>
             <div className="mb-[7px] flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
+              <label className={lblCls + " !mb-0"}>{t("authors_note_label")}</label>
 
               <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4">
                 <div className="flex items-center gap-2">

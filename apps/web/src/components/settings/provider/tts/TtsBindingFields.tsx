@@ -21,7 +21,7 @@ import {
   type LinkBindingRecord,
   type LinkTarget,
 } from "../../../shared/LinkBindingPopover.js";
-import { lblCls } from "../../../build/fields/field-styles.js";
+import { lblCls } from "../../../../lib/field-tokens.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";

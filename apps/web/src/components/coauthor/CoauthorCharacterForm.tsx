@@ -52,7 +52,7 @@ import { buildLineDiff } from "../shared/TextDiffPreview.js";
 import { HunkSelectionDiff } from "./HunkSelectionDiff.js";
 import { groupHunks, mergeSelectedBody, allHunkIds } from "../../lib/coauthor-hunk-merge.js";
 
-import { lblCls } from "../build/fields/field-styles.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { characterDefaults } from "../../lib/character-draft.js";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/coauthor-apply-aggregate.js";
 import { selectLoreBundle, allLorebookIds, allEntryIds } from "../../lib/lore-selection.js";
