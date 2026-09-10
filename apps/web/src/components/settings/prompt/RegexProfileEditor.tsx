@@ -3,7 +3,8 @@ import { useT } from "../../../i18n/context.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
-import { inputCls, lblCls } from "../../build/fields/field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
+import { TextInput } from "../../shared/text-input.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { getRegexProfileLinks, setRegexProfileLinks } from "../../../api/regex-api.js";
@@ -139,10 +140,8 @@ export function RegexProfileEditor({
           <label className={lblCls} htmlFor="regex-profile-name">
             {t("promptManager.regex.fieldName")}
           </label>
-          <input
+          <TextInput
             id="regex-profile-name"
-            type="text"
-            className={inputCls}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={commitName}
