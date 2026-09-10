@@ -18,7 +18,8 @@ import { Toggle } from "../../shared/Toggle.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
-import { lblCls, monoCls } from "../../build/fields/field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
+import { TextInput } from "../../shared/text-input.js";
 import { buildFormatPreviewSegments } from "../../../lib/format-preview.js";
 import {
 	createFormatTemplate,
@@ -89,7 +90,9 @@ function sequencesDiverge(a: GenerationFormat, b: GenerationFormat): boolean {
 }
 
 /** Single-line monospace field for one sequence — sequences are template
- *  strings (`<|im_start|>user`, `\n`, …), so they render mono. */
+ *  strings (`<|im_start|>user`, `\n`, …), so they render mono. Canonical
+ *  TextInput mono since FS-4 (owner: plain canonical inputs, grid desktop /
+ *  stacked mobile — no compact novelty for one usage). */
 function SequenceField(props: {
 	label: string;
 	hint?: string;
@@ -99,9 +102,8 @@ function SequenceField(props: {
 	return (
 		<div>
 			<label className={lblCls}>{props.label}</label>
-			<input
-				type="text"
-				className={cn(monoCls, "h-8 px-2")}
+			<TextInput
+				mono
 				value={props.value}
 				onChange={(e) => props.onChange(e.target.value)}
 				spellCheck={false}

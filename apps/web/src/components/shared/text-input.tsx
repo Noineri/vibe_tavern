@@ -31,11 +31,12 @@ export type TextInputProps = Omit<React.ComponentProps<"input">, "className"> & 
  * Read-only styling is automatic: passing the standard HTML `readOnly`
  * attribute appends `readonlyMod` (cursor + dimming), replacing the four
  * hand-smears the provider forms carried. */
-export function TextInput({ className, mono, register, ...rest }: TextInputProps) {
+export function TextInput({ className, mono, register, type = "text", ...rest }: TextInputProps) {
   return (
     <input
       {...rest}
       {...(register ?? {})}
+      type={type}
       className={cn(inputCls, mono && monoMod, rest.readOnly && readonlyMod, className)}
     />
   );
