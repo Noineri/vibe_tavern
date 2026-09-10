@@ -4,6 +4,8 @@ import type { ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { TextInput } from "../shared/text-input.js";
+import { lblCls, textareaCls } from "../../lib/field-tokens.js";
 import { MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
@@ -32,10 +34,6 @@ import {
   updateChatSummaryAction,
   updateMemorySettingsAction,
 } from "../../stores/api-actions/chat-actions.js";
-
-/* ─── shared styles ─── */
-const labelCls = "block font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3 mb-2";
-const inputCls = "rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[13px] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-50";
 
 /* ─── SUM-3b: sortable archive row ───
  * The drag affordance is a dedicated ≡ grip on the left (PresetList/
@@ -664,7 +662,7 @@ export function useSummaryTab({
     <>
       {/* ── Range ── */}
       <section>
-        <div className={labelCls}>{t("summary_range_label")}</div>
+        <div className={lblCls}>{t("summary_range_label")}</div>
         <div className="rounded-lg border border-border bg-input-bg p-4">
           <DualRangeSlider min={1} max={maxMessage} from={rangeFrom} to={rangeTo} disabled={generating} onChange={handleRangeChange} />
           <div className="flex items-center justify-between font-ui text-[11px] text-t4">
@@ -718,7 +716,7 @@ export function useSummaryTab({
       {/* ── Summary text ── */}
       <section className="mt-4">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <div className={cn(labelCls, "mb-0")}>{t("summary_text_label")}</div>
+          <div className={lblCls + " !mb-0"}>{t("summary_text_label")}</div>
           <div className="flex gap-2">
             {activeSummaryId && isMobile && (
               <button type="button"
@@ -740,17 +738,17 @@ export function useSummaryTab({
             </button>
           </div>
         </div>
-        <input
-          className={cn(inputCls, "mb-2 w-full")}
+        <TextInput
+          className="mb-2"
           value={draftLabel}
           onChange={(e) => { setDraftLabel(e.target.value); setDirty(true); }}
           placeholder={`T${rangeFrom}\u2013T${rangeTo}`}
         />
         <MobileExpandTextarea value={draftText} onChange={(v) => { setDraftText(v); setDirty(true); }} label={t("summary_text_label")}>
           <AutoTextarea
-            className={cn(inputCls, "min-h-[86px] w-full resize-y leading-relaxed")}
-            style={{}}
+            className={cn(textareaCls, "leading-relaxed")}
             maxRows={20}
+            minRows={3}
             value={draftText}
             onChange={(e) => { setDraftText(e.target.value); setDirty(true); }}
             placeholder={t("summary_placeholder_short")}
@@ -764,7 +762,7 @@ export function useSummaryTab({
 
       {/* ── Provider & Model ── */}
       <section className="mt-4">
-        <div className={labelCls}>{t("summary_provider_label")}</div>
+        <div className={lblCls}>{t("summary_provider_label")}</div>
         <label className="mb-3 flex items-center gap-2 font-ui text-[13px] text-t2">
           <Toggle checked={useChatModel} onChange={(v) => setUseChatModel(v)} />
           {t("summary_use_chat_model")}
@@ -910,7 +908,7 @@ export function useSummaryTab({
       {/* ── Messages in prompt (mobile: moved here from footer) ── */}
       {isMobile && (
         <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
-          <div className={labelCls}>{t("summary_messages_in_prompt")}</div>
+          <div className={lblCls}>{t("summary_messages_in_prompt")}</div>
           <div className="flex items-center gap-3">
             <input
               className="accent-accent flex-1"
