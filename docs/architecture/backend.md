@@ -459,6 +459,28 @@ The fallback is acceptable for context-budget accounting, but **not** for logit 
 
 ---
 
+## Outbound Provider Proxy
+
+Provider-bound HTTP traffic (AI SDK generation — streaming, non-streaming, Responses transport — plus adapter probes, model-list fetches, and test chats) routes through **one proxy-aware fetch factory**: `domain/providers/provider-fetch-factory.ts`. The precedence is implemented exactly once there; adapters and executors never re-implement it:
+
+- `direct` → no proxy, plain fetch (existing behavior preserved);
+- `proxy` → the provider's selected named proxy — **fail closed** if it is missing, malformed, or uses an unsupported scheme;
+- `inherit` (default) → the current global default proxy, or `direct` when no global default is configured.
+
+**Supported schemes:** `http://` and `https://` use Bun's native per-request `fetch(url, { proxy })`. `socks5://` uses a loopback HTTP bridge (`proxy-chain`, `domain/providers/socks-bridge.ts`) so Bun fetch stays the actual client — lazily created, cached by upstream configuration, closed on shutdown. Anything else fails closed.
+
+**SOCKS5 is HTTPS-only and redirect-proof:** a SOCKS5-backed fetch applied to an `http://` target fails closed before any DNS or network access, and automatic redirects are disabled (`redirect: "manual"`) so a provider's `Location: http://...` cannot escape the HTTPS-only guard. The raw 3xx is surfaced to the caller as a failed provider response; local HTTP providers remain usable with `direct`.
+
+**Secret handling:** proxy username/password live in separate DB columns, combined into the proxy URL only at request time, and never appear in errors or logs. Client DTOs expose `hasStoredPassword` only — the password is write-only.
+
+**Intentionally NOT proxied:** GitHub update checks (`server/updater.ts`) and the local API itself. Proxying covers outbound provider traffic only.
+
+**UI:** the Proxy Manager (Tweaks → Proxies, `MasterDetailModal` shell) manages named proxies (CRUD + write-only password + singleton global default); each provider profile carries a three-state selector (Use global default / Direct connection / named proxy) placed after the API key, and the global default selector lives in ProviderModal's stable footer.
+
+**Boundary tests:** `services/api/test/provider-proxy-traversal.test.ts` (deterministic canned proxies: HTTP, HTTPS with a test-only CA, and a maintained SOCKS5 fixture — traversal for both the provider gateway and the AI SDK, streaming, aborts, wrong-credential failure, direct bypass, redirect blocking).
+
+---
+
 ## AI Assistant
 
 A separate generation subsystem (`domain/ai-assistant/`) for the lightbulb-icon "assist" actions in the Build editor — generate a script, draft a lore entry, extract lore keys, impersonate a character, import a card from markdown. These are short, user-initiated, result-returning LLM calls distinct from the main chat generation path.
@@ -659,6 +681,32 @@ Fire-and-forget background task triggered after `appendAssistantReply()`:
 - Range capped at `lastMessagePosition - 1` (excludes last user message)
 
 The dedup-lock + error-boundary pattern used here is the `BackgroundTaskLocks` shared helper (`shared/background-task-locks.ts`). Any background LLM feature that subscribes to chat events and may fire on rapid successive triggers needs it: `runExclusive(key, task)` does an atomic check-and-acquire (no `await` between the `has` check and the `add`) so two concurrent triggers can't both start the same task. Each feature keeps its **own** `BackgroundTaskLocks` instance — an objective run and a summary run on the same chat+branch are independent keys and may proceed in parallel. This is the building block for every feature of this shape (summary, objective, tracker, badge, dream); the feature itself is then wrapped as a `FeatureModule` that subscribes on the EventBus (see [Feature Modules](#feature-modules--lifecycle) and [Adding a feature](../guides/adding-a-feature.md)).
+
+---
+
+## Request Origin Trust Boundary
+
+`server/request-origin-guard.ts` — a fail-closed browser-origin boundary wired before mobile authentication in `app-factory.ts`. It replaces the old global `cors({ origin: "*" })`, which allowed any website to read API responses (including `/api/bootstrap` chat data).
+
+**Default posture is same-origin:** the SPA and API share one origin, so no CORS grant is needed. The gate applies to `/api` and `/api/*`; static SPA HTML and assets are unrestricted.
+
+**Rules, in order:**
+
+1. **Host validation** (DNS-rebinding protection) — the Host/URL host must be loopback, a valid IP literal, or the configured external host; anything else is 403.
+2. **Fetch Metadata defense-in-depth** — `Sec-Fetch-Site: cross-site` is 403 unless the Origin is explicitly allowlisted (split-origin deployments are correctly labeled cross-site by browsers).
+3. **No `Origin` header** → non-browser client (curl, CLI, server-to-server); mobile-auth enforces the token boundary separately.
+4. **Same-origin** request → passes, no CORS headers needed.
+5. **Explicitly allowed** cross-origin (`VIBE_TAVERN_ALLOWED_ORIGINS`) → preflights answered directly (204 + allow headers); actual requests get CORS headers appended with `Vary: Origin`.
+6. Every other browser `Origin` → 403 at the boundary — not merely stripped of response headers.
+
+**Environment variables:**
+
+| Variable | Meaning |
+|---|---|
+| `VIBE_TAVERN_ALLOWED_ORIGINS` | Comma-separated exact origins for intentional split frontend/API deployments. Wildcards, credentials, paths, queries, fragments are rejected (silently skipped — fail-closed). |
+| `VIBE_TAVERN_EXTERNAL_HOST` | One external hostname admitted by Host validation (scheme/port stripped at parse). |
+
+**Boundary tests:** `services/api/test/request-origin-guard.test.ts` — same-origin desktop and LAN/mobile access works, loopback with a foreign Origin fails, arbitrary DNS-rebinding Host values fail, explicit split origins work, token-protected LAN behavior unchanged.
 
 ---
 
