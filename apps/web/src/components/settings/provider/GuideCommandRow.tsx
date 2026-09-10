@@ -1,6 +1,6 @@
 import { Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
-import { monoCls } from "../../build/fields/field-styles.js";
+import { codeQuoteCls } from "../../../lib/field-tokens.js";
 
 export interface GuideCommandRowProps {
   /** The command text (copyable, mono). */
@@ -60,7 +60,7 @@ export function GuideCommandRow({
       </button>
       <div
         className={cn(
-          monoCls + " min-w-0 flex-1 whitespace-pre-wrap break-all",
+          codeQuoteCls + " flex-1",
           checked && "opacity-50",
         )}
       >

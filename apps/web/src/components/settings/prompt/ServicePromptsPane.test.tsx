@@ -172,7 +172,7 @@ describe("ServicePromptsPane", () => {
 		});
 	});
 
-	test("Default detail: textareas disabled, duplicate in footer, no reset", async () => {
+	test("Default detail: values shown read-only, duplicate in footer, no reset", async () => {
 		const def = makeDefaultProfile();
 		listMock.mockResolvedValue({ profiles: [def], activeProfileId: null });
 		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
@@ -182,13 +182,16 @@ describe("ServicePromptsPane", () => {
 		await waitFor(() => expect(getDetailMock).toHaveBeenCalled());
 		const detail = getByTestId("detail");
 		await openAllFamilies(detail);
+		// FS-6: default texts render as codeQuoteCls displays — the boundary is
+		// "the default profile is read-only": zero editable textareas, and every
+		// field's default value is visible in the detail pane.
 		await waitFor(() => {
-			const tas = detail.querySelectorAll("textarea");
-			expect(tas.length).toBeGreaterThan(0);
-			for (const ta of Array.from(tas)) {
-				expect((ta as HTMLTextAreaElement).disabled).toBe(true);
-			}
+			expect(detail.querySelectorAll("textarea").length).toBe(0);
 		});
+		const resolved = makeResolved();
+		for (const key of SERVICE_PROMPT_FIELD_KEYS.slice(0, 3)) {
+			expect(detail.textContent).toContain(resolved[key].default.slice(0, 20));
+		}
 		const footer = getByTestId("footer");
 		expect(footer.textContent).toContain("promptManager.servicePrompts.duplicateButton");
 		expect(queryByText("promptManager.servicePrompts.reset")).toBeNull();
@@ -316,7 +319,9 @@ describe("ServicePromptsPane", () => {
 		await waitFor(() => expect(getDetailMock).toHaveBeenCalled());
 		const detail = getByTestId("detail");
 		await openAllFamilies(detail);
-		await waitFor(() => expect(detail.querySelectorAll("textarea").length).toBe(SERVICE_PROMPT_FIELD_KEYS.length));
+		// FS-6: default-profile fields render as codeQuote displays (max-h-40
+		// is the display block's scroll cap), not editable textareas.
+		await waitFor(() => expect(detail.querySelectorAll(".max-h-40").length).toBe(SERVICE_PROMPT_FIELD_KEYS.length));
 
 		rerender(<Harness active={false} />);
 		expect(getByTestId("master").textContent).toBe("");
@@ -327,7 +332,7 @@ describe("ServicePromptsPane", () => {
 		rerender(<Harness active={true} />);
 		const detail2 = getByTestId("detail");
 		await openAllFamilies(detail2);
-		await waitFor(() => expect(detail2.querySelectorAll("textarea").length).toBe(SERVICE_PROMPT_FIELD_KEYS.length));
+		await waitFor(() => expect(detail2.querySelectorAll(".max-h-40").length).toBe(SERVICE_PROMPT_FIELD_KEYS.length));
 		expect(getDetailMock.mock.calls.length).toBe(callsBefore);
 	});
 
@@ -381,7 +386,7 @@ describe("ServicePromptsPane", () => {
 		await waitFor(() => expect(getDetailMock.mock.calls.length).toBeGreaterThanOrEqual(2));
 		const detail = getByTestId("detail");
 		await openAllFamilies(detail);
-		await waitFor(() => expect(detail.querySelectorAll("textarea").length).toBe(SERVICE_PROMPT_FIELD_KEYS.length));
+		await waitFor(() => expect(detail.querySelectorAll(".max-h-40").length).toBe(SERVICE_PROMPT_FIELD_KEYS.length));
 	});
 
 	test("rows have DnD grip and no hover action cluster", async () => {

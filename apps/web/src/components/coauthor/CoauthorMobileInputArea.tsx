@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { cn } from "../../lib/cn.js";
+import { composerCls } from "../../lib/field-tokens.js";
 import { Icons } from "../shared/icons.js";
 import { ToolbarSelect } from "../shared/ToolbarSelect.js";
 import { QuickSwitchPopover } from "../shared/QuickSwitchPopover.js";
@@ -116,7 +117,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 					<textarea
 						ref={mobileTextareaRef}
 						data-testid="coauthor-input-textarea"
-						className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto"
+						className={composerCls}
 						placeholder={t("coauthor.input.placeholder")}
 						value={draft}
 						onChange={mobileOnChange}

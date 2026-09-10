@@ -16,7 +16,7 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { formatSceneHistory } from "@vibe-tavern/prompt-pipeline";
-import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
+import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
 import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore, useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
@@ -255,7 +255,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           <div className="mt-2 space-y-2 rounded-md border border-border2 bg-s2/40 p-2.5">
             <p className="font-ui text-[11px] leading-relaxed text-t3">{t("scn_schema_grammar")}</p>
             <div className="relative">
-              <pre className={cn(monoCls, "max-h-56 overflow-auto rounded p-2 pr-9 text-[11px] leading-relaxed text-t2")}>{SCENE_DSL_EXAMPLE}</pre>
+              <pre className={cn(codeQuoteCls, "max-h-56 overflow-auto pr-9")}>{SCENE_DSL_EXAMPLE}</pre>
               <CustomTooltip content={t("copy")}>
                 <button
                   type="button"
@@ -454,14 +454,14 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           </div>
           <details className="mt-2">
             <summary className="cursor-pointer select-none font-ui text-[11px] text-t4 hover:text-t3">{t("scn_preview_raw_json")}</summary>
-            <pre className={cn(monoCls, "mt-1 max-h-48 overflow-auto rounded p-2 text-[11px] leading-relaxed text-t2")}>
+            <pre className={cn(codeQuoteCls, "mt-1 max-h-48 overflow-auto")}>
               {JSON.stringify(previewState, null, 2)}
             </pre>
           </details>
           {draft.promptFormat === SCENE_PROMPT_FORMAT.xml && (
             <details className="mt-2">
               <summary className="cursor-pointer select-none font-ui text-[11px] text-t4 hover:text-t3">{t("scn_preview_raw_xml")}</summary>
-              <pre className={cn(monoCls, "mt-1 max-h-48 overflow-auto rounded p-2 text-[11px] leading-relaxed text-t2")}>
+              <pre className={cn(codeQuoteCls, "mt-1 max-h-48 overflow-auto")}>
                 {formatSceneHistory([previewState], "xml")}
               </pre>
             </details>
@@ -536,13 +536,15 @@ function PromptField({ label, hint, defaultValue, onSave, action }: { label: str
         <label className={lblCls + " !mb-0"}>{label}</label>
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>
-      <AutoTextarea
-        className={monoCls + " mt-1.5"}
-        defaultValue={defaultValue}
+      <div className="mt-1.5">
+        <AutoTextarea
+          mono
+          defaultValue={defaultValue}
         placeholder={hint}
         minRows={2}
         onBlur={(e) => { if (e.target.value !== defaultValue) onSave(e.target.value); }}
       />
+      </div>
     </div>
   );
 }

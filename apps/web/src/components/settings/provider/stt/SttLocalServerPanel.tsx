@@ -5,7 +5,7 @@ import { useT } from "../../../../i18n/context.js";
 import { copyText } from "../../../../lib/clipboard.js";
 import { cn } from "../../../../lib/cn.js";
 import { detectTtsOsKind, worstDiagnostic, diagnosticI18nKey } from "../../../../lib/tts/quickstarts.js";
-import { lblCls, monoCls } from "../../../build/fields/field-styles.js";
+import { lblCls, codeQuoteCls } from "../../../../lib/field-tokens.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
@@ -200,7 +200,7 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                   <div data-testid="stt-help-step-endpoint" className="flex flex-col gap-1.5">
                     <label className={lblCls}>{t("stt_local_step_endpoint")}</label>
                     <div className="flex items-center gap-2">
-                      <div className={`${monoCls} min-w-0 flex-1 whitespace-pre-wrap break-all text-t3`}>
+                      <div className={cn(codeQuoteCls, "flex-1")}>
                         {guide.endpoint}
                       </div>
                       {wireMatches ? (

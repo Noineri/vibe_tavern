@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
+import { composerCls } from "../../lib/field-tokens.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
@@ -111,7 +112,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
           <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif,audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/mp3,audio/wav,audio/flac" onChange={onFileInputChange} />
           <textarea
             ref={mobileTextareaRef}
-            className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto"
+            className={composerCls}
             placeholder={t("placeholder")}
             value={draft}
             onChange={(event) => { setDraft(event.target.value); adjustTextareaHeight(); }}

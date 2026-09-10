@@ -17,8 +17,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { MasterDetailFooter } from "../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
-import { lblCls } from "../../../lib/field-tokens.js";
-import { monoCls } from "../../build/fields/field-styles.js";
+import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
@@ -772,7 +771,7 @@ export function ServicePromptsPane({
 												return (
 													<div key={field} className="flex flex-col">
 														<label className={lblCls}>{tDynamic(labelKey)}</label>
-														<AutoTextarea className={monoCls} value={defaultText} disabled minRows={2} />
+														<div className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{defaultText}</div>
 													</div>
 												);
 											}
