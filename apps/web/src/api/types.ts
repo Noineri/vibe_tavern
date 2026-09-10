@@ -425,6 +425,14 @@ export interface UiSettingsRecord {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  /** Summary-generation binding (SUM-4/SUM-5). Optional for the same
+   *  bootstrap-snapshot compat reason as the STT pointers below. */
+  summaryProviderId?: string | null;
+  summaryModelName?: string | null;
+  /** Message AI editor binding (SUM-5) — stops sharing the ai-assistant
+   *  pair. Same optional-for-compat shape. */
+  messageEditorProviderId?: string | null;
+  messageEditorModelName?: string | null;
   coauthorProviderId: string | null;
   coauthorModelName: string | null;
   /** Optional for compatibility with bootstrap snapshots predating token overrides. */

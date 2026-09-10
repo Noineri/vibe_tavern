@@ -93,6 +93,7 @@ export {
   summarizeChat,
   saveChatSummary,
   listChatSummaries,
+  reorderChatSummaries,
   createChatSummary,
   updateChatSummary,
   deleteChatSummary,

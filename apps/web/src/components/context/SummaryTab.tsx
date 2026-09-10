@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type CSSProperties, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
@@ -9,7 +9,7 @@ import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Toggle } from "../shared/Toggle.js";
 import { NumberInput } from "../shared/NumberInput.js";
-import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
+import { AiGenParamsRow, type SecondaryGenOverrides } from "../shared/ai-assistant/AiGenParamsRow.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -17,11 +17,18 @@ import { DualRangeSlider } from "./DualRangeSlider.js";
 import { computeTokenEstimate, TokenEstimate, type CountedMessage } from "./TokenEstimate.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { updateUiSettings } from "../../api/settings-api.js";
+import { useReorderableList } from "../../hooks/use-reorderable-list.js";
+import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   createChatSummaryAction,
   deleteChatSummaryAction,
   generateChatSummaryAction,
   listChatSummariesAction,
+  reorderChatSummariesAction,
   updateChatSummaryAction,
   updateMemorySettingsAction,
 } from "../../stores/api-actions/chat-actions.js";
@@ -29,6 +36,70 @@ import {
 /* ─── shared styles ─── */
 const labelCls = "block font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3 mb-2";
 const inputCls = "rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[13px] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-50";
+
+/* ─── SUM-3b: sortable archive row ───
+ * The drag affordance is a dedicated ≡ grip on the left (PresetList/
+ * LoreEntryList convention — the row already carries click-to-select, a
+ * toggle, and a delete button that would conflict with a whole-row
+ * activator). The DragOverlay carries the visible preview; the source
+ * becomes an invisible in-place placeholder while dragging. */
+interface SortableSummaryRowProps {
+  s: ChatSummaryRecord;
+  isActive: boolean;
+  onSelect: (s: ChatSummaryRecord) => void;
+  onToggleInclude: (s: ChatSummaryRecord) => void;
+  onDelete: (id: string) => void;
+  labelFor: (s: ChatSummaryRecord) => string;
+  sourceLabel: (s: ChatSummaryRecord) => string;
+}
+
+const SortableSummaryRow = memo(function SortableSummaryRow({
+  s, isActive, onSelect, onToggleInclude, onDelete, labelFor, sourceLabel,
+}: SortableSummaryRowProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: s.id });
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    ...(isDragging ? { opacity: 0 } : {}),
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "group flex cursor-pointer items-center gap-2 border-l-2 border-l-transparent px-3 min-h-[56px] transition-colors touch-manipulation hover:bg-s2",
+        isActive && "border-l-accent bg-accent-dim",
+      )}
+      onPointerDown={() => onSelect(s)}
+    >
+      <button
+        type="button"
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label="drag"
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-8 w-5 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing"
+      >
+        <span className="text-base leading-none">≡</span>
+      </button>
+      <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+        <Toggle checked={s.includeInContext} onChange={() => onToggleInclude(s)} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-ui text-[12px] text-t1">{labelFor(s)}</div>
+        <div className="mt-0.5 font-ui text-[10px] text-t4">{sourceLabel(s)}</div>
+      </div>
+      <MasterDetailMobileDrillDown onSelect={() => onSelect(s)} />
+      <button type="button"
+        className="hidden md:flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 opacity-0 hover:bg-danger-dim hover:text-danger-text group-hover:opacity-100"
+        onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
+      >
+        <Ic.close />
+      </button>
+    </div>
+  );
+});
 
 const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
   enabled: false,
@@ -105,6 +176,7 @@ export function useSummaryTab({
 } {
   const { t } = useT();
   const isMobile = useIsMobile();
+  const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
   const activeProvider = providers.find((p) => p.isActive) ?? providers[0] ?? null;
   const messagesById = useSnapshotStore((s) => s.messagesById);
   const messageOrder = useSnapshotStore((s) => s.messageOrder);
@@ -137,6 +209,10 @@ export function useSummaryTab({
   const [useChatModel, setUseChatModel] = useState(true);
   const [selectedProviderId, setSelectedProviderId] = useState(activeProvider?.id ?? "");
   const [selectedModel, setSelectedModel] = useState(activeProvider?.defaultModel ?? "");
+  // SUM-4: the pin is PERSISTED (ui_settings summary pair), not ephemeral
+  // useState — it survives modal close/reopen. `pinnedModel` is hydrated from
+  // the store on open; the star writes/clears the pair. Null = follow the
+  // chat model (unpinned).
   const [pinnedModel, setPinnedModel] = useState<string | null>(null);
   const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
@@ -159,9 +235,60 @@ export function useSummaryTab({
   // Keying on chatId|branchId resets on BOTH chat and branch switches.
   const prevScopeRef = useRef<string | null>(null);
 
+  // SUM-4 hydration: a persisted summary binding (provider + model) restores
+  // the pinned selection on open — the exact state the star wrote last time.
+  // A dangling provider id (profile deleted since) falls through to the
+  // follow-chat-model default instead of wedging the picker on a ghost row.
+  useEffect(() => {
+    if (!isOpen) return;
+    const storedProviderId = bootstrapUiSettings?.summaryProviderId ?? null;
+    const storedModelName = bootstrapUiSettings?.summaryModelName ?? null;
+    if (storedProviderId && storedModelName) {
+      const providerExists = providers.some((p) => p.id === storedProviderId);
+      if (providerExists) {
+        setUseChatModel(false);
+        setSelectedProviderId(storedProviderId);
+        setSelectedModel(storedModelName);
+        setPinnedModel(storedModelName);
+      }
+    }
+  }, [isOpen, bootstrapUiSettings?.summaryProviderId, bootstrapUiSettings?.summaryModelName, providers]);
+
   const maxMessage = Math.max(1, messageCount - 1);
   const { latched, displayLimit } = resolveHistoryLimitState(limitOverride, messageCount);
   const activeSummary = summaries.find((s) => s.id === activeSummaryId) ?? null;
+
+  // SUM-3b: manual archive order — the shared single-container DnD
+  // orchestration (optimistic array + rollback on rejected persist).
+  const {
+    sensors,
+    displayItems,
+    activeDragItem: activeDragSummary,
+    handleDragStart,
+    handleDragEnd,
+    handleDragCancel,
+  } = useReorderableList<ChatSummaryRecord>({
+    items: summaries,
+    getId: (s) => s.id,
+    onReorder: (activeId, overId, currentItems) => {
+      const fromIdx = currentItems.findIndex((s) => s.id === activeId);
+      const toIdx = currentItems.findIndex((s) => s.id === overId);
+      if (fromIdx === -1 || toIdx === -1 || activeChatId === null) {
+        return { optimisticItems: currentItems, persist: () => {} };
+      }
+      const reordered = arrayMove(currentItems, fromIdx, toIdx);
+      return {
+        optimisticItems: reordered,
+        // The route returns the fresh server-ordered list — the committed
+        // state replaces the optimistic one on success (rollback otherwise).
+        persist: async () => {
+          const fresh = await reorderChatSummariesAction(activeChatId, reordered.map((s) => s.id));
+          setSummaries(fresh);
+        },
+      };
+    },
+  });
+  const sortableSummaryIds = useMemo(() => displayItems.map((s) => s.id), [displayItems]);
   const effectiveProviderId = useChatModel ? activeProvider?.id ?? selectedProviderId : selectedProviderId;
   const effectiveModel = (useChatModel ? (pinnedModel ?? activeProvider?.defaultModel ?? selectedModel) : (pinnedModel ?? selectedModel))?.trim() ?? "";
 
@@ -392,6 +519,13 @@ export function useSummaryTab({
     const abort = new AbortController();
     abortRef.current = abort;
     setGenerating(true);
+    // SUM-5 shared override shape — the trio never inherits the RP profile
+    // (SUM-2 ruling); the defaults are the summary-sane values.
+    const genOverrides: { [K in keyof SecondaryGenOverrides]-?: number } = {
+      temperature: summaryTemperature ?? SUMMARY_DEFAULT_TEMPERATURE,
+      maxOutputTokens: summaryMaxTokens ?? SUMMARY_DEFAULT_MAX_TOKENS,
+      contextBudget: summaryContextBudget ?? SUMMARY_DEFAULT_CONTEXT_BUDGET,
+    };
     try {
       const generated = await generateChatSummaryAction(activeChatId, {
         providerProfileId: effectiveProviderId,
@@ -404,9 +538,9 @@ export function useSummaryTab({
         excludeSummarized,
         includePriorSummaries: rangedIncludePrior,
         maxPriorSummaries: rangedIncludePrior ? rangedMaxPrior : 0,
-        temperature: summaryTemperature ?? SUMMARY_DEFAULT_TEMPERATURE,
-        maxOutputTokens: summaryMaxTokens ?? SUMMARY_DEFAULT_MAX_TOKENS,
-        contextBudget: summaryContextBudget ?? SUMMARY_DEFAULT_CONTEXT_BUDGET,
+        temperature: genOverrides.temperature,
+        maxOutputTokens: genOverrides.maxOutputTokens,
+        contextBudget: genOverrides.contextBudget,
       }, abort.signal);
       setSummaries((prev) => upsertSummary(prev, generated));
       selectSummary(generated);
@@ -467,38 +601,45 @@ export function useSummaryTab({
 
   /* ─── archive sidebar / list ─── */
   const archiveList = (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      {loading && <div className="px-4 py-3 font-ui text-xs text-t3">{t("loading_models")}</div>}
-      {!loading && summaries.length === 0 && <div className="px-4 py-3 font-ui text-xs text-t4">{t("no_saved_summaries")}</div>}
-      {summaries.map((s) => (
-        <div
-          key={s.id}
-          className={cn(
-            "group flex cursor-pointer items-center gap-2 border-l-2 border-l-transparent px-3 min-h-[56px] transition-colors touch-manipulation hover:bg-s2",
-            activeSummaryId === s.id && "border-l-accent bg-accent-dim",
-          )}
-          onPointerDown={() => selectSummary(s)}
-        >
-          <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-            <Toggle
-              checked={s.includeInContext}
-              onChange={() => void patchSummary(s, { includeInContext: !s.includeInContext })}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      <SortableContext items={sortableSummaryIds} strategy={verticalListSortingStrategy}>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {loading && <div className="px-4 py-3 font-ui text-xs text-t3">{t("loading_models")}</div>}
+          {!loading && summaries.length === 0 && <div className="px-4 py-3 font-ui text-xs text-t4">{t("no_saved_summaries")}</div>}
+          {displayItems.map((s) => (
+            <SortableSummaryRow
+              key={s.id}
+              s={s}
+              isActive={activeSummaryId === s.id}
+              onSelect={(row) => selectSummary(row)}
+              onToggleInclude={(row) => void patchSummary(row, { includeInContext: !row.includeInContext })}
+              onDelete={(id) => void handleDelete(id)}
+              labelFor={(row) => row.label || `T${row.summarizedFrom}\u2013T${row.summarizedTo}`}
+              sourceLabel={(row) => (row.source === "auto" ? t("summary_source_auto") : t("summary_source_manual"))}
             />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-ui text-[12px] text-t1">{s.label || `T${s.summarizedFrom}\u2013T${s.summarizedTo}`}</div>
-            <div className="mt-0.5 font-ui text-[10px] text-t4">{s.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
-          </div>
-          <MasterDetailMobileDrillDown onSelect={() => selectSummary(s)} />
-          <button type="button"
-            className="hidden md:flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 opacity-0 hover:bg-danger-dim hover:text-danger-text group-hover:opacity-100"
-            onClick={(e) => { e.stopPropagation(); void handleDelete(s.id); }}
-          >
-            <Ic.close />
-          </button>
+          ))}
         </div>
-      ))}
-    </div>
+      </SortableContext>
+      {/* The drag preview mirror (PresetList convention: plain copy of the
+       *  row chrome, no sortable transform). */}
+      <DragOverlay>
+        {activeDragSummary !== null ? (
+          <div className="flex cursor-grabbing items-center gap-2 border-l-2 border-l-accent bg-s3 px-3 min-h-[56px] shadow-lg">
+            <span className="text-base leading-none text-t4">≡</span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-ui text-[12px] text-t1">{activeDragSummary.label || `T${activeDragSummary.summarizedFrom}\u2013T${activeDragSummary.summarizedTo}`}</div>
+              <div className="mt-0.5 font-ui text-[10px] text-t4">{activeDragSummary.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
+            </div>
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 
   /* ─── master pane content (archive label + list + new button) ─── */
@@ -632,7 +773,13 @@ export function useSummaryTab({
           <DropdownSelect
             value={selectedProviderId}
             options={providerOptions}
-            onChange={(id) => { setSelectedProviderId(id); setSelectedModel(""); setPinnedModel(null); }}
+            onChange={(id) => {
+              setSelectedProviderId(id);
+              setSelectedModel("");
+              setPinnedModel(null);
+              // SUM-4: switching providers invalidates the persisted pin.
+              void updateUiSettings({ summaryProviderId: null, summaryModelName: null }).catch(() => {});
+            }}
             disabled={useChatModel || generating}
             placeholder={t("summarize_provider_label")}
             searchPlaceholder={t("summarize_provider_label")}
@@ -641,20 +788,40 @@ export function useSummaryTab({
             <DropdownSelect
               value={pinnedModel ?? selectedModel}
               options={modelOptions}
-              onChange={(id) => { setSelectedModel(id); setPinnedModel(useChatModel ? id : null); }}
+              onChange={(id) => {
+                setSelectedModel(id);
+                // SUM-4: picking a model while pinned rewrites the persisted
+                // binding (the pin follows the live selection, as before).
+                if (pinnedModel !== null) {
+                  setPinnedModel(id);
+                  void updateUiSettings({ summaryProviderId: effectiveProviderId || null, summaryModelName: id }).catch(() => {});
+                } else {
+                  setPinnedModel(useChatModel ? id : null);
+                }
+              }}
               disabled={useChatModel || generating || isLoadingModels}
               placeholder={t("model_placeholder")}
               searchPlaceholder={t("summarize_model_label")}
               className="flex-1"
             />
-            {/* Pin star: lock this model even when "use chat model" is on */}
+            {/* Pin star: lock this model even when "use chat model" is on.
+             *  SUM-4: the pin is PERSISTED in ui_settings (summary pair) —
+             *  it survives modal close/reopen; unpin clears the pair. */}
             <button type="button"
               className={cn(
                 "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
                 pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
               )}
               title={pinnedModel ? t("summary_unpin_model") : t("summary_pin_model")}
-              onClick={() => { if (pinnedModel) setPinnedModel(null); else if (selectedModel) setPinnedModel(selectedModel); }}
+              onClick={() => {
+                if (pinnedModel) {
+                  setPinnedModel(null);
+                  void updateUiSettings({ summaryProviderId: null, summaryModelName: null }).catch(() => {});
+                } else if (selectedModel) {
+                  setPinnedModel(selectedModel);
+                  void updateUiSettings({ summaryProviderId: effectiveProviderId || null, summaryModelName: selectedModel }).catch(() => {});
+                }
+              }}
               disabled={!selectedModel}
             >
               {pinnedModel ? <Ic.starFilled /> : <Ic.star />}

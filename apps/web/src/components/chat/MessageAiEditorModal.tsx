@@ -160,17 +160,22 @@ export function MessageAiEditorModal() {
     }
   }, [target?.targetChatId, target?.targetMessageId, target?.requestedMode]);
 
-  const seedProviderId = bootstrapUiSettings?.aiAssistantProviderId ?? "";
-  const seedModelName = bootstrapUiSettings?.aiAssistantModelName ?? "";
+  // SUM-5: the editor owns its context slot. Seed order: the editor's own
+  // persisted pair, then the legacy ai-assistant pair (upgrade fallback — a
+  // selection made before the split keeps working and STOPS writing there),
+  // then empty (active-profile default resolves downstream).
+  const seedProviderId = bootstrapUiSettings?.messageEditorProviderId ?? bootstrapUiSettings?.aiAssistantProviderId ?? "";
+  const seedModelName = bootstrapUiSettings?.messageEditorModelName ?? bootstrapUiSettings?.aiAssistantModelName ?? "";
 
   const runner = useAiAssistantRunner({
     isOpen,
     seedProviderId,
     seedModelName,
-    // Persist the editor's provider/model choice to uiSettings so the next
-    // editor open (and other AI assistants) inherit it — same UX as the
-    // existing AiAssistantModal "full" path.
+    // Persist the editor's provider/model choice to its OWN ui_settings pair
+    // (SUM-5: it previously wrote the shared ai-assistant slot — picking a
+    // model here silently changed the AI-assistant model and vice versa).
     persistSelection: true,
+    persistContext: "message-editor",
   });
 
   // Reset transient stream/apply state whenever the modal closes so a reopen

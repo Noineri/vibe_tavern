@@ -18,6 +18,14 @@ export interface UiSettings {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  /** Summary-generation model binding (SUM-4/SUM-5) — the Memory tab's
+   *  pinned model, persisted per context instead of ephemeral useState. */
+  summaryProviderId: string | null;
+  summaryModelName: string | null;
+  /** Message AI editor model binding (SUM-5) — no longer shares the
+   *  ai-assistant pair. */
+  messageEditorProviderId: string | null;
+  messageEditorModelName: string | null;
   coauthorProviderId: string | null;
   coauthorModelName: string | null;
   /** Null inherits the bound profile/model's effective max output tokens. */
@@ -58,6 +66,10 @@ export interface UiSettingsUpdate {
   activePromptPresetId?: string | null;
   aiAssistantProviderId?: string | null;
   aiAssistantModelName?: string | null;
+  summaryProviderId?: string | null;
+  summaryModelName?: string | null;
+  messageEditorProviderId?: string | null;
+  messageEditorModelName?: string | null;
   coauthorProviderId?: string | null;
   coauthorModelName?: string | null;
   coauthorMaxTokens?: number | null;
@@ -86,6 +98,10 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   activePromptPresetId: null,
   aiAssistantProviderId: null,
   aiAssistantModelName: null,
+  summaryProviderId: null,
+  summaryModelName: null,
+  messageEditorProviderId: null,
+  messageEditorModelName: null,
   coauthorProviderId: null,
   coauthorModelName: null,
   coauthorMaxTokens: null,
@@ -145,6 +161,10 @@ export class UiSettingsStore {
       activePromptPresetId: partial.activePromptPresetId ?? UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: partial.aiAssistantProviderId ?? UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: partial.aiAssistantModelName ?? UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      summaryProviderId: partial.summaryProviderId ?? UI_SETTINGS_DEFAULTS.summaryProviderId,
+      summaryModelName: partial.summaryModelName ?? UI_SETTINGS_DEFAULTS.summaryModelName,
+      messageEditorProviderId: partial.messageEditorProviderId ?? UI_SETTINGS_DEFAULTS.messageEditorProviderId,
+      messageEditorModelName: partial.messageEditorModelName ?? UI_SETTINGS_DEFAULTS.messageEditorModelName,
       coauthorProviderId: partial.coauthorProviderId ?? UI_SETTINGS_DEFAULTS.coauthorProviderId,
       coauthorModelName: partial.coauthorModelName ?? UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: partial.coauthorMaxTokens ?? UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
@@ -180,6 +200,10 @@ export class UiSettingsStore {
       activePromptPresetId: UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      summaryProviderId: UI_SETTINGS_DEFAULTS.summaryProviderId,
+      summaryModelName: UI_SETTINGS_DEFAULTS.summaryModelName,
+      messageEditorProviderId: UI_SETTINGS_DEFAULTS.messageEditorProviderId,
+      messageEditorModelName: UI_SETTINGS_DEFAULTS.messageEditorModelName,
       coauthorProviderId: UI_SETTINGS_DEFAULTS.coauthorProviderId,
       coauthorModelName: UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
@@ -213,6 +237,10 @@ export class UiSettingsStore {
       activePromptPresetId: row.activePromptPresetId,
       aiAssistantProviderId: row.aiAssistantProviderId ?? null,
       aiAssistantModelName: row.aiAssistantModelName ?? null,
+      summaryProviderId: row.summaryProviderId ?? null,
+      summaryModelName: row.summaryModelName ?? null,
+      messageEditorProviderId: row.messageEditorProviderId ?? null,
+      messageEditorModelName: row.messageEditorModelName ?? null,
       coauthorProviderId: row.coauthorProviderId ?? null,
       coauthorModelName: row.coauthorModelName ?? null,
       coauthorMaxTokens: row.coauthorMaxTokens ?? null,

@@ -444,6 +444,14 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.stores.chatSummaries.listByChatBranch(chat.id, chat.activeBranchId);
 	};
 
+	// SUM-3b: reorder over the ACTIVE branch (the same scope the list reads).
+	reorderChatSummaries = async (chatId: string, body: { orderedIds: string[] }) => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		await this.stores.chatSummaries.reorder(chat.id, chat.activeBranchId, body.orderedIds);
+		return this.stores.chatSummaries.listByChatBranch(chat.id, chat.activeBranchId);
+	};
+
 	createChatSummary = async (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => {
 		const chat = await this.stores.chats.getById(chatId);
 		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);

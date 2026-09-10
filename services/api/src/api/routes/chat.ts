@@ -320,6 +320,11 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       logSendDebug("api.route.summaries.generate", { chatId, providerProfileId: body.providerProfileId, model: body.model ?? null, from: body.summarizedFrom, to: body.summarizedTo });
       return c.json(await runtime.generateChatSummary(chatId, body, c.req.raw.signal));
     })
+    .put("/api/chats/:chatId/summaries/reorder", zValidator("json", schemas.reorderChatSummariesSchema), async (c) => {
+      // SUM-3b: manual summary-list order (store-side transactional rewrite
+      // over the ACTIVE branch, matching listChatSummaries' branch scope).
+      return c.json(await runtime.reorderChatSummaries(c.req.param("chatId"), c.req.valid("json")));
+    })
     .patch("/api/chats/:chatId/memory-settings", zValidator("json", schemas.updateMemorySettingsSchema), async (c) => {
       return c.json(await runtime.updateMemorySettings(c.req.param("chatId"), c.req.valid("json")));
     })

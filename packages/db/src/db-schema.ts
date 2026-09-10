@@ -1126,6 +1126,14 @@ export const uiSettings = sqliteTable('ui_settings', {
   activePromptPresetId: text('active_prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
   aiAssistantProviderId: text('ai_assistant_provider_id'),
   aiAssistantModelName: text('ai_assistant_model_name'),
+  // Secondary-model bindings per CONTEXT (SUM-5): summary generation and the
+  // message AI editor stop sharing the ai-assistant pair — each context owns
+  // its slot so picking a model in one place never leaks into another.
+  // Same dangling-policy as aiAssistantProviderId (no FK; adapter resolves).
+  summaryProviderId: text('summary_provider_id'),
+  summaryModelName: text('summary_model_name'),
+  messageEditorProviderId: text('message_editor_provider_id'),
+  messageEditorModelName: text('message_editor_model_name'),
   // Co-Author generation binding — app-wide, independent of RP active profile.
   // Null (or dangling after profile deletion) falls back to the RP active
   // profile/default model at the adapter boundary. No DB-level FK: like

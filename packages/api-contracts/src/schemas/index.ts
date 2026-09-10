@@ -107,6 +107,7 @@ export {
   createChatSummarySchema,
   updateChatSummarySchema,
   generateChatSummarySchema,
+  reorderChatSummariesSchema,
   updateMemorySettingsSchema,
   summarizeChatSchema,
   saveChatSummarySchema,

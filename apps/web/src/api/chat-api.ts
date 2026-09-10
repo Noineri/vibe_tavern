@@ -388,6 +388,12 @@ export async function listChatSummaries(chatId: ChatId): Promise<ChatSummaryReco
   return unwrapRpc<ChatSummaryRecord[]>(response);
 }
 
+// SUM-3b: manual reorder of the chat's summary list (active branch).
+export async function reorderChatSummaries(chatId: ChatId, orderedIds: string[]): Promise<ChatSummaryRecord[]> {
+  const response = await client.api.chats[":chatId"].summaries.reorder.$put({ param: { chatId }, json: { orderedIds } });
+  return unwrapRpc<ChatSummaryRecord[]>(response);
+}
+
 export async function createChatSummary(
   chatId: ChatId,
   input: {

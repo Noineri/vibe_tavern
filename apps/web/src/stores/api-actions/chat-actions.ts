@@ -18,6 +18,7 @@ import {
   generateReply,
   generateChatSummary,
   listChatSummaries,
+  reorderChatSummaries,
   createChatSummary,
   updateChatSummary,
   deleteChatSummary,
@@ -449,6 +450,11 @@ export async function saveChatSummaryAction(chatId: ChatId, summary: string): Pr
 
 export async function listChatSummariesAction(chatId: ChatId): Promise<ChatSummaryRecord[]> {
   return listChatSummaries(chatId);
+}
+
+// SUM-3b: manual reorder — returns the fresh (server-ordered) list.
+export async function reorderChatSummariesAction(chatId: ChatId, orderedIds: string[]): Promise<ChatSummaryRecord[]> {
+  return reorderChatSummaries(chatId, orderedIds);
 }
 
 export async function createChatSummaryAction(chatId: ChatId, input: Parameters<typeof createChatSummary>[1]): Promise<ChatSummaryRecord> {

@@ -27,6 +27,41 @@ async function mkSettingsStore() {
 	};
 }
 
+describe("UiSettingsStore — per-context secondary-model pairs (SUM-5)", () => {
+	test("defaults are null for the summary and message-editor pairs", async () => {
+		const { settings } = await mkSettingsStore();
+		const got = await settings.get();
+		expect(got.summaryProviderId).toBeNull();
+		expect(got.summaryModelName).toBeNull();
+		expect(got.messageEditorProviderId).toBeNull();
+		expect(got.messageEditorModelName).toBeNull();
+	});
+
+	test("persists and clears each context pair independently", async () => {
+		const { settings } = await mkSettingsStore();
+		await settings.update({
+			summaryProviderId: "prov_a",
+			summaryModelName: "glm-5.2",
+			messageEditorProviderId: "prov_b",
+			messageEditorModelName: "gpt-x",
+		});
+		let got = await settings.get();
+		expect(got.summaryProviderId).toBe("prov_a");
+		expect(got.summaryModelName).toBe("glm-5.2");
+		expect(got.messageEditorProviderId).toBe("prov_b");
+		expect(got.messageEditorModelName).toBe("gpt-x");
+
+		// Clearing the summary pin leaves the editor pair untouched — the two
+		// contexts no longer share one slot (the SUM-5 leak).
+		await settings.update({ summaryProviderId: null, summaryModelName: null });
+		got = await settings.get();
+		expect(got.summaryProviderId).toBeNull();
+		expect(got.summaryModelName).toBeNull();
+		expect(got.messageEditorProviderId).toBe("prov_b");
+		expect(got.messageEditorModelName).toBe("gpt-x");
+	});
+});
+
 describe("UiSettingsStore — coauthor binding fields", () => {
 	test("defaults are null for both coauthorProviderId and coauthorModelName", async () => {
 		const { settings } = await mkSettingsStore();
