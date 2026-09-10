@@ -2797,6 +2797,7 @@ export default interface Resources {
     "tts_field_emotion_volcengine_placeholder": "e.g. happy — per-voice, see the voice roster",
     "tts_field_endpoint": "Endpoint",
     "tts_field_engine": "Engine",
+    "tts_field_language": "Language",
     "tts_field_model": "Model",
     "tts_field_model_id": "Model ID",
     "tts_field_narrator_voice": "Narrator voice",

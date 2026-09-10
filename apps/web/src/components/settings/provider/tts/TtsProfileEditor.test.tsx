@@ -987,6 +987,51 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     await act(async () => {});
   });
 
+  it("applyPreset: every native roster row maps to ITS backend (Wave B/C + xAI regression pin)", async () => {
+    // Regression pin (found during TPE-15): the historic ternary here
+    // silently truncated at MiniMax — selecting a Wave B/C native preset
+    // (volcengine…google-cloud) landed the profile on the
+    // OpenAI-compatible backend. backendForVariant is now the single
+    // mapping; this pins every native row end-to-end through the dropdown.
+    const calls: Array<{ backend?: string; config?: Record<string, unknown> }> = [];
+    const tts = makeTts({
+      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: {}, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+      setForm: mock((patch: { backend?: string; config?: Record<string, unknown> }) => {
+        calls.push(patch);
+      }),
+    });
+    const expected: Array<[string, string]> = [
+      ["Gemini", TTS_BACKEND.Gemini],
+      ["Volcengine", TTS_BACKEND.Volcengine],
+      ["Deepgram", TTS_BACKEND.Deepgram],
+      ["Azure", TTS_BACKEND.Azure],
+      ["Amazon Polly", TTS_BACKEND.Polly],
+      ["Google Cloud TTS", TTS_BACKEND.GoogleCloud],
+      ["xAI (Grok Voice)", TTS_BACKEND.Xai],
+    ];
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    });
+    for (const [label, backend] of expected) {
+      document.body.innerHTML = "";
+      const trigger = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "custom");
+      expect(trigger).toBeTruthy();
+      fireEvent.click(trigger!);
+      await waitFor(() => {
+        const item = Array.from(document.body.querySelectorAll("[cmdk-item]")).find((el) => el.textContent?.trim() === label);
+        expect(item).toBeTruthy();
+        fireEvent.click(item!);
+      });
+      const applied = calls[calls.length - 1];
+      expect(applied?.backend).toBe(backend);
+      expect(applied?.config?.["preset"]).toBeDefined();
+    }
+    cleanup();
+    document.body.innerHTML = "";
+    await act(async () => {});
+  });
+
   it("re-open: bare endpoint (no preset) → Custom", async () => {
     const tts = makeTts({
       form: {

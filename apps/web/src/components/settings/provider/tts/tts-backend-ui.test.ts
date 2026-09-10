@@ -43,6 +43,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Azure, {})).toBe("azure");
     expect(ttsUiVariantOf(TTS_BACKEND.Polly, {})).toBe("polly");
     expect(ttsUiVariantOf(TTS_BACKEND.GoogleCloud, {})).toBe("google-cloud");
+    expect(ttsUiVariantOf(TTS_BACKEND.Xai, {})).toBe("xai");
   });
 });
 
@@ -62,6 +63,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("azure")).toBe(TTS_BACKEND.Azure);
     expect(backendForVariant("polly")).toBe(TTS_BACKEND.Polly);
     expect(backendForVariant("google-cloud")).toBe(TTS_BACKEND.GoogleCloud);
+    expect(backendForVariant("xai")).toBe(TTS_BACKEND.Xai);
   });
 });
 
@@ -290,6 +292,39 @@ describe("ttsUiSpecFor (field configuration)", () => {
     expect(spec.tuning.some((f) => f.key === "pitchSt" || f.key === "pitch")).toBe(false);
   });
 
+  it("xai: key with console docs link; language select (auto + documented 20) + speed 0.7–1.5; NO model field", () => {
+    const spec = ttsUiSpecFor("xai");
+    expect(spec.connection.apiKey?.placeholder).toBe("xai-…");
+    expect(spec.connection.apiKey?.docsUrl).toBe("https://console.x.ai");
+    // One implicit grok-tts model serves all voices — a model input would
+    // invent a choice the API does not offer (Deepgram Aura precedent).
+    expect(spec.connection.model).toBeUndefined();
+    expect(spec.connection.region).toBeUndefined();
+    expect(spec.localHelpers).toBe(false);
+
+    const language = spec.tuning.find((f) => f.kind === "select" && f.key === "language");
+    if (language?.kind === "select") {
+      // language is REQUIRED by the wire; "auto" is the fallback. The
+      // option list is the documented 20-language table + auto.
+      expect(language.fallback).toBe("auto");
+      expect(language.options.map((o) => o.id)).toContain("ru");
+      expect(language.options.length).toBe(21);
+      expect(language.testid).toBe("tts-field-language");
+    } else {
+      throw new Error("xai spec is missing the language select");
+    }
+
+    const speed = spec.tuning.find((f) => f.kind === "number" && f.key === "speed");
+    if (speed?.kind === "number") {
+      // REST body `speed` — documented range 0.7–1.5, default 1.
+      expect(speed.min).toBe(0.7);
+      expect(speed.max).toBe(1.5);
+      expect(speed.fallback).toBe(1);
+    } else {
+      throw new Error("xai spec is missing the speed field");
+    }
+  });
+
   it("google-cloud: MULTILINE key (SA JSON paste) with docs link; rate/pitch/volume tuning, NO model field", () => {
     const spec = ttsUiSpecFor("google-cloud");
     // The secret IS the service-account JSON file — pasted whole into the
@@ -337,7 +372,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud", "xai"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

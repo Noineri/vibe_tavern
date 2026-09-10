@@ -7,7 +7,7 @@
  * upcoming `TtsProviderForm` fork retypes mechanically (import path change only).
  */
 
-export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud";
+export type TtsBackend = "openai-compat" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud" | "xai";
 /** TPE-9a (owner rule 2026-09-01): static catalogs are gone — the
  *  retired `documented`/`name-heuristic` stamps no longer exist. Stamps
  *  that remain describe a LIVE server-side filter: `modality`
@@ -207,6 +207,16 @@ export const TTS_PRESETS: TtsPreset[] = [
     // Live discovery (TPE-14): listVoices() fetches the v1 voices.list
     // roster — the voice id IS the voice name (engine family included),
     // no model field.
+    modelFilter: "none",
+  },
+  {
+    id: "xai",
+    label: "xAI (Grok Voice)",
+    group: "native",
+    backend: "xai",
+    // Live discovery (TPE-15): listVoices() merges GET /v1/tts/voices
+    // (built-ins) with GET /v1/custom-voices (team customs) — single
+    // implicit grok-tts model, no model field (Deepgram Aura precedent).
     modelFilter: "none",
   },
 ];

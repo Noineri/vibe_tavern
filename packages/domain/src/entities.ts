@@ -543,6 +543,8 @@ export const TTS_BACKEND = {
   Polly: "polly",
   /** TPE-14 — native Google Cloud TTS (service-account JWT-bearer, live voices.list). */
   GoogleCloud: "google-cloud",
+  /** TPE-15 — native xAI Grok Voice TTS (direct /v1/tts, live voice roster). */
+  Xai: "xai",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -807,6 +809,25 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     // owner rule).
     supportsVoiceList: true,
     // audioConfig.speakingRate (documented multiplier range 0.25–2.0).
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Xai]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // POST /v1/tts returns the clip as raw audio bytes — our generate()
+    // buffers, same contract as every native backend. A bidirectional
+    // WebSocket streaming endpoint exists upstream but stays unwired.
+    supportsStreaming: false,
+    // Custom Voices API (POST /v1/custom-voices) is Enterprise-gated and
+    // US-only (docs warning, verified 2026-09-10) — same ruling as Google
+    // Cloud's gated program: clone section hidden, already-created custom
+    // voices still listed via GET /v1/custom-voices in listVoices().
+    supportsCloning: false,
+    // Live catalog: GET /v1/tts/voices (built-ins) + GET /v1/custom-voices
+    // (team customs, paginated) — no hardcoded voice list (owner rule).
+    supportsVoiceList: true,
+    // REST body `speed` — documented range 0.7–1.5, default 1.
     supportsSpeed: true,
     requiresApiKey: true,
   },

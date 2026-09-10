@@ -36,7 +36,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "native" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud" | "xai";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -178,6 +178,33 @@ const OPENAI_TUNING: TtsTuningFieldSpec[] = [
     testid: "tts-field-response-format",
   },
   { kind: "number", key: "speed", labelKey: "tts_field_speed", min: 0.25, max: 4.0, step: 0.1, fallback: 1 },
+];
+
+/** xAI REST `language` — the documented 20-language table + "auto"
+ *  (TPE-15). Codes are BCP-47 and self-describing; labels mirror the ids
+ *  (language codes carry no translation — they ARE the notation). */
+const XAI_LANGUAGE_OPTIONS: Array<{ id: string; label: string }> = [
+  { id: "auto", label: "auto" },
+  { id: "ar-EG", label: "ar-EG" },
+  { id: "ar-SA", label: "ar-SA" },
+  { id: "ar-AE", label: "ar-AE" },
+  { id: "bn", label: "bn" },
+  { id: "zh", label: "zh" },
+  { id: "en", label: "en" },
+  { id: "fr", label: "fr" },
+  { id: "de", label: "de" },
+  { id: "hi", label: "hi" },
+  { id: "id", label: "id" },
+  { id: "it", label: "it" },
+  { id: "ja", label: "ja" },
+  { id: "ko", label: "ko" },
+  { id: "pt-BR", label: "pt-BR" },
+  { id: "pt-PT", label: "pt-PT" },
+  { id: "ru", label: "ru" },
+  { id: "es-MX", label: "es-MX" },
+  { id: "es-ES", label: "es-ES" },
+  { id: "tr", label: "tr" },
+  { id: "vi", label: "vi" },
 ];
 
 const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
@@ -461,6 +488,33 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  "xai": {
+    connection: {
+      apiKey: {
+        placeholder: "xai-…",
+        docsUrl: "https://console.x.ai",
+      },
+      // NO model field on purpose (Deepgram Aura precedent): one implicit
+      // grok-tts model serves all voices — a model input would invent a
+      // choice the API does not offer.
+    },
+    tuning: [
+      // REST body `language` — REQUIRED by the wire; "auto" (documented
+      // auto-detect) is the fallback. The option list is the documented
+      // 20-language table (BCP-47 codes, self-describing labels).
+      {
+        kind: "select",
+        key: "language",
+        labelKey: "tts_field_language",
+        options: XAI_LANGUAGE_OPTIONS,
+        fallback: "auto",
+        testid: "tts-field-language",
+      },
+      // REST body `speed` — documented range 0.7–1.5, default 1.
+      { kind: "number", key: "speed", labelKey: "tts_field_speed", min: 0.7, max: 1.5, step: 0.05, fallback: 1 },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -485,6 +539,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Azure) return "azure";
   if (backend === TTS_BACKEND.Polly) return "polly";
   if (backend === TTS_BACKEND.GoogleCloud) return "google-cloud";
+  if (backend === TTS_BACKEND.Xai) return "xai";
   return "kokoro";
 }
 
@@ -503,6 +558,7 @@ const TTS_NATIVE_BACKENDS: ReadonlySet<TtsBackendSlug> = new Set([
   TTS_BACKEND.Azure,
   TTS_BACKEND.Polly,
   TTS_BACKEND.GoogleCloud,
+  TTS_BACKEND.Xai,
 ]);
 
 /** Derive the five-segment view for the forked ProviderForm (TE2-8, SPE-8):
@@ -561,5 +617,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.Polly;
     case "google-cloud":
       return TTS_BACKEND.GoogleCloud;
+    case "xai":
+      return TTS_BACKEND.Xai;
   }
 }

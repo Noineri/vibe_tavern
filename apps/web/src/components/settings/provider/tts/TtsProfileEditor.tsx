@@ -14,13 +14,7 @@ import { GLUE_GAP_SECONDS, GlueVoiceSamplesError, glueDecoder, glueVoiceSamples 
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
-import {
-  ttsPresetIdOf,
-  ttsUiSpecFor,
-  ttsUiVariantOf,
-  type TtsTuningFieldSpec,
-  type TtsUiVariant,
-} from "./tts-backend-ui.js";
+import { backendForVariant, ttsPresetIdOf, ttsUiSpecFor, ttsUiVariantOf, type TtsTuningFieldSpec, type TtsUiVariant } from "./tts-backend-ui.js";
 import { TtsProviderForm } from "./TtsProviderForm.js";
 import { TtsBaseCard } from "./TtsBaseCard.js";
 import { TtsModelPicker } from "./TtsModelPicker.js";
@@ -594,20 +588,15 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
   function handleApplyPreset(presetId: string): void {
     const preset = TTS_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
+    // Every native preset backend id IS its UI variant (one id space), and
+    // backendForVariant is the exhaustive pinned map — the historic
+    // hand-rolled ternary here silently truncated at MiniMax, dropping
+    // Wave B/C rows (volcengine…google-cloud) into the OpenAI-compatible
+    // backend on selection. One mapping, one place.
     const nextBackend =
-      preset.backend === "gemini"
-        ? TTS_BACKEND.Gemini
-        : preset.backend === "elevenlabs"
-          ? TTS_BACKEND.ElevenLabs
-          : preset.backend === "cartesia"
-            ? TTS_BACKEND.Cartesia
-            : preset.backend === "inworld"
-              ? TTS_BACKEND.Inworld
-              : preset.backend === "lmnt"
-                ? TTS_BACKEND.Lmnt
-                : preset.backend === "minimax"
-                  ? TTS_BACKEND.MiniMax
-                  : TTS_BACKEND.OpenAiCompatible;
+      preset.backend === "openai-compat"
+        ? TTS_BACKEND.OpenAiCompatible
+        : backendForVariant(preset.backend);
     const nextConfig: Record<string, unknown> = {};
     if (preset.baseUrl) nextConfig["endpoint"] = preset.baseUrl;
     // D15: the preset's modelFilter must ride the config bag — the server

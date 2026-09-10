@@ -608,6 +608,7 @@
   "tts_field_model": "Model",
   "tts_field_response_format": "Response Format",
   "tts_field_speed": "Speed",
+  "tts_field_language": "Language",
   "tts_field_emotion": "Emotion",
   "tts_field_delivery_mode": "Delivery style",
   "tts_field_top_p": "Stability (top_p)",
