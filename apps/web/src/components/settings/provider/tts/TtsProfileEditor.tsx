@@ -3,7 +3,8 @@ import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { Ic, Icons } from "../../../shared/icons.js";
-import { inputCls, lblCls, monoCls } from "../../../build/fields/field-styles.js";
+import { lblCls } from "../../../../lib/field-tokens.js";
+import { TextInput } from "../../../shared/text-input.js";
 import { cn } from "../../../../lib/cn.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
@@ -185,11 +186,9 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
         <label htmlFor="tts-clone-name" className={lblCls}>
           {t("tts_clone_name_label")}
         </label>
-        <input
+        <TextInput
           id="tts-clone-name"
           data-testid="tts-clone-name"
-          type="text"
-          className={inputCls + " px-3 py-2 text-[13px]"}
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -205,7 +204,6 @@ function TtsVoiceCloneCard({ backend, config, profileId, capabilities, onCloned 
             onChange={(event) => setReferenceText(event.target.value)}
             minRows={2}
             maxRows={4}
-            className={inputCls + " px-3 py-2 text-[13px]"}
             placeholder={t("tts_clone_reference_text_placeholder")}
           />
         </div>
@@ -350,7 +348,6 @@ function TtsTuningField({ tts, form, field }: { tts: TtsHook; form: NonNullable<
       <div>
         <label className={lblCls}>{t(field.labelKey)}</label>
         <AutoTextarea
-          className={inputCls + " mt-1 px-3 py-2 text-[13px]"}
           value={configString(form.config, field.key)}
           onChange={(e) => updateConfigField(tts, form, field.key, e.target.value)}
           placeholder={t(field.placeholderKey)}
@@ -369,15 +366,13 @@ function TtsTuningField({ tts, form, field }: { tts: TtsHook; form: NonNullable<
     return (
       <div>
         <label className={lblCls}>{t(field.labelKey)}</label>
-        <input
-          type="text"
+        <TextInput
           value={configString(form.config, field.key)}
           onChange={(e) => {
             const v = e.target.value;
             updateConfigField(tts, form, field.key, v.length > 0 ? v : undefined);
           }}
           placeholder={field.placeholderKey !== undefined ? t(field.placeholderKey) : undefined}
-          className={inputCls + " mt-1"}
           data-testid={`tts-field-${field.key}`}
         />
       </div>
@@ -386,7 +381,7 @@ function TtsTuningField({ tts, form, field }: { tts: TtsHook; form: NonNullable<
   return (
     <div>
       <label className={lblCls}>{t(field.labelKey)}</label>
-      <div className="mt-1">
+      <div>
         <DropdownSelect
           value={configString(form.config, field.key, field.fallback)}
           options={field.options}
@@ -872,7 +867,7 @@ export function TtsVoiceFields({
       <>
         <div className="mb-3">
       <label className={lblCls}>{t("tts_field_voice")}</label>
-      <div className="mt-1">
+      <div>
         <DropdownSelect
           value={form.voiceId}
           options={kokoroVoiceOptions}
@@ -885,7 +880,7 @@ export function TtsVoiceFields({
         </div>
         <div className="mb-3">
       <label className={lblCls}>{t("tts_field_narrator_voice")}</label>
-      <div className="mt-1">
+      <div>
         <DropdownSelect
           value={form.narratorVoiceId}
           options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...kokoroVoiceOptions]}
@@ -910,9 +905,9 @@ export function TtsVoiceFields({
       </div>
         ) : voicesError !== null ? (
       <>
-        <input
+        <TextInput
           data-testid="tts-voice-input"
-          className={monoCls + " mt-1"}
+          mono
           value={form.voiceId}
           onChange={(e) => updateForm("voiceId", e.target.value)}
           placeholder={manualPlaceholder}
@@ -931,24 +926,24 @@ export function TtsVoiceFields({
         </div>
       ) : (
         // Host without a voices endpoint — the manual floor stays honest.
-        <input
+        <TextInput
           data-testid="tts-voice-input"
-          className={monoCls + " mt-1"}
+          mono
           value={form.voiceId}
           onChange={(e) => updateForm("voiceId", e.target.value)}
           placeholder={manualPlaceholder}
         />
       )
         ) : voices.length === 0 ? (
-      <input
+      <TextInput
         data-testid="tts-voice-input"
-        className={monoCls + " mt-1"}
+        mono
         value={form.voiceId}
         onChange={(e) => updateForm("voiceId", e.target.value)}
         placeholder={manualPlaceholder}
       />
         ) : (
-      <div className="mt-1">
+      <div>
         <DropdownSelect
           value={form.voiceId}
           options={(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))}
@@ -980,15 +975,15 @@ export function TtsVoiceFields({
         {t("tts_voices_loading")}
       </div>
         ) : voicesError !== null || voices === null || voices.length === 0 ? (
-      <input
+      <TextInput
         data-testid="tts-narrator-voice-input"
-        className={monoCls + " mt-1"}
+        mono
         value={form.narratorVoiceId}
         onChange={(e) => updateForm("narratorVoiceId", e.target.value)}
         placeholder={t("tts_field_narrator_voice_none")}
       />
         ) : (
-      <div className="mt-1">
+      <div>
         <DropdownSelect
           value={form.narratorVoiceId}
           options={[{ id: "", label: t("tts_field_narrator_voice_none") }, ...(voices ?? []).map((v) => ({ id: v.id, label: v.label || v.id }))]}

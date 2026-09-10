@@ -11,7 +11,7 @@ import { currentWhisperLane } from "../../../../lib/stt/whisper-client-instance.
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { Icons } from "../../../shared/icons.js";
 import { Toggle } from "../../../shared/Toggle.js";
-import { labelCls } from "../form-field-classes.js";
+import { lblCls } from "../../../../lib/field-tokens.js";
 import { configString } from "./stt-form-helpers.js";
 import { SttModelPicker } from "./SttModelPicker.js";
 import type { SttModelOption } from "./SttModelPicker.js";
@@ -84,7 +84,7 @@ export function SttRecognitionSection({
        *  (whisper.cpp — model bound at server start, SPE-9). */}
       {isBrowser ? (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("stt_field_model")}</label>
+          <label className={lblCls}>{t("stt_field_model")}</label>
           <DropdownSelect
             value={whisperModelId}
             options={WHISPER_MODELS.map((m) => ({
@@ -103,7 +103,7 @@ export function SttRecognitionSection({
         </div>
       ) : serverBoundModel ? (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("stt_field_model")}</label>
+          <label className={lblCls}>{t("stt_field_model")}</label>
           <div
             data-testid="stt-whispercpp-server-model-hint"
             className="rounded-md border border-border bg-s1 px-3 py-2 font-ui text-[11px] text-t3"
@@ -140,7 +140,7 @@ export function SttRecognitionSection({
        *  hidden for English-only whisper models. */}
       {showLanguageField && (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("stt_field_language")}</label>
+          <label className={lblCls}>{t("stt_field_language")}</label>
           <DropdownSelect
             value={configString(form.config, "language")}
             options={WHISPER_LANGUAGES.map((l) => ({

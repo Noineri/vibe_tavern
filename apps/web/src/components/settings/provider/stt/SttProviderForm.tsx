@@ -12,8 +12,8 @@ import { listSttDraftModels } from "../../../../api/stt-api.js";
 import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
-import { labelCls, inputCls } from "../form-field-classes.js";
-import { monoCls } from "../../../build/fields/field-styles.js";
+import { lblCls } from "../../../../lib/field-tokens.js";
+import { TextInput } from "../../../shared/text-input.js";
 import { SttApiKeyField } from "./SttApiKeyField.js";
 import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.js";
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
@@ -265,13 +265,11 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
       {/* Row 1: profile name + backend segment */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("profile_name")}</label>
-          <input
-            type="text"
+          <label className={lblCls}>{t("profile_name")}</label>
+          <TextInput
             value={form.name}
             onChange={(e) => updateForm("name", e.target.value)}
             placeholder={t("profile_name_placeholder")}
-            className={inputCls}
             data-testid="stt-profile-name-input"
           />
           {duplicateNameWarning && (
@@ -284,7 +282,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
           )}
         </div>
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("provider_preset_label")}</label>
+          <label className={lblCls}>{t("provider_preset_label")}</label>
           {/* P7 (audit 2026-09-04): dropdown instead of the wrapping segment
            *  row — same replacement as the TTS preset segment. */}
           <DropdownSelect
@@ -327,7 +325,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
       {(segment === "cloud" || segment === "native" || segment === "local") && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="mb-3">
-            <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
+            <label className={lblCls}>{t("api_format_label")}</label>
             <DropdownSelect
               value={presetId}
               options={groupPresets.map((p) => {
@@ -342,13 +340,8 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
             />
           </div>
           <div className="mb-3">
-            <label className={labelCls + " mb-[6px]"}>{t("preset_endpoint_label")}</label>
-            <input
-              type="text"
-              value={presetEndpoint || t("custom")}
-              readOnly
-              className={cn(inputCls, "!cursor-not-allowed !opacity-60")}
-            />
+            <label className={lblCls}>{t("preset_endpoint_label")}</label>
+            <TextInput value={presetEndpoint || t("custom")} readOnly />
           </div>
         </div>
       )}
@@ -360,13 +353,11 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
           the level-2 section, P8). */}
       {(segment === "custom" || segment === "local" || (segment === "cloud" && isCompat)) && (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("stt_field_endpoint")}</label>
-          <input
-            type="text"
+          <label className={lblCls}>{t("stt_field_endpoint")}</label>
+          <TextInput
             value={configString(form.config, "endpoint")}
             onChange={(e) => updateConfigField(stt, form, "endpoint", e.target.value)}
             placeholder="https://api.openai.com/v1"
-            className={monoCls}
             data-testid="stt-field-endpoint"
           />
         </div>
@@ -377,7 +368,7 @@ export function SttProviderForm({ form, editingId, sttProfiles, updateForm, stt 
           keyless whisper.cpp local backend need none, SPE-9) */}
       {!isBrowser && form.backend !== STT_BACKENDS.WhisperCpp && (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
+          <label className={lblCls}>{t("api_key_label")}</label>
           <SttApiKeyField
             value={apiKey}
             onChange={(v) => updateForm("apiKey", v)}

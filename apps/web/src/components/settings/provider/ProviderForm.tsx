@@ -8,7 +8,8 @@ import { cn } from '../../../lib/cn.js';
 import { Toggle } from '../../shared/Toggle.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
-import { labelCls, inputCls, pwCls } from './form-field-classes.js';
+import { lblCls } from '../../../lib/field-tokens.js';
+import { TextInput } from '../../shared/text-input.js';
 
 interface ProviderFormProps {
   form: FormState;
@@ -76,13 +77,11 @@ export function ProviderForm({
       {/* Row 1: profile name + provider preset */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("profile_name")}</label>
-          <input
-            type="text"
+          <label className={lblCls}>{t("profile_name")}</label>
+          <TextInput
             value={form.name}
             onChange={(e) => updateForm('name', e.target.value)}
             placeholder={t("profile_name_placeholder")}
-            className={inputCls}
           />
           {duplicateNameWarning && (
             <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
@@ -92,7 +91,7 @@ export function ProviderForm({
           )}
         </div>
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("provider_preset_label")}</label>
+          <label className={lblCls}>{t("provider_preset_label")}</label>
           <SegmentedControl
             value={visiblePresetGroup ?? ''}
             options={[
@@ -115,7 +114,7 @@ export function ProviderForm({
       {/* Row 2: API format + preset endpoint */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
+          <label className={lblCls}>{t("api_format_label")}</label>
           <DropdownSelect
             value={form.providerPreset || ''}
             options={visiblePresetGroup ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
@@ -127,26 +126,19 @@ export function ProviderForm({
           />
         </div>
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("preset_endpoint_label")}</label>
-          <input
-            type="text"
-            value={presetEndpoint || t("custom")}
-            readOnly
-            className={cn(inputCls, '!cursor-not-allowed !opacity-60')}
-          />
+          <label className={lblCls}>{t("preset_endpoint_label")}</label>
+          <TextInput value={presetEndpoint || t("custom")} readOnly />
         </div>
       </div>
 
       {!hideConnectionFields && (<>
       {/* Custom endpoint */}
       <div className="mb-3">
-        <label className={labelCls + " mb-[6px]"}>{t("custom_endpoint_label")}</label>
-        <input
-          type="text"
+        <label className={lblCls}>{t("custom_endpoint_label")}</label>
+        <TextInput
           value={form.baseUrl}
           onChange={(e) => updateForm('baseUrl', e.target.value)}
           placeholder="https://api.openai.com/v1"
-          className={inputCls}
         />
       </div>
 
@@ -167,13 +159,13 @@ export function ProviderForm({
 
       {/* API key */}
       <div className="mb-3">
-        <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
-        <input
+        <label className={lblCls}>{t("api_key_label")}</label>
+        <TextInput
           type="password"
+          mono
           value={form.apiKey}
           onChange={(e) => updateForm('apiKey', e.target.value)}
           placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")}
-          className={cn(inputCls, pwCls)}
         />
       </div>
 

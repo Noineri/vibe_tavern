@@ -7,7 +7,8 @@ import { cn } from '../../../lib/cn.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
 import { SaveButton } from '../../shared/SaveBar.js';
-import { labelCls, inputCls, pwCls } from './form-field-classes.js';
+import { lblCls } from '../../../lib/field-tokens.js';
+import { TextInput } from '../../shared/text-input.js';
 import { DIRECT_PROXY_SELECTION, INHERIT_PROXY_SELECTION, proxyPolicyFromSelection, resolvedGlobalProxyLabel, selectionFromProxyPolicy } from '../../../lib/provider-proxy-policy.js';
 
 /** GOVERNING RULE (owner 2026-09-04): provider settings are TWO-LEVEL
@@ -77,8 +78,8 @@ export function ProviderEditHeader({
       {/* Row 1: profile name + preset group */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("profile_name")}</label>
-          <input type="text" value={form.name} onChange={(e) => updateForm('name', e.target.value)} placeholder={t("profile_name_placeholder")} className={inputCls} />
+          <label className={lblCls}>{t("profile_name")}</label>
+          <TextInput value={form.name} onChange={(e) => updateForm('name', e.target.value)} placeholder={t("profile_name_placeholder")} />
           {duplicateNameWarning && (
             <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
@@ -87,7 +88,7 @@ export function ProviderEditHeader({
           )}
         </div>
         <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("provider_preset_label")}</label>
+          <label className={lblCls}>{t("provider_preset_label")}</label>
           <SegmentedControl
             value={visiblePresetGroup ?? ''}
             options={[
@@ -103,7 +104,7 @@ export function ProviderEditHeader({
       {/* Row 2: API format + preset endpoint */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
+          <label className={lblCls}>{t("api_format_label")}</label>
           <DropdownSelect
             value={form.providerPreset || ''}
             options={visiblePresetGroup ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
@@ -113,15 +114,15 @@ export function ProviderEditHeader({
           />
         </div>
         <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("preset_endpoint_label")}</label>
-          <input type="text" value={presetEndpoint || t("custom")} readOnly className={cn(inputCls, '!cursor-not-allowed !opacity-60')} />
+          <label className={lblCls}>{t("preset_endpoint_label")}</label>
+          <TextInput type="text" value={presetEndpoint || t("custom")} readOnly />
         </div>
       </div>
 
       {/* Custom endpoint */}
       <div className="mb-4">
-        <label className={labelCls + " mb-[7px]"}>{t("custom_endpoint_label")}</label>
-        <input type="text" value={form.baseUrl} onChange={(e) => updateForm('baseUrl', e.target.value)} placeholder="https://api.openai.com/v1" className={inputCls} />
+        <label className={lblCls}>{t("custom_endpoint_label")}</label>
+        <TextInput type="text" value={form.baseUrl} onChange={(e) => updateForm('baseUrl', e.target.value)} placeholder="https://api.openai.com/v1" />
       </div>
 
       {/* API key */}
@@ -131,14 +132,14 @@ export function ProviderEditHeader({
         </div>
       ) : (
         <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("api_key_label")}</label>
-          <input type="password" value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} className={cn(inputCls, pwCls)} />
+          <label className={lblCls}>{t("api_key_label")}</label>
+          <TextInput type="password" mono value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} />
         </div>
       )}
 
       {/* Proxy policy */}
       <div className="mb-4">
-        <label className={labelCls + " mb-[7px]"}>{t("provider_proxy")}</label>
+        <label className={lblCls}>{t("provider_proxy")}</label>
         <DropdownSelect
           value={selectionFromProxyPolicy({ proxyMode: form.proxyMode ?? "inherit", proxyId: form.proxyId ?? null })}
           options={[

@@ -9,8 +9,8 @@ import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
-import { labelCls, inputCls } from "../form-field-classes.js";
-import { monoCls } from "../../../build/fields/field-styles.js";
+import { lblCls } from "../../../../lib/field-tokens.js";
+import { TextInput } from "../../../shared/text-input.js";
 import { TtsApiKeyField } from "./TtsApiKeyField.js";
 import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.js";
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
@@ -194,13 +194,11 @@ export function TtsProviderForm({
       {/* Row 1: profile name + segment */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("profile_name")}</label>
-          <input
-            type="text"
+          <label className={lblCls}>{t("profile_name")}</label>
+          <TextInput
             value={form.name}
             onChange={(e) => updateForm("name", e.target.value)}
             placeholder={t("profile_name_placeholder")}
-            className={inputCls}
             data-testid="tts-profile-name-input"
           />
           {duplicateNameWarning && (
@@ -213,7 +211,7 @@ export function TtsProviderForm({
           )}
         </div>
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("provider_preset_label")}</label>
+          <label className={lblCls}>{t("provider_preset_label")}</label>
           {/* P7 (audit 2026-09-04): dropdown instead of the wrapping segment
            *  row — the option tooltips ride as `detail` (shown in the open
            *  list and next to the trigger label). */}
@@ -230,7 +228,7 @@ export function TtsProviderForm({
       {/* Row 2: preset select + preset endpoint */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
+          <label className={lblCls}>{t("api_format_label")}</label>
           <DropdownSelect
             value={presetId || ""}
             options={
@@ -246,17 +244,16 @@ export function TtsProviderForm({
           />
         </div>
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("preset_endpoint_label")}</label>
-          <input type="text" value={presetEndpoint || t("custom")} readOnly className={cn(inputCls, "!cursor-not-allowed !opacity-60")} />
+          <label className={lblCls}>{t("preset_endpoint_label")}</label>
+          <TextInput value={presetEndpoint || t("custom")} readOnly />
         </div>
       </div>
 
       {/* Custom/local endpoint */}
       {showEndpoint && (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("custom_endpoint_label")}</label>
-          <input
-            type="text"
+          <label className={lblCls}>{t("custom_endpoint_label")}</label>
+          <TextInput
             value={configString(form.config, "endpoint")}
             onChange={(e) => {
               const v = e.target.value;
@@ -266,7 +263,6 @@ export function TtsProviderForm({
               updateForm("config", next);
             }}
             placeholder="https://api.openai.com/v1"
-            className={inputCls}
             data-testid="tts-field-endpoint"
           />
         </div>
@@ -277,9 +273,9 @@ export function TtsProviderForm({
           the config bag rather than the typed key column. */}
       {spec.connection.appId !== undefined && (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("tts_field_app_id")}</label>
-          <input
-            type="text"
+          <label className={lblCls}>{t("tts_field_app_id")}</label>
+          <TextInput
+            mono
             value={configString(form.config, "appId")}
             onChange={(e) => {
               const v = e.target.value;
@@ -289,7 +285,6 @@ export function TtsProviderForm({
               updateForm("config", next);
             }}
             placeholder={spec.connection.appId.placeholder}
-            className={inputCls}
             data-testid="tts-field-app-id"
           />
         </div>
@@ -300,9 +295,9 @@ export function TtsProviderForm({
           Key) is the masked key field below. Empty value removes the key. */}
       {spec.connection.accessKeyId !== undefined && (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("tts_field_access_key_id")}</label>
-          <input
-            type="text"
+          <label className={lblCls}>{t("tts_field_access_key_id")}</label>
+          <TextInput
+            mono
             value={configString(form.config, "accessKeyId")}
             onChange={(e) => {
               const v = e.target.value;
@@ -312,7 +307,6 @@ export function TtsProviderForm({
               updateForm("config", next);
             }}
             placeholder={spec.connection.accessKeyId.placeholder}
-            className={inputCls}
             data-testid="tts-field-access-key-id"
           />
         </div>
@@ -323,9 +317,9 @@ export function TtsProviderForm({
           removes the key so the guard sees a clean missing region. */}
       {spec.connection.region !== undefined && (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("tts_field_region")}</label>
-          <input
-            type="text"
+          <label className={lblCls}>{t("tts_field_region")}</label>
+          <TextInput
+            mono
             value={configString(form.config, "region")}
             onChange={(e) => {
               const v = e.target.value;
@@ -335,7 +329,6 @@ export function TtsProviderForm({
               updateForm("config", next);
             }}
             placeholder={spec.connection.region.placeholder}
-            className={inputCls}
             data-testid="tts-field-region"
           />
           {/* Docs link under the field — the house pattern from the manual
@@ -359,7 +352,7 @@ export function TtsProviderForm({
       {/* API key */}
       {showKeyInput && (
         <div className="mb-3">
-          <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
+          <label className={lblCls}>{t("api_key_label")}</label>
           {spec.connection.apiKey?.multiline === true ? (
             // TPE-14 Google Cloud: the secret IS the service-account JSON
             // file — a paste target, not a one-line masked input (owner
@@ -369,7 +362,7 @@ export function TtsProviderForm({
             // stored-status line below carries the F2b semantics.
             <div data-testid="tts-field-api-key-multiline">
               <AutoTextarea
-                className={monoCls + " w-full"}
+                mono
                 value={apiKey}
                 onChange={(e) => updateForm("apiKey", e.target.value)}
                 placeholder={
