@@ -22,6 +22,9 @@ import { Modal } from "../shared/Modal.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
+import { TextInput } from "../shared/text-input.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { updatePersona, createPersona, uploadPersonaAvatar } from "../../app-client.js";
 import { toast } from "sonner";
 import { readCardRaw } from "../modals/import/parse-import-file.js";
@@ -583,33 +586,30 @@ function PersonaStep({
         />
       )}
 
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
-        <input
-          className={cn("w-full rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base min-h-[44px]" : "text-[0.9rem]")}
-          type="text"
+      <div>
+        <label className={lblCls}>{t("ws_name_label")}</label>
+        <TextInput
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("persona_name_placeholder")}
           autoFocus
         />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("persona_desc_placeholder")}</span>
+      </div>
+      <div>
+        <label className={lblCls}>{t("persona_desc_placeholder")}</label>
         <MobileExpandTextarea value={description} onChange={setDescription} label={t("persona_desc_placeholder")}>
-          <textarea
-            className={cn("w-full min-h-[80px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+          <AutoTextarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={t("persona_desc_placeholder")}
-            rows={3}
+            minRows={3}
           />
         </MobileExpandTextarea>
-      </label>
+      </div>
 
       {/* Pronouns */}
       <div className="flex flex-col gap-1.5">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("pronouns_custom_placeholder")}</span>
+        <span className={lblCls + " !mb-0"}>{t("pronouns_custom_placeholder")}</span>
         <div className="flex flex-wrap gap-1.5">
           {PRONOUN_OPTIONS.map((opt) => (
             <button key={opt.v} type="button"
@@ -626,8 +626,7 @@ function PersonaStep({
           ))}
         </div>
         {pronouns === "custom" && (
-          <input
-            className="w-full rounded-lg border border-border2 bg-s2 px-3 py-2 font-ui text-t1 outline-none transition-colors focus:border-accent"
+          <TextInput
             value={pronounsCustom}
             onChange={(e) => setPronounsCustom(e.target.value)}
             placeholder={t("pronouns_custom_placeholder")}
@@ -811,41 +810,37 @@ function CharacterStep({
         />
       )}
 
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
-        <input
-          className={cn("w-full rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base min-h-[44px]" : "text-[0.9rem]")}
-          type="text"
+      <div>
+        <label className={lblCls}>{t("ws_name_label")}</label>
+        <TextInput
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("ws_name_placeholder")}
           autoFocus
         />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_desc_label")}</span>
+      </div>
+      <div>
+        <label className={lblCls}>{t("ws_desc_label")}</label>
         <MobileExpandTextarea value={desc} onChange={setDesc} label={t("ws_desc_label")}>
-          <textarea
-            className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+          <AutoTextarea
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
             placeholder={t("ws_desc_label")}
-            rows={3}
+            minRows={3}
           />
         </MobileExpandTextarea>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_first_msg_label")}</span>
+      </div>
+      <div>
+        <label className={lblCls}>{t("ws_first_msg_label")}</label>
         <MobileExpandTextarea value={firstMsg} onChange={setFirstMsg} label={t("ws_first_msg_label")}>
-          <textarea
-            className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+          <AutoTextarea
             value={firstMsg}
             onChange={(e) => setFirstMsg(e.target.value)}
             placeholder={t("ws_first_msg_label")}
-            rows={3}
+            minRows={3}
           />
         </MobileExpandTextarea>
-      </label>
+      </div>
 
       {/* Import card */}
       <button
