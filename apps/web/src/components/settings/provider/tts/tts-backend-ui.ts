@@ -36,7 +36,7 @@ export const TTS_PRESET_CONFIG_KEY = "preset";
  */
 export type TtsProviderSegment = "browser" | "local" | "cloud" | "native" | "custom";
 
-export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud" | "xai";
+export type TtsUiVariant = "kokoro" | "local" | "openai" | "gemini" | "elevenlabs" | "cartesia" | "inworld" | "lmnt" | "minimax" | "volcengine" | "deepgram" | "azure" | "polly" | "google-cloud" | "xai" | "mistral";
 
 export interface TtsNumberFieldSpec {
   kind: "number";
@@ -515,6 +515,44 @@ const SPECS: Record<TtsUiVariant, TtsUiSpec> = {
     ],
     localHelpers: false,
   },
+  "mistral": {
+    connection: {
+      apiKey: {
+        placeholder: "…",
+        docsUrl: "https://console.mistral.ai/api-keys",
+      },
+      // No TTS models-list endpoint exists — manual input with a
+      // docs-link discovery path (owner directives 2026-08-29/09-01:
+      // no example placeholder, the provider's own page is the catalog).
+      // An empty field is fine: the backend falls back to the cookbook
+      // model server-side (voxtral-mini-tts-2603).
+      model: {
+        mode: "input",
+        key: "model",
+        labelKey: "tts_field_model",
+        docsUrl: "https://docs.mistral.ai/api/endpoint/audio/speech",
+      },
+    },
+    tuning: [
+      // REST body `response_format` — documented enum minus "pcm": raw
+      // float32 PCM has no container header and a bare <audio> element
+      // cannot play it back (honest option list, not the full enum).
+      {
+        kind: "select",
+        key: "responseFormat",
+        labelKey: "tts_field_response_format",
+        options: [
+          { id: "mp3", label: "mp3" },
+          { id: "wav", label: "wav" },
+          { id: "flac", label: "flac" },
+          { id: "opus", label: "opus" },
+        ],
+        fallback: "mp3",
+        testid: "tts-field-response-format",
+      },
+    ],
+    localHelpers: false,
+  },
 };
 
 export function ttsUiSpecFor(variant: TtsUiVariant): TtsUiSpec {
@@ -540,6 +578,7 @@ export function ttsUiVariantOf(backend: TtsBackendSlug, config: Record<string, u
   if (backend === TTS_BACKEND.Polly) return "polly";
   if (backend === TTS_BACKEND.GoogleCloud) return "google-cloud";
   if (backend === TTS_BACKEND.Xai) return "xai";
+  if (backend === TTS_BACKEND.Mistral) return "mistral";
   return "kokoro";
 }
 
@@ -559,6 +598,7 @@ const TTS_NATIVE_BACKENDS: ReadonlySet<TtsBackendSlug> = new Set([
   TTS_BACKEND.Polly,
   TTS_BACKEND.GoogleCloud,
   TTS_BACKEND.Xai,
+  TTS_BACKEND.Mistral,
 ]);
 
 /** Derive the five-segment view for the forked ProviderForm (TE2-8, SPE-8):
@@ -619,5 +659,7 @@ export function backendForVariant(variant: TtsUiVariant): TtsBackendSlug {
       return TTS_BACKEND.GoogleCloud;
     case "xai":
       return TTS_BACKEND.Xai;
+    case "mistral":
+      return TTS_BACKEND.Mistral;
   }
 }

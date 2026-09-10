@@ -44,6 +44,7 @@ describe("ttsUiVariantOf", () => {
     expect(ttsUiVariantOf(TTS_BACKEND.Polly, {})).toBe("polly");
     expect(ttsUiVariantOf(TTS_BACKEND.GoogleCloud, {})).toBe("google-cloud");
     expect(ttsUiVariantOf(TTS_BACKEND.Xai, {})).toBe("xai");
+    expect(ttsUiVariantOf(TTS_BACKEND.Mistral, {})).toBe("mistral");
   });
 });
 
@@ -64,6 +65,7 @@ describe("backendForVariant", () => {
     expect(backendForVariant("polly")).toBe(TTS_BACKEND.Polly);
     expect(backendForVariant("google-cloud")).toBe(TTS_BACKEND.GoogleCloud);
     expect(backendForVariant("xai")).toBe(TTS_BACKEND.Xai);
+    expect(backendForVariant("mistral")).toBe(TTS_BACKEND.Mistral);
   });
 });
 
@@ -325,6 +327,33 @@ describe("ttsUiSpecFor (field configuration)", () => {
     }
   });
 
+  it("mistral: key with console docs link; INPUT-mode model (no placeholder, docs discovery) + response format select WITHOUT pcm", () => {
+    const spec = ttsUiSpecFor("mistral");
+    expect(spec.connection.apiKey?.docsUrl).toBe("https://console.mistral.ai/api-keys");
+    expect(spec.connection.model?.mode).toBe("input");
+    expect(spec.connection.model?.key).toBe("model");
+    expect(spec.connection.region).toBeUndefined();
+    expect(spec.localHelpers).toBe(false);
+
+    // No TTS models-list endpoint exists — the docs link is the discovery
+    // path (owner directives 2026-08-29/09-01: no example placeholder,
+    // never a static catalog).
+    expect(spec.connection.model?.docsUrl).toBe("https://docs.mistral.ai/api/endpoint/audio/speech");
+
+    const format = spec.tuning.find((f) => f.kind === "select" && f.key === "responseFormat");
+    if (format?.kind === "select") {
+      // Documented enum minus "pcm": raw float32 PCM carries no container
+      // header — a bare <audio> element cannot play it back.
+      expect(format.options.map((o) => o.id)).toEqual(["mp3", "wav", "flac", "opus"]);
+      expect(format.fallback).toBe("mp3");
+    } else {
+      throw new Error("mistral spec is missing the response format select");
+    }
+
+    // No speed knob on this wire — nothing else in tuning.
+    expect(spec.tuning.length).toBe(1);
+  });
+
   it("google-cloud: MULTILINE key (SA JSON paste) with docs link; rate/pitch/volume tuning, NO model field", () => {
     const spec = ttsUiSpecFor("google-cloud");
     // The secret IS the service-account JSON file — pasted whole into the
@@ -372,7 +401,7 @@ describe("ttsUiSpecFor (field configuration)", () => {
 
 describe("ttsUiSpecFor — no example-id placeholder stubs (D20)", () => {
   it("no variant carries a voicePlaceholder (fake example id) field", () => {
-    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud", "xai"] as const) {
+    for (const variant of ["kokoro", "local", "openai", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud", "xai", "mistral"] as const) {
       const spec = ttsUiSpecFor(variant);
       expect(Object.hasOwn(spec, "voicePlaceholder")).toBe(false);
       expect(JSON.stringify(spec)).not.toContain("alloy");

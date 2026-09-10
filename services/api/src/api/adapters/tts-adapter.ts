@@ -22,6 +22,7 @@ import "../../domain/tts/backends/azure-tts.js";
 import "../../domain/tts/backends/polly-tts.js";
 import "../../domain/tts/backends/google-cloud-tts.js";
 import "../../domain/tts/backends/xai-tts.js";
+import "../../domain/tts/backends/mistral-tts.js";
 // The STT openai-compat adapter self-registers at import time (ST-5a); its
 // home is now stt-adapter.ts (ST-5b) — imported from there, not here.
 

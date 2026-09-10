@@ -545,6 +545,8 @@ export const TTS_BACKEND = {
   GoogleCloud: "google-cloud",
   /** TPE-15 — native xAI Grok Voice TTS (direct /v1/tts, live voice roster). */
   Xai: "xai",
+  /** TPE-16 — native Mistral Voxtral Mini TTS (direct /v1/audio/speech, clone-capable). */
+  Mistral: "mistral",
 } as const;
 export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
 
@@ -829,6 +831,24 @@ export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabili
     supportsVoiceList: true,
     // REST body `speed` — documented range 0.7–1.5, default 1.
     supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Mistral]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // Non-stream POST /v1/audio/speech returns {audio_data: base64}; the
+    // SSE stream=true lane (speech.audio.delta/done, float32 PCM) exists
+    // upstream but stays unwired — buffered first per the plan row.
+    supportsStreaming: false,
+    // POST /v1/audio/voices (name + base64 sample_audio) is open to every
+    // account — the first wave-D native WITH a clone section.
+    supportsCloning: true,
+    // Live catalog: GET /v1/audio/voices (offset pagination, type=all —
+    // presets + customs in one list) — no hardcoded voice list (owner
+    // rule).
+    supportsVoiceList: true,
+    // SpeechRequest exposes no speed knob — nothing to tune.
+    supportsSpeed: false,
     requiresApiKey: true,
   },
 };

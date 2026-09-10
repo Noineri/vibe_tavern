@@ -1008,6 +1008,7 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
       ["Amazon Polly", TTS_BACKEND.Polly],
       ["Google Cloud TTS", TTS_BACKEND.GoogleCloud],
       ["xAI (Grok Voice)", TTS_BACKEND.Xai],
+      ["Mistral (Voxtral Mini)", TTS_BACKEND.Mistral],
     ];
     let view!: ReturnType<typeof render>;
     await act(async () => {
