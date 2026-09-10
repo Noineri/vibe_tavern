@@ -260,7 +260,7 @@ export async function discoverLocalTtsServers(
 /** Probe the STT side of a local server. STT capability is signalled by the
  *  OpenAI-compatible `/v1/audio/transcriptions` ROUTE EXISTING: the route is
  *  a POST-only endpoint, so a GET answers 405 Method Not Allowed on servers
- *  that have it (faster-whisper-server, LocalAI) and 404 on servers that do
+ *  that have it (speaches, LocalAI) and 404 on servers that do
  *  not. A port is STT-"found" when BOTH the models endpoint returns a usable
  *  catalog AND the transcriptions route exists (non-404). Same non-found
  *  precedence as probeServerPort (timeout > bad-shape > http-error > refused).

@@ -229,7 +229,7 @@ export const STT_PROVIDER_PRESETS: readonly SttProviderPreset[] = [
 	{
 		// «Локальный сервер» — the owner-required named row for any local
 		// OpenAI-compatible transcription server (whisper.cpp server,
-		// faster-whisper-server, LocalAI, a Riva NIM ASR container); mirrors
+		// speaches, LocalAI, a Riva NIM ASR container); mirrors
 		// the TTS tab's Local Server entry instead of hiding locals in the
 		// old catch-all row.
 		id: "local",

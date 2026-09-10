@@ -18,12 +18,14 @@ import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
 
-/** The STT local-server panel (STT_PLAN ST-8): fork SUBSET of
+/** The STT local-server panel (STT_PLAN ST-8, SPE-10): fork SUBSET of
  *  TtsLocalServerPanel — the setup-help accordion + the port-scan block.
  *  Deliberately DROPS the TTS docker-status probe (that is a TTS-only D8
  *  route; STT discovery is pure port probing) and the voices count (STT has
- *  no voices). Renders ONLY for the openai-compat backend — the whisper-browser
- *  tier is in-browser and needs no server. */
+ *  no voices). Renders for BOTH local rows (SPE-8): the generic
+ *  OpenAI-compat server and the dedicated whisper.cpp preset — guides for
+ *  everyone, the port scan only where its /v1/models probe can work. The
+ *  whisper-browser tier is in-browser and needs no server. */
 export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: Pick<SttHook, "setForm"> }) {
   const { t, tDynamic } = useT();
   const discovery = useSttDiscovery();
@@ -36,7 +38,11 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
   // guide+OS (same tracker as the TTS panel — shared row + hook).
   const checklist = useGuideChecklist(guideId, os);
 
-  if (form.backend !== STT_BACKENDS.OpenAiCompat) return null;
+  if (form.backend !== STT_BACKENDS.OpenAiCompat && form.backend !== STT_BACKENDS.WhisperCpp) return null;
+
+  // The scan probe speaks the OpenAI /v1/models dialect — it can only run
+  // in the generic compat row, not on the whisper.cpp preset.
+  const isCompat = form.backend === STT_BACKENDS.OpenAiCompat;
 
   const currentEndpoint = configString(form.config, "endpoint");
 
@@ -151,6 +157,7 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
 
             {(() => {
               const guide = STT_SERVER_GUIDES.find((g) => g.id === guideId) ?? STT_SERVER_GUIDES[0];
+            const wireMatches = (guide.wire === "openai") === isCompat;
               const step = (id: string, s: SttHelpStep) => (
                 <div key={id} data-testid={`stt-help-step-${id}`} className="flex flex-col gap-1.5">
                   <label className={lblCls}>{t(s.titleKey)}</label>
@@ -183,21 +190,33 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
                   {step("download-clone", guide.clone)}
                   {step("install", guide.install)}
                   {step("run", guide.run)}
-                  {/* Endpoint to paste (adopt flow preserved). */}
+                  {/* Endpoint to paste (adopt flow preserved). When the
+                   *  guide's wire does not match the row's backend (e.g. the
+                   *  whisper.cpp/whisperfile guides read from the compat row,
+   *  or an OpenAI-wire guide read from the whisper.cpp row) the
+   *  adopt button is replaced by a pointer to the right preset —
+   *  adopting a mismatched endpoint would silently produce a
+   *  broken profile (SPE-10 honesty rule). */}
                   <div data-testid="stt-help-step-endpoint" className="flex flex-col gap-1.5">
                     <label className={lblCls}>{t("stt_local_step_endpoint")}</label>
                     <div className="flex items-center gap-2">
                       <div className={`${monoCls} min-w-0 flex-1 whitespace-pre-wrap break-all text-t3`}>
                         {guide.endpoint}
                       </div>
-                      <button
-                        type="button"
-                        data-testid={`stt-help-use-${guide.id}`}
-                        className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
-                        onClick={() => updateConfigField(stt, form, "endpoint", guide.endpoint)}
-                      >
-                        {t("stt_local_adopt")}
-                      </button>
+                      {wireMatches ? (
+                        <button
+                          type="button"
+                          data-testid={`stt-help-use-${guide.id}`}
+                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded bg-accent px-2 py-1 font-ui text-[11px] text-white transition-colors hover:bg-accent/90"
+                          onClick={() => updateConfigField(stt, form, "endpoint", guide.endpoint)}
+                        >
+                          {t("stt_local_adopt")}
+                        </button>
+                      ) : (
+                        <div data-testid="stt-help-wire-mismatch" className="shrink-0 font-ui text-[11px] text-t3">
+                          {t(guide.wire === "whisper-cpp" ? "stt_local_wire_needs_whisper_cpp" : "stt_local_wire_needs_compat")}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>
@@ -208,7 +227,8 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
         </AnimatedDisclosure>
       </div>
 
-      {/* Local-server scan. */}
+      {/* Local-server scan (compat row only — the probe speaks OpenAI /v1/models). */}
+      {isCompat && (
       <div className="flex flex-col gap-2">
         <label className={lblCls}>{t("stt_local_section")}</label>
         <button
@@ -278,11 +298,7 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
           </div>
         )}
       </div>
-
-      {/* whisper.cpp exclusion — plain-language note (ST-8). */}
-      <div data-testid="stt-local-whisper-cpp-note" className="rounded-md border border-border bg-s1 px-3 py-2 font-ui text-[11px] text-t3">
-        {t("stt_local_whisper_cpp_note")}
-      </div>
+      )}
     </div>
   );
 }

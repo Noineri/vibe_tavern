@@ -51,6 +51,19 @@ function whisperForm(): SttProfileForm {
   };
 }
 
+function whisperCppForm(): SttProfileForm {
+  return {
+    id: null,
+    name: "",
+    backend: STT_BACKENDS.WhisperCpp,
+    config: { endpoint: "" },
+    apiKey: "",
+    autoKeyProviderName: null,
+    hasStoredApiKey: false,
+      emotionAnnotation: false,
+  };
+}
+
 function foundServer(port: number, modelIds: string[]): DiscoveredServer {
   return { port, baseUrl: `http://127.0.0.1:${port}`, kind: "openai-compatible", voiceIds: [], modelIds };
 }
@@ -65,9 +78,13 @@ afterEach(() => {
 });
 
 describe("SttLocalServerPanel", () => {
-  test("renders only for the openai-compat backend (null for whisper-browser)", () => {
+  test("renders for both local rows (compat + whisper.cpp), null for whisper-browser", () => {
     const view = renderPanel(openaiForm(), mock(() => {}));
     expect(view.queryByTestId("stt-local-server-panel")).not.toBeNull();
+
+    cleanup();
+    const viewCpp = renderPanel(whisperCppForm(), mock(() => {}));
+    expect(viewCpp.queryByTestId("stt-local-server-panel")).not.toBeNull();
 
     cleanup();
     const view2 = renderPanel(whisperForm(), mock(() => {}));
@@ -115,18 +132,57 @@ describe("SttLocalServerPanel", () => {
     expect(patch.config.model).toBe("Systran/faster-whisper-base");
   });
 
-  test("whisper.cpp exclusion note is rendered", () => {
+  test("the stale whisper.cpp exclusion note is gone (SPE-10)", () => {
     const view = renderPanel(openaiForm(), mock(() => {}));
-    expect(view.queryByTestId("stt-local-whisper-cpp-note")).not.toBeNull();
-    expect(view.getByTestId("stt-local-whisper-cpp-note").textContent).toBe("stt_local_whisper_cpp_note");
+    expect(view.queryByTestId("stt-local-whisper-cpp-note")).toBeNull();
   });
 
-  test("setup help renders both server guide cards", async () => {
+  test("setup help renders all six server guide cards (SPE-10)", async () => {
     const view = renderPanel(openaiForm(), mock(() => {}));
     await act(async () => {
       await userEvent.click(view.getByTestId("stt-setup-help-toggle"));
     });
-    expect(view.getByText("Faster Whisper Server")).not.toBeNull();
+    expect(view.getByText("Speaches")).not.toBeNull();
+    expect(view.getByText("whisper.cpp")).not.toBeNull();
+    expect(view.getByText("Whisperfile")).not.toBeNull();
     expect(view.getByText("LocalAI")).not.toBeNull();
+    expect(view.getByText("vLLM")).not.toBeNull();
+    expect(view.getByText("NVIDIA Riva NIM")).not.toBeNull();
+  });
+
+  test("wire mismatch: whisper.cpp guide in the compat row shows a pointer, not the adopt button", async () => {
+    const view = renderPanel(openaiForm(), mock(() => {}));
+    await act(async () => {
+      await userEvent.click(view.getByTestId("stt-setup-help-toggle"));
+    });
+    // default guide = speaches (openai wire, matches the row) → adopt present
+    expect(view.queryByTestId("stt-help-use-speaches")).not.toBeNull();
+
+    await act(async () => {
+      await userEvent.click(view.getByTestId("stt-help-choice-whisper-cpp"));
+    });
+    expect(view.queryByTestId("stt-help-use-whisper-cpp")).toBeNull();
+    expect(view.queryByTestId("stt-help-wire-mismatch")).not.toBeNull();
+    expect(view.getByTestId("stt-help-wire-mismatch").textContent).toBe("stt_local_wire_needs_whisper_cpp");
+  });
+
+  test("whisper.cpp row: adopt works for whisper-wire guides, compat guides get the mirror pointer", async () => {
+    const view = renderPanel(whisperCppForm(), mock(() => {}));
+    await act(async () => {
+      await userEvent.click(view.getByTestId("stt-setup-help-toggle"));
+    });
+    // scan is compat-only — no probe in the whisper.cpp row
+    expect(view.queryByTestId("stt-local-scan")).toBeNull();
+
+    await act(async () => {
+      await userEvent.click(view.getByTestId("stt-help-choice-whisper-cpp"));
+    });
+    expect(view.queryByTestId("stt-help-use-whisper-cpp")).not.toBeNull();
+
+    await act(async () => {
+      await userEvent.click(view.getByTestId("stt-help-choice-speaches"));
+    });
+    expect(view.queryByTestId("stt-help-use-speaches")).toBeNull();
+    expect(view.getByTestId("stt-help-wire-mismatch").textContent).toBe("stt_local_wire_needs_compat");
   });
 });
