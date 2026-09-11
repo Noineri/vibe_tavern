@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/launch_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/vt_background"
+    android:clipToPadding="false"
     android:fillViewport="true">
 
     <LinearLayout
@@ -105,16 +107,6 @@
             android:text="@string/open_browser"
             android:textSize="15sp" />
 
-        <Button
-            android:id="@+id/btn_stop_server"
-            style="@style/Widget.VibeTavern.Button.Secondary"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="18dp"
-            android:minHeight="48dp"
-            android:text="@string/stop_server"
-            android:textSize="14sp" />
-
         <TextView
             android:id="@+id/management_label"
             android:layout_width="match_parent"
@@ -134,6 +126,26 @@
             android:layout_marginBottom="10dp"
             android:minHeight="48dp"
             android:text="@string/check_launcher_update"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btn_copy_server_log"
+            style="@style/Widget.VibeTavern.Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minHeight="48dp"
+            android:text="@string/copy_server_log"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btn_clear_server_log"
+            style="@style/Widget.VibeTavern.Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minHeight="48dp"
+            android:text="@string/clear_server_log"
             android:textSize="14sp" />
 
         <LinearLayout
@@ -170,44 +182,11 @@
                 android:visibility="gone">
 
                 <TextView
-                    android:id="@+id/first_time_setup_step_open"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
-                    android:lineSpacingExtra="3dp"
-                    android:text="@string/first_time_setup_step_open"
-                    android:textColor="@color/vt_text_primary"
-                    android:textSize="13sp" />
-
-                <TextView
-                    android:id="@+id/first_time_setup_step_command"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="10dp"
-                    android:lineSpacingExtra="3dp"
-                    android:text="@string/first_time_setup_step_command"
-                    android:textColor="@color/vt_text_primary"
-                    android:textSize="13sp" />
-
-                <include layout="@layout/view_termux_setup_command" />
-
-                <TextView
-                    android:id="@+id/first_time_setup_step_restart"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:layout_marginBottom="14dp"
-                    android:lineSpacingExtra="3dp"
-                    android:text="@string/first_time_setup_step_restart"
-                    android:textColor="@color/vt_text_primary"
-                    android:textSize="13sp" />
-
-                <TextView
-                    android:id="@+id/first_time_setup_step_install"
+                    android:id="@+id/first_time_setup_migration_slot"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:lineSpacingExtra="3dp"
-                    android:text="@string/first_time_setup_step_install"
+                    android:text="@string/first_time_setup_migration_slot"
                     android:textColor="@color/vt_text_primary"
                     android:textSize="13sp" />
 

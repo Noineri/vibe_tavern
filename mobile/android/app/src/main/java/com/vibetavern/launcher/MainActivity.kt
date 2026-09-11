@@ -1,29 +1,32 @@
 package com.vibetavern.launcher
 
+import android.Manifest
 import android.app.DownloadManager
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.ClipData
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,7 +43,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progressText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var openBtn: Button
-    private lateinit var stopBtn: Button
     private lateinit var setupBtn: Button
     private lateinit var launchBtn: Button
     private lateinit var uninstallBtn: Button
@@ -57,186 +59,21 @@ class MainActivity : AppCompatActivity() {
     )
     private val apkUpdateManager by lazy { ApkUpdateManager(this) }
     private var pollingJob: Job? = null
+    private var payloadExtractionJob: Job? = null
     private var updateCheckJob: Job? = null
     private var downloadPollingJob: Job? = null
     private var downloadReceiverRegistered = false
-    private var resultReceiverRegistered = false
     private var installerHandoffInProgress = false
-    private var installationInProgress = false
     private var activityStarted = false
     private var pendingUpdateRelease: PublishedRelease? = null
     private var launcherUpdateAction = LauncherUpdateAction.CHECK
+    private var nativeStartRequested = false
+    private var extractingPayload = false
+    private var serverActionStops = false
 
-    private val RUN_CMD_PERM = "com.termux.permission.RUN_COMMAND"
-    private val TERMUX_RESULT_ACTION = "com.vibetavern.launcher.TERMUX_RESULT"
-    private val PREFS = "vibe_tavern_launcher"
-    private val PREF_INSTALLED = "installed_once"
-    private val PREF_PAYLOAD_VERSION = "installed_payload_version"
-    private val PREF_LANGUAGE = "language"
-    private val serverUrl = "http://127.0.0.1:8787"
-    private val launcherBuildLabel = "archive-orchestrator-${BuildConfig.VERSION_NAME}"
-    private val bundledArchiveName = "vibe-tavern-android-arm64.tgz"
-    private val localArchiveUrl = PayloadTransferService.ARCHIVE_URL
+    private val serverUrl = ServerService.BASE_URL
 
-    // The APK asset `install.sh` is the single installer source of truth.
-
-    // ========== Quick launch (post-setup, inside proot) ==========
-    private val startCmd = """
-        clear
-        LOG="${'$'}HOME/vibe-tavern-start.log"
-        exec > >(tee -a "${'$'}LOG") 2>&1
-        echo '=== Vibe Tavern server start ==='
-        echo 'Launcher build: $launcherBuildLabel'
-        echo "Time: $(date)"
-        echo "Log: ${'$'}LOG"
-        echo
-        echo 'This is the diagnostic start log. If startup fails, this screen will stay open.'
-        echo 'Keep Termux open while using Vibe Tavern.'
-        echo
-
-        echo '[1/6] Checking Termux environment...'
-        echo "TERMUX_VERSION=${'$'}{TERMUX_VERSION:-unknown}"
-        echo "HOME=${'$'}HOME"
-        pwd || true
-        echo
-
-        echo '[2/6] Checking required commands...'
-        if ! command -v proot-distro >/dev/null 2>&1; then
-          echo '❌ proot-distro is not installed. Run Install / Update from the APK first.'
-          echo
-          echo 'Press Enter to close this Termux session.'
-          read -r _
-          exit 1
-        fi
-        command -v proot-distro || true
-        echo
-
-        echo '[3/6] Checking Ubuntu proot...'
-        proot-distro list || true
-        if ! proot-distro list --quiet | grep -qxF 'ubuntu'; then
-          echo '❌ Ubuntu proot is missing. Run Install / Update from the APK first.'
-          echo
-          echo 'Press Enter to close this Termux session.'
-          read -r _
-          exit 1
-        fi
-        echo
-
-        echo '[4/6] Skipping stale process cleanup during Start...'
-        echo 'Start no longer runs wake-lock, pgrep, or pkill here because some Android/Termux builds close the foreground session during cleanup.'
-        echo 'If a stale server is already running, use Stop Server first, then Start again.'
-        echo 'Step 4 OK'
-        echo
-
-        echo '[5/6] Inspecting files inside proot...'
-        proot-distro login ubuntu -- bash -lc '
-          set -u
-          echo "proot HOME=${'$'}HOME"
-          echo "start script:"
-          ls -l "${'$'}HOME/start-vibe-tavern.sh" 2>/dev/null || true
-          echo "app dir:"
-          ls -la "${'$'}HOME/vibe-tavern" 2>/dev/null || true
-          echo "data dir:"
-          ls -la "${'$'}HOME/.local/share/vibe-tavern" 2>/dev/null || true
-        '
-        inspect_code=${'$'}?
-        echo "Inspect exited with code ${'$'}inspect_code"
-        echo
-
-        echo '[6/6] Starting server inside proot...'
-        echo 'If startup succeeds, this terminal becomes the server log.'
-        echo
-        proot-distro login ubuntu -- bash -lc '
-          set -euxo pipefail
-          if [ -x "${'$'}HOME/start-vibe-tavern.sh" ]; then
-            bash -x "${'$'}HOME/start-vibe-tavern.sh"
-          elif [ -x "${'$'}HOME/vibe-tavern/vibe-tavern" ]; then
-            export VIBE_TAVERN_OPEN_BROWSER=0
-            export VIBE_TAVERN_HOST=127.0.0.1
-            export VIBE_TAVERN_PORT=8787
-            export VIBE_TAVERN_DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
-            export VIBE_TAVERN_WEB_DIR="${'$'}HOME/vibe-tavern/web"
-            cd "${'$'}HOME/vibe-tavern"
-            exec ./vibe-tavern
-          else
-            echo ERROR_NO_ARCHIVE_INSTALL
-            echo "Install or update Vibe Tavern from the APK first."
-            exit 1
-          fi
-        '
-        code=${'$'}?
-        echo
-        echo "❌ Server process exited with code ${'$'}code"
-        echo "Log saved at: ${'$'}LOG"
-        echo
-        echo 'Common fixes:'
-        echo '- Run Install / Update from the APK if files are missing.'
-        echo '- Make sure Termux is from F-Droid.'
-        echo '- Disable battery optimization for Termux if it gets killed or lags.'
-        echo
-        echo 'Press Enter to close this Termux session.'
-        read -r _
-        exit "${'$'}code"
-    """.trimIndent()
-
-    private val stopCmd = """
-        LOG="${'$'}HOME/vibe-tavern-stop.log"
-        exec > >(tee -a "${'$'}LOG") 2>&1
-        echo '=== Vibe Tavern server stop ==='
-        echo "Time: $(date)"
-        echo "Log: ${'$'}LOG"
-        echo
-
-        echo '[1/4] Processes before stop, exact process name only:'
-        pgrep -ax 'vibe-tavern' || true
-        echo
-
-        echo '[2/4] Asking server process to stop inside proot...'
-        if command -v proot-distro >/dev/null 2>&1 && proot-distro list --quiet | grep -qxF 'ubuntu'; then
-          proot-distro login ubuntu -- bash -lc '
-            set +e
-            echo "Inside proot before stop, exact process name only:"
-            pgrep -ax "vibe-tavern" || true
-            pkill -TERM -x "vibe-tavern" 2>/dev/null || true
-            sleep 2
-            pkill -KILL -x "vibe-tavern" 2>/dev/null || true
-            echo "Inside proot after stop, exact process name only:"
-            pgrep -ax "vibe-tavern" || true
-          ' || true
-        else
-          echo 'Ubuntu proot not found; skipping proot stop.'
-        fi
-        echo
-
-        echo '[3/4] Stopping any remaining Termux-side exact-name process...'
-        pkill -TERM -x 'vibe-tavern' 2>/dev/null || true
-        sleep 1
-        pkill -KILL -x 'vibe-tavern' 2>/dev/null || true
-        termux-wake-unlock 2>/dev/null || true
-        echo
-
-        echo '[4/4] Processes after stop, exact process name only:'
-        pgrep -ax 'vibe-tavern' || true
-        echo 'Done.'
-    """.trimIndent()
-
-    private val resultReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (installationInProgress) finishInstallationAttempt()
-            val errMsg = intent?.getStringExtra("com.termux.RUN_COMMAND_RESULT_ERRMSG")
-            val stderr = intent?.getStringExtra("com.termux.RUN_COMMAND_RESULT_STDERR")
-            if (!errMsg.isNullOrBlank()) {
-                progressText.text = "❌ Termux: $errMsg"
-                progressText.visibility = View.VISIBLE
-                progressBar.visibility = View.GONE
-            } else if (!stderr.isNullOrBlank()) {
-                progressText.text = "⚠️ Termux: ${stderr.take(180)}"
-                progressText.visibility = View.VISIBLE
-            }
-        }
-    }
-
-    private val downloadReceiver = object : BroadcastReceiver() {
+    private val downloadReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
             val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
@@ -248,17 +85,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            ContextCompat.checkSelfPermission(this, RUN_CMD_PERM) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(RUN_CMD_PERM), 0)
-        }
-
-        when {
-            !isTermuxInstalled() -> showTermuxInstallGuide()
-            !hasRunCommandPermission() -> showPermissionGuide()
-            else -> showLaunchScreen()
-        }
+        showLaunchScreen()
+        maybeRequestNotificationPermission()
     }
 
     override fun onStart() {
@@ -278,12 +106,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         installerHandoffInProgress = false
-        if (installationInProgress && ::setupBtn.isInitialized) setupBtn.isEnabled = true
         pendingUpdateRelease?.let { release ->
             pendingUpdateRelease = null
             showLauncherUpdateConsent(release)
         }
-        if (::statusText.isInitialized) refreshServerStatus(showChecking = false)
+        if (::statusText.isInitialized && !extractingPayload) refreshServerStatus(showChecking = false)
         if (::launcherUpdateBtn.isInitialized) {
             if (apkUpdateManager.isAwaitingInstallPermission() && apkUpdateManager.canInstallPackages()) {
                 beginDownloadedApkInstall()
@@ -304,154 +131,40 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         pollingJob?.cancel()
+        payloadExtractionJob?.cancel()
         updateCheckJob?.cancel()
         downloadPollingJob?.cancel()
-        if (resultReceiverRegistered) {
-            unregisterReceiver(resultReceiver)
-            resultReceiverRegistered = false
-        }
         mainScope.cancel()
         super.onDestroy()
     }
 
-    private fun isTermuxInstalled() = try {
-        packageManager.getPackageInfo("com.termux", 0); true
-    } catch (_: PackageManager.NameNotFoundException) { false }
+    private fun preferences() = getSharedPreferences(PREFS, MODE_PRIVATE)
 
-    private fun hasRunCommandPermission() =
-        ContextCompat.checkSelfPermission(this, RUN_CMD_PERM) == PackageManager.PERMISSION_GRANTED
-
-    private fun markInstalled(installed: Boolean) {
-        val editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_INSTALLED, installed)
-        if (!installed) editor.remove(PREF_PAYLOAD_VERSION)
-        editor.apply()
-    }
-
-    private fun markCurrentPayloadInstalled() {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-            .putBoolean(PREF_INSTALLED, true)
-            .putString(PREF_PAYLOAD_VERSION, BuildConfig.VERSION_NAME)
-            .apply()
-    }
-
-    private fun wasInstalledOnce(): Boolean =
-        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_INSTALLED, false)
-
-    private fun installedPayloadVersion(): String? =
-        getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_PAYLOAD_VERSION, null)
+    private fun installedPayloadVersion(): String? = preferences().getString(PREF_PAYLOAD_VERSION, null)
 
     private fun payloadUpdateRequired(): Boolean = installedPayloadVersion() != BuildConfig.VERSION_NAME
 
     private fun currentLanguage(): String {
-        val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_LANGUAGE, null)
+        val saved = preferences().getString(PREF_LANGUAGE, null)
         if (saved == "ru" || saved == "en") return saved
         return if (Locale.getDefault().language == "ru") "ru" else "en"
     }
 
     private fun setLanguage(language: String) {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_LANGUAGE, language).apply()
+        preferences().edit().putString(PREF_LANGUAGE, language).apply()
     }
 
     private fun isRu(): Boolean = currentLanguage() == "ru"
 
     private fun tr(en: String, ru: String): String = if (isRu()) ru else en
 
-    private fun applyLaunchTexts() {
-        findViewById<TextView>(R.id.launch_intro).text = tr(
-            "The launcher manages the local server; Vibe Tavern opens in your browser.",
-            "Лаунчер управляет локальным сервером, а Vibe Tavern открывается в браузере.",
-        )
-        findViewById<TextView>(R.id.management_label).text = tr(
-            "Launcher and server management",
-            "Управление лаунчером и сервером",
-        )
-        launchBtn.text = tr("🚀 Start Server in Termux", "🚀 Запустить сервер в Termux")
-        openBtn.text = tr("🌐 Open in Browser", "🌐 Открыть в браузере")
-        stopBtn.text = tr("⏹ Stop Server", "⏹ Остановить сервер")
-        updateSetupButtonText()
-        uninstallBtn.text = tr("🗑 Uninstall", "🗑 Удалить")
-        languageBtn.text = tr("🌐 Language: English", "🌐 Язык: Русский")
-        updateFirstTimeSetupTexts()
-        updateLauncherActionUi()
-        updateVersionStatus()
-        findViewById<Button>(R.id.btn_help).text = tr("❓ Help / Troubleshooting", "❓ Справка / проблемы")
-        findViewById<TextView>(R.id.help_hint).text = tr(
-            "Tip: if the web UI lags after switching apps, disable battery optimization for Termux.",
-            "Совет: если веб-интерфейс лагает после сворачивания, отключите оптимизацию батареи для Termux."
-        )
-    }
-
-    private fun updateSetupButtonText() {
-        setupBtn.text = when {
-            !wasInstalledOnce() -> tr(
-                "📦 Install server v${BuildConfig.VERSION_NAME}",
-                "📦 Установить сервер v${BuildConfig.VERSION_NAME}",
-            )
-            payloadUpdateRequired() -> tr(
-                "🔄 Update server to v${BuildConfig.VERSION_NAME}",
-                "🔄 Обновить сервер до v${BuildConfig.VERSION_NAME}",
-            )
-            else -> tr(
-                "📦 Reinstall server v${BuildConfig.VERSION_NAME}",
-                "📦 Переустановить сервер v${BuildConfig.VERSION_NAME}",
-            )
-        }
-        updateVersionStatus()
-    }
-
-    // ========== Screens ==========
-
-    private fun showTermuxInstallGuide() {
-        setContentView(R.layout.screen_install_termux)
-        findViewById<TextView>(R.id.termux_step_title).text = tr(
-            "Step 1: Install Termux",
-            "Шаг 1: установите Termux",
-        )
-        findViewById<TextView>(R.id.termux_install_body).text = tr(
-            "Vibe Tavern needs Termux to run the local server on your device.\n\nIMPORTANT: install Termux from F-Droid, not the Play Store. The Play Store version is outdated and will not work.",
-            "Vibe Tavern использует Termux для запуска локального сервера на устройстве.\n\nВАЖНО: установите Termux из F-Droid, а не из Play Store. Версия из Play Store устарела и не работает.",
-        )
-        findViewById<Button>(R.id.btn_install_termux).text = tr(
-            "Install Termux from F-Droid",
-            "Установить Termux из F-Droid",
-        )
-        findViewById<Button>(R.id.btn_check_again).text = tr(
-            "I've installed it — continue",
-            "Termux установлен — продолжить",
-        )
-        findViewById<Button>(R.id.btn_install_termux).setOnClickListener {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux/")))
-        }
-        findViewById<Button>(R.id.btn_check_again).setOnClickListener { recreate() }
-    }
-
-    private fun showPermissionGuide() {
-        setContentView(R.layout.screen_permission_guide)
-        findViewById<TextView>(R.id.permission_step_title).text = tr(
-            "Step 2: Grant Permission",
-            "Шаг 2: выдайте разрешение",
-        )
-        findViewById<TextView>(R.id.permission_guide_body).text = tr(
-            "This permission belongs to Vibe Tavern, not Termux. Copy the complete command block below into Termux, restart Termux, then grant the launcher permission in Android settings.",
-            "Это разрешение нужно приложению Vibe Tavern, а не Termux. Скопируйте весь блок команды ниже в Termux, перезапустите Termux, затем выдайте разрешение лаунчеру в настройках Android.",
-        )
-        bindTermuxSetupCommand()
-        findViewById<Button>(R.id.btn_open_termux_settings).text = tr(
-            "Open Vibe Tavern Settings",
-            "Открыть настройки Vibe Tavern",
-        )
-        findViewById<Button>(R.id.btn_continue_after_permission).text = tr("Continue", "Продолжить")
-        findViewById<Button>(R.id.btn_open_termux_settings).setOnClickListener { openAppSettings(packageName) }
-        findViewById<Button>(R.id.btn_continue_after_permission).setOnClickListener { recreate() }
-    }
-
     private fun showLaunchScreen() {
         setContentView(R.layout.screen_launch)
+        applySystemInsets()
         statusText = findViewById(R.id.status_text)
         progressText = findViewById(R.id.progress_text)
         progressBar = findViewById(R.id.progress_bar)
         openBtn = findViewById(R.id.btn_open_browser)
-        stopBtn = findViewById(R.id.btn_stop_server)
         setupBtn = findViewById(R.id.btn_one_time_setup)
         launchBtn = findViewById(R.id.btn_launch_server)
         uninstallBtn = findViewById(R.id.btn_uninstall)
@@ -461,22 +174,25 @@ class MainActivity : AppCompatActivity() {
         launcherUpdateBtn = findViewById(R.id.btn_check_launcher_update)
         launcherVersionText = findViewById(R.id.launcher_version_status)
 
-        setupBtn.setOnClickListener { doOneTimeSetup() }
-        firstTimeSetupHeader.setOnClickListener { toggleFirstTimeSetupHelp() }
-        bindTermuxSetupCommand()
-        launchBtn.setOnClickListener { launchServer() }
-        openBtn.setOnClickListener { openBrowser() }
-        stopBtn.setOnClickListener { stopServer() }
+        launchBtn.setOnClickListener { handleServerAction() }
+        openBtn.setOnClickListener { openBrowserWhenReady() }
         uninstallBtn.setOnClickListener { confirmUninstall() }
         languageBtn.setOnClickListener { showLanguageDialog() }
         launcherUpdateBtn.setOnClickListener { handleLauncherUpdateAction() }
         findViewById<Button>(R.id.btn_help).setOnClickListener { showHelpDialog() }
+        findViewById<Button>(R.id.btn_copy_server_log).setOnClickListener { copyServerLog() }
+        findViewById<Button>(R.id.btn_clear_server_log).setOnClickListener { clearServerLog() }
+
+        // NL-7 reuses this existing panel and action shell for the Termux-data migration entry.
+        firstTimeSetupHeader.visibility = View.GONE
+        firstTimeSetupContent.visibility = View.GONE
+        setupBtn.visibility = View.GONE
 
         apkUpdateManager.cleanupStaleDownload()
         applyLaunchTexts()
         setProgress(null, visible = false)
-        setServerRunningUi(running = false, checking = true)
         refreshServerStatus(showChecking = true)
+        ensurePayloadExtracted()
         observeLauncherDownload(installWhenReady = false)
         if (!automaticUpdateCheckStarted && !apkUpdateManager.hasTrackedDownload()) {
             automaticUpdateCheckStarted = true
@@ -484,33 +200,431 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ========== Launcher update ==========
+    private fun applySystemInsets() {
+        val root = findViewById<ScrollView>(R.id.launch_root)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(0, bars.top, 0, bars.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun applyLaunchTexts() {
+        findViewById<TextView>(R.id.launch_intro).text = tr(
+            "The launcher manages the embedded local server; Vibe Tavern opens in your browser.",
+            "Лаунчер управляет встроенным локальным сервером, а Vibe Tavern открывается в браузере.",
+        )
+        findViewById<TextView>(R.id.management_label).text = tr(
+            "Launcher and server management",
+            "Управление лаунчером и сервером",
+        )
+        openBtn.text = tr("🌐 Open in Browser", "🌐 Открыть в браузере")
+        findViewById<Button>(R.id.btn_copy_server_log).text = tr("📋 Copy server log", "📋 Скопировать журнал сервера")
+        findViewById<Button>(R.id.btn_clear_server_log).text = tr("🧹 Clear server log", "🧹 Очистить журнал сервера")
+        uninstallBtn.text = tr("🗑 Uninstall", "🗑 Удалить")
+        languageBtn.text = tr("🌐 Language: English", "🌐 Язык: Русский")
+        findViewById<Button>(R.id.btn_help).text = tr("❓ Help / Troubleshooting", "❓ Справка / проблемы")
+        findViewById<TextView>(R.id.help_hint).text = tr(
+            "Tip: if the web UI lags after switching apps, disable battery optimization for Vibe Tavern.",
+            "Совет: если веб-интерфейс лагает после сворачивания, отключите оптимизацию батареи для Vibe Tavern.",
+        )
+        updateLauncherActionUi()
+        updateVersionStatus()
+    }
 
     private fun updateVersionStatus() {
         if (!::launcherVersionText.isInitialized) return
         val serverVersion = installedPayloadVersion()?.let { "v$it" }
-            ?: tr("not applied", "не установлена")
+            ?: tr("extracting on first launch", "извлекается при первом запуске")
         launcherVersionText.text = tr(
             "Launcher v${BuildConfig.VERSION_NAME} • Server payload $serverVersion",
             "Лаунчер v${BuildConfig.VERSION_NAME} • Серверная часть $serverVersion",
         )
     }
 
+    private fun hasRequiredPayload(): Boolean {
+        val payload = File(filesDir, PAYLOAD_DIRECTORY)
+        return File(payload, "web/index.html").isFile &&
+            hasFiles(File(payload, "drizzle")) &&
+            hasFiles(File(payload, "tokenizers")) &&
+            hasFiles(File(payload, "prompts"))
+    }
+
+    private fun hasFiles(directory: File): Boolean =
+        directory.isDirectory && directory.walkTopDown().any { it.isFile }
+
+    private fun ensurePayloadExtracted() {
+        if (extractingPayload || (!payloadUpdateRequired() && hasRequiredPayload())) return
+        payloadExtractionJob?.cancel()
+        extractingPayload = true
+        pollingJob?.cancel()
+        setPayloadExtractionUi()
+        payloadExtractionJob = mainScope.launch(Dispatchers.IO) {
+            try {
+                extractPayloadFromAssets { copied, total ->
+                    if (copied == 1 || copied == total || copied % 25 == 0) {
+                        runOnUiThread {
+                            progressText.text = tr(
+                                "Extracting bundled server files… $copied/$total",
+                                "Извлекаю встроенные файлы сервера… $copied/$total",
+                            )
+                        }
+                    }
+                }
+                preferences().edit().putString(PREF_PAYLOAD_VERSION, BuildConfig.VERSION_NAME).apply()
+                withContext(Dispatchers.Main) {
+                    extractingPayload = false
+                    updateVersionStatus()
+                    setProgress(tr("✅ Server files are ready.", "✅ Файлы сервера готовы."), visible = false)
+                    refreshServerStatus(showChecking = false)
+                }
+            } catch (error: Exception) {
+                withContext(Dispatchers.Main) {
+                    extractingPayload = false
+                    setProgress(
+                        tr(
+                            "❌ Could not extract server files: ${error.message}. Try Start again.",
+                            "❌ Не удалось извлечь файлы сервера: ${error.message}. Повторите Start.",
+                        ),
+                        visible = false,
+                    )
+                    setServerState(ServerUiState.STOPPED)
+                }
+            }
+        }
+    }
+
+    private fun extractPayloadFromAssets(onProgress: (Int, Int) -> Unit) {
+        val files = listAssetFiles(PAYLOAD_DIRECTORY)
+        check(files.isNotEmpty()) { "Bundled server payload is missing" }
+        val temporary = File(filesDir, "$PAYLOAD_DIRECTORY-copy-${UUID.randomUUID()}")
+        val destination = File(filesDir, PAYLOAD_DIRECTORY)
+        try {
+            check(temporary.mkdirs()) { "Could not create payload staging directory" }
+            files.forEachIndexed { index, relativePath ->
+                val output = File(temporary, relativePath.removePrefix("$PAYLOAD_DIRECTORY/"))
+                output.parentFile?.mkdirs()
+                assets.open(relativePath).use { input ->
+                    FileOutputStream(output).use { outputStream -> input.copyTo(outputStream) }
+                }
+                onProgress(index + 1, files.size)
+            }
+            check(hasRequiredPayload(temporary)) { "Bundled payload is incomplete" }
+            if (destination.exists()) destination.deleteRecursively()
+            check(temporary.renameTo(destination)) { "Could not activate extracted payload" }
+        } catch (error: Exception) {
+            temporary.deleteRecursively()
+            throw error
+        }
+    }
+
+    private fun hasRequiredPayload(payload: File): Boolean =
+        File(payload, "web/index.html").isFile &&
+            hasFiles(File(payload, "drizzle")) &&
+            hasFiles(File(payload, "tokenizers")) &&
+            hasFiles(File(payload, "prompts"))
+
+    private fun listAssetFiles(path: String): List<String> {
+        val children = assets.list(path).orEmpty()
+        if (children.isEmpty()) return listOf(path)
+        return children.flatMap { child -> listAssetFiles("$path/$child") }
+    }
+
+    private fun setPayloadExtractionUi() {
+        setServerState(ServerUiState.EXTRACTING)
+        openBtn.isEnabled = false
+        setProgress(tr("Extracting bundled server files…", "Извлекаю встроенные файлы сервера…"), visible = true)
+    }
+
+    private fun handleServerAction() {
+        if (serverActionStops) stopServer() else launchServer()
+    }
+
+    private fun launchServer() {
+        if (extractingPayload) {
+            setPayloadExtractionUi()
+            return
+        }
+        if (!hasRequiredPayload()) {
+            ensurePayloadExtracted()
+            return
+        }
+        nativeStartRequested = true
+        maybeOfferBatteryOptimizationExemption()
+        setProgress(tr("🚀 Starting native server…", "🚀 Запускаю нативный сервер…"), visible = true)
+        setServerState(ServerUiState.WARMING)
+        ServerService.start(this)
+        startPolling()
+    }
+
+    private fun stopServer() {
+        pollingJob?.cancel()
+        nativeStartRequested = false
+        setProgress(tr("⏹ Stopping native server…", "⏹ Останавливаю нативный сервер…"), visible = true)
+        ServerService.stop(this)
+        mainScope.launch {
+            delay(500)
+            setProgress(tr("🛑 Server stopped", "🛑 Сервер остановлен"), visible = false)
+            refreshServerStatus(showChecking = false)
+        }
+    }
+
+    private fun startPolling() {
+        pollingJob?.cancel()
+        pollingJob = mainScope.launch(Dispatchers.IO) {
+            for (seconds in 0..120) {
+                if (!isActive) return@launch
+                val owned = ServerService.hasOwnedServerProcess()
+                val ready = ServerService.apiReady()
+                val state = when {
+                    ready && owned -> ServerUiState.READY
+                    ready -> ServerUiState.FOREIGN
+                    !owned && seconds > 1 -> ServerUiState.FAILED
+                    else -> ServerUiState.WARMING
+                }
+                withContext(Dispatchers.Main) {
+                    when (state) {
+                        ServerUiState.READY -> setProgress(
+                            tr("✅ Server is ready. Tap Open to use Vibe Tavern.", "✅ Сервер готов. Нажмите «Открыть», чтобы перейти в Vibe Tavern."),
+                            visible = false,
+                        )
+                        ServerUiState.FOREIGN -> setProgress(
+                            tr("⚠️ An old Termux server is using port 8787.", "⚠️ Старый сервер Termux использует порт 8787."),
+                            visible = false,
+                        )
+                        ServerUiState.FAILED -> setProgress(
+                            tr("❌ Native server exited. Copy the server log or open Help.", "❌ Нативный сервер завершился. Скопируйте журнал сервера или откройте справку."),
+                            visible = false,
+                        )
+                        ServerUiState.WARMING -> progressText.text = tr("Warming up… ${seconds}s", "Запуск… ${seconds}с")
+                        ServerUiState.EXTRACTING, ServerUiState.STOPPED -> Unit
+                    }
+                    setServerState(state)
+                }
+                if (state != ServerUiState.WARMING) return@launch
+                delay(1_000)
+            }
+            withContext(Dispatchers.Main) {
+                setProgress(
+                    tr("⚠️ Native server did not become ready. Copy the log or open Help.", "⚠️ Нативный сервер не стал готов. Скопируйте журнал или откройте справку."),
+                    visible = false,
+                )
+                setServerState(ServerUiState.FAILED)
+            }
+        }
+    }
+
+    private fun refreshServerStatus(showChecking: Boolean) {
+        if (extractingPayload) return
+        if (showChecking) {
+            statusText.text = tr("🔎 Checking local server…", "🔎 Проверяю локальный сервер…")
+        }
+        mainScope.launch(Dispatchers.IO) {
+            val owned = ServerService.hasOwnedServerProcess()
+            val ready = ServerService.apiReady()
+            withContext(Dispatchers.Main) {
+                if (extractingPayload) return@withContext
+                setServerState(
+                    when {
+                        ready && owned -> ServerUiState.READY
+                        ready -> ServerUiState.FOREIGN
+                        owned -> ServerUiState.WARMING
+                        nativeStartRequested -> ServerUiState.FAILED
+                        else -> ServerUiState.STOPPED
+                    },
+                )
+            }
+        }
+    }
+
+    private fun setServerState(state: ServerUiState) {
+        serverActionStops = state == ServerUiState.WARMING || state == ServerUiState.READY
+        openBtn.isEnabled = state == ServerUiState.READY || state == ServerUiState.FOREIGN
+        launchBtn.text = when (state) {
+            ServerUiState.WARMING, ServerUiState.READY -> tr("⏹ Stop Server", "⏹ Остановить сервер")
+            ServerUiState.EXTRACTING -> tr("📦 Preparing server…", "📦 Подготавливаю сервер…")
+            ServerUiState.FOREIGN -> tr("⚠️ Port 8787 is in use", "⚠️ Порт 8787 занят")
+            ServerUiState.STOPPED, ServerUiState.FAILED -> tr("🚀 Start Server", "🚀 Запустить сервер")
+        }
+        launchBtn.isEnabled = !extractingPayload && state != ServerUiState.FOREIGN
+        statusText.text = when (state) {
+            ServerUiState.EXTRACTING -> tr("📦 Extracting server payload", "📦 Извлекаю серверную часть")
+            ServerUiState.STOPPED -> tr("⏹ Server is stopped", "⏹ Сервер остановлен")
+            ServerUiState.WARMING -> tr("⏳ Native server is warming up", "⏳ Нативный сервер запускается")
+            ServerUiState.READY -> tr("✅ Native server is ready\n$serverUrl", "✅ Нативный сервер готов\n$serverUrl")
+            ServerUiState.FAILED -> tr("❌ Native server exited or failed. See server log.", "❌ Нативный сервер завершился с ошибкой. Смотрите журнал сервера.")
+            ServerUiState.FOREIGN -> tr(
+                "⚠️ API is ready on port 8787, but it is not this app's server. Stop the old Termux server before starting Vibe Tavern here.",
+                "⚠️ API готов на порту 8787, но это не сервер этого приложения. Остановите старый сервер Termux перед запуском Vibe Tavern здесь.",
+            )
+        }
+    }
+
+    private fun setProgress(message: String?, visible: Boolean) {
+        progressBar.visibility = if (visible) View.VISIBLE else View.GONE
+        progressBar.isIndeterminate = true
+        progressText.visibility = if (message.isNullOrBlank()) View.GONE else View.VISIBLE
+        progressText.text = message.orEmpty()
+    }
+
+    private fun openBrowserWhenReady() {
+        mainScope.launch(Dispatchers.IO) {
+            val ready = ServerService.apiReady()
+            withContext(Dispatchers.Main) {
+                if (!ready) {
+                    setProgress(
+                        tr("⏳ Server is not API-ready yet. Wait for the ready status before opening the browser.", "⏳ Сервер ещё не готов для API. Дождитесь статуса готовности перед открытием браузера."),
+                        visible = false,
+                    )
+                    refreshServerStatus(showChecking = false)
+                    return@withContext
+                }
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(serverUrl)))
+            }
+        }
+    }
+
+    private fun copyServerLog() {
+        mainScope.launch(Dispatchers.IO) {
+            val log = readLogTail(MAX_LOG_CLIPBOARD_BYTES)
+            withContext(Dispatchers.Main) {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("vt-server-log", log))
+                setProgress(
+                    tr("Server log copied to clipboard.", "Журнал сервера скопирован в буфер обмена."),
+                    visible = false,
+                )
+            }
+        }
+    }
+
+    private fun readLogTail(maxBytes: Long): String {
+        val log = File(filesDir, "server.log")
+        if (!log.isFile) return tr("(No server log yet.)", "(Журнала сервера пока нет.)")
+        return try {
+            RandomAccessFile(log, "r").use { file ->
+                val length = file.length()
+                val count = minOf(length, maxBytes).toInt()
+                file.seek(length - count)
+                ByteArray(count).also(file::readFully).toString(StandardCharsets.UTF_8)
+            }
+        } catch (error: Exception) {
+            tr("(Could not read server log: ${error.message})", "(Не удалось прочитать журнал сервера: ${error.message})")
+        }
+    }
+
+    private fun clearServerLog() {
+        ServerService.requestLogClear()
+        setProgress(
+            tr("Server log clear requested.", "Запрошена очистка журнала сервера."),
+            visible = false,
+        )
+    }
+
+    private fun maybeRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST)
+        }
+    }
+
+    private fun maybeOfferBatteryOptimizationExemption() {
+        if (preferences().getBoolean(PREF_BATTERY_EXEMPTION_PROMPTED, false)) return
+        val powerManager = getSystemService(PowerManager::class.java)
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return
+        preferences().edit().putBoolean(PREF_BATTERY_EXEMPTION_PROMPTED, true).apply()
+        AlertDialog.Builder(this)
+            .setTitle(tr("Keep Vibe Tavern running", "Не закрывайте Vibe Tavern"))
+            .setMessage(tr(
+                "Some phones pause local servers after you switch apps. Allow Vibe Tavern to ignore battery optimization to keep browser requests working. You can also keep Vibe Tavern in your recent-apps list and disable aggressive battery saver modes.",
+                "Некоторые телефоны приостанавливают локальные серверы после переключения приложений. Разрешите Vibe Tavern игнорировать оптимизацию батареи, чтобы запросы из браузера продолжали работать. Также оставьте Vibe Tavern в списке недавних приложений и отключите агрессивный режим энергосбережения.",
+            ))
+            .setPositiveButton(tr("Allow", "Разрешить")) { _, _ -> requestBatteryOptimizationExemption() }
+            .setNegativeButton(tr("Not now", "Не сейчас"), null)
+            .show()
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            })
+        } catch (error: Exception) {
+            AlertDialog.Builder(this)
+                .setTitle(tr("Battery settings", "Настройки батареи"))
+                .setMessage(tr(
+                    "Android could not open the battery-exemption request. Open Vibe Tavern's app settings and set its battery use to unrestricted if your phone provides that option.",
+                    "Android не смог открыть запрос на исключение из оптимизации батареи. Откройте настройки Vibe Tavern и выберите неограниченное использование батареи, если телефон предоставляет эту возможность.",
+                ))
+                .setPositiveButton(tr("Open app settings", "Открыть настройки приложения")) { _, _ -> openAppSettings() }
+                .setNegativeButton(tr("Cancel", "Отмена"), null)
+                .show()
+        }
+    }
+
+    private fun openAppSettings() {
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        })
+    }
+
+    private fun showLanguageDialog() {
+        val languages = arrayOf("Русский", "English")
+        val checked = if (isRu()) 0 else 1
+        AlertDialog.Builder(this)
+            .setTitle(tr("Language", "Язык"))
+            .setSingleChoiceItems(languages, checked) { dialog, which ->
+                setLanguage(if (which == 0) "ru" else "en")
+                applyLaunchTexts()
+                refreshServerStatus(showChecking = false)
+                dialog.dismiss()
+            }
+            .setNegativeButton(tr("Cancel", "Отмена"), null)
+            .show()
+    }
+
+    private fun showHelpDialog() {
+        val help = tr(
+            "If Start does not make the server ready:\n• Copy the server log and check the last lines for the error.\n• Stop the old Termux server if it is still using port 8787.\n• Try Start again after the bundled files finish extracting.\n\nIf the web UI lags or freezes after switching apps:\n• Disable battery optimization for Vibe Tavern.\n• Keep Vibe Tavern in your recent-apps list while using it.\n• Disable aggressive vendor battery-saver modes.\n\nOpen in Browser works only after the local API is ready at $serverUrl.",
+            "Если Start не делает сервер готовым:\n• Скопируйте журнал сервера и проверьте последние строки с ошибкой.\n• Остановите старый сервер Termux, если он всё ещё использует порт 8787.\n• Повторите Start после завершения извлечения встроенных файлов.\n\nЕсли веб-интерфейс лагает или зависает после переключения приложений:\n• Отключите оптимизацию батареи для Vibe Tavern.\n• Оставьте Vibe Tavern в списке недавних приложений во время работы.\n• Отключите агрессивные режимы энергосбережения производителя.\n\n«Открыть в браузере» работает только после готовности локального API по адресу $serverUrl.",
+        )
+        AlertDialog.Builder(this)
+            .setTitle(tr("Help / Troubleshooting", "Справка / проблемы"))
+            .setMessage(help)
+            .setPositiveButton(tr("Open app settings", "Открыть настройки приложения")) { _, _ -> openAppSettings() }
+            .setNegativeButton(tr("Copy URL", "Скопировать URL")) { _, _ -> copyServerUrl() }
+            .show()
+    }
+
+    private fun copyServerUrl() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Vibe Tavern URL", serverUrl))
+        setProgress(tr("Copied: $serverUrl", "Скопировано: $serverUrl"), visible = false)
+    }
+
+    private fun confirmUninstall() {
+        AlertDialog.Builder(this)
+            .setTitle(tr("Uninstall Vibe Tavern", "Удалить Vibe Tavern"))
+            .setMessage(tr(
+                "Uninstalling Vibe Tavern removes this app and its native server files, chats, and settings from this device. It does not change any old Termux installation.",
+                "Удаление Vibe Tavern удалит это приложение, его нативные файлы сервера, чаты и настройки с устройства. Старая установка Termux не изменится.",
+            ))
+            .setPositiveButton(tr("Uninstall Vibe Tavern", "Удалить Vibe Tavern")) { _, _ ->
+                ServerService.stop(this)
+                startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName")))
+            }
+            .setNegativeButton(tr("Cancel", "Отмена"), null)
+            .show()
+    }
+
     private fun updateLauncherActionUi() {
         if (!::launcherUpdateBtn.isInitialized) return
         launcherUpdateBtn.text = when (launcherUpdateAction) {
-            LauncherUpdateAction.CHECK -> tr(
-                "Check for launcher update",
-                "Проверить обновление лаунчера",
-            )
-            LauncherUpdateAction.DOWNLOADING -> tr(
-                "Downloading launcher update…",
-                "Загрузка обновления лаунчера…",
-            )
-            LauncherUpdateAction.INSTALL -> tr(
-                "Install downloaded launcher update",
-                "Установить загруженное обновление лаунчера",
-            )
+            LauncherUpdateAction.CHECK -> tr("Check for launcher update", "Проверить обновление лаунчера")
+            LauncherUpdateAction.DOWNLOADING -> tr("Downloading launcher update…", "Загрузка обновления лаунчера…")
+            LauncherUpdateAction.INSTALL -> tr("Install downloaded launcher update", "Установить загруженное обновление лаунчера")
         }
         launcherUpdateBtn.isEnabled = launcherUpdateAction != LauncherUpdateAction.DOWNLOADING
     }
@@ -542,30 +656,11 @@ class MainActivity : AppCompatActivity() {
                         "Launcher v${decision.release.version} is available.",
                         "Доступен лаунчер v${decision.release.version}.",
                     ))
-                    if (activityStarted) {
-                        showLauncherUpdateConsent(decision.release)
-                    } else {
-                        pendingUpdateRelease = decision.release
-                    }
+                    if (activityStarted) showLauncherUpdateConsent(decision.release) else pendingUpdateRelease = decision.release
                 }
-                is ReleaseUpdateDecision.UpToDate -> if (manual) {
-                    setLauncherUpdateStatus(tr(
-                        "Launcher is up to date.",
-                        "Лаунчер уже обновлён.",
-                    ))
-                }
-                is ReleaseUpdateDecision.Unavailable -> if (manual) {
-                    setLauncherUpdateStatus(tr(
-                        "No compatible Android launcher release was found.",
-                        "Совместимый Android-релиз лаунчера не найден.",
-                    ))
-                }
-                is ReleaseUpdateDecision.Error -> if (manual) {
-                    setLauncherUpdateStatus(tr(
-                        "Update check failed: ${decision.message}",
-                        "Не удалось проверить обновление: ${decision.message}",
-                    ))
-                }
+                is ReleaseUpdateDecision.UpToDate -> if (manual) setLauncherUpdateStatus(tr("Launcher is up to date.", "Лаунчер уже обновлён."))
+                is ReleaseUpdateDecision.Unavailable -> if (manual) setLauncherUpdateStatus(tr("No compatible Android launcher release was found.", "Совместимый Android-релиз лаунчера не найден."))
+                is ReleaseUpdateDecision.Error -> if (manual) setLauncherUpdateStatus(tr("Update check failed: ${decision.message}", "Не удалось проверить обновление: ${decision.message}"))
             }
             updateLauncherActionUi()
         }
@@ -582,13 +677,10 @@ class MainActivity : AppCompatActivity() {
             setPadding(padding, padding / 2, padding, padding / 2)
             textSize = 15f
         }
-        val scroll = ScrollView(this).apply { addView(notes) }
         AlertDialog.Builder(this)
             .setTitle(tr("Launcher update available", "Доступно обновление лаунчера"))
-            .setView(scroll)
-            .setPositiveButton(tr("Download APK", "Скачать APK")) { _, _ ->
-                startLauncherDownload(release)
-            }
+            .setView(ScrollView(this).apply { addView(notes) })
+            .setPositiveButton(tr("Download APK", "Скачать APK")) { _, _ -> startLauncherDownload(release) }
             .setNegativeButton(tr("Later", "Позже"), null)
             .show()
     }
@@ -598,18 +690,12 @@ class MainActivity : AppCompatActivity() {
             apkUpdateManager.enqueue(release)
             launcherUpdateAction = LauncherUpdateAction.DOWNLOADING
             updateLauncherActionUi()
-            setLauncherUpdateStatus(tr(
-                "Downloading launcher v${release.version}…",
-                "Загружаю лаунчер v${release.version}…",
-            ))
+            setLauncherUpdateStatus(tr("Downloading launcher v${release.version}…", "Загружаю лаунчер v${release.version}…"))
             observeLauncherDownload(installWhenReady = true)
         } catch (error: Exception) {
             launcherUpdateAction = LauncherUpdateAction.CHECK
             updateLauncherActionUi()
-            setLauncherUpdateStatus(tr(
-                "Could not start download: ${error.message}",
-                "Не удалось начать загрузку: ${error.message}",
-            ))
+            setLauncherUpdateStatus(tr("Could not start download: ${error.message}", "Не удалось начать загрузку: ${error.message}"))
         }
     }
 
@@ -626,12 +712,8 @@ class MainActivity : AppCompatActivity() {
                     is ApkDownloadState.Downloading -> {
                         launcherUpdateAction = LauncherUpdateAction.DOWNLOADING
                         updateLauncherActionUi()
-                        val progress = state.progressPercent?.let { "$it%" }
-                            ?: tr("in progress", "в процессе")
-                        setLauncherUpdateStatus(tr(
-                            "Downloading launcher update: $progress",
-                            "Загрузка обновления лаунчера: $progress",
-                        ))
+                        val progress = state.progressPercent?.let { "$it%" } ?: tr("in progress", "в процессе")
+                        setLauncherUpdateStatus(tr("Downloading launcher update: $progress", "Загрузка обновления лаунчера: $progress"))
                         delay(750)
                     }
                     is ApkDownloadState.Ready -> {
@@ -647,10 +729,7 @@ class MainActivity : AppCompatActivity() {
                     is ApkDownloadState.Failed -> {
                         launcherUpdateAction = LauncherUpdateAction.CHECK
                         updateLauncherActionUi()
-                        setLauncherUpdateStatus(tr(
-                            "Download failed: ${state.reason}",
-                            "Ошибка загрузки: ${state.reason}",
-                        ))
+                        setLauncherUpdateStatus(tr("Download failed: ${state.reason}", "Ошибка загрузки: ${state.reason}"))
                         return@launch
                     }
                 }
@@ -664,613 +743,37 @@ class MainActivity : AppCompatActivity() {
         mainScope.launch {
             when (val handoff = apkUpdateManager.prepareInstall()) {
                 is ApkInstallHandoff.LaunchInstaller -> {
-                    setLauncherUpdateStatus(tr(
-                        "Confirm the launcher update in Android's installer.",
-                        "Подтвердите обновление лаунчера в установщике Android.",
-                    ))
+                    setLauncherUpdateStatus(tr("Confirm the launcher update in Android's installer.", "Подтвердите обновление лаунчера в установщике Android."))
                     startActivity(handoff.intent)
                 }
                 is ApkInstallHandoff.PermissionRequired -> {
                     installerHandoffInProgress = false
-                    setLauncherUpdateStatus(tr(
-                        "Allow installs from Vibe Tavern, then return here.",
-                        "Разрешите установку из Vibe Tavern, затем вернитесь сюда.",
-                    ))
+                    setLauncherUpdateStatus(tr("Allow installs from Vibe Tavern, then return here.", "Разрешите установку из Vibe Tavern, затем вернитесь сюда."))
                     startActivity(handoff.settingsIntent)
                 }
                 is ApkInstallHandoff.Rejected -> {
                     installerHandoffInProgress = false
                     launcherUpdateAction = LauncherUpdateAction.CHECK
                     updateLauncherActionUi()
-                    setLauncherUpdateStatus(tr(
-                        "Downloaded APK rejected: ${handoff.reason}",
-                        "Загруженный APK отклонён: ${handoff.reason}",
-                    ))
+                    setLauncherUpdateStatus(tr("Downloaded APK rejected: ${handoff.reason}", "Загруженный APK отклонён: ${handoff.reason}"))
                 }
                 ApkInstallHandoff.MissingDownload -> {
                     installerHandoffInProgress = false
                     launcherUpdateAction = LauncherUpdateAction.CHECK
                     updateLauncherActionUi()
-                    setLauncherUpdateStatus(tr(
-                        "Downloaded launcher APK is no longer available.",
-                        "Загруженный APK лаунчера больше недоступен.",
-                    ))
+                    setLauncherUpdateStatus(tr("Downloaded launcher APK is no longer available.", "Загруженный APK лаунчера больше недоступен."))
                 }
             }
         }
     }
 
-    // ========== One-time setup ==========
-
-    private fun doOneTimeSetup() {
-        if (installationInProgress) finishInstallationAttempt()
-        pollingJob?.cancel()
-        installationInProgress = true
-        setupBtn.isEnabled = false
-        setProgress(tr("📦 Preparing the bundled archive and opening Termux installer…", "📦 Подготавливаю встроенный архив и открываю установщик в Termux…"), visible = true)
-        statusText.text = tr("📦 Installation/update runs in Termux", "📦 Установка/обновление выполняется в Termux")
-        tryRegisterResultReceiver()
-
-        try {
-            PayloadTransferService.start(this)
-            runTermuxInstallerVisible()
-        } catch (e: Exception) {
-            finishInstallationAttempt()
-            setProgress(tr("❌ Could not auto-run Termux: ${e.message}. Open Termux, return here, and retry.", "❌ Не удалось автоматически запустить Termux: ${e.message}. Откройте Termux, вернитесь сюда и повторите попытку."), visible = false)
-            openTermux()
-            return
-        }
-
-        openTermux()
-        startPolling(maxAttempts = 1200, waitingLabel = tr("Installing / waiting for server", "Установка / ожидание сервера"), markInstalledOnSuccess = true)
-    }
-
-    private fun finishInstallationAttempt() {
-        PayloadTransferService.stop(this)
-        installationInProgress = false
-        if (::setupBtn.isInitialized) setupBtn.isEnabled = true
-    }
-
-    private fun runTermuxInstallerVisible() {
-        val installerScript = assets.open("install.sh").bufferedReader().use { it.readText() }
-        val installerCommand = """
-            export VIBE_TAVERN_ARCHIVE_PATH=''
-            export VIBE_TAVERN_ARCHIVE_URL='$localArchiveUrl'
-            echo '=== Vibe Tavern installer ==='
-            echo 'Bundled archive transfer: $localArchiveUrl'
-            set -x
-            $installerScript
-        """.trimIndent()
-        runTermuxInline(installerCommand, visible = true, sessionName = "Vibe Tavern Installer")
-    }
-
-    // ========== Server controls ==========
-
-    private fun launchServer() {
-        tryRegisterResultReceiver()
-        setProgress(tr("🚀 Opening Termux and starting the server visibly…", "🚀 Открываю Termux и запускаю сервер в видимой сессии…"), visible = true)
-        statusText.text = tr("🚀 Starting server in Termux", "🚀 Запускаю сервер в Termux") + "\n$launcherBuildLabel"
-
-        try {
-            runTermuxInline(startCmd, visible = true, sessionName = "Vibe Tavern Server")
-        } catch (e: Exception) {
-            setProgress(tr("❌ Could not open Termux: ${e.message}", "❌ Не удалось открыть Termux: ${e.message}"), visible = false)
-            return
-        }
-
-        openTermux()
-        startPolling(maxAttempts = 90, waitingLabel = tr("Waiting for server", "Ожидание сервера"))
-    }
-
-    private fun stopServer() {
-        pollingJob?.cancel()
-        tryRegisterResultReceiver()
-        setProgress(tr("⏹ Stopping server…", "⏹ Останавливаю сервер…"), visible = true)
-
-        try {
-            runTermuxInline(stopCmd, visible = false, sessionName = "Vibe Tavern Stop")
-        } catch (e: Exception) {
-            setProgress(tr("❌ Could not send stop command to Termux: ${e.message}", "❌ Не удалось отправить команду остановки в Termux: ${e.message}"), visible = false)
-            return
-        }
-
-        waitForServerStopped()
-    }
-
-    private fun waitForServerStopped() {
-        mainScope.launch(Dispatchers.IO) {
-            var stopped = false
-            for (i in 1..12) {
-                if (!checkServerOnce()) {
-                    stopped = true
-                    break
-                }
-                withContext(Dispatchers.Main) {
-                    progressText.text = tr("Stopping server… (${i}s)", "Останавливаю сервер… (${i}s)")
-                    progressText.visibility = View.VISIBLE
-                }
-                delay(1000)
-            }
-
-            withContext(Dispatchers.Main) {
-                progressBar.visibility = View.GONE
-                if (stopped) {
-                    ServerService.stop(this@MainActivity)
-                    progressText.text = tr("🛑 Server stopped", "🛑 Сервер остановлен")
-                    progressText.visibility = View.VISIBLE
-                    setServerRunningUi(running = false, checking = false)
-                } else {
-                    progressText.text = tr("⚠️ Stop command ran, but server still responds. Open Termux and check ~/vibe-tavern-stop.log.", "⚠️ Команда Stop выполнена, но сервер всё ещё отвечает. Откройте Termux и проверьте ~/vibe-tavern-stop.log.")
-                    progressText.visibility = View.VISIBLE
-                    setServerRunningUi(running = true, checking = false)
-                }
-            }
-        }
-    }
-
-    private fun startPolling(
-        maxAttempts: Int = 45,
-        waitingLabel: String = "Waiting for server",
-        markInstalledOnSuccess: Boolean = false,
-    ) {
-        pollingJob?.cancel()
-        pollingJob = mainScope.launch(Dispatchers.IO) {
-            var started = false
-            for (i in 1..maxAttempts) {
-                if (!isActive) return@launch
-                withContext(Dispatchers.Main) {
-                    progressText.text = "$waitingLabel… (${i}s)"
-                    progressText.visibility = View.VISIBLE
-                }
-                if (checkServerOnce()) {
-                    started = true
-                    break
-                }
-                delay(1000)
-            }
-
-            withContext(Dispatchers.Main) {
-                progressBar.visibility = View.GONE
-                if (markInstalledOnSuccess) finishInstallationAttempt()
-                if (started) {
-                    if (markInstalledOnSuccess) markCurrentPayloadInstalled()
-                    updateSetupButtonText()
-                    progressText.text = tr("✅ Server running. Tap Open to use Vibe Tavern.", "✅ Сервер работает. Нажмите «Открыть», чтобы перейти в Vibe Tavern.")
-                    progressText.visibility = View.VISIBLE
-                    ServerService.start(this@MainActivity)
-                    setServerRunningUi(running = true, checking = false)
-                } else {
-                    progressText.text = tr("⚠️ Server did not respond. Check the visible Termux session or open Help.", "⚠️ Сервер не ответил. Проверьте видимую сессию Termux или откройте справку.")
-                    progressText.visibility = View.VISIBLE
-                    setServerRunningUi(running = false, checking = false)
-                }
-            }
-        }
-    }
-
-    private fun refreshServerStatus(showChecking: Boolean) {
-        if (showChecking) setServerRunningUi(running = false, checking = true)
-        mainScope.launch(Dispatchers.IO) {
-            val running = checkServerOnce()
-            withContext(Dispatchers.Main) {
-                if (running) {
-                    markInstalled(true)
-                    updateSetupButtonText()
-                    ServerService.start(this@MainActivity)
-                }
-                setServerRunningUi(running = running, checking = false)
-            }
-        }
-    }
-
-    private fun checkServerOnce(): Boolean {
-        return try {
-            val conn = java.net.URL(serverUrl).openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 900
-            conn.readTimeout = 900
-            conn.requestMethod = "GET"
-            conn.responseCode in 200..399
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun setServerRunningUi(running: Boolean, checking: Boolean) {
-        if (checking) {
-            statusText.text = tr("🔎 Checking local server…", "🔎 Проверяю локальный сервер…")
-            launchBtn.visibility = View.VISIBLE
-            openBtn.visibility = View.GONE
-            stopBtn.visibility = View.GONE
-            return
-        }
-
-        if (running) {
-            val payloadHint = if (payloadUpdateRequired()) {
-                "\n" + tr(
-                    "Server payload update to v${BuildConfig.VERSION_NAME} is available",
-                    "Доступно обновление серверной части до v${BuildConfig.VERSION_NAME}",
-                )
-            } else {
-                "\n" + tr(
-                    "Server payload v${BuildConfig.VERSION_NAME}",
-                    "Серверная часть v${BuildConfig.VERSION_NAME}",
-                )
-            }
-            statusText.text = tr("✅ Server is running", "✅ Сервер работает") + "\n$serverUrl" + payloadHint
-            launchBtn.visibility = View.GONE
-            openBtn.visibility = View.VISIBLE
-            stopBtn.visibility = View.VISIBLE
-        } else {
-            val installHint = when {
-                !wasInstalledOnce() -> tr(
-                    "Not installed. Install server v${BuildConfig.VERSION_NAME} first.",
-                    "Не установлено. Сначала установите сервер v${BuildConfig.VERSION_NAME}.",
-                )
-                payloadUpdateRequired() -> tr(
-                    "Server is off; update its payload to v${BuildConfig.VERSION_NAME}.",
-                    "Сервер выключен; обновите серверную часть до v${BuildConfig.VERSION_NAME}.",
-                )
-                else -> tr("Installed, server is off", "Установлено, сервер выключен")
-            }
-            statusText.text = "⏹ $installHint"
-            launchBtn.visibility = View.VISIBLE
-            openBtn.visibility = View.GONE
-            stopBtn.visibility = View.GONE
-        }
-    }
-
-    private fun setProgress(message: String?, visible: Boolean) {
-        progressBar.visibility = if (visible) View.VISIBLE else View.GONE
-        progressBar.isIndeterminate = true
-        progressText.visibility = if (message.isNullOrBlank()) View.GONE else View.VISIBLE
-        progressText.text = message ?: ""
-    }
-
-    // ========== Termux RUN_COMMAND ==========
-
-    private fun runTermuxInline(command: String, visible: Boolean, sessionName: String? = null) {
-        runTermuxBash(arrayOf("-lc", command), visible, sessionName)
-    }
-
-    private fun runTermuxBash(arguments: Array<String>, visible: Boolean, sessionName: String? = null) {
-        val resultIntent = Intent(TERMUX_RESULT_ACTION).setPackage(packageName)
-        val resultPendingIntent = PendingIntent.getBroadcast(
-            this,
-            1001,
-            resultIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val intent = Intent().apply {
-            component = ComponentName("com.termux", "com.termux.app.RunCommandService")
-            action = "com.termux.RUN_COMMAND"
-            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
-            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arguments)
-            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
-            putExtra("com.termux.RUN_COMMAND_BACKGROUND", !visible)
-            putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0")
-            putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", resultPendingIntent)
-            putExtra("com.termux.RUN_COMMAND_COMMAND_LABEL", sessionName ?: "Vibe Tavern")
-            putExtra("com.termux.RUN_COMMAND_COMMAND_DESCRIPTION", "Runs the Vibe Tavern local server/orchestrator command.")
-            if (sessionName != null) {
-                putExtra("com.termux.RUN_COMMAND_SESSION_NAME", sessionName)
-                putExtra("com.termux.RUN_COMMAND_SESSION_CREATE_MODE", "no-session-with-name")
-            }
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            ContextCompat.startForegroundService(this, intent)
-        } else {
-            startService(intent)
-        }
-    }
-
-    private fun tryRegisterResultReceiver() {
-        if (resultReceiverRegistered) return
-        ContextCompat.registerReceiver(
-            this,
-            resultReceiver,
-            IntentFilter(TERMUX_RESULT_ACTION),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
-        )
-        resultReceiverRegistered = true
-    }
-
-    // ========== Browser / help / settings ==========
-
-    private fun openBrowser() {
-        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(serverUrl)))
-    }
-
-    private fun openTermux() {
-        packageManager.getLaunchIntentForPackage("com.termux")?.let { startActivity(it) }
-    }
-
-    private fun openAppSettings(targetPackage: String) {
-        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = Uri.fromParts("package", targetPackage, null)
-        })
-    }
-
-    private fun copyServerUrl() {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Vibe Tavern URL", serverUrl))
-        setProgress(tr("Copied: $serverUrl", "Скопировано: $serverUrl"), visible = false)
-    }
-
-    private fun showLanguageDialog() {
-        val languages = arrayOf("Русский", "English")
-        val checked = if (isRu()) 0 else 1
-        AlertDialog.Builder(this)
-            .setTitle(tr("Language", "Язык"))
-            .setSingleChoiceItems(languages, checked) { dialog, which ->
-                setLanguage(if (which == 0) "ru" else "en")
-                applyLaunchTexts()
-                setServerRunningUi(running = false, checking = true)
-                refreshServerStatus(showChecking = false)
-                dialog.dismiss()
-            }
-            .setNegativeButton(tr("Cancel", "Отмена"), null)
-            .show()
-    }
-
-    private val FIRST_TIME_SETUP_COMMAND = """
-        mkdir -p ~/.termux
-        printf '%s\n' \
-          'allow-external-apps=true' \
-          >> ~/.termux/termux.properties
-        termux-reload-settings
-    """.trimIndent()
-
-    private fun toggleFirstTimeSetupHelp() {
-        firstTimeSetupContent.visibility = if (firstTimeSetupContent.visibility == View.VISIBLE) {
-            View.GONE
-        } else {
-            View.VISIBLE
-        }
-        updateFirstTimeSetupTexts()
-    }
-
-    private fun updateFirstTimeSetupTexts() {
-        val expanded = firstTimeSetupContent.visibility == View.VISIBLE
-        firstTimeSetupHeader.text = tr(
-            if (expanded) "▾ First-Time Termux Setup" else "▸ First-Time Termux Setup",
-            if (expanded) "▾ Первичная настройка Termux" else "▸ Первичная настройка Termux",
-        )
-        firstTimeSetupHeader.contentDescription = tr(
-            if (expanded) "Collapse first-time Termux setup" else "Expand first-time Termux setup",
-            if (expanded) "Свернуть первичную настройку Termux" else "Развернуть первичную настройку Termux",
-        )
-        findViewById<TextView>(R.id.first_time_setup_step_open).text = tr(
-            "1. Open Termux once\nWait for the initial shell prompt. You do not need to update packages manually.",
-            "1. Откройте Termux один раз\nДождитесь появления командной строки. Обновлять пакеты вручную не нужно.",
-        )
-        findViewById<TextView>(R.id.first_time_setup_step_command).text = tr(
-            "2. Allow launcher commands\nCopy the complete block below and paste it at the Termux prompt.",
-            "2. Разрешите команды лаунчера\nСкопируйте весь блок ниже и вставьте его в командную строку Termux.",
-        )
-        findViewById<TextView>(R.id.first_time_setup_step_restart).text = tr(
-            "3. Restart Termux\nType exit, swipe Termux away from recent apps, reopen it, and wait for the shell prompt.",
-            "3. Перезапустите Termux\nВведите exit, смахните Termux из недавних приложений, снова откройте его и дождитесь командной строки.",
-        )
-        findViewById<TextView>(R.id.first_time_setup_step_install).text = tr(
-            "4. Install the server\nReturn here and tap Install server. The APK handles packages, Ubuntu 24.04, and the private localhost transfer; storage permission is not required.",
-            "4. Установите сервер\nВернитесь сюда и нажмите «Установить сервер». APK сам подготовит пакеты, Ubuntu 24.04 и приватную localhost-передачу; разрешение на хранилище не требуется.",
-        )
-        applyTermuxSetupCommandTexts()
-    }
-
-    private fun bindTermuxSetupCommand() {
-        applyTermuxSetupCommandTexts()
-        findViewById<Button>(R.id.btn_copy_termux_command).setOnClickListener {
-            copyTermuxSetupCommand()
-        }
-        findViewById<Button>(R.id.btn_open_termux_for_setup).setOnClickListener {
-            openTermux()
-        }
-    }
-
-    private fun applyTermuxSetupCommandTexts() {
-        findViewById<TextView>(R.id.termux_command_label).text = tr(
-            "Copy this entire command block into Termux",
-            "Скопируйте весь блок команды в Termux",
-        )
-        findViewById<TextView>(R.id.termux_command_block).text = FIRST_TIME_SETUP_COMMAND
-        findViewById<Button>(R.id.btn_copy_termux_command).text = tr(
-            "📋 Copy command",
-            "📋 Скопировать команду",
-        )
-        findViewById<Button>(R.id.btn_open_termux_for_setup).text = tr(
-            "Open Termux",
-            "Открыть Termux",
-        )
-    }
-
-    private fun copyTermuxSetupCommand() {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("termux-setup", FIRST_TIME_SETUP_COMMAND))
-        Toast.makeText(
-            this,
-            tr("Command copied. Paste it into Termux.", "Команда скопирована. Вставьте её в Termux."),
-            Toast.LENGTH_SHORT,
-        ).show()
-    }
-
-    private fun showHelpDialog() {
-        val help = if (isRu()) {
-            """
-                Если Start ничего не делает:
-                • Start открывает видимую сессию Termux. Ошибки нужно смотреть там.
-                • Termux должен быть установлен из F-Droid, не из Play Store.
-                • Vibe Tavern нужно Android-разрешение: Run commands in Termux environment.
-                • В Termux должно быть: allow-external-apps=true в ~/.termux/termux.properties.
-
-                Если Install / Update завершился ошибкой:
-                • Проверь видимую сессию Termux и ~/vibe-tavern-install.log.
-                • При ошибке зеркала или хеша выполни termux-change-repo и выбери другое зеркало.
-                • Если Termux был принудительно остановлен, открой его, дождись командной строки и повтори установку.
-                • Разрешение на хранилище и файл в Downloads не нужны: архив передаётся через 127.0.0.1.
-
-                Если веб-интерфейс лагает/зависает:
-                • Отключите оптимизацию батареи для Termux.
-                • Не закрывайте Termux, пока пользуетесь Vibe Tavern.
-                • Отключите агрессивный энергосберегающий режим, если он есть.
-
-                Если браузер не открылся:
-                • Откройте вручную: $serverUrl
-            """.trimIndent()
-        } else {
-            """
-                If Start does nothing:
-                • Start opens a visible Termux session. Check that session for errors.
-                • Termux must be installed from F-Droid, not Play Store.
-                • Vibe Tavern needs Android permission: Run commands in Termux environment.
-                • Termux needs: allow-external-apps=true in ~/.termux/termux.properties.
-
-                If Install / Update fails:
-                • Check the visible Termux session and ~/vibe-tavern-install.log.
-                • For mirror or repository hash errors, run termux-change-repo and choose another mirror.
-                • If Termux was force-stopped, open it, wait for the shell prompt, and retry installation.
-                • Storage permission and a Downloads file are not needed; the archive transfers over 127.0.0.1.
-
-                If the web UI lags/freezes:
-                • Disable battery optimization for Termux.
-                • Keep Termux open while using Vibe Tavern.
-                • Disable aggressive battery saver modes if your phone has them.
-
-                If browser does not open:
-                • Open manually: $serverUrl
-            """.trimIndent()
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle(tr("Help / Troubleshooting", "Справка / проблемы"))
-            .setMessage(help)
-            .setPositiveButton(tr("Open Termux settings", "Открыть настройки Termux")) { _, _ -> openAppSettings("com.termux") }
-            .setNegativeButton(tr("Copy URL", "Скопировать URL")) { _, _ -> copyServerUrl() }
-            .setNeutralButton(tr("Open Termux", "Открыть Termux")) { _, _ -> openTermux() }
-            .show()
-    }
-
-    private fun confirmUninstall() {
-        val message = if (isRu()) {
-            "Что удалить:\n\n" +
-                "Удалить Vibe Tavern: удалит программу, чаты/настройки и start script внутри Ubuntu. Ubuntu-контейнер останется.\n\n" +
-                "Удалить всё: удалит весь Ubuntu proot-контейнер, который использовался Vibe Tavern."
-        } else {
-            "Choose what to remove:\n\n" +
-                "Delete Vibe Tavern: removes program files, chats/settings, and start script inside Ubuntu. Keeps the Ubuntu container.\n\n" +
-                "Delete everything: removes the entire Ubuntu proot container used by Vibe Tavern."
-        }
-        AlertDialog.Builder(this)
-            .setTitle(tr("Uninstall Vibe Tavern", "Удалить Vibe Tavern"))
-            .setMessage(message)
-            .setPositiveButton(tr("Delete Vibe Tavern", "Удалить Vibe Tavern")) { _, _ -> uninstallVibeTavernOnly() }
-            .setNegativeButton(tr("Cancel", "Отмена"), null)
-            .setNeutralButton(tr("Delete everything", "Удалить всё")) { _, _ -> uninstallEverything() }
-            .show()
-    }
-
-    private fun uninstallVibeTavernOnly() {
-        pollingJob?.cancel()
-        setProgress(tr("🗑 Opening Termux to remove Vibe Tavern files…", "🗑 Открываю Termux для удаления файлов Vibe Tavern…"), visible = true)
-        val command = """
-            clear
-            LOG="${'$'}HOME/vibe-tavern-uninstall.log"
-            exec > >(tee -a "${'$'}LOG") 2>&1
-            echo '=== Vibe Tavern uninstall: app files only ==='
-            echo "Time: $(date)"
-            echo "Log: ${'$'}LOG"
-            echo
-            code=0
-            echo '[1/4] Stop server process by exact name...'
-            pkill -TERM -x 'vibe-tavern' 2>/dev/null || true
-            sleep 1
-            pkill -KILL -x 'vibe-tavern' 2>/dev/null || true
-            termux-wake-unlock 2>/dev/null || true
-            echo
-            echo '[2/4] Remove Vibe Tavern files inside Ubuntu, keep container...'
-            if command -v proot-distro >/dev/null 2>&1 && proot-distro list --quiet | grep -qxF 'ubuntu'; then
-              proot-distro login ubuntu -- bash -lc '
-                set -eux
-                rm -rf "${'$'}HOME/vibe-tavern" \
-                       "${'$'}HOME/.local/share/vibe-tavern" \
-                       "${'$'}HOME/start-vibe-tavern.sh" \
-                       "${'$'}HOME/vibe-tavern.next" \
-                       "${'$'}HOME/vibe-tavern.old"
-              ' || code=${'$'}?
-              echo "proot removal exit code: ${'$'}code"
-            else
-              echo 'Ubuntu proot not found; nothing to remove inside Ubuntu.'
-            fi
-            echo
-            echo '[3/4] Remove Termux-side Vibe Tavern logs/archive...'
-            rm -f ~/vibe-tavern-install.log ~/vibe-tavern-start.log ~/vibe-tavern-stop.log ~/$bundledArchiveName
-            echo
-            echo '[4/4] Done.'
-            if [ "${'$'}code" -eq 0 ]; then
-              echo '✅ Vibe Tavern files removed. Ubuntu container kept.'
-            else
-              echo "❌ Uninstall finished with errors. Exit code: ${'$'}code"
-            fi
-            echo "Log saved at: ${'$'}LOG"
-            echo 'Press Enter to close this Termux session.'
-            read -r _
-            exit "${'$'}code"
-        """.trimIndent()
-        runUninstallCommand(command, "Vibe Tavern Uninstall")
-    }
-
-    private fun uninstallEverything() {
-        pollingJob?.cancel()
-        setProgress(tr("🗑 Opening Termux to remove Ubuntu container…", "🗑 Открываю Termux для удаления Ubuntu-контейнера…"), visible = true)
-        val command = """
-            clear
-            LOG="${'$'}HOME/vibe-tavern-uninstall.log"
-            exec > >(tee -a "${'$'}LOG") 2>&1
-            echo '=== Vibe Tavern uninstall: everything ==='
-            echo "Time: $(date)"
-            echo "Log: ${'$'}LOG"
-            echo
-            code=0
-            echo '[1/4] Stop server process by exact name...'
-            pkill -TERM -x 'vibe-tavern' 2>/dev/null || true
-            sleep 1
-            pkill -KILL -x 'vibe-tavern' 2>/dev/null || true
-            termux-wake-unlock 2>/dev/null || true
-            echo
-            echo '[2/4] Remove Ubuntu proot container...'
-            proot-distro remove ubuntu || code=${'$'}?
-            echo "proot-distro remove exit code: ${'$'}code"
-            echo
-            echo '[3/4] Remove Termux-side Vibe Tavern logs/archive...'
-            rm -f ~/vibe-tavern-install.log ~/vibe-tavern-start.log ~/vibe-tavern-stop.log ~/$bundledArchiveName
-            echo
-            echo '[4/4] Done.'
-            if [ "${'$'}code" -eq 0 ]; then
-              echo '✅ Vibe Tavern and Ubuntu proot container removed.'
-            else
-              echo "❌ Uninstall finished with errors. Exit code: ${'$'}code"
-            fi
-            echo "Log saved at: ${'$'}LOG"
-            echo 'Press Enter to close this Termux session.'
-            read -r _
-            exit "${'$'}code"
-        """.trimIndent()
-        runUninstallCommand(command, "Vibe Tavern Remove All")
-    }
-
-    private fun runUninstallCommand(command: String, sessionName: String) {
-        try {
-            runTermuxInline(command, visible = true, sessionName = sessionName)
-            openTermux()
-        } catch (e: Exception) {
-            setProgress(tr("❌ Could not open Termux: ${e.message}", "❌ Не удалось открыть Termux: ${e.message}"), visible = false)
-            return
-        }
-        markInstalled(false)
-        ServerService.stop(this)
-        setServerRunningUi(running = false, checking = false)
-        updateSetupButtonText()
-        updateVersionStatus()
+    private enum class ServerUiState {
+        EXTRACTING,
+        STOPPED,
+        WARMING,
+        READY,
+        FAILED,
+        FOREIGN,
     }
 
     private enum class LauncherUpdateAction {
@@ -1279,7 +782,14 @@ class MainActivity : AppCompatActivity() {
         INSTALL,
     }
 
-    companion object {
+    private companion object {
+        const val PREFS = "vibe_tavern_launcher"
+        const val PREF_PAYLOAD_VERSION = "installed_payload_version"
+        const val PREF_LANGUAGE = "language"
+        const val PREF_BATTERY_EXEMPTION_PROMPTED = "battery_exemption_prompted"
+        const val PAYLOAD_DIRECTORY = "payload"
+        const val MAX_LOG_CLIPBOARD_BYTES = 400_000L
+        const val NOTIFICATION_PERMISSION_REQUEST = 1
         private var automaticUpdateCheckStarted = false
     }
 }
