@@ -466,3 +466,40 @@ describe("ProviderSamplerPanel sampler-set row (LS-5)", () => {
     expect(h.calls.find((c) => c.k === "samplerSetId")).toEqual({ k: "samplerSetId", v: null });
   });
 });
+
+// W1 (MOBILE_UI_DEFECTS_REPORT step 2): on phones the accordion header's set
+// row columnates — title row, then the preset selector row, then the
+// icon-action row — so the preset-management buttons are never clipped by
+// horizontal row pressure. Desktop keeps the original single horizontal row
+// (title | selector + icon actions; the md: prefixed classes restore it).
+describe("ProviderSamplerPanel accordion header (mobile two-row layout, W1)", () => {
+  it("max-md: columnates the set row (selector / icon-action rows); md: restores the single horizontal row", () => {
+    const view = render(<ProviderSamplerPanel form={setForm()} updateForm={mock()} />);
+    const header = view.getByTestId("sampler-accordion-header");
+    // Mobile: the header stacks (title row → set row) and children stretch.
+    // Mobile-first: flex-col is the base direction, md:flex-row restores the
+    // single desktop row.
+    expect(header.className).toContain("flex-col");
+    expect(header.className).toContain("max-md:items-stretch");
+    expect(header.className).toContain("max-md:gap-2");
+    // Desktop: the original single horizontal row.
+    expect(header.className).toContain("md:flex-row");
+    expect(header.className).toContain("md:items-center");
+    expect(header.className).toContain("md:justify-between");
+    // The set row (cluster) is the header's second child and columnates too:
+    // row 1 = preset selector wrap, row 2 = the icon-action row.
+    const cluster = view.getByTestId("sampler-set-trigger").parentElement!.parentElement!;
+    expect(cluster).toBe(header.lastElementChild as HTMLElement);
+    expect(cluster.className).toContain("max-md:flex-col");
+    expect(cluster.className).toContain("max-md:items-stretch");
+    expect(cluster.className).toContain("md:flex-row");
+    expect(cluster.className).toContain("md:items-center");
+    // Icon actions live in their own row — a sibling of the selector wrap
+    // inside the cluster, wrap-capable for narrow widths (7×28px + toggle ≈ 264px).
+    const iconRow = view.getByTestId("sampler-set-new").parentElement!;
+    expect(iconRow).toBe(cluster.lastElementChild as HTMLElement);
+    expect(iconRow.className).toContain("flex-wrap");
+    expect(iconRow.querySelectorAll("button")).toHaveLength(7);
+    view.unmount();
+  });
+});

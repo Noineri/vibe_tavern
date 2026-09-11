@@ -572,8 +572,12 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
       {/* ── Advanced sampler accordion with toggle in header ── */}
       <div className="mt-4 overflow-hidden rounded-lg border border-border2">
         <div
+          data-testid="sampler-accordion-header"
           className={cn(
-            'flex w-full items-center justify-between bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer',
+            // Mobile (MOBILE_UI_DEFECTS_REPORT step 2): the header columnates —
+            // title row, then the set row below it. Desktop keeps the original
+            // single horizontal row (title | set row).
+            'flex w-full flex-col bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:justify-between',
             advOpen && '!rounded-b-none'
           )}
         >
@@ -588,8 +592,10 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
           </span>
           {/* Named sampler-set row (LS-5): bounded inline dropdown + 7 icon
               actions + the customSamplers toggle switch. Icon-only per the
-              owner's final decision — no labels, tooltips only. */}
-          <div className="flex items-center gap-1">
+              owner's final decision — no labels, tooltips only. Mobile: the
+              cluster columnates too — row 1 = preset selector, row 2 = the
+              icon-action row — so the buttons are never clipped. */}
+          <div className="flex max-md:flex-col max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:gap-1">
             {morph ? (
               /* ── Morph state: dropdown → name input (lorebook-accordion
                   inline-rename clone: input + ✓ + ✕, Enter = save, autofocus) ── */
@@ -670,7 +676,10 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
             )}
             {/* Icon-only action row. Pencil/refresh/trash/download act on the
                 selected set — disabled when none is selected (same rule as
-                diskette/refresh; no target = no action). */}
+                diskette/refresh; no target = no action). Its own row so the
+                mobile two-row layout stacks it under the preset selector
+                (flex-wrap: 7×28px buttons + toggle ≈ 264px, fits any phone). */}
+            <div className="flex flex-wrap items-center gap-1">
             <CustomTooltip content={t('sampler_set_new')}>
               <button
                 type="button"
@@ -771,6 +780,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               onClick={(e) => { e.stopPropagation(); handleToggleCustomSamplers(!form.customSamplers); }}
             >
               <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", form.customSamplers ? "translate-x-[18px]" : "translate-x-0.5")} />
+            </div>
             </div>
           </div>
         </div>
