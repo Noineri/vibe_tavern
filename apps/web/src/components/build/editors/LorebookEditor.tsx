@@ -604,7 +604,7 @@ export function LorebookEditor({
           <div className="mb-2 text-[13px] text-t3">
             {t("lore_no_entries")}
           </div>
-          <div className="mx-auto flex justify-center gap-2">
+          <div className="mx-auto flex max-md:flex-col max-md:items-stretch justify-center gap-2">
             <AddButton onClick={handleAddLorebook}>
               <Ic.plus /> {t("new_lorebook")}
             </AddButton>
@@ -669,7 +669,7 @@ export function LorebookEditor({
 
       {/* Bottom list buttons */}
       {lorebooks.length > 0 && (
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex gap-2 max-md:flex-col max-md:items-stretch">
           <AddButton onClick={handleAddLorebook}>
             <Ic.plus /> {t("new_lorebook")}
           </AddButton>

@@ -444,7 +444,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       {scripts.length === 0 ? (
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
-          <div className="flex justify-center gap-2">
+          <div className="flex max-md:flex-col max-md:items-stretch justify-center gap-2">
             <AddButton onClick={() => handleAdd()}>
               <Ic.plus /> {t("new_script")}
             </AddButton>
@@ -474,7 +474,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                 onClick={() => setActiveScriptId(s.id)}
               />
             ))}
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap gap-2 max-md:flex-col max-md:items-stretch">
               <AddButton onClick={() => handleAdd()}><Ic.plus /> {t("new_script")}</AddButton>
               <AddButton onClick={() => handleAdd("dice")}><Ic.dice /> {t("new_dice_script")}</AddButton>
               <AddButton onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</AddButton>

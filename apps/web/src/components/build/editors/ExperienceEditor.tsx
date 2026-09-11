@@ -1276,7 +1276,7 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
                   onClick={handleNewBlankVisual}
                 >
                   <Ic.plus /> {t("experience_editor_visual_blank")}
