@@ -10,6 +10,10 @@ export type SearchInputProps = Omit<React.ComponentProps<"input">, "className" |
    *  search field in the app shows it (uniform family look); pass `null`
    *  explicitly to render an iconless shell. */
   icon?: React.ReactNode | null;
+  /** Trailing slot INSIDE the shell (clear-✕ buttons, inline badges).
+   *  Sits after the input, inside the border — chrome that used to live in
+   *  hand shells belongs here, not as a floating sibling outside. */
+  trailing?: React.ReactNode;
 };
 
 /**
@@ -32,6 +36,7 @@ export type SearchInputProps = Omit<React.ComponentProps<"input">, "className" |
 export function SearchInput({
   className,
   icon,
+  trailing,
   placeholder,
   onKeyDown,
   ...rest
@@ -53,6 +58,7 @@ export function SearchInput({
         onKeyDown={onKeyDown}
         className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t3/60"
       />
+      {trailing != null && <span className="flex shrink-0 items-center">{trailing}</span>}
     </div>
   );
 }

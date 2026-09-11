@@ -19,6 +19,7 @@ import { MasterDetailFooter } from "../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
@@ -553,8 +554,9 @@ export function ServicePromptsPane({
 									</span>
 								</CustomTooltip>
 								{isRenaming ? (
-									<input
+									<InlineRenameInput
 										ref={renameInputRef}
+										className="min-w-0 flex-1"
 										value={renameValue}
 										onChange={(e) => setRenameValue(e.target.value)}
 										onKeyDown={(e) => {
@@ -563,7 +565,6 @@ export function ServicePromptsPane({
 										}}
 										onBlur={() => void handleRenameSave()}
 										onClick={(e) => e.stopPropagation()}
-										className="min-w-0 flex-1 rounded border border-accent bg-surface px-2 py-1 font-ui text-[13px] text-t1 outline-none"
 									/>
 								) : (
 									<CustomTooltip content={p.name}>
@@ -609,7 +610,7 @@ export function ServicePromptsPane({
 								if (isRenaming) {
 									return (
 										<div key={p.id} className="border-l-2 border-transparent px-3 py-2">
-											<input
+											<InlineRenameInput
 												ref={renameInputRef}
 												value={renameValue}
 												onChange={(e) => setRenameValue(e.target.value)}
@@ -619,7 +620,6 @@ export function ServicePromptsPane({
 												}}
 												onBlur={() => void handleRenameSave()}
 												onClick={(e) => e.stopPropagation()}
-												className="min-w-0 w-full rounded border border-accent bg-surface px-2 py-1 font-ui text-[13px] text-t1 outline-none"
 											/>
 										</div>
 									);
@@ -650,9 +650,8 @@ export function ServicePromptsPane({
 					</DndContext>
 					{isCreating && (
 						<div className="border-l-2 border-transparent px-3 py-2">
-							<input
+							<InlineRenameInput
 								ref={newInputRef}
-								type="text"
 								placeholder={t("promptManager.servicePrompts.newNamePlaceholder")}
 								value={newName}
 								onChange={(e) => setNewName(e.target.value)}
@@ -667,7 +666,6 @@ export function ServicePromptsPane({
 									if (!newName.trim()) setIsCreating(false);
 									else void handleCreateNew();
 								}}
-								className="w-full rounded border border-border bg-s2 px-2 py-1.5 font-ui text-[13px] text-t1 outline-none focus:border-border2"
 							/>
 						</div>
 					)}

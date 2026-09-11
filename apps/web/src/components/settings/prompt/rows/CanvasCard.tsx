@@ -31,6 +31,7 @@ import { useT } from "../../../../i18n/context.js";
 import { cn } from "../../../../lib/cn.js";
 import { textareaCls, monoMod } from "../../../../lib/field-tokens.js";
 import { Ic } from "../../../shared/icons.js";
+import { InlineRenameInput } from "../../../shared/InlineRenameInput.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { TokenCounter } from "../../../shared/TokenCounter.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
@@ -193,9 +194,9 @@ export function CanvasCard({
           {editableName ? (
             <div className="group flex min-w-0 flex-1 items-center gap-1.5">
               {editingName ? (
-                <input
+                <InlineRenameInput
                   autoFocus
-                  className={cn("min-w-0 flex-1 rounded border border-border bg-s2 px-1.5 py-0.5 font-ui text-[12px] outline-none focus:border-accent placeholder:text-t4", enabled ? "text-t1" : "text-t3")}
+                  className={cn("min-w-0 flex-1", !enabled && "!text-t3")}
                   value={editableName.value}
                   placeholder={editableName.placeholder}
                   onChange={(e) => editableName.onRename(e.target.value)}

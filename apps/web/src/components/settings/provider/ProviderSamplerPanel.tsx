@@ -11,6 +11,7 @@ import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
 import { NumberInput } from '../../shared/NumberInput.js';
+import { TextInput } from '../../shared/text-input.js';
 import { AnimatedDisclosure } from '../../shared/AnimatedDisclosure.js';
 import { samplerPresetPayloadSchema, type SamplerSet } from '@vibe-tavern/api-contracts';
 import { computeOverlayPatch } from '../../../hooks/save-provider-patch.js';
@@ -594,13 +595,9 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   inline-rename clone: input + ✓ + ✕, Enter = save, autofocus) ── */
               <div className="flex min-w-0 items-center gap-1">
                 <div className="flex min-w-0 flex-col">
-                  <input
-                    type="text"
+                  <TextInput
                     data-testid="sampler-set-name-input"
-                    className={cn(
-                      "h-7 w-[180px] rounded border bg-bg px-2 text-[12px] text-t1 outline-none",
-                      morphShowConflict ? "border-danger" : "border-accent",
-                    )}
+                    className={cn("w-[180px]", morphShowConflict && "!border-danger")}
                     value={morph.value}
                     onChange={(e) => {
                       setMorph({ ...morph, value: e.target.value });

@@ -10,6 +10,7 @@ import { useIsMobile } from '../../hooks/use-mobile.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
 import { useT } from '../../i18n/context.js';
 import { AutoTextarea } from '../shared/auto-textarea.js';
+import { ChipInput } from '../shared/ChipInput.js';
 import { TextInput } from '../shared/text-input.js';
 import { lblCls } from '../../lib/field-tokens.js';
 import { MobileExpandTextarea } from '../shared/MobileExpandTextarea.js';
@@ -60,7 +61,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const tags = watch("tags") || [];
 
   const [altGreetIdx, setAltGreetIdx] = useState(0);
-  const [tagInput, setTagInput] = useState('');
   const avaInputRef = useRef<HTMLInputElement>(null);
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
   // Confirmed (post-crop) avatar lives outside the form: BuildCharacterDraft has
@@ -101,20 +101,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   function handleAvatarCropCancel() {
     if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
     setPendingAvatar(null);
-  }
-
-  function removeTag(tag: string) {
-    patchForm({ tags: tags.filter((tn: string) => tn !== tag) });
-  }
-
-  function handleTagKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && tagInput.trim()) {
-      e.preventDefault();
-      if (!tags.includes(tagInput.trim())) {
-        patchForm({ tags: [...tags, tagInput.trim()] });
-      }
-      setTagInput('');
-    }
   }
 
   async function handleSave() {
@@ -377,21 +363,12 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           {/* Tags */}
           <div className="mb-5">
             <label className={lblCls}>{t("char_tags_label")}</label>
-            <TextInput
-              value={tagInput}
-              onChange={e => setTagInput(e.target.value)}
-              onKeyDown={handleTagKey}
+            <ChipInput
+              values={tags}
+              onChange={(next) => patchForm({ tags: next })}
+              mode="words"
               placeholder={t("tags_enter")}
             />
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {tags.map((tag: string) => (
-                <span
-                  key={tag}
-                  className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                  onClick={() => removeTag(tag)}
-                >{tag} ✕</span>
-              ))}
-            </div>
           </div>
 
           {/* TODO: Phase 3 — Capabilities (built-in tools + MCP tools) */}

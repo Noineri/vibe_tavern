@@ -20,6 +20,7 @@ import { Checkbox } from "../../shared/Checkbox.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { NumberInput } from "../../shared/NumberInput.js";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import {
   listLoreEntries,
   type LorebookRecord,
@@ -266,11 +267,8 @@ export function LorebookAccordion({
             )}
           >
             {/* Lorebook name — takes the full row on mobile */}
-            <input
-              className={cn(
-                "flex-1 rounded border border-accent bg-bg px-2 py-0.5 text-[13px] font-medium text-t1 outline-none",
-                isMobile && "min-w-0 basis-full"
-              )}
+            <InlineRenameInput
+              className={cn("flex-1", isMobile && "basis-full")}
               value={editLbName}
               onChange={(e) => onEditLbName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onSaveEdit()}

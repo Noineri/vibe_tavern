@@ -58,6 +58,7 @@ import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { Icons } from "../../shared/icons.js";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
@@ -359,10 +360,8 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                       <li key={chat.id} className="group relative">
                         {renamingChatId === chat.id ? (
                           <div className="flex w-full flex-col items-start gap-1 px-3 py-2">
-                            <input
-                              // eslint-disable-next-line jsx-a11y/no-autofocus
+                            <InlineRenameInput
                               autoFocus
-                              className="w-full rounded border border-border bg-s2 px-2 py-1 font-ui text-[0.85rem] font-medium text-t1 outline-none focus:border-border2"
                               value={renameDraft}
                               onChange={(e) => setRenameDraft(e.target.value)}
                               onKeyDown={(e) => {

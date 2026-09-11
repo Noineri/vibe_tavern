@@ -76,4 +76,22 @@ describe("FS-8c SearchInput carries the search canon (shell + borderless input)"
     expect(input.placeholder).toBe("find…");
     expect(input.className).not.toContain("mt-1");
   });
+
+  it("trailing slot renders INSIDE the shell, after the input (clear-✕ home)", () => {
+    const { container, getByTestId } = render(
+      <SearchInput
+        value="x"
+        onChange={() => {}}
+        trailing={<button type="button" data-testid="clear-x">✕</button>}
+      />,
+    );
+    const shell = container.firstElementChild as HTMLDivElement;
+    const clear = getByTestId("clear-x");
+    expect(shell.contains(clear)).toBe(true);
+    const input = shell.querySelector("input") as HTMLInputElement;
+    // Node.DOCUMENT_POSITION_FOLLOWING: clear is positioned after input
+    expect(
+      input.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 });

@@ -389,13 +389,9 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 							    ✓ + ✕ (Enter = save, Esc = cancel, collision warns inline). ── */
 							<div className="flex min-w-0 items-center gap-1">
 								<div className="flex min-w-0 flex-col">
-									<input
-										type="text"
+									<TextInput
 										data-testid="provider-format-save-name"
-										className={cn(
-											"h-7 w-[180px] rounded border bg-bg px-2 text-[12px] text-t1 outline-none",
-											morphShowConflict ? "border-danger" : "border-accent",
-										)}
+										className={cn("w-[180px]", morphShowConflict && "!border-danger")}
 										value={morph.value}
 										onChange={(e) => {
 											setMorph({ ...morph, value: e.target.value });

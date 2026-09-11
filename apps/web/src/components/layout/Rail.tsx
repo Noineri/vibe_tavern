@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
 import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
+import { InlineRenameInput } from "../shared/InlineRenameInput.js";
+import { SearchInput } from "../shared/SearchInput.js";
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
@@ -280,12 +282,11 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                   {/* Search + sort + tag-filter row. No section header on mobile
                       — just the controls, compact. Tags open a bottom sheet. */}
                   <div className="flex items-center gap-1.5 px-1">
-                    <input
-                      type="text"
+                    <SearchInput
+                      className="min-w-0 flex-1"
                       value={charQuery}
                       onChange={(e) => setCharQuery(e.target.value)}
                       placeholder={t("search_name_placeholder")}
-                      className="min-w-0 flex-1 rounded border border-border bg-s2 px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors placeholder:text-t3/60 focus:border-accent"
                     />
                     <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} className="shrink-0" />
                     <div className="relative shrink-0">
@@ -355,8 +356,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                  )}
                                  onClick={() => { void chat.handleSwitchChat(ch.id); }}>
                               {renamingChatId === ch.id ? (
-                                <input
-                                  className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
+                                <InlineRenameInput
+                                  className="mb-px"
                                   value={renameDraft}
                                   autoFocus
                                   onChange={(e) => setRenameDraft(e.target.value)}
@@ -411,8 +412,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                       >
                                         <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
                                         {isRenamingThisBranch ? (
-                                          <input
-                                            className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
+                                          <InlineRenameInput
+                                            className="mb-px"
                                             value={branchRenameDraft}
                                             autoFocus
                                             onChange={(e) => setBranchRenameDraft(e.target.value)}

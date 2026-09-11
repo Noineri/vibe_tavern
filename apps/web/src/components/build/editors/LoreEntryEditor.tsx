@@ -6,9 +6,9 @@
  * reports/lorebook-editor-form-state-gap.md Step 1): `ActivationTestPanel`
  * (the activation tester), `CharacterFilterPicker` (the id-bound character
  * filter), and `LoreKeysAiPill` (AI key generation). This component keeps the
- * local UI state for keyword input (keyInput / secKeyInput), the advanced-
- * settings disclosure (advancedOpen), the AI helper modal (aiHelperOpen),
- * and the delete-confirmation modal (confirmDeleteEntry).
+ * local UI state for the advanced-settings disclosure (advancedOpen), the AI
+ * helper modal (aiHelperOpen), and the delete-confirmation modal
+ * (confirmDeleteEntry).
  *
  * Receives from the parent:
  *   - onDeleted (callback after successful deletion)
@@ -25,9 +25,10 @@ import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
 
 import { useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
-import { Ic, Icons } from "../../shared/icons.js";
+import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { TextInput } from "../../shared/text-input.js";
+import { ChipInput } from "../../shared/ChipInput.js";
 import { textareaCls } from "../../../lib/field-tokens.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
@@ -110,8 +111,6 @@ export function LoreEntryEditor({
   const delayUntilRecursion = form.watch("delayUntilRecursion");
   const groupName = form.watch("groupName");
   // ── Local UI state ──
-  const [keyInput, setKeyInput] = useState("");
-  const [secKeyInput, setSecKeyInput] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState(false);
   useKeyDown("Escape", () => setConfirmDeleteEntry(false), { enabled: confirmDeleteEntry });
@@ -172,38 +171,13 @@ export function LoreEntryEditor({
           <div className="flex items-start gap-2">
             <ControlledField name="keys">
               {(field) => (
-                <div
-                  className="flex flex-1 flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                  style={{ minHeight: 38 }}
-                >
-                  {field.value.map((k) => (
-                    <span
-                      key={k}
-                      className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                      onClick={() => field.onChange(field.value.filter((x) => x !== k))}
-                    >
-                      {k} <Icons.Close />
-                    </span>
-                  ))}
-                  <input
-                    className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
-                    value={keyInput}
-                    onChange={(e) => setKeyInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      e.preventDefault();
-                      const val = keyInput.trim();
-                      if (!val) return;
-                      if (!field.value.includes(val)) field.onChange([...field.value, val]);
-                      setKeyInput("");
-                    }}
-                    placeholder={
-                      field.value.length === 0
-                        ? t("lore_entry_keys_placeholder")
-                        : ""
-                    }
-                  />
-                </div>
+                <ChipInput
+                  className="min-w-0 flex-1"
+                  values={field.value}
+                  onChange={field.onChange}
+                  mode="words"
+                  placeholder={t("lore_entry_keys_placeholder")}
+                />
               )}
             </ControlledField>
             <LoreKeysAiPill />
@@ -351,33 +325,11 @@ export function LoreEntryEditor({
               </FieldLabel>
               <ControlledField name="secondaryKeys">
                 {(field) => (
-                  <div
-                    className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                    style={{ minHeight: 38 }}
-                  >
-                    {field.value.map((k) => (
-                      <span
-                        key={k}
-                        className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                        onClick={() => field.onChange(field.value.filter((x) => x !== k))}
-                      >
-                        {k} <Icons.Close />
-                      </span>
-                    ))}
-                    <input
-                      className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
-                      value={secKeyInput}
-                      onChange={(e) => setSecKeyInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        const val = secKeyInput.trim();
-                        if (!val) return;
-                        if (!field.value.includes(val)) field.onChange([...field.value, val]);
-                        setSecKeyInput("");
-                      }}
-                    />
-                  </div>
+                  <ChipInput
+                    values={field.value}
+                    onChange={field.onChange}
+                    mode="words"
+                  />
                 )}
               </ControlledField>
             </div>

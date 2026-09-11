@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from 
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../../shared/icons.js";
+import { SearchInput } from "../../shared/SearchInput.js";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
@@ -495,15 +497,12 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
         <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pt-1 pb-[5px]">
           {t("promptManager.regex.tabLabel")}
         </div>
-        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-s2 px-[9px] py-1.5">
-          <Icons.Search />
-          <input
-            className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
-            placeholder={t("search_presets")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+        <SearchInput
+          className="mb-2"
+          placeholder={t("search_presets")}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
       <DndContext
@@ -535,14 +534,12 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                   return (
                     <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
                       <div className="relative flex items-center">
-                        <input
+                        <InlineRenameInput
                           ref={editInputRef}
-                          type="text"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           onKeyDown={handleEditKeyDown}
                           onBlur={saveEdit}
-                          className="w-full rounded border border-accent bg-surface px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
                         />
                         <button type="button"
                           onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
@@ -569,8 +566,7 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                     {isExpanded && inlineRuleProfileId === pr.id && (
                       <div className="ml-8 border-l border-border/40 px-3 py-2">
                         <div className="relative flex items-center">
-                          <input
-                            type="text"
+                          <InlineRenameInput
                             placeholder={t("promptManager.regex.newNamePlaceholder")}
                             value={inlineRuleName}
                             onChange={(e) => setInlineRuleName(e.target.value)}
@@ -584,7 +580,6 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                             }}
                             onBlur={() => { if (!inlineRuleName.trim()) { setInlineRuleProfileId(null); setInlineRuleName(""); } else if (onAddRuleToProfile) { onAddRuleToProfile(pr.id, inlineRuleName.trim()); setInlineRuleName(""); setInlineRuleProfileId(null); } }}
                             autoFocus
-                            className="w-full rounded border border-border bg-s2 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-border2"
                           />
                           <button type="button"
                             onMouseDown={(e) => { e.preventDefault(); if (inlineRuleName.trim() && onAddRuleToProfile) { onAddRuleToProfile(pr.id, inlineRuleName.trim()); setInlineRuleName(""); setInlineRuleProfileId(null); } }}
@@ -618,14 +613,12 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                 return (
                   <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
                     <div className="relative flex items-center">
-                      <input
+                      <InlineRenameInput
                         ref={editInputRef}
-                        type="text"
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         onKeyDown={handleEditKeyDown}
                         onBlur={saveEdit}
-                        className="w-full rounded border border-accent bg-surface px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
                       />
                       <button type="button"
                         onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
@@ -653,15 +646,13 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
             {isCreating && (
               <div className="border-l-2 border-transparent px-3 py-2">
                 <div className="relative flex items-center">
-                  <input
+                  <InlineRenameInput
                     ref={newInputRef}
-                    type="text"
                     placeholder={t("promptManager.regex.newNamePlaceholder")}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     onKeyDown={handleNewKeyDown}
                     onBlur={() => { if (!newName.trim()) setIsCreating(false); else saveNew(); }}
-                    className="w-full rounded border border-border bg-s2 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-border2"
                   />
                   <button type="button"
                     onMouseDown={(e) => { e.preventDefault(); saveNew(); }}
@@ -675,14 +666,12 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
             {isCreatingProfile && (
               <div className="border-l-2 border-transparent px-3 py-2">
                 <div className="relative flex items-center">
-                  <input
-                    type="text"
+                  <InlineRenameInput
                     placeholder={t("promptManager.regex.newProfilePlaceholder")}
                     value={newProfileName}
                     onChange={(e) => setNewProfileName(e.target.value)}
                     onKeyDown={handleNewProfileKeyDown}
                     onBlur={() => { if (!newProfileName.trim()) setIsCreatingProfile(false); else saveNewProfile(); }}
-                    className="w-full rounded border border-border bg-s2 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-border2"
                   />
                   <button type="button"
                     onMouseDown={(e) => { e.preventDefault(); saveNewProfile(); }}
