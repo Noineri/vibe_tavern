@@ -75,4 +75,19 @@ describe("MaskedConnectionKeyField", () => {
     expect(view.getByTestId("p11-field-api-key-status").textContent).toBe("stored-status");
     cleanup();
   });
+
+  it("the eye anchors to the input row, not the wrapper that owns the stored-status line", () => {
+    // F5 fix (owner 2026-09-11: «глаз уехал слегка за пределы инпута"): when the
+    // status line renders inside the same relative wrapper, the wrapper grows
+    // taller than the input and the toggle's top-1/2/-translate-y-1/2 centers
+    // against it — dropping the eye ~3.5px below the input's bottom edge.
+    // Structural pin: the toggle's parent must be the relative row that holds
+    // the input and nothing else.
+    const { view } = renderField({ value: "", stored: true });
+    const anchor = view.getByTestId("p11-field-api-key-toggle").parentElement;
+    expect(anchor?.className).toContain("relative");
+    expect(anchor?.contains(view.getByTestId("p11-field-api-key") as Node)).toBe(true);
+    expect(anchor?.contains(view.getByTestId("p11-field-api-key-status") as Node)).toBe(false);
+    cleanup();
+  });
 });
