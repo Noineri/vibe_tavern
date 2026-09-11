@@ -55,29 +55,31 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
   const noProfiles = profiles.length === 0;
 
   return (
-    // MUI W7 (owner 2026-09-11): on phones this block gets the footer's
-    // full-width row (via MasterDetailFooter `mobileBottomRow`) and wraps
-    // INTERNALLY into sub-rows when the children exceed it. Budget at 360px
-    // (row width 336px): label «Диктовка» ~56 + toggle 36 + profile select
-    // ~177 («Профиль по умолчанию» + chrome) + mode select ~100 + gaps 24
-    // ≈ 393px > 336 → sub-row A = label + toggle + profile (~293px),
-    // sub-row B = mode select. Step 18's basis-full is gone — it resolved
-    // against the auto-width right group and overflowed the viewport.
+    // MUI W7+ (owner 2026-09-11, variant 2 after the first W7 pass still
+    // looked ragged): on phones this block owns the footer's full-width row
+    // (MasterDetailFooter `mobileBottomRow`) and splits into TWO balanced
+    // sub-rows — row A = label + toggle (compact, left), row B = the two
+    // selects sharing the width: the profile select stretches (flex-1, cap
+    // lifted), the mode select stays content-sized at the row's right end.
+    // No orphans, no ragged gaps, nothing truncated. Desktop is visually
+    // unchanged: the cluster wrapper is a nested flex with the same gaps.
     <div data-testid="stt-dictation-block" className="flex min-w-0 flex-1 items-center gap-2 max-md:flex-wrap">
-      <label
-        className={cn(
-          "shrink-0 font-ui text-[12px] text-t3 transition-opacity",
-          noProfiles && "opacity-40",
-        )}
-      >
-        {t("dictation_panel_title")}
-      </label>
-      <Toggle
-        checked={enabled}
-        onChange={setEnabled}
-        disabled={noProfiles}
-        aria-label={t("dictation_enable")}
-      />
+      <div className="flex shrink-0 items-center gap-2 max-md:w-full">
+        <label
+          className={cn(
+            "shrink-0 font-ui text-[12px] text-t3 transition-opacity",
+            noProfiles && "opacity-40",
+          )}
+        >
+          {t("dictation_panel_title")}
+        </label>
+        <Toggle
+          checked={enabled}
+          onChange={setEnabled}
+          disabled={noProfiles}
+          aria-label={t("dictation_enable")}
+        />
+      </div>
       {/* Inline-footer dropdowns (AGENTS.md inline-row gotcha, 2026-09-05):
        *  the default trigger chrome is w-full — a FORM-FIELD shape that
        *  stretched both selects across the whole footer and pushed Save
@@ -105,8 +107,11 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
         }}
         disabled={!enabled || profiles.length === 0}
         // MUI W7: footer trigger sits ~45px above the screen edge on phones —
-        // open upward into the modal body.
+        // open upward into the modal body. Mobile: the trigger stretches to
+        // fill the shared selects row (flex-1, cap lifted); the profile name
+        // (user data) may still ellipsize — the full name is in the list.
         side="top"
+        className="max-md:flex-1 max-md:max-w-none"
         triggerClassName="w-auto min-w-0 max-w-[240px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[12px] text-t1 hover:border-accent"
       />
       <DropdownSelect

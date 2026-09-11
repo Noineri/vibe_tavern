@@ -193,11 +193,19 @@ describe("SttDictationBlock footer-row layout (inline-row gotcha pin, 2026-09-05
     expect(modeTrigger.textContent).toContain("dictation_mode_append");
     expect(modeTrigger.className).toContain("max-w-[200px]");
     expect(view.getByTestId("dictation-profile-select").className).toContain("max-w-[240px]");
-    // MUI W7: on phones the block owns a full-width footer row
-    // (MasterDetailFooter `mobileBottomRow`) and wraps INTERNALLY into
-    // sub-rows — sub-row A = label + toggle + profile select, sub-row B =
-    // mode select (worst-case RU ≈ 393px > 336px row, see the component).
-    expect(view.getByTestId("stt-dictation-block").className).toContain("max-md:flex-wrap");
+    // MUI W7+: on phones the block owns a full-width footer row
+    // (MasterDetailFooter `mobileBottomRow`) split into two balanced
+    // sub-rows — A = label + toggle (cluster wrapper, max-md:w-full),
+    // B = profile select stretched (flex-1, cap lifted) + mode select
+    // content-sized at the right end. No orphan select on its own line.
+    const block = view.getByTestId("stt-dictation-block");
+    expect(block.className).toContain("max-md:flex-wrap");
+    const cluster = block.querySelector(":scope > div") as HTMLElement;
+    expect(cluster.className).toContain("max-md:w-full");
+    const profileTrigger = view.getByTestId("dictation-profile-select");
+    expect(profileTrigger.className).toContain("max-md:flex-1");
+    expect(profileTrigger.className).toContain("max-md:max-w-none");
+    expect(modeTrigger.className).not.toContain("max-md:flex-1");
     await user.click(modeTrigger);
     await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeTruthy());
     // W7: footer trigger near the screen bottom — the list opens UPWARD.
