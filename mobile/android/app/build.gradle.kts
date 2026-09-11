@@ -15,7 +15,6 @@ val localUpdaterTestProperties = listOf(
     "VIBE_UPDATE_TEST_URL",
     "VIBE_UPDATE_TEST_VERSION_NAME",
     "VIBE_UPDATE_TEST_VERSION_CODE",
-    "VIBE_UPDATE_TEST_INCLUDE_PAYLOAD",
 )
 val localUpdaterTestValues = localUpdaterTestProperties.associateWith {
     providers.gradleProperty(it).orNull?.takeIf(String::isNotBlank)
@@ -25,11 +24,6 @@ val localUpdaterTestVersionName = localUpdaterTestValues["VIBE_UPDATE_TEST_VERSI
 val localUpdaterTestVersionCode = localUpdaterTestValues["VIBE_UPDATE_TEST_VERSION_CODE"]?.toIntOrNull()
     ?: if (localUpdaterTestValues["VIBE_UPDATE_TEST_VERSION_CODE"] == null) null
     else error("VIBE_UPDATE_TEST_VERSION_CODE must be an integer")
-val localUpdaterTestIncludePayload = when (localUpdaterTestValues["VIBE_UPDATE_TEST_INCLUDE_PAYLOAD"]) {
-    null, "false" -> false
-    "true" -> true
-    else -> error("VIBE_UPDATE_TEST_INCLUDE_PAYLOAD must be true or false")
-}
 
 fun buildConfigString(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -40,8 +34,11 @@ android {
 
     defaultConfig {
         applicationId = "com.vibetavern.launcher"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 35
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
         versionCode = 1
         versionName = "0.0.0"
         localUpdaterTestVersionCode?.let { versionCode = it }
@@ -89,18 +86,10 @@ android {
         viewBinding = true
         buildConfig = true
     }
-}
 
-if (localUpdaterTestUrl != null && !localUpdaterTestIncludePayload) {
-    tasks.matching { it.name == "mergeDebugAssets" }.configureEach {
-        inputs.property("localUpdaterPayloadExcluded", true)
-        doLast {
-            val bundledPayloads = outputs.files.asFileTree.matching {
-                include("**/vibe-tavern-android-arm64.tgz")
-            }.files
-            bundledPayloads.forEach { payload ->
-                check(payload.delete()) { "Could not exclude local-test payload: $payload" }
-            }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }

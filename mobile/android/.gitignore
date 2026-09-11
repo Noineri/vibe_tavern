@@ -10,8 +10,8 @@
 local.properties
 /local.properties
 /app/build
-/app/src/main/assets/vibe-tavern-android-arm64.tar.gz
-/app/src/main/assets/vibe-tavern-android-arm64.tgz
+/app/src/main/jniLibs/
+/app/src/main/assets/payload/
 *.jks
 *.keystore
 /signing.properties
