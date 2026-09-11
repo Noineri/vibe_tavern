@@ -67,6 +67,16 @@ function lorebookToTarget(lb: LorebookRecord): LinkTarget {
  * Map a script record to the LinkTarget shape. Scripts have no avatar, so they
  * fall back to the name-initial dot (same as lorebooks).
  */
+/**
+ * MUI step 13 (owner 2026-09-11): application-scope (global) scripts run
+ * everywhere unconditionally — a character/persona link is never consulted
+ * for them, so entity-side pickers must not offer them. Mirrors the
+ * ScriptEditor guard (`scope === "entity"`) on the resource side.
+ */
+export function isScriptOfferableForEntityLink(sc: Pick<ScriptRecord, "scopeType">): boolean {
+  return sc.scopeType !== "global";
+}
+
 function scriptToTarget(sc: ScriptRecord): LinkTarget {
   return { id: sc.id, name: sc.name, avatarAssetId: null };
 }
@@ -142,7 +152,11 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
   }, [refresh]);
 
   const targets = allLorebooks.map(lorebookToTarget);
-  const scriptTargets = allScripts.map(scriptToTarget);
+  // MUI step 13: global scripts are not OFFERED here. Legacy links made before
+  // this rule still render as pills and can be removed; only new offers stop.
+  const scriptTargets = allScripts
+    .filter(isScriptOfferableForEntityLink)
+    .map(scriptToTarget);
   // LinkBindingPopover is told the persona's bound lorebooks as pseudo-links of
   // targetType 'lorebook'. The pill row + the popover's lorebook section both
   // derive from this list and the `lorebooks` prop.

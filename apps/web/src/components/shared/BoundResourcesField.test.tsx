@@ -79,6 +79,18 @@ function regexPreset(id: string, name: string) {
   };
 }
 
+describe("BoundResourcesField — entity-side script offering (MUI step 13)", () => {
+  // The popover's opened list cannot mount in happy-dom (Radix Popper needs a
+  // real anchor box — see the file comment), so the offered-list filter is a
+  // pure helper pinned directly, same pattern as lorebookBindingIcon.
+  it("offers entity- and chat-scope scripts but never application-scope (global) ones", async () => {
+    const { isScriptOfferableForEntityLink } = await import("./BoundResourcesField.js");
+    expect(isScriptOfferableForEntityLink({ scopeType: "entity" })).toBe(true);
+    expect(isScriptOfferableForEntityLink({ scopeType: "chat" })).toBe(true);
+    expect(isScriptOfferableForEntityLink({ scopeType: "global" })).toBe(false);
+  });
+});
+
 describe("BoundResourcesField — regex group", () => {
   it("renders the regex group for a character and lists linked presets as pills", async () => {
     listAllRegexPresetsMock.mockResolvedValue([regexPreset("rx1", "No Italics"), regexPreset("rx2", "Trim Think")]);
