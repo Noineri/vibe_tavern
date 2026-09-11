@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { createDb } from "@vibe-tavern/db";
@@ -11,9 +11,21 @@ import { __setDiscoveryFetchForTests } from "../src/api/adapters/tts-adapter.js"
 import { TtsAdapter } from "../src/api/adapters/tts-adapter.js";
 import {
   __resetTtsRegistryForTests,
+  __snapshotTtsRegistryForTests,
+  __restoreTtsRegistryForTests,
   registerTtsBackend,
 } from "../src/domain/tts/tts-registry.js";
 import type { TtsBackend } from "../src/domain/tts/tts-backend.js";
+
+// Shared-process rule: this file resets the registry per test and leaves it
+// EMPTY at file end; without the afterAll restore below, every later test file
+// whose backend modules are already import-cached dies with
+// TtsBackendNotRegisteredError (order-dependent — seen on linux CI).
+const registrySnapshot = __snapshotTtsRegistryForTests();
+
+afterAll(() => {
+  __restoreTtsRegistryForTests(registrySnapshot);
+});
 
 const fixedClock = { now: () => "2026-08-27T00:00:00.000Z" };
 

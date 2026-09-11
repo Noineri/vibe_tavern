@@ -203,7 +203,25 @@ export function listSttBackendSlugs(): SttBackendType[] {
  * Reset all registrations. Test-only helper — not part of the public API
  * surface, but exported so stt-registry.test.ts can isolate registrations
  * between tests without relying on module reload.
+ *
+ * CAUTION (process-global state): services/api runs every test file in ONE
+ * bun process — see the matching comment on __resetTtsRegistryForTests.
+ * stt-registry.test.ts snapshots before its first reset and restores in
+ * afterAll so later files keep their import-time registrations.
  */
 export function __resetSttRegistryForTests(): void {
   factories.clear();
+}
+
+/** Test-only: capture the current registrations so they can be restored after a reset. */
+export function __snapshotSttRegistryForTests(): ReadonlyMap<SttBackendType, SttBackendFactory> {
+  return new Map(factories);
+}
+
+/** Test-only: put the process back exactly as this file found it (see caution above). */
+export function __restoreSttRegistryForTests(snapshot: ReadonlyMap<SttBackendType, SttBackendFactory>): void {
+  factories.clear();
+  for (const [slug, factory] of snapshot) {
+    factories.set(slug, factory);
+  }
 }

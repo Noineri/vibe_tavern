@@ -9,7 +9,7 @@ import { REGEX_PLACEMENT, REGEX_SUBSTITUTE } from "@vibe-tavern/domain";
 
 // ── Fixtures (real card data, cross-repo test assets) ──────────────────────
 
-const FIXTURE_DIR = "N:/janitor_characters/vibe_tavern_plan/plans/v1.3/fixtures";
+const FIXTURE_DIR = `${import.meta.dir}/fixtures`;
 const CARD_WITH_REGEX = `${FIXTURE_DIR}/card-with-regex-seraphina.json`;
 const CARD_BASE = `${FIXTURE_DIR}/seraphina-base.json`;
 

@@ -1760,11 +1760,16 @@ describe("narration playlist card layout (RD-1)", () => {
     const actions = zone(row, "playlist-row-zone-actions");
     const playback = zone(row, "playlist-row-zone-playback");
     // Fetch progress lives on the chunk line (eventual: segments land async).
-    await waitFor(() => {
-      expect(zone(getByTestId("narration-playlist-row"), "playlist-row-zone-chunk").textContent).toContain(
-        "narration_playlist_fetching:",
-      );
-    });
+    // Slow CI needs more than waitFor's 1000ms default — observed 1164ms on a
+    // GH linux runner before the fetching label appeared.
+    await waitFor(
+      () => {
+        expect(zone(getByTestId("narration-playlist-row"), "playlist-row-zone-chunk").textContent).toContain(
+          "narration_playlist_fetching:",
+        );
+      },
+      { timeout: 5000 },
+    );
     expect(chunk.textContent).toContain("narration_playlist_swipe:1:1:");
     // Playback zone: the full-width seek control + clock, no badges.
     expect(playback.querySelector('[data-testid="playlist-seek"]')).not.toBeNull();

@@ -8,7 +8,9 @@ import { REGEX_PLACEMENT, REGEX_SUBSTITUTE } from "@vibe-tavern/domain";
 
 // ── Fixtures (real ST regex-script data, cross-repo test assets) ───────────
 
-const FIXTURE_DIR = "N:/janitor_characters/vibe_tavern_plan/plans/v1.3/fixtures";
+// Test fixtures are committed copies of SillyTavern community preset files
+// (originally staged in the planning repo) — kept in-repo so CI has them.
+const FIXTURE_DIR = `${import.meta.dir}/fixtures`;
 const TRIM_INCOMPLETE = `${FIXTURE_DIR}/st-regex-sphiratrioth/regex-trim_incomplete.json`;
 
 async function loadFixtureText(path: string): Promise<string> {

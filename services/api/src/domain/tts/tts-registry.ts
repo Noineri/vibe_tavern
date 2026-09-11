@@ -115,9 +115,30 @@ export function listTtsBackendSlugs(): TtsBackendSlug[] {
  * Reset all registrations. Test-only helper — not part of the public API
  * surface, but exported so tts-registry.test.ts can isolate registrations
  * between tests without relying on module reload.
+ *
+ * CAUTION (process-global state): services/api runs every test file in ONE
+ * bun process. A bare reset here wipes factories that backend modules
+ * registered at import time; because module imports are cached, nothing
+ * re-registers for files that run later — they then fail with
+ * TtsBackendNotRegisteredError depending on file order (CI-vs-local).
+ * tts-registry.test.ts therefore snapshots before its first reset and
+ * RESTORES the snapshot in afterAll via the helpers below.
  */
 export function __resetTtsRegistryForTests(): void {
   factories.clear();
+}
+
+/** Test-only: capture the current registrations so they can be restored after a reset. */
+export function __snapshotTtsRegistryForTests(): ReadonlyMap<TtsBackendSlug, TtsBackendFactory> {
+  return new Map(factories);
+}
+
+/** Test-only: put the process back exactly as this file found it (see caution above). */
+export function __restoreTtsRegistryForTests(snapshot: ReadonlyMap<TtsBackendSlug, TtsBackendFactory>): void {
+  factories.clear();
+  for (const [slug, factory] of snapshot) {
+    factories.set(slug, factory);
+  }
 }
 
 // Re-export domain helper for convenience (callers should not need to import

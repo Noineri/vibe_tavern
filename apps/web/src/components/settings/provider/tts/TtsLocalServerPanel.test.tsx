@@ -9,7 +9,7 @@ import { __setTtsDiscoveryDepsForTests } from "./use-tts-discovery.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import type { DiscoveredServer, ProbeOutcome } from "@vibe-tavern/domain";
 
-const { render, act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
+const { render, act, cleanup, fireEvent, waitFor, within } = await import("@testing-library/react");
 
 // Track setForm calls
 let lastFormPatch: Record<string, unknown> | null = null;
@@ -393,6 +393,13 @@ describe("TtsLocalServerPanel", () => {
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
     await openHelp(view);
+
+    // Pin the OS segment to Windows: auto-detect follows navigator.userAgent
+    // (unix on Linux CI) and would change the localStorage key below — the
+    // assertion must be deterministic across runner platforms.
+    await act(async () => {
+      fireEvent.click(within(view.getByTestId("tts-help-os-toggle")).getAllByRole("radio")[0]);
+    });
 
     // Kokoro guide (default), docker step, first command.
     const checkId = "tts-help-check-kokoro-fastapi-download-docker-0";

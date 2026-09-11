@@ -6,7 +6,7 @@
  * provider auto-match > TTS-profile auto-match) and the error mappings.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { createDb } from "@vibe-tavern/db";
 import { ProviderStore, SttStore, TtsStore } from "@vibe-tavern/db";
@@ -64,9 +64,20 @@ import { nvidiaSttFactory } from "../src/domain/stt/backends/nvidia-stt.js";
 import { whisperCppSttFactory } from "../src/domain/stt/backends/whisper-cpp-stt.js";
 import {
   __resetSttRegistryForTests,
+  __snapshotSttRegistryForTests,
+  __restoreSttRegistryForTests,
   registerSttBackend,
 } from "../src/domain/stt/stt-registry.js";
 import { STT_BACKENDS } from "@vibe-tavern/domain";
+
+// Shared-process rule (see tts-routes.test.ts): the beforeEach re-registers
+// the real factories, but the afterAll restore makes the file bulletproof
+// against roster drift — later files always see the state this file found.
+const registrySnapshot = __snapshotSttRegistryForTests();
+
+afterAll(() => {
+  __restoreSttRegistryForTests(registrySnapshot);
+});
 
 beforeEach(() => {
   __resetSttRegistryForTests();

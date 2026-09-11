@@ -2,7 +2,7 @@
  * Unit tests for the TTS backend registry — mirrors protocol-registry.test.ts.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterAll } from "bun:test";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import type { TtsBackendSlug } from "@vibe-tavern/domain";
 import {
@@ -13,14 +13,26 @@ import {
   TtsUnknownBackendError,
   TtsBackendNotRegisteredError,
   __resetTtsRegistryForTests,
+  __snapshotTtsRegistryForTests,
+  __restoreTtsRegistryForTests,
 } from "../src/domain/tts/tts-registry.js";
 import { classifyOpenAiCompatTransport } from "@vibe-tavern/domain";
 import type { TtsBackend } from "../src/domain/tts/tts-backend.js";
 
 const ALL_SLUGS = Object.values(TTS_BACKEND) as TtsBackendSlug[];
 
+// Snapshot BEFORE the first reset: this file runs in the shared services/api
+// bun process, and a bare reset would wipe the import-time registrations of
+// backend modules that earlier files already imported (module cache means
+// nothing re-registers). afterAll puts the registry back for later files.
+const registrySnapshot = __snapshotTtsRegistryForTests();
+
 beforeEach(() => {
   __resetTtsRegistryForTests();
+});
+
+afterAll(() => {
+  __restoreTtsRegistryForTests(registrySnapshot);
 });
 
 describe("tts registry", () => {

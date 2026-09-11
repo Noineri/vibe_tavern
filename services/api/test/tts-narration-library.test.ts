@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +20,17 @@ import { TtsAdapter } from "../src/api/adapters/tts-adapter.js";
 import { createTtsRoutes } from "../src/api/routes/tts.js";
 import {
   __resetTtsRegistryForTests,
+  __snapshotTtsRegistryForTests,
+  __restoreTtsRegistryForTests,
 } from "../src/domain/tts/tts-registry.js";
+
+// Shared-process rule (see tts-routes.test.ts): restore the registry state
+// this file found, so reset-free later files keep their import-time factories.
+const registrySnapshot = __snapshotTtsRegistryForTests();
+
+afterAll(() => {
+  __restoreTtsRegistryForTests(registrySnapshot);
+});
 
 const OGG_BYTES = new Uint8Array([0x4f, 0x67, 0x67, 0x53, 0x00, 0x02]);
 

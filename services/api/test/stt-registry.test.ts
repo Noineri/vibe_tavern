@@ -2,7 +2,7 @@
  * Unit tests for the STT backend registry — mirrors tts-registry.test.ts.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterAll } from "bun:test";
 import { STT_BACKENDS } from "@vibe-tavern/domain";
 import type { SttBackendType } from "@vibe-tavern/domain";
 import {
@@ -13,6 +13,8 @@ import {
   SttUnknownBackendError,
   SttBackendNotRegisteredError,
   __resetSttRegistryForTests,
+  __snapshotSttRegistryForTests,
+  __restoreSttRegistryForTests,
 } from "../src/domain/stt/stt-registry.js";
 import type { SttBackend } from "../src/domain/stt/stt-backend.js";
 
@@ -23,8 +25,15 @@ const OPENAI_COMPAT_CONFIG = {
   model: "whisper-1",
 };
 
+// Snapshot BEFORE the first reset — shared-process rule, see tts-registry.test.ts.
+const registrySnapshot = __snapshotSttRegistryForTests();
+
 beforeEach(() => {
   __resetSttRegistryForTests();
+});
+
+afterAll(() => {
+  __restoreSttRegistryForTests(registrySnapshot);
 });
 
 describe("stt registry", () => {

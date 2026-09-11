@@ -119,12 +119,11 @@ describe("service-prompt resolver", () => {
       expect(file, `missing mapping for ${key}`).toBeTruthy();
       const assetFile = SERVICE_PROMPT_ASSET_FILES[key];
       expect(assetFile).toBe(file);
-      const exists = await Bun.file(`services/api/assets/${file}`).exists()
-        || await Bun.file(`N:/janitor_characters/vibe_tavern/services/api/assets/${file}`).exists();
-      // Also try via loader path resolution — at least one candidate must exist.
-      // Direct fs check with absolute path for determinism.
-      const absExists = await Bun.file(`N:/janitor_characters/vibe_tavern/services/api/assets/${file}`).exists();
-      expect(absExists, `asset file missing on disk: services/api/assets/${file} (key ${key})`).toBe(true);
+      // Resolve assets relative to THIS file so the pin works on any checkout
+      // path/platform (the old check hardcoded an N:/ absolute path and failed on CI).
+      const assetPath = `${import.meta.dir}/../assets/${file}`;
+      const absExists = await Bun.file(assetPath).exists();
+      expect(absExists, `asset file missing on disk: ${assetPath} (key ${key})`).toBe(true);
       const text = await loadPromptAsset(file);
       expect(text.length, `asset file empty: ${file}`).toBeGreaterThan(0);
     }
