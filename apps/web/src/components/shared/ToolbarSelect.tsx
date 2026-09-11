@@ -27,6 +27,7 @@ import * as Select from "@radix-ui/react-select";
 import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { BottomSheet } from "./BottomSheet.js";
+import { SearchInput } from "./SearchInput.js";
 import { popoverMaxHeight } from "./popover-constants.js";
 import { useT } from "../../i18n/context.js";
 
@@ -263,10 +264,8 @@ function ToolbarSelectMobile({
 			<BottomSheet open={open} onClose={() => { setOpen(false); setSearch(""); }} title={title}>
 				{searchable && items.length > 0 && (
 					<div className="px-4 pb-2">
-						<input
-							type="text"
+						<SearchInput
 							data-testid="toolbar-select-search"
-							className="w-full rounded-md border border-border bg-input-bg px-3 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none placeholder:text-t4 focus:border-accent"
 							placeholder={t("search_models")}
 							value={search}
 							onChange={(e) => setSearch(e.target.value)}
