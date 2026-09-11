@@ -20,7 +20,6 @@
     "build:api-stack": "bun scripts/build.ts api-stack",
     "build:prod": "bun scripts/build.ts api-stack",
     "build:standalone": "bun scripts/build-standalone.ts",
-    "build:android-arm64": "bun scripts/build-android-arm64.ts",
     "build:android-native": "bun scripts/build-android-native.ts",
     "build:linux-dist": "bun scripts/build-linux-dist.ts",
     "build:windows-dist": "bun scripts/build-windows-dist.ts",

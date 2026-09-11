@@ -27,6 +27,10 @@ class MobilePackagingTest {
         assertTrue(workflow.contains("ANDROID_KEY_PASSWORD"))
         assertTrue(workflow.contains("apksigner"))
         assertTrue(workflow.contains("testDebugUnitTest assembleRelease"))
+        assertTrue(ciWorkflow.contains("bun run build:android-native"))
+        assertFalse(ciWorkflow.contains("bun scripts/build-android-arm64.ts"))
+        assertFalse(ciWorkflow.contains("Stage tarball in Android assets"))
+        assertFalse(ciWorkflow.contains("vibe-tavern-android-arm64.tar.gz"))
         assertTrue(ciWorkflow.contains("testDebugUnitTest assembleDebug"))
         assertFalse(ciWorkflow.contains("./gradlew assembleRelease"))
         assertTrue(workflow.contains("out/Vibe-Tavern-v\${VERSION}-android.apk"))
@@ -78,6 +82,37 @@ class MobilePackagingTest {
         assertTrue(androidIgnore.contains("/app/src/main/jniLibs/"))
         assertTrue(androidIgnore.contains("/app/src/main/assets/payload/"))
         assertFalse(obsoleteArchive.exists())
+    }
+
+    @Test
+    fun `legacy Termux tooling is frozen outside the active Android build`() {
+        val packageJson = File(repoRoot, "package.json").readText()
+        val updaterHelper = File(repoRoot, "mobile/android/scripts/serve-local-update.ts").readText()
+        val archiveReadme = File(repoRoot, "mobile/legacy-termux/README.md")
+        val activeLegacyPaths = listOf(
+            "scripts/build-android-arm64.ts",
+            "mobile/android/app/src/main/assets/install.sh",
+            "mobile/android/app/src/main/assets/start.sh",
+        )
+        val frozenArchivePaths = listOf(
+            "mobile/legacy-termux/scripts/build-android-arm64.ts",
+            "mobile/legacy-termux/android-assets/install.sh",
+            "mobile/legacy-termux/android-assets/start.sh",
+        )
+
+        assertFalse(packageJson.contains("\"build:android-arm64\""))
+        assertTrue(packageJson.contains("\"build:android-native\""))
+        assertTrue(activeLegacyPaths.none { File(repoRoot, it).exists() })
+        assertTrue(frozenArchivePaths.all { File(repoRoot, it).isFile })
+        assertTrue(archiveReadme.isFile)
+        assertTrue(archiveReadme.readText().contains("frozen, unsupported, non-built, and non-tested"))
+        assertTrue(archiveReadme.readText().contains("965da98d"))
+        assertTrue(updaterHelper.contains("[\"bun\", \"run\", \"build:android-native\"]"))
+        assertTrue(updaterHelper.contains("VIBE_TAVERN_BUILD_VERSION: versionName"))
+        assertFalse(updaterHelper.contains("include-payload"))
+        assertFalse(updaterHelper.contains("VIBE_UPDATE_TEST_INCLUDE_PAYLOAD"))
+        assertFalse(updaterHelper.contains("vibe-tavern-android-arm64"))
+        assertFalse(updaterHelper.contains("\"tar\""))
     }
 
     @Test
