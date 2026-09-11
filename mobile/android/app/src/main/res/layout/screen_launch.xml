@@ -186,9 +186,45 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:lineSpacingExtra="3dp"
-                    android:text="@string/first_time_setup_migration_slot"
                     android:textColor="@color/vt_text_primary"
                     android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/migration_command"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="@color/vt_surface"
+                    android:padding="10dp"
+                    android:textColor="@color/vt_text_secondary"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btn_copy_migration_command"
+                    style="@style/Widget.VibeTavern.Button.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:minHeight="48dp"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btn_import_migration_archive"
+                    style="@style/Widget.VibeTavern.Button.Primary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:minHeight="48dp"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btn_start_fresh"
+                    style="@style/Widget.VibeTavern.Button.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:minHeight="48dp"
+                    android:textSize="14sp" />
 
             </LinearLayout>
         </LinearLayout>

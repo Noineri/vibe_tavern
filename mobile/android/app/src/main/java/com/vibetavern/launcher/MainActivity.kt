@@ -16,6 +16,7 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -51,6 +52,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var firstTimeSetupContent: View
     private lateinit var launcherUpdateBtn: Button
     private lateinit var launcherVersionText: TextView
+    private lateinit var migrationInstructions: TextView
+    private lateinit var migrationCommand: TextView
+    private lateinit var copyMigrationCommandBtn: Button
+    private lateinit var importMigrationArchiveBtn: Button
+    private lateinit var startFreshBtn: Button
+
+    private val migrationManager by lazy { LegacyMigration(filesDir) }
+    private var migrationJob: Job? = null
+    private var migrationInProgress = false
+    private val migrationArchivePicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data ?: return@registerForActivityResult
+        importMigrationArchive(uri)
+    }
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val releaseClient = GitHubReleaseClient(
@@ -134,6 +148,7 @@ class MainActivity : AppCompatActivity() {
         payloadExtractionJob?.cancel()
         updateCheckJob?.cancel()
         downloadPollingJob?.cancel()
+        migrationJob?.cancel()
         mainScope.cancel()
         super.onDestroy()
     }
@@ -167,6 +182,11 @@ class MainActivity : AppCompatActivity() {
         openBtn = findViewById(R.id.btn_open_browser)
         setupBtn = findViewById(R.id.btn_one_time_setup)
         launchBtn = findViewById(R.id.btn_launch_server)
+        migrationInstructions = findViewById(R.id.first_time_setup_migration_slot)
+        migrationCommand = findViewById(R.id.migration_command)
+        copyMigrationCommandBtn = findViewById(R.id.btn_copy_migration_command)
+        importMigrationArchiveBtn = findViewById(R.id.btn_import_migration_archive)
+        startFreshBtn = findViewById(R.id.btn_start_fresh)
         uninstallBtn = findViewById(R.id.btn_uninstall)
         languageBtn = findViewById(R.id.btn_language)
         firstTimeSetupHeader = findViewById(R.id.first_time_setup_header)
@@ -182,14 +202,18 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_help).setOnClickListener { showHelpDialog() }
         findViewById<Button>(R.id.btn_copy_server_log).setOnClickListener { copyServerLog() }
         findViewById<Button>(R.id.btn_clear_server_log).setOnClickListener { clearServerLog() }
-
-        // NL-7 reuses this existing panel and action shell for the Termux-data migration entry.
-        firstTimeSetupHeader.visibility = View.GONE
-        firstTimeSetupContent.visibility = View.GONE
+        firstTimeSetupHeader.setOnClickListener {
+            firstTimeSetupContent.visibility = if (firstTimeSetupContent.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+        copyMigrationCommandBtn.setOnClickListener { copyMigrationCommand() }
+        importMigrationArchiveBtn.setOnClickListener { chooseMigrationArchive() }
+        startFreshBtn.setOnClickListener { startFresh() }
         setupBtn.visibility = View.GONE
+        migrationManager.recoverIncompleteTransaction()
 
         apkUpdateManager.cleanupStaleDownload()
         applyLaunchTexts()
+        configureMigrationUi()
         setProgress(null, visible = false)
         refreshServerStatus(showChecking = true)
         ensurePayloadExtracted()
@@ -198,6 +222,109 @@ class MainActivity : AppCompatActivity() {
             automaticUpdateCheckStarted = true
             checkForLauncherUpdate(manual = false)
         }
+    }
+
+    private fun hasLegacyMigrationCandidate(): Boolean =
+        preferences().getBoolean(PREF_LEGACY_INSTALLED_ONCE, false) &&
+            !File(File(filesDir, LegacyMigration.DATA_DIRECTORY), LegacyMigration.DATABASE_NAME).exists() &&
+            !preferences().getBoolean(PREF_MIGRATION_COMPLETED, false) &&
+            !preferences().getBoolean(PREF_MIGRATION_DISMISSED, false)
+
+    private fun configureMigrationUi() {
+        val eligible = hasLegacyMigrationCandidate()
+        firstTimeSetupHeader.visibility = if (eligible) View.VISIBLE else View.GONE
+        firstTimeSetupContent.visibility = View.GONE
+        copyMigrationCommandBtn.isEnabled = !migrationInProgress
+        importMigrationArchiveBtn.isEnabled = !migrationInProgress
+        startFreshBtn.isEnabled = !migrationInProgress
+    }
+
+    private fun migrationBlocksStart(): Boolean = hasLegacyMigrationCandidate() || migrationInProgress
+
+    private fun copyMigrationCommand() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("vt-migration-command", MIGRATION_COMMAND))
+        setProgress(tr("Migration command copied. Run it in Termux, then choose the archive.", "Команда миграции скопирована. Выполните её в Termux, затем выберите архив."), visible = false)
+    }
+
+    private fun chooseMigrationArchive() {
+        if (!hasLegacyMigrationCandidate() || migrationInProgress) return
+        migrationArchivePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/gzip"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/gzip", "application/octet-stream"))
+        })
+    }
+
+    private fun importMigrationArchive(uri: Uri) {
+        if (!hasLegacyMigrationCandidate() || migrationInProgress) return
+        migrationInProgress = true
+        configureMigrationUi()
+        setServerState(ServerUiState.STOPPED)
+        setProgress(tr("Validating and importing migration archive…", "Проверяю и импортирую архив миграции…"), visible = true)
+        migrationJob = mainScope.launch(Dispatchers.IO) {
+            var prepared: LegacyMigration.PreparedImport? = null
+            var cachedArchive: File? = null
+            try {
+                if (ServerService.apiReady() && !ServerService.hasOwnedServerProcess()) {
+                    throw MigrationException("Port 8787 is in use by another server. Stop the old Termux server first.")
+                }
+                val archive = File(cacheDir, "vt-migration-${UUID.randomUUID()}.tar.gz")
+                cachedArchive = archive
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(archive).use(input::copyTo)
+                } ?: throw MigrationException("Could not open the selected archive")
+                prepared = migrationManager.prepare(archive)
+                if (ServerService.hasOwnedServerProcess()) {
+                    ServerService.stop(this@MainActivity)
+                    var remainingSeconds = SERVER_STOP_WAIT_SECONDS
+                    while (ServerService.hasOwnedServerProcess() && remainingSeconds-- > 0) delay(1_000)
+                    if (ServerService.hasOwnedServerProcess()) throw MigrationException("Native server did not stop before migration")
+                }
+                if (ServerService.apiReady()) throw MigrationException("Port 8787 is in use by another server. Stop the old Termux server first.")
+                migrationManager.activate(
+                    prepared = prepared,
+                    startServer = { ServerService.start(this@MainActivity) },
+                    stopFailedServer = {
+                        ServerService.stop(this@MainActivity)
+                        var remainingSeconds = SERVER_STOP_WAIT_SECONDS
+                        while (ServerService.hasOwnedServerProcess() && remainingSeconds-- > 0) Thread.sleep(1_000)
+                    },
+                    apiReady = readiness@{
+                        repeat(SERVER_READY_WAIT_SECONDS) {
+                            if (ServerService.apiReady()) return@readiness true
+                            Thread.sleep(1_000)
+                        }
+                        false
+                    },
+                )
+                preferences().edit().putBoolean(PREF_MIGRATION_COMPLETED, true).apply()
+                withContext(Dispatchers.Main) {
+                    migrationInProgress = false
+                    configureMigrationUi()
+                    setProgress(tr("✅ Migration complete. Your native server is ready; Termux data was not changed and can now be removed.", "✅ Миграция завершена. Нативный сервер готов; данные Termux не изменялись и теперь Termux можно удалить."), visible = false)
+                    refreshServerStatus(showChecking = false)
+                }
+            } catch (error: Exception) {
+                ServerService.stop(this@MainActivity)
+                migrationManager.discard(prepared)
+                withContext(Dispatchers.Main) {
+                    migrationInProgress = false
+                    configureMigrationUi()
+                    setProgress(tr("❌ Migration failed: ${error.message}. Existing native data was restored. ${readLogTail(8_000)}", "❌ Миграция не удалась: ${error.message}. Прежние нативные данные восстановлены. ${readLogTail(8_000)}"), visible = false)
+                    refreshServerStatus(showChecking = false)
+                }
+            } finally {
+                cachedArchive?.delete()
+            }
+        }
+    }
+
+    private fun startFresh() {
+        preferences().edit().putBoolean(PREF_MIGRATION_DISMISSED, true).apply()
+        configureMigrationUi()
+        setProgress(tr("Migration skipped. Termux data was not changed; you can start a fresh native server.", "Миграция пропущена. Данные Termux не изменялись; можно запустить новый нативный сервер."), visible = false)
+        refreshServerStatus(showChecking = false)
     }
 
     private fun applySystemInsets() {
@@ -215,6 +342,14 @@ class MainActivity : AppCompatActivity() {
             "The launcher manages the embedded local server; Vibe Tavern opens in your browser.",
             "Лаунчер управляет встроенным локальным сервером, а Vibe Tavern открывается в браузере.",
         )
+        migrationInstructions.text = tr(
+            "Previously used the old Termux launcher? Stop its server first. In Termux run termux-setup-storage and grant storage access if Android asks. Then run the command below in the Ubuntu guest, select vt-migration.tar.gz, and import it. The Termux data is not modified; after a successful import you may remove Termux.",
+            "Пользовались старым лаунчером Termux? Сначала остановите его сервер. В Termux выполните termux-setup-storage и предоставьте доступ к хранилищу, если Android попросит. Затем выполните команду ниже в Ubuntu-госте, выберите vt-migration.tar.gz и импортируйте его. Данные Termux не изменяются; после успешного импорта Termux можно удалить.",
+        )
+        migrationCommand.text = MIGRATION_COMMAND
+        copyMigrationCommandBtn.text = tr("Copy archive command", "Скопировать команду архива")
+        importMigrationArchiveBtn.text = tr("Choose archive and import", "Выбрать архив и импортировать")
+        startFreshBtn.text = tr("Start fresh instead", "Начать заново")
         findViewById<TextView>(R.id.management_label).text = tr(
             "Launcher and server management",
             "Управление лаунчером и сервером",
@@ -342,6 +477,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchServer() {
+        if (migrationBlocksStart()) {
+            setProgress(tr("Import old Termux data or choose Start fresh before starting the native server.", "Импортируйте старые данные Termux или выберите «Начать заново» перед запуском нативного сервера."), visible = false)
+            return
+        }
         if (extractingPayload) {
             setPayloadExtractionUi()
             return
@@ -447,7 +586,7 @@ class MainActivity : AppCompatActivity() {
             ServerUiState.FOREIGN -> tr("⚠️ Port 8787 is in use", "⚠️ Порт 8787 занят")
             ServerUiState.STOPPED, ServerUiState.FAILED -> tr("🚀 Start Server", "🚀 Запустить сервер")
         }
-        launchBtn.isEnabled = !extractingPayload && state != ServerUiState.FOREIGN
+        launchBtn.isEnabled = !extractingPayload && !migrationBlocksStart() && state != ServerUiState.FOREIGN
         statusText.text = when (state) {
             ServerUiState.EXTRACTING -> tr("📦 Extracting server payload", "📦 Извлекаю серверную часть")
             ServerUiState.STOPPED -> tr("⏹ Server is stopped", "⏹ Сервер остановлен")
@@ -785,11 +924,17 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         const val PREFS = "vibe_tavern_launcher"
         const val PREF_PAYLOAD_VERSION = "installed_payload_version"
+        const val PREF_LEGACY_INSTALLED_ONCE = "installed_once"
+        const val PREF_MIGRATION_COMPLETED = "legacy_migration_completed"
+        const val PREF_MIGRATION_DISMISSED = "legacy_migration_dismissed"
         const val PREF_LANGUAGE = "language"
         const val PREF_BATTERY_EXEMPTION_PROMPTED = "battery_exemption_prompted"
         const val PAYLOAD_DIRECTORY = "payload"
         const val MAX_LOG_CLIPBOARD_BYTES = 400_000L
         const val NOTIFICATION_PERMISSION_REQUEST = 1
+        const val SERVER_STOP_WAIT_SECONDS = 10
+        const val SERVER_READY_WAIT_SECONDS = 120
+        const val MIGRATION_COMMAND = "proot-distro login ubuntu -- bash -lc 'set -eu; test -f \"\$HOME/.local/share/vibe-tavern/vibe-tavern.db\"; tar -czf /sdcard/Download/vt-migration.tar.gz -C \"\$HOME/.local/share\" vibe-tavern'"
         private var automaticUpdateCheckStarted = false
     }
 }

@@ -84,8 +84,6 @@ class MobilePackagingTest {
         val manifest = File(repoRoot, "mobile/android/app/src/main/AndroidManifest.xml").readText()
         val activeResources = listOf(
             "mobile/android/app/src/main/res/layout/screen_launch.xml",
-            "mobile/android/app/src/main/res/layout/screen_install_termux.xml",
-            "mobile/android/app/src/main/res/layout/screen_permission_guide.xml",
             "mobile/android/app/src/main/res/values/themes.xml",
         ).joinToString("\n") { relativePath -> File(repoRoot, relativePath).readText() }
 
@@ -117,6 +115,9 @@ class MobilePackagingTest {
     fun `obsolete token and duplicate manual flows stay removed`() {
         val obsoletePaths = listOf(
             "mobile/android/app/src/main/res/layout/screen_token_input.xml",
+            "mobile/android/app/src/main/res/layout/screen_install_termux.xml",
+            "mobile/android/app/src/main/res/layout/screen_permission_guide.xml",
+            "mobile/android/app/src/main/res/layout/view_termux_setup_command.xml",
             "mobile/android/app/src/main/res/drawable/token_input_bg.xml",
             "mobile/scripts/install.sh",
             "mobile/scripts/update.sh",
