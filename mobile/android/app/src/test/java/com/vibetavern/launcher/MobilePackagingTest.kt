@@ -67,6 +67,7 @@ class MobilePackagingTest {
         assertTrue(nativeBuilder.contains("--target=bun-linux-arm64-android"))
         assertTrue(nativeBuilder.contains("--minify"))
         assertTrue(nativeBuilder.contains("VIBE_TAVERN_VERSION"))
+        assertTrue(nativeBuilder.contains("VIBE_TAVERN_INSTALL_KIND=\\\"android\\\""))
         assertFalse(nativeBuilder.contains("vibe-tavern-android-arm64.tgz"))
         assertFalse(nativeBuilder.contains("tar -"))
         assertFalse(nativeBuilder.contains("gzip"))

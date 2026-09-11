@@ -129,6 +129,8 @@ async function main() {
 			"--minify",
 			"--define",
 			`VIBE_TAVERN_VERSION=\"${VERSION}\"`,
+			"--define",
+			"VIBE_TAVERN_INSTALL_KIND=\"android\"",
 			entrypoint,
 			"--outfile",
 			NATIVE_OUT,

@@ -307,7 +307,7 @@ export interface ChatListItem {
 // RuntimeUpdateStatus.phase before serialising; if the two drift, the
 // frontend's exhaustive switch will fail to typecheck.
 
-export type RuntimeInstallKind = "standalone" | "inno-setup" | "docker" | "npm" | "dev";
+export type RuntimeInstallKind = "standalone" | "inno-setup" | "docker" | "npm" | "android" | "dev";
 
 export interface RuntimeInfo {
 	currentVersion: string;

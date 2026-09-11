@@ -33,9 +33,10 @@ import { installPackageVersion, isVersionPublished } from "./npm-update.js";
 declare const VIBE_TAVERN_INSTALL_KIND: string | undefined;
 
 /**
- * Install kind declared at build time via Bun's `define` (build-npm-dist.ts).
- * Undefined in every other build, where classifyInstallKind falls back to
- * inference. See the classifier for why the npm channel cannot be inferred.
+ * Install kind declared at build time via Bun's `define` (build-npm-dist.ts
+ * and build-android-native.ts). Undefined in every other build, where
+ * classifyInstallKind falls back to inference. See the classifier for why the
+ * npm channel cannot be inferred.
  */
 const DECLARED_INSTALL_KIND: string | undefined =
 	typeof VIBE_TAVERN_INSTALL_KIND !== "undefined" ? VIBE_TAVERN_INSTALL_KIND : undefined;
@@ -116,11 +117,13 @@ export async function shutdownAfterUpdate(
 	exit(0);
 }
 
-class UpdateOrchestrator {
+export class UpdateOrchestrator {
 	private status: UpdateStatus = INITIAL_STATUS;
 	private running = false;
 	/** Where this run's pre-update database snapshot landed, for the UI/logs. */
 	private dbSnapshotPath: string | null = null;
+
+	constructor(private readonly detectInstallKindForRun: () => InstallKind = detectInstallKind) {}
 
 	getStatus(): UpdateStatus {
 		return this.status;
@@ -135,11 +138,16 @@ class UpdateOrchestrator {
 			return { accepted: false, reason: "An update is already in progress." };
 		}
 
+		const installKind = this.detectInstallKindForRun();
+		if (!canSelfUpdateInstallKind(installKind)) {
+			return { accepted: false, reason: selfUpdateUnavailableReason(installKind) };
+		}
+
 		// The npm channel updates through the package manager, which needs no
 		// install directory and cannot use the swap pipeline. Branch before the
 		// IS_COMPILED/installDir guards below — both are about a binary install
 		// and would reject a perfectly updatable npm one.
-		if (detectInstallKind() === "npm") {
+		if (installKind === "npm") {
 			this.running = true;
 			void this.runNpmPipeline();
 			return { accepted: true };
@@ -409,8 +417,10 @@ export function getUpdateOrchestrator(): UpdateOrchestrator {
  * That answer is not merely a wrong label — it would authorise the binary-swap
  * updater to rename files inside the user's ~/.bun/bin. Hence the explicit
  * VIBE_TAVERN_INSTALL_KIND define, baked at build time by build-npm-dist.ts.
+ * The Android native build declares `android` for the same reason: its binary
+ * is inside the APK's read-only nativeLibraryDir and cannot be swapped.
  */
-export type InstallKind = "standalone" | "inno-setup" | "docker" | "npm" | "dev";
+export type InstallKind = "standalone" | "inno-setup" | "docker" | "npm" | "android" | "dev";
 
 const INNO_MARKER_FILENAME = ".vibe-tavern-install";
 
@@ -424,7 +434,7 @@ export function classifyInstallKind(input: {
 	execPath: string;
 	hasInnoMarker: boolean;
 }): InstallKind {
-	if (input.declaredKind === "npm") return "npm";
+	if (input.declaredKind === "npm" || input.declaredKind === "android") return input.declaredKind;
 	if (input.dockerEnv === "1") return "docker";
 	if (!input.isCompiled) return "dev";
 	if (input.hasInnoMarker) return "inno-setup";
@@ -445,10 +455,19 @@ export function detectInstallKind(): InstallKind {
 	});
 }
 
-export function canSelfUpdate(): boolean {
-	const kind = detectInstallKind();
-	// Two channels can replace themselves in place: a standalone binary (file
-	// swap) and an npm install (package manager). Everything else — Docker,
-	// Inno Setup, dev — is updated by whatever installed it.
+/** Two channels can update themselves: standalone swaps its binary and npm
+ * delegates to its package manager. Every other kind is updated by its
+ * installer or deployment channel. */
+export function canSelfUpdateInstallKind(kind: InstallKind): kind is "standalone" | "npm" {
 	return kind === "standalone" || kind === "npm";
+}
+
+function selfUpdateUnavailableReason(kind: Exclude<InstallKind, "standalone" | "npm">): string {
+	return kind === "dev"
+		? "Self-update is unavailable in dev builds."
+		: `Self-update is unavailable for ${kind} installations.`;
+}
+
+export function canSelfUpdate(): boolean {
+	return canSelfUpdateInstallKind(detectInstallKind());
 }
