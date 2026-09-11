@@ -206,12 +206,7 @@ jobs:
         with:
           bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
-      - run: bun scripts/build-android-arm64.ts
-      - name: Stage tarball in Android assets
-        run: |
-          mkdir -p mobile/android/app/src/main/assets
-          cp out/vibe-tavern-android-arm64.tar.gz \
-             mobile/android/app/src/main/assets/vibe-tavern-android-arm64.tgz
+      - run: bun run build:android-native
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -224,16 +219,17 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew testDebugUnitTest assembleRelease
-      - name: Verify embedded ARM payload
+      - name: Verify embedded native payload
         run: |
           set -euo pipefail
           APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
-          PAYLOAD="$RUNNER_TEMP/vibe-tavern-android-arm64.tgz"
-          unzip -p "$APK" assets/vibe-tavern-android-arm64.tgz > "$PAYLOAD"
-          test -s "$PAYLOAD"
-          tar -tzf "$PAYLOAD" >/dev/null
-          test "$(tar -xOf "$PAYLOAD" ./version.txt | tr -d '\r\n')" = "$VERSION"
-          tar -tvzf "$PAYLOAD" | awk '$NF == "vibe-tavern" && $1 ~ /^-rwx/ { found=1 } END { exit !found }'
+          NATIVE_SERVER="$RUNNER_TEMP/libvibetavern.so"
+          WEB_INDEX="$RUNNER_TEMP/index.html"
+          ! unzip -l "$APK" | grep -q 'assets/vibe-tavern-android-arm64.tgz'
+          unzip -p "$APK" lib/arm64-v8a/libvibetavern.so > "$NATIVE_SERVER"
+          test -s "$NATIVE_SERVER"
+          unzip -p "$APK" assets/payload/web/index.html > "$WEB_INDEX"
+          test -s "$WEB_INDEX"
       - name: Verify APK signature
         run: |
           set -euo pipefail

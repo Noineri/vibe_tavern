@@ -9,22 +9,18 @@ class MobilePackagingTest {
     private val repoRoot = findRepoRoot(File(requireNotNull(System.getProperty("user.dir"))).canonicalFile)
 
     @Test
-    fun `release APK bundles a cross-compiled ARM archive`() {
+    fun `release APK builds and verifies the native ARM64 payload`() {
         val workflow = File(repoRoot, ".github/workflows/release.yml").readText()
         val ciWorkflow = File(repoRoot, ".github/workflows/ci.yml").readText()
         val gradle = File(repoRoot, "mobile/android/app/build.gradle.kts").readText()
-        val armBuilder = File(repoRoot, "scripts/build-android-arm64.ts").readText()
-        val activity = File(
-            repoRoot,
-            "mobile/android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt",
-        ).readText()
-        val installer = File(
-            repoRoot,
-            "mobile/android/app/src/main/assets/install.sh",
-        ).readText()
 
-        assertTrue(workflow.contains("bun scripts/build-android-arm64.ts"))
-        assertTrue(workflow.contains("vibe-tavern-android-arm64.tgz"))
+        assertTrue(workflow.contains("bun run build:android-native"))
+        assertFalse(workflow.contains("bun scripts/build-android-arm64.ts"))
+        assertFalse(workflow.contains("Stage tarball in Android assets"))
+        assertTrue(workflow.contains("Set Android versionCode/versionName"))
+        assertTrue(workflow.contains("VERSION_CODE=\$((MAJOR * 1000000 + MINOR * 1000 + PATCH))"))
+        assertTrue(workflow.contains("grep -q \"^[[:space:]]*versionCode = \${VERSION_CODE}\$\""))
+        assertTrue(workflow.contains("grep -q \"^[[:space:]]*versionName = \\\"\${VERSION}\\\"\$\""))
         assertTrue(workflow.contains("ANDROID_KEYSTORE_BASE64"))
         assertTrue(workflow.contains("ANDROID_KEYSTORE_PASSWORD"))
         assertTrue(workflow.contains("ANDROID_KEY_ALIAS"))
@@ -35,120 +31,52 @@ class MobilePackagingTest {
         assertFalse(ciWorkflow.contains("./gradlew assembleRelease"))
         assertTrue(workflow.contains("out/Vibe-Tavern-v\${VERSION}-android.apk"))
         assertTrue(workflow.contains("out/Vibe-Tavern-v\${{ env.VERSION }}-android.apk"))
-        assertTrue(workflow.contains("unzip -p \"\$APK\" assets/vibe-tavern-android-arm64.tgz"))
-        assertTrue(workflow.contains("tar -xOf \"\$PAYLOAD\" ./version.txt"))
+        assertTrue(workflow.contains("unzip -p \"\$APK\" lib/arm64-v8a/libvibetavern.so"))
+        assertTrue(workflow.contains("unzip -p \"\$APK\" assets/payload/web/index.html"))
+        assertTrue(workflow.contains("! unzip -l \"\$APK\" | grep -q 'assets/vibe-tavern-android-arm64.tgz'"))
+        assertFalse(workflow.contains("unzip -p \"\$APK\" assets/vibe-tavern-android-arm64.tgz"))
         assertTrue(gradle.contains("applicationId = \"com.vibetavern.launcher\""))
         assertTrue(gradle.contains("create(\"release\")"))
         assertTrue(gradle.contains("ANDROID_KEYSTORE_PATH"))
         assertFalse(gradle.contains("signingConfigs.getByName(\"debug\")"))
-        assertTrue(armBuilder.contains("version.txt"))
-        assertTrue(armBuilder.contains("--mode=755"))
-        assertTrue(armBuilder.contains("gzip"))
-        assertTrue(activity.contains("bundledArchiveName"))
-        assertTrue(activity.contains("PREF_PAYLOAD_VERSION"))
-        assertTrue(activity.contains("markCurrentPayloadInstalled"))
-        assertTrue(activity.contains("assets.open(\"install.sh\")"))
-        assertTrue(activity.contains("proot-distro login ubuntu"))
-        assertTrue(installer.contains("VIBE_TAVERN_ARCHIVE_PATH"))
-        assertTrue(installer.contains("VIBE_TAVERN_ARCHIVE_URL"))
-        assertTrue(installer.contains("version.txt"))
-        assertTrue(installer.contains("chmod 755 \"\$NEXT_DIR/vibe-tavern\""))
-        assertTrue(installer.contains("proot-distro login \"\$DISTRO\""))
-        assertFalse(installer.contains("git clone"))
-        assertFalse(installer.contains("bun install"))
-        assertFalse(installer.contains("bun run build"))
     }
 
     @Test
-    fun `fresh install avoids shared storage and keeps payload transfer alive`() {
-        val activity = File(
+    fun `native Android build inputs have the executable payload contract`() {
+        val nativeBuilder = File(repoRoot, "scripts/build-android-native.ts").readText()
+        val gradle = File(repoRoot, "mobile/android/app/build.gradle.kts").readText()
+        val androidIgnore = File(repoRoot, "mobile/android/.gitignore").readText()
+        val obsoleteArchive = File(
             repoRoot,
-            "mobile/android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt",
-        ).readText()
-        val manifest = File(repoRoot, "mobile/android/app/src/main/AndroidManifest.xml").readText()
-        val installer = File(repoRoot, "mobile/android/app/src/main/assets/install.sh").readText()
-        val transferService = File(
-            repoRoot,
-            "mobile/android/app/src/main/java/com/vibetavern/launcher/PayloadTransferService.kt",
-        ).readText()
-
-        assertTrue(activity.contains("assets.open(\"install.sh\").bufferedReader()"))
-        assertTrue(activity.contains("runTermuxInline(installerCommand"))
-        assertTrue(activity.contains("ContextCompat.startForegroundService(this, intent)"))
-        assertTrue(activity.contains("PayloadTransferService.start(this)"))
-        assertFalse(activity.contains("copyBundledArchiveToDownloads"))
-        assertFalse(activity.contains("copyInstallerScriptToDownloads"))
-        assertFalse(activity.contains("bash -x '${'$'}installerPath'"))
-        assertTrue(manifest.contains("android:name=\".PayloadTransferService\""))
-        assertFalse(manifest.contains("android.permission.WRITE_EXTERNAL_STORAGE"))
-        assertTrue(transferService.contains("startForeground(NOTIFICATION_ID"))
-        assertTrue(transferService.contains("assets.open(ARCHIVE_NAME)"))
-        assertTrue(transferService.contains("stopSelf()"))
-        assertFalse(installer.contains("termux-setup-storage"))
-    }
-
-    @Test
-    fun `fresh Termux bootstrap is deterministic and checks exact containers`() {
-        val installer = File(
-            repoRoot,
-            "mobile/android/app/src/main/assets/install.sh",
-        ).readText()
-        val starter = File(repoRoot, "mobile/android/app/src/main/assets/start.sh").readText()
-        val activity = File(
-            repoRoot,
-            "mobile/android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt",
-        ).readText()
-        val serverService = File(
-            repoRoot,
-            "mobile/android/app/src/main/java/com/vibetavern/launcher/ServerService.kt",
-        ).readText()
-
-        assertTrue(installer.contains("Acquire::Retries=3"))
-        assertTrue(installer.contains("--force-confold"))
-        assertTrue(installer.contains("apt-get \"${'$'}{TERMUX_APT_OPTIONS[@]}\" install"))
-        assertFalse(installer.contains("pkg update"))
-        assertFalse(installer.contains("yes | apt"))
-        assertTrue(installer.contains("proot-distro list --quiet | grep -qxF \"${'$'}DISTRO\""))
-        assertTrue(installer.contains("VIBE_TAVERN_DISTRO_IMAGE:-ubuntu:24.04"))
-        assertFalse(installer.contains("proot-distro list 2>&1 | grep -q"))
-        assertTrue(starter.contains("proot-distro list --quiet | grep -qxF \"${'$'}{DISTRO}\""))
-        assertFalse(starter.contains("proot-distro list 2>&1 | grep -q"))
-        assertFalse(activity.contains("proot-distro list 2>&1 | grep -q"))
-        assertFalse(serverService.contains("proot-distro list 2>&1 | grep -q"))
-    }
-
-    @Test
-    fun `first-time setup is an inline accordion with a copyable command block`() {
-        val activity = File(
-            repoRoot,
-            "mobile/android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt",
-        ).readText()
-        val launchLayout = File(
-            repoRoot,
-            "mobile/android/app/src/main/res/layout/screen_launch.xml",
-        ).readText()
-        val permissionLayout = File(
-            repoRoot,
-            "mobile/android/app/src/main/res/layout/screen_permission_guide.xml",
-        ).readText()
-        val commandLayout = File(
-            repoRoot,
-            "mobile/android/app/src/main/res/layout/view_termux_setup_command.xml",
+            "mobile/android/app/src/main/assets/vibe-tavern-android-arm64.tgz",
         )
 
-        assertTrue(launchLayout.contains("@+id/first_time_setup_header"))
-        assertTrue(launchLayout.contains("@+id/first_time_setup_content"))
-        assertTrue(launchLayout.contains("android:visibility=\"gone\""))
-        assertTrue(launchLayout.contains("@layout/view_termux_setup_command"))
-        assertTrue(permissionLayout.contains("@layout/view_termux_setup_command"))
-        assertTrue(commandLayout.isFile)
-        assertTrue(commandLayout.readText().contains("@+id/termux_command_block"))
-        assertTrue(commandLayout.readText().contains("@+id/btn_copy_termux_command"))
-        assertTrue(commandLayout.readText().contains("android:textIsSelectable=\"true\""))
-        assertTrue(activity.contains("toggleFirstTimeSetupHelp"))
-        assertTrue(activity.contains("copyTermuxSetupCommand"))
-        assertFalse(activity.contains("showFirstTimeSetupGuide"))
-        assertFalse(launchLayout.contains("@+id/btn_first_time_setup"))
+        assertTrue(nativeBuilder.contains("[\"bun\", \"run\", \"--filter\", \"@vibe-tavern/web\", \"build\"]"))
+        assertTrue(nativeBuilder.contains("assets", ignoreCase = false))
+        assertTrue(nativeBuilder.contains("payload"))
+        assertTrue(nativeBuilder.contains("web"))
+        assertTrue(nativeBuilder.contains("drizzle"))
+        assertTrue(nativeBuilder.contains("tokenizers"))
+        assertTrue(nativeBuilder.contains("prompts"))
+        assertTrue(nativeBuilder.contains("jniLibs"))
+        assertTrue(nativeBuilder.contains("arm64-v8a"))
+        assertTrue(nativeBuilder.contains("libvibetavern.so"))
+        assertTrue(nativeBuilder.contains("services", ignoreCase = false))
+        assertTrue(nativeBuilder.contains("standalone-server.ts"))
+        assertTrue(nativeBuilder.contains("--compile"))
+        assertTrue(nativeBuilder.contains("--target=bun-linux-arm64-android"))
+        assertTrue(nativeBuilder.contains("--minify"))
+        assertTrue(nativeBuilder.contains("VIBE_TAVERN_VERSION"))
+        assertFalse(nativeBuilder.contains("vibe-tavern-android-arm64.tgz"))
+        assertFalse(nativeBuilder.contains("tar -"))
+        assertFalse(nativeBuilder.contains("gzip"))
+        assertTrue(gradle.contains("minSdk = 29"))
+        assertTrue(gradle.contains("abiFilters += \"arm64-v8a\""))
+        assertTrue(gradle.contains("useLegacyPackaging = true"))
+        assertFalse(gradle.contains("vibe-tavern-android-arm64.tgz"))
+        assertTrue(androidIgnore.contains("/app/src/main/jniLibs/"))
+        assertTrue(androidIgnore.contains("/app/src/main/assets/payload/"))
+        assertFalse(obsoleteArchive.exists())
     }
 
     @Test
@@ -180,7 +108,6 @@ class MobilePackagingTest {
         assertTrue(gradle.contains("VIBE_UPDATE_TEST_URL"))
         assertTrue(gradle.contains("VIBE_UPDATE_TEST_VERSION_NAME"))
         assertTrue(gradle.contains("VIBE_UPDATE_TEST_VERSION_CODE"))
-        assertTrue(gradle.contains("VIBE_UPDATE_TEST_INCLUDE_PAYLOAD"))
         assertTrue(gradle.contains("Local updater test properties are forbidden for release builds"))
         assertTrue(releaseClient.contains("https://api.github.com/repos/Noineri/vibe_tavern/releases/latest"))
         assertTrue(releaseClient.contains("allowInsecureHttp"))
@@ -205,17 +132,11 @@ class MobilePackagingTest {
             repoRoot,
             "mobile/android/app/src/main/java/com/vibetavern/launcher/ReleaseUpdate.kt",
         ).readText()
-        val installer = File(repoRoot, "mobile/android/app/src/main/assets/install.sh").readText()
-        val starter = File(repoRoot, "mobile/android/app/src/main/assets/start.sh").readText()
 
         assertFalse(releaseClient.contains("Authorization"))
         assertTrue(activity.contains("setPositiveButton(tr(\"Download APK\""))
         assertTrue(activity.contains("startLauncherDownload(release)"))
         assertTrue(activity.contains("apkUpdateManager.enqueue(release)"))
-        assertTrue(starter.contains("proot-distro login \"\${DISTRO}\""))
-        assertTrue(starter.contains("VIBE_TAVERN_DATA_DIR=\"\$HOME/.local/share/vibe-tavern\""))
-        assertTrue(installer.contains("cat > \"\$HOME/start-vibe-tavern.sh\""))
-        assertTrue(installer.contains("exec ./vibe-tavern"))
     }
 
     private fun findRepoRoot(start: File): File {
