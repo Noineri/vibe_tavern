@@ -1014,6 +1014,11 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     await act(async () => {
       view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     });
+    // `calls` records EVERY form patch — async follow-ups (e.g. a voices
+    // refresh) can land AFTER the preset patch and become the array tail on
+    // slower runners. The applyPreset wiring is pinned by the LAST patch
+    // that actually carries a backend, not by the raw tail.
+    const lastBackendPatch = () => [...calls].reverse().find((c) => c && typeof c.backend === "string");
     for (const [label, backend] of expected) {
       document.body.innerHTML = "";
       const trigger = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "custom");
@@ -1026,9 +1031,9 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
         const item = Array.from(document.body.querySelectorAll("[cmdk-item]")).find((el) => el.textContent?.trim() === label);
         expect(item).toBeTruthy();
         fireEvent.click(item!);
-        expect(calls[calls.length - 1]?.backend).toBe(backend);
+        expect(lastBackendPatch()?.backend).toBe(backend);
       });
-      const applied = calls[calls.length - 1];
+      const applied = lastBackendPatch();
       expect(applied?.config?.["preset"]).toBeDefined();
     }
     cleanup();
