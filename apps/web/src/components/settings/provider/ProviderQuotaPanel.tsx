@@ -13,6 +13,7 @@ import { NumberInput } from "../../shared/NumberInput.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { selectQuotaEntry, useQuotaStore } from "../../../stores/quota-store.js";
+import { QuotaSummaryRows } from "../../shared/QuotaSummaryRows.js";
 
 /**
  * Provider-quota settings — the disclosure that only exists for providers whose
@@ -48,6 +49,9 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
   const [open, setOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProviderQuotaConfig | null>(null);
+  // `now` for the summary countdowns — sampled when the disclosure opens,
+  // same contract as the chat flyout (no ticking interval while closed).
+  const [openedAt, setOpenedAt] = useState(() => Date.now());
 
   const entry = useQuotaStore(selectQuotaEntry(providerProfileId));
   const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,7 +110,10 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
         <button
           type="button"
           className="flex cursor-pointer items-center gap-2 font-ui text-[13px] font-medium text-t1"
-          onClick={() => setOpen(!open)}
+          onClick={() => {
+            setOpen(!open);
+            if (!open) setOpenedAt(Date.now());
+          }}
           aria-expanded={open}
         >
           <span className={cn("transition-transform", open && "rotate-90")}>
@@ -125,6 +132,13 @@ export function ProviderQuotaPanel({ providerProfileId }: ProviderQuotaPanelProp
         <p className="mb-3 font-ui text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
           {t("quota_section_hint")}
         </p>
+
+        {/* Current numbers (MUI step 4): on phones the chat toolbar has no
+            room for the flyout, so this disclosure is where quota becomes
+            viewable — the same shared body the flyout renders. */}
+        <div className="mb-3 rounded-lg border border-border2 bg-s2 px-4 py-3">
+          <QuotaSummaryRows snapshot={entry.snapshot} lastError={entry.lastError} now={openedAt} />
+        </div>
 
         {windowed && (
           <>
