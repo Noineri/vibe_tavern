@@ -246,17 +246,22 @@ export function LorebookAccordion({
           borderRadius: expanded ? "12px 12px 0 0" : 12,
         }}
       >
-        {/* Expand button ▶/▼ */}
-        <div
-          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2"
-          onClick={onToggle}
-        >
-          {expanded ? (
-            <span className="text-[10px]">{"\u25BC"}</span>
-          ) : (
-            <span className="text-[10px]">{"\u25B6"}</span>
-          )}
-        </div>
+        {/* Expand button ▶/▼ — hidden while editing on mobile: the inline
+            create/edit form then owns the full row width and its stacked rows
+            (name / scope / confirm) align with the card edge instead of being
+            pushed right of a caret that is dead weight mid-edit (MUI step 6). */}
+        {(!editing || !isMobile) && (
+          <div
+            className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2"
+            onClick={onToggle}
+          >
+            {expanded ? (
+              <span className="text-[10px]">{"\u25BC"}</span>
+            ) : (
+              <span className="text-[10px]">{"\u25B6"}</span>
+            )}
+          </div>
+        )}
 
         {/* ── Edit mode: inline name + scope form ── */}
         {editing ? (

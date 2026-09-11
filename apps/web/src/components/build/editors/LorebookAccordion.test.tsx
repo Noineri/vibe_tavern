@@ -170,6 +170,7 @@ function renderAccordion(
     editing: boolean;
     editLbName: string;
     editLbScope: string;
+    isMobile: boolean;
     onEditLbScope: (scope: string) => void;
     onSaveEdit: () => void;
   }> = {},
@@ -183,7 +184,7 @@ function renderAccordion(
       editLbName={overrides.editLbName ?? ""}
       editLbScope={overrides.editLbScope ?? "global"}
       activeEntryId={null}
-      isMobile={false}
+      isMobile={overrides.isMobile ?? false}
       actionMenuOpen={false}
       onToggleActionMenu={() => {}}
       t={(k: string) => k}
@@ -378,4 +379,25 @@ describe("LorebookAccordion scope collapse (entity)", () => {
 		const chatHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "chat", chatId: "chat-1" });
 		expect(chatHomed?.tooltipKey).toBe("scope_chat");
 	});
+});
+
+describe("LorebookAccordion mobile edit form (MUI step 6)", () => {
+  it("on mobile the dead expand caret disappears while editing; the form rows own the width", async () => {
+    const { container } = renderAccordion({ editing: true, editLbName: "Draft", isMobile: true });
+    // The ▶/▼ glyph spans are the caret's only text content.
+    expect(container.textContent).not.toContain("\u25BC");
+    expect(container.textContent).not.toContain("\u25B6");
+    // The inline rename field is the creation form's name row.
+    expect(container.querySelector("input")).not.toBeNull();
+  });
+
+  it("on desktop the caret stays visible next to the inline edit form", async () => {
+    const { container } = renderAccordion({ editing: true, editLbName: "Draft", isMobile: false });
+    expect(container.textContent).toContain("\u25BC"); // expanded=true in the harness
+  });
+
+  it("outside edit mode the caret is present on mobile too (expansion still works)", async () => {
+    const { container } = renderAccordion({ editing: false, isMobile: true });
+    expect(container.textContent).toContain("\u25BC");
+  });
 });
