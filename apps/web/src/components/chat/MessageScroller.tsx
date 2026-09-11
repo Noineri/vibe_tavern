@@ -77,6 +77,15 @@ export interface MessageScrollerProps {
    * live inside each caller's renderItem — the scroller itself is mode-agnostic.
    */
   renderItem: (index: number, messageId: string) => ReactNode;
+  /**
+   * Extra scroll room (px) below the stable tail — MUI step 14 (2026-09-11):
+   * the chat add-on launcher bar (dice/playlist/experience chips) floats
+   * absolutely above the input dock and overlays the list's bottom edge, so
+   * the last message's action buttons could never be scrolled clear of it.
+   * The caller measures the bar and passes its height here; 0 (default) keeps
+   * the historical 12px tail breathing room unchanged.
+   */
+  bottomInset?: number;
 }
 
 interface MessageScrollerContext {
@@ -84,6 +93,7 @@ interface MessageScrollerContext {
   stableTailIds: string[];
   stableTailStartIndex: number;
   stableTailRef: (node: HTMLElement | null) => void;
+  bottomInset: number;
 }
 
 // Hoisted to module scope: fresh component identities make Virtuoso remount its
@@ -91,7 +101,7 @@ interface MessageScrollerContext {
 const Header = () => <div style={{ height: 28 }} />;
 
 function StableTail({ context }: ContextProp<MessageScrollerContext>) {
-  const { renderItem, stableTailIds, stableTailStartIndex, stableTailRef } = context;
+  const { renderItem, stableTailIds, stableTailStartIndex, stableTailRef, bottomInset } = context;
 
   return (
     <div ref={stableTailRef} data-message-stable-tail style={{ display: "flow-root" }}>
@@ -100,7 +110,12 @@ function StableTail({ context }: ContextProp<MessageScrollerContext>) {
           {renderItem(stableTailStartIndex + offset, messageId)}
         </div>
       ))}
-      <div style={{ height: 12 }} />
+      {/* Base 12px breathing room + the caller's bottomInset (MUI step 14:
+          scroll clearance for the floating add-on launcher bar above the
+          input dock). The spacer sits inside the observed stable tail, so an
+          inset change while pinned is followed before paint (same settle path
+          as streaming growth). */}
+      <div style={{ height: 12 + bottomInset }} />
     </div>
   );
 }
@@ -154,7 +169,7 @@ const components: Components<string, MessageScrollerContext> = {
  * the oldest tail page moves into virtualization while the four newest pages
  * keep their React and DOM identity.
  */
-export function MessageScroller({ displayIds, renderItem }: MessageScrollerProps) {
+export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: MessageScrollerProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const resetKey = useSnapshotStore((state) =>
@@ -176,7 +191,8 @@ export function MessageScroller({ displayIds, renderItem }: MessageScrollerProps
     stableTailIds,
     stableTailStartIndex,
     stableTailRef,
-  }), [renderItem, stableTailIds, stableTailStartIndex, stableTailRef]);
+    bottomInset,
+  }), [renderItem, stableTailIds, stableTailStartIndex, stableTailRef, bottomInset]);
 
   return (
     <TranslateErrorBoundary>
