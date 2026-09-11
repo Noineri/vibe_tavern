@@ -13,9 +13,12 @@
 | `<ToggleChips>` | Rows of checkboxes | `ToggleChips.tsx` | Multi-select chip group |
 | `<SegmentedControl>` | `<select>` for 2-5 items | `SegmentedControl.tsx` | Radio pill bar |
 | `<DropdownSelect>` | `<select>` | `DropdownSelect.tsx` | Searchable dropdown with Radix |
+| `<TextInput>` | raw `<input>` | `text-input.tsx` | Canonical single-line input — bakes in `inputCls`; `mono` / `readOnly` modifiers compose |
+| `<SearchInput>` | hand-rolled search shells | `SearchInput.tsx` | Search field: shell owns chrome, borderless input inside, glass icon default, `trailing` slot (clear-✕) |
+| `<InlineRenameInput>` | hand-rolled rename inputs | `InlineRenameInput.tsx` | Compact inline-rename field; accent-at-rest border = edit-state marker |
 | `<CustomTooltip>` | `title="..."` | `Tooltip.tsx` | Dark tooltip with arrow |
 | `<Modal>` | Custom dialogs | `Modal.tsx` | Radix Dialog, focus trap, scroll lock |
-| `<AutoTextarea>` | `<textarea>` | `auto-textarea.tsx` | Auto-resizing textarea |
+| `<AutoTextarea>` | `<textarea>` | `auto-textarea.tsx` | Auto-resizing textarea; canon field base by default, `className` extends (FS-8b), `bare` = composer escape hatch |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<SaveBar>` / `<SaveButton>` | Custom save buttons | `SaveBar.tsx` | Sticky save bar with dirty/saved state. Public export is `<SaveButton>`; `SaveBar` is the internal layout component |
 | `<TokenCounter>` | Custom token display | `TokenCounter.tsx` | "123 tokens" badge |
@@ -25,7 +28,7 @@
 | `<DestructiveConfirmModal>` | Custom confirm | `destructive-confirm-modal.tsx` | "Are you sure?" for delete actions |
 | `<EmptyState>` | Custom empty states | `empty-state.tsx` | Icon + title + CTA placeholder |
 | `<Icons.* />` | Emoji / SVG inline | `icons.tsx` | All UI icons as React components |
-| `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input with add/remove |
+| `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input, chips inside the box; `mode="tokens"` (Shift+Enter commits) / `mode="words"` (Enter commits) |
 | `<AiQuickPill>` | — | `AiQuickPill.tsx` | Compact AI model quick-select pill |
 | `<AvatarCropModal>` | — | `AvatarCropModal.tsx` | Circular crop overlay using react-easy-crop |
 | `<TextDiffPreview>` | — | `TextDiffPreview.tsx` | Side-by-side or inline text diff view |
@@ -291,22 +294,31 @@
 **Replaces:** `<textarea>` that needs auto-resize
 
 ```tsx
-// Controlled mode:
+// Controlled mode — canon base composes by default, className EXTENDS it:
 <AutoTextarea
-  className="w-full rounded-md border border-border bg-s2 px-3 py-2 text-t1"
-  style={{}}
+  className="leading-relaxed"   // extension only — the base is baked in
   value={text}
   onChange={e => setText(e.target.value)}
-  maxHeight={300}
+  minRows={3}
+  maxRows={10}
 />
 
 // Uncontrolled (react-hook-form):
 <AutoTextarea
-  className="..."
-  style={{}}
   register={register("description")}
+  minRows={5}
+/>
+
+// Composer family — bare opts out of the field base entirely:
+<AutoTextarea
+  bare
+  className={cn(composerCls, "w-full !px-4")}
+  minRows={1}
+  maxRows={6}
 />
 ```
+
+Size control is row-based (`minRows` / `maxRows`), never pixel heights — the lib throws on `style.minHeight`/`style.maxHeight`.
 
 | Prop | Type | Description |
 |------|------|-------------|
@@ -531,9 +543,13 @@ Native checkboxes are only acceptable for functional filter toggles (e.g., "Show
 ## ChipInput
 
 **File:** `ChipInput.tsx`
-**Purpose:** Reusable tag/chip input with add/remove behavior.
+**Purpose:** Reusable tag/chip input — the ONE chip primitive.
 
-Used for compact list-style fields such as stop sequences and other token-like inputs. Prefer this over ad-hoc comma-separated text fields when the user needs to manage discrete values.
+Chips live inside the box (single visual field). Two modes:
+- `mode="tokens"` — stop-sequence semantics: Shift+Enter commits the draft, plain Enter adds a separator (tokens can contain spaces);
+- `mode="words"` — tag/lore-key semantics: plain Enter commits, values are trimmed single words.
+
+JSON-array paste inserts every element at once in both modes. Prefer this over ad-hoc comma-separated text fields when the user manages discrete values.
 
 ---
 
