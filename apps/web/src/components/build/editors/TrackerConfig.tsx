@@ -309,7 +309,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
       </div>
 
       {/* Scalar controls */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1 sm:grid-cols-3">
         <ScalarField label={t("scn_context_window_label")} hint={t("scn_context_window_hint")}>
           <NumberInput value={draft.contextWindow} min={1} onChange={(v) => update("contextWindow", v)} />
         </ScalarField>
@@ -336,7 +336,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
         </button>
         {advancedOpen && (
           <div className="mt-2 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
               <ScalarField label={t("scn_depth_label")} hint={t("scn_depth_hint")}>
                 <NumberInput value={draft.injectionDepth} min={1} onChange={(v) => update("injectionDepth", v)} />
               </ScalarField>
@@ -597,7 +597,7 @@ function SceneModelSelector({
         <Toggle checked={useChatModel} onChange={(v) => onUpdate("useChatModel", v)} />
         {t("scn_use_chat_model")}
       </label>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
         <DropdownSelect
           value={profileId}
           options={providerOptions}

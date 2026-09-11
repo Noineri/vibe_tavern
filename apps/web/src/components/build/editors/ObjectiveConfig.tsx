@@ -631,7 +631,7 @@ function ModelSelector({ chatId, state }: { chatId: ChatId; state: ObjectiveStat
         <Toggle checked={useChatModel} onChange={(v) => save({ useChatModel: v })} />
         {t("obj_use_chat_model")}
       </label>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
         <DropdownSelect
           value={profileId}
           options={providerOptions}
