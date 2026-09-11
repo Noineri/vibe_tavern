@@ -2342,6 +2342,7 @@ export default interface Resources {
     "script_api_random": "Seeded randomness (deterministic per turn)",
     "script_api_randomInt": "Random integer in [min, max] inclusive (seeded)",
     "script_api_random_fn": "Random float in [0, 1) — seeded by turn index",
+    "script_api_random_hint": "The same turn index always yields the same random sequence — rolls are reproducible across restarts and easy to debug.",
     "script_api_reference": "API Reference",
     "script_api_shared": "Shared state (turn-scoped, cross-script)",
     "script_api_shared_get": "Read a cross-script value (same turn only)",

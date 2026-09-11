@@ -121,6 +121,7 @@ export function ScriptApiReference({ kind }: { kind: ScriptKind }) {
         </div>
         <div>
           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_random")}</div>
+          <div className="mb-1.5 text-[11px] leading-[1.5] text-t3">{t("script_api_random_hint")}</div>
           <div className="grid gap-1">
             <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.random()</code><span className="text-t3">— {t("script_api_random_fn")}</span></div>
             <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.randomInt(min, max)</code><span className="text-t3">— {t("script_api_randomInt")}</span></div>
