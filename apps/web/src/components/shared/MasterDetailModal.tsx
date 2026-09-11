@@ -102,7 +102,13 @@ export function MasterDetailFooter({
           </span>
         ),
       )}
-      <div className="ml-auto flex min-w-0 items-center gap-2.5">
+      {/* MUI step 18 (owner 2026-09-11): on phones the right slot wraps —
+          the inline settings block (TTS narration / STT dictation) takes its
+          own full-width row (the blocks carry max-md:basis-full) and
+          Cancel/Save settle on a second row, right-aligned. Before this, the
+          group was one atomic line: settings + Cancel + Save (min-w 124px)
+          exceeded a phone row and Save was clipped off-window with no scroll. */}
+      <div className="ml-auto flex min-w-0 items-center gap-2.5 max-md:flex-wrap max-md:justify-end">
         {!isMobile && onClose && (
           <button
             type="button"
@@ -232,8 +238,11 @@ export function MasterDetailModal<T extends string = string>({
       </div>
       {headerBottom}
       {tabs && (
-        <div className="mt-3">
-          <SegmentedControl value={tabs.active} options={tabs.items} onChange={tabs.onChange} />
+        <div className="mt-3 max-md:pr-1">
+          {/* MUI step 20: on narrow screens the provider tabs (LLM/TTS/STT)
+              exceed the row — the control becomes a horizontal drag with no
+              scrollbar strip instead of cramming its labels. */}
+          <SegmentedControl value={tabs.active} options={tabs.items} onChange={tabs.onChange} mobileScroll />
         </div>
       )}
     </div>

@@ -397,5 +397,11 @@ describe("MasterDetailFooter — footer chrome primitive", () => {
     expect(bar.querySelector('[data-testid="save"]')).toBeTruthy();
     // Close is desktop-only.
     expect(bar.textContent?.includes("close")).toBe(false);
+    // MUI step 18: the right slot wraps on phones — the inline settings block
+    // (narration/dictation, max-md:basis-full) gets its own row and
+    // Cancel/Save settle below it instead of being clipped off-window.
+    const rightGroup = bar.querySelector("div.ml-auto") as HTMLElement;
+    expect(rightGroup.className).toContain("max-md:flex-wrap");
+    expect(rightGroup.className).toContain("max-md:justify-end");
   });
 });

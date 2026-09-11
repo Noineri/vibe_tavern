@@ -304,6 +304,31 @@ describe("SegmentedControl — layout props", () => {
 		expect(group.className).toMatch(/\bw-full\b/);
 		expect(group.className).toMatch(/\bsm:w-auto\b/);
 	});
+
+	it("mobileScroll: horizontal drag with hidden scrollbar on phones; desktop untouched", () => {
+		isMobile = true;
+		const { container } = render(
+			<SegmentedControl value="a" options={opts} onChange={() => {}} mobileScroll />,
+		);
+		const group = container.querySelector('[role="radiogroup"]')!;
+		// Draggable: the row scrolls, capped at the container width.
+		expect(group.className).toMatch(/overflow-x-auto/);
+		expect(group.className).toMatch(/max-w-full/);
+		// No scrollbar strip (MUI step 20 owner ruling).
+		expect(group.className).toMatch(/\[scrollbar-width:none\]/);
+		expect(group.className).toMatch(/\[&::-webkit-scrollbar\]:hidden/);
+		// Segments keep natural width — no cramming/truncation.
+		const item = container.querySelector('[role="radio"]')!;
+		expect(item.className).toMatch(/\bshrink-0\b/);
+
+		isMobile = false;
+		const desktop = render(
+			<SegmentedControl value="a" options={opts} onChange={() => {}} mobileScroll />,
+		);
+		const desktopGroup = desktop.container.querySelector('[role="radiogroup"]')!;
+		expect(desktopGroup.className).not.toMatch(/overflow-x-auto/);
+		expect(desktopGroup.className).not.toMatch(/\[scrollbar-width:none\]/);
+	});
 });
 
 // ── mobileSelect (SP-12) ─────────────────────────────────────────────────

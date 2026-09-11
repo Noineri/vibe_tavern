@@ -39,6 +39,23 @@ async function pickMode(view: { container: HTMLElement; baseElement: HTMLElement
 }
 
 describe("TtsNarrationModeBlock (D26, footer-inline dropdown)", () => {
+  test("inline-footer canon (MUI step 19): bounded trigger, no description in the trigger line, own mobile row", async () => {
+    let view: { container: HTMLElement } | null = null;
+    await act(async () => {
+      view = render(React.createElement(TtsNarrationModeBlock));
+    });
+    const root = view!.container.querySelector('[data-testid="tts-narration-mode-block"]') as HTMLElement;
+    // Own full-width row inside the wrapping footer right slot on phones.
+    expect(root.className).toContain("max-md:basis-full");
+    const trigger = view!.container.querySelector('[data-testid="tts-narration-mode-select"]') as HTMLElement;
+    // Content-sized trigger with a cap — never the w-full form-field chrome.
+    expect(trigger.className).toContain("max-w-[200px]");
+    expect(trigger.className).toContain("w-auto");
+    // The per-mode description rides the opened list items only.
+    expect(trigger.textContent).not.toContain("tts_narration_mode_full_desc");
+    expect(trigger.textContent).toContain("tts_narration_mode_full");
+  });
+
   test("renders label + trigger with the default full mode; storage untouched", async () => {
     let container: HTMLElement | null = null;
     await act(async () => {

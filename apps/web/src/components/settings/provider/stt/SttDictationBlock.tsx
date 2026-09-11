@@ -55,7 +55,7 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
   const noProfiles = profiles.length === 0;
 
   return (
-    <div data-testid="stt-dictation-block" className="flex min-w-0 flex-1 items-center gap-2">
+    <div data-testid="stt-dictation-block" className="flex min-w-0 flex-1 items-center gap-2 max-md:basis-full">
       <label
         className={cn(
           "shrink-0 font-ui text-[12px] text-t3 transition-opacity",
