@@ -403,7 +403,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         }}
         onOpenProxyManager={() => setIsProxyManagerOpen(true)}
       />}
-      {mobileAccessOpen && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
+      {mobileAccessOpen && !isMobile && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
       <ProxyManagerModal
         proxies={proxies}
         defaultProxyId={defaultProxyId}

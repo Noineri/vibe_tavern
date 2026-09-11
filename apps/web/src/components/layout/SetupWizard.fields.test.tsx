@@ -20,8 +20,12 @@ const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 
+// Mutable viewport flag: the wizard branches on useIsMobile() at render time,
+// so one module mock can serve both the desktop and the mobile case.
+let isMobileViewport = false;
+
 mock.module("../../i18n/context.js", () => ({ ...realI18nContext, useT: () => ({ t: (key: string) => key }) }));
-mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
+mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => isMobileViewport }));
 mock.module("../../hooks/use-provider-profiles.js", () => ({
 	...realProviderProfiles,
 	useProviderProfiles: () => ({
@@ -66,7 +70,26 @@ async function renderAtPersonaStep() {
 }
 
 beforeEach(() => {
+	isMobileViewport = false;
 	seedFirstRun();
+});
+
+test("path selector: the ST-migrate path is absent on mobile and present on desktop", async () => {
+	isMobileViewport = true;
+	seedFirstRun();
+	const mobileView = render(createElement(SetupWizard, { onVisibilityChange: () => {} }));
+	expect(mobileView.queryByText("wizard_path_b_title")).toBeNull();
+	expect(mobileView.queryByText("wizard_path_b_sub")).toBeNull();
+	// Path A and the skip link stay — only the ST-migrate card is removed.
+	expect(mobileView.getByText("wizard_path_a_title")).toBeTruthy();
+	expect(mobileView.getByText("wizard_skip_all")).toBeTruthy();
+	mobileView.unmount();
+
+	isMobileViewport = false;
+	seedFirstRun();
+	const desktopView = render(createElement(SetupWizard, { onVisibilityChange: () => {} }));
+	expect(desktopView.getByText("wizard_path_b_title")).toBeTruthy();
+	desktopView.unmount();
 });
 
 test("persona step: fields render with labels and controlled typing works", async () => {

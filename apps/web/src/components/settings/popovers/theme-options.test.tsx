@@ -66,4 +66,24 @@ describe("theme settings", () => {
     fireEvent.click(radios[2]);
     expect(setSetting).toHaveBeenCalledWith("theme", "mystic-dawn");
   });
+
+  // MUI-W5 step 15: the Mobile Access entry was removed from the mobile
+  // settings sheet (the feature is desktop-only). The text query is proven to
+  // resolve labels in this render by the proxies assertion — both rows share
+  // the same button shape, only the label differs.
+  it("has no Mobile Access entry in mobile settings", () => {
+    const { getByText, queryByText } = render(
+      <MobileSettings
+        open
+        onClose={mock()}
+        settings={{ ...baseSettings, showRail: true }}
+        setSetting={mock()}
+        onOpenMobileAccess={mock()}
+      />,
+    );
+
+    expect(getByText("proxies")).toBeTruthy();
+    expect(queryByText("mobile_access")).toBeNull();
+    expect(queryByText("mobile_access_enable")).toBeNull();
+  });
 });

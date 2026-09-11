@@ -59,11 +59,13 @@ function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
         <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_a_title")}</div>
         <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_a_sub")}</div>
       </button>
-      <button type="button" className={cardBase} onClick={() => onSelect("b")}>
-        <div className="text-[1.4rem] text-accent"><Icons.Import /></div>
-        <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_b_title")}</div>
-        <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_b_sub")}</div>
-      </button>
+      {!isMobile && (
+        <button type="button" className={cardBase} onClick={() => onSelect("b")}>
+          <div className="text-[1.4rem] text-accent"><Icons.Import /></div>
+          <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_b_title")}</div>
+          <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_b_sub")}</div>
+        </button>
+      )}
       <button type="button" className="mt-2 text-t3 hover:text-t2 transition-colors font-ui text-[0.85rem] underline underline-offset-2 hover:underline-offset-4" onClick={() => onSelect("skip")}>
         {t("wizard_skip_all")}
       </button>
