@@ -1019,13 +1019,16 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
       const trigger = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "custom");
       expect(trigger).toBeTruthy();
       fireEvent.click(trigger!);
+      // Assert INSIDE waitFor: a click can be swallowed when Radix/cmdk
+      // re-renders the item between find and fire (seen on linux CI) —
+      // retrying find+click+assert re-fires until the patch lands.
       await waitFor(() => {
         const item = Array.from(document.body.querySelectorAll("[cmdk-item]")).find((el) => el.textContent?.trim() === label);
         expect(item).toBeTruthy();
         fireEvent.click(item!);
+        expect(calls[calls.length - 1]?.backend).toBe(backend);
       });
       const applied = calls[calls.length - 1];
-      expect(applied?.backend).toBe(backend);
       expect(applied?.config?.["preset"]).toBeDefined();
     }
     cleanup();

@@ -1659,8 +1659,12 @@ describe("narration playlist card layout (RD-1)", () => {
   }
 
   /** Deferred single-segment lane — the panel shows a live row while
-   *  the play promise is unresolved (same shape as the FS-7 helper). */
-  function parkLane(): void {
+   *  the play promise is unresolved (same shape as the FS-7 helper).
+   *  `hangSynthesisAfter` parks the Nth+1 synthesis forever so the chunk
+   *  zone's fetch-progress label (received < total) is STABLE instead of a
+   *  transient frame — CI runners otherwise batch renders and skip it. */
+  function parkLane(opts: { hangSynthesisAfter?: number } = {}): void {
+    let localSynthCalls = 0;
     let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
     __setTtsPlaybackDepsForTests({
       player: {
@@ -1682,6 +1686,10 @@ describe("narration playlist card layout (RD-1)", () => {
       },
       synthesize: mock(async (text: string) => {
         synthCalls.push(text);
+        localSynthCalls += 1;
+        if (opts.hangSynthesisAfter !== undefined && localSynthCalls > opts.hangSynthesisAfter) {
+          return new Promise<{ blob: Blob; mime: string }>(() => {});
+        }
         return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
       }),
       cache,
@@ -1746,7 +1754,10 @@ describe("narration playlist card layout (RD-1)", () => {
   });
 
   it("RD-1b: live card carries all four zones — fetch on chunk, seek on playback", async () => {
-    parkLane();
+    // Hang synthesis after the first segment so the live fetch-progress
+    // state is stable (see parkLane) — a plain instant-synth run only shows
+    // the label transiently and loses it to render batching on CI runners.
+    parkLane({ hangSynthesisAfter: 1 });
     const { getByTestId, queryByTestId } = render(<NarrationPlaylistPanel docked />);
     act(() => {
       void useTtsPlaybackStore.getState().startNarration("m1", "Para one.\n\nPara two.", profile(), meta());
