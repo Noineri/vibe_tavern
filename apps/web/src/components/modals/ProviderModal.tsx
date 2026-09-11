@@ -907,7 +907,7 @@ export function ProviderModal({
           ) : activeCategory === "audio" ? (
             <TtsAudioFooter tts={tts} />
           ) : (
-            <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}>
+            <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]" : "px-6 py-4")}>
             <div className={cn("flex items-center gap-3", isMobile && "flex-wrap")}>
               <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
                 <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>

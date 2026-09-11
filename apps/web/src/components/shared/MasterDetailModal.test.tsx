@@ -387,6 +387,9 @@ describe("MasterDetailFooter — footer chrome primitive", () => {
     );
     const bar = container.firstElementChild as HTMLElement;
     expect(bar.className).toContain("px-3");
+    // MUI step 1: the mobile footer expands upward — safe-area-aware bottom
+    // padding keeps Save above the browser/gesture curtain (house pattern).
+    expect(bar.className).toContain("safe-area-inset-bottom");
     const iconBtn = bar.querySelector("button.h-9.w-9") as HTMLElement;
     expect(iconBtn).toBeTruthy();
     expect(iconBtn.getAttribute("aria-label")).toBe("Copy me");

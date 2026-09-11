@@ -70,7 +70,15 @@ export function MasterDetailFooter({
     <div
       className={cn(
         "flex shrink-0 items-center gap-2.5 border-t border-border",
-        isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5",
+        // MUI step 1 (owner 2026-09-11): on phones the modal is h-[100dvh] and
+        // the browser's bottom bar / system gesture curtain covers the footer's
+        // bottom edge — Save sat behind it and the owner had to switch to
+        // desktop view. The footer expands UPWARD via safe-area-aware bottom
+        // padding (the house pattern: MediaModal / LorebookEditor /
+        // ExperienceModal / BottomSheet), keeping the 10px base padding.
+        isMobile
+          ? "flex-wrap px-3 pt-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+0.625rem)]"
+          : "py-3.5 px-5",
       )}
     >
       {actions.map((a) =>

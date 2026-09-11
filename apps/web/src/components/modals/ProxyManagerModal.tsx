@@ -261,7 +261,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
           <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">{t("proxy_select_or_create")}</div>
         )}
         footer={
-          <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-border px-5 py-3">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-border px-5 pt-3 pb-3 max-md:pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
             {draft?.id && <button type="button" className="flex items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={() => setConfirmDelete(true)}><Icons.Trash /> {t("proxy_delete")}</button>}
             <div className="ml-auto flex items-center gap-2">
               <button type="button" className="rounded-md border border-border px-4 py-2 font-ui text-[13px] text-t2 hover:bg-s2 hover:text-t1" onClick={requestClose}>{t("close")}</button>
