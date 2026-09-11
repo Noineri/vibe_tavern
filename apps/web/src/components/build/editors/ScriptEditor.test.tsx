@@ -202,6 +202,11 @@ function HarnessAll() {
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 
+function HarnessGlobal() {
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "global" });
+  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+}
+
 async function openEditor(container: HTMLElement, findByText: (text: string) => Promise<HTMLElement>): Promise<EditorViewInstance> {
   fireEvent.click(await findByText("Test Script"));
   let view: EditorViewInstance | null = null;
@@ -369,6 +374,25 @@ describe("useScriptPanel interactive-script filtering", () => {
 
     expect(await findByText("Prompt All")).toBeTruthy();
     expect(queryByText("Interactive All")).toBeNull();
+  });
+});
+
+// ── MUI step 13: link binding is entity-scope only ────────────────────────────
+// Global (application-scope) scripts run everywhere, so a character/persona
+// link is never consulted for them; chat scripts are already chat-bound.
+describe("useScriptPanel link-binding scope filter", () => {
+  it("omits the character/persona link binding for global (application-scope) scripts", async () => {
+    const { container, findByText, queryByText } = render(<HarnessGlobal />);
+
+    await openEditor(container, findByText);
+    expect(queryByText("script_links_label")).toBeNull();
+  });
+
+  it("keeps the character/persona link binding for entity-scope scripts", async () => {
+    const { container, findByText } = render(<Harness />);
+
+    await openEditor(container, findByText);
+    expect(await findByText("script_links_label")).toBeTruthy();
   });
 });
 

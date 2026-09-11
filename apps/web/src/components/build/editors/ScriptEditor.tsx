@@ -552,7 +552,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       </div>
 
       {/* Link binding (forward): bind this script to additional characters/personas */}
-      {scope !== "chat" && (
+      {/* MUI step 13: only entity-owned scripts bind to characters/personas; global (application-scope) scripts run unconditionally and chat scripts are chat-bound. */}
+      {scope === "entity" && (
         <div style={{ marginBottom: 16 }}>
           <div className="mb-1.5 flex items-center gap-1.5">
             <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
