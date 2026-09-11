@@ -2,7 +2,7 @@ import { useT } from "../../../i18n/context.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { cn } from "../../../lib/cn.js";
-import { lblCls, textareaCls } from "../../../lib/field-tokens.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 
 interface PrefillFieldProps {
   prefill: string;
@@ -30,7 +30,7 @@ export function PrefillField({ prefill, onUpdate, disabled, prefillSupported }: 
       </div>
       <MobileExpandTextarea value={prefill} onChange={onUpdate} label={t("prefill_assistant")}>
         <AutoTextarea
-          className={cn(textareaCls, "disabled:opacity-60")}
+          className="disabled:opacity-60"
           maxRows={15}
           minRows={3}
           value={prefill}

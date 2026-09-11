@@ -37,9 +37,24 @@ describe("FS-2 primitives carry the canon by default", () => {
 		expect(ta.className).not.toContain("text-xs");
 	});
 
-	it("AutoTextarea with an explicit className keeps full caller control (migration window)", () => {
+	it("AutoTextarea className EXTENDS the base (FS-8b flip): base always composes", () => {
 		const { getByRole } = render(<AutoTextarea className="my-extension" minRows={2} />);
-		expect((getByRole("textbox") as HTMLTextAreaElement).className).toContain("my-extension");
+		const cls = (getByRole("textbox") as HTMLTextAreaElement).className;
+		expect(cls).toContain("my-extension");
+		expect(cls).toContain("rounded-[6px]"); // textareaCls base still present
+		// base first, extension after — the composition order
+		expect(cls.indexOf("my-extension")).toBeGreaterThan(cls.indexOf("rounded-[6px]"));
+	});
+
+	it("AutoTextarea bare opts out of the base entirely — the composer escape hatch (FS-8b)", () => {
+		const { getByRole } = render(<AutoTextarea bare className="composer-chrome" minRows={2} />);
+		const cls = (getByRole("textbox") as HTMLTextAreaElement).className;
+		expect(cls).toBe("composer-chrome"); // nothing else — no border, no field pad
+	});
+
+	it("AutoTextarea bare without a className renders classless (shell owns everything)", () => {
+		const { getByRole } = render(<AutoTextarea bare minRows={2} />);
+		expect((getByRole("textbox") as HTMLTextAreaElement).className).toBe("");
 	});
 
 	it("bare TextInput renders the canonical single-line shape", () => {

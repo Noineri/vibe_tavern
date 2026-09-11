@@ -134,6 +134,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
       <div ref={cardRef} className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
         <CopilotContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
         <AutoTextarea
+          bare
           className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
           maxRows={12}
           minRows={3}

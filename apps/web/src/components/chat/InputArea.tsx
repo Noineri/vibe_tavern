@@ -124,6 +124,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               chip row — owner design 2026-09-09). */}
 
           <AutoTextarea
+            bare
             className={cn(composerCls, "w-full !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
             maxRows={12}
             minRows={3}
@@ -155,6 +156,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               <div className="overflow-hidden pb-1.5">
                 <div className="flex items-start gap-1.5 rounded-lg border border-border bg-s2 px-2.5 py-1.5">
                   <AutoTextarea
+                    bare
                     className="min-w-0 flex-1 resize-none border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
                     minRows={1}
                     maxRows={6}

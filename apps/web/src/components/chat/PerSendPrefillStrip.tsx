@@ -66,6 +66,7 @@ export function PerSendPrefillStrip({ supported }: { supported: boolean }) {
         <div className="overflow-hidden">
           <div className="mt-1.5 rounded-md border border-border bg-s2 px-2.5 py-2">
             <AutoTextarea
+              bare
               className="w-full resize-none border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
               minRows={2}
               maxRows={8}

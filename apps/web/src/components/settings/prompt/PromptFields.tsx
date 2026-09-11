@@ -8,7 +8,7 @@ import { PerSendPrefillToggle } from "./PerSendPrefillToggle.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
-import { lblCls, textareaCls } from "../../../lib/field-tokens.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 
 type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "authorsNoteRole">;
 
@@ -70,7 +70,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
   const ta = useCallback((key: TextDraftKey, placeholder: string, minRows = 5, labelKey?: string) => (
     <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? tDynamic(labelKey) : undefined}>
     <AutoTextarea
-      className={cn(textareaCls, "disabled:opacity-60")}
+      className="disabled:opacity-60"
       minRows={minRows}
       value={String(draft?.[key] ?? "")}
       placeholder={placeholder}

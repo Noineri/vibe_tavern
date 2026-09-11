@@ -55,7 +55,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { TextInput } from "../../shared/text-input.js";
-import { lblCls, textareaCls, monoMod } from "../../../lib/field-tokens.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { cn } from "../../../lib/cn.js";
 import { parseOptionalJsonDiagnosed } from "../../../lib/json-parse-diagnostic.js";
 import { useT } from "../../../i18n/context.js";
@@ -1458,7 +1458,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   // (no declared fields / non-object JSON — the pre-LOBBY-A fallback).
   const settingsJsonTextarea = (
     <AutoTextarea
-      className={cn(textareaCls, monoMod, "mt-1.5 min-h-[34px]")}
+      mono
+      className="mt-1.5 min-h-[34px]"
       value={settingsJson}
       onChange={(e) => {
         setSettingsTouched(true);

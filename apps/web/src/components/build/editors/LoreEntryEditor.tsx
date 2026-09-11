@@ -29,7 +29,6 @@ import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { TextInput } from "../../shared/text-input.js";
 import { ChipInput } from "../../shared/ChipInput.js";
-import { textareaCls } from "../../../lib/field-tokens.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { Checkbox } from "../../shared/Checkbox.js";
@@ -239,7 +238,7 @@ export function LoreEntryEditor({
                 label={t("lore_entry_content")}
               >
                 <AutoTextarea
-                  className={cn(textareaCls, "leading-[1.6]")}
+                  className="leading-[1.6]"
                   minRows={8}
                   maxRows={25}
                   value={field.value}

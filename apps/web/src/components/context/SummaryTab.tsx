@@ -5,7 +5,7 @@ import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { TextInput } from "../shared/text-input.js";
-import { lblCls, textareaCls } from "../../lib/field-tokens.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
@@ -746,7 +746,7 @@ export function useSummaryTab({
         />
         <MobileExpandTextarea value={draftText} onChange={(v) => { setDraftText(v); setDirty(true); }} label={t("summary_text_label")}>
           <AutoTextarea
-            className={cn(textareaCls, "leading-relaxed")}
+            className="leading-relaxed"
             maxRows={20}
             minRows={3}
             value={draftText}

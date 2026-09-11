@@ -9,7 +9,7 @@ import { Toggle } from "../../shared/Toggle.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { TextInput } from "../../shared/text-input.js";
-import { lblCls, textareaCls } from "../../../lib/field-tokens.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
@@ -244,7 +244,7 @@ function LongTermGoalEditor({ chatId, goal }: { chatId: ChatId; goal: ObjectiveL
         {goal ? <StatusDot status={goal.status} onClick={() => void cycleStatus()} title={t("obj_cycle_status")} /> : <span className="mt-1 text-accent"><Ic.target /></span>}
         <AutoTextarea
           key={goal?.description ?? "empty-long-term"}
-          className={cn(textareaCls, "flex-1")}
+          className="flex-1"
           defaultValue={goal?.description ?? ""}
           placeholder={t("obj_long_term_placeholder")}
           minRows={2}

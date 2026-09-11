@@ -3,7 +3,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import { codeQuoteCls, textareaCls, monoMod } from "../../../lib/field-tokens.js";
+import { codeQuoteCls } from "../../../lib/field-tokens.js";
 import { testScript } from "../../../app-client.js";
 import type { PromptScriptTestResult } from "@vibe-tavern/api-contracts";
 
@@ -141,11 +141,11 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 						</div>
 						<div>
 							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_personality")}</label>
-							<AutoTextarea className={cn(textareaCls, monoMod)} value={testCharPersonality} onChange={(e) => setTestCharPersonality(e.target.value)} minRows={3} maxRows={12} />
+							<AutoTextarea mono value={testCharPersonality} onChange={(e) => setTestCharPersonality(e.target.value)} minRows={3} maxRows={12} />
 						</div>
 						<div>
 							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_scenario")}</label>
-							<AutoTextarea className={cn(textareaCls, monoMod)} value={testCharScenario} onChange={(e) => setTestCharScenario(e.target.value)} minRows={3} maxRows={12} />
+							<AutoTextarea mono value={testCharScenario} onChange={(e) => setTestCharScenario(e.target.value)} minRows={3} maxRows={12} />
 						</div>
 						<div className="border-t border-border pt-2">
 							<div className="mb-1 font-ui text-[11px] font-medium text-t2">{t("script_test_persona_fields")}</div>
@@ -156,7 +156,7 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 								</div>
 								<div>
 									<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_persona_desc")}</label>
-									<AutoTextarea className={cn(textareaCls, monoMod)} value={testPersonaDesc} onChange={(e) => setTestPersonaDesc(e.target.value)} minRows={3} maxRows={12} />
+									<AutoTextarea mono value={testPersonaDesc} onChange={(e) => setTestPersonaDesc(e.target.value)} minRows={3} maxRows={12} />
 								</div>
 							</div>
 						</div>

@@ -11,10 +11,11 @@ import {
   useMacroAutocompleteStore,
 } from "./macro-autocomplete-store.js";
 
-/** The canonical auto-grow field class (see `lib/field-tokens.ts`)
- *  when the caller passes none. `className` is an optional EXTENSION today
- *  (a passed className fully replaces the base during the FS-2..FS-8
- *  migration window); the end state is bare-or-non-conflicting extension. */
+/** The canonical auto-grow field class (see `lib/field-tokens.ts`).
+ *  `className` is an EXTENSION — the base always composes (FS-8b flip,
+ *  2026-09-10): a passed className adds to the base instead of replacing
+ *  it, killing the silent-unstyled-field bug class permanently. The one
+ *  escape hatch is the explicit `bare` mode below. */
 import { cn, } from "../../lib/cn.js";
 import { monoMod, textareaCls } from "../../lib/field-tokens.js";
 
@@ -28,10 +29,17 @@ export type AutoTextareaPassthrough = Omit<
 
 export interface AutoTextareaProps extends AutoTextareaPassthrough {
   /** Optional — a bare AutoTextarea IS the canonical field (textareaCls,
-   *  lib/field-tokens.ts). During the FS-2..FS-8 migration window a passed
-   *  className fully replaces the base (no class races on legacy callers);
-   *  the end state is bare or non-conflicting extension. */
+   *  lib/field-tokens.ts). Since the FS-8b flip a passed className EXTENDS
+   *  the base (base always composes) — the silent-replace window is closed. */
   className?: string;
+  /** Explicit no-base mode — the composer-family escape hatch (FS-8b).
+   *  When set, the primitive applies NO base at all: the caller's className
+   *  carries everything (borderless composer chrome, bubble/strip shells).
+   *  This is the one visible, greppable opt-out — composing a field base
+   *  under a composer chrome would fight it (border-inside-border, UI font
+   *  under prose font), so the composer family opts out DELIBERATELY.
+   *  Regular fields never set this. */
+  bare?: boolean;
   /** Inline styles. NOTE: `minHeight` / `maxHeight` / `height` are NOT supported
    *  here — the underlying library owns element height and throws at runtime if
    *  they appear in `style`. Use `minRows` / `maxRows` for size control. */
@@ -106,6 +114,7 @@ const textareaValueSetter = typeof window === "undefined"
  */
 export function AutoTextarea({
   className,
+  bare,
   mono,
   style,
   disabled,
@@ -288,7 +297,11 @@ export function AutoTextarea({
         {...rest}
         {...(register ? { name: register.name } : {})}
         ref={setRef}
-        className={className ?? (mono ? cn(textareaCls, monoMod) : textareaCls)}
+        className={
+          bare
+            ? className
+            : cn(mono ? cn(textareaCls, monoMod) : textareaCls, className)
+        }
         style={style as TextareaAutosizeProps["style"]}
         disabled={disabled}
         placeholder={placeholder}

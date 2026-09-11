@@ -6,7 +6,7 @@ import { Ic } from "./icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "./MobileExpandTextarea.js";
 import { AutoTextarea } from "./auto-textarea.js";
-import { lblCls, textareaCls, monoMod } from "../../lib/field-tokens.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { DropdownSelect } from "./DropdownSelect.js";
 import { Checkbox } from "./Checkbox.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "./LinkBindingPopover.js";
@@ -538,7 +538,7 @@ export function AiAssistantModal({
                     <label className={lblCls}>{t("import_md_paste_label")}</label>
                     <MobileExpandTextarea value={mdContent} onChange={setMdContent} label={t("import_md_paste_label")}>
                       <AutoTextarea
-                        className={cn(textareaCls, monoMod)}
+                        mono
                         maxRows={15}
                         minRows={6}
                         placeholder={t("import_md_paste_placeholder")}

@@ -168,6 +168,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
         {/* Input row. */}
         <div className="flex items-end gap-2">
           <AutoTextarea
+            bare
             className={composerCls}
             minRows={1}
             maxRows={6}

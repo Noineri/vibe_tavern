@@ -14,7 +14,7 @@ import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
-import { lblCls, textareaCls, monoMod } from "../../../lib/field-tokens.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
@@ -401,7 +401,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
               <div className="mb-3 text-[13px] text-t2">{t("script_import_paste")}</div>
               <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
-                <AutoTextarea className={cn(textareaCls, monoMod, "leading-[1.6]")} maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
+                <AutoTextarea mono className="leading-[1.6]" maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
               </MobileExpandTextarea>
               {importCode.trim() && (
                 <div className="mt-2 text-[11px] text-accent-t">
