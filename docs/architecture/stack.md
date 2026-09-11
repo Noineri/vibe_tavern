@@ -237,7 +237,7 @@ vibe-tavern/
 | **Standalone .exe** | `bun run build:standalone` — single binary with embedded frontend + assets | `out/standalone/vibe-tavern.exe` |
 | **Windows installer** | `bun run build:installer` — Inno Setup wrapper around the standalone exe | `out/installer/vibe-tavern-setup.exe` |
 | **Linux** | `bun run build:linux-dist` — cross-compile + self-updater tarball | `out/linux-dist/` |
-| **Android** | `bun run build:android-arm64` — cross-compile for ARM64 | `out/android-arm64/` |
+| **Android** | `bun run build:android-native` — compiles the native ARM64 server and prepares the APK payload | Generated `mobile/android/app/src/main/jniLibs/arm64-v8a/libvibetavern.so` plus `mobile/android/app/src/main/assets/payload/`; Gradle packages them into the APK |
 
 **Why standalone .exe:** The target audience (RP community) includes non-technical users. Download one file, double-click, it opens in browser. No Node.js, no `npm install`, no terminal.
 

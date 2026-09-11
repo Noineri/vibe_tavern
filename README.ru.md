@@ -6,7 +6,7 @@
 
 **Локальный клиент для долгого AI-ролеплея — с упором на UX, удобное чтение и нормальную работу на мобильных экранах**
 
-**Windows** (установщик и portable `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
+**Windows** (установщик и portable `.exe`) • **Linux** • **Docker** • **Android** (нативный ARM64-лаунчер)
 
 ![Release](https://www.shieldcn.dev/github/release/Noineri/vibe_tavern.svg?size=sm&theme=zinc)
 ![GitHub Downloads](https://shieldcn.dev/github/downloads/Noineri/vibe_tavern.svg?variant=secondary)
@@ -218,7 +218,7 @@ Markdown-редактор закрепляет канонические заго
 
 Мобильная версия имеет полностью адаптированный вид.
 
-Для Android доступна сборка под Termux, автоматизирующая основную часть установки.
+Нативный Android-лаунчер запускает Vibe Tavern локально на поддерживаемых ARM64-телефонах и открывает интерфейс в системном браузере. Подробности — в [гайде по Android](docs/android-setup-ru.md).
 
 ---
 
@@ -242,7 +242,7 @@ docker compose up -d
 
 ### Android
 
-Используйте APK-сборку под Termux. Подробности — в [гайде по установке](docs/android-setup-ru.md).
+Скачайте нативный ARM64 APK-лаунчер из [Releases](https://github.com/Noineri/vibe_tavern/releases). Установка, использование, обновления и миграция со старого лаунчера описаны в [гайде по Android](docs/android-setup-ru.md).
 
 ### Запуск из исходников
 

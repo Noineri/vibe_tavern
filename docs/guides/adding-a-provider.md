@@ -58,7 +58,7 @@ Field reference:
 - `id` — the preset id. **Remember this exact string**; it is used verbatim in Step 2.
 - `type` — an existing `PROVIDER_TYPE` value (`openaiCompat`, `anthropic`, `google`, …).
 - `baseUrl` — default endpoint. For OpenAI-compat this must end at the `/v1` root.
-- `group` — `cloud` | `native` | `local`. Local presets are hidden on ARM/Termux builds.
+- `group` — `cloud` | `native` | `local`. Local presets are hidden on non-Darwin ARM server builds, including native Android.
 - `noApiKey` — true for local servers that ignore auth.
 - `requiresAuthForModels` — true if `/models` returns 401 without a key (see Step 4).
 
