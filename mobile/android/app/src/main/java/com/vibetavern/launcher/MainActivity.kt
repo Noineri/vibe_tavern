@@ -44,10 +44,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progressText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var openBtn: Button
-    private lateinit var setupBtn: Button
     private lateinit var launchBtn: Button
     private lateinit var uninstallBtn: Button
     private lateinit var languageBtn: Button
+    private lateinit var firstTimeSetupAccordion: View
     private lateinit var firstTimeSetupHeader: TextView
     private lateinit var firstTimeSetupContent: View
     private lateinit var launcherUpdateBtn: Button
@@ -61,6 +61,8 @@ class MainActivity : AppCompatActivity() {
     private val migrationManager by lazy { LegacyMigration(filesDir) }
     private var migrationJob: Job? = null
     private var migrationInProgress = false
+    private var migrationRecoveryInProgress = true
+    private var migrationRecoveryFailed = false
     private val migrationArchivePicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uri = result.data?.data ?: return@registerForActivityResult
         importMigrationArchive(uri)
@@ -180,7 +182,6 @@ class MainActivity : AppCompatActivity() {
         progressText = findViewById(R.id.progress_text)
         progressBar = findViewById(R.id.progress_bar)
         openBtn = findViewById(R.id.btn_open_browser)
-        setupBtn = findViewById(R.id.btn_one_time_setup)
         launchBtn = findViewById(R.id.btn_launch_server)
         migrationInstructions = findViewById(R.id.first_time_setup_migration_slot)
         migrationCommand = findViewById(R.id.migration_command)
@@ -189,6 +190,7 @@ class MainActivity : AppCompatActivity() {
         startFreshBtn = findViewById(R.id.btn_start_fresh)
         uninstallBtn = findViewById(R.id.btn_uninstall)
         languageBtn = findViewById(R.id.btn_language)
+        firstTimeSetupAccordion = findViewById(R.id.first_time_setup_accordion)
         firstTimeSetupHeader = findViewById(R.id.first_time_setup_header)
         firstTimeSetupContent = findViewById(R.id.first_time_setup_content)
         launcherUpdateBtn = findViewById(R.id.btn_check_launcher_update)
@@ -208,19 +210,50 @@ class MainActivity : AppCompatActivity() {
         copyMigrationCommandBtn.setOnClickListener { copyMigrationCommand() }
         importMigrationArchiveBtn.setOnClickListener { chooseMigrationArchive() }
         startFreshBtn.setOnClickListener { startFresh() }
-        setupBtn.visibility = View.GONE
-        migrationManager.recoverIncompleteTransaction()
 
         apkUpdateManager.cleanupStaleDownload()
         applyLaunchTexts()
         configureMigrationUi()
-        setProgress(null, visible = false)
-        refreshServerStatus(showChecking = true)
-        ensurePayloadExtracted()
+        setProgress(tr("Checking migration state…", "Проверяю состояние миграции…"), visible = true)
+        recoverMigrationState()
         observeLauncherDownload(installWhenReady = false)
         if (!automaticUpdateCheckStarted && !apkUpdateManager.hasTrackedDownload()) {
             automaticUpdateCheckStarted = true
             checkForLauncherUpdate(manual = false)
+        }
+    }
+
+    private fun recoverMigrationState() {
+        migrationRecoveryInProgress = true
+        migrationRecoveryFailed = false
+        configureMigrationUi()
+        migrationJob?.cancel()
+        migrationJob = mainScope.launch(Dispatchers.IO) {
+            val recoveryError = try {
+                migrationManager.recoverIncompleteTransaction()
+                null
+            } catch (error: Exception) {
+                error
+            }
+            withContext(Dispatchers.Main) {
+                migrationRecoveryInProgress = false
+                migrationRecoveryFailed = recoveryError != null
+                configureMigrationUi()
+                if (recoveryError != null) {
+                    setServerState(ServerUiState.STOPPED)
+                    setProgress(
+                        tr(
+                            "Could not recover the previous migration: ${recoveryError.message}. Restart the launcher to retry.",
+                            "Не удалось восстановить предыдущую миграцию: ${recoveryError.message}. Перезапустите лаунчер для повторной попытки.",
+                        ),
+                        visible = false,
+                    )
+                } else {
+                    setProgress(null, visible = false)
+                    refreshServerStatus(showChecking = true)
+                    ensurePayloadExtracted()
+                }
+            }
         }
     }
 
@@ -231,15 +264,18 @@ class MainActivity : AppCompatActivity() {
             !preferences().getBoolean(PREF_MIGRATION_DISMISSED, false)
 
     private fun configureMigrationUi() {
-        val eligible = hasLegacyMigrationCandidate()
+        val eligible = !migrationRecoveryInProgress && !migrationRecoveryFailed && hasLegacyMigrationCandidate()
+        firstTimeSetupAccordion.visibility = if (eligible) View.VISIBLE else View.GONE
         firstTimeSetupHeader.visibility = if (eligible) View.VISIBLE else View.GONE
         firstTimeSetupContent.visibility = View.GONE
-        copyMigrationCommandBtn.isEnabled = !migrationInProgress
-        importMigrationArchiveBtn.isEnabled = !migrationInProgress
-        startFreshBtn.isEnabled = !migrationInProgress
+        val controlsEnabled = !migrationInProgress && !migrationRecoveryInProgress
+        copyMigrationCommandBtn.isEnabled = controlsEnabled
+        importMigrationArchiveBtn.isEnabled = controlsEnabled
+        startFreshBtn.isEnabled = controlsEnabled
     }
 
-    private fun migrationBlocksStart(): Boolean = hasLegacyMigrationCandidate() || migrationInProgress
+    private fun migrationBlocksStart(): Boolean =
+        hasLegacyMigrationCandidate() || migrationInProgress || migrationRecoveryInProgress || migrationRecoveryFailed
 
     private fun copyMigrationCommand() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -292,7 +328,9 @@ class MainActivity : AppCompatActivity() {
                     },
                     apiReady = readiness@{
                         repeat(SERVER_READY_WAIT_SECONDS) {
-                            if (ServerService.apiReady()) return@readiness true
+                            if (ServerService.hasOwnedServerProcess() && ServerService.apiReady()) {
+                                return@readiness true
+                            }
                             Thread.sleep(1_000)
                         }
                         false
@@ -654,9 +692,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearServerLog() {
-        ServerService.requestLogClear()
+        val cleared = ServerService.requestLogClear(this)
         setProgress(
-            tr("Server log clear requested.", "Запрошена очистка журнала сервера."),
+            if (cleared) {
+                tr("Server log cleared.", "Журнал сервера очищен.")
+            } else {
+                tr("Could not clear the server log.", "Не удалось очистить журнал сервера.")
+            },
             visible = false,
         )
     }

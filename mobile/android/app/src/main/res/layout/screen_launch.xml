@@ -230,16 +230,6 @@
         </LinearLayout>
 
         <Button
-            android:id="@+id/btn_one_time_setup"
-            style="@style/Widget.VibeTavern.Button.Secondary"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:minHeight="48dp"
-            android:text="@string/install_server"
-            android:textSize="14sp" />
-
-        <Button
             android:id="@+id/btn_help"
             style="@style/Widget.VibeTavern.Button.Secondary"
             android:layout_width="match_parent"

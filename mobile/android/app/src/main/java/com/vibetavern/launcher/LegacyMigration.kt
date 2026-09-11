@@ -18,25 +18,34 @@ class LegacyMigration(private val appFilesDir: File) {
 
     class PreparedImport internal constructor(val stagingRoot: File, val data: File)
 
-    /** Removes an incomplete promoted import and restores the pre-import data, if there was any. */
-    fun recoverIncompleteTransaction() {
-        if (!transactionFile.exists()) return
+    /** Restores an interrupted activation, or removes debris left after a committed activation. */
+    fun recoverIncompleteTransaction() = synchronized(TRANSACTION_LOCK) {
+        recoverIncompleteTransactionLocked()
+    }
+
+    private fun recoverIncompleteTransactionLocked() {
         val backup = File(appFilesDir, BACKUP_DIRECTORY)
+        if (!transactionFile.exists()) {
+            backup.deleteRecursively()
+            return
+        }
         if (backup.exists()) {
             dataDir.deleteRecursivelyOrThrow()
             move(backup, dataDir, "restore the interrupted migration backup")
         } else {
             dataDir.deleteRecursivelyOrThrow()
         }
-        appFilesDir.listFiles().orEmpty()
-            .filter { it.name.startsWith("$STAGING_DIRECTORY-") }
-            .forEach { it.deleteRecursivelyOrThrow() }
+        stagingDirectories().forEach { it.deleteRecursivelyOrThrow() }
         transactionFile.deleteOrThrow()
     }
 
     /** Validates every archive entry before extracting the validated archive into private staging. */
     @Throws(MigrationException::class)
-    fun prepare(archive: File): PreparedImport {
+    fun prepare(archive: File): PreparedImport = synchronized(TRANSACTION_LOCK) {
+        prepareLocked(archive)
+    }
+
+    private fun prepareLocked(archive: File): PreparedImport {
         val requiredBytes = validateArchive(archive)
         if (appFilesDir.usableSpace < requiredBytes) {
             throw MigrationException("Not enough free storage for the archive's declared uncompressed size")
@@ -58,7 +67,12 @@ class LegacyMigration(private val appFilesDir: File) {
 
     /** Promotes prepared data only after the caller has stopped its owned server and verified the port. */
     @Throws(MigrationException::class)
-    fun activate(prepared: PreparedImport, startServer: () -> Unit, stopFailedServer: () -> Unit, apiReady: () -> Boolean) {
+    fun activate(prepared: PreparedImport, startServer: () -> Unit, stopFailedServer: () -> Unit, apiReady: () -> Boolean) =
+        synchronized(TRANSACTION_LOCK) {
+            activateLocked(prepared, startServer, stopFailedServer, apiReady)
+        }
+
+    private fun activateLocked(prepared: PreparedImport, startServer: () -> Unit, stopFailedServer: () -> Unit, apiReady: () -> Boolean) {
         require(prepared.data.parentFile == prepared.stagingRoot) { "Prepared import is not from this migration manager" }
         val backup = File(appFilesDir, BACKUP_DIRECTORY)
         try {
@@ -69,8 +83,9 @@ class LegacyMigration(private val appFilesDir: File) {
             prepared.stagingRoot.deleteRecursivelyOrThrow()
             startServer()
             if (!apiReady()) throw MigrationException("Native server did not become API-ready after migration")
-            backup.deleteRecursivelyOrThrow()
             transactionFile.deleteOrThrow()
+            // Once the marker is gone, failure to remove this stale backup must not roll back healthy imported data.
+            backup.deleteRecursively()
         } catch (error: Exception) {
             stopFailedServer()
             rollbackAfterFailedActivation()
@@ -78,7 +93,7 @@ class LegacyMigration(private val appFilesDir: File) {
         }
     }
 
-    fun discard(prepared: PreparedImport?) {
+    fun discard(prepared: PreparedImport?) = synchronized(TRANSACTION_LOCK) {
         prepared?.stagingRoot?.deleteRecursively()
     }
 
@@ -88,9 +103,12 @@ class LegacyMigration(private val appFilesDir: File) {
         if (backup.exists()) {
             move(backup, dataDir, "restore native data after failed migration")
         }
-        File(appFilesDir, STAGING_DIRECTORY).deleteRecursively()
+        stagingDirectories().forEach { it.deleteRecursively() }
         transactionFile.delete()
     }
+
+    private fun stagingDirectories(): List<File> = appFilesDir.listFiles().orEmpty()
+        .filter { it.name.startsWith("$STAGING_DIRECTORY-") }
 
     private fun validateArchive(archive: File): Long {
         var totalSize = 0L
@@ -197,6 +215,8 @@ class LegacyMigration(private val appFilesDir: File) {
     }
 
     companion object {
+        private val TRANSACTION_LOCK = Any()
+
         const val DATA_DIRECTORY = "data"
         const val DATABASE_NAME = "vibe-tavern.db"
         private const val ARCHIVE_ROOT = "vibe-tavern"

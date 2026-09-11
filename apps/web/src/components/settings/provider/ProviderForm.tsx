@@ -27,7 +27,7 @@ interface ProviderFormProps {
   hideConnectionFields?: boolean;
   /** Hide model-dependent test chat button (wizard provider edit mode) */
   hideTestChat?: boolean;
-  /** When true (ARM/Termux build), Local presets (localhost-bound) are hidden from the selector. Mirrors ProviderEditHeader. */
+  /** Runtime architecture flag used by the shared preset visibility policy. Mirrors ProviderEditHeader. */
   isArmServer: boolean;
 }
 

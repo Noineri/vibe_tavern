@@ -18,6 +18,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
 
+internal fun clearInactiveServerLog(logFile: File) {
+    FileOutputStream(logFile, false).use { }
+}
+
 /** Foreground owner for the native Vibe Tavern server child process. */
 class ServerService : Service() {
 
@@ -32,11 +36,14 @@ class ServerService : Service() {
         private const val READINESS_CONNECT_TIMEOUT_MS = 1_000
         private const val READINESS_READ_TIMEOUT_MS = 1_000
         private const val READINESS_TIMEOUT_SECONDS = 120
+        private const val SERVER_LOG_FILE = "server.log"
 
         /** The process started by this service, never a process discovered by port probing. */
         @Volatile
         var serverProcess: Process? = null
             private set
+
+        private val logWriterLock = Any()
 
         @Volatile
         private var activeLogWriter: ServerLogWriter? = null
@@ -72,9 +79,28 @@ class ServerService : Service() {
             }
         }
 
-        /** Clears the active launch log under the same lock used by the output pump. */
-        fun requestLogClear() {
-            activeLogWriter?.clear()
+        /** Clears either the active writer or the persisted log from the most recent launch. */
+        fun requestLogClear(context: Context): Boolean = synchronized(logWriterLock) {
+            activeLogWriter?.clear() ?: try {
+                clearInactiveServerLog(File(context.filesDir, SERVER_LOG_FILE))
+                true
+            } catch (e: IOException) {
+                Log.w(TAG, "Could not clear inactive server log", e)
+                false
+            }
+        }
+
+        private fun replaceActiveLogWriter(writer: ServerLogWriter) {
+            synchronized(logWriterLock) {
+                activeLogWriter?.close()
+                activeLogWriter = writer
+            }
+        }
+
+        private fun releaseActiveLogWriter(writer: ServerLogWriter) {
+            synchronized(logWriterLock) {
+                if (activeLogWriter === writer) activeLogWriter = null
+            }
         }
     }
 
@@ -115,13 +141,16 @@ class ServerService : Service() {
     }
 
     private fun runServer() {
-        if (stopRequested) return
+        if (stopRequested) {
+            finishForegroundService()
+            return
+        }
 
         val launchedServer = try {
             launchServer()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch native server", e)
-            updateNotification("failed to start — see server.log")
+            finishForegroundService()
             return
         }
         val process = launchedServer.process
@@ -146,7 +175,9 @@ class ServerService : Service() {
                 break
             }
         }
-        updateNotification(if (ready) "running at $BASE_URL" else "not ready — see server.log")
+        if (!stopRequested) {
+            updateNotification(if (ready) "running at $BASE_URL" else "not ready — see server.log")
+        }
 
         // This is deliberately the same thread that called ProcessBuilder.start(). Bun's
         // --no-orphans uses PDEATHSIG, so returning from the forking thread would kill the child.
@@ -170,19 +201,26 @@ class ServerService : Service() {
                 serverProcess = null
             }
             launchedServer.logWriter.close()
-            if (activeLogWriter === launchedServer.logWriter) {
-                activeLogWriter = null
-            }
+            releaseActiveLogWriter(launchedServer.logWriter)
+            finishForegroundService()
         }
+    }
+
+    private fun finishForegroundService() {
+        synchronized(lifecycleLock) {
+            stopRequested = true
+            if (runnerThread === Thread.currentThread()) runnerThread = null
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun launchServer(): LaunchedServer {
         val binary = File(applicationInfo.nativeLibraryDir, "libvibetavern.so")
         check(binary.exists()) { "libvibetavern.so missing in ${applicationInfo.nativeLibraryDir}" }
 
-        val logWriter = ServerLogWriter(File(filesDir, "server.log"))
-        activeLogWriter?.close()
-        activeLogWriter = logWriter
+        val logWriter = ServerLogWriter(File(filesDir, SERVER_LOG_FILE))
+        replaceActiveLogWriter(logWriter)
 
         val payloadDir = File(filesDir, "payload")
         val processBuilder = ProcessBuilder(binary.absolutePath).apply {
@@ -209,9 +247,7 @@ class ServerService : Service() {
         } catch (e: IOException) {
             logWriter.writeLine("failed to start server: ${e.message}")
             logWriter.close()
-            if (activeLogWriter === logWriter) {
-                activeLogWriter = null
-            }
+            releaseActiveLogWriter(logWriter)
             throw e
         }
         serverProcess = process
@@ -238,8 +274,10 @@ class ServerService : Service() {
     )
 
     private fun stopOwnedServer() {
-        stopRequested = true
-        val process = serverProcess
+        val process = synchronized(lifecycleLock) {
+            stopRequested = true
+            serverProcess
+        }
         if (process != null && process.isAlive) {
             process.destroy()
         }
@@ -277,7 +315,11 @@ class ServerService : Service() {
     }
 
     private fun updateNotification(text: String) {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+        synchronized(lifecycleLock) {
+            if (!stopRequested) {
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+            }
+        }
     }
 
     private fun createNotificationChannel() {
@@ -312,14 +354,14 @@ class ServerService : Service() {
             }
         }
 
-        fun clear() {
-            synchronized(lock) {
-                try {
-                    stream.close()
-                    stream = FileOutputStream(logFile, false)
-                } catch (e: IOException) {
-                    Log.w(TAG, "Could not clear server log", e)
-                }
+        fun clear(): Boolean = synchronized(lock) {
+            try {
+                stream.close()
+                stream = FileOutputStream(logFile, false)
+                true
+            } catch (e: IOException) {
+                Log.w(TAG, "Could not clear server log", e)
+                false
             }
         }
 

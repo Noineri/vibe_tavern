@@ -3,7 +3,11 @@ package com.vibetavern.launcher
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.GZIPOutputStream
+import kotlin.concurrent.thread
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.apache.commons.compress.archivers.tar.TarConstants
@@ -92,6 +96,63 @@ class LegacyMigrationTest {
             manager.activate(manager.prepare(archive(filesDir, file("vibe-tavern/vibe-tavern.db", "new"))), {}, {}, { false })
         }
         assertFalse(File(filesDir, "data").exists())
+    }
+
+    @Test
+    fun `recovery waits for an active migration transaction`() = withTempFiles { filesDir ->
+        File(filesDir, "data").apply { mkdirs() }.resolve("vibe-tavern.db").writeText("old")
+        val manager = LegacyMigration(filesDir)
+        val prepared = manager.prepare(archive(filesDir, file("vibe-tavern/vibe-tavern.db", "new")))
+        val healthCheckEntered = CountDownLatch(1)
+        val allowHealthCheck = CountDownLatch(1)
+        val recoveryStarted = CountDownLatch(1)
+        val recoveryFinished = CountDownLatch(1)
+        val activationFailure = AtomicReference<Throwable?>(null)
+        val recoveryFailure = AtomicReference<Throwable?>(null)
+
+        val activation = thread {
+            try {
+                manager.activate(prepared, {}, {}, {
+                    healthCheckEntered.countDown()
+                    allowHealthCheck.await(5, TimeUnit.SECONDS)
+                })
+            } catch (error: Throwable) {
+                activationFailure.set(error)
+            }
+        }
+        assertTrue(healthCheckEntered.await(5, TimeUnit.SECONDS))
+        val recovery = thread {
+            recoveryStarted.countDown()
+            try {
+                LegacyMigration(filesDir).recoverIncompleteTransaction()
+            } catch (error: Throwable) {
+                recoveryFailure.set(error)
+            } finally {
+                recoveryFinished.countDown()
+            }
+        }
+
+        assertTrue(recoveryStarted.await(5, TimeUnit.SECONDS))
+        val recoveryCompletedDuringActivation = recoveryFinished.await(200, TimeUnit.MILLISECONDS)
+        allowHealthCheck.countDown()
+        activation.join(5_000)
+        recovery.join(5_000)
+
+        assertFalse(recoveryCompletedDuringActivation)
+        assertEquals(null, activationFailure.get())
+        assertEquals(null, recoveryFailure.get())
+        assertEquals("new", File(filesDir, "data/vibe-tavern.db").readText())
+    }
+
+    @Test
+    fun `completed transaction keeps promoted data and removes stale backup`() = withTempFiles { filesDir ->
+        File(filesDir, ".migration-backup").apply { mkdirs() }.resolve("vibe-tavern.db").writeText("old")
+        File(filesDir, "data").apply { mkdirs() }.resolve("vibe-tavern.db").writeText("new")
+
+        LegacyMigration(filesDir).recoverIncompleteTransaction()
+
+        assertEquals("new", File(filesDir, "data/vibe-tavern.db").readText())
+        assertFalse(File(filesDir, ".migration-backup").exists())
     }
 
     @Test

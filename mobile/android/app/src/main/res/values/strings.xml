@@ -12,8 +12,6 @@
     <string name="copy_server_log">Copy server log</string>
     <string name="clear_server_log">Clear server log</string>
     <string name="first_time_setup">First-Time Setup</string>
-    <string name="first_time_setup_migration_slot">A future update will offer a safe migration from an existing Termux installation.</string>
-    <string name="install_server">Prepare server</string>
     <string name="help_troubleshooting">Help and troubleshooting</string>
     <string name="language">Language</string>
     <string name="uninstall">Uninstall</string>
