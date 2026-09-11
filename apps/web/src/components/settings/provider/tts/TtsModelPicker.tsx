@@ -196,7 +196,10 @@ export function TtsModelPicker({
           disabled={fetching}
           className={cn(
             "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
-            isMobile ? "flex w-[34px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2",
+            // Mobile icon-only shape must match the closed dropdown's height
+            // (2px borders + 2×6px py + 13px×1.5 line box = 33.5px; row is
+            // items-end). Same derivation as ProviderModelSelector (MUI step 5).
+            isMobile ? "flex w-[34px] min-h-[33.5px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2",
           )}
           title={t("refresh_models")}
         >

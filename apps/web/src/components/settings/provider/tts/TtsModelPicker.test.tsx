@@ -28,6 +28,17 @@ mock.module("../../../../i18n/context.js", () => ({
   }),
 }));
 
+// useIsMobile reads window.matchMedia, which happy-dom does not reliably
+// implement. The mutable flag lets one file pin BOTH branches (mobile parity
+// is the defect under test; desktop must stay untouched) — same pattern as
+// ProviderModelSelector.test.tsx (W1).
+let isMobileValue = false;
+const realUseMobile = await import("../../../../hooks/use-mobile.js");
+mock.module("../../../../hooks/use-mobile.js", () => ({
+  ...realUseMobile,
+  useIsMobile: () => isMobileValue,
+}));
+
 const { TtsModelPicker } = await import("./TtsModelPicker.js");
 
 const ENRICHED = [
@@ -124,5 +135,31 @@ describe("TtsModelPicker (ProviderModelSelector fork)", () => {
   it("the current value stays visible even when absent from the fetched list", () => {
     const { view } = mountPicker({ value: "gone/model" });
     expect((view.getByTestId("tts-field-model") as HTMLElement).textContent).toContain("gone/model");
+  });
+});
+
+describe("TtsModelPicker refresh button height (MUI step 5 extension to TTS/STT)", () => {
+  it("mobile: the icon-only refresh button matches the closed dropdown height (min-h-[33.5px], same derivation as the LLM picker)", () => {
+    isMobileValue = true;
+    const { view } = mountPicker();
+    const refresh = view.getByTestId("tts-models-refresh");
+    expect(refresh.className).toContain("min-h-[33.5px]");
+    expect(refresh.className).toContain("w-[34px]");
+    expect(refresh.textContent).toBe("");
+    // The closed trigger's metrics that 33.5px derives from: 13px text on the
+    // preflight 1.5 line-height + py-[6px].
+    const trigger = view.getByRole("button", { name: /select_model/i }).closest("button")!;
+    expect(trigger.className).toContain("text-[13px]");
+    expect(trigger.className).toContain("py-[6px]");
+    view.unmount();
+  });
+
+  it("desktop: the refresh button keeps its text-driven canon height (no min-h override)", () => {
+    isMobileValue = false;
+    const { view } = mountPicker();
+    const refresh = view.getByTestId("tts-models-refresh");
+    expect(refresh.className).not.toContain("min-h-[33.5px]");
+    expect(refresh.textContent).toContain("refresh_models");
+    view.unmount();
   });
 });
