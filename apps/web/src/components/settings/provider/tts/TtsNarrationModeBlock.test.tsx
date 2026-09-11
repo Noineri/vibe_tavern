@@ -39,17 +39,22 @@ async function pickMode(view: { container: HTMLElement; baseElement: HTMLElement
 }
 
 describe("TtsNarrationModeBlock (D26, footer-inline dropdown)", () => {
-  test("inline-footer canon (MUI step 19): bounded trigger, no description in the trigger line, own mobile row", async () => {
+  test("inline-footer canon (MUI W7): bounded trigger, no description in the trigger line, no row ownership", async () => {
     let view: { container: HTMLElement } | null = null;
     await act(async () => {
       view = render(React.createElement(TtsNarrationModeBlock));
     });
     const root = view!.container.querySelector('[data-testid="tts-narration-mode-block"]') as HTMLElement;
-    // Own full-width row inside the wrapping footer right slot on phones.
-    expect(root.className).toContain("max-md:basis-full");
+    // W7: the block is width-agnostic — the mobile full-width row is owned
+    // by MasterDetailFooter's `mobileBottomRow`. Step 18/19's basis-full
+    // resolved against the auto-width right group and overflowed the
+    // viewport; it must not come back.
+    expect(root.className).not.toContain("basis-full");
     const trigger = view!.container.querySelector('[data-testid="tts-narration-mode-select"]') as HTMLElement;
     // Content-sized trigger with a cap — never the w-full form-field chrome.
-    expect(trigger.className).toContain("max-w-[200px]");
+    // 220px: the longest RU mode label «Игнорировать *звёздочки*» (~205px
+    // with chrome) must not ellipsize (authored strings are never cut).
+    expect(trigger.className).toContain("max-w-[220px]");
     expect(trigger.className).toContain("w-auto");
     // The per-mode description rides the opened list items only.
     expect(trigger.textContent).not.toContain("tts_narration_mode_full_desc");
@@ -89,6 +94,9 @@ describe("TtsNarrationModeBlock (D26, footer-inline dropdown)", () => {
       fireEvent.click(trigger as HTMLElement);
     });
     await waitFor(() => expect(view!.baseElement.querySelector("[cmdk-list]")).toBeTruthy());
+    // W7: footer trigger sits ~45px above the screen edge on phones — the
+    // list opens UPWARD into the modal body.
+    expect(view!.baseElement.querySelector('[data-side="top"]')).toBeTruthy();
     const listText = view!.baseElement.textContent ?? "";
     expect(listText).toContain("tts_narration_mode_full_desc");
     expect(listText).toContain("tts_narration_mode_skip_desc");

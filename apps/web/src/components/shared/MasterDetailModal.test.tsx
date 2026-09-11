@@ -397,11 +397,50 @@ describe("MasterDetailFooter — footer chrome primitive", () => {
     expect(bar.querySelector('[data-testid="save"]')).toBeTruthy();
     // Close is desktop-only.
     expect(bar.textContent?.includes("close")).toBe(false);
-    // MUI step 18: the right slot wraps on phones — the inline settings block
-    // (narration/dictation, max-md:basis-full) gets its own row and
-    // Cancel/Save settle below it instead of being clipped off-window.
+    // MUI W7: the right slot is back to ONE atomic line — step 18's wrap
+    // let the auto-width group balloon to max-content and pushed settings
+    // past the viewport edge. Footer-level settings now render via the
+    // `mobileBottomRow` prop (pinned in the next test).
     const rightGroup = bar.querySelector("div.ml-auto") as HTMLElement;
-    expect(rightGroup.className).toContain("max-md:flex-wrap");
-    expect(rightGroup.className).toContain("max-md:justify-end");
+    expect(rightGroup.className).not.toContain("max-md:flex-wrap");
+    expect(rightGroup.className).not.toContain("max-md:justify-end");
+  });
+
+  it("mobileBottomRow: full-width row below the action row, mobile-only (MUI W7)", () => {
+    isMobile = true;
+    const { container } = render(
+      <MasterDetailFooter
+        actions={[{ icon: <span />, label: "Delete", onClick: () => {} }]}
+        right={<button type="button" data-testid="save">save</button>}
+        mobileBottomRow={<div data-testid="settings-row">settings</div>}
+      />,
+    );
+    const bar = container.firstElementChild as HTMLElement;
+    const rightGroup = bar.querySelector("div.ml-auto") as HTMLElement;
+    const row = bar.querySelector(":scope > div.w-full") as HTMLElement;
+    // A DIRECT footer child — w-full resolves against the flex-wrap footer
+    // (definite 336px at a 360px viewport), not against an auto-width group.
+    expect(row).toBeTruthy();
+    expect(row.querySelector('[data-testid="settings-row"]')).toBeTruthy();
+    // It renders AFTER the right group (row 2 below row 1) and its content
+    // is NOT inside the atomic right line.
+    const kids = Array.from(bar.children);
+    expect(kids.indexOf(row)).toBeGreaterThan(kids.indexOf(rightGroup));
+    expect(rightGroup.querySelector('[data-testid="settings-row"]')).toBeNull();
+    // Row 1 = delete icon + right group (save reachable beside it).
+    const deleteBtn = bar.querySelector("button.h-9.w-9") as HTMLElement;
+    expect(kids[0]).toBe(deleteBtn);
+    expect(kids[1]).toBe(rightGroup);
+
+    // Desktop: never rendered — the desktop DOM is bit-identical to pre-W7.
+    isMobile = false;
+    const desktop = render(
+      <MasterDetailFooter
+        right={<button type="button" data-testid="save">save</button>}
+        mobileBottomRow={<div data-testid="settings-row">settings</div>}
+      />,
+    );
+    expect(desktop.container.querySelector('[data-testid="settings-row"]')).toBeNull();
+    expect(desktop.container.querySelector(":scope > div.w-full")).toBeNull();
   });
 });

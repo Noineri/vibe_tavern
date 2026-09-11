@@ -933,6 +933,10 @@ export function ProviderModal({
                   defaultOption={t("proxy_direct")}
                   options={proxies.map((proxy) => ({ id: proxy.id, label: proxy.name, detail: proxy.url }))}
                   onChange={(id) => void onSetDefaultProxy(id || null)}
+                  // MUI W7: on mobile this select sits on the footer's bottom
+                  // row (~45px above the screen edge) — open upward, same as
+                  // the TTS/STT footer selects.
+                  side="top"
                   className="min-w-0 flex-1"
                 />
               </div>

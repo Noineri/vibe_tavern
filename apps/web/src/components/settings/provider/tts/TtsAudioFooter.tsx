@@ -10,6 +10,7 @@
 import { useState } from "react";
 
 import { useT } from "../../../../i18n/context.js";
+import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { MasterDetailFooter } from "../../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../../shared/SaveBar.js";
 import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
@@ -21,6 +22,7 @@ type TtsHook = ReturnType<typeof useTtsProfiles>;
 
 export function TtsAudioFooter({ tts }: { tts: TtsHook }) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const editingExisting = tts.form?.id != null;
 
@@ -38,12 +40,19 @@ export function TtsAudioFooter({ tts }: { tts: TtsHook }) {
               ]
             : []
         }
+        /* MUI W7 (owner 2026-09-11, design variant A): on phones the footer
+         * is two definite rows — row 1 = Delete icon + Cancel + icon-mode
+         * Save (the shared footer's atomic right line), row 2 = this
+         * settings block on a full-width row via `mobileBottomRow`. Desktop
+         * keeps the settings INLINE in the right slot (the pre-W7 DOM). */
+        mobileBottomRow={isMobile ? <TtsNarrationModeBlock /> : undefined}
         right={
           <div className="flex items-center gap-2">
             {/* Narration text-mode selector lives HERE in the footer row —
              * the same slot pattern as the LLM footer's default-proxy control
-             * (owner 2026-08-31). */}
-            <TtsNarrationModeBlock />
+             * (owner 2026-08-31). Desktop only; the mobile copy renders in
+             * `mobileBottomRow` above. */}
+            {!isMobile && <TtsNarrationModeBlock />}
             {/* Cancel is ALWAYS available while a form is open (owner
              * 2026-08-29): gating it on `dirty` left the editor with no
              * exit — Save disabled by the same flag, the card could not be
@@ -63,6 +72,11 @@ export function TtsAudioFooter({ tts }: { tts: TtsHook }) {
               saveState={tts.saving ? "saving" : "idle"}
               resetKey={tts.form?.id ?? null}
               onClick={() => void tts.save()}
+              // MUI W7: the mobile footer row has no room for the 124px text
+              // button — icon mode (36px square, the documented mobile-toolbar
+              // usage; live precedent ExperienceEditor) keeps desktop's full
+              // label untouched.
+              icon={isMobile ? <Icons.Floppy /> : undefined}
             />
           </div>
         }

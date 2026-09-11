@@ -59,10 +59,18 @@ export function MasterDetailFooter({
   actions = [],
   onClose,
   right,
+  mobileBottomRow,
 }: {
   actions?: MasterDetailFooterAction[];
   onClose?: () => void;
   right?: ReactNode;
+  /** MOBILE-ONLY second footer row, rendered full-width below the action row
+   *  (MUI W7, owner 2026-09-11). The `right` slot is one atomic line next to
+   *  the icon actions — whatever must NOT share that line on a phone (the
+   *  provider footers' inline settings blocks) goes here instead. Desktop
+   *  never renders it; consumers keep their desktop-inline copy inside
+   *  `right` behind `!isMobile`. */
+  mobileBottomRow?: ReactNode;
 }) {
   const isMobile = useIsMobile();
   const { t } = useT();
@@ -102,13 +110,12 @@ export function MasterDetailFooter({
           </span>
         ),
       )}
-      {/* MUI step 18 (owner 2026-09-11): on phones the right slot wraps —
-          the inline settings block (TTS narration / STT dictation) takes its
-          own full-width row (the blocks carry max-md:basis-full) and
-          Cancel/Save settle on a second row, right-aligned. Before this, the
-          group was one atomic line: settings + Cancel + Save (min-w 124px)
-          exceeded a phone row and Save was clipped off-window with no scroll. */}
-      <div className="ml-auto flex min-w-0 items-center gap-2.5 max-md:flex-wrap max-md:justify-end">
+      {/* MUI W7 (owner 2026-09-11): the right slot stays ONE atomic line —
+          consumers pass only what fits a phone row next to the icon actions
+          (Cancel + icon-mode Save). Step 18 wrapped THIS group instead; the
+          auto-width group ballooned to its max-content size (~610px) and
+          justify-end pushed the settings past the viewport edge. */}
+      <div className="ml-auto flex min-w-0 items-center gap-2.5">
         {!isMobile && onClose && (
           <button
             type="button"
@@ -120,6 +127,12 @@ export function MasterDetailFooter({
         )}
         {right}
       </div>
+      {isMobile && mobileBottomRow ? (
+        // Definite-width row: w-full resolves against the flex-wrap FOOTER
+        // (336px at a 360px viewport), not against an auto-width group —
+        // that resolution difference was the step-18 failure mode.
+        <div className="w-full min-w-0">{mobileBottomRow}</div>
+      ) : null}
     </div>
   );
 }

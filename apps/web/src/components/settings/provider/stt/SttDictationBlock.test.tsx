@@ -193,8 +193,15 @@ describe("SttDictationBlock footer-row layout (inline-row gotcha pin, 2026-09-05
     expect(modeTrigger.textContent).toContain("dictation_mode_append");
     expect(modeTrigger.className).toContain("max-w-[200px]");
     expect(view.getByTestId("dictation-profile-select").className).toContain("max-w-[240px]");
+    // MUI W7: on phones the block owns a full-width footer row
+    // (MasterDetailFooter `mobileBottomRow`) and wraps INTERNALLY into
+    // sub-rows — sub-row A = label + toggle + profile select, sub-row B =
+    // mode select (worst-case RU ≈ 393px > 336px row, see the component).
+    expect(view.getByTestId("stt-dictation-block").className).toContain("max-md:flex-wrap");
     await user.click(modeTrigger);
     await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeTruthy());
+    // W7: footer trigger near the screen bottom — the list opens UPWARD.
+    expect(view.baseElement.querySelector('[data-side="top"]')).toBeTruthy();
     const desc = [...view.baseElement.querySelectorAll("[cmdk-item] span.break-words")].find((s) => s.className.includes("text-t2"));
     expect(desc?.textContent).toContain("dictation_mode_append_desc");
     // Wrapped, not truncated: the description span must not carry the

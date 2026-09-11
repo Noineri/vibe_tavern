@@ -55,7 +55,15 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
   const noProfiles = profiles.length === 0;
 
   return (
-    <div data-testid="stt-dictation-block" className="flex min-w-0 flex-1 items-center gap-2 max-md:basis-full">
+    // MUI W7 (owner 2026-09-11): on phones this block gets the footer's
+    // full-width row (via MasterDetailFooter `mobileBottomRow`) and wraps
+    // INTERNALLY into sub-rows when the children exceed it. Budget at 360px
+    // (row width 336px): label «Диктовка» ~56 + toggle 36 + profile select
+    // ~177 («Профиль по умолчанию» + chrome) + mode select ~100 + gaps 24
+    // ≈ 393px > 336 → sub-row A = label + toggle + profile (~293px),
+    // sub-row B = mode select. Step 18's basis-full is gone — it resolved
+    // against the auto-width right group and overflowed the viewport.
+    <div data-testid="stt-dictation-block" className="flex min-w-0 flex-1 items-center gap-2 max-md:flex-wrap">
       <label
         className={cn(
           "shrink-0 font-ui text-[12px] text-t3 transition-opacity",
@@ -96,6 +104,9 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
           void patchUiSettingsAction({ activeDictationProfileId: id === NONE_VALUE ? null : id });
         }}
         disabled={!enabled || profiles.length === 0}
+        // MUI W7: footer trigger sits ~45px above the screen edge on phones —
+        // open upward into the modal body.
+        side="top"
         triggerClassName="w-auto min-w-0 max-w-[240px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[12px] text-t1 hover:border-accent"
       />
       <DropdownSelect
@@ -111,6 +122,7 @@ export function SttDictationBlock({ profiles }: { profiles: SttProfileRecord[] }
         }))}
         onChange={(value) => setMode(value as DictationMode)}
         disabled={!enabled || noProfiles}
+        side="top"
         triggerClassName="w-auto min-w-0 max-w-[200px] rounded-[6px] border border-border bg-s2 px-[10px] py-[6px] text-[12px] text-t1 hover:border-accent"
       />
     </div>
