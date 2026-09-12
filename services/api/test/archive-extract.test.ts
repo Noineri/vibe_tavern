@@ -293,12 +293,13 @@ describe("extractArchive — .zip", () => {
 	});
 
 	it("streams an incompressible entry across many source chunks", async () => {
-		// Regression guard for the inflater choice. Highly-compressible data
-		// shrinks to a few KB and is handed over in ONE ondata call, so it
-		// exercises none of the streaming path — that is why an earlier
-		// all-'x' fixture passed while real release zips died partway through
-		// with "strm.flush is not a function" (fflate's AsyncUnzipInflate runs
-		// in a Blob Worker whose shim is incompatible with Bun).
+		// Regression guard for the streaming path itself. Highly-compressible
+		// data shrinks to a few KB and is handed over in ONE ondata call, so it
+		// exercises none of that path — that is why an earlier all-'x' fixture
+		// passed while real release zips died partway through. (The historical
+		// failure was "strm.flush is not a function" from fflate's Blob-Worker
+		// AsyncUnzipInflate; that Bun gap is fixed as of 1.4.2, but the
+		// single-chunk blind spot this case covers is independent of it.)
 		//
 		// Random bytes cannot be compressed, so the archive stays multi-megabyte
 		// and createReadStream delivers it in many chunks, forcing repeated

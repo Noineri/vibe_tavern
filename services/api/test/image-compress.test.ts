@@ -93,8 +93,9 @@ describe("image-compress: compressForVision", () => {
     const png = await makeImage(8, 8, "png");
     const out = await compressForVision(png, "image/png");
     const meta = await dims(out.buffer);
-    // fit:"inside" upscales small inputs even with upscale:false (verified on
-    // Bun 1.4) — this pin protects the explicit over-cap gate in the module.
+    // fit:"inside" upscales a smaller source (verified on Bun 1.4.2: an 8×8
+    // PNG resized to 1536×1536 comes back 1536×1536) — this pin protects the
+    // explicit over-cap gate in the module.
     expect(meta.width).toBe(8);
     expect(meta.height).toBe(8);
   });

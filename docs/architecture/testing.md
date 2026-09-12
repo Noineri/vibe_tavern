@@ -17,11 +17,11 @@ bun test -t "name"     # filter by test name
 bun run check          # typecheck + test + i18n:check (the full local gate)
 ```
 
-The web suite is orchestrated by [`scripts/test-web.ts`](../../scripts/test-web.ts): it discovers `apps/web/src/**/*.test.{ts,tsx}` plus the `apps/web/test/harness.smoke.test.tsx` canary and hands them to a single `bun test --parallel=8` run. `--parallel` implies `--isolate`, so every file still gets a fresh global **and** a fresh module registry — the property the suite depends on — without paying for one process per file (18.4s -> 13.8s for 217 files). The orchestrator adds the one guard `bun test` does not: a file that registers zero tests exits 0 on its own, so the run is cross-checked against the JUnit report and any file with no test case fails the suite.
+The web suite is orchestrated by [`scripts/test-web.ts`](../../scripts/test-web.ts): it discovers `apps/web/src/**/*.test.{ts,tsx}` plus `apps/web/test/*.test.{ts,tsx}` (336 files as of this writing), pins the `apps/web/test/harness.smoke.test.tsx` canary last, and hands them to a single `bun test --parallel=8` run. `--parallel` implies `--isolate`, so every file still gets a fresh global **and** a fresh module registry — the property the suite depends on — without paying for one process per file (18.4s -> 13.8s for 217 files). The orchestrator adds the one guard `bun test` does not: a file that registers zero tests exits 0 on its own, so the run is cross-checked against the JUnit report and any file with no test case fails the suite.
 
 `--randomize` (optionally `--seed <n>`) shuffles test order for the run, replacing the old `--reverse` flag: per-file isolation makes in-process file-order dependence structurally impossible, and a seed makes a shuffled failure replayable.
 
-CI runs `typecheck` as the sole blocking gate plus an advisory `test` job (`continue-on-error`) — green CI ≠ tested; the local `bun run check` is the gate that matters. See [CONTRIBUTING.md → Running the gates](../../CONTRIBUTING.md#running-the-gates) for the typecheck caveat (always `bun run typecheck` from the repo root; bare `tsc` from `apps/web/` emits ~80 false errors).
+CI runs three blocking root jobs — `typecheck`, `test-linux` and `test-windows` (`.github/workflows/ci.yml`; no job carries `continue-on-error`). The local `bun run check` is still the wider gate, because it adds `i18n:types`/`i18n:check` on top. See [CONTRIBUTING.md → Running the gates](../../CONTRIBUTING.md#running-the-gates) for the typecheck caveat (always `bun run typecheck` from the repo root; bare `tsc` from `apps/web/` emits ~80 false errors).
 
 ---
 
@@ -85,7 +85,9 @@ The canonical example is [`services/api/test/gallery-describe.test.ts`](../../se
 
 ### Fake timers — `jest.*` compat from `bun:test`
 
-`jest.useFakeTimers()` and `jest.advanceTimersByTime()` (imported from `bun:test`) work and are the sanctioned way to control `setTimeout`/`setInterval` in tests. **`jest.setSystemTime()` is inert on the pinned Bun build** — it neither throws nor changes the clock, so tests must not rely on faking `Date.now()` through it; inject the clock or seed the time-dependent value instead.
+`jest.useFakeTimers()` and `jest.advanceTimersByTime()` (imported from `bun:test`) work and are the sanctioned way to control `setTimeout`/`setInterval` in tests. **`jest.setSystemTime()` also works** on the pinned Bun build — verified on 1.4.2: under `useFakeTimers()` it moves `Date.now()` to the given date, and `useRealTimers()` restores the real clock. (An earlier note here claimed it was inert; that was wrong.)
+
+That does not make it the default for time-dependent code. The injected `StoreClock` in [`packages/db`](../../packages/db) is a product-level port, not a test workaround — several stores need a clock that *increments* per call so consecutive rows get distinct timestamps, which a frozen system time cannot give. Keep using the injected clock there; reach for `setSystemTime()` only where the code under test reads the ambient `Date` and there is nothing to inject.
 
 ---
 
@@ -97,7 +99,7 @@ Linux runs everything. Windows runs everything with platform-sensitive behaviour
 
 | Skipped on Windows | Declared at | Why |
 |---|---|---|
-| the whole `web` suite | `skipOnWindows` in [`scripts/test.ts`](../../scripts/test.ts) | 160 of its 162 files are React components and stores; two touch `node:fs`/`node:path`/`process.platform`. ~83s for no platform coverage. `bun run test web` still runs it there. |
+| the whole `web` suite | `skipOnWindows` in [`scripts/test.ts`](../../scripts/test.ts) | All but two of its 336 files are React components and stores; exactly two touch `node:fs`/`node:path`/`process.platform`. ~83s for no platform coverage. `bun run test web` still runs it there. |
 | `scripts/cli-args.test.ts` | `test.skipIf(process.platform === "win32")` | Nine cases that each spawn a full `bun` to pin argv parsing — pure Bun/Node semantics. |
 | `scripts/bump-version.test.ts` | `describe.skipIf(process.platform === "win32")` | Builds a disposable workspace and two git repos per case; the release script it covers only ever runs on the Linux release job. |
 
@@ -105,7 +107,7 @@ Linux runs everything. Windows runs everything with platform-sensitive behaviour
 
 Adding to that list is a judgement call with one rule: **do not leave a test green on Windows when its named behaviour is not being exercised there.** Skip the whole thing and say why, or keep it running on both. A test that silently no-ops is worse than a skip.
 
-Suites run several at a time (`suiteConcurrency()` in [`scripts/test.ts`](../../scripts/test.ts): half the cores, floored at 2, capped at 4), so any suite may be competing with `web`'s own 8-way subprocess pool for the box. That is why every `bun test` invocation carries `--timeout 15000` on every platform — bun's 5s default is a product-sized budget, and a test doing a normal amount of SQLite + filesystem work can lose seconds to contention alone. **Do not treat that headroom as a licence for slow tests**; it is a floor for a loaded runner, not a budget.
+Suites run several at a time (`suiteConcurrency()` in [`scripts/test.ts`](../../scripts/test.ts): half the cores, floored at 2, capped at 4), so any suite may be competing with `web`'s own 8-way subprocess pool for the box. That is why every `bun test` invocation carries `--timeout 45000` (`TEST_TIMEOUT_MS` in [`scripts/test.ts`](../../scripts/test.ts)) on every platform — bun's 5s default is a product-sized budget, and a test doing a normal amount of SQLite + filesystem work can lose seconds to contention alone. **Do not treat that headroom as a licence for slow tests**; it is a floor for a loaded runner, not a budget.
 
 Six rules, each one a real failure that has already cost a red build:
 
@@ -213,7 +215,7 @@ import { useDomEnv } from "../../test/dom-env.js";
 
 `@testing-library/dom` binds its `screen` export to `document.body` while its own module evaluates. Evaluate it before happy-dom is registered and every `screen` query becomes a throwing stub — permanently, for the rest of the process, no matter what registers a `window` afterwards.
 
-Moving the static import above `useDomEnv()`'s does **not** fix it: Bun does not evaluate a module's static imports in source order, and a bare specifier can win over a relative one. `await import(...)` placed after the `useDomEnv()` call is the only ordering that actually holds.
+Moving the static import *below* `dom-env.js`'s does **not** fix it, and the reason is not what an earlier version of this note claimed. Bun evaluates a module's **CommonJS** dependencies ahead of its ESM ones, out of source order — reproduced on 1.4.2 with a three-import probe: the relative CJS file evaluated first, then the top-level-await ESM module declared *above* it, then a bare ESM package. Specifier kind (bare vs relative) has nothing to do with it; module format does. `@testing-library/dom` — where `screen` is defined, and which `@testing-library/react` re-exports it from — ships a CJS `dist/index.js`, so a static import of either evaluates before *any* ESM module body in the file, `dom-env.ts`'s registration included. `await import(...)` placed after the `useDomEnv()` call is the only ordering that actually holds.
 
 This is not theoretical. `@testing-library/jest-dom` 6.10 began importing `@testing-library/dom`, which turned a previously inert `import * as matchers` at the top of [`dom-env.ts`](../../apps/web/test/dom-env.ts) into a poisoned `screen` in every DOM test file at once — a suite-wide outage that presents as 100+ unrelated assertion failures. The `"the global \`screen\` is bound to a live document"` case in [`harness.smoke.test.tsx`](../../apps/web/test/harness.smoke.test.tsx) pins it; that file is appended to every full run.
 

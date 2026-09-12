@@ -45,8 +45,10 @@ export function isCompressibleImage(mimeType: string): boolean {
  * - Decodes any supported raster format (format sniffed from bytes, not the
  *   MIME label)
  * - Resizes to fit {@link MAX_VISION_DIMENSION} — ONLY when oversized; Bun's
- *   `resize` upscales small images even with `fit: "inside"` (+ `upscale: false`
- *   is ignored, verified on Bun 1.4), so the over-cap check is explicit
+ *   `resize` upscales a smaller source even with `fit: "inside"` (verified on
+ *   Bun 1.4.2: an 8×8 PNG through `resize(1536, 1536, { fit: "inside" })` comes
+ *   back 1536×1536), so the over-cap check is explicit. The option that
+ *   suppresses this is `withoutEnlargement: true`
  * - Re-encodes as JPEG at quality 80
  */
 export async function compressForVision(

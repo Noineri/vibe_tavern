@@ -161,15 +161,17 @@ function drain(stream: TarEntryStream): Promise<void> {
 
 async function extractZip(archivePath: string, destDir: string): Promise<void> {
 	const unzip = new Unzip();
-	// UnzipInflate, NOT AsyncUnzipInflate: fflate's async inflater runs in a
-	// Web Worker built from a Blob, and its worker shim calls `strm.flush`,
-	// which does not exist under Bun — extraction dies with "strm.flush is not
-	// a function" partway through. Small archives never reach the worker path,
-	// so this only shows up on real release-sized zips.
+	// UnzipInflate, NOT AsyncUnzipInflate. The original reason is GONE: fflate's
+	// async inflater used to die with "strm.flush is not a function" because its
+	// Blob-Worker shim called an API Bun lacked. That is fixed — re-measured on
+	// Bun 1.4.2, fflate 0.8.3 inflates an 8MB zip through AsyncUnzipInflate with
+	// err=null and every byte accounted for.
 	//
-	// The synchronous inflater keeps everything on this thread and delivers
-	// entries during `push()`. Memory stays bounded either way because each
-	// chunk is written straight to disk as it arrives.
+	// The synchronous inflater stays for its own reasons: it keeps everything on
+	// this thread and delivers entries during `push()`, so entry ordering and
+	// failure propagation are deterministic and no Blob Workers are spawned per
+	// archive. Memory stays bounded either way because each chunk is written
+	// straight to disk as it arrives.
 	unzip.register(UnzipInflate);
 
 	const source = createReadStream(archivePath);
