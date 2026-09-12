@@ -180,7 +180,7 @@ export function filesWithTests(report: string): ReadonlySet<string> {
 }
 
 /**
- * Per-file failure counts from the same JUnit report: test cases carrying a
+ * Per-file failure info from the same JUnit report: test cases carrying a
  * `<failure>` or `<error>` child, keyed like `filesWithTests` keys them.
  *
  * Why this exists when bun already prints failures on screen: CI log systems
@@ -191,20 +191,61 @@ export function filesWithTests(report: string): ReadonlySet<string> {
  * The runner itself must name the failing files; the JUnit report it already
  * collects is the only input that survives truncation.
  *
+ * Names and messages are kept because bun's on-screen tally counts TEST
+ * failures only — a file-level error (afterAll crash, worker-level throw)
+ * lands in the JUnit report as an error-carrying test case bun never names
+ * (PR #39 run 34664917488: gallery-api.test.ts carried a JUnit failure while
+ * bun's "N tests failed" listed a different file). The message attribute is
+ * the only surviving trace of such errors.
+ *
  * Self-closing testcases (`<testcase ... />`) are passes by construction — a
  * failure always has body content (the assertion diff / message).
  */
-export function failingFiles(report: string): ReadonlyMap<string, number> {
-	const counts = new Map<string, number>();
+export interface FailingFile {
+	readonly file: string;
+	readonly count: number;
+	readonly entries: readonly { readonly name: string; readonly message: string }[];
+}
+
+function parseFailingEntry(block: string): { name: string; message: string } | null {
+	if (!/<(?:failure|error)\b/.test(block)) return null;
+	const file = block.match(/\bfile="([^"]+)"/)?.[1];
+	if (file === undefined) return null;
+	const name = block.match(/\bname="([^"]*)"/)?.[1] ?? "(unnamed)";
+	const rawMessage = block.match(/<(?:failure|error)\b[^>]*>([\s\S]*?)<\/(?:failure|error)>/)?.[1] ?? "";
+	// XML-unescape the essentials; escaped stack frames render as &lt;at ...&gt;
+	// blobs — collapse them, keep the readable first line of the message.
+	const message = rawMessage
+		.replace(/&lt;[\s\S]*?&gt;/g, " ")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, 200);
+	return { name: name === "" ? "(unnamed)" : name, message };
+}
+
+export function failingFiles(report: string): ReadonlyMap<string, FailingFile> {
+	const byFile = new Map<string, FailingFile>();
 	const blocks = report.match(/<testcase\b[^>]*>[\s\S]*?<\/testcase>|<testcase\b[^>]*\/>/g) ?? [];
 	for (const block of blocks) {
-		if (!/<(?:failure|error)\b/.test(block)) continue;
-		const file = block.match(/\bfile="([^"]+)"/)?.[1];
-		if (file === undefined) continue;
-		const key = file.replaceAll("\\", "/");
-		counts.set(key, (counts.get(key) ?? 0) + 1);
+		const entry = parseFailingEntry(block);
+		if (entry === null) continue;
+		const key = (block.match(/\bfile="([^"]+)"/)?.[1] ?? "").replaceAll("\\", "/");
+		if (key === "") continue;
+		const existing = byFile.get(key);
+		if (existing === undefined) {
+			byFile.set(key, { file: key, count: 1, entries: [entry] });
+		} else {
+			const entries = [...existing.entries, entry].slice(0, 5);
+			byFile.set(key, { file: key, count: existing.count + 1, entries });
+		}
 	}
-	return counts;
+	return byFile;
 }
 
 export async function runWebTestCli(
@@ -277,11 +318,14 @@ export async function runWebTestCli(
 		errorWrite(`Web test files declaring zero tests (${empty.length}):\n${empty.join("\n")}`);
 	}
 	if (outcome.exitCode !== 0) {
-		const failing = [...failingFiles(outcome.report).entries()].sort(
-			([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
+		const failing = [...failingFiles(outcome.report).values()].sort(
+			(a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0),
 		);
 		if (failing.length > 0) {
-			const lines = failing.map(([file, count]) => `FAIL ${file} (${count} failed)`);
+			const lines = failing.flatMap((entry) => [
+				`FAIL ${entry.file} (${entry.count} failed)`,
+				...entry.entries.map((e) => `  · ${e.name}${e.message === "" ? "" : ` — ${e.message}`}`),
+			]);
 			errorWrite(`Web test files with failures (${failing.length}):\n${lines.join("\n")}`);
 		} else {
 			errorWrite(
