@@ -84,6 +84,14 @@ jobs:
           bun-version: "1.4.2"
       # Existing transitive findings stay explicit until BUN14-30 updates
       # their owners. Every advisory outside this baseline remains fatal.
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - name: Audit dependencies
         run: >-
           bun audit
