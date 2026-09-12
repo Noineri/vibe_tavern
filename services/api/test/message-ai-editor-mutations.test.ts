@@ -322,10 +322,17 @@ describe("PUT /api/chats/:chatId/messages/:messageId/variants/:variantIndex/tts-
     expect(snap.messages[0]!.variants[0]!.content).toBe(variantContent(snap, 0));
   });
 
-  test("unknown variant index → non-2xx (no silent write to a sibling)", async () => {
+  test("unknown variant index → structured 404 (no silent write to a sibling)", async () => {
     const { message } = await seedTwoVariants(env);
     const res = await putAnnotation(message.id, 9, "x");
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    // TH-2: stale variant addressing is client staleness, not a server fault —
+    // a structured 404 NotFound (previously an anonymous 500 via the generic
+    // onError path, and in the shared test process an unhandled-rejection
+    // billing hazard attributed to whatever file was running).
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { kind: string; resource?: string } };
+    expect(body.error.kind).toBe("NotFound");
+    expect(body.error.resource).toBe("variant");
   });
 
   test("oversized text → zod rejection (400)", async () => {
