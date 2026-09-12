@@ -620,6 +620,34 @@ describe("SOCKS5 provider proxy traversal", () => {
 		await socksFetch(fixture, "different-user", "different-pass");
 		expect(manager.size).toBe(2);
 	});
+
+	// ── Forced shutdown after a reused CONNECT tunnel ──────────────────────
+
+	it(
+		"force-closes a bridge whose single tunnel carried several keep-alive requests",
+		async () => {
+			const manager = getSocksBridgeManager();
+			const fetch = await socksFetch(fixture);
+			for (let index = 0; index < 5; index += 1) {
+				const response = await fetch(`${fixture.targetUrl}/v1/models`);
+				expect(response.ok).toBe(true);
+				// Consume the body so the keep-alive connection is released for reuse
+				// rather than torn down, which is what makes the next request share
+				// this tunnel instead of opening a second one.
+				await response.text();
+			}
+			// One CONNECT for five requests proves they shared a single tunnel,
+			// whose source socket detaches from proxy-chain's own socket tracking
+			// on upgrade. That is precisely the shape that used to make the forced
+			// close hang, so the bounded timeout below is the real assertion: a
+			// regression stalls here instead of failing somewhere downstream.
+			expect(fixture.connects).toHaveLength(1);
+			expect(manager.size).toBe(1);
+			await closeAllSocksBridges();
+			expect(manager.size).toBe(0);
+		},
+		10_000,
+	);
 });
 
 // ─── Bridge manager lifecycle (unit, no real network) ──────────────────────
