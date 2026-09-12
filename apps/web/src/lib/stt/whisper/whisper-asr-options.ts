@@ -12,12 +12,12 @@
  *    automatically; without it anything past ~30 s truncates.
  */
 
-export interface WhisperAsrCallOptions {
+export type WhisperAsrCallOptions = {
   task: "transcribe";
   chunk_length_s: number;
   stride_length_s: number;
   language?: string;
-}
+};
 
 /** English-only checkpoints (.en suffix) cannot take a language hint. */
 export function isEnglishOnlyWhisperModel(modelId: string): boolean {

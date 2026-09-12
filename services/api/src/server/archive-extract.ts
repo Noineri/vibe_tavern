@@ -23,12 +23,13 @@
 
 import { createReadStream, createWriteStream, mkdirSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { Unzip, UnzipInflate } from "fflate";
-import { extract, type Headers as TarHeaders } from "tar-stream";
+import { extract, type Header as TarHeaders, type ExtractEvents } from "tar-stream";
+
+type TarEntryStream = ExtractEvents["entry"][1];
 
 /** Thrown for anything the archive itself is at fault for. */
 export class ArchiveExtractError extends Error {
@@ -97,7 +98,7 @@ function safeMode(mode: number | undefined, fallback: number): number {
 async function extractTarGz(archivePath: string, destDir: string): Promise<void> {
 	const tar = extract();
 
-	tar.on("entry", (header: TarHeaders, stream: Readable, next: () => void) => {
+	tar.on("entry", (header, stream, next) => {
 		void handleTarEntry(header, stream, destDir).then(
 			() => next(),
 			(err: unknown) => {
@@ -112,7 +113,7 @@ async function extractTarGz(archivePath: string, destDir: string): Promise<void>
 	await pipeline(createReadStream(archivePath), createGunzip(), tar);
 }
 
-async function handleTarEntry(header: TarHeaders, stream: Readable, destDir: string): Promise<void> {
+async function handleTarEntry(header: TarHeaders, stream: TarEntryStream, destDir: string): Promise<void> {
 	const name = header.name;
 	const type = header.type;
 
@@ -148,7 +149,7 @@ async function handleTarEntry(header: TarHeaders, stream: Readable, destDir: str
 }
 
 /** Consume an entry stream to completion — tar-stream stalls otherwise. */
-function drain(stream: Readable): Promise<void> {
+function drain(stream: TarEntryStream): Promise<void> {
 	return new Promise((resolvePromise, reject) => {
 		stream.on("end", resolvePromise);
 		stream.on("error", reject);

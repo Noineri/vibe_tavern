@@ -47,6 +47,17 @@ function installNodeInspector(): void {
 function ensureDomEnvRegistration(): void {
   if (typeof globalThis.window === "undefined") {
     GlobalRegistrator.register();
+    // happy-dom 20.14.5 rejects finished on cancel but omits the spec's
+    // PromiseIsHandled step. Preserve the rejection for observers while
+    // preventing spurious unhandled AbortErrors when Motion cancels animations.
+    // https://drafts.csswg.org/web-animations-1/#canceling-an-animation-section
+    const cancel = Animation.prototype.cancel;
+    Animation.prototype.cancel = function cancelAnimation(): void {
+      void this.finished.catch((error: Error) => {
+        if (error.name !== "AbortError") throw error;
+      });
+      cancel.call(this);
+    };
   }
   installNodeInspector();
 }

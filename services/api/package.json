@@ -16,29 +16,28 @@
   },
   "dependencies": {
     "@agnai/web-tokenizers": "^0.1.6-pre3",
-    "@ai-sdk/anthropic": "^4.0.39",
-    "@ai-sdk/google": "^4.0.44",
-    "@ai-sdk/openai": "^4.0.42",
-    "@ai-sdk/openai-compatible": "^3.0.30",
-    "@ai-sdk/provider": "^4.0.7",
-    "@hono/zod-validator": "^0.9.0",
+    "@ai-sdk/anthropic": "^4.0.53",
+    "@ai-sdk/google": "^4.0.69",
+    "@ai-sdk/openai": "^4.0.66",
+    "@ai-sdk/openai-compatible": "^3.0.48",
+    "@ai-sdk/provider": "^4.0.14",
+    "@hono/zod-validator": "^0.9.1",
     "@vibe-tavern/api-contracts": "workspace:*",
     "@vibe-tavern/db": "workspace:*",
     "@vibe-tavern/domain": "workspace:*",
     "@vibe-tavern/import-export": "workspace:*",
     "@vibe-tavern/prompt-pipeline": "workspace:*",
-    "ai": "^7.0.66",
+    "ai": "^7.0.99",
     "fflate": "^0.8.3",
-    "hono": "^4.13.2",
+    "hono": "^4.13.7",
     "js-tiktoken": "^1.0.21",
-    "proxy-chain": "^3.0.0",
-    "tar-stream": "^3.2.0",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "proxy-chain": "^3.0.1",
+    "tar-stream": "^3.2.1",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@e9x/simple-socks": "^1.0.0",
-    "@types/bun": "^1.4.0",
-    "@types/tar-stream": "^3.1.4"
+    "@types/bun": "^1.4.2"
   }
 }
