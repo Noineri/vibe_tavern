@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { cn } from "../../../lib/cn.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import {
@@ -167,12 +168,20 @@ export function LorebookImportModal({
 
     if (mode === "new") {
       // "all" is a read-only overview scope with no concrete owner; fall back
-      // to character scope (the import CTA is hidden in "all" mode anyway, so
+      // to entity scope (the import CTA is hidden in "all" mode anyway, so
       // this is purely defensive against a stale importOpen state).
-      const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "character" : scope;
+      const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "entity" : scope;
       body.scopeType = effectiveScope;
-      if (effectiveScope === "character") body.characterId = characterId;
-      if (effectiveScope === "persona" && personaId) body.personaId = personaId;
+      // A standalone world file activates nothing on arrival at the source
+      // (ST parity) — it lands disabled; the scope it lands in stays the
+      // surface's current selection.
+      body.enabled = false;
+      // Entity home FK resolves from the current context: a persona context
+      // owns the import, otherwise the character does (exactly one typed FK).
+      if (effectiveScope === "entity") {
+        if (personaId) body.personaId = personaId;
+        else body.characterId = characterId;
+      }
       if (effectiveScope === "chat" && chatId) body.chatId = chatId;
     }
     if (fileName) body.fallbackName = fileName.replace(/\.json$/i, "");
@@ -380,27 +389,23 @@ export function LorebookImportModal({
                     {t("import_step3_desc")}
                   </div>
                   <div className="mb-4 flex flex-col gap-2">
-                    <label className="flex items-center gap-2 text-[13px] text-t1">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        checked={mode === "merge"}
-                        onChange={() => setMode("merge")}
-                      />{" "}
-                      {t("import_merge")}
-                    </label>
+                    {/* R-2b: import-mode radios are the shared SegmentedControl
+                        (regex-tab idiom: wrap + mobileFill + mobileSelect).
+                        Per-mode descriptions stay below, unchanged. */}
+                    <SegmentedControl
+                      value={mode}
+                      onChange={(v) => setMode(v)}
+                      wrap
+                      mobileFill
+                      mobileSelect
+                      options={[
+                        { value: "merge", label: t("import_merge") },
+                        { value: "replace", label: t("import_replace") },
+                      ]}
+                    />
                     <div className="ml-6 text-xs text-t3">
                       {t("import_merge_desc")}
                     </div>
-                    <label className="flex items-center gap-2 text-[13px] text-t1">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        checked={mode === "replace"}
-                        onChange={() => setMode("replace")}
-                      />{" "}
-                      {t("import_replace")}
-                    </label>
                     <div className="ml-6 text-xs text-t3">
                       {t("import_replace_desc")}
                     </div>

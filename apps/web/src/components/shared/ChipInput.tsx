@@ -1,11 +1,20 @@
 /**
  * ChipInput — editable tag/chip list for discrete string values.
  *
- * Used for stop sequences, tags, etc.
- * - Enter / Tab / comma commits a chip
- * - Backspace on empty input removes last chip
+ * Two modes (FS-8c, owner 2026-09-10 — "one chip primitive, parameterized"):
+ * - `tokens` (default) — opaque technical values where whitespace is
+ *   SIGNIFICANT (stop sequences, banned strings, dry breakers): plain Enter
+ *   inserts a \n into the draft (rendered as ⏎), Shift+Enter commits, Tab
+ *   inserts a \t, escape sequences (\\n, \\t, \\\\) are parsed on commit,
+ *   mono font ladder.
+ * - `words` — human words (lorebook keys, character tags): plain Enter
+ *   commits, values are trimmed single-line words, no newline/tab machinery,
+ *   UI font ladder. Comma still commits in both modes.
+ * - Backspace on empty input removes last chip (both modes)
+ * - Blur commits the draft (both modes)
  * - Each chip shows a remove button on hover
- * - Special character rendering: \n → ⏎, \t → ⇥, trailing space → ␣
+ * - Pasting an ST-style JSON array of strings commits it as many deduped chips
+ * - Special character rendering: \n → ⏎, \t → ⇥, trailing space → ␣ (tokens)
  */
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
@@ -68,6 +77,30 @@ function parseEscapeSequences(input: string): string {
     .replace(/\\\\/g, "\\");
 }
 
+/**
+ * ST-style JSON array paste detection (LOCAL_SAMPLERS_ADDITION_REPORT B3):
+ * a clipboard payload that is a JSON array of strings (e.g. `[" finger", " moan"]`)
+ * is committed as MANY chips instead of one literal chip — ST migrants paste
+ * their existing antislop/stop lists verbatim instead of re-typing them.
+ * Values are taken verbatim from the parsed JSON (JSON unescaping already
+ * applied); leading/trailing spaces stay significant. Returns null for
+ * anything that is not an array of strings (plain text → normal paste).
+ */
+function parseJsonStringArray(text: string): string[] | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const items = parsed as unknown[];
+  if (!items.every((item): item is string => typeof item === "string")) return null;
+  return items;
+}
+
 // ── Preset buttons ─────────────────────────────────────────────────
 
 interface SpecialCharPreset {
@@ -87,6 +120,11 @@ const SPECIAL_CHAR_PRESETS: SpecialCharPreset[] = [
 interface ChipInputProps {
   values: string[];
   onChange: (values: string[]) => void;
+  /** Chip semantics — see the component docstring. `tokens` (default) is the
+   *  original stop-sequence behavior; `words` is the FS-8c "simple words"
+   *  mode: plain Enter commits, values are trimmed single-line words, UI
+   *  font ladder (lorebook keys, character tags). */
+  mode?: "tokens" | "words";
   placeholder?: string;
   disabled?: boolean;
   /** Show the special character shortcut buttons */
@@ -101,6 +139,7 @@ interface ChipInputProps {
 export function ChipInput({
   values,
   onChange,
+  mode = "tokens",
   placeholder = "Type and press Enter…",
   disabled = false,
   showPresets = false,
@@ -120,15 +159,14 @@ export function ChipInput({
 
   const addChip = useCallback(
     (raw: string) => {
-      if (raw.length === 0) return;
-      const parsed = parseEscapeSequences(raw);
+      const parsed = mode === "words" ? raw.trim() : parseEscapeSequences(raw);
       if (parsed.length === 0) return;
       if (!values.includes(parsed)) {
         onChange([...values, parsed]);
       }
       setInputValue("");
     },
-    [values, onChange],
+    [values, onChange, mode],
   );
 
   const removeChip = useCallback(
@@ -142,14 +180,26 @@ export function ChipInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && e.shiftKey) {
+      if (mode === "words") {
+        // Words are single-line: plain Enter (with or without Shift) commits.
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addChip(inputValue);
+          return;
+        }
+        // Tab keeps default focus behavior — no \t literals in word values.
+      } else if (e.key === "Enter" && e.shiftKey) {
         // Shift+Enter commits the chip
         e.preventDefault();
         addChip(inputValue);
         return;
-      }
-      if (e.key === "Enter") {
-        // Enter inserts \n literal (parsed to newline on commit)
+      } else if (e.key === "Enter") {
+        // Enter inserts \n literal (parsed to newline on commit). NOTE: the DOM
+        // value of a single-line input strips newlines (spec sanitization), so
+        // the inserted draft newline lives in component state only — visible
+        // later as the ⏎ chip rendering after Shift+Enter commits it.
+        // The literal `\\n` text path (preset buttons / typing backslash-n)
+        // is the VISIBLE newline affordance.
         e.preventDefault();
         const input = inputRef.current;
         const start = input?.selectionStart ?? inputValue.length;
@@ -162,8 +212,7 @@ export function ChipInput({
           inputRef.current?.setSelectionRange(caret, caret);
         });
         return;
-      }
-      if (e.key === "Tab") {
+      } else if (e.key === "Tab") {
         // Tab inserts \t literal (parsed to tab on commit)
         e.preventDefault();
         const input = inputRef.current;
@@ -185,13 +234,35 @@ export function ChipInput({
         removeChip(values.length - 1);
       }
     },
-    [inputValue, values.length, addChip, removeChip],
+    [inputValue, values.length, addChip, removeChip, mode],
   );
 
   // Auto-resize: blur commits
   const handleBlur = useCallback(() => {
     if (inputValue.length > 0) addChip(inputValue);
   }, [inputValue, addChip]);
+
+  // Paste interceptor: an ST-style JSON array (e.g. `[" finger", " moan"]`)
+  // is committed as many deduped chips; anything else falls through to the
+  // normal paste path (single chip via the usual Enter/blur commit).
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLInputElement>) => {
+      const text = e.clipboardData.getData("text/plain");
+      if (!text) return;
+      const chips = parseJsonStringArray(text);
+      if (!chips) return;
+      e.preventDefault();
+      const seen = new Set(values);
+      const fresh: string[] = [];
+      for (const chip of chips) {
+        if (chip.length === 0 || seen.has(chip)) continue;
+        seen.add(chip);
+        fresh.push(chip);
+      }
+      if (fresh.length > 0) onChange([...values, ...fresh]);
+    },
+    [values, onChange],
+  );
 
   const insertPreset = useCallback(
     (preset: SpecialCharPreset) => {
@@ -225,7 +296,10 @@ export function ChipInput({
           <span
             key={`${i}:${val}`}
             className={cn(
-              "group inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] transition-colors select-none",
+              "group inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition-colors select-none",
+              mode === "words"
+                ? "font-ui text-[12px]"
+                : "font-mono text-[11px]",
               disabled
                 ? "border-border bg-s3 text-t3"
                 : "border-accent/30 bg-accent/10 text-accent-t hover:border-danger/50 hover:bg-danger/10 hover:text-danger",
@@ -253,11 +327,13 @@ export function ChipInput({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onBlur={handleBlur}
           disabled={disabled}
           placeholder={values.length === 0 ? placeholder : ""}
           className={cn(
-            "min-w-[80px] flex-1 bg-transparent font-mono text-[12px] text-t1 outline-none placeholder:text-t3/50",
+            "min-w-[80px] flex-1 bg-transparent text-t1 outline-none placeholder:text-t3/50",
+            mode === "words" ? "font-ui text-[13px]" : "font-mono text-[12px]",
             disabled && "pointer-events-none",
           )}
         />

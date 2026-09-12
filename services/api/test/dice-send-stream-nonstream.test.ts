@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, mock, beforeEach } from "bun:test";
+import { describe, it, expect, afterAll, beforeEach } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -23,6 +23,9 @@ import {
   setProviderFetchFactory,
   type ProviderFetch,
 } from "../src/domain/providers/provider-fetch-factory.js";
+import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // DICE-B11 (DICE_SYSTEM_BACKEND_PLAN, Wave B4 unit 2) — stream/non-stream send.
@@ -32,55 +35,27 @@ import {
 // SAME preparation boundary (`ChatRuntime.prepareLiveTurn`), plus the direct
 // preparation-boundary cases that don't need the provider.
 //
-// The provider executors are mocked via the SAFE mock.module pattern: real
-// exports and callable references are captured FIRST (`await import`), then all
-// exports are spread before overriding one function. Bun's module override is
-// process-global, so the captured callable references below are also the only
-// reliable way to exercise the genuine executor boundary in this file. The
-// orchestrator is dynamic-imported AFTER registration so it resolves the mocks.
-// ChatRuntime / ChatApplicationService / createRuntimeStore do not import the
-// executors, so they remain safe to import statically.
+// The provider executors are injected through the orchestrator's `executors`
+// constructor seam (regex-assist `deps.streamTextImpl` precedent) — no
+// `mock.module`, which is process-global and permanent under bun:test
+// (AGENTS.md tier policy: T1 doubles enter through DI seams only). The
+// "provider executor proxy boundary" block below exercises the REAL
+// executors through the provider-fetch factory seam instead.
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── Safe mock.module: capture real executor exports BEFORE registering ──────
-const realNonstreaming = await import("../src/infrastructure/ai/nonstreaming-provider-executor.js");
-const realStream = await import("../src/infrastructure/ai/stream-provider-executor.js");
-const realNonstreamingProviderExecute = realNonstreaming.nonstreamingProviderExecute;
-const realStreamProviderExecutor = realStream.streamProviderExecutor;
-
-let providerShouldThrow = false;
 const PROVIDER_FAILURE = new Error("provider-failure-after-commit");
 
-mock.module("../src/infrastructure/ai/nonstreaming-provider-executor.js", () => ({
-  ...realNonstreaming,
-  nonstreamingProviderExecute: async () => {
-    if (providerShouldThrow) throw PROVIDER_FAILURE;
-    return {
-      text: "Assistant reply.",
-      providerResponse: { mode: "nonstream" as const, steps: [] },
-    };
-  },
-}));
+/** Rejecting executor stubs: Part 2 pins prepare→execute ordering (rolls
+ *  bound BEFORE the provider call) and retention-after-failure, so only the
+ *  rejection path is exercised. */
+const FAILING_NONSTREAMING: typeof nonstreamingProviderExecute = async () => {
+  throw PROVIDER_FAILURE;
+};
+const FAILING_STREAM: typeof streamProviderExecutor = async () => {
+  throw PROVIDER_FAILURE;
+};
 
-mock.module("../src/infrastructure/ai/stream-provider-executor.js", () => ({
-  ...realStream,
-  streamProviderExecutor: async () => {
-    if (providerShouldThrow) throw PROVIDER_FAILURE;
-    return {
-      stream: (async function* () {
-        yield { type: "text-delta" as const, delta: "Assistant reply." };
-      })(),
-      finished: Promise.resolve({ finishReason: "stop" as const }),
-      text: Promise.resolve("Assistant reply."),
-      reasoning: Promise.resolve(undefined),
-      hasRedactedReasoning: false,
-      providerResponse: { mode: "stream" as const, steps: [] },
-    };
-  },
-}));
-
-// Dynamic import AFTER mock registration so the orchestrator resolves mocks.
-const { LiveChatOrchestrator } = await import("../src/domain/chat/live-chat-orchestrator.js");
+const FAILING_EXECUTORS = { nonstreaming: FAILING_NONSTREAMING, stream: FAILING_STREAM };
 
 // ── Test harness ────────────────────────────────────────────────────────────
 
@@ -119,13 +94,11 @@ async function setup(): Promise<{
 }
 
 afterAll(async () => {
-  providerShouldThrow = false;
   resetProviderFetchFactory();
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
 });
 
 beforeEach(() => {
-  providerShouldThrow = false;
   resetProviderFetchFactory();
 });
 
@@ -348,13 +321,20 @@ const fakeStrategy: ChatModeStrategy = {
   },
 };
 
-function makeOrchestrator(rt: ChatRuntime, chatApp: ChatApplicationService): InstanceType<typeof LiveChatOrchestrator> {
+function makeOrchestrator(
+  rt: ChatRuntime,
+  chatApp: ChatApplicationService,
+  executors?: { nonstreaming: typeof nonstreamingProviderExecute; stream: typeof streamProviderExecutor },
+): InstanceType<typeof LiveChatOrchestrator> {
   return new LiveChatOrchestrator(
     rt,
     chatApp,
     null as never,
     new EventBus(),
     async () => fakeStrategy,
+    undefined,
+    undefined,
+    executors,
   );
 }
 
@@ -458,10 +438,10 @@ describe("provider executor proxy boundary", () => {
     });
 
     const input = { profile: realExecutorProfile(), model: "test-model", prompt: realExecutorPrompt };
-    const nonstreaming = await realNonstreamingProviderExecute(input);
+    const nonstreaming = await nonstreamingProviderExecute(input);
     expect(nonstreaming.text).toBe("chat reply");
 
-    const streaming = await realStreamProviderExecutor(input);
+    const streaming = await streamProviderExecutor(input);
     let streamedText = "";
     for await (const chunk of streaming.stream) {
       if (chunk.type === "text-delta") streamedText += chunk.delta;
@@ -484,8 +464,7 @@ describe("DICE-B11 orchestrator — both endpoints + provider-failure retention"
     const { stores, chatApp, chatId, branchId } = await setup();
     const revision = await seedRoll(stores.diceRolls, chatId, branchId, "req_e_ns");
     const rt = makeChatRuntime(stores, chatApp, async () => fakeAssembleResult(chatId as string, branchId));
-    const orch = makeOrchestrator(rt, chatApp);
-    providerShouldThrow = true;
+    const orch = makeOrchestrator(rt, chatApp, FAILING_EXECUTORS);
 
     // sendMessage: prepareLiveTurn binds rolls → provider throws → rethrow.
     await expect(
@@ -512,8 +491,7 @@ describe("DICE-B11 orchestrator — both endpoints + provider-failure retention"
     const { stores, chatApp, chatId, branchId } = await setup();
     const revision = await seedRoll(stores.diceRolls, chatId, branchId, "req_e_s");
     const rt = makeChatRuntime(stores, chatApp, async () => fakeAssembleResult(chatId as string, branchId));
-    const orch = makeOrchestrator(rt, chatApp);
-    providerShouldThrow = true;
+    const orch = makeOrchestrator(rt, chatApp, FAILING_EXECUTORS);
 
     // sendMessageStream: prepareLiveTurn binds → startStream throws → generator throws.
     const gen = orch.sendMessageStream({
@@ -540,11 +518,10 @@ describe("DICE-B11 orchestrator — both endpoints + provider-failure retention"
     const { stores, chatApp, chatId, branchId } = await setup();
     const revision = await seedRoll(stores.diceRolls, chatId, branchId, "req_thread");
     const rt = makeChatRuntime(stores, chatApp, async () => fakeAssembleResult(chatId as string, branchId));
-    const orch = makeOrchestrator(rt, chatApp);
+    const orch = makeOrchestrator(rt, chatApp, FAILING_EXECUTORS);
     // Provider throws so the turn doesn't complete, but the BIND happens in
     // prepareLiveTurn BEFORE the provider call — proving both endpoints thread
     // diceCommit through the same preparation boundary.
-    providerShouldThrow = true;
 
     // Non-stream
     await expect(
@@ -565,8 +542,7 @@ describe("DICE-B11 orchestrator — both endpoints + provider-failure retention"
     const s = await setup();
     const sRevision = await seedRoll(s.stores.diceRolls, s.chatId, s.branchId, "req_thread_s");
     const sRt = makeChatRuntime(s.stores, s.chatApp, async () => fakeAssembleResult(s.chatId as string, s.branchId));
-    const sOrch = makeOrchestrator(sRt, s.chatApp);
-    providerShouldThrow = true;
+    const sOrch = makeOrchestrator(sRt, s.chatApp, FAILING_EXECUTORS);
     const gen = sOrch.sendMessageStream({
       chatId: s.chatId as string,
       content: "threading test s",

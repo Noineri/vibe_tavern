@@ -23,6 +23,12 @@ function profile(
     topA: 0.4,
     typicalP: 0.97,
     tfsZ: 0.9,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
+    dynatempRange: 0,
+    dynatempExponent: 1,
+    topNSigma: 0,
+    smoothingFactor: 0,
     repeatLastN: 256,
     mirostat: 2,
     mirostatTau: 6,
@@ -30,7 +36,9 @@ function profile(
     dryMultiplier: 0.8,
     dryBase: 1.75,
     dryAllowedLength: 3,
+    dryPenaltyLastN: -1,
     drySequenceBreakers: ["\n", ":", "\""],
+    bannedStrings: [],
     xtcThreshold: 0.12,
     xtcProbability: 0.4,
     frequencyPenalty: 0.5,
@@ -314,6 +322,181 @@ describe("buildSamplerConfig", () => {
     });
   });
 
+  // ─── llama.cpp (llamacpp_native — openai_local + adaptive-p) ──────────
+
+  describe("llamacpp (llamacpp_native)", () => {
+    it("does not emit adaptive-p fields or a chain when adaptive-p is disabled (−1)", () => {
+      const config = buildSamplerConfig(profile("llamacpp"));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      expect(opts.adaptive_target).toBeUndefined();
+      expect(opts.adaptive_decay).toBeUndefined();
+      expect(opts.samplers).toBeUndefined();
+    });
+
+    it("emits adaptive_target + adaptive_decay and the full samplers chain (adaptive_p last) when enabled", () => {
+      const config = buildSamplerConfig(profile("llamacpp", {
+        adaptiveTarget: 0.55,
+        adaptiveDecay: 0.9,
+      }));
+      expect(config.providerOptions!.llamacpp).toEqual({
+        top_k: 80,
+        min_p: 0.05,
+        typical_p: 0.97,
+        tfs_z: 0.9,
+        adaptive_target: 0.55,
+        adaptive_decay: 0.9,
+        repeat_last_n: 256,
+        mirostat: 2,
+        mirostat_tau: 6,
+        mirostat_eta: 0.2,
+        dry_multiplier: 0.8,
+        dry_base: 1.75,
+        dry_allowed_length: 3,
+        dry_sequence_breakers: ["\n", ":", "\""],
+        xtc_threshold: 0.12,
+        xtc_probability: 0.4,
+        repetition_penalty: 1.15,
+        samplers: [
+          "penalties",
+          "dry",
+          "top_n_sigma",
+          "top_k",
+          "typ_p",
+          "top_p",
+          "min_p",
+          "xtc",
+          "temperature",
+          "adaptive_p",
+        ],
+      });
+      const samplers = (config.providerOptions!.llamacpp as Record<string, unknown>).samplers as string[];
+      expect(samplers[samplers.length - 1]).toBe("adaptive_p");
+    });
+
+    it("does not emit the chain when adaptive-p target is null (field absent)", () => {
+      const config = buildSamplerConfig(profile("llamacpp", { adaptiveTarget: undefined }));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      expect(opts.samplers).toBeUndefined();
+    });
+
+    // ── B2: llama-server numeric tail ────────────────────────────────────
+
+    it("emits no numeric-tail fields when all are at their disabled defaults", () => {
+      const config = buildSamplerConfig(profile("llamacpp"));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      expect(opts.dynatemp_range).toBeUndefined();
+      expect(opts.dynatemp_exponent).toBeUndefined();
+      expect(opts.top_n_sigma).toBeUndefined();
+      expect(opts.smoothing_factor).toBeUndefined();
+      expect(opts.dry_penalty_last_n).toBeUndefined();
+      expect(opts.samplers).toBeUndefined();
+    });
+
+    it("emits top_n_sigma + dynatemp (with exponent) + smoothing + dry window when enabled", () => {
+      const config = buildSamplerConfig(profile("llamacpp", {
+        topNSigma: 0.95,
+        dynatempRange: 1.5,
+        dynatempExponent: 0.8,
+        smoothingFactor: 0.7,
+        dryPenaltyLastN: 512,
+      }));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      expect(opts.top_n_sigma).toBe(0.95);
+      expect(opts.dynatemp_range).toBe(1.5);
+      expect(opts.dynatemp_exponent).toBe(0.8);
+      expect(opts.smoothing_factor).toBe(0.7);
+      expect(opts.dry_penalty_last_n).toBe(512);
+    });
+
+    it("V1: dry_penalty_last_n −1 (disabled) and 0 (zero window) are both omitted — never sent", () => {
+      const disabled = buildSamplerConfig(profile("llamacpp", { dryPenaltyLastN: -1 }));
+      const zero = buildSamplerConfig(profile("llamacpp", { dryPenaltyLastN: 0 }));
+      const absent = buildSamplerConfig(profile("llamacpp", { dryPenaltyLastN: undefined }));
+      for (const config of [disabled, zero, absent]) {
+        const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+        expect(opts.dry_penalty_last_n).toBeUndefined();
+      }
+    });
+
+    it("emits no dynatemp_exponent when dynatemp_range is disabled (exponent rides the range)", () => {
+      const config = buildSamplerConfig(profile("llamacpp", { dynatempRange: 0, dynatempExponent: 1.3 }));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      expect(opts.dynatemp_range).toBeUndefined();
+      expect(opts.dynatemp_exponent).toBeUndefined();
+    });
+
+    it("emits the samplers chain (without adaptive_p) when only the numeric tail is active", () => {
+      const config = buildSamplerConfig(profile("llamacpp", {
+        topNSigma: 0.95,
+        dryPenaltyLastN: 512,
+      }));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      const samplers = opts.samplers as string[];
+      expect(samplers).toEqual([
+        "penalties",
+        "dry",
+        "top_n_sigma",
+        "top_k",
+        "typ_p",
+        "top_p",
+        "min_p",
+        "xtc",
+        "temperature",
+      ]);
+      expect(samplers).not.toContain("adaptive_p");
+    });
+
+    it("does not emit the chain for dynatemp/smoothing alone (temperature/top_p modifiers)", () => {
+      const config = buildSamplerConfig(profile("llamacpp", {
+        dynatempRange: 1.5,
+        smoothingFactor: 0.7,
+      }));
+      const opts = config.providerOptions!.llamacpp as Record<string, unknown>;
+      expect(opts.dynatemp_range).toBe(1.5);
+      expect(opts.smoothing_factor).toBe(0.7);
+      expect(opts.samplers).toBeUndefined();
+    });
+  });
+
+  // ─── Unsloth Studio (llamacpp_native — rides llama-server) ────────────
+
+  describe("unsloth (llamacpp_native)", () => {
+    it("emits adaptive-p + the samplers chain via providerOptions.unsloth", () => {
+      const config = buildSamplerConfig(profile("unsloth", {
+        adaptiveTarget: 0.55,
+        adaptiveDecay: 0.9,
+        showReasoning: true,
+        reasoningEffort: "high",
+      }));
+      const opts = config.providerOptions!.unsloth as Record<string, unknown>;
+      expect(opts.adaptive_target).toBe(0.55);
+      expect(opts.adaptive_decay).toBe(0.9);
+      const samplers = opts.samplers as string[];
+      expect(samplers[samplers.length - 1]).toBe("adaptive_p");
+    });
+
+    it("emits no chain and no adaptive fields when adaptive-p is disabled", () => {
+      const config = buildSamplerConfig(profile("unsloth"));
+      const opts = config.providerOptions!.unsloth as Record<string, unknown>;
+      expect(opts.adaptive_target).toBeUndefined();
+      expect(opts.samplers).toBeUndefined();
+    });
+
+    it("emits the B2 numeric tail + chain (no adaptive_p) when only the tail is active", () => {
+      const config = buildSamplerConfig(profile("unsloth", {
+        topNSigma: 0.9,
+        smoothingFactor: 0.5,
+        dryPenaltyLastN: 512,
+      }));
+      const opts = config.providerOptions!.unsloth as Record<string, unknown>;
+      expect(opts.top_n_sigma).toBe(0.9);
+      expect(opts.smoothing_factor).toBe(0.5);
+      expect(opts.dry_penalty_last_n).toBe(512);
+      const samplers = opts.samplers as string[];
+      expect(samplers).not.toContain("adaptive_p");
+    });
+  });
+
   // ─── Anthropic ─────────────────────────────────────────────────────────
 
   describe("anthropic", () => {
@@ -374,6 +557,67 @@ describe("buildSamplerConfig", () => {
         mirostat_tau: 6,
         mirostat_eta: 0.2,
       });
+    });
+
+    it("emits native adaptive_target/adaptive_decay and NO samplers chain when adaptive-p is enabled", () => {
+      const config = buildSamplerConfig(profile("koboldcpp", {
+        adaptiveTarget: 0.55,
+        adaptiveDecay: 0.9,
+      }));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      expect(opts.adaptive_target).toBe(0.55);
+      expect(opts.adaptive_decay).toBe(0.9);
+      expect(opts.samplers).toBeUndefined(); // koboldcpp native path needs no chain
+    });
+
+    it("omits adaptive fields when adaptive-p is disabled (−1)", () => {
+      const config = buildSamplerConfig(profile("koboldcpp"));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      expect(opts.adaptive_target).toBeUndefined();
+      expect(opts.adaptive_decay).toBeUndefined();
+    });
+
+    it("emits banned_strings (antislop) verbatim — exact-match, leading spaces significant (B3)", () => {
+      const config = buildSamplerConfig(profile("koboldcpp", {
+        bannedStrings: [" finger", " purr", "moan"],
+      }));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      // V1b probe: phrases are exact-match strings — the leading spaces must
+      // survive untouched (" purr" ≠ "purr").
+      expect(opts.banned_strings).toEqual([" finger", " purr", "moan"]);
+    });
+
+    it("omits banned_strings when the list is empty", () => {
+      const config = buildSamplerConfig(profile("koboldcpp", { bannedStrings: [] }));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      expect(opts.banned_strings).toBeUndefined();
+    });
+
+    it("never emits banned_strings outside koboldcpp_native (antislop is KoboldCPP-only)", () => {
+      const banned = { bannedStrings: [" finger"] };
+      const llamacpp = buildSamplerConfig(profile("llamacpp", banned));
+      expect((llamacpp.providerOptions?.llamacpp as Record<string, unknown> | undefined)?.banned_strings).toBeUndefined();
+      const unsloth = buildSamplerConfig(profile("unsloth", banned));
+      expect((unsloth.providerOptions?.unsloth as Record<string, unknown> | undefined)?.banned_strings).toBeUndefined();
+      const vllm = buildSamplerConfig(profile("vllm", banned));
+      expect((vllm.providerOptions?.openai_compat as Record<string, unknown> | undefined)?.banned_strings).toBeUndefined();
+    });
+
+    it("never emits the B2 llama-server numeric tail (llamacpp_native-only fields)", () => {
+      const config = buildSamplerConfig(profile("koboldcpp", {
+        dynatempRange: 1.5,
+        dynatempExponent: 0.8,
+        topNSigma: 0.95,
+        smoothingFactor: 0.7,
+        dryPenaltyLastN: 512,
+      }));
+      const opts = config.providerOptions!.koboldcpp as Record<string, unknown>;
+      expect(opts.dynatemp_range).toBeUndefined();
+      expect(opts.dynatemp_exponent).toBeUndefined();
+      expect(opts.top_n_sigma).toBeUndefined();
+      expect(opts.smoothing_factor).toBeUndefined();
+      expect(opts.dry_penalty_last_n).toBeUndefined();
+      expect(opts.samplers).toBeUndefined();
     });
 
     it("does NOT set native frequencyPenalty, presencePenalty, seed", () => {

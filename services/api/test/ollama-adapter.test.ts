@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { createOllamaModel, fetchOllamaModels } from "../src/domain/providers/ollama-adapter.js";
+import { createOllamaModel, fetchOllamaModels, tokenizeOllama } from "../src/domain/providers/ollama-adapter.js";
 
 const originalFetch = globalThis.fetch;
 let mockFetch: ReturnType<typeof mock>;
@@ -144,5 +144,44 @@ describe("fetchOllamaModels", () => {
       "gemma3:4b",
       "legacy-no-capabilities",
     ]);
+  });
+});
+
+
+describe("tokenizeOllama (LS-1a)", () => {
+  it("posts {model, input} to /api/tokenize and returns tokens.length", async () => {
+    mockJson({ model: "gemma3:4b", tokens: [1, 2, 3, 4, 5, 6] });
+    const count = await tokenizeOllama({
+      baseUrl: "http://127.0.0.1:9601",
+      apiKey: null,
+      text: "Hello there",
+      modelId: "gemma3:4b",
+    });
+    expect(count).toBe(6);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe("http://127.0.0.1:9601/api/tokenize");
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.model).toBe("gemma3:4b");
+    expect(body.input).toBe("Hello there");
+  });
+
+  it("throws on an unexpected response shape (counting layer falls back)", async () => {
+    mockJson({ model: "gemma3:4b" });
+    await expect(tokenizeOllama({
+      baseUrl: "http://127.0.0.1:9602",
+      apiKey: null,
+      text: "hi",
+      modelId: "gemma3:4b",
+    })).rejects.toThrow("tokens");
+  });
+
+  it("throws on HTTP error (counting layer falls back)", async () => {
+    mockJson({ error: "nope" }, 404);
+    await expect(tokenizeOllama({
+      baseUrl: "http://127.0.0.1:9603",
+      apiKey: null,
+      text: "hi",
+      modelId: "gemma3:4b",
+    })).rejects.toThrow("404");
   });
 });

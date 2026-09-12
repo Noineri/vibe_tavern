@@ -111,6 +111,7 @@ const LOREBOOK: LorebookRecord = {
   tokenBudget: 2048,
   tokenBudgetPercent: null,
   recursiveScanning: false,
+  useGroupScoring: false,
   enabled: true,
 };
 
@@ -162,17 +163,28 @@ const ENTRIES: LoreEntryRecord[] = [
   makeEntry({ id: "e3", title: "Fire Sprite", content: "ember", keys: ["fire"], secondaryKeys: ["lair"] }),
 ];
 
-function renderAccordion() {
+function renderAccordion(
+  overrides: Partial<{
+    lorebook: LorebookRecord;
+    onUpdateMeta: (body: Parameters<NonNullable<Parameters<typeof LorebookAccordion>[0]["onUpdateMeta"]>>[0]) => void;
+    editing: boolean;
+    editLbName: string;
+    editLbScope: string;
+    isMobile: boolean;
+    onEditLbScope: (scope: string) => void;
+    onSaveEdit: () => void;
+  }> = {},
+) {
   return render(
     <LorebookAccordion
-      lorebook={LOREBOOK}
+      lorebook={overrides.lorebook ?? LOREBOOK}
       links={[]}
       expanded={true}
-      editing={false}
-      editLbName=""
-      editLbScope="global"
+      editing={overrides.editing ?? false}
+      editLbName={overrides.editLbName ?? ""}
+      editLbScope={overrides.editLbScope ?? "global"}
       activeEntryId={null}
-      isMobile={false}
+      isMobile={overrides.isMobile ?? false}
       actionMenuOpen={false}
       onToggleActionMenu={() => {}}
       t={(k: string) => k}
@@ -181,12 +193,12 @@ function renderAccordion() {
       onSaveEdit={() => {}}
       onCancelEdit={() => {}}
       onEditLbName={() => {}}
-      onEditLbScope={() => {}}
+      onEditLbScope={overrides.onEditLbScope ?? (() => {})}
       onDelete={() => {}}
       onAddEntry={() => {}}
       onEntryClick={() => {}}
       onToggleEnabled={() => {}}
-      onUpdateMeta={() => {}}
+      onUpdateMeta={overrides.onUpdateMeta ?? (() => {})}
       onReorderEntries={async () => []}
       onToggleEntryEnabled={async () => ENTRIES[0]}
       onSetLinks={() => {}}
@@ -280,5 +292,112 @@ describe("LorebookAccordion search", () => {
     const tagInput = getByPlaceholderText("lore_search_keys_placeholder");
     await user.type(tagInput, "stone{Enter}");
     expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
+  });
+});
+
+// ── LG-7: book-level group scoring checkbox ─────────────────────────────
+
+describe("LorebookAccordion book-level group scoring (LG-7)", () => {
+  beforeEach(() => {
+    listLoreEntries.mockClear();
+    listLoreEntries.mockResolvedValue(ENTRIES);
+  });
+
+  it("renders the checkbox unchecked/checked from the book record", async () => {
+    const off = renderAccordion({ lorebook: { ...LOREBOOK, useGroupScoring: false } });
+    // t is identity → the label text is the i18n key; the Checkbox owns its
+    // <input>. Assert via the meta payload instead of DOM shape (below), here
+    // just pin the control renders.
+    expect(await off.findByText("lore_book_group_scoring")).toBeTruthy();
+    off.unmount();
+
+    const on = renderAccordion({ lorebook: { ...LOREBOOK, useGroupScoring: true } });
+    expect(await on.findByText("lore_book_group_scoring")).toBeTruthy();
+  });
+
+  it("toggling reports onUpdateMeta({ useGroupScoring }) in both directions", async () => {
+    // Two independent renders (unmount between): the disclosure's mount
+    // animation doesn't like two live accordions in one document.
+    const onUpdateMeta = mock();
+    const r1 = renderAccordion({
+      lorebook: { ...LOREBOOK, useGroupScoring: false },
+      onUpdateMeta,
+    });
+    fireEvent.click(await r1.findByText("lore_book_group_scoring"));
+    expect(onUpdateMeta).toHaveBeenCalledWith({ useGroupScoring: true });
+    r1.unmount();
+
+    const on = mock();
+    const r2 = renderAccordion({
+      lorebook: { ...LOREBOOK, useGroupScoring: true },
+      onUpdateMeta: on,
+    });
+    fireEvent.click(await r2.findByText("lore_book_group_scoring"));
+    expect(on).toHaveBeenCalledWith({ useGroupScoring: false });
+  });
+});
+
+// ── Scope taxonomy collapse 4 → 3 (entity) ──────────────────────────────
+//
+// The inline edit form's scope picker and the row binding icon reflect the
+// merged taxonomy: global / entity / chat — the character/persona split is
+// gone. `scope_char`/`scope_persona` remain LIVE i18n keys only for the
+// LinkBindingPopover target-type section labels, so absence here must be
+// asserted against the rendered DOM, not the key registry.
+
+describe("LorebookAccordion scope collapse (entity)", () => {
+	it("inline edit renders exactly 3 scope options (global / entity / chat)", async () => {
+		const { getByText, queryByText } = renderAccordion({ editing: true });
+		expect(getByText("scope_global")).toBeTruthy();
+		expect(getByText("scope_entity")).toBeTruthy();
+		expect(getByText("scope_chat")).toBeTruthy();
+		expect(queryByText("scope_char")).toBeNull();
+		expect(queryByText("scope_persona")).toBeNull();
+	});
+
+	it("picking the entity option reports scopeType 'entity'", async () => {
+		const onEditLbScope = mock();
+		const { getByText } = renderAccordion({ editing: true, onEditLbScope });
+		fireEvent.click(getByText("scope_entity"));
+		expect(onEditLbScope).toHaveBeenCalledWith("entity");
+	});
+
+	it("entity-homed books (character OR persona FK) map to the ONE entity binding icon", async () => {
+		const { lorebookBindingIcon } = await import("./LorebookAccordion.js");
+		const charHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "entity", characterId: "char-1" });
+		expect(charHomed?.tooltipKey).toBe("scope_entity");
+		const personaHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "entity", personaId: "persona-9" });
+		// The persona FK maps to the SAME single entity icon — no separate
+		// persona tooltip, no user icon.
+		expect(personaHomed?.tooltipKey).toBe("scope_entity");
+		expect(personaHomed).toEqual(charHomed);
+	});
+
+	it("global books map to no binding icon; chat-homed books keep the chat icon", async () => {
+		const { lorebookBindingIcon } = await import("./LorebookAccordion.js");
+		expect(lorebookBindingIcon(LOREBOOK)).toBeNull();
+		const chatHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "chat", chatId: "chat-1" });
+		expect(chatHomed?.tooltipKey).toBe("scope_chat");
+	});
+});
+
+describe("LorebookAccordion mobile edit form (MUI step 6)", () => {
+  it("on mobile the dead expand caret disappears while editing; the form rows own the width", async () => {
+    const { container } = renderAccordion({ editing: true, editLbName: "Draft", isMobile: true });
+    // The ▶/▼ glyph spans are the caret's only text content.
+    expect(container.textContent).not.toContain("\u25BC");
+    expect(container.textContent).not.toContain("\u25B6");
+    // The inline rename field is the creation form's name row.
+    expect(container.querySelector("input")).not.toBeNull();
+  });
+
+  it("on desktop the caret stays visible next to the inline edit form", async () => {
+    const { container } = renderAccordion({ editing: true, editLbName: "Draft", isMobile: false });
+    expect(container.textContent).toContain("\u25BC"); // expanded=true in the harness
+  });
+
+  it("outside edit mode the caret is present on mobile too (expansion still works)", async () => {
+    const { container } = renderAccordion({ editing: false, isMobile: true });
+    expect(container.textContent).toContain("\u25BC");
   });
 });

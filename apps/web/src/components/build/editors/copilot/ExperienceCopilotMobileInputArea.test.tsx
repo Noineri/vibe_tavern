@@ -132,6 +132,15 @@ describe("ExperienceCopilotMobileInputArea — pinned context (CX-6)", () => {
     expect(onUnpinContext).toHaveBeenCalledWith("character", "c1");
   });
 
+  it("bare Enter does NOT send (E4: on-screen enter = newline key; send via button only)", () => {
+    const { props } = renderMobileInput({});
+    typeInto("hello there");
+    fireEvent.keyDown(chatInput(), { key: "Enter" });
+    fireEvent.keyDown(chatInput(), { key: "Enter", shiftKey: true });
+    expect(props.onSend).not.toHaveBeenCalled();
+    expect(chatInput().value).toBe("hello there");
+  });
+
   it("typing @ + Enter picks → @query stripped from the draft + onPinContext", () => {
     const onPinContext = mock();
     renderMobileInput({ mentionCatalog: CATALOG, onPinContext });

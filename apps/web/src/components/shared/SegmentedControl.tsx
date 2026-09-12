@@ -2,9 +2,11 @@ import { Fragment, type ReactNode } from 'react';
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
+import { DropdownSelect } from "./DropdownSelect.js";
+import { useIsMobile } from "../../hooks/use-mobile.js";
 
-interface SegmentedOption {
-  value: string;
+interface SegmentedOption<T extends string = string> {
+  value: T;
   label: ReactNode;
   /** Disable only this option while leaving the rest of the group interactive. */
   disabled?: boolean;
@@ -20,10 +22,10 @@ interface SegmentedOption {
   trailing?: ReactNode;
 }
 
-interface SegmentedControlProps {
-  value: string;
-  options: SegmentedOption[];
-  onChange: (value: string) => void;
+interface SegmentedControlProps<T extends string = string> {
+  value: T;
+  options: SegmentedOption<T>[];
+  onChange: (value: T) => void;
   className?: string;
   disabled?: boolean;
   /** Render as a more compact variant for tight spaces */
@@ -42,6 +44,21 @@ interface SegmentedControlProps {
    *  11 current call sites; opt in for option sets that grow (e.g. version
    *  switcher). Wrapped segments still share one bordered container. */
   wrap?: boolean;
+  /** On MOBILE ONLY, replace the segments with the shared DropdownSelect
+   *  (searchable={false}) so long option labels are shown in full in the
+   *  trigger instead of truncating inside equal-width segments (settings
+   *  wording must be readable). Desktop rendering is unchanged. Segment-only
+   *  features are dropped in mobile mode: per-option `tooltip` (touch has no
+   *  hover), `trailing` actions and per-option `disabled` — no mobileSelect
+   *  call site uses them. The group-level `disabled` is honored. */
+  mobileSelect?: boolean;
+  /** On MOBILE ONLY, let the control scroll horizontally when the segments
+   *  exceed the viewport width — the labels keep their natural width (no
+   * truncation) and the scrollbar strip is hidden (drag or swipe to move).
+   *  Desktop rendering is unchanged. For tab bars whose option set is fixed
+   *  and authored (e.g. the provider modal's LLM/TTS/STT tabs) — the owner
+   *  ruling 2026-09-11: movable, no visible scrollbar, no wrapping. */
+  mobileScroll?: boolean;
 }
 
 /**
@@ -62,7 +79,7 @@ interface SegmentedControlProps {
  * content via `group-hover/seg`. Both survive the `RadioGroup.Item` swap
  * unchanged. See toggle-segmented-radix-migration.md.
  */
-export function SegmentedControl({
+export function SegmentedControl<T extends string = string>({
   value,
   options,
   onChange,
@@ -73,11 +90,33 @@ export function SegmentedControl({
   fill,
   mobileFill,
   wrap,
-}: SegmentedControlProps) {
+  mobileSelect,
+  mobileScroll,
+}: SegmentedControlProps<T>) {
+  const isMobile = useIsMobile();
+  if (mobileSelect && isMobile) {
+    return (
+      <DropdownSelect
+        value={value}
+        // DropdownSelect emits the clicked item's id as a plain string; the
+        // ids here ARE this control's typed option values, so the emit is
+        // always a valid T — the same provably-safe string-land re-entry as
+        // the Radix onValueChange cast below.
+        onChange={(next) => onChange(next as T)}
+        searchable={false}
+        disabled={disabled}
+        className={className}
+        options={options.map((opt) => ({ id: opt.value, label: opt.label }))}
+      />
+    );
+  }
   return (
     <RadioGroup.Root
       value={value}
-      onValueChange={onChange}
+      // Radix emits the clicked item's value as a plain string; every option
+      // is typed T, so this is the single provably-safe re-entry point from
+      // string-land (keeps callers cast-free — see MasterDetailModal tabs).
+      onValueChange={(next) => onChange(next as T)}
       disabled={disabled}
       asChild
     >
@@ -86,6 +125,8 @@ export function SegmentedControl({
           "rounded-md border border-border bg-s3 p-0.5",
           fill ? "flex w-full" : mobileFill ? "flex w-full sm:inline-flex sm:w-auto" : "inline-flex",
           wrap && "flex-wrap",
+          // MUI step 20: horizontal drag on phones, scrollbar strip hidden.
+          mobileScroll && isMobile && "flex max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
           (dense || compact) ? "gap-0" : "gap-0.5",
           disabled && "pointer-events-none opacity-40",
           className,
@@ -109,6 +150,10 @@ export function SegmentedControl({
                 // every property and causes unexpected color/padding transitions.
                 "cursor-pointer rounded-[5px] font-ui transition-[background-color,color,box-shadow,transform] duration-150 ease-out select-none active:scale-[0.96]",
                 opt.tooltip ? "w-full" : flexCls,
+                // MUI step 20: scrollable segments keep their natural width —
+                // shrink-0 stops the flex row from cramming/truncating them,
+                // which is what made the drag meaningful in the first place.
+                mobileScroll && isMobile && "shrink-0",
                 dense ? "min-h-7 px-2.5 py-1 text-[11px] sm:min-h-0" : compact ? "min-h-9 px-2.5 py-1 text-[11px] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[13px] sm:min-h-0",
                 "text-t2 hover:text-t1",
                 "data-[state=checked]:bg-s2 data-[state=checked]:text-accent data-[state=checked]:shadow-sm data-[state=checked]:font-medium",

@@ -16,7 +16,7 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { formatSceneHistory } from "@vibe-tavern/prompt-pipeline";
-import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
+import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
 import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore, useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
@@ -234,13 +234,13 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
       {/* DSL schema editor */}
       <div>
         <div className="flex items-center gap-2">
-          <label className={lblCls}>{t("scn_schema_label")}</label>
+          <label className={lblCls + " !mb-0"}>{t("scn_schema_label")}</label>
           <button
             type="button"
             onClick={() => setSchemaAiOpen(true)}
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-border2 bg-s3 px-2 py-1 font-ui text-[11px] font-medium text-t2 transition-colors hover:border-accent hover:text-accent"
+            className="ml-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
           >
-            <Ic.sparkles />
+            <Ic.brain />
             {t("scn_ai_generate")}
           </button>
         </div>
@@ -255,7 +255,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           <div className="mt-2 space-y-2 rounded-md border border-border2 bg-s2/40 p-2.5">
             <p className="font-ui text-[11px] leading-relaxed text-t3">{t("scn_schema_grammar")}</p>
             <div className="relative">
-              <pre className={cn(monoCls, "max-h-56 overflow-auto rounded p-2 pr-9 text-[11px] leading-relaxed text-t2")}>{SCENE_DSL_EXAMPLE}</pre>
+              <pre className={cn(codeQuoteCls, "max-h-56 overflow-auto pr-9")}>{SCENE_DSL_EXAMPLE}</pre>
               <CustomTooltip content={t("copy")}>
                 <button
                   type="button"
@@ -309,7 +309,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
       </div>
 
       {/* Scalar controls */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1 sm:grid-cols-3">
         <ScalarField label={t("scn_context_window_label")} hint={t("scn_context_window_hint")}>
           <NumberInput value={draft.contextWindow} min={1} onChange={(v) => update("contextWindow", v)} />
         </ScalarField>
@@ -336,7 +336,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
         </button>
         {advancedOpen && (
           <div className="mt-2 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
               <ScalarField label={t("scn_depth_label")} hint={t("scn_depth_hint")}>
                 <NumberInput value={draft.injectionDepth} min={1} onChange={(v) => update("injectionDepth", v)} />
               </ScalarField>
@@ -374,9 +374,9 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
                 <button
                   type="button"
                   onClick={() => setRulesAiOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-md border border-border2 bg-s3 px-2 py-1 font-ui text-[11px] font-medium text-t2 transition-colors hover:border-accent hover:text-accent"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
                 >
-                  <Ic.sparkles />
+                  <Ic.brain />
                   {t("scn_pull_rules_button")}
                 </button>
               }
@@ -454,14 +454,14 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           </div>
           <details className="mt-2">
             <summary className="cursor-pointer select-none font-ui text-[11px] text-t4 hover:text-t3">{t("scn_preview_raw_json")}</summary>
-            <pre className={cn(monoCls, "mt-1 max-h-48 overflow-auto rounded p-2 text-[11px] leading-relaxed text-t2")}>
+            <pre className={cn(codeQuoteCls, "mt-1 max-h-48 overflow-auto")}>
               {JSON.stringify(previewState, null, 2)}
             </pre>
           </details>
           {draft.promptFormat === SCENE_PROMPT_FORMAT.xml && (
             <details className="mt-2">
               <summary className="cursor-pointer select-none font-ui text-[11px] text-t4 hover:text-t3">{t("scn_preview_raw_xml")}</summary>
-              <pre className={cn(monoCls, "mt-1 max-h-48 overflow-auto rounded p-2 text-[11px] leading-relaxed text-t2")}>
+              <pre className={cn(codeQuoteCls, "mt-1 max-h-48 overflow-auto")}>
                 {formatSceneHistory([previewState], "xml")}
               </pre>
             </details>
@@ -533,16 +533,18 @@ function PromptField({ label, hint, defaultValue, onSave, action }: { label: str
   return (
     <div>
       <div className="flex items-center gap-2">
-        <label className={lblCls}>{label}</label>
+        <label className={lblCls + " !mb-0"}>{label}</label>
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>
-      <AutoTextarea
-        className={monoCls + " mt-1.5"}
-        defaultValue={defaultValue}
+      <div className="mt-1.5">
+        <AutoTextarea
+          mono
+          defaultValue={defaultValue}
         placeholder={hint}
         minRows={2}
         onBlur={(e) => { if (e.target.value !== defaultValue) onSave(e.target.value); }}
       />
+      </div>
     </div>
   );
 }
@@ -595,7 +597,7 @@ function SceneModelSelector({
         <Toggle checked={useChatModel} onChange={(v) => onUpdate("useChatModel", v)} />
         {t("scn_use_chat_model")}
       </label>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
         <DropdownSelect
           value={profileId}
           options={providerOptions}

@@ -1,5 +1,5 @@
 import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse } from "./types.js";
-import type { CoauthorTransport, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { CoauthorTransport, GenerationMode, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay, ProviderProxyMode } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -18,12 +18,15 @@ export async function saveProviderProfile(input: {
   name: string;
   providerPreset: string;
   coauthorTransport?: CoauthorTransport;
+  /** Generation mode (LS-2a): chat (default) vs raw text completion. */
+  generationMode?: GenerationMode;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
   visionModel?: string | null;
   contextBudget?: number | null;
   pinContextBudget?: boolean;
+  tokenPadding?: number;
   temperature?: number;
   topP?: number;
   minP?: number;
@@ -31,6 +34,12 @@ export async function saveProviderProfile(input: {
   topA?: number;
   typicalP?: number;
   tfsZ?: number;
+  adaptiveTarget?: number;
+  adaptiveDecay?: number;
+  dynatempRange?: number;
+  dynatempExponent?: number;
+  topNSigma?: number;
+  smoothingFactor?: number;
   repeatLastN?: number;
   mirostat?: number;
   mirostatTau?: number;
@@ -46,6 +55,7 @@ export async function saveProviderProfile(input: {
   repetitionPenalty?: number;
   maxTokens?: number;
   stopSequences?: string[];
+  bannedStrings?: string[];
   logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed?: string | null;
   reasoningEffort?: string;
@@ -65,12 +75,15 @@ export async function updateProviderProfile(
     name?: string;
     providerPreset?: string;
     coauthorTransport?: CoauthorTransport;
+    /** Generation mode (LS-2a): chat (default) vs raw text completion. */
+    generationMode?: GenerationMode;
     endpoint?: string;
     apiKey?: string | null;
     defaultModel?: string | null;
     visionModel?: string | null;
     contextBudget?: number | null;
     pinContextBudget?: boolean;
+    tokenPadding?: number;
     temperature?: number;
     topP?: number;
     minP?: number;
@@ -78,6 +91,12 @@ export async function updateProviderProfile(
     topA?: number;
     typicalP?: number;
     tfsZ?: number;
+    adaptiveTarget?: number;
+    adaptiveDecay?: number;
+    dynatempRange?: number;
+    dynatempExponent?: number;
+    topNSigma?: number;
+    smoothingFactor?: number;
     repeatLastN?: number;
     mirostat?: number;
     mirostatTau?: number;
@@ -93,6 +112,7 @@ export async function updateProviderProfile(
     repetitionPenalty?: number;
     maxTokens?: number;
     stopSequences?: string[];
+    bannedStrings?: string[];
     logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
     seed?: string | null;
     reasoningEffort?: string;

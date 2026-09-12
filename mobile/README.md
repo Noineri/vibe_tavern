@@ -1,80 +1,109 @@
 # Vibe Tavern Mobile Launcher
 
-The Android APK is a local-server orchestrator for Vibe Tavern on ARM64 phones through Termux and proot Ubuntu.
-
-It installs and controls the bundled server, then opens `http://127.0.0.1:8787` in the system browser; it does not embed a WebView or build the application on the device.
+The maintained Android distribution is one native ARM64 launcher APK for Android 10 and later. It runs the bundled Vibe Tavern server locally, keeps it alive through a foreground service while it is running, and opens the interface in the system browser; it does not use a WebView or require a supported parallel Termux edition.
 
 ## Documentation
 
 - [English setup guide](../docs/android-setup.md)
 - [Russian setup guide](../docs/android-setup-ru.md)
-- [Mobile orchestrator decisions](docs/mobile-orchestrator-decisions.md)
+- [Mobile launcher decision history](docs/mobile-orchestrator-decisions.md)
+- [Frozen Termux archive](legacy-termux/README.md)
 
 ## Repository layout
 
-- `android/` — Gradle application, Kotlin launcher, resources, tests, and APK assets.
-- `android/app/src/main/assets/install.sh` — the only maintained Termux/proot installer and updater.
-- `android/app/src/main/assets/start.sh` — launcher-owned Termux start entry point.
-- `android/app/src/main/java/com/vibetavern/launcher/PayloadTransferService.kt` — temporary localhost foreground service that streams the bundled server archive to Termux without shared storage.
-- `android/scripts/serve-local-update.ts` — debug-only same-LAN updater fixture.
-- `docs/` — mobile architecture and lifecycle decisions.
+- `android/` — Gradle application, Kotlin launcher, resources, tests, and APK configuration.
+- `android/app/src/main/java/com/vibetavern/launcher/ServerService.kt` — foreground-service owner for the native server child and its readiness/log lifecycle.
+- `android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt` — launcher controls, payload extraction, browser handoff, updater, diagnostics, battery guidance, and legacy-only migration entry.
+- `android/app/src/main/java/com/vibetavern/launcher/LegacyMigration.kt` — safe import of a user-selected archive from an old launcher installation.
+- `android/app/src/main/java/com/vibetavern/launcher/ReleaseUpdate.kt` and `ApkUpdateManager.kt` — GitHub Releases discovery, approved download, validation, and Android installer handoff.
+- `android/scripts/serve-local-update.ts` — debug-only same-LAN APK updater fixture.
+- `legacy-termux/` — frozen, unsupported archive; it is not part of a current build, test, CI, or release path.
 
-## Build the ARM64 payload
+## Generated APK inputs
 
-From the repository root:
+Run this from the repository root before every local Gradle build:
 
 ```sh
-bun run build:android-arm64
+bun run build:android-native
 ```
 
-The build produces:
+The command regenerates inputs that are deliberately never committed:
 
 ```text
-out/vibe-tavern-android-arm64.tar.gz
+mobile/android/app/src/main/jniLibs/arm64-v8a/libvibetavern.so
+mobile/android/app/src/main/assets/payload/web/
+mobile/android/app/src/main/assets/payload/drizzle/
+mobile/android/app/src/main/assets/payload/tokenizers/
+mobile/android/app/src/main/assets/payload/prompts/
 ```
 
-For a local APK build, stage it under the asset name expected by Android:
+`libvibetavern.so` is the native Android ARM64 server executable. `useLegacyPackaging` makes Gradle extract it so Android can execute it from `nativeLibraryDir`; the payload is copied from APK assets to the app's private files directory on first run or when the bundled payload version changes.
+
+## Build, test, and debug APK
+
+From the repository root, regenerate the native inputs, then run the Android unit tests and build a debug APK:
 
 ```sh
-cp out/vibe-tavern-android-arm64.tar.gz mobile/android/app/src/main/assets/vibe-tavern-android-arm64.tgz
-```
-
-The archive must contain a matching `version.txt` marker and an executable `vibe-tavern` ARM64 binary.
-
-## Test and build a debug APK
-
-On Linux/macOS from the repository root:
-
-```sh
+bun run build:android-native
 cd mobile/android
 ./gradlew testDebugUnitTest assembleDebug
 ```
 
-On Windows:
+On Windows, use:
 
 ```powershell
+bun run build:android-native
 cd mobile/android
 .\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
-Output:
+The debug APK is written to:
 
 ```text
 mobile/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Run root checks when root TypeScript, packaging scripts, or release workflow behavior changes:
+Use the release workflow for a signed distributable APK. It runs the native-input build, Android tests, release assembly, embedded-payload checks, and APK signature verification before publishing the `Vibe-Tavern-vX.Y.Z-android.apk` release asset.
+
+## Native runtime contract
+
+The launcher starts `libvibetavern.so` with this frozen local contract:
+
+- host `127.0.0.1` and port `8787`;
+- app-private data at `<filesDir>/data`;
+- extracted payload at `<filesDir>/payload`, including `web`, `drizzle`, `tokenizers`, and `prompts`;
+- browser auto-open disabled in the server, because the launcher owns the separate system-browser action;
+- `BUN_OPTIONS=--no-orphans`, `HOME=<filesDir>`, and `TMPDIR=<cacheDir>`.
+
+The foreground service owns the child for its full lifetime: the thread that starts it remains parked on `waitFor()`. Readiness is a successful `GET /api/runtime/version`, not merely an HTTP response from the bind-first web placeholder. The current launch writes `filesDir/server.log`; the launcher can copy or clear it, and records the child exit code.
+
+The service uses Android's `dataSync` foreground-service type. Android notification permission is requested where the platform requires it. The launcher also offers a battery-optimization exemption because a foreground service cannot prevent every OEM battery freezer; users should keep Vibe Tavern in recents and disable aggressive vendor power saving when browser requests lag after app switching.
+
+## Launcher controls and data
+
+The stateful server button starts or stops only the launcher-owned server. **Open in Browser** is separate and enabled after API readiness; it opens `http://127.0.0.1:8787` with Android's normal browser intent. If another server already owns port 8787, the launcher does not stop it and tells the user to stop the old server first.
+
+Chats, settings, keys, and assets live in Android app-private data. Removing the launcher APK removes that native app data, so users must export anything they need before uninstalling. Payload extraction and APK replacement never intentionally replace `<filesDir>/data`.
+
+## Legacy migration only
+
+Termux is not a current runtime prerequisite or supported alternative edition. A user upgrading from the old launcher may see a one-time migration panel only when its old-launcher marker is present and no native database exists. The panel asks the user to stop the old server, run `termux-setup-storage`, and execute the displayed archive command in the old Ubuntu guest:
 
 ```sh
-bun run typecheck
-bun run test
+proot-distro login ubuntu -- bash -lc 'set -eu; test -f "$HOME/.local/share/vibe-tavern/vibe-tavern.db"; tar -czf /sdcard/Download/vt-migration.tar.gz -C "$HOME/.local/share" vibe-tavern'
 ```
 
-## Debug-only LAN updater harness
+The user selects that archive through Android's document picker. The native launcher validates and stages it before replacing native data, retains a backup until the new server passes its API health check, and restores the prior native data if activation fails. **Start fresh instead** permanently dismisses the migration panel without modifying the old installation. Clean native installations never need Termux.
 
-The local fixture serves GitHub-shaped latest-release JSON and same-key debug APKs to a device on the same private network.
+## APK updates and signing continuity
 
-Example from the repository root:
+The launcher checks the latest stable GitHub Release and can manually check for an update. A user must approve the download, and Android separately confirms installation. The downloaded APK is checked for the expected package ID, version name, and increasing version code before installer handoff; Android may require the per-app unknown-apps permission.
+
+Official APKs retain package ID `com.vibetavern.launcher` and the permanent release signing identity so they update in place. A launcher signed with a different historical/debug key cannot update in place and must be uninstalled once before installing an official build. APK replacement preserves native app-private data and causes the matching bundled payload to be extracted on the next launch.
+
+## Debug-only same-LAN updater fixture
+
+The fixture builds matching native payloads into both the base and update debug APK, then serves GitHub-shaped release metadata and the update APK over a private LAN endpoint. It is never available to release builds.
 
 ```sh
 bun mobile/android/scripts/serve-local-update.ts \
@@ -86,48 +115,4 @@ bun mobile/android/scripts/serve-local-update.ts \
   --update-code 2
 ```
 
-Add `--include-payload true` only after staging a full ARM archive whose `version.txt` exactly matches `--update-version`.
-
-The harness passes local endpoint/version properties only to debug builds.
-
-`preReleaseBuild` rejects every `VIBE_UPDATE_TEST_*` property, and release builds remain fixed to the public GitHub HTTPS endpoint.
-
-## Release signing and artifact flow
-
-Official releases are tag-driven through `.github/workflows/release.yml`.
-
-The Android job:
-
-1. derives `versionName` and increasing `versionCode` from the release tag;
-2. restores the permanent keystore under `RUNNER_TEMP`;
-3. builds the version-matched ARM64 payload;
-4. stages the archive into Android assets;
-5. runs Android unit tests and `assembleRelease`;
-6. extracts and validates the embedded archive, payload version, and executable mode;
-7. verifies the APK with `apksigner`;
-8. publishes only the exact `Vibe-Tavern-vX.Y.Z-android.apk` artifact after all gates pass.
-
-The release build requires these repository secrets:
-
-- `ANDROID_KEYSTORE_BASE64`;
-- `ANDROID_KEYSTORE_PASSWORD`;
-- `ANDROID_KEY_ALIAS`;
-- `ANDROID_KEY_PASSWORD`.
-
-Never commit or print the keystore, Base64 payload, aliases, or passwords.
-
-The Gradle release configuration has no debug-signing fallback and fails when required signing inputs are absent.
-
-## Update model
-
-The launcher discovers the latest public stable GitHub Release without authentication.
-
-Automatic checks never download; the user approves `DownloadManager`, and Android's system installer separately confirms APK replacement.
-
-The downloaded APK is accepted only when package ID, version name, and increasing version code match expectations.
-
-APK replacement does not silently apply the bundled server archive.
-
-The user explicitly chooses **Install server** or **Update server** after the launcher reports a payload mismatch.
-
-Program files under `~/vibe-tavern` are swapped separately from persistent data under `~/.local/share/vibe-tavern`.
+Install the fixture's `/base.apk` on a same-LAN device, open Vibe Tavern, choose **Check for launcher update**, approve the download, grant the Android install permission if requested, and confirm the system installer. The fixture rebuilds the matching native payload for each APK; it has no archive-staging option.

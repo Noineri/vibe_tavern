@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 // getModalPortal lives in modal-helpers.ts — import from there directly.
 // Do NOT re-export here to keep this file Fast Refresh compatible.
+import { registerOverlayPortal } from "./modal-helpers.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
@@ -35,6 +36,19 @@ export function Modal({
   description = "Application dialog",
 }: ModalProps) {
   const isMobile = useIsMobile();
+  // Stable callback ref; the returned function is React 19's ref-cleanup
+  // (unregister on unmount) — the same registration BottomSheet performs.
+  // MUI step 3 (2026-09-11): without registration, a DropdownSelect popup in
+  // a STACKED modal resolved getModalPortal() via the getElementById
+  // fallback, which with two mounted Modals returns DOM-first = the BOTTOM
+  // modal's anchor — the popup portaled into the bottom modal's z-context
+  // and painted under the top modal (owner's phone: preset-import dropdown).
+  // Registering makes the stack resolve the topmost OPEN modal instead.
+  const portalAnchorRef = useCallback(
+    (node: HTMLDivElement | null): (() => void) | undefined =>
+      node === null ? undefined : registerOverlayPortal(node),
+    [],
+  );
   return (
     <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <Dialog.Portal>
@@ -81,6 +95,8 @@ export function Modal({
                 must not use CSS transforms or fixed dropdown coordinates become wrong. */}
             <div
               id="modal-portal"
+              data-overlay-portal="modal"
+              ref={portalAnchorRef}
               style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "visible", pointerEvents: "auto" }}
             />
           </Dialog.Content>

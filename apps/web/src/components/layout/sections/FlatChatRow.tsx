@@ -61,7 +61,6 @@ export function FlatChatRow({ chatItem, isActive, chat, character, setConfirmDes
       <div className="min-w-0 flex-1">
         {renaming ? (
           <SidebarChatRename
-            className="w-full rounded border border-border bg-bg px-1 py-0.5 text-[calc(var(--ui-fs)-1px)] text-t1 outline-none focus:border-accent"
             initialValue={chatItem.title}
             onCommit={(title) => { void character.handleRenameChat(chatItem.id, title); setRenaming(false); }}
             onCancel={() => setRenaming(false)}

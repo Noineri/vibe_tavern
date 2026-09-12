@@ -31,7 +31,7 @@ import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
-import { lblCls, inputCls } from "../fields/field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { toast } from "sonner";
 import {
 	GenerateCancelButton,
@@ -112,7 +112,7 @@ export function AvatarDescriptionField({
 		>
 			{/* Header: label + toggle */}
 			<div className="mb-2.5 flex items-center justify-between gap-2">
-				<label className={cn(lblCls, "mb-0")}>{t("avatar_description_label")}</label>
+				<label className={cn(lblCls, "!mb-0")}>{t("avatar_description_label")}</label>
 				<div className="flex items-center gap-2">
 					<span className="font-ui text-[12px] text-t3">{t("avatar_include_in_prompt")}</span>
 					<Toggle
@@ -155,7 +155,7 @@ export function AvatarDescriptionField({
 			>
 				{({ disabled, controlClassName }) => (
 					<AutoTextarea
-						className={cn(inputCls, controlClassName)}
+						className={controlClassName}
 						value={draft}
 						onChange={(e) => setDraft(e.target.value)}
 						onBlur={commitDraft}

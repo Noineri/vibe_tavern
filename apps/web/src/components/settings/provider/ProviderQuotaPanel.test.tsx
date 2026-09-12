@@ -14,9 +14,13 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ReactNode } from "react";
 import {
+  PROVIDER_BALANCE_KIND,
+  PROVIDER_BALANCE_UNIT,
   PROVIDER_QUOTA_KIND,
   PROVIDER_QUOTA_NONE_REASON,
+  PROVIDER_QUOTA_WINDOW_KIND,
   type ProviderQuotaConfig,
+  type ProviderQuotaSnapshot,
 } from "@vibe-tavern/domain";
 import type { ProviderQuotaCapabilityRecord, ProviderQuotaRecord } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -186,5 +190,48 @@ describe("ProviderQuotaPanel", () => {
 
     await waitFor(() => expect(updateCalls).toHaveLength(1));
     expect(updateCalls[0]).toMatchObject({ pollIntervalMinutes: 2 });
+  });
+
+  test("the current quota summary renders inside the disclosure (MUI step 4: quota viewable on phones)", async () => {
+    capability = windowedCapability();
+    record = {
+      providerProfileId: PROFILE,
+      config: WINDOWED_CONFIG,
+      snapshot: {
+        kind: PROVIDER_QUOTA_KIND.windowed,
+        providerProfileId: PROFILE,
+        capabilityId: "zai",
+        capabilityVersion: 1,
+        observedAt: "2026-09-11T12:00:00.000Z",
+        windows: [
+          {
+            kind: PROVIDER_QUOTA_WINDOW_KIND.session,
+            label: "5-hour session",
+            usedPercent: 50,
+            resetsAt: "2099-01-01T00:00:00.000Z",
+          },
+        ],
+        balances: [
+          {
+            kind: PROVIDER_BALANCE_KIND.available,
+            unit: PROVIDER_BALANCE_UNIT.usd,
+            amount: "12.40",
+            primary: true,
+          },
+        ],
+      } satisfies ProviderQuotaSnapshot,
+      lastError: null,
+      updatedAt: "2026-09-11T12:00:00.000Z",
+    };
+
+    const { findByText, getByText } = render(<ProviderQuotaPanel providerProfileId={PROFILE} />);
+    fireEvent.click(await findByText("quota_section"));
+
+    // Windowed row (50% used → 50% remaining) and the reported balance both
+    // render — the same body the chat flyout shows.
+    await waitFor(() => {
+      expect(getByText('quota_remaining_value:{"percent":50}')).toBeTruthy();
+    });
+    expect(getByText("$12.40")).toBeTruthy();
   });
 });

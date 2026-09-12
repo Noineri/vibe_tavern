@@ -8,10 +8,11 @@
  *
  * `scope` is the LIST FILTER and includes `"all"` (the overview). `"all"` is
  * NOT a valid scopeType for a real lorebook, so it is coerced to the editor's
- * primary context (`"character"`, which always has a characterId). The create
- * flow opens the inline edit form immediately after, where the scope picker
- * lets the user change it — so a fixed, predictable default is correct,
- * independent of the active filter.
+ * primary context (`"entity"`, which always has an owner — persona context
+ * when present, otherwise the character). The create flow opens the inline
+ * edit form immediately after, where the scope picker lets the user change
+ * it — so a fixed, predictable default is correct, independent of the active
+ * filter.
  *
  * Mirrors `scopeBody()` in ScriptEditor.tsx (same `effectiveScope` coercion);
  * if that sibling is ever shared, this is the natural home for the unified
@@ -32,13 +33,17 @@ export function buildLorebookCreateBody(
 	ids: { characterId: string; personaId: string | null; chatId: string | null },
 	name: string,
 ): LorebookCreateBody {
-	const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "character" : scope;
+	const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "entity" : scope;
 	const body: LorebookCreateBody = {
 		name,
 		scopeType: effectiveScope,
 	};
-	if (effectiveScope === "character") body.characterId = ids.characterId;
-	if (effectiveScope === "persona" && ids.personaId) body.personaId = ids.personaId;
+	// Entity home FK resolves from the current context: a persona context owns
+	// the book, otherwise the character does (exactly one typed FK).
+	if (effectiveScope === "entity") {
+		if (ids.personaId) body.personaId = ids.personaId;
+		else body.characterId = ids.characterId;
+	}
 	if (effectiveScope === "chat" && ids.chatId) body.chatId = ids.chatId;
 	return body;
 }

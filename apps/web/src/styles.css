@@ -360,6 +360,46 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .crop-zoom-slider::-webkit-slider-thumb:hover{transform:scale(1.15)}
 .crop-zoom-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}
 
+/* ── Narration playlist sliders (FS-5) — a playlist-LOCAL family, NOT the
+   shared SliderField (settings keep it untouched). Rail = theme surface
+   token var(--s3) — the same pair the fetch mini-bar already uses
+   (s3 rail / accent fill) — so every theme stays coherent; never a
+   hardcoded translucent white (owner: «полупрозрачный не везде впишется
+   в темы»). Fill = accent with a hard stop exactly at the value via the
+   --p custom property (set inline per render; Firefox paints the fill via
+   ::-moz-range-progress instead). Density: volume 4px rail / 12px thumb,
+   seek (--seek) 3px / 10px. Thumb = solid accent dot + 1px theme-token
+   outline (owner: «лучше с обводкой»). */
+.playlist-slider{-webkit-appearance:none;appearance:none;background:transparent;height:28px;margin:0;cursor:grab}
+@media (pointer:coarse){.playlist-slider{height:44px}}
+.playlist-slider::-webkit-slider-runnable-track{height:4px;border-radius:9999px;background:linear-gradient(to right,var(--accent) 0 var(--p,50%),var(--s3) var(--p,50%) 100%)}
+.playlist-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;margin-top:-4px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
+.playlist-slider::-moz-range-track{height:4px;border-radius:9999px;background:var(--s3)}
+.playlist-slider::-moz-range-progress{height:4px;border-radius:9999px;background:var(--accent)}
+.playlist-slider::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
+.playlist-slider:active{cursor:grabbing}
+.playlist-slider:active::-webkit-slider-thumb{cursor:grabbing}
+.playlist-slider:active::-moz-range-thumb{cursor:grabbing}
+.playlist-slider:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:9999px}
+.playlist-slider:disabled{opacity:.4;cursor:default}
+.playlist-slider--seek::-webkit-slider-runnable-track{height:3px}
+.playlist-slider--seek::-webkit-slider-thumb{width:10px;height:10px;margin-top:-3.5px}
+.playlist-slider--seek::-moz-range-track{height:3px}
+.playlist-slider--seek::-moz-range-progress{height:3px}
+.playlist-slider--seek::-moz-range-thumb{width:10px;height:10px}
+/* ── Narration playlist vertical volume rail (RD-4) — same s3/accent
+   family, rotated: writing-mode:vertical-lr stacks the value bottom→top
+   (direction:rtl puts min at the bottom); the webkit fill gradient runs
+   to top instead of to right. Same 4px rail / 12px thumb density as the
+   old horizontal volume slider. Pixels are live-checked by the owner. */
+.playlist-slider--vertical{width:28px;height:auto}
+@media (pointer:coarse){.playlist-slider--vertical{width:44px}}
+.playlist-slider--vertical::-webkit-slider-runnable-track{width:4px;height:100%;border-radius:9999px;background:linear-gradient(to top,var(--accent) 0 var(--p,50%),var(--s3) var(--p,50%) 100%)}
+.playlist-slider--vertical::-webkit-slider-thumb{width:12px;height:12px;margin-left:-4px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
+.playlist-slider--vertical::-moz-range-track{width:4px;border-radius:9999px;background:var(--s3)}
+.playlist-slider--vertical::-moz-range-progress{width:4px;border-radius:9999px;background:var(--accent)}
+.playlist-slider--vertical::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--accent);border:1px solid var(--border2);cursor:grab}
+
 /* ── Summary message-range dual slider (DualRangeSlider) ──
    Two full-width range inputs stacked on one track. Making each *thumb* its own
    hit target — host `pointer-events:none` + `::-webkit-slider-thumb{pointer-events:auto}`
@@ -467,6 +507,37 @@ select option{padding:2px 6px}
    saturate/brightness read as frosted glass. --glass-blur is 0 in opaque
    themes, so there's no GPU cost there. */
 .glass-blur {
+  -webkit-backdrop-filter: blur(var(--glass-blur, 0px)) saturate(180%) brightness(110%);
+  backdrop-filter: blur(var(--glass-blur, 0px)) saturate(180%) brightness(110%);
+}
+
+/* ── Frost-under variant for panels hosting position:fixed descendants ──
+   Use INSTEAD of .glass-blur when the panel's subtree renders fixed-position
+   overlays inline (dnd-kit DragOverlay does). Any non-none backdrop-filter on
+   the panel element — even blur(0px) in opaque themes — makes it a containing
+   block for fixed descendants, so the overlay resolves against the panel box
+   instead of the viewport and renders offset (R-8: dragged rows appeared
+   right/below the cursor in every master-detail list).
+   Same frost as .glass-blur, but the fill + filter live on a z:-1 ::before
+   underlayer (the .glass-bar technique, minus the feather mask): the panel
+   element itself has backdrop-filter: none, fixed descendants resolve against
+   the viewport again, and the frost rect/look is identical (the pseudo covers
+   the panel box; overflow:hidden on the panel clips it to the rounded rect).
+   isolation: isolate keeps the negative-z pseudo inside the panel (above the
+   page behind, below all in-flow content). Opaque themes: --glass-bg is opaque
+   and --glass-blur is 0 — visually identical to plain bg-surface. */
+.glass-blur-under {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+.glass-blur-under::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--glass-bg);
   -webkit-backdrop-filter: blur(var(--glass-blur, 0px)) saturate(180%) brightness(110%);
   backdrop-filter: blur(var(--glass-blur, 0px)) saturate(180%) brightness(110%);
 }

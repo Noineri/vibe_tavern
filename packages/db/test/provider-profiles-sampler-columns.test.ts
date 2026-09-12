@@ -9,9 +9,10 @@ import { providerProfiles } from "../src/db-schema.js";
 // avatarFullExt disease in another module: silently dropped on round-trip.
 //
 // Column-name shape: most sampler fields map 1:1 (camelCase JS accessor ===
-// field id), but the three JSON-array fields use a `Json` suffix
+// field id), but the JSON-array fields use a `Json` suffix
 // (`drySequenceBreakers` → `drySequenceBreakersJson`, `stopSequences` →
-// `stopSequencesJson`, `logitBias` → `logitBiasJson`). The check accepts either
+// `stopSequencesJson`, `bannedStrings` → `bannedStringsJson`, `logitBias` →
+// `logitBiasJson`). The check accepts either
 // the direct name or the `Json`-suffixed name, so it does not need a parallel
 // hand-maintained field→column map that could itself drift.
 describe("provider_profiles sampler column coverage (ERA-1)", () => {
@@ -30,12 +31,13 @@ describe("provider_profiles sampler column coverage (ERA-1)", () => {
     }
   });
 
-  // Document the three intentional Json-suffixed columns explicitly, so a
+  // Document the intentional Json-suffixed columns explicitly, so a
   // future rename that drops the suffix (and would break the store's
   // JSON.stringify/parse mapping) is caught here, not at runtime.
-  it("pins the three Json-suffixed sampler columns", () => {
+  it("pins the Json-suffixed sampler columns", () => {
     expect(columnKeys.has("drySequenceBreakersJson")).toBe(true);
     expect(columnKeys.has("stopSequencesJson")).toBe(true);
+    expect(columnKeys.has("bannedStringsJson")).toBe(true);
     expect(columnKeys.has("logitBiasJson")).toBe(true);
   });
 });

@@ -61,6 +61,7 @@ const STABLE_CONTROLLER = {
   handleDeleteMessage: NOOP_ASYNC,
   handleDeleteVariant: NOOP_ASYNC,
   handleRegenerateMessage: NOOP_ASYNC,
+  handleContinueMessage: NOOP_ASYNC,
   handleSelectMessageVariant: NOOP_ASYNC,
   handleResend: NOOP_ASYNC,
   handleFork: NOOP_ASYNC,

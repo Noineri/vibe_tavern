@@ -14,6 +14,7 @@
 import React, { useState, useCallback } from "react";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
+import { TextInput } from "../../shared/text-input.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -238,14 +239,13 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
 
       {/* Tokenize input */}
       <div className="flex gap-2">
-        <input
-          type="text"
+        <TextInput
+          className="flex-1"
           value={textInput}
           onChange={(e) => setTextInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void handleTokenize(); }}
           placeholder={t("logit_bias_tokenize_placeholder")}
           disabled={disabled || loading}
-          className="h-[38px] flex-1 rounded-md border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent placeholder:text-t3/50"
         />
         <button
           type="button"
@@ -264,15 +264,15 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
 
       {/* Manual token ID input */}
       <div className="mt-2 flex gap-2">
-        <input
-          type="text"
+        <TextInput
+          mono
+          className="flex-1"
           inputMode="numeric"
           value={manualId}
           onChange={(e) => setManualId(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleManualAdd(); }}
           placeholder={t("logit_bias_manual_placeholder")}
           disabled={disabled}
-          className="h-[30px] flex-1 rounded-md border border-border bg-s2 px-3 font-mono text-[11px] text-t1 outline-none transition-colors focus:border-accent placeholder:text-t3/50"
         />
         <button
           type="button"

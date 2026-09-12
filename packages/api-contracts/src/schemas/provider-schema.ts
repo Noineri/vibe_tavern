@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { COAUTHOR_TRANSPORT, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
 import { providerProxyModeSchema } from "./proxy-schema.js";
+import { generationFormatSchema as generationFormatSchemaRef } from "./prompt-preset-schema.js";
 
 /**
  * Per-sampler-field zod schema — the single source of the sampler wire surface.
@@ -26,6 +27,12 @@ const samplerFieldSchemas = {
   minP: z.number().optional(),
   typicalP: z.number().optional(),
   tfsZ: z.number().optional(),
+  adaptiveTarget: z.number().optional(),
+  adaptiveDecay: z.number().optional(),
+  dynatempRange: z.number().optional(),
+  dynatempExponent: z.number().optional(),
+  topNSigma: z.number().optional(),
+  smoothingFactor: z.number().optional(),
   repeatLastN: z.number().optional(),
   mirostat: z.number().optional(),
   mirostatTau: z.number().optional(),
@@ -33,6 +40,7 @@ const samplerFieldSchemas = {
   dryMultiplier: z.number().optional(),
   dryBase: z.number().optional(),
   dryAllowedLength: z.number().optional(),
+  dryPenaltyLastN: z.number().optional(),
   drySequenceBreakers: z.array(z.string()).optional(),
   xtcThreshold: z.number().optional(),
   xtcProbability: z.number().optional(),
@@ -40,6 +48,7 @@ const samplerFieldSchemas = {
   presencePenalty: z.number().optional(),
   repetitionPenalty: z.number().optional(),
   stopSequences: z.array(z.string()).optional(),
+  bannedStrings: z.array(z.string()).optional(),
   logitBias: z.array(z.object({
     tokenId: z.number().int(),
     bias: z.number().min(-100).max(100),
@@ -71,6 +80,13 @@ const providerCoreSchema = z.object({
   defaultModel: z.string().nullable().optional(),
   contextBudget: z.number().nullable().optional(),
   pinContextBudget: z.boolean().optional(),
+  /** Token padding (LS-1d): safety margin subtracted from the context budget.
+   *  Profile-level (not a per-model overlay field) — see effectiveContextBudget. */
+  tokenPadding: z.number().optional(),
+  /** Generation mode (LS-2a): `chat` (default) vs raw text `completion`.
+   *  Profile-level (not a per-model overlay field) — see GENERATION_MODE.
+   *  The flip is silent: only how FUTURE generations are sent changes. */
+  generationMode: z.enum([GENERATION_MODE.chat, GENERATION_MODE.completion]).optional(),
   /** When true, sampler/context edits route to a per-model overlay (see modelSettingsOverlaySchema). */
   bindPerModel: z.boolean().optional(),
   modelFreeOnly: z.boolean().optional(),
@@ -84,6 +100,19 @@ const providerCoreSchema = z.object({
   proxyMode: providerProxyModeSchema.optional(),
   proxyId: z.string().nullable().optional(),
   visionModel: z.string().nullable().optional(),
+  /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a). Nullable — null = "no set". */
+  samplerSetId: z.string().nullable().optional(),
+  /** LS-10: the provider-side generation format (the format block in provider
+   *  settings). Nullable — null = unset (the active preset's format keeps
+   *  applying as the fallback source, supervisor decision (c) 2026-09-09). */
+  generationFormat: z
+    .object({
+      mode: z.enum(["auto", "manual"]),
+      selection: z.string().optional(),
+      format: generationFormatSchemaRef.optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const saveProviderDraftSchema = providerCoreSchema.extend({

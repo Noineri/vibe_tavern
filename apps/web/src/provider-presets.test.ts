@@ -10,4 +10,13 @@ describe("provider preset transport classifications", () => {
     const capabilityIds = (Object.keys(COAUTHOR_TRANSPORT_CAPABILITIES) as ProviderPresetId[]).sort();
     expect(registryIds).toEqual(capabilityIds);
   });
+
+  test("LM Studio is the ninth local preset — localhost pass-through, no API key (B4)", () => {
+    const lmstudio = PROVIDER_PRESETS.find((preset) => preset.id === "lmstudio");
+    expect(lmstudio).toBeDefined();
+    expect(lmstudio!.type).toBe("openai_compat");
+    expect(lmstudio!.baseUrl).toBe("http://localhost:1234/v1");
+    expect(lmstudio!.group).toBe("local");
+    expect(lmstudio!.noApiKey).toBe(true);
+  });
 });

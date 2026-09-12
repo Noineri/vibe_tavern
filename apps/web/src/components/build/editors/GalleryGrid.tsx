@@ -282,7 +282,6 @@ function GalleryTile({
                     value={captionDraft}
                     onChange={(e) => setCaptionDraft(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void saveCaption(); } }}
-                    className="w-full rounded bg-s2 px-3 py-2 text-[calc(var(--ui-fs)-1px)] text-t1 outline-none ring-1 ring-border focus:ring-accent"
                     style={{}} maxRows={5}
                     placeholder={t("caption_placeholder")} autoFocus
                   />
@@ -386,7 +385,6 @@ function GalleryTile({
                       value={captionDraft}
                       onChange={(e) => setCaptionDraft(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void saveCaption(); } }}
-                      className="w-full rounded bg-s2 px-2 py-1.5 text-sm text-t1 outline-none ring-1 ring-border focus:ring-accent"
                       style={{}} maxRows={7}
                       placeholder={t("caption_placeholder")} autoFocus
                     />

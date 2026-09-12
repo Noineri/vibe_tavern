@@ -2,38 +2,20 @@
 <resources>
     <string name="app_name">Vibe Tavern</string>
     <string name="logo_content_description">Vibe Tavern book and stars</string>
-    <string name="launcher_intro">The launcher manages the local server; Vibe Tavern opens in your browser.</string>
+    <string name="launcher_intro">The launcher manages the embedded local server; Vibe Tavern opens in your browser.</string>
     <string name="launcher_version_status">Launcher and server versions</string>
     <string name="checking_server">Checking local server…</string>
-    <string name="start_server">Start Server in Termux</string>
+    <string name="start_server">Start Server</string>
     <string name="open_browser">Open in Browser</string>
-    <string name="stop_server">Stop Server</string>
     <string name="management">Launcher and server management</string>
     <string name="check_launcher_update">Check for launcher update</string>
+    <string name="copy_server_log">Copy server log</string>
+    <string name="clear_server_log">Clear server log</string>
     <string name="first_time_setup">First-Time Setup</string>
-    <string name="first_time_setup_step_open">1. Open Termux once</string>
-    <string name="first_time_setup_step_command">2. Allow launcher commands</string>
-    <string name="first_time_setup_step_restart">3. Restart Termux</string>
-    <string name="first_time_setup_step_install">4. Install the server</string>
-    <string name="termux_command_label">Copy this entire command block into Termux</string>
-    <string name="termux_command_placeholder">The Termux setup command appears here.</string>
-    <string name="copy_termux_command">Copy command</string>
-    <string name="open_termux">Open Termux</string>
-    <string name="install_server">Install or update server payload</string>
     <string name="help_troubleshooting">Help and troubleshooting</string>
     <string name="language">Language</string>
     <string name="uninstall">Uninstall</string>
-    <string name="battery_hint">Tip: if the web UI lags after switching apps, disable battery optimization for Termux.</string>
-
-    <string name="step_install_termux">Step 1: Install Termux</string>
-    <string name="btn_install_termux">Install Termux from F-Droid</string>
-    <string name="btn_installed_continue">I\'ve installed it — continue</string>
-    <string name="termux_install_body">Vibe Tavern needs Termux to run the local server on your device.\n\nIMPORTANT: install Termux from F-Droid, not the Play Store. The Play Store version is outdated and will not work.</string>
-
-    <string name="step_grant_permission">Step 2: Grant Permission</string>
-    <string name="btn_open_settings">Open Vibe Tavern Settings</string>
-    <string name="btn_continue">Continue</string>
-    <string name="permission_guide_body">This permission belongs to Vibe Tavern, not Termux. Copy the command block below into Termux, restart Termux, then grant the launcher permission in Android settings.</string>
+    <string name="battery_hint">Tip: if the web UI lags after switching apps, disable battery optimization for Vibe Tavern.</string>
 
     <string name="loading">Starting server…</string>
     <string name="notification_server_running">Server is running on localhost:8787</string>

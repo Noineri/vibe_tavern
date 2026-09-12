@@ -95,7 +95,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 
 	return (
 			<Modal open={open} onClose={onClose} title={headerLabel} description={t("update_modal_description")}>
-			<div className="flex max-h-[80vh] w-[min(760px,94vw)] flex-col rounded-lg border border-border2 bg-surface shadow-xl">
+			<div className="glass-blur-under flex max-h-[80vh] w-[min(760px,94vw)] flex-col overflow-hidden rounded-lg border border-border2 shadow-xl">
 				{/* Header */}
 				<div className="flex items-center justify-between border-b border-border2 px-5 py-3.5">
 					<div className="flex items-center gap-2.5">

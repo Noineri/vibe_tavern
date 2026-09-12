@@ -22,6 +22,9 @@ import type { ProviderFetch } from "./provider-fetch-factory.js";
 export const PROBE_TIMEOUT_MS = 5_000;
 export const MODEL_LIST_TIMEOUT_MS = 10_000;
 export const TEST_CHAT_TIMEOUT_MS = 15_000;
+/** Backend tokenize requests (LOCAL_SUPPORT_PLAN LS-1a). Runs on the warm path
+ *  only — never blocks prompt assembly — but must not hang the warm queue. */
+export const TOKENIZE_TIMEOUT_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // Transport types

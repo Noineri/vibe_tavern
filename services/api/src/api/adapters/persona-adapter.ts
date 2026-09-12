@@ -17,7 +17,19 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 		private readonly stores: StoreContainer,
 		private readonly assetService: AssetService,
 		private readonly providerProfileService: ProviderProfileService,
+		/** Vision-describe test seam (AGENTS.md tier policy: T1 doubles enter via
+		 *  DI seams, not mock.module). Mirrors CharacterAdapter. Absent ⇒ the real
+		 *  vision-gate fns. */
+		private readonly visionDescribeDeps?: {
+			describeAttachments?: typeof describeAttachments;
+			resolveVisionDescribePrompt?: typeof resolveVisionDescribePrompt;
+		},
 	) {}
+
+	/** Seam accessor — injected stub (tests) or the real vision-gate fn. */
+	private get describeAttachmentsImpl(): typeof describeAttachments {
+		return this.visionDescribeDeps?.describeAttachments ?? describeAttachments;
+	}
 
 	listPersonas = () => this.sessionRuntime.persona.list();
 
@@ -134,7 +146,7 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 		const prompt = await this.resolveVisionDescribePromptFromPreset();
 		const providerFetch = await resolveProviderFetchForProfile(profile);
 
-		const descriptions = await describeAttachments(
+		const descriptions = await this.describeAttachmentsImpl(
 			[{ id: "avatar", assetId: "avatar", type: "image", name: `${persona.name} avatar`, mimeType, sizeBytes: 0 }],
 			profile.visionModel,
 			profile,
@@ -159,22 +171,7 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 	}
 
 	private async resolveVisionDescribePromptFromPreset(): Promise<string> {
-		const settings = await this.stores.uiSettings.get();
-		let aiAssistantPrompts: Record<string, string> | null = null;
-		if (settings?.activePromptPresetId) {
-			const preset = await this.stores.presets.getById(settings.activePromptPresetId);
-			if (preset?.aiAssistantPrompts) {
-				try {
-					const parsed = JSON.parse(preset.aiAssistantPrompts);
-					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-						aiAssistantPrompts = Object.fromEntries(
-							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
-						) as Record<string, string>;
-					}
-				} catch { /* preset.aiAssistantPrompts may hold malformed JSON; skip and fall back to the default vision-describe prompt */ }
-			}
-		}
-		return resolveVisionDescribePrompt(aiAssistantPrompts);
+		return (this.visionDescribeDeps?.resolveVisionDescribePrompt ?? resolveVisionDescribePrompt)(this.stores.db);
 	}
 
 	// ─── Export / Import (PR-5) ─────────────────────────────────────────

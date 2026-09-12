@@ -3,7 +3,7 @@ import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { ToolSet } from "ai";
-import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
+import type { Character, Message as DbMessage, Chat as DbChat, AppDb } from "@vibe-tavern/db";
 import type {
   AssemblePromptForChatInput,
   AssemblePromptForChatResult,
@@ -157,6 +157,8 @@ export interface ChatModeAssembleLoaders {
  */
 export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
   promptService: PromptAssemblyService;
+  /** Service-prompt DB handle — when present, co-author base resolves via the active profile. */
+  db?: AppDb;
   loaders: ChatModeAssembleLoaders;
   /**
    * Optional AI-delegation callback for lore tools (CTX-L2b). When present,

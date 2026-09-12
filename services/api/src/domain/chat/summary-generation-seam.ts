@@ -40,6 +40,7 @@ export const API_KEY_OPTIONAL_PROVIDER_PRESETS = new Set([
 	"ooba",
 	"tabby",
 	"aphrodite",
+	"lmstudio",
 ]);
 
 /** Whether a provider preset requires a saved API key before it can be used. */

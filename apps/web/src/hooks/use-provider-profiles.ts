@@ -516,6 +516,11 @@ export function useProviderProfiles() {
           bindPerModel: basePatch.bindPerModel,
           proxyMode: basePatch.proxyMode,
           proxyId: basePatch.proxyId,
+          // The sampler-set pointer is PROFILE-level (never overlay): the
+          // dropdown pre-selection + dirty-dot baseline survive overlay saves.
+          samplerSetId: basePatch.samplerSetId,
+          // Same for the LS-10 format block — profile-level, survives overlays.
+          generationFormat: basePatch.generationFormat,
         };
         saved = form.id
           ? await updateProviderProfileAction(form.id, identityPatch)

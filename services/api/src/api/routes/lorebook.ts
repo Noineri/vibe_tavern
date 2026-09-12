@@ -9,7 +9,7 @@ export function createLorebookRoutes(runtime: LorebookRuntimeApi) {
       return c.json(await runtime.listAllLorebooks());
     })
     .get("/api/lorebooks", async (c) => {
-      const scopeType = c.req.query("scopeType") ?? "character";
+      const scopeType = c.req.query("scopeType") ?? "entity";
       const ownerId = c.req.query("ownerId") ?? undefined;
       return c.json(await runtime.listLorebooks(scopeType, ownerId));
     })
@@ -56,7 +56,7 @@ export function createLorebookRoutes(runtime: LorebookRuntimeApi) {
       const body = c.req.valid("json");
       const lorebookIdParam = c.req.param("lorebookId");
       const lorebookId = lorebookIdParam === "new" ? null : lorebookIdParam;
-      return c.json(await runtime.importLorebook(lorebookId, { format: body.format, data: body.data, mode: body.mode, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId, fallbackName: body.fallbackName }), 201);
+      return c.json(await runtime.importLorebook(lorebookId, { format: body.format, data: body.data, mode: body.mode, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId, fallbackName: body.fallbackName, enabled: body.enabled }), 201);
     })
     // ── Links ───────────────────────────────────────────────────────────
     .get("/api/lorebooks/:lorebookId/links", async (c) => {

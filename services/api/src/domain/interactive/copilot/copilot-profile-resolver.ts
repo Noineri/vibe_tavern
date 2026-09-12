@@ -50,12 +50,12 @@ export class CopilotProfileResolver {
 	 * or any missing/dangling link falls back to the built-in seed.
 	 */
 	async resolveForScript(scriptId: string | null): Promise<CopilotProfile> {
-		if (scriptId === null) return resolveBuiltinCopilotProfile();
+		if (scriptId === null) return resolveBuiltinCopilotProfile(this.stores.db);
 		const script = await this.stores.scripts.getById(scriptId);
 		const profileId = script?.copilotProfileId ?? null;
-		if (profileId === null) return resolveBuiltinCopilotProfile();
+		if (profileId === null) return resolveBuiltinCopilotProfile(this.stores.db);
 		const row = await this.stores.copilotProfiles.getById(profileId);
-		if (row === null) return resolveBuiltinCopilotProfile();
+		if (row === null) return resolveBuiltinCopilotProfile(this.stores.db);
 		return copilotProfileRowToWire(row);
 	}
 }

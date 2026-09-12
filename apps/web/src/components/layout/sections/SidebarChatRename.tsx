@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 
 /**
  * Inline chat-title rename input used inside `RichChatRow`.
@@ -28,7 +29,7 @@ export function SidebarChatRename({
   initialValue: string;
   onCommit: (title: string) => void;
   onCancel: () => void;
-  className: string;
+  className?: string;
 }) {
   const [draft, setDraft] = useState(initialValue);
 
@@ -42,7 +43,7 @@ export function SidebarChatRename({
   };
 
   return (
-    <input
+    <InlineRenameInput
       className={className}
       value={draft}
       autoFocus

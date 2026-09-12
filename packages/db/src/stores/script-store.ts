@@ -118,21 +118,37 @@ export class ScriptStore {
         .all();
       return rows.map((r) => this.mapRow(r));
     }
-    if (!ownerId) return [];
-    const fkCol = scopeType === 'character' ? scripts.characterId
-      : scopeType === 'persona' ? scripts.personaId
-      : scripts.chatId;
-    const directCondition = and(eq(scripts.scopeType, scopeType), eq(fkCol, ownerId));
-
-    // Character/persona tabs show both directly scoped scripts and scripts
-    // linked via the junction table (mirrors LorebookStore.listLorebooksByScope).
-    // Chat scope remains direct-only — script_links supports character/persona
-    // targets only, same as lorebook_links.
-    if (scopeType === 'character' || scopeType === 'persona') {
+    // Entity scope: the home FK is whichever owner column is set
+    // (characterId OR personaId), so the direct match covers both.
+    // Without an ownerId this is a BROWSE view — every entity-home script
+    // regardless of which owner it is bound to (the editor sidebar's
+    // "entity" tab is a scope filter, symmetric with the global tab).
+    // Owner views (character/persona build sidebars) always pass ownerId.
+    if (scopeType === 'entity') {
+      if (!ownerId) {
+        const rows = await this.db
+          .select()
+          .from(scripts)
+          .where(eq(scripts.scopeType, 'entity'))
+          .orderBy(asc(scripts.sortOrder), asc(scripts.name))
+          .all();
+        return rows.map((r) => this.mapRow(r));
+      }
+      const directCondition = and(
+        eq(scripts.scopeType, 'entity'),
+        or(eq(scripts.characterId, ownerId), eq(scripts.personaId, ownerId)),
+      );
+      // The owner view shows both directly scoped scripts and scripts linked
+      // via the junction table (either target type — a script bound to the
+      // owner through any link belongs to the owner's view). Mirrors
+      // `LorebookStore.listLorebooksByScope`. Chat scope remains direct-only
+      // — script_links supports character/persona targets only, same as
+      // lorebook_links. Any other (legacy) scope value falls through to the
+      // same direct-FK read — no junction union.
       const linkedRows = await this.db
         .select({ scriptId: scriptLinks.scriptId })
         .from(scriptLinks)
-        .where(and(eq(scriptLinks.targetType, scopeType), eq(scriptLinks.targetId, ownerId)))
+        .where(and(inArray(scriptLinks.targetType, ['character', 'persona']), eq(scriptLinks.targetId, ownerId)))
         .all();
       const linkedIds = [...new Set(linkedRows.map((row) => row.scriptId))];
       const whereCondition = linkedIds.length > 0
@@ -146,6 +162,12 @@ export class ScriptStore {
         .all();
       return rows.map((r) => this.mapRow(r));
     }
+
+    // Legacy/chat fallthrough is an owner view by definition — no ownerId
+    // means nothing to match (chat tab without a chat context stays empty).
+    if (!ownerId) return [];
+    const fkCol = scopeType === 'chat' ? scripts.chatId : scripts.characterId;
+    const directCondition = and(eq(scripts.scopeType, scopeType), eq(fkCol, ownerId));
 
     const rows = await this.db
       .select()
@@ -198,7 +220,7 @@ export class ScriptStore {
         enabled: (data.enabled ?? true) ? 1 : 0,
         scriptKind: data.scriptKind ?? 'prompt',
         creationIntentId: data.creationIntentId ?? null,
-        scopeType: data.scopeType ?? 'character',
+        scopeType: data.scopeType ?? 'entity',
         sortOrder: data.sortOrder ?? 0,
         characterId: data.characterId ?? null,
         personaId: data.personaId ?? null,
@@ -262,17 +284,24 @@ export class ScriptStore {
 
   /** Atomically reassign a script's scope: clears ALL FK columns, then sets
    *  only the one matching `scopeType`. `ownerId` is null for 'global'.
-   *  This is the safe write path for the persona/character binding UI — unlike
-   *  a raw `update({ scopeType, personaId })`, it cannot leave a stale FK behind. */
-  async setScope(id: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null): Promise<Script> {
+   *  This is the safe write path for the scope binding UI — unlike a raw
+   *  `update({ scopeType, personaId })`, it cannot leave a stale FK behind.
+   *  Entity scope: the owner FK is the typed characterId/personaId pair, and
+   *  the caller's `ownerId` alone does not identify the target type, so an
+   *  entity re-homing keeps the row's existing owner FK untouched (quirk
+   *  parity with the lorebook accordion scope flip, which sends only
+   *  `{name, scopeType}`) — global/chat transitions still clear stale FKs. */
+  async setScope(id: string, scopeType: 'global' | 'entity' | 'chat', ownerId: string | null): Promise<Script> {
     const now = this.clock.now();
-    const values: Partial<typeof scripts.$inferInsert> = {
-      updatedAt: now,
-      scopeType,
-      characterId: scopeType === 'character' ? ownerId : null,
-      personaId: scopeType === 'persona' ? ownerId : null,
-      chatId: scopeType === 'chat' ? ownerId : null,
-    };
+    const values: Partial<typeof scripts.$inferInsert> = scopeType === 'entity'
+      ? { updatedAt: now, scopeType }
+      : {
+          updatedAt: now,
+          scopeType,
+          characterId: null,
+          personaId: null,
+          chatId: scopeType === 'chat' ? ownerId : null,
+        };
     const [row] = await this.db.update(scripts).set(values).where(eq(scripts.id, id)).returning();
     if (!row) throw new Error(`Script '${id}' not found after scope update`);
     if (this.content) {
@@ -301,7 +330,7 @@ export class ScriptStore {
    * path that loads dice scripts. Scope resolution and FK ∪ junction union
    * are unchanged from the pre-kind behavior; only a kind filter is added.
    *
-   * Scope resolution: global → character → persona → chat.
+   * Scope resolution: global → entity (character-FK OR persona-FK) → chat.
    * Scripts run synchronously in this order — script #2 can read state from script #1.
    */
   async listAllEnabledForChat(
@@ -329,8 +358,8 @@ export class ScriptStore {
 
   /**
    * Shared scope-aware enabled-script resolution, filtered by `kind`. Unions
-   * FK-scoped sources (global / character-FK / persona-FK / chat-FK) with
-   * junction-linked sources (character ∪ persona), Set-dedups, and sorts by
+   * FK-scoped sources (global / entity-FK = characterId OR personaId / chat-FK)
+   * with junction-linked sources (character ∪ persona), Set-dedups, and sorts by
    * sortOrder. The kind filter is applied at BOTH the FK query and the junction
    * innerJoin so the opposite kind can never leak into a resolver.
    */
@@ -342,17 +371,16 @@ export class ScriptStore {
   ): Promise<Script[]> {
     const ids = new Set<string>();
 
-    // FK-scoped sources: global, character-FK, persona-FK, chat-FK.
+    // FK-scoped sources: global, entity-FK (home FK is whichever owner column
+    // is set — one pass covers character AND persona homes), chat-FK.
+    const entityFkCondition = personaId
+      ? and(eq(scripts.scopeType, 'entity'), or(eq(scripts.characterId, characterId), eq(scripts.personaId, personaId)))
+      : and(eq(scripts.scopeType, 'entity'), eq(scripts.characterId, characterId));
     const fkConditions = [
       eq(scripts.scopeType, 'global'),
-      and(eq(scripts.scopeType, 'character'), eq(scripts.characterId, characterId)),
-      and(eq(scripts.scopeType, 'chat'), eq(scripts.chatId, chatId)),
+      entityFkCondition,
+      eq(scripts.scopeType, 'chat'), eq(scripts.chatId, chatId),
     ];
-    if (personaId) {
-      fkConditions.push(
-        and(eq(scripts.scopeType, 'persona'), eq(scripts.personaId, personaId)),
-      );
-    }
     const fkRows = await this.db
       .select({ id: scripts.id })
       .from(scripts)

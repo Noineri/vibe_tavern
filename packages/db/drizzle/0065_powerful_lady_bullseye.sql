@@ -1,0 +1,1 @@
+ALTER TABLE `provider_profiles` ADD `banned_strings_json` text;

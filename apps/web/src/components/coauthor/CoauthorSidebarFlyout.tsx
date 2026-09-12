@@ -37,6 +37,7 @@ import type { ChatId, ChatMode } from "@vibe-tavern/domain";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
 import { formatRelativeTime } from "../layout/sidebar-utils.js";
 import { Icons } from "../shared/icons.js";
+import { SearchInput } from "../shared/SearchInput.js";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { OverflowTooltip } from "../shared/OverflowTooltip.js";
@@ -146,21 +147,18 @@ export function CoauthorSidebarFlyout({
 
           {/* ── Search ── */}
           <div className="shrink-0 px-3">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-s2 px-2 py-1 transition-colors focus-within:border-accent/60">
-              <Icons.Search className="h-3.5 w-3.5 shrink-0 text-t3" />
-              <input
-                type="text"
-                value={chatQuery}
-                onChange={(e) => setChatQuery(e.target.value)}
-                placeholder={t("chat_search_placeholder")}
-                className="min-w-0 flex-1 bg-transparent font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none placeholder:text-t4"
-              />
-              {chatQuery && (
-                <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1" aria-label={t("chat_search_clear")} onClick={() => setChatQuery("")}>
-                  <Icons.Close className="h-3 w-3" />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              value={chatQuery}
+              onChange={(e) => setChatQuery(e.target.value)}
+              placeholder={t("chat_search_placeholder")}
+              trailing={
+                chatQuery ? (
+                  <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1" aria-label={t("chat_search_clear")} onClick={() => setChatQuery("")}>
+                    <Icons.Close className="h-3 w-3" />
+                  </button>
+                ) : undefined
+              }
+            />
           </div>
 
           {/* ── Chat list ── */}

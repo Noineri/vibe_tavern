@@ -1,0 +1,370 @@
+/** Local TTS server discovery — pure probe module (TTS_PLAN TS-11a; lives in
+ *  domain so BOTH the web client and the API server can run it: discovery is
+ *  routed through the API (server-side fetch) because some local servers
+ *  (openai-edge-tts) ship no CORS headers at all, which makes direct browser
+ *  probing impossible — the browser kills the response before we can read
+ *  it. The fetch implementation is injected (FetchLike); the module itself
+ *  has zero dependencies and never touches I/O globals. */
+
+export type FetchLike = (
+  input: string,
+  init?: { method?: string; headers?: Record<string, string>; signal?: AbortSignal },
+) => Promise<ResponseLike>;
+
+export interface ResponseLike {
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+}
+
+export interface DiscoveredServer {
+  port: number;
+  /** Base URL, e.g. http://127.0.0.1:8880 */
+  baseUrl: string;
+  /** Best-effort server identity (kokoro-fastapi recognized by a "kokoro"
+   *  model id; the voices shape alone is NOT enough — openai-edge-tts returns
+   *  the same { voices: [{ id }] } shape and is not kokoro). */
+  kind: "kokoro-fastapi" | "openai-compatible";
+  /** Voice ids when the voices endpoint returned a usable list; else []. */
+  voiceIds: string[];
+  /** Model ids from /v1/models when reachable; else []. */
+  modelIds: string[];
+}
+
+export interface ProbeOutcome {
+  port: number;
+  status: "found" | "refused" | "http-error" | "bad-shape" | "timeout";
+  server?: DiscoveredServer;
+  /** HTTP status when status === "http-error"; used by diagnoseOutcome. */
+  httpStatus?: number;
+}
+
+export type DiscoveryDiagnosticCode =
+  | "found"
+  | "server-not-running"
+  | "wrong-shape"
+  | "auth-or-http"
+  | "http-other"
+  | "timeout";
+
+/** Ports probed by local discovery. 8880 kokoro-fastapi, 5050 openai-edge-tts,
+ *  4123 chatterbox-tts-api, 5005 orpheus-fastapi (the four servers documented
+ *  in the setup cards), 8000/7851/5000 common defaults for other
+ *  OpenAI-compatible servers. */
+const PROBE_PORTS = [8880, 8000, 7851, 5000, 5050, 4123, 5005] as const;
+
+class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TimeoutError";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Pull the model-id array out of a /v1/models body. Two shapes in the wild:
+ *  the OpenAI-compatible `{ data: [{ id }] }` and openai-edge-tts's
+ *  `{ models: [{ id }] }` — accept either. Returns null when neither key
+ *  holds an array. */
+function readModelIdArray(json: unknown): string[] | null {
+  if (!isRecord(json)) return null;
+  const source: unknown[] | undefined = Array.isArray(json.data)
+    ? json.data
+    : Array.isArray(json.models)
+      ? json.models
+      : undefined;
+  if (source === undefined) return null;
+  const modelIds: string[] = [];
+  for (const item of source) {
+    if (isRecord(item) && typeof item.id === "string" && item.id.length > 0) {
+      modelIds.push(item.id);
+    }
+  }
+  return modelIds;
+}
+
+function fetchWithTimeout(
+  fetchLike: FetchLike,
+  url: string,
+  timeoutMs: number,
+): Promise<ResponseLike> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new TimeoutError(`timeout after ${timeoutMs}ms for ${url}`)), timeoutMs);
+  });
+  let fetchPromise: Promise<ResponseLike>;
+  try {
+    fetchPromise = fetchLike(url);
+  } catch (error) {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    throw error;
+  }
+  return Promise.race([fetchPromise, timeoutPromise]).finally(() => {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  });
+}
+
+type EndpointResult =
+  | { status: "found"; modelIds?: string[]; voiceIds?: string[] }
+  | { status: "http-error"; httpStatus: number }
+  | { status: "bad-shape" }
+  | { status: "refused" }
+  | { status: "timeout" };
+
+async function probeModels(
+  baseUrl: string,
+  fetchLike: FetchLike,
+  timeoutMs: number,
+): Promise<EndpointResult & { modelIds?: string[] }> {
+  let response: ResponseLike;
+  try {
+    response = await fetchWithTimeout(fetchLike, `${baseUrl}/v1/models`, timeoutMs);
+  } catch (error) {
+    if (error instanceof TimeoutError) return { status: "timeout" };
+    return { status: "refused" };
+  }
+  if (!response.ok) {
+    return { status: "http-error", httpStatus: response.status };
+  }
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
+    return { status: "bad-shape" };
+  }
+  const modelIds = readModelIdArray(json);
+  if (modelIds === null) return { status: "bad-shape" };
+  return { status: "found", modelIds };
+}
+
+async function probeVoices(
+  baseUrl: string,
+  fetchLike: FetchLike,
+  timeoutMs: number,
+): Promise<EndpointResult & { voiceIds?: string[] }> {
+  let response: ResponseLike;
+  try {
+    response = await fetchWithTimeout(fetchLike, `${baseUrl}/v1/audio/voices`, timeoutMs);
+  } catch (error) {
+    if (error instanceof TimeoutError) return { status: "timeout" };
+    return { status: "refused" };
+  }
+  if (!response.ok) {
+    return { status: "http-error", httpStatus: response.status };
+  }
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
+    return { status: "bad-shape" };
+  }
+  // Bare array: [{ id, name? }]
+  if (Array.isArray(json)) {
+    const voiceIds: string[] = [];
+    for (const item of json) {
+      if (isRecord(item) && typeof item.id === "string" && item.id.length > 0) {
+        voiceIds.push(item.id);
+      }
+    }
+    return { status: "found", voiceIds };
+  }
+  if (isRecord(json) && Array.isArray(json.voices)) {
+    const voiceIds: string[] = [];
+    for (const item of json.voices) {
+      if (isRecord(item) && typeof item.id === "string" && item.id.length > 0) {
+        voiceIds.push(item.id);
+      }
+    }
+    return { status: "found", voiceIds };
+  }
+  return { status: "bad-shape" };
+}
+
+/** Probe one port: GET {base}/v1/models and GET {base}/v1/audio/voices.
+ *  AbortSignal with a caller-chosen timeout (default 1500ms).
+ *  A port is "found" when /v1/models returns ok JSON shaped { data: [{ id }] }
+ *  or { models: [{ id }] } OR /v1/audio/voices returns ok JSON shaped
+ *  { voices: [{ id }] } / bare array. ok-but-unparseable → "bad-shape".
+ *  Non-2xx → "http-error". Network refusal → "refused". Timeout via the
+ *  signal → "timeout". Never throws. */
+export async function probeServerPort(
+  port: number,
+  fetchLike: FetchLike,
+  timeoutMs = 1500,
+): Promise<ProbeOutcome> {
+  // 127.0.0.1 is the deterministic loopback form — avoids IPv6 localhost
+  // resolution stalls that some local servers exhibit on ::1.
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const [modelsResult, voicesResult] = await Promise.all([
+    probeModels(baseUrl, fetchLike, timeoutMs),
+    probeVoices(baseUrl, fetchLike, timeoutMs),
+  ]);
+
+  const modelsFound = modelsResult.status === "found";
+  const voicesFound = voicesResult.status === "found";
+
+  if (modelsFound || voicesFound) {
+    const modelIds = modelsFound && modelsResult.modelIds !== undefined ? modelsResult.modelIds : [];
+    const voiceIds = voicesFound && voicesResult.voiceIds !== undefined ? voicesResult.voiceIds : [];
+    // kokoro recognition: a "kokoro" model id. The voices shape alone is NOT
+    // evidence — openai-edge-tts serves the same { voices: [...] } shape.
+    const hasKokoroModel = modelIds.some((id) => id.toLowerCase().includes("kokoro"));
+    const kind: DiscoveredServer["kind"] = hasKokoroModel ? "kokoro-fastapi" : "openai-compatible";
+    const server: DiscoveredServer = {
+      port,
+      baseUrl,
+      kind,
+      voiceIds,
+      modelIds,
+    };
+    return { port, status: "found", server };
+  }
+
+  // Not found — pick the most informative non-found status.
+  const hasTimeout = modelsResult.status === "timeout" || voicesResult.status === "timeout";
+  if (hasTimeout) {
+    return { port, status: "timeout" };
+  }
+  const hasBadShape = modelsResult.status === "bad-shape" || voicesResult.status === "bad-shape";
+  if (hasBadShape) {
+    return { port, status: "bad-shape" };
+  }
+  if (modelsResult.status === "http-error" || voicesResult.status === "http-error") {
+    const httpStatus =
+      modelsResult.status === "http-error"
+        ? modelsResult.httpStatus
+        : voicesResult.status === "http-error"
+          ? voicesResult.httpStatus
+          : undefined;
+    return { port, status: "http-error", httpStatus };
+  }
+  return { port, status: "refused" };
+}
+
+/** Probe the full ordered list in parallel; resolves when all settle. */
+export async function discoverLocalTtsServers(
+  fetchLike: FetchLike,
+  timeoutMs = 1500,
+): Promise<ProbeOutcome[]> {
+  const outcomes = await Promise.all(
+    PROBE_PORTS.map((port) => probeServerPort(port, fetchLike, timeoutMs)),
+  );
+  return outcomes;
+}
+
+// ─── STT discovery (STT_PLAN ST-8 — reuse of this module) ────────────────
+
+/** Probe the STT side of a local server. STT capability is signalled by the
+ *  OpenAI-compatible `/v1/audio/transcriptions` ROUTE EXISTING: the route is
+ *  a POST-only endpoint, so a GET answers 405 Method Not Allowed on servers
+ *  that have it (speaches, LocalAI) and 404 on servers that do
+ *  not. A port is STT-"found" when BOTH the models endpoint returns a usable
+ *  catalog AND the transcriptions route exists (non-404). Same non-found
+ *  precedence as probeServerPort (timeout > bad-shape > http-error > refused).
+ *  Never throws. */
+export async function probeSttPort(
+  port: number,
+  fetchLike: FetchLike,
+  timeoutMs = 1500,
+): Promise<ProbeOutcome> {
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const [modelsResult, transcriptionsResult] = await Promise.all([
+    probeModels(baseUrl, fetchLike, timeoutMs),
+    probeTranscriptionsEndpoint(baseUrl, fetchLike, timeoutMs),
+  ]);
+
+  const modelsFound =
+    modelsResult.status === "found" && modelsResult.modelIds !== undefined;
+  const sttCapable = transcriptionsResult.status === "found";
+
+  if (modelsFound && sttCapable) {
+    const server: DiscoveredServer = {
+      port,
+      baseUrl,
+      kind: "openai-compatible",
+      voiceIds: [],
+      modelIds: modelsResult.modelIds ?? [],
+    };
+    return { port, status: "found", server };
+  }
+
+  // Not found — mirror probeServerPort's precedence.
+  if (modelsResult.status === "timeout" || transcriptionsResult.status === "timeout") {
+    return { port, status: "timeout" };
+  }
+  if (modelsResult.status === "bad-shape") {
+    return { port, status: "bad-shape" };
+  }
+  const httpStatus =
+    modelsResult.status === "http-error"
+      ? modelsResult.httpStatus
+      : transcriptionsResult.status === "http-error"
+        ? transcriptionsResult.httpStatus
+        : undefined;
+  if (httpStatus !== undefined) {
+    return { port, status: "http-error", httpStatus };
+  }
+  return { port, status: "refused" };
+}
+
+/** The STT twin of probeTranscriptionsEndpoint logic inlined below: a single
+ *  GET against the POST-only transcriptions route to test existence.
+ *  Returns "found" for every non-404 status (405 = route present), http-error
+ *  for a literal 404 (route absent), and the usual refused/timeout. */
+async function probeTranscriptionsEndpoint(
+  baseUrl: string,
+  fetchLike: FetchLike,
+  timeoutMs: number,
+): Promise<EndpointResult> {
+  let response: ResponseLike;
+  try {
+    response = await fetchWithTimeout(fetchLike, `${baseUrl}/v1/audio/transcriptions`, timeoutMs);
+  } catch (error) {
+    if (error instanceof TimeoutError) return { status: "timeout" };
+    return { status: "refused" };
+  }
+  // GET on a POST route: 405 Method Not Allowed means the route exists;
+  // 404 means the server does not expose it. Any other status is equally
+  // "the route exists" for STT-capability purposes.
+  if (response.status === 404) return { status: "http-error", httpStatus: 404 };
+  return { status: "found" };
+}
+
+/** Probe the full ordered port list for STT-capable servers in parallel;
+ *  resolves when all settle. Same PROBE_PORTS list as the TTS discovery. */
+export async function discoverLocalSttServers(
+  fetchLike: FetchLike,
+  timeoutMs = 1500,
+): Promise<ProbeOutcome[]> {
+  const outcomes = await Promise.all(
+    PROBE_PORTS.map((port) => probeSttPort(port, fetchLike, timeoutMs)),
+  );
+  return outcomes;
+}
+
+/** Map a ProbeOutcome to a machine-readable diagnostic CODE (11b turns these
+ *  into i18n strings): found / server-not-running (refused) / wrong-shape
+ *  (bad-shape) / auth-or-http (http-error 401/403) / http-other / timeout. */
+export function diagnoseOutcome(outcome: ProbeOutcome): DiscoveryDiagnosticCode {
+  switch (outcome.status) {
+    case "found":
+      return "found";
+    case "refused":
+      return "server-not-running";
+    case "bad-shape":
+      return "wrong-shape";
+    case "timeout":
+      return "timeout";
+    case "http-error": {
+      const code = outcome.httpStatus;
+      if (code === 401 || code === 403) return "auth-or-http";
+      return "http-other";
+    }
+    default:
+      return "http-other";
+  }
+}

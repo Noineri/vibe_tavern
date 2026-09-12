@@ -27,6 +27,7 @@ import type {
 import {
   MODEL_LIST_TIMEOUT_MS,
   TEST_CHAT_TIMEOUT_MS,
+  TOKENIZE_TIMEOUT_MS,
   normalizeKoboldCppBaseUrl,
   tryParseUrl,
   wrapProviderNetworkError,
@@ -36,7 +37,8 @@ import {
   type TestChatResult,
 } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
-import type { ProtocolAdapter, ProbeInput, ListModelsInput } from "./protocol-types.js";
+import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput, CompletionFormatHandoff } from "./protocol-types.js";
+import { serializeCompletionPrompt, DEFAULT_COMPLETION_TEMPLATE, templateStopMarkers, unionStopSequences, type CompletionFormatTemplate } from "./completion-prompt.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -103,53 +105,45 @@ export interface KoboldCppAdapterOptions {
   signal?: AbortSignal;
   /** Optional proxy-aware fetch honoring the profile's proxy policy. */
   fetch?: ProviderFetch;
+  /** LS-6b: the preset's manual Generation-format template, threaded through
+   *  the same handoff the openai-compat completion seam uses. Absent (auto)
+   *  → the default role-prefixed serialization — byte-identical to the
+   *  pre-LS-6 hardcoded serializer except the trailing-assistant continuation
+   *  (the LS-3 seam semantics: a trailing assistant line IS the continuation
+   *  point, no extra bare trailer). */
+  template?: CompletionFormatTemplate;
 }
 
 // ─── Prompt serialization ────────────────────────────────────────────────
 
 /**
- * Convert AI SDK V3 prompt messages into a single text prompt for KoboldCPP.
+ * Convert AI SDK model prompt messages into a single text prompt for KoboldCPP.
  *
  * KoboldCPP's native API takes a flat `prompt` string, not structured messages.
- * We serialize the messages into a chat-like format:
- *
- *   System: You are helpful.
- *   User: Hello
- *   Assistant: Hi there
- *   Assistant: [prefill if present]
+ * Delegates to the SHARED serialization seam (`completion-prompt.ts` —
+ * LS-6b): the default template renders the historical role-prefixed shape
+ * ("System: / User: / Assistant:" lines, "\n" separator, bare continuation
+ * prefix); a manual template from the preset's Generation-format tab renders
+ * the ST-instruct semantics through the same seam the llama path uses.
  */
-function serializePrompt(prompt: LanguageModelV3CallOptions["prompt"]): string {
-  const parts: string[] = [];
+function serializePrompt(
+  prompt: LanguageModelV3CallOptions["prompt"],
+  template?: CompletionFormatTemplate,
+): string {
+  return serializeCompletionPrompt(prompt, { template });
+}
 
-  for (const message of prompt) {
-    switch (message.role) {
-      case "system": {
-        // V3: system content is a plain string
-        parts.push(`System: ${message.content}\n`);
-        break;
-      }
-      case "user": {
-        for (const c of message.content) {
-          if (c.type === "text") parts.push(`User: ${c.text}\n`);
-        }
-        break;
-      }
-      case "assistant": {
-        for (const c of message.content) {
-          if (c.type === "text") parts.push(`Assistant: ${c.text}\n`);
-        }
-        break;
-      }
-      case "tool": {
-        // KoboldCPP doesn't support tools — skip
-        break;
-      }
-    }
-  }
-
-  // End with Assistant: prefix to prompt continuation
-  parts.push("Assistant:");
-  return parts.join("");
+/**
+ * LS-9 implied stops for this model instance (owner rule, 2026-09-09): in
+ * AUTO the native serializer owns the role markers — they ride into
+ * `stop_sequence` alongside the user's own stops (a model continuing the
+ * dialog writes "User:" and rambles otherwise; the owner's live runaway
+ * catch). A MANUAL template means the user authors the format — NOTHING is
+ * injected, their stops ride alone (the empty-stops hint is the format
+ * pane's job, LS-10).
+ */
+function impliedStopsFor(template: CompletionFormatTemplate | undefined): string[] {
+  return template ? [] : templateStopMarkers(DEFAULT_COMPLETION_TEMPLATE);
 }
 
 // ─── Adapter ─────────────────────────────────────────────────────────────
@@ -158,9 +152,10 @@ function serializePrompt(prompt: LanguageModelV3CallOptions["prompt"]): string {
  * Create a LanguageModelV3 adapter for KoboldCPP.
  */
 export function createKoboldCppModel(options: KoboldCppAdapterOptions): LanguageModelV3 {
-  const { baseURL, modelId, fetch: customFetch } = options;
+  const { baseURL, modelId, fetch: customFetch, template } = options;
   const base = baseURL.replace(/\/+$/, "");
   const doFetch: typeof fetch = customFetch ?? fetch;
+  const impliedStops = impliedStopsFor(template);
 
   return {
     specificationVersion: "v3",
@@ -169,7 +164,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
     supportedUrls: {},
 
     async doGenerate(callOptions: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
-      const prompt = serializePrompt(callOptions.prompt);
+      const prompt = serializePrompt(callOptions.prompt, template);
 
       const body: KoboldGenerateRequest = {
         prompt,
@@ -177,7 +172,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
         temperature: callOptions.temperature ?? 1.0,
         top_p: callOptions.topP,
         top_k: callOptions.topK,
-        stop_sequence: callOptions.stopSequences,
+        stop_sequence: unionStopSequences(callOptions.stopSequences, impliedStops),
         seed: callOptions.seed,
         // Pass through providerOptions as KoboldCPP native sampler params
         ...(callOptions.providerOptions?.koboldcpp ?? {}),
@@ -212,7 +207,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
     },
 
     async doStream(callOptions: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
-      const prompt = serializePrompt(callOptions.prompt);
+      const prompt = serializePrompt(callOptions.prompt, template);
 
       const body: KoboldGenerateRequest = {
         prompt,
@@ -220,7 +215,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
         temperature: callOptions.temperature ?? 1.0,
         top_p: callOptions.topP,
         top_k: callOptions.topK,
-        stop_sequence: callOptions.stopSequences,
+        stop_sequence: unionStopSequences(callOptions.stopSequences, impliedStops),
         seed: callOptions.seed,
         ...(callOptions.providerOptions?.koboldcpp ?? {}),
       };
@@ -241,32 +236,61 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
         throw new Error("KoboldCPP stream: no response body");
       }
 
-      // Parse SSE stream from KoboldCPP and convert to AI SDK V3 stream parts
+      // Parse SSE stream from KoboldCPP and convert to AI SDK V3 stream parts.
+      // LS-6d: the ai@7 streamText recorder requires the FULL protocol
+      // sequence — stream-start first, a text-start before the first delta,
+      // and a matching text-end before finish ("text part 0 not found" was
+      // the recorder rejecting bare deltas). Flags persist across pull calls.
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let streamStarted = false;
+      let textOpened = false;
+
+      const emitEventParts = (
+        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
+        event: Record<string, unknown>,
+      ) => {
+        const parts = mapSSEEventToStreamParts(event);
+        if (parts.length === 0) return;
+        if (!textOpened) {
+          textOpened = true;
+          controller.enqueue({ type: "text-start", id: "0" });
+        }
+        for (const part of parts) controller.enqueue(part);
+      };
+
+      const closeTextAndFinish = (
+        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
+      ) => {
+        if (textOpened) {
+          textOpened = false;
+          controller.enqueue({ type: "text-end", id: "0" });
+        }
+        controller.enqueue({
+          type: "finish",
+          finishReason: makeFinishReason("stop"),
+          usage: makeUsage(),
+        });
+        controller.close();
+      };
 
       const stream = new ReadableStream<LanguageModelV3StreamPart>({
         async pull(controller) {
           try {
+            if (!streamStarted) {
+              streamStarted = true;
+              controller.enqueue({ type: "stream-start", warnings: [] });
+            }
             while (true) {
               const { done, value } = await reader.read();
               if (done) {
                 // Flush remaining buffer
                 if (buffer.trim()) {
                   const event = parseSSEEvent(buffer);
-                  if (event) {
-                    const parts = mapSSEEventToStreamParts(event);
-                    for (const part of parts) controller.enqueue(part);
-                  }
+                  if (event) emitEventParts(controller, event);
                 }
-                // Emit finish
-                controller.enqueue({
-                  type: "finish",
-                  finishReason: makeFinishReason("stop"),
-                  usage: makeUsage(),
-                });
-                controller.close();
+                closeTextAndFinish(controller);
                 return;
               }
 
@@ -281,22 +305,20 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
                 const event = parseSSEEvent(trimmed);
                 if (!event) continue;
 
-                const parts = mapSSEEventToStreamParts(event);
-                for (const part of parts) controller.enqueue(part);
+                emitEventParts(controller, event);
 
                 // Check for done event
                 if ("done" in event && event.done) {
-                  controller.enqueue({
-                    type: "finish",
-                    finishReason: makeFinishReason("stop"),
-                    usage: makeUsage(),
-                  });
-                  controller.close();
+                  closeTextAndFinish(controller);
                   return;
                 }
               }
             }
           } catch (err) {
+            if (textOpened) {
+              textOpened = false;
+              controller.enqueue({ type: "text-end", id: "0" });
+            }
             if (callOptions.abortSignal?.aborted) {
               controller.enqueue({
                 type: "finish",
@@ -360,6 +382,101 @@ function mapSSEEventToStreamParts(
   }
 
   return [];
+}
+
+// ─── Tokenize (LS-1a) ───────────────────────────────────────────────────
+
+/** KoboldCPP `/api/extra/tokencount` response (V1f-probed shape). */
+interface KoboldTokenCountResponse {
+  value?: unknown;
+  ids?: unknown;
+}
+
+/**
+ * Per-base-url cache of the LEADING-SPECIALS BASELINE for `/api/extra/tokencount`.
+ *
+ * V1f probe finding (LOCAL_SAMPLERS_ADDITION_REPORT): KoboldCPP prepends the
+ * model's BOS/special token to every tokencount response's `ids` (Qwen2.5 →
+ * id 151643 `</s>`), so `value` (= ids.length) overcounts by 1 vs the exact
+ * content count (llama-server /tokenize). The special is model-dependent and
+ * invisible from a single response — but an EMPTY-prompt probe returns exactly
+ * the prepended specials as `ids`, which detects it for any model. One probe
+ * per backend, cached for the process lifetime.
+ */
+const koboldSpecialBaseline = new Map<string, number | null>();
+
+async function probeKoboldSpecialBaseline(
+  base: string,
+  doFetch: typeof fetch,
+  signal: AbortSignal,
+): Promise<number | null> {
+  const cached = koboldSpecialBaseline.get(base);
+  if (cached !== undefined) return cached;
+  try {
+    const response = await doFetch(`${base}/api/extra/tokencount`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ prompt: "" }),
+      signal,
+    });
+    if (!response.ok) throw new Error(`status ${response.status}`);
+    const payload = (await response.json()) as KoboldTokenCountResponse;
+    if (!Array.isArray(payload.ids)) throw new Error("missing ids array");
+    // ids for an empty prompt ARE the prepended specials (empty array = none).
+    koboldSpecialBaseline.set(base, payload.ids.length);
+    return payload.ids.length;
+  } catch {
+    // Remember the failure so every warm call doesn't re-probe a dead endpoint;
+    // the count then falls back to `value` (V1f: overcounts by at most 1).
+    koboldSpecialBaseline.set(base, null);
+    return null;
+  }
+}
+
+/**
+ * Exact token count via KoboldCPP's native `POST /api/extra/tokencount`
+ * (body field is `prompt`, NOT `text` — V1f correction).
+ *
+ * Normalization heuristic (pinned by fixture tests): prefer `ids.length` minus
+ * the detected leading-specials baseline (empty-prompt probe) over `value`.
+ * When the baseline probe fails, fall back to `value` — still far more accurate
+ * than the local tokenizer ladder, off by at most 1 special token.
+ */
+export async function tokenizeKoboldCpp(input: TokenizeInput): Promise<number> {
+  const base = normalizeKoboldCppBaseUrl(input.baseUrl);
+  if (!base) throw new Error("KoboldCPP tokenize: provider endpoint is required.");
+  const doFetch: typeof fetch = input.fetch ?? fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TOKENIZE_TIMEOUT_MS);
+  try {
+    const baseline = await probeKoboldSpecialBaseline(base, doFetch, controller.signal);
+
+    const response = await doFetch(`${base}/api/extra/tokencount`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ prompt: input.text }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(`KoboldCPP tokencount failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+    }
+    const payload = (await response.json()) as KoboldTokenCountResponse;
+    const ids = Array.isArray(payload.ids) ? (payload.ids as unknown[]).length : null;
+    const value = typeof payload.value === "number" ? payload.value : null;
+    if (ids === null && value === null) {
+      throw new Error("KoboldCPP tokencount: unexpected response shape (missing value and ids).");
+    }
+    // Exact: ids.length minus the detected leading specials. Guard against a
+    // nonsensical baseline (≥ ids) by falling back to value.
+    if (ids !== null && baseline !== null && baseline < ids) {
+      return ids - baseline;
+    }
+    if (value !== null) return value;
+    return ids ?? 0;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ─── Model listing ───────────────────────────────────────────────────────
@@ -486,10 +603,21 @@ export const koboldCppProtocol: ProtocolAdapter = {
     logitBias: false,
     samplers: SAMPLER_SETS.koboldcpp_native,
     textCompletion: false,
+    // LS-3c: KoboldCPP is NATIVE text completion — its own adapter builds the
+    // flat prompt, so AUTO is a no-op here (no backend template, no seam
+    // serialization). See ProviderCapabilityFlags.backendTemplate.
+    backendTemplate: false,
   },
-  resolveModel(profile, model, fetch?: ProviderFetch) {
+  resolveModel(profile, model, fetch?: ProviderFetch, format?: CompletionFormatHandoff) {
     const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:5001";
-    return createKoboldCppModel({ baseURL: endpoint, modelId: model ?? "koboldcpp", ...(fetch ? { fetch } : {}) });
+    return createKoboldCppModel({
+      baseURL: endpoint,
+      modelId: model ?? "koboldcpp",
+      // LS-6b: the preset's manual Generation-format sequences render through
+      // the shared seam (auto/absent → the default template = today's bytes).
+      ...(format?.completionFormat?.kind === "manual" ? { template: format.completionFormat.template } : {}),
+      ...(fetch ? { fetch } : {}),
+    });
   },
   limitations: [
     "Uses KoboldCPP native /api/v1/generate endpoint (not OpenAI-compat).",
@@ -499,4 +627,5 @@ export const koboldCppProtocol: ProtocolAdapter = {
   probe: probeKoboldCppConnection,
   testChat: testKoboldCppChat,
   listModels: listKoboldCppModels,
+  tokenize: tokenizeKoboldCpp,
 };

@@ -3,8 +3,19 @@ import { NumberInput } from "../NumberInput.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { useT } from "../../../i18n/context.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 
-const lblCls = "mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
+/** SUM-5: the shared optional sampler-override shape for secondary-model
+ *  contexts (summary / message-editor / ai-assistant). Every slot is
+ *  optional and nullable — null/undefined means "inherit the context's
+ *  effective default"; a consumer that exposes no knob simply omits the
+ *  slot. All three modals assemble their request overrides through this
+ *  type (AiGenParamsRow is the shared UI surface). */
+export interface SecondaryGenOverrides {
+  temperature?: number | null;
+  maxOutputTokens?: number | null;
+  contextBudget?: number | null;
+}
 
 export interface AiGenParamsRowProps {
   /** Resolved temperature (per-mode defaults applied at the call site). */

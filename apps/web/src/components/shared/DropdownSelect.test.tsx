@@ -88,3 +88,32 @@ describe.skip("DropdownSelect keyboard navigation (manual — see header)", () =
 		await waitFor(() => expect(activeItemLabel(doc)).toContain("Apple"));
 	});
 });
+
+/** Trigger-detail seam (owner rule 2026-09-05): an arbitrary-length setting
+ *  description must not bloat a collapsed trigger in inline/footer slots —
+ *  `triggerDetail={false}` keeps it out of the trigger; it lives ONLY in the
+ *  opened list (wrapped, never truncated). Trigger-only assertions: the
+ *  popover itself needs layout (see the STATUS note above), and popup-side
+ *  wrapping is pinned in SttDictationBlock.test.tsx where the cmdk list
+ *  mounts for real. */
+describe("DropdownSelect triggerDetail", () => {
+	const withDetail = [
+		{ id: "append", label: "Добавлять", detail: "Расшифровка добавляется после текста черновика" },
+		{ id: "replace", label: "Заменять", detail: "Расшифровка заменяет текст черновика целиком" },
+	];
+
+	it("default: the selected detail renders inside the trigger (historical form-field behavior)", () => {
+		const { container } = render(
+			<DropdownSelect value="append" options={withDetail} searchable={false} onChange={() => {}} />,
+		);
+		expect(container.querySelector("button")!.textContent).toContain("Расшифровка добавляется после текста черновика");
+	});
+
+	it("triggerDetail={false}: the trigger shows the label only — no description in the collapsed control", () => {
+		const { container } = render(
+			<DropdownSelect value="append" options={withDetail} searchable={false} triggerDetail={false} onChange={() => {}} />,
+		);
+		expect(container.querySelector("button")!.textContent).not.toContain("Расшифровка");
+		expect(container.querySelector("button")!.textContent).toContain("Добавлять");
+	});
+});

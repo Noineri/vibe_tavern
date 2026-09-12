@@ -261,7 +261,6 @@ export function SetupFieldRow({ field, value, error, t, onText, onNumber, onTogg
       </div>
       {field.kind === "text" && (
         <AutoTextarea
-          className="rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-[13px] text-t1 outline-none focus:border-accent"
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onText(e.target.value)}
           placeholder={"placeholder" in field ? field.placeholder : undefined}

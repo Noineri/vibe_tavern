@@ -1,0 +1,1190 @@
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { TTS_BACKEND } from "@vibe-tavern/domain";
+import { createDb } from "@vibe-tavern/db";
+import { ProviderStore, TtsStore } from "@vibe-tavern/db";
+
+import { createTtsRoutes } from "../src/api/routes/tts.js";
+import { openAiCompatTtsFactory } from "../src/domain/tts/backends/openai-tts.js";
+import { __setDockerProbeRunnerForTests } from "../src/domain/tts/docker-probe.js";
+import { __setDiscoveryFetchForTests } from "../src/api/adapters/tts-adapter.js";
+import { TtsAdapter } from "../src/api/adapters/tts-adapter.js";
+import {
+  __resetTtsRegistryForTests,
+  __snapshotTtsRegistryForTests,
+  __restoreTtsRegistryForTests,
+  registerTtsBackend,
+} from "../src/domain/tts/tts-registry.js";
+import type { TtsBackend } from "../src/domain/tts/tts-backend.js";
+
+// Shared-process rule: this file resets the registry per test and leaves it
+// EMPTY at file end; without the afterAll restore below, every later test file
+// whose backend modules are already import-cached dies with
+// TtsBackendNotRegisteredError (order-dependent — seen on linux CI).
+const registrySnapshot = __snapshotTtsRegistryForTests();
+
+afterAll(() => {
+  __restoreTtsRegistryForTests(registrySnapshot);
+});
+
+// Seams null even when a test throws mid-flight: a leaked discovery/probe
+// stub would poison every later file in this shared bun process (TH-7). The
+// old inline last-line resets only ran on the happy path.
+afterEach(() => {
+  __setDockerProbeRunnerForTests(null);
+  __setDiscoveryFetchForTests(null);
+});
+
+const fixedClock = { now: () => "2026-08-27T00:00:00.000Z" };
+
+function makeIdGen() {
+  let counter = 0;
+  return { next: (prefix: string) => `${prefix}_test_${++counter}` };
+}
+
+async function makeApp() {
+  const db = await createDb(":memory:");
+  const store = new TtsStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
+  const providers = new ProviderStore(db, { clock: fixedClock, idGenerator: makeIdGen() });
+  const adapter = new TtsAdapter({ tts: store, providers });
+  const app = createTtsRoutes(adapter);
+  return { app, store, providers, db };
+}
+
+beforeEach(() => {
+  __resetTtsRegistryForTests();
+});
+
+afterEach(() => {
+  __resetTtsRegistryForTests();
+});
+
+function stubBackend(overrides: Partial<TtsBackend> = {}): TtsBackend {
+  return {
+    generate: async () => ({ audio: Buffer.from([1, 2, 3, 4]), mime: "audio/wav" }),
+    listVoices: async () => [{ id: "v1", label: "V1", lang: "en" }],
+    probe: async () => ({ ok: true }),
+    dispose: async () => {},
+    capabilities: () => ({ supportsCloning: false }),
+    ...overrides,
+  };
+}
+
+describe("TTS routes — CRUD", () => {
+  test("POST /api/tts/profiles → 201, GET :id round-trip, GET all", async () => {
+    const { app } = await makeApp();
+
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Kokoro — Heart", backend: "kokoro", voiceId: "af_heart" }),
+    });
+    expect(createdRes.status).toBe(201);
+    const created = (await createdRes.json()) as { id: string; name: string };
+    expect(created.name).toBe("Kokoro — Heart");
+
+    const getRes = await app.request(`/api/tts/profiles/${created.id}`);
+    expect(getRes.status).toBe(200);
+    const fetched = (await getRes.json()) as { id: string };
+    expect(fetched.id).toBe(created.id);
+
+    const allRes = await app.request("/api/tts/profiles/all");
+    expect(allRes.status).toBe(200);
+    const all = (await allRes.json()) as unknown[];
+    expect(all.length).toBe(1);
+  });
+
+  test("PATCH unknown id → 404; DELETE → ok:true", async () => {
+    const { app } = await makeApp();
+
+    const patchRes = await app.request("/api/tts/profiles/missing", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "x" }),
+    });
+    expect(patchRes.status).toBe(404);
+
+    const delRes = await app.request("/api/tts/profiles/missing", { method: "DELETE" });
+    expect(delRes.status).toBe(200);
+    const delBody = (await delRes.json()) as { ok: boolean };
+    expect(delBody.ok).toBe(true);
+  });
+
+  test("PUT default → pointer moves", async () => {
+    const { app } = await makeApp();
+
+    const aRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "A", backend: "kokoro", isDefault: true }),
+    });
+    const a = (await aRes.json()) as { id: string };
+    const bRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "B", backend: "kokoro" }),
+    });
+    const b = (await bRes.json()) as { id: string };
+
+    const putRes = await app.request(`/api/tts/profiles/${b.id}/default`, { method: "PUT" });
+    expect(putRes.status).toBe(200);
+
+    const getA = (await (await app.request(`/api/tts/profiles/${a.id}`)).json()) as { isDefault: boolean };
+    const getB = (await (await app.request(`/api/tts/profiles/${b.id}`)).json()) as { isDefault: boolean };
+    expect(getA.isDefault).toBe(false);
+    expect(getB.isDefault).toBe(true);
+  });
+
+  test("PUT links → round-trip link list", async () => {
+    const { app } = await makeApp();
+
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "P", backend: "kokoro" }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+
+    const putRes = await app.request(`/api/tts/profiles/${profile.id}/links`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ links: [{ targetType: "character", targetId: "char_1" }] }),
+    });
+    expect(putRes.status).toBe(200);
+    const links = (await putRes.json()) as unknown[];
+    expect(links.length).toBe(1);
+
+    const getRes = await app.request(`/api/tts/profiles/${profile.id}/links`);
+    expect(getRes.status).toBe(200);
+    const fetched = (await getRes.json()) as unknown[];
+    expect(fetched.length).toBe(1);
+  });
+
+  test("GET /api/tts/links returns all links across profiles", async () => {
+    const { app, store } = await makeApp();
+
+    const aRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "A", backend: "kokoro" }),
+    });
+    const a = (await aRes.json()) as { id: string };
+    const bRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "B", backend: "kokoro" }),
+    });
+    const b = (await bRes.json()) as { id: string };
+
+    await store.addLink(a.id, "character" as never, "char_1");
+    await store.addLink(b.id, "persona" as never, "persona_1");
+
+    const res = await app.request("/api/tts/links");
+    expect(res.status).toBe(200);
+    const all = (await res.json()) as unknown[];
+    expect(all.length).toBe(2);
+  });
+});
+
+describe("TTS routes — generate + voices", () => {
+  test("POST /api/tts/generate happy path → 200 binary audio", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () => stubBackend());
+    const { app } = await makeApp();
+
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "OpenAI Compat",
+        backend: "openai-compatible",
+        voiceId: "af_bella",
+        config: { endpoint: "http://localhost:8880/v1" },
+      }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+
+    const genRes = await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "Hello world" }),
+    });
+    expect(genRes.status).toBe(200);
+    expect(genRes.headers.get("content-type")).toBe("audio/wav");
+    const buf = new Uint8Array(await genRes.arrayBuffer());
+    expect([...buf]).toEqual([1, 2, 3, 4]);
+  });
+
+  test("POST /api/tts/generate unknown profile → 404", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () => stubBackend());
+    const { app } = await makeApp();
+
+    const genRes = await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: "missing", text: "hi" }),
+    });
+    expect(genRes.status).toBe(404);
+  });
+
+  test("POST /api/tts/generate with kokoro profile → 400", async () => {
+    const { app } = await makeApp();
+
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Kokoro", backend: "kokoro", voiceId: "af_heart" }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+
+    const genRes = await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "hi" }),
+    });
+    expect(genRes.status).toBe(400);
+    const body = (await genRes.json()) as { error: string };
+    expect(body.error).toContain("kokoro runs client-side");
+  });
+
+  test("GET /api/tts/profiles/:id/voices passthrough; unknown → 404", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({
+        listVoices: async () => [{ id: "v1", label: "V1", lang: "en" }],
+      }),
+    );
+    const { app } = await makeApp();
+
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "P",
+        backend: "openai-compatible",
+        config: { endpoint: "http://localhost:8880/v1" },
+      }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+
+    const voicesRes = await app.request(`/api/tts/profiles/${profile.id}/voices`);
+    expect(voicesRes.status).toBe(200);
+    const voices = (await voicesRes.json()) as unknown[];
+    expect(voices.length).toBe(1);
+
+    const missingRes = await app.request("/api/tts/profiles/missing/voices");
+    expect(missingRes.status).toBe(404);
+  });
+
+  test("POST /api/tts/generate with voiceId override → backend receives the override", async () => {
+    let seenVoiceId: string | null = null;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({
+        generate: async (req) => {
+          seenVoiceId = req.voiceId;
+          return { audio: Buffer.from([1, 2, 3, 4]), mime: "audio/wav" };
+        },
+      }),
+    );
+    const { app } = await makeApp();
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "P", backend: "openai-compatible", voiceId: "alloy" }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+    // Without override uses stored voiceId
+    const genPlain = await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "hi" }),
+    });
+    expect(genPlain.status).toBe(200);
+    expect(seenVoiceId).toBe("alloy");
+    // With override uses body.voiceId
+    const genOverride = await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "hi", voiceId: "verse" }),
+    });
+    expect(genOverride.status).toBe(200);
+    expect(seenVoiceId).toBe("verse");
+  });
+
+  test("TPE-16: aborted client request → backend generate observes the abort (stop propagates upstream)", async () => {
+    let seenSignal: AbortSignal | null | undefined;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({
+        generate: async (req) => {
+          seenSignal = req.signal ?? null;
+          return { audio: Buffer.from([1, 2, 3, 4]), mime: "audio/wav" };
+        },
+      }),
+    );
+    const { app } = await makeApp();
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "P", backend: "openai-compatible", voiceId: "alloy" }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+
+    await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "hi" }),
+      signal: AbortSignal.abort(),
+    });
+    expect(seenSignal?.aborted).toBe(true);
+  });
+
+  test("POST /api/tts/generate validation: empty text → 400", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () => stubBackend());
+    const { app } = await makeApp();
+
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "P", backend: "openai-compatible" }),
+    });
+    const profile = (await createdRes.json()) as { id: string };
+
+    const genRes = await app.request("/api/tts/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, text: "" }),
+    });
+    expect(genRes.status).toBe(400);
+  });
+});
+
+describe("TTS routes — draft (transient, unsaved form config)", () => {
+  test("POST /api/tts/draft/voices → factory gets the transient config verbatim; no DB row needed", async () => {
+    let seenConfig: Record<string, unknown> | null = null;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, (config) => {
+      seenConfig = { ...(config as Record<string, unknown>) };
+      return stubBackend({ listVoices: async () => [{ id: "alloy", label: "Alloy", lang: "en" }] });
+    });
+    const { app } = await makeApp();
+
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: "openai-compatible",
+        config: { endpoint: "http://localhost:8880/v1", apiKey: "transient-key" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { voices: Array<{ id: string }>; capabilities: { supportsCloning: boolean } };
+    expect(body.voices[0]?.id).toBe("alloy");
+    // Envelope (clone field design): capabilities ride alongside voices.
+    expect(body.capabilities.supportsCloning).toBe(false);
+    expect((seenConfig as Record<string, unknown> | null)?.endpoint).toBe("http://localhost:8880/v1");
+  });
+
+  test("POST /api/tts/draft/voices kokoro → 400 (browser-only), not a registry 500", async () => {
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "kokoro", config: {} }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("kokoro runs client-side");
+  });
+
+  test("POST /api/tts/draft/preview → buffered audio + mime; transient voiceId/text reach the factory", async () => {
+    let seenRequest: { text: string; voiceId: string } | null = null;
+    registerTtsBackend(TTS_BACKEND.ElevenLabs, () =>
+      stubBackend({
+        generate: async (req) => {
+          seenRequest = { text: req.text, voiceId: req.voiceId };
+          return { audio: Buffer.from([9, 9, 9]), mime: "audio/mpeg" };
+        },
+      }),
+    );
+    const { app } = await makeApp();
+
+    const res = await app.request("/api/tts/draft/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: "elevenlabs",
+        config: { apiKey: "transient" },
+        voiceId: "Rachel",
+        text: "Hello! Preview.",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("audio/mpeg");
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.length).toBe(3);
+    expect(seenRequest?.voiceId).toBe("Rachel");
+  });
+
+  test("POST /api/tts/draft/preview kokoro → 400; empty text → 400 (zod)", async () => {
+    const { app } = await makeApp();
+
+    const kokoroRes = await app.request("/api/tts/draft/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "kokoro", config: {}, text: "hi" }),
+    });
+    expect(kokoroRes.status).toBe(400);
+
+    const badTextRes = await app.request("/api/tts/draft/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "elevenlabs", config: {}, text: "" }),
+    });
+    expect(badTextRes.status).toBe(400);
+  });
+
+  test("POST /api/tts/draft/models → transient config, listModels passthrough", async () => {
+    let seenConfig: Record<string, unknown> | null = null;
+    registerTtsBackend(TTS_BACKEND.Gemini, (config) => {
+      seenConfig = { ...(config as Record<string, unknown>) };
+      return stubBackend({
+        listModels: async () => [
+          { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
+          { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
+        ],
+      });
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "gemini", config: { apiKey: "transient" } }),
+    });
+    expect(res.status).toBe(200);
+    const models = (await res.json()) as Array<{ id: string }>;
+    expect(models.length).toBe(2);
+    expect(models[0].id).toBe("gemini-2.5-flash-preview-tts");
+    expect(seenConfig?.apiKey).toBe("transient");
+  });
+
+  test("POST /api/tts/draft/models kokoro → 400", async () => {
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "kokoro", config: {} }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("kokoro runs client-side");
+  });
+
+  test("POST /api/tts/draft/models backend without listModels → 400", async () => {
+    registerTtsBackend(TTS_BACKEND.ElevenLabs, () => stubBackend());
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "elevenlabs", config: { apiKey: "k" } }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("model listing not supported");
+  });
+});
+
+// ─── F2b: key projection (strip-on-read), merge-on-write, draft stored-key
+// resolution, and the D8 docker probe ─────────────────────────────────────
+
+interface SeenConfig {
+  capture: Record<string, unknown> | null;
+}
+
+function capturingRegistry(seen: SeenConfig): void {
+  registerTtsBackend(TTS_BACKEND.OpenAiCompatible, (config) => {
+    seen.capture = { ...(config as Record<string, unknown>) };
+    return stubBackend();
+  });
+}
+
+
+// ─── F2b: key projection (strip-on-read), merge-on-write, draft stored-key
+// resolution, and the D8 docker probe ─────────────────────────────────────
+
+interface SeenConfig {
+  capture: Record<string, unknown> | null;
+}
+
+function capturingRegistry(seen: SeenConfig): void {
+  registerTtsBackend(TTS_BACKEND.OpenAiCompatible, (config) => {
+    seen.capture = { ...(config as Record<string, unknown>) };
+    return stubBackend();
+  });
+}
+
+type RouteApp = ReturnType<Awaited<ReturnType<typeof makeApp>>["app"]>;
+
+async function seedCloudProfile(app: RouteApp, overrides: Record<string, unknown> = {}): Promise<string> {
+  const res = await app.request("/api/tts/profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "Cloud",
+      backend: "openai-compatible",
+      config: { endpoint: "https://api.example.com/v1", model: "tts-1" },
+      apiKey: "sk-original",
+      voiceId: "alloy",
+      ...overrides,
+    }),
+  });
+  return ((await res.json()) as { id: string }).id;
+}
+
+/** Voices-with-profileId is the only read-back of a stored key — use it to
+ *  observe what the DB actually kept after a PATCH. */
+async function storedKeyReachesFactory(app: RouteApp, id: string, config: Record<string, unknown>): Promise<string | undefined> {
+  const seen: SeenConfig = { capture: null };
+  capturingRegistry(seen);
+  const res = await app.request("/api/tts/draft/voices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backend: "openai-compatible", config, profileId: id }),
+  });
+  expect(res.status).toBe(200);
+  return seen.capture?.apiKey as string | undefined;
+}
+
+describe("TTS routes — TE2-16 typed key columns (wire projection)", () => {
+  test("reads never carry the key; hasStoredApiKey + providerRef report it instead", async () => {
+    const { app } = await makeApp();
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Cloud",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1", model: "tts-1" },
+        apiKey: "sk-secret",
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await createdRes.json()) as { id: string; config: Record<string, unknown>; hasStoredApiKey: boolean; providerRef: string | null };
+    expect(created.hasStoredApiKey).toBe(true);
+    expect(created.config.apiKey).toBeUndefined();
+    expect(created.config.endpoint).toBe("https://api.example.com/v1");
+    expect(created.providerRef).toBeNull();
+
+    const getRes = await app.request(`/api/tts/profiles/${created.id}`);
+    const fetched = (await getRes.json()) as { config: Record<string, unknown>; hasStoredApiKey: boolean };
+    expect(fetched.hasStoredApiKey).toBe(true);
+    expect(fetched.config.apiKey).toBeUndefined();
+
+    const allRes = await app.request("/api/tts/profiles/all");
+    const all = (await allRes.json()) as Array<{ config: Record<string, unknown> }>;
+    expect(all[0].config.apiKey).toBeUndefined();
+  });
+
+  test("a config-bag apiKey sent by a legacy client is stripped, not persisted", async () => {
+    const { app, store } = await makeApp();
+    const res = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Legacy",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1", apiKey: "sk-in-bag" },
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await res.json()) as { id: string; hasStoredApiKey: boolean };
+    // The bag is NOT a key channel anymore: hasStoredApiKey stays false and
+    // the stored blob (checked raw, through the store) carries no secret.
+    expect(created.hasStoredApiKey).toBe(false);
+    const stored = await store.getById(created.id);
+    expect(stored?.config.apiKey).toBeUndefined();
+    expect(stored?.apiKey).toBeNull();
+  });
+
+  test("keyless profiles report hasStoredApiKey:false (local server without a key)", async () => {
+    const { app } = await makeApp();
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Local",
+        backend: "openai-compatible",
+        config: { endpoint: "http://127.0.0.1:8880/v1", localServer: true },
+        voiceId: "af_heart",
+      }),
+    });
+    const created = (await createdRes.json()) as { hasStoredApiKey: boolean; providerRef: string | null };
+    expect(created.hasStoredApiKey).toBe(false);
+    expect(created.providerRef).toBeNull();
+  });
+});
+
+describe("TTS routes — TE2-16 apiKey tri-state update", () => {
+  test("PATCH without apiKey keeps the stored key", async () => {
+    const { app } = await makeApp();
+    const id = await seedCloudProfile(app);
+    const patchRes = await app.request(`/api/tts/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Cloud (renamed)",
+        config: { endpoint: "https://api.example.com/v1", model: "tts-1" },
+      }),
+    });
+    const patched = (await patchRes.json()) as { hasStoredApiKey: boolean };
+    expect(patched.hasStoredApiKey).toBe(true);
+    expect(await storedKeyReachesFactory(app, id, { endpoint: "https://api.example.com/v1" })).toBe("sk-original");
+  });
+
+  test("PATCH with a new key replaces the stored one", async () => {
+    const { app } = await makeApp();
+    const id = await seedCloudProfile(app);
+    await app.request(`/api/tts/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: { endpoint: "https://api.example.com/v1" }, apiKey: "sk-new" }),
+    });
+    expect(await storedKeyReachesFactory(app, id, { endpoint: "https://api.example.com/v1" })).toBe("sk-new");
+  });
+
+  test("PATCH with apiKey:\"\" explicitly clears the key", async () => {
+    const { app } = await makeApp();
+    const id = await seedCloudProfile(app);
+    const patchRes = await app.request(`/api/tts/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "" }),
+    });
+    const patched = (await patchRes.json()) as { hasStoredApiKey: boolean };
+    expect(patched.hasStoredApiKey).toBe(false);
+    expect(await storedKeyReachesFactory(app, id, { endpoint: "https://api.example.com/v1" })).toBeUndefined();
+  });
+
+  test("backend flip clears the stored key (never leaks across backends); a new key in the same patch survives", async () => {
+    const { app } = await makeApp();
+    const id = await seedCloudProfile(app);
+    const patchRes = await app.request(`/api/tts/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "gemini", config: {} }),
+    });
+    const patched = (await patchRes.json()) as { hasStoredApiKey: boolean };
+    expect(patched.hasStoredApiKey).toBe(false);
+    // The stored openai-compatible key never travels into a gemini request.
+    let geminiSeen: Record<string, unknown> | null = null;
+    registerTtsBackend(TTS_BACKEND.Gemini, (config) => {
+      geminiSeen = { ...(config as Record<string, unknown>) };
+      return stubBackend({ listModels: async () => [{ id: "gemini-2.5-flash-preview-tts", label: "Flash TTS" }] });
+    });
+    const res = await app.request("/api/tts/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "gemini", config: {}, profileId: id }),
+    });
+    expect(res.status).toBe(200);
+    expect((geminiSeen as Record<string, unknown> | null)?.apiKey ?? "").toBe("");
+
+    // Flip + a fresh key in the same patch: the new key IS the gemini key.
+    const { app: app2 } = await makeApp();
+    const id2 = await seedCloudProfile(app2);
+    const flipRes = await app2.request(`/api/tts/profiles/${id2}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "gemini", config: {}, apiKey: "gem-key" }),
+    });
+    const flipped = (await flipRes.json()) as { hasStoredApiKey: boolean };
+    expect(flipped.hasStoredApiKey).toBe(true);
+  });
+});
+
+describe("TTS routes — TE2-16 draft stored-key resolution (profileId)", () => {
+  test("profileId + matching endpoint injects the stored key for the one request", async () => {
+    const { app } = await makeApp();
+    const id = await seedCloudProfile(app);
+    expect(await storedKeyReachesFactory(app, id, { endpoint: "https://api.example.com/v1" })).toBe("sk-original");
+  });
+
+  test("profileId + DIFFERENT endpoint does not inject (secret stays where it was saved)", async () => {
+    const { app } = await makeApp();
+    const id = await seedCloudProfile(app);
+    expect(await storedKeyReachesFactory(app, id, { endpoint: "https://evil.example.net/v1" })).toBeUndefined();
+  });
+
+  test("unknown profileId passes the transient config through untouched", async () => {
+    const seen: SeenConfig = { capture: null };
+    capturingRegistry(seen);
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1" },
+        profileId: "tts_profile_test_missing",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen.capture?.apiKey).toBeUndefined();
+  });
+});
+
+describe("TTS routes — TE2-16 providerRef (server-side key + baseUrl)", () => {
+  test("a providerRef profile synthesizes with the provider's key and endpoint — neither crosses the wire", async () => {
+    const { app, providers } = await makeApp();
+    const provider = await providers.create({
+      name: "OpenRouter",
+      providerPreset: "openrouter",
+      endpoint: "https://openrouter.example/api/v1",
+      apiKey: "prov-key-1",
+    });
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Via provider",
+        backend: "openai-compatible",
+        config: { model: "tts-1" },
+        providerRef: provider.id,
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await createdRes.json()) as { id: string; hasStoredApiKey: boolean; providerRef: string | null; config: Record<string, unknown> };
+    expect(created.hasStoredApiKey).toBe(false);
+    expect(created.providerRef).toBe(provider.id);
+    expect(created.config.endpoint).toBeUndefined();
+
+    // Draft with the provider's endpoint + no transient key → the server
+    // injects BOTH the provider key and the provider endpoint.
+    const seen: SeenConfig = { capture: null };
+    capturingRegistry(seen);
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "openai-compatible", config: { endpoint: "https://openrouter.example/api/v1" }, profileId: created.id }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen.capture?.apiKey).toBe("prov-key-1");
+  });
+
+  test("an own key beats the provider's key (explicit profile key wins)", async () => {
+    const { app, providers } = await makeApp();
+    const provider = await providers.create({
+      name: "OpenRouter",
+      providerPreset: "openrouter",
+      endpoint: "https://openrouter.example/api/v1",
+      apiKey: "prov-key-1",
+    });
+    const id = await seedCloudProfile(app, { providerRef: provider.id });
+    // Own endpoint wins too — the draft names the stored endpoint, and the
+    // injected key is the OWN key, not the provider's.
+    expect(await storedKeyReachesFactory(app, id, { endpoint: "https://api.example.com/v1" })).toBe("sk-original");
+  });
+
+  test("a broken providerRef (missing provider row) degrades to the plain config", async () => {
+    const { app } = await makeApp();
+    // No own key — the providerRef is the only key source, and it is broken.
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Broken ref",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1" },
+        providerRef: "provider_missing",
+        voiceId: "alloy",
+      }),
+    });
+    const { id } = (await createdRes.json()) as { id: string };
+    const seen: SeenConfig = { capture: null };
+    capturingRegistry(seen);
+    const res = await app.request("/api/tts/draft/voices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backend: "openai-compatible", config: { endpoint: "https://api.example.com/v1" }, profileId: id }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen.capture?.apiKey).toBeUndefined();
+  });
+});
+
+describe("TTS routes — D8 docker probe", () => {
+  test("GET /api/tts/local/docker → available + parsed version", async () => {
+    __setDockerProbeRunnerForTests(async () => "Docker version 27.3.1, build df5b597");
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/local/docker");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ available: true, version: "27.3.1" });
+  });
+
+  test("GET /api/tts/local/docker → not available when the CLI cannot run", async () => {
+    __setDockerProbeRunnerForTests(async () => null);
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/local/docker");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ available: false, version: null });
+  });
+
+  test("a throwing probe degrades to not-available instead of a 500", async () => {
+    __setDockerProbeRunnerForTests(async () => {
+      throw new Error("spawn exploded");
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/local/docker");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ available: false, version: null });
+  });
+});
+
+describe("TTS routes — local discovery (server-side, CORS-less servers)", () => {
+  test("GET /api/tts/local/discover → probe outcomes; edge-tts shapes recognized", async () => {
+    // Live-verified openai-edge-tts wire shapes (2026-08-29): models under
+    // the `models` key, voices under `voices` — kind must be
+    // openai-compatible, not kokoro.
+    __setDiscoveryFetchForTests(async (input: string) => {
+      if (!input.includes(":5050")) throw new TypeError("refused");
+      if (input.endsWith("/v1/models")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ models: [{ id: "tts-1" }, { id: "gpt-4o-mini-tts" }] }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ voices: [{ id: "alloy", name: "en-US-JennyNeural" }] }),
+      };
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/local/discover");
+    expect(res.status).toBe(200);
+    const outcomes = (await res.json()) as Array<{ port: number; status: string; server?: { kind: string; modelIds: string[]; voiceIds: string[] } }>;
+    const found = outcomes.find((o) => o.status === "found");
+    expect(found?.port).toBe(5050);
+    expect(found?.server?.kind).toBe("openai-compatible");
+    expect(found?.server?.modelIds).toEqual(["tts-1", "gpt-4o-mini-tts"]);
+    expect(found?.server?.voiceIds).toEqual(["alloy"]);
+  });
+
+  test("all ports refused → 200 with refused outcomes (no 500, no throw)", async () => {
+    __setDiscoveryFetchForTests(async () => {
+      throw new TypeError("refused");
+    });
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/local/discover");
+    expect(res.status).toBe(200);
+    const outcomes = (await res.json()) as Array<{ status: string }>;
+    expect(outcomes.length).toBe(7);
+    expect(outcomes.every((o) => o.status === "refused")).toBe(true);
+  });
+});
+
+describe("TTS routes — narratorVoiceId persistence (TE2-4)", () => {
+  test("POST with narratorVoiceId round-trips via GET; null clears to single-voice", async () => {
+    const { app } = await makeApp();
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Narr", backend: "kokoro", voiceId: "af_heart", narratorVoiceId: "af_bella" }),
+    });
+    expect(createdRes.status).toBe(201);
+    const created = (await createdRes.json()) as { id: string; narratorVoiceId: string | null };
+    expect(created.narratorVoiceId).toBe("af_bella");
+    const getRes = await app.request(`/api/tts/profiles/${created.id}`);
+    const fetched = (await getRes.json()) as { narratorVoiceId: string | null };
+    expect(fetched.narratorVoiceId).toBe("af_bella");
+    const patchRes = await app.request(`/api/tts/profiles/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ narratorVoiceId: null }),
+    });
+    const patched = (await patchRes.json()) as { narratorVoiceId: string | null };
+    expect(patched.narratorVoiceId).toBeNull();
+  });
+
+  test("POST without narratorVoiceId defaults to null", async () => {
+    const { app } = await makeApp();
+    const res = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "NoNarr", backend: "kokoro", voiceId: "af_heart" }),
+    });
+    const body = (await res.json()) as { narratorVoiceId: string | null };
+    expect(body.narratorVoiceId).toBeNull();
+  });
+});
+
+// ─── D16 auto key: an endpoint match against LLM provider profiles supplies
+// the key by default (owner decision 2026-08-28 — no manual linking step) ───
+
+async function seedLlmProvider(providers: ProviderStore, endpoint: string, apiKey: string): Promise<void> {
+  await providers.create({ name: "LLM Hub", providerPreset: "custom", endpoint, apiKey });
+}
+
+/** Draft voices without a profileId is the factory-visible seam: the config
+ *  that reaches registerTtsBackend shows what key resolution decided. */
+async function draftFactoryKey(app: RouteApp, config: Record<string, unknown>): Promise<string | undefined> {
+  const seen: SeenConfig = { capture: null };
+  capturingRegistry(seen);
+  const res = await app.request("/api/tts/draft/voices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backend: "openai-compatible", config }),
+  });
+  expect(res.status).toBe(200);
+  return seen.capture?.apiKey as string | undefined;
+}
+
+describe("TTS routes — auto key reuse by endpoint match (D16)", () => {
+  test("draft without a key: matching endpoint pulls the LLM provider key", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1", "sk-llm");
+    const key = await draftFactoryKey(app, { endpoint: "https://openrouter.ai/api/v1", model: "deepgram/flux-tts" });
+    expect(key).toBe("sk-llm");
+  });
+
+  test("normalization: scheme-less, trailing-slash endpoint still matches", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1/", "sk-llm");
+    const key = await draftFactoryKey(app, { endpoint: "openrouter.ai/api/v1///" });
+    expect(key).toBe("sk-llm");
+  });
+
+  test("no matching provider endpoint → factory gets no key", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://api.openai.com/v1", "sk-llm");
+    const key = await draftFactoryKey(app, { endpoint: "https://openrouter.ai/api/v1" });
+    expect(key).toBeUndefined();
+  });
+
+  test("own typed key beats the auto-matched provider key", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1", "sk-llm");
+    const key = await draftFactoryKey(app, { endpoint: "https://openrouter.ai/api/v1", apiKey: "sk-own" });
+    expect(key).toBe("sk-own");
+  });
+
+  test("keyless profile record reports autoKeyProviderName on create + list", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1", "sk-llm");
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Auto",
+        backend: "openai-compatible",
+        config: { endpoint: "https://openrouter.ai/api/v1", model: "deepgram/flux-tts" },
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await createdRes.json()) as { autoKeyProviderName: string | null };
+    expect(created.autoKeyProviderName).toBe("LLM Hub");
+
+    const listRes = await app.request("/api/tts/profiles/all");
+    const list = (await listRes.json()) as Array<{ autoKeyProviderName: string | null }>;
+    expect(list[0].autoKeyProviderName).toBe("LLM Hub");
+  });
+
+  test("profile with an own key (or no matching provider) reports null", async () => {
+    const { app, providers } = await makeApp();
+    await seedLlmProvider(providers, "https://openrouter.ai/api/v1", "sk-llm");
+    const createdRes = await app.request("/api/tts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Own",
+        backend: "openai-compatible",
+        config: { endpoint: "https://openrouter.ai/api/v1", model: "deepgram/flux-tts" },
+        apiKey: "sk-mine",
+        voiceId: "alloy",
+      }),
+    });
+    const created = (await createdRes.json()) as { autoKeyProviderName: string | null };
+    expect(created.autoKeyProviderName).toBeNull();
+  });
+});
+
+// ── Voice cloning route (clone field design 2026-08-31) ────────────────────
+describe("TTS routes — voice clone (multipart draft passthrough)", () => {
+  function cloneForm(overrides: Record<string, string | File> = {}): FormData {
+    const form = new FormData();
+    form.append("backend", "openai-compatible");
+    form.append("config", JSON.stringify({ endpoint: "http://localhost:4123/v1" }));
+    form.append("name", "my-clone");
+    form.append("audio", new File([new Uint8Array([1, 2, 3])], "sample.mp3", { type: "audio/mpeg" }));
+    for (const [k, v] of Object.entries(overrides)) form.set(k, v);
+    return form;
+  }
+
+  test("happy path: multipart reaches cloneVoice verbatim; created voice returned; no DB row", async () => {
+    let seenClone: { name: string; mimeType: string; bytes: number } | null = null;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({
+        capabilities: () => ({ supportsCloning: true }),
+        cloneVoice: async (req) => {
+          seenClone = { name: req.name, mimeType: req.mimeType, bytes: req.referenceAudio.length };
+          return { id: req.name, label: req.name, lang: "en" };
+        },
+      }),
+    );
+    const { app } = await makeApp();
+
+    const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
+
+    expect(res.status).toBe(200);
+    const voice = (await res.json()) as { id: string };
+    expect(voice.id).toBe("my-clone");
+    expect(seenClone).toEqual({ name: "my-clone", mimeType: "audio/mpeg", bytes: 3 });
+  });
+
+  test("capability-gated backend → 400 with the honest message (not a 500)", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () => stubBackend());
+    const { app } = await makeApp();
+
+    const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("does not support voice cloning");
+  });
+
+  // TPE-10 regression pin: the clone route builds a FRESH backend instance
+  // per request, so the openai-compat clone capability (per-instance closure
+  // state set only by listVoices) MUST be re-derived inside this request —
+  // the UI's earlier draftListTtsVoices ran on a different instance in a
+  // different HTTP request and its detection dies at the request boundary.
+  // Chatterbox-shaped server: /audio/voices 404 → /voices library 200 →
+  // POST /voices 200. Without the in-route re-derivation this 400s
+  // "does not support voice cloning" even though the UI showed the form.
+  test("TPE-10: fresh instance re-detects the library route — chatterbox clone passes end-to-end", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);
+    const { app } = await makeApp();
+    const calls: { method: string; url: string }[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ method, url });
+      if (url.endsWith("/audio/voices")) {
+        return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+      }
+      if (method === "POST" && url.endsWith("/voices")) {
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      // GET /voices — the library (gate's listVoices AND the post-clone re-list)
+      return new Response(
+        JSON.stringify({
+          voices: [{ name: "my-clone", path: "/x/my-clone.wav", language: "ru", aliases: [], exists: true }],
+          count: 1,
+        }),
+        { status: 200 },
+      );
+    });
+    try {
+      const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
+
+      expect(res.status).toBe(200);
+      const voice = (await res.json()) as { id: string; lang: string };
+      expect(voice.id).toBe("my-clone");
+      // The created entry resolves through the re-listed library (language metadata comes along).
+      expect(voice.lang).toBe("ru");
+      expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+        "GET http://localhost:4123/v1/audio/voices",
+        "GET http://localhost:4123/v1/voices",
+        "POST http://localhost:4123/v1/voices",
+        "GET http://localhost:4123/v1/audio/voices",
+        "GET http://localhost:4123/v1/voices",
+      ]);
+    } finally {
+      // Process-global seam — restore or the mock poisons every later test file.
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // TPE-10b: an upstream clone rejection must reach the client WITH its
+  // detail and a user-fixable status — never an opaque Internal 500.
+  test("upstream 400 on the library upload → VT passes the 400 through with the upstream detail", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);
+    const { app } = await makeApp();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/audio/voices")) {
+        return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+      }
+      if (method === "POST" && url.endsWith("/voices")) {
+        return new Response(
+          JSON.stringify({ error: { message: "Unsupported audio format: .bin", type: "invalid_request_error" } }),
+          { status: 400 },
+        );
+      }
+      return new Response(JSON.stringify({ voices: [], count: 0 }), { status: 200 });
+    });
+    try {
+      const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("voice clone failed: 400");
+      expect(body.error).toContain("Unsupported audio format");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("validation: missing name, non-audio mime, oversize file → 400 each", async () => {
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, () =>
+      stubBackend({ capabilities: () => ({ supportsCloning: true }), cloneVoice: async (req) => ({ id: req.name, label: req.name, lang: "en" }) }),
+    );
+    const { app } = await makeApp();
+
+    const noName = await app.request("/api/tts/clone", { method: "POST", body: cloneForm({ name: "  " }) });
+    expect(noName.status).toBe(400);
+
+    const badMime = await app.request("/api/tts/clone", {
+      method: "POST",
+      body: cloneForm({ audio: new File([new Uint8Array([1])], "x.txt", { type: "text/plain" }) }),
+    });
+    expect(badMime.status).toBe(400);
+
+    const oversize = await app.request("/api/tts/clone", {
+      method: "POST",
+      body: cloneForm({ audio: new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.mp3", { type: "audio/mpeg" }) }),
+    });
+    expect(oversize.status).toBe(400);
+
+    const unknownBackend = await app.request("/api/tts/clone", { method: "POST", body: cloneForm({ backend: "nope" }) });
+    expect(unknownBackend.status).toBe(400);
+  });
+
+  test("stored-key injection: profileId + empty config apiKey injects the saved key into the clone call", async () => {
+    let injected: unknown = undefined;
+    registerTtsBackend(TTS_BACKEND.OpenAiCompatible, (config) => {
+      const record = config as Record<string, unknown>;
+      injected = record.apiKey;
+      return stubBackend({
+        capabilities: () => ({ supportsCloning: true }),
+        cloneVoice: async (req) => ({ id: req.name, label: req.name, lang: "en" }),
+      });
+    });
+    const { app, store } = await makeApp();
+    // TtsProfile carries the key as a typed column (never inside the config
+    // blob) — create the row the way the CRUD route does.
+    const created = await store.create({
+      name: "P1",
+      backend: "openai-compatible",
+      apiKey: "stored-secret",
+      config: { endpoint: "http://localhost:4123/v1" } as Record<string, unknown>,
+    });
+
+    const form = cloneForm();
+    form.set("profileId", created.id);
+    form.set("config", JSON.stringify({ endpoint: "http://localhost:4123/v1" }));
+    const res = await app.request("/api/tts/clone", { method: "POST", body: form });
+
+    expect(res.status).toBe(200);
+    expect(injected).toBe("stored-secret");
+  });
+});

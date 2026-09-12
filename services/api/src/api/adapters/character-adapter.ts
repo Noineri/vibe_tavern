@@ -16,7 +16,18 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		private readonly stores: StoreContainer,
 		private readonly assetService: AssetService,
 		private readonly providerProfileService: ProviderProfileService,
+		/** Vision-describe test seam (AGENTS.md tier policy: T1 doubles enter via
+		 *  DI seams, not mock.module). Absent ⇒ the real vision-gate fns. */
+		private readonly visionDescribeDeps?: {
+			describeAttachments?: typeof describeAttachments;
+			resolveVisionDescribePrompt?: typeof resolveVisionDescribePrompt;
+		},
 	) {}
+
+	/** Seam accessor — injected stub (tests) or the real vision-gate fn. */
+	private get describeAttachmentsImpl(): typeof describeAttachments {
+		return this.visionDescribeDeps?.describeAttachments ?? describeAttachments;
+	}
 
 	createCharacterFromScratch = (body: {
 		name: string;
@@ -410,7 +421,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		// missing buffer can't surprise us mid-batch (those rows are already failed).
 		const assetLoader = async (assetId: string) => byId.get(assetId) ?? null;
 
-		const descriptions = await describeAttachments(
+		const descriptions = await this.describeAttachmentsImpl(
 			attachments,
 			profile.visionModel,
 			profile,
@@ -450,7 +461,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		const providerFetch = await resolveProviderFetchForProfile(profile);
 		console.log(`[DESCRIBE] adapter.avatar.send visionModel=${profile.visionModel} providerPreset=${profile.providerPreset} endpoint=${profile.endpoint} promptLen=${prompt.length}`);
 
-		const descriptions = await describeAttachments(
+		const descriptions = await this.describeAttachmentsImpl(
 			[{ id: "avatar", assetId: "avatar", type: "image", name: `${character.name} avatar`, mimeType, sizeBytes: 0 }],
 			profile.visionModel,
 			profile,
@@ -476,22 +487,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 	}
 
 	private async resolveVisionDescribePromptFromPreset(): Promise<string> {
-		const settings = await this.stores.uiSettings.get();
-		let aiAssistantPrompts: Record<string, string> | null = null;
-		if (settings?.activePromptPresetId) {
-			const preset = await this.stores.presets.getById(settings.activePromptPresetId);
-			if (preset?.aiAssistantPrompts) {
-				try {
-					const parsed = JSON.parse(preset.aiAssistantPrompts);
-					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-						aiAssistantPrompts = Object.fromEntries(
-							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
-						) as Record<string, string>;
-					}
-				} catch { /* preset.aiAssistantPrompts may hold malformed JSON; skip and fall back to the default vision-describe prompt */ }
-			}
-		}
-		return resolveVisionDescribePrompt(aiAssistantPrompts);
+		return (this.visionDescribeDeps?.resolveVisionDescribePrompt ?? resolveVisionDescribePrompt)(this.stores.db);
 	}
 
 	// ─── Bound resources (character-editor binding field) ────────────────

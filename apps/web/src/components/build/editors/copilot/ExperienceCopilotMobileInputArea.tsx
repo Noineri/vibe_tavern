@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../../../../lib/cn.js";
+import { composerCls } from "../../../../lib/field-tokens.js";
 import { Icons } from "../../../shared/icons.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { ToolbarSelect } from "../../../shared/ToolbarSelect.js";
@@ -90,12 +91,10 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
     onSend(content);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  // E4 (MOBILE_DEFECTS_ROUND_2): NO Enter-to-send on mobile — the on-screen
+  // enter key is the newline key; sending happens via the send button only.
+  // The mention picker still intercepts its own keys (Enter/Tab/Arrows/Escape)
+  // before any fallback; desktop (ExperienceCopilotInputArea) keeps Enter-to-send.
 
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2">
@@ -169,7 +168,8 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
         {/* Input row. */}
         <div className="flex items-end gap-2">
           <AutoTextarea
-            className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4"
+            bare
+            className={composerCls}
             minRows={1}
             maxRows={6}
             data-testid="copilot-chat-input"
@@ -179,7 +179,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
             onSelect={mention.handleSelect}
             onClick={mention.handleClick}
             onBlur={mention.handleBlur}
-            onKeyDown={(e) => mention.handleKeyDown(e, handleKeyDown)}
+            onKeyDown={(e) => mention.handleKeyDown(e)}
           />
           <div className="flex shrink-0 items-center">
             {isSending ? (

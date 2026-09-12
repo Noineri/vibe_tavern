@@ -13,10 +13,16 @@ export const attachmentSchema = z.object({
   /** Stable attachment id — correlates vision descriptions back to specific attachments. */
   id: z.string().min(1),
   assetId: z.string().min(1),
-  type: z.enum(["image", "file", "video"]),
+  type: z.enum(["image", "file", "video", "audio"]),
   name: z.string().max(255),
   mimeType: z.string().max(100),
   sizeBytes: z.number().int().positive().max(50_000_000),
+  /** Audio-only (STT_PLAN ST-6): intent discriminator. Absent = "voice"
+  *  (the domain contract — only `voice` notes are transcribed and
+  *  prompt-visible; music/ambient are playback-only). */
+  purpose: z.enum(["voice", "music", "ambient"]).optional(),
+  /** Audio-only (STT_PLAN ST-6): clip length in ms for the bubble UI. */
+  durationMs: z.number().int().nonnegative().optional(),
 });
 
 export const sendMessageSchema = z.object({
@@ -48,6 +54,16 @@ export const sendMessageSchema = z.object({
   experienceAttachmentId: z.string().min(1).optional(),
   experienceQueueRevision: z.number().int().nonnegative().optional(),
   experienceSessionRevision: z.number().int().nonnegative().optional(),
+  /**
+   * LS-4b (per-send prefill strip): a ONE-SHOT prefill override for THIS send.
+   * When present it replaces the preset's `prefill` for this turn only — the
+   * orchestrator threads it to the executor in place of the assembled prompt's
+   * prefill, and the preset value stays untouched. Absent ⇒ the preset
+   * prefill cascade behaves byte-for-byte as before. The backend still honors
+   * the protocol's `capabilities.prefill` gate (no push on non-capable
+   * providers), so this field is inert where prefill is unsupported.
+   */
+  prefill: z.string().min(1).optional(),
 }).refine(
   (data) => (data.diceMode === undefined) === (data.pendingRevision === undefined),
   { message: "diceMode and pendingRevision must both be present or both absent" },
@@ -70,6 +86,13 @@ const messageVariantIdSchema = z.string().min(1).transform((value) => brandId<Me
 export const editMessageSchema = z.object({
   content: z.string().optional().default(""),
   expectedVariantId: messageVariantIdSchema.optional(),
+});
+
+/** TPE-1 (AN-1): set (or clear) the per-variant TTS narration annotation.
+ *  `text` null / empty / whitespace → annotation cleared. Cap mirrors a
+ *  generous message length so an annotated copy always fits. */
+export const setVariantTtsAnnotationSchema = z.object({
+  text: z.string().max(100_000).nullable(),
 });
 
 export const createMessageVariantSchema = z.object({
@@ -131,7 +154,7 @@ export const coauthorDraftLorebookSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  scopeType: z.enum(["global", "character", "persona", "chat"]),
+  scopeType: z.enum(["global", "entity", "chat"]),
   enabled: z.boolean(),
   /** Activation: how many recent messages to scan for key matches (CE-A1). Optional — the draft engine fills `LOREBOOK_DEFAULTS`; Apply honors the co-author's choice. */
   scanDepth: z.number().int().optional(),

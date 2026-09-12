@@ -40,8 +40,9 @@ mock.module("./Tooltip.js", () => ({
 }));
 
 let MasterDetailModal: typeof import("./MasterDetailModal.js").MasterDetailModal;
+let MasterDetailFooter: typeof import("./MasterDetailModal.js").MasterDetailFooter;
 beforeAll(async () => {
-  ({ MasterDetailModal } = await import("./MasterDetailModal.js"));
+  ({ MasterDetailModal, MasterDetailFooter } = await import("./MasterDetailModal.js"));
 });
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -209,5 +210,237 @@ describe("MasterDetailModal — mobile", () => {
     expect(outer.className).toContain("h-[100dvh]");
     expect(outer.className).toContain("w-[100dvw]");
     expect(outer.className).not.toContain("some-desktop-class");
+  });
+});
+
+// ── Frost layer (R-8) ─────────────────────────────────────────────────────
+// Any non-none backdrop-filter on the panel — even blur(0) in opaque themes —
+// makes the panel a containing block for position:fixed descendants, so
+// dnd-kit's DragOverlay (fixed, rendered inline in the panel tree) resolved
+// against the panel box and dragged rows appeared offset right/down of the
+// cursor in every master-detail list (PromptManager presets/regex/canvas,
+// provider profiles). The frost therefore lives on a z:-1 ::before underlayer
+// (.glass-blur-under); this pins that the panel itself never re-gains the
+// on-element .glass-blur class.
+describe("MasterDetailModal — frost layer (R-8)", () => {
+  it("panel carries glass-blur-under, never on-element glass-blur", () => {
+    isMobile = false;
+    render(
+      <MasterDetailModal
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+      />,
+    );
+
+    const panel = document.querySelector(".glass-blur-under");
+    expect(panel).toBeTruthy();
+    expect([...panel!.classList]).not.toContain("glass-blur");
+    // The translucent fill moved to the underlayer too — no double fill.
+    expect([...panel!.classList]).not.toContain("bg-glass-bg");
+  });
+});
+
+// ── Header tabs (declarative `tabs` prop) ──────────────────────────────────
+// The optional tabs element renders a SegmentedControl at the bottom of the
+// global header — on desktop AND on the mobile main view (not the drill-down
+// header). Switching must call back with the option's value, fully typed.
+describe("MasterDetailModal — header tabs", () => {
+  type TestTab = "presets" | "regex" | "service";
+
+  it("renders tab labels with the active segment checked", () => {
+    isMobile = false;
+    const { getByText } = render(
+      <MasterDetailModal<TestTab>
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+        tabs={{
+          items: [
+            { value: "presets", label: "Presets" },
+            { value: "regex", label: "Regex" },
+            { value: "service", label: "Service" },
+          ],
+          active: "regex",
+          onChange: () => {},
+        }}
+      />,
+    );
+
+    expect(getByText("Presets")).toBeTruthy();
+    expect(getByText("Regex")).toBeTruthy();
+    expect(getByText("Service")).toBeTruthy();
+    const active = getByText("Regex").closest('[role="radio"]')!;
+    expect(active.getAttribute("aria-checked")).toBe("true");
+    const inactive = getByText("Presets").closest('[role="radio"]')!;
+    expect(inactive.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("clicking another tab calls onChange with its value", () => {
+    isMobile = false;
+    const calls: string[] = [];
+    const { getByText } = render(
+      <MasterDetailModal<TestTab>
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={master()}
+        detailContent={detail()}
+        tabs={{
+          items: [
+            { value: "presets", label: "Presets" },
+            { value: "regex", label: "Regex" },
+          ],
+          active: "presets",
+          onChange: (v: TestTab) => { calls.push(v); },
+        }}
+      />,
+    );
+
+    fireEvent.click(getByText("Regex"));
+    expect(calls).toEqual(["regex"]);
+  });
+
+  it("tabs stay on the mobile main view and disappear in the drill-down", () => {
+    isMobile = true;
+    const { getByText, getByTestId, queryByText } = render(
+      <MasterDetailModal<TestTab>
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        detailTitle="Detail"
+        masterContent={({ openDetail }: { openDetail: () => void }) => (
+          <div data-testid="master">
+            <button type="button" data-testid="open-detail" onClick={openDetail}>
+              open
+            </button>
+          </div>
+        )}
+        detailContent={detail()}
+        tabs={{
+          items: [
+            { value: "presets", label: "Presets" },
+            { value: "regex", label: "Regex" },
+          ],
+          active: "presets",
+          onChange: () => {},
+        }}
+      />,
+    );
+
+    // Main view: tabs visible.
+    expect(getByText("Regex")).toBeTruthy();
+    // Open the drill-down: master header (with tabs) is replaced by the
+    // drill-down header, so the tab control is gone.
+    fireEvent.click(getByTestId("open-detail"));
+    expect(queryByText("Regex")).toBeNull();
+  });
+});
+
+// ── MasterDetailFooter (SP-11) ──────────────────────────────────────────
+
+describe("MasterDetailFooter — footer chrome primitive", () => {
+  it("desktop: icon-text actions left, Close + right slot in ml-auto group", () => {
+    isMobile = false;
+    let closed = false;
+    const { container } = render(
+      <MasterDetailFooter
+        actions={[
+          { icon: <span data-testid="ico-copy" />, label: "Copy me", onClick: () => {} },
+          { icon: <span data-testid="ico-trash" />, label: "Delete me", onClick: () => {} },
+        ]}
+        onClose={() => { closed = true; }}
+        right={<button type="button" data-testid="save">save</button>}
+      />,
+    );
+    const bar = container.firstElementChild as HTMLElement;
+    expect(bar.className).toContain("border-t");
+    // Actions render as icon-text spans, in order, before the ml-auto group.
+    const spans = bar.querySelectorAll("span.cursor-pointer");
+    expect(spans.length).toBe(2);
+    expect(spans[0]?.textContent).toContain("Copy me");
+    expect(spans[1]?.textContent).toContain("Delete me");
+    // Right group: Close button + custom right content, after the actions.
+    const rightGroup = bar.querySelector("div.ml-auto") as HTMLElement;
+    expect(rightGroup).toBeTruthy();
+    expect(rightGroup.querySelector('[data-testid="save"]')).toBeTruthy();
+    const close = Array.from(rightGroup.querySelectorAll("button")).find((b) => b.textContent === "close");
+    expect(close).toBeTruthy();
+    fireEvent.click(close as HTMLElement);
+    expect(closed).toBe(true);
+    // Ordering: the ml-auto group must come AFTER the action spans (Save right).
+    expect(bar.textContent?.indexOf("Copy me")).toBeLessThan(bar.textContent?.indexOf("save") ?? -1);
+  });
+
+  it("mobile: actions collapse to 9x9 icon buttons, no Close", () => {
+    isMobile = true;
+    const { container } = render(
+      <MasterDetailFooter
+        actions={[{ icon: <span data-testid="ico-copy" />, label: "Copy me", onClick: () => {} }]}
+        onClose={() => {}}
+        right={<button type="button" data-testid="save">save</button>}
+      />,
+    );
+    const bar = container.firstElementChild as HTMLElement;
+    expect(bar.className).toContain("px-3");
+    // MUI step 1: the mobile footer expands upward — safe-area-aware bottom
+    // padding keeps Save above the browser/gesture curtain (house pattern).
+    expect(bar.className).toContain("safe-area-inset-bottom");
+    const iconBtn = bar.querySelector("button.h-9.w-9") as HTMLElement;
+    expect(iconBtn).toBeTruthy();
+    expect(iconBtn.getAttribute("aria-label")).toBe("Copy me");
+    expect(bar.textContent?.includes("Copy me")).toBe(false);
+    expect(bar.querySelector('[data-testid="save"]')).toBeTruthy();
+    // Close is desktop-only.
+    expect(bar.textContent?.includes("close")).toBe(false);
+    // MUI W7: the right slot is back to ONE atomic line — step 18's wrap
+    // let the auto-width group balloon to max-content and pushed settings
+    // past the viewport edge. Footer-level settings now render via the
+    // `mobileBottomRow` prop (pinned in the next test).
+    const rightGroup = bar.querySelector("div.ml-auto") as HTMLElement;
+    expect(rightGroup.className).not.toContain("max-md:flex-wrap");
+    expect(rightGroup.className).not.toContain("max-md:justify-end");
+  });
+
+  it("mobileBottomRow: full-width row below the action row, mobile-only (MUI W7)", () => {
+    isMobile = true;
+    const { container } = render(
+      <MasterDetailFooter
+        actions={[{ icon: <span />, label: "Delete", onClick: () => {} }]}
+        right={<button type="button" data-testid="save">save</button>}
+        mobileBottomRow={<div data-testid="settings-row">settings</div>}
+      />,
+    );
+    const bar = container.firstElementChild as HTMLElement;
+    const rightGroup = bar.querySelector("div.ml-auto") as HTMLElement;
+    const row = bar.querySelector(":scope > div.w-full") as HTMLElement;
+    // A DIRECT footer child — w-full resolves against the flex-wrap footer
+    // (definite 336px at a 360px viewport), not against an auto-width group.
+    expect(row).toBeTruthy();
+    expect(row.querySelector('[data-testid="settings-row"]')).toBeTruthy();
+    // It renders AFTER the right group (row 2 below row 1) and its content
+    // is NOT inside the atomic right line.
+    const kids = Array.from(bar.children);
+    expect(kids.indexOf(row)).toBeGreaterThan(kids.indexOf(rightGroup));
+    expect(rightGroup.querySelector('[data-testid="settings-row"]')).toBeNull();
+    // Row 1 = delete icon + right group (save reachable beside it).
+    const deleteBtn = bar.querySelector("button.h-9.w-9") as HTMLElement;
+    expect(kids[0]).toBe(deleteBtn);
+    expect(kids[1]).toBe(rightGroup);
+
+    // Desktop: never rendered — the desktop DOM is bit-identical to pre-W7.
+    isMobile = false;
+    const desktop = render(
+      <MasterDetailFooter
+        right={<button type="button" data-testid="save">save</button>}
+        mobileBottomRow={<div data-testid="settings-row">settings</div>}
+      />,
+    );
+    expect(desktop.container.querySelector('[data-testid="settings-row"]')).toBeNull();
+    expect(desktop.container.querySelector(":scope > div.w-full")).toBeNull();
   });
 });

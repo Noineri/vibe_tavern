@@ -12,6 +12,12 @@ export type SamplerFieldId =
   | "minP"
   | "typicalP"
   | "tfsZ"
+  | "adaptiveTarget"
+  | "adaptiveDecay"
+  | "dynatempRange"
+  | "dynatempExponent"
+  | "topNSigma"
+  | "smoothingFactor"
   | "repeatLastN"
   | "mirostat"
   | "mirostatTau"
@@ -20,6 +26,8 @@ export type SamplerFieldId =
   | "dryBase"
   | "dryAllowedLength"
   | "drySequenceBreakers"
+  | "dryPenaltyLastN"
+  | "bannedStrings"
   | "xtcThreshold"
   | "xtcProbability"
   | "frequencyPenalty"
@@ -52,8 +60,17 @@ export type SamplerSetId =
   | "aggregator"
   // NanoGPT — near-full surface including mirostat, tfs, typicalP
   | "nanogpt"
-  // Group B — Local / vLLM-based (full sampler surface)
+  // Group B — Local / vLLM-based (full sampler surface).
+  // llama.cpp / Unsloth ride llama-server → llamacpp_native (own set:
+  // openai_local + adaptive-p, see LOCAL_SAMPLERS_ADDITION_REPORT B1).
   | "openai_local"
+  // llama.cpp / Unsloth Studio — llama-server surface: openai_local +
+  // adaptive-p (`adaptiveTarget`/`adaptiveDecay`) + the llama-server numeric
+  // tail (`dynatempRange`, `dynatempExponent`, `topNSigma`, `smoothingFactor`,
+  // `dryPenaltyLastN`). Separate set so the shared openai_local set (Ollama,
+  // vLLM-family presets) stays untouched. See LOCAL_SAMPLERS_ADDITION_REPORT
+  // B1/B2.
+  | "llamacpp_native"
   // Group C — Minimal samplers + reasoning control
   | "minimal_reasoning"
   // Group D — OpenAI-standard cloud (full set)
@@ -84,6 +101,12 @@ const NONE: SamplerCapabilityFlags = {
   minP: false,
   typicalP: false,
   tfsZ: false,
+  adaptiveTarget: false,
+  adaptiveDecay: false,
+  dynatempRange: false,
+  dynatempExponent: false,
+  topNSigma: false,
+  smoothingFactor: false,
   repeatLastN: false,
   mirostat: false,
   mirostatTau: false,
@@ -92,6 +115,8 @@ const NONE: SamplerCapabilityFlags = {
   dryBase: false,
   dryAllowedLength: false,
   drySequenceBreakers: false,
+  dryPenaltyLastN: false,
+  bannedStrings: false,
   xtcThreshold: false,
   xtcProbability: false,
   frequencyPenalty: false,
@@ -190,6 +215,47 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "logitBias",
   ),
 
+  // ── llama.cpp / Unsloth Studio ───────────────────────────────────────────
+  // llama-server (OpenAI-compat /v1): full local surface + adaptive-p + the
+  // llama-server numeric tail (LOCAL_SAMPLERS_ADDITION_REPORT B2).
+  // `adaptiveTarget` −1 = disabled (llama.cpp default); 0.0–1.0 active.
+  // Numeric-tail off defaults per upstream: dynatemp_range 0 (off),
+  // dynatemp_exponent 1 (applies only when range > 0), top_n_sigma 0 (off),
+  // smoothing_factor 0 (off); `dryPenaltyLastN` −1 = disabled (the field is
+  // omitted from the request — llama-server rejects −1 with HTTP 400 and 0
+  // means a zero window, DRY inert).
+  llamacpp_native: set(
+    "temperature",
+    "topP",
+    "topK",
+    "minP",
+    "typicalP",
+    "tfsZ",
+    "adaptiveTarget",
+    "adaptiveDecay",
+    "dynatempRange",
+    "dynatempExponent",
+    "topNSigma",
+    "smoothingFactor",
+    "repeatLastN",
+    "mirostat",
+    "mirostatTau",
+    "mirostatEta",
+    "dryMultiplier",
+    "dryBase",
+    "dryAllowedLength",
+    "drySequenceBreakers",
+    "dryPenaltyLastN",
+    "xtcThreshold",
+    "xtcProbability",
+    "frequencyPenalty",
+    "presencePenalty",
+    "repetitionPenalty",
+    "stopSequences",
+    "seed",
+    "logitBias",
+  ),
+
   // ── Group C: Minimal samplers + reasoning control ───────────────────────
   // Google AI Studio, ZAI (Zhipu), AI21 — temp, topP, stop, reasoning
   minimal_reasoning: set(
@@ -260,7 +326,10 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
   ),
 
   // ── Outlier: KoboldCPP ──────────────────────────────────────────────────
-  // topA + minP + repPen but NO freqPen/presPen. Full local surface.
+  // topA + minP + repPen but NO freqPen/presPen. Full local surface + adaptive-p
+  // (native `adaptive_target`/`adaptive_decay` request fields, V1-verified) +
+  // antislop phrase banning (`bannedStrings` → native `banned_strings` request
+  // field, V1-verified exact-match semantics; LOCAL_SAMPLERS_ADDITION_REPORT B3).
   koboldcpp_native: set(
     "temperature",
     "topP",
@@ -269,6 +338,8 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "minP",
     "typicalP",
     "tfsZ",
+    "adaptiveTarget",
+    "adaptiveDecay",
     "repeatLastN",
     "mirostat",
     "mirostatTau",
@@ -277,6 +348,7 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "dryBase",
     "dryAllowedLength",
     "drySequenceBreakers",
+    "bannedStrings",
     "xtcThreshold",
     "xtcProbability",
     "repetitionPenalty",
@@ -329,6 +401,10 @@ const LOCAL_OPENAI_COMPAT_PRESETS = new Set([
   "ooba",
   "tabby",
   "aphrodite",
+  // LM Studio (LOCAL_SAMPLERS_ADDITION_REPORT B4): its /v1 API is a pass-through
+  // to the GGUF engine — OpenAI-standard samplers plus the llama.cpp extras are
+  // forwarded, unknown fields ignored (V1 probe on 0.4.23: DRY applied live).
+  "lmstudio",
 ]);
 
 /**
@@ -381,10 +457,11 @@ export function resolveSamplerSet(
     case PROVIDER_TYPE.ollama:
       return "openai_local";
     case PROVIDER_TYPE.llamaCpp:
-      return "openai_local";
+      // llama-server: full local surface + adaptive-p.
+      return "llamacpp_native";
     case PROVIDER_TYPE.unsloth:
-      // Unsloth Studio wraps llama-server; full local sampler surface.
-      return "openai_local";
+      // Unsloth Studio wraps llama-server; same surface as llama.cpp.
+      return "llamacpp_native";
     case PROVIDER_TYPE.koboldCpp:
       return "koboldcpp_native";
     case PROVIDER_TYPE.openaiCompat:

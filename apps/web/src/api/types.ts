@@ -425,6 +425,14 @@ export interface UiSettingsRecord {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  /** Summary-generation binding (SUM-4/SUM-5). Optional for the same
+   *  bootstrap-snapshot compat reason as the STT pointers below. */
+  summaryProviderId?: string | null;
+  summaryModelName?: string | null;
+  /** Message AI editor binding (SUM-5) — stops sharing the ai-assistant
+   *  pair. Same optional-for-compat shape. */
+  messageEditorProviderId?: string | null;
+  messageEditorModelName?: string | null;
   coauthorProviderId: string | null;
   coauthorModelName: string | null;
   /** Optional for compatibility with bootstrap snapshots predating token overrides. */
@@ -436,6 +444,14 @@ export interface UiSettingsRecord {
   userMessageCount?: number;
   nextStarPromptAt?: number;
   starPromptDeferrals?: number;
+  /** STT dictation pointer (ST-1 ui_settings column): the profile the chat
+   *  mic transcribes with. Optional for bootstrap-snapshot compat (a client
+   *  can be newer than its server). Null → fall back to the default profile. */
+  activeDictationProfileId?: string | null;
+  /** STT voice-message pointer (ST-1 ui_settings column): the profile that
+   *  transcribes attached voice notes at send time. Same optional-for-compat
+   *  shape as the dictation pointer; null → default profile. */
+  activeVoiceMessageProfileId?: string | null;
   /** Optional for compatibility with bootstrap snapshots predating the
    *  copilot binding. Null → the copilot shell defaults to the first profile. */
   copilotProviderId?: string | null;
@@ -503,7 +519,8 @@ export interface LoreEntryRecord {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  useGroupScoring: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level default, true/false = explicit. */
+  useGroupScoring: boolean | null;
   excludeRecursion: boolean;
   preventRecursion: boolean;
   delayUntilRecursion: boolean;
@@ -529,6 +546,8 @@ export interface LorebookRecord {
   tokenBudget: number;
   tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
+  /** Book-level default for entry.useGroupScoring (ST's global switch, scoped to the book). Effective flag: entry.useGroupScoring ?? book.useGroupScoring. */
+  useGroupScoring: boolean;
   enabled: boolean;
 }
 
@@ -564,6 +583,57 @@ export interface ScriptRecord {
 export interface ScriptLinkRecord {
   scriptId: string;
   targetType: "character" | "persona";
+  targetId: string;
+}
+
+// ─── Regex presets (REGEX_EXTENSION_PLAN, RX-11) ─────────────────────────────
+
+export interface RegexPresetRecord {
+  id: string;
+  name: string;
+  /** Find pattern in ST's `/pattern/flags` notation. */
+  findRegex: string;
+  /** Replacement; supports `{{match}}`, `$1`.. capture groups and `$<name>`. */
+  replaceString: string;
+  /** ST "Trim Out" — substrings stripped from each match before replacement. */
+  trimStrings: string[];
+  /** Macro substitution mode into the find pattern: 0=NONE, 1=RAW, 2=ESCAPED. */
+  substituteRegex: number;
+  disabled: boolean;
+  markdownOnly: boolean;
+  promptOnly: boolean;
+  runOnEdit: boolean;
+  minDepth: number | null;
+  maxDepth: number | null;
+  /** Hooks this preset runs at (ST numeric codes: 1/2/5/6). */
+  placement: number[];
+  isGlobal: boolean;
+  sortOrder: number;
+  /** R-13: the profile this rule belongs to, or null for a standalone rule. */
+  profileId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RegexLinkRecord {
+  regexPresetId: string;
+  targetType: "character" | "preset";
+  targetId: string;
+}
+
+export interface RegexProfileRecord {
+  id: string;
+  name: string;
+  disabled: boolean;
+  isGlobal: boolean;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RegexProfileLinkRecord {
+  regexProfileId: string;
+  targetType: "character" | "preset";
   targetId: string;
 }
 
@@ -1020,7 +1090,7 @@ export interface AiAssistantChunk {
   finishReason?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "dice_script";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "message_tts_annotate" | "dice_script";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;

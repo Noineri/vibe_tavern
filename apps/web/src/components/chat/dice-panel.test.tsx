@@ -74,11 +74,18 @@ mock.module("../../stores/snapshot-store.js", () => ({
     activeBranch: typeof mocks.activeBranch;
     character: typeof mocks.character;
     persona: typeof mocks.persona;
+    messagesById: Record<string, unknown>;
+    messageOrder: string[];
   }) => unknown) => selector({
     activeChat: mocks.activeChat,
     activeBranch: mocks.activeBranch,
     character: mocks.character,
     persona: mocks.persona,
+    // TPE-18a: the full PlayMode tree (incl. the narration playlist pill
+    // mounted beside Dice) reads the message index through the real
+    // useOrderedMessages — an empty index, same as a fresh chat.
+    messagesById: {},
+    messageOrder: [],
   }),
 }));
 

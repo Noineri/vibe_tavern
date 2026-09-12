@@ -13,6 +13,10 @@ import { CharacterAdapter } from "./character-adapter.js";
 import { PersonaAdapter } from "./persona-adapter.js";
 import { LorebookAdapter } from "./lorebook-adapter.js";
 import { ScriptAdapter } from "./script-adapter.js";
+import { RegexAdapter } from "./regex-adapter.js";
+import { TtsAdapter } from "./tts-adapter.js";
+import { NarrationLibraryService } from "../../domain/tts/narration-library.js";
+import { SttAdapter } from "./stt-adapter.js";
 import { ProviderAdapter } from "./provider-adapter.js";
 import { ProxyAdapter } from "./proxy-adapter.js";
 import { PresetAdapter } from "./preset-adapter.js";
@@ -27,6 +31,9 @@ import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
 import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
+import { SamplerSetAdapter } from "./sampler-set-adapter.js";
+import { FormatTemplateAdapter } from "./format-template-adapter.js";
+import { ServicePromptAdapter } from "./service-prompt-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
@@ -49,11 +56,15 @@ import type { ExperienceContextService } from "../../domain/interactive/experien
  */
 export class RuntimeApiAdapter implements RuntimeApi {
 	readonly bootstrap: RuntimeApi["bootstrap"];
+	readonly servicePrompts: ServicePromptAdapter;
 	readonly chat: ChatAdapter;
 	readonly character: CharacterAdapter;
 	readonly persona: PersonaAdapter;
 	readonly lorebook: LorebookAdapter;
 	readonly script: ScriptAdapter;
+	readonly regex: RegexAdapter;
+	readonly tts: TtsAdapter;
+	readonly stt: SttAdapter;
 	readonly provider: ProviderAdapter;
 	readonly proxy: ProxyAdapter;
 	readonly preset: PresetAdapter;
@@ -66,6 +77,8 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly coauthorSkills: CoauthorSkillAdapter;
 	readonly copilotSkills: CopilotSkillAdapter;
 	readonly copilotProfiles: CopilotProfileAdapter;
+	readonly samplerSets: SamplerSetAdapter;
+	readonly formatTemplates: FormatTemplateAdapter;
 	readonly dice: DiceAdapter;
 	readonly experience: ExperienceAdapter;
 	readonly experienceCopilot: ExperienceCopilotAdapter;
@@ -93,14 +106,30 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
+		// STT first (ST-6): ChatAdapter receives the SttAdapter's bound
+		// transcription path for voice-message attachments — the adapter graph
+		// stays acyclic (no cross-imports, constructor injection only).
+		const sttAdapter = new SttAdapter(stores);
+		this.stt = sttAdapter;
 		this.chat = new ChatAdapter(
 			stores, sessionRuntime, liveChatOrchestrator,
 			chatSummaryService, providerProfileService, assetService,
+			sttAdapter.transcribeSttAudio,
 		);
 		this.character = new CharacterAdapter(sessionRuntime, stores, assetService, providerProfileService);
 		this.persona = new PersonaAdapter(sessionRuntime, stores, assetService, providerProfileService);
 		this.lorebook = new LorebookAdapter(stores);
 		this.script = new ScriptAdapter(stores);
+		this.servicePrompts = new ServicePromptAdapter(stores);
+		this.regex = new RegexAdapter(stores);
+		// TPE-18c: the narration library writes into the character's EXISTING
+		// assets folder — same folder resolver the AssetService uses, so
+		// narrations land next to avatars/gallery even post-HRF renames.
+		const narrationLibrary = new NarrationLibraryService({
+			content: stores.content,
+			resolveCharacterFolder: (id) => stores.characters.resolveFolderName(id),
+		});
+		this.tts = new TtsAdapter(stores, narrationLibrary);
 		this.provider = new ProviderAdapter(stores, providerProfileService);
 		this.proxy = new ProxyAdapter(proxyService);
 		this.preset = new PresetAdapter(promptPresetService);
@@ -113,6 +142,8 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
 		this.copilotSkills = new CopilotSkillAdapter(copilotSkillService);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
+		this.samplerSets = new SamplerSetAdapter(stores);
+		this.formatTemplates = new FormatTemplateAdapter(stores);
 		this.dice = new DiceAdapter(diceService);
 		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService, providerProfileService);
 		this.experienceCopilot = new ExperienceCopilotAdapter(stores, providerProfileService, copilotSkillService);

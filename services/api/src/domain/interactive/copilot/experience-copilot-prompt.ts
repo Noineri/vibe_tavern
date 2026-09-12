@@ -43,6 +43,8 @@ import {
 import type { ToolCallPart, ToolResultPart } from "ai";
 import type { CopilotProfile, CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
+import type { AppDb } from "@vibe-tavern/db";
+import { resolveServicePromptText } from "../../service-prompts/service-prompt-resolver.js";
 import { runExperienceTest } from "../experience-tester.js";
 import type {
   ExperienceCopilotRealtimeDigest,
@@ -280,6 +282,8 @@ export interface ExperienceCopilotAssembleInput {
    *  systemTokens), so it survives history compaction — the plan is the
    *  session's durable working state, not a history message. */
   readonly todo?: readonly CopilotTodoItem[];
+  /** Optional DB handle — when present, reference prompts resolve via the active service-prompt profile. */
+  readonly db?: AppDb;
 }
 
 /** One message in the final assembled prompt (system + compacted history). */
@@ -618,16 +622,20 @@ export async function assembleExperienceCopilotPrompt(
   // from the built-in root plus the optional user root (CP-4); the two API
   // references (rules DSL + visual bridge) load alongside so all asset I/O fans
   // out together.
-  const profile = input.profile ?? await resolveBuiltinCopilotProfile();
+  const profile = input.profile ?? await resolveBuiltinCopilotProfile(input.db);
+  const resolveRef = (field: "interactive_rules" | "interactive_visual" | "copilot_user_flow", assetFile: string) =>
+    input.db
+      ? resolveServicePromptText(input.db, field)
+      : loadPromptAsset(assetFile);
   const [allSkills, rulesReference, visualReference, userFlow] = await Promise.all([
     resolveExperienceCopilotSkillCatalog(input.skillUserRoot),
-    loadPromptAsset("interactive-rules.md"),
-    loadPromptAsset("interactive-visual.md"),
+    resolveRef("interactive_rules", "interactive-rules.md"),
+    resolveRef("interactive_visual", "interactive-visual.md"),
     // The human-side authoring/testing flow (stepper, diff review, sandbox
     // settings, live run, guiding protocol) — app-universal knowledge, so it
     // loads in the ASSEMBLY (not the profile's base prompt, which user-created
     // profiles snapshot away from base.md).
-    loadPromptAsset("experience-copilot/user-flow.md"),
+    resolveRef("copilot_user_flow", "experience-copilot/user-flow.md"),
   ]);
   // The profile's skillIds GATE the catalog — only enabled skills are listed
   // and only their roots are exposed to `read_skill_file`. The built-in seed

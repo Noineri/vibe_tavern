@@ -597,7 +597,7 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
     );
     expect(out.target).toBe("lore_bundle");
     expect(out.bundle.lorebooks).toHaveLength(1);
-    expect(out.bundle.lorebooks[0]).toMatchObject({ id: "lorebook_1", name: "World Lore", scopeType: "character" });
+    expect(out.bundle.lorebooks[0]).toMatchObject({ id: "lorebook_1", name: "World Lore", scopeType: "entity" });
     expect(out.bundle.entries).toEqual([]);
     expect(out.summary).toBe("Add a world lorebook.");
   });
@@ -850,7 +850,7 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
   /** A canned persisted lorebook draft node returned by the lookup mock. */
   const persistedBook = {
     id: "lb_p", name: "Old Book", description: "d",
-    scopeType: "character" as const, enabled: true,
+    scopeType: "entity" as const, enabled: true,
     scanDepth: 10, tokenBudget: 1000, recursiveScanning: false,
   };
   /** A canned persisted entry draft node. */

@@ -152,6 +152,17 @@ describe("sampler params", () => {
     expect(ollamaCaps.mirostat).toBe(true);
     expect(ollamaCaps.dryMultiplier).toBe(true);
     expect(ollamaCaps.xtcProbability).toBe(true);
+    // openai_local stays WITHOUT the adaptive-p fields (LOCAL_SAMPLERS_ADDITION_REPORT:
+    // separate llamacpp_native set, so Ollama/vLLM presets never receive them)
+    expect(ollamaCaps.adaptiveTarget).toBe(false);
+    expect(ollamaCaps.adaptiveDecay).toBe(false);
+    // …and without the B2 llama-server numeric tail
+    expect(ollamaCaps.dynatempRange).toBe(false);
+    expect(ollamaCaps.dynatempExponent).toBe(false);
+    expect(ollamaCaps.topNSigma).toBe(false);
+    expect(ollamaCaps.smoothingFactor).toBe(false);
+    expect(ollamaCaps.dryPenaltyLastN).toBe(false);
+    expect(ollamaCaps.bannedStrings).toBe(false);
 
     const koboldCaps = resolveSamplerCapabilities("koboldcpp", PROVIDER_TYPE.koboldCpp);
     expect(koboldCaps.topA).toBe(true);
@@ -159,5 +170,80 @@ describe("sampler params", () => {
     expect(koboldCaps.dryMultiplier).toBe(true);
     expect(koboldCaps.xtcProbability).toBe(true);
     expect(koboldCaps.frequencyPenalty).toBe(false);
+    // KoboldCPP native supports adaptive-p (V1-verified request fields)
+    expect(koboldCaps.adaptiveTarget).toBe(true);
+    expect(koboldCaps.adaptiveDecay).toBe(true);
+    // …and antislop phrase banning (B3, V1-verified `banned_strings`)
+    expect(koboldCaps.bannedStrings).toBe(true);
+    // The B2 llama-server numeric tail is llama-server-only — NOT in koboldcpp_native
+    expect(koboldCaps.dynatempRange).toBe(false);
+    expect(koboldCaps.topNSigma).toBe(false);
+    expect(koboldCaps.smoothingFactor).toBe(false);
+    expect(koboldCaps.dryPenaltyLastN).toBe(false);
+  });
+
+  it("resolves llamacpp_native for llama.cpp and Unsloth (openai_local + adaptive-p)", () => {
+    expect(resolveSamplerSet(null, PROVIDER_TYPE.llamaCpp)).toBe("llamacpp_native");
+    expect(resolveSamplerSet(null, PROVIDER_TYPE.unsloth)).toBe("llamacpp_native");
+
+    const llamaCaps = resolveSamplerCapabilities(null, PROVIDER_TYPE.llamaCpp);
+    // Same full local surface as openai_local…
+    expect(llamaCaps.minP).toBe(true);
+    expect(llamaCaps.typicalP).toBe(true);
+    expect(llamaCaps.dryMultiplier).toBe(true);
+    expect(llamaCaps.xtcProbability).toBe(true);
+    expect(llamaCaps.mirostat).toBe(true);
+    expect(llamaCaps.logitBias).toBe(true);
+    // …plus adaptive-p
+    expect(llamaCaps.adaptiveTarget).toBe(true);
+    expect(llamaCaps.adaptiveDecay).toBe(true);
+    // …plus the llama-server numeric tail (B2)
+    expect(llamaCaps.dynatempRange).toBe(true);
+    expect(llamaCaps.dynatempExponent).toBe(true);
+    expect(llamaCaps.topNSigma).toBe(true);
+    expect(llamaCaps.smoothingFactor).toBe(true);
+    expect(llamaCaps.dryPenaltyLastN).toBe(true);
+
+    const unslothCaps = resolveSamplerCapabilities(null, PROVIDER_TYPE.unsloth);
+    expect(unslothCaps.adaptiveTarget).toBe(true);
+    expect(unslothCaps.adaptiveDecay).toBe(true);
+    expect(unslothCaps.dryMultiplier).toBe(true);
+    expect(unslothCaps.dynatempRange).toBe(true);
+    expect(unslothCaps.dryPenaltyLastN).toBe(true);
+
+    // The shared openai_local set (Ollama / vLLM-family presets) is untouched
+    const vllmCaps = resolveSamplerCapabilities("vllm", PROVIDER_TYPE.openaiCompat);
+    expect(resolveSamplerSet("vllm", PROVIDER_TYPE.openaiCompat)).toBe("openai_local");
+    expect(vllmCaps.adaptiveTarget).toBe(false);
+    expect(vllmCaps.adaptiveDecay).toBe(false);
+    expect(vllmCaps.dynatempRange).toBe(false);
+    expect(vllmCaps.topNSigma).toBe(false);
+    expect(vllmCaps.smoothingFactor).toBe(false);
+    expect(vllmCaps.dryPenaltyLastN).toBe(false);
+  });
+
+  it("resolves openai_local for the LM Studio preset (B4, local pass-through)", () => {
+    expect(resolveSamplerSet("lmstudio", PROVIDER_TYPE.openaiCompat)).toBe("openai_local");
+    const caps = resolveSamplerCapabilities("lmstudio", PROVIDER_TYPE.openaiCompat);
+    // The full local surface applies unchanged — no new set, no adapter work
+    expect(caps.topK).toBe(true);
+    expect(caps.minP).toBe(true);
+    expect(caps.dryMultiplier).toBe(true);
+    expect(caps.xtcProbability).toBe(true);
+    expect(caps.logitBias).toBe(true);
+    // B1/B2 llama-server-specific fields stay out until a live probe confirms
+    // acceptance (same policy as Ollama)
+    expect(caps.adaptiveTarget).toBe(false);
+    expect(caps.topNSigma).toBe(false);
+    expect(caps.dryPenaltyLastN).toBe(false);
+  });
+
+  it("keeps bannedStrings (antislop) exclusive to koboldcpp_native (B3)", () => {
+    expect(resolveSamplerCapabilities("koboldcpp", PROVIDER_TYPE.koboldCpp).bannedStrings).toBe(true);
+    // llama-server surface and the shared openai_local set have no upstream equivalent
+    expect(resolveSamplerCapabilities(null, PROVIDER_TYPE.llamaCpp).bannedStrings).toBe(false);
+    expect(resolveSamplerCapabilities(null, PROVIDER_TYPE.unsloth).bannedStrings).toBe(false);
+    expect(resolveSamplerCapabilities("ollama", PROVIDER_TYPE.ollama).bannedStrings).toBe(false);
+    expect(resolveSamplerCapabilities("vllm", PROVIDER_TYPE.openaiCompat).bannedStrings).toBe(false);
   });
 });

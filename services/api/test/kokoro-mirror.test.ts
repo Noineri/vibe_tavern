@@ -1,0 +1,325 @@
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+import {
+	buildHuggingFaceUrl,
+	KokoroMirrorService,
+	validateKokoroFilePath,
+	type KokoroMirrorDeps,
+} from "../src/domain/tts/kokoro-mirror.js";
+import { createKokoroMirrorRoutes } from "../src/api/routes/kokoro-mirror.js";
+
+const tmpRoot = await mkdtemp(join(tmpdir(), "kokoro-mirror-test-"));
+afterAll(async () => {
+	// Windows EBUSY: a just-closed cache file handle can linger a beat
+	// (AV scan / delayed close). Retry; if it still fails, the OS temp
+	// cleaner owns it — say so rather than failing the suite.
+	for (let attempt = 0; attempt < 4; attempt += 1) {
+		try {
+			await rm(tmpRoot, { recursive: true, force: true });
+			return;
+		} catch (error) {
+			if (attempt === 3) {
+				console.warn("kokoro-mirror test cleanup failed (temp dir left for the OS):", error);
+			}
+			await new Promise((resolve) => setTimeout(resolve, 200));
+		}
+	}
+});
+
+/** Build a service with a scripted transport (never touches the proxy factory). */
+function makeService(script: (url: string) => Promise<Response>): {
+	service: KokoroMirrorService;
+	calls: string[];
+} {
+	const calls: string[] = [];
+	const deps: KokoroMirrorDeps = {
+		resolveFetch: async () => {
+			return (input: Parameters<typeof fetch>[0]) => {
+				const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+				calls.push(url);
+				return script(url);
+			};
+		},
+	};
+	return { service: new KokoroMirrorService(tmpRoot, deps), calls };
+}
+
+/** Poll until the async disk-cache branch has landed a file (tee writes
+ *  concurrently with the client stream, so existence is eventually-true). */
+async function pollUntilFileExists(path: string, ms = 3000): Promise<void> {
+	const deadline = Date.now() + ms;
+	while (Date.now() < deadline) {
+		if (await Bun.file(path).exists()) return;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	throw new Error(`cache file never appeared: ${path}`);
+}
+
+const okResponse = (body: string) =>
+	new Response(body, {
+		status: 200,
+		headers: { "content-type": "application/octet-stream", "content-length": String(body.length) },
+	});
+
+describe("validateKokoroFilePath", () => {
+	test("accepts real repo paths", () => {
+		expect(validateKokoroFilePath("onnx/model_q4f16.onnx")).toBe("onnx/model_q4f16.onnx");
+		expect(validateKokoroFilePath("config.json")).toBe("config.json");
+		expect(validateKokoroFilePath("voices/af_heart.bin")).toBe("voices/af_heart.bin");
+		expect(validateKokoroFilePath("onnx/tokenizer.json")).toBe("onnx/tokenizer.json");
+	});
+
+	test("rejects traversal and absolute shapes", () => {
+		expect(validateKokoroFilePath("../etc/passwd")).toBeNull();
+		expect(validateKokoroFilePath("onnx/../../etc/passwd")).toBeNull();
+		expect(validateKokoroFilePath("a/./b.json")).toBeNull();
+		expect(validateKokoroFilePath("/etc/passwd")).toBeNull();
+		expect(validateKokoroFilePath("")).toBeNull();
+	});
+
+	test("rejects hostile characters (percent/backslash/space/control)", () => {
+		expect(validateKokoroFilePath("a%2fb.json")).toBeNull();
+		expect(validateKokoroFilePath("a\\b.json")).toBeNull();
+		expect(validateKokoroFilePath("a b.json")).toBeNull();
+		expect(validateKokoroFilePath("a\u0000.json")).toBeNull();
+		expect(validateKokoroFilePath("a?x=1")).toBeNull();
+	});
+
+	test("rejects overlong paths", () => {
+		expect(validateKokoroFilePath("a/".repeat(150) + "x.json")).toBeNull();
+	});
+});
+
+describe("KokoroMirrorService", () => {
+	test("streams an upstream 200 and caches it to disk", async () => {
+		const { service, calls } = makeService(async () => okResponse("MODEL-BYTES"));
+		const result = await service.handle("onnx/model_q4f16.onnx");
+		expect(result.status).toBe(200);
+		if (result.status !== 200) throw new Error("unreachable");
+		expect(calls).toEqual([buildHuggingFaceUrl("onnx/model_q4f16.onnx")]);
+		const text = await new Response(result.body ?? null).text();
+		expect(text).toBe("MODEL-BYTES");
+		// The disk branch writes concurrently — wait until it lands AND pin the
+		// bytes (guards the BunFile.write streaming path against silent
+		// stringification — see the comment in kokoro-mirror.ts).
+		const cachePath = join(tmpRoot, "kokoro-model-cache", "onnx", "model_q4f16.onnx");
+		await pollUntilFileExists(cachePath);
+		expect(await Bun.file(cachePath).text()).toBe("MODEL-BYTES");
+	});
+
+	test("second request is served from cache without a new upstream fetch", async () => {
+		let fetched = 0;
+		const { service } = makeService(async () => {
+			fetched += 1;
+			return okResponse("CACHED-ONCE");
+		});
+		const first = await service.handle("from-cache.onnx");
+		expect(first.status).toBe(200);
+		// The disk write is concurrent with the client stream — make sure it
+		// landed BEFORE the second request, or it would legitimately re-fetch.
+		await pollUntilFileExists(join(tmpRoot, "kokoro-model-cache", "from-cache.onnx"));
+		const second = await service.handle("from-cache.onnx");
+		if (second.status !== 200) throw new Error("expected 200");
+		// P14: cache hits hand the route a Bun.file path (sendfile → real
+		// Content-Length on the wire), not a stream — the body now lives on
+		// disk at that path.
+		expect(second.filePath).toBe(join(tmpRoot, "kokoro-model-cache", "from-cache.onnx"));
+		expect(await Bun.file(second.filePath ?? "").text()).toBe("CACHED-ONCE");
+		expect(second.contentLength).toBe(String("CACHED-ONCE".length));
+		expect(second.status).toBe(200);
+		expect(fetched).toBe(1);
+	});
+
+	test("concurrent requests share one in-flight fetch", async () => {
+		let fetched = 0;
+		const { service } = makeService(async () => {
+			fetched += 1;
+			await new Promise((resolve) => setTimeout(resolve, 30));
+			return okResponse("SHARED");
+		});
+		const [a, b] = await Promise.all([service.handle("shared.onnx"), service.handle("shared.onnx")]);
+		expect(a.status).toBe(200);
+		expect(b.status).toBe(200);
+		expect(fetched).toBe(1);
+	});
+
+	test("upstream 404 passes through as 404 and is not cached", async () => {
+		const { service } = makeService(async () => new Response("nope", { status: 404 }));
+		const result = await service.handle("missing.json");
+		expect(result.status).toBe(404);
+	});
+
+	test("upstream failure maps to 502 without internals", async () => {
+		const { service } = makeService(async () => {
+			throw new Error("secret internal detail");
+		});
+		const result = await service.handle("broken.onnx");
+		expect(result.status).toBe(502);
+		if (result.status !== 200) {
+			expect(result.error).not.toContain("secret");
+		}
+	});
+
+	test("follows redirect chains to HTTPS targets (SOCKS-bridge manual mode)", async () => {
+		let hop = 0;
+		const { service, calls } = makeService(async () => {
+			hop += 1;
+			if (hop === 1) {
+				return new Response(null, {
+					status: 302,
+					headers: { location: "https://cas-bridge.example.net/real-file" },
+				});
+			}
+			return okResponse("REDIRECTED-BYTES");
+		});
+		const result = await service.handle("redirect.onnx");
+		expect(result.status).toBe(200);
+		expect(calls).toEqual([
+			buildHuggingFaceUrl("redirect.onnx"),
+			"https://cas-bridge.example.net/real-file",
+		]);
+	});
+
+	test("rejects redirects that leave HTTPS", async () => {
+		const { service } = makeService(async () => {
+			return new Response(null, {
+				status: 302,
+				headers: { location: "http://plain.example.net/leak" },
+			});
+		});
+		const result = await service.handle("http-redirect.onnx");
+		expect(result.status).toBe(502);
+	});
+
+	test("invalid paths are rejected before any fetch", async () => {
+		const { service, calls } = makeService(async () => okResponse("x"));
+		const result = await service.handle("onnx/../../escape");
+		expect(result.status).toBe(400);
+		expect(calls).toEqual([]);
+	});
+
+	// ── P14: Content-Length injection for length-less upstream responses ─
+	// Twin of the Whisper mirror pin set. The CDN hop after the LFS redirect
+	// delivers without Content-Length; kokoro-js then stretches `total` per
+	// chunk and the download bar pins at 100%.
+	const lengthLess = (body: string) =>
+		new Response(body, {
+			status: 200,
+		headers: { "content-type": "application/octet-stream" },
+		});
+
+	const treeUrl = () =>
+		"https://huggingface.co/api/models/onnx-community/Kokoro-82M-v1.0-ONNX/tree/main?recursive=true";
+
+	test("length-less upstream gets Content-Length injected from the tree listing", async () => {
+		const { service, calls } = makeService(async (url) => {
+			if (url.includes("/tree/main")) {
+				return Response.json([
+					{ type: "file", path: "onnx/model_fp16.onnx", size: 163234740, lfs: { size: 163234740 } },
+					{ type: "file", path: "config.json", size: 44 },
+				]);
+			}
+			return lengthLess("Q4F16-BYTES");
+		});
+		// Distinct path: the suite shares one tmpRoot disk cache — an earlier
+		// test's cached file would answer from disk and bypass upstream.
+		const result = await service.handle("onnx/model_fp16.onnx");
+		if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+		expect(result.contentLength).toBe("163234740");
+		expect(calls).toEqual([buildHuggingFaceUrl("onnx/model_fp16.onnx"), treeUrl()]);
+	});
+
+	test("upstream-provided Content-Length wins — no tree lookup", async () => {
+		const { service, calls } = makeService(async (url) => {
+			if (url.includes("/tree/main")) throw new Error("tree must not be called");
+			return okResponse("SMALL");
+		});
+		const result = await service.handle("README.md");
+		if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+		expect(result.contentLength).toBe(String("SMALL".length));
+		expect(calls).toEqual([buildHuggingFaceUrl("README.md")]);
+	});
+
+	test("tree listing failure is fail-soft: file serves without a length", async () => {
+		const { service } = makeService(async (url) => {
+			if (url.includes("/tree/main")) throw new Error("api down");
+			return lengthLess("ANYWAY");
+		});
+		const result = await service.handle("fallback.onnx");
+		if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+		expect(result.contentLength).toBe("");
+	});
+
+	test("tree listing is cached per repo across files", async () => {
+		let treeCalls = 0;
+		const { service } = makeService(async (url) => {
+			if (url.includes("/tree/main")) {
+				treeCalls += 1;
+				return Response.json([
+					{ type: "file", path: "config.json", size: 44 },
+					{ type: "file", path: "onnx/tokenizer.json", size: 2100000 },
+				]);
+			}
+			return lengthLess("data");
+		});
+		const first = await service.handle("config.json");
+		const second = await service.handle("onnx/tokenizer.json");
+		if (first.status !== 200 || second.status !== 200) throw new Error("expected 200s");
+		expect(first.contentLength).toBe("44");
+		expect(second.contentLength).toBe("2100000");
+		expect(treeCalls).toBe(1);
+	});
+});
+
+describe("kokoro mirror route (HTTP layer)", () => {
+	test("GET /api/tts/kokoro/model/* streams a file with no-store", async () => {
+		const { service } = makeService(async () => okResponse("ROUTE-BYTES"));
+		const app = createKokoroMirrorRoutes(service);
+		// Distinct path: the service tests share tmpRoot, and this one must
+		// exercise the UPSTREAM path, not an earlier test's disk cache hit.
+		const res = await app.request("/api/tts/kokoro/model/route-check/model.onnx");
+		expect(res.status).toBe(200);
+		expect(res.headers.get("cache-control")).toBe("no-store");
+		expect(res.headers.get("content-type")).toBe("application/octet-stream");
+		expect(await res.text()).toBe("ROUTE-BYTES");
+	});
+
+	test("P14: injected size reaches the wire as the Content-Length header", async () => {
+		const { service } = makeService(async (url) => {
+			if (url.includes("/tree/main")) {
+				return Response.json([{ type: "file", path: "route-length/model.onnx", size: 123456 }]);
+			}
+			return new Response("WIRE-BYTES", {
+				status: 200,
+			headers: { "content-type": "application/octet-stream" },
+			});
+		});
+		const app = createKokoroMirrorRoutes(service);
+		const res = await app.request("/api/tts/kokoro/model/route-length/model.onnx");
+		expect(res.status).toBe(200);
+		// The route must forward the oracle-provided length onto the HTTP
+		// response — this is the header the browser download bar reads.
+		expect(res.headers.get("content-length")).toBe("123456");
+		expect(await res.text()).toBe("WIRE-BYTES");
+	});
+
+	test("traversal in the URL wildcard → 400", async () => {
+		const { service } = makeService(async () => okResponse("x"));
+		const app = createKokoroMirrorRoutes(service);
+		// Encoded traversal reaches the route as a raw path segment.
+		const res = await app.request("/api/tts/kokoro/model/onnx%2F..%2F..%2Fescape");
+		expect(res.status).toBe(400);
+	});
+
+	test("upstream miss → 404 JSON error", async () => {
+		const { service } = makeService(async () => new Response("nope", { status: 404 }));
+		const app = createKokoroMirrorRoutes(service);
+		const res = await app.request("/api/tts/kokoro/model/missing.json");
+		expect(res.status).toBe(404);
+		const body = (await res.json()) as { error: string };
+		expect(typeof body.error).toBe("string");
+	});
+});

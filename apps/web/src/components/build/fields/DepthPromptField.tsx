@@ -14,12 +14,11 @@ import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 
 import { useT } from "../../../i18n/context.js";
-import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
-import { monoCls, lblCls } from "./field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 
 export interface DepthPromptFieldProps {
@@ -36,12 +35,10 @@ export function DepthPromptField({ form, isSaving }: DepthPromptFieldProps) {
   const depthPrompt = watch("depthPrompt");
   const depthPromptRole = watch("depthPromptRole");
   const depthPromptDepth = watch("depthPromptDepth");
-  const isMobile = useIsMobile();
-  const mInput = isMobile ? " text-base" : "";
   return (
     <div className="mb-5">
       <div className="mb-1.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <label className={lblCls}>{t("depth_prompt")}</label>
+        <label className={lblCls + " !mb-0"}>{t("depth_prompt")}</label>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
             <SegmentedControl
@@ -72,7 +69,7 @@ export function DepthPromptField({ form, isSaving }: DepthPromptFieldProps) {
       </div>
       <MobileExpandTextarea value={depthPrompt || ""} onChange={(v) => setValue("depthPrompt", v)} label={t("depth_prompt_label")}>
         <AutoTextarea
-          className={monoCls + mInput}
+          mono
           disabled={isSaving}
           placeholder={t("depth_prompt_placeholder")}
           register={register("depthPrompt")}

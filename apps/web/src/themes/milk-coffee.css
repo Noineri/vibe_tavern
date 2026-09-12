@@ -18,9 +18,9 @@
 
   /* ─── Text ─── */
   --t1:        oklch(0.14 0.005 70);     /* #1A1917 — primary UI */
-  --t2:        oklch(0.47 0.015 72);     /* #6B665F — secondary */
-  --t3:        oklch(0.60 0.015 72);     /* #8D877D — muted / disabled */
-  --t4:        oklch(0.72 0.01 72);      /* faintest text */
+  --t2:        oklch(0.254 0.015 72);     /* secondary */
+  --t3:        oklch(0.297 0.015 72);     /* muted / disabled */
+  --t4:        oklch(0.388 0.01 72);      /* faintest text */
 
   /* ─── Message text (long-form readability) ─── */
   --msg-t1:    oklch(0.17 0.006 65);     /* slightly softer than UI black */

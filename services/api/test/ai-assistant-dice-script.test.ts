@@ -5,8 +5,8 @@
  *  - `dice_script` is a complete assistant mode (registered in the assembler
  *    registry + mode config with its own asset).
  *  - Prompt selection resolves to `dice-script-ai-prompt.md` on disk (non-empty).
- *  - The generic `script` preset/legacy override stays prompt-only (dice_script
- *    has no legacyColumn → scriptAiSystemPrompt does NOT leak into it).
+ *  - The generic `script` profile override stays prompt-only (dice_script
+ *    has no legacyColumn → script override does NOT leak into it).
  *  - Generated Dice-code cleanup path (markdown-fence stripping).
  *  - `buildUserMessage` for dice_script produces the right instruction shape.
  */
@@ -21,6 +21,22 @@ import {
   resolvePromptPathForMode,
 } from "../src/domain/ai-assistant/ai-assistant-prompts.js";
 import { cleanGeneratedCode } from "../src/domain/ai-assistant/ai-assistant-stream.js";
+import { createDb } from "@vibe-tavern/db";
+import { ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
+import type { StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
+
+const fixedClock: StoreClock = { now: () => "2026-08-26T00:00:00.000Z" };
+let counter = 0;
+const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_${++counter}` };
+
+async function setupDb() {
+  counter = 0;
+  const db = await createDb(":memory:");
+  const profileStore = new ServicePromptProfileStore(db, { clock: fixedClock, idGenerator: idGen });
+  const uiSettings = new UiSettingsStore(db, { clock: fixedClock, idGenerator: idGen });
+  await profileStore.ensureDefaultServicePromptProfile();
+  return { db, profileStore, uiSettings };
+}
 
 describe("dice_script — registry completeness", () => {
   test("dice_script has an assembler in the registry", () => {
@@ -53,41 +69,47 @@ describe("dice_script — prompt selection", () => {
   });
 
   test("the default prompt is non-empty and instructs the Dice VM API", async () => {
-    const { prompt, source } = await resolveSystemPrompt("dice_script", {
-      aiAssistantPrompts: null,
-      scriptAiSystemPrompt: null,
-    });
-    expect(source).toBe("default_md");
+    const { db } = await setupDb();
+    const { prompt, source } = await resolveSystemPrompt(db, "dice_script");
+    expect(source).toBe("default");
     expect(prompt.length).toBeGreaterThan(0);
     // The prompt must reference the Dice VM API surface.
     expect(prompt).toContain("context.dice.register");
     expect(prompt).toContain("context.dice.roll");
   });
 
-  test("a preset override for dice_script wins", async () => {
-    const { prompt, source } = await resolveSystemPrompt("dice_script", {
-      aiAssistantPrompts: { dice_script: "CUSTOM DICE PROMPT" },
+  test("a profile override for dice_script wins", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Dice Override",
+      overrides: { dice_script: "CUSTOM DICE PROMPT" },
     });
-    expect(source).toBe("preset_override");
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    const { prompt, source } = await resolveSystemPrompt(db, "dice_script");
+    expect(source).toBe("override");
     expect(prompt).toBe("CUSTOM DICE PROMPT");
   });
 
-  test("scriptAiSystemPrompt does NOT leak into dice_script (no legacy column)", async () => {
-    // The generic `script` legacy column must stay prompt-only. A dice_script
-    // request with scriptAiSystemPrompt set must fall through to default_md,
-    // NOT pick up the legacy script prompt.
-    const { source } = await resolveSystemPrompt("dice_script", {
-      aiAssistantPrompts: null,
-      scriptAiSystemPrompt: "LEGACY SCRIPT PROMPT — MUST NOT LEAK",
+  test("script profile override does NOT leak into dice_script (presetKey isolation)", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Script Only",
+      overrides: { script: "WRONG KEY" },
     });
-    expect(source).toBe("default_md");
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    const { source } = await resolveSystemPrompt(db, "dice_script");
+    expect(source).toBe("default");
   });
 
-  test("a script-mode preset override does NOT leak into dice_script (presetKey isolation)", async () => {
-    const { source } = await resolveSystemPrompt("dice_script", {
-      aiAssistantPrompts: { script: "WRONG KEY" },
+  test("a dice_script profile override does NOT leak into script", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Dice Only",
+      overrides: { dice_script: "DICE ONLY" },
     });
-    expect(source).toBe("default_md");
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    const { source } = await resolveSystemPrompt(db, "script");
+    expect(source).toBe("default");
   });
 });
 

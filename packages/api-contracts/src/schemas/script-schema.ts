@@ -38,7 +38,7 @@ export const updateScriptSchema = z.object({
 /** Reassign a script's scope atomically (PR-6 binding). Clears stale FKs.
  *  `ownerId` is omitted/null for 'global'. */
 export const setScriptScopeSchema = z.object({
-  scopeType: z.enum(['global', 'character', 'persona', 'chat']),
+  scopeType: z.enum(['global', 'entity', 'chat']),
   ownerId: z.string().nullable().optional(),
 });
 
@@ -70,7 +70,7 @@ export const importScriptSchema = z.discriminatedUnion("format", [
     code: z.string().min(1),
     name: z.string().optional(),
     scriptKind: scriptKindSchema.optional().default("prompt"),
-    scopeType: z.string().optional().default("character"),
+    scopeType: z.string().optional().default("entity"),
     characterId: z.string().optional(),
     personaId: z.string().optional(),
     chatId: z.string().optional(),
@@ -79,7 +79,7 @@ export const importScriptSchema = z.discriminatedUnion("format", [
     format: z.literal("json"),
     jsonText: z.string().min(1),
     scriptKind: scriptKindSchema.optional().default("prompt"),
-    scopeType: z.string().optional().default("character"),
+    scopeType: z.string().optional().default("entity"),
     characterId: z.string().optional(),
     personaId: z.string().optional(),
     chatId: z.string().optional(),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useKeyDown } from "../../hooks/use-key-down.js";
+import { useImageZoomPan } from "../../hooks/use-image-zoom-pan.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { useT } from "../../i18n/context.js";
@@ -145,6 +146,16 @@ export function MediaModal({ open, onClose, characterId, characterName }: MediaM
   );
 }
 
+/**
+ * Fullscreen image view. Mobile gesture parity with the avatar top-bar panel
+ * (AvatarPanel MobileLightbox canon): pinch-zoom + SINGLE-finger pan while
+ * zoomed (D5b) + double-tap toggle, all via the shared useImageZoomPan hook.
+ * Before this, the lightbox had no gesture handling at all — a pinch fell
+ * through to the browser's viewport zoom, which only pans with two fingers
+ * (the reported mobile defect: "двигать могу только двумя пальцами").
+ * touch-action none makes the app own the gestures; tap targets (close, send)
+ * still fire because a tap without movement never enters the pan path.
+ */
 function MediaLightbox({
   asset,
   characterId,
@@ -160,11 +171,22 @@ function MediaLightbox({
 }) {
   const { t } = useT();
   const src = serveCharacterAssetUrl(characterId, asset.id as string);
+  const { scale, translate, isPinching, touchHandlers, handleTap } = useImageZoomPan();
   // Escape closes the lightbox (not the whole modal).
   useKeyDown("Escape", onClose);
 
   return (
-    <div className="fixed inset-0 z-[700] flex flex-col bg-black/95">
+    <div
+      className="fixed inset-0 z-[700] flex flex-col bg-black/95"
+      // touch-action none: the lightbox OWNS all gestures — same reason as the
+      // avatar/gallery lightboxes (React's onTouchMove runs on a passive root
+      // listener, so CSS is the only way to keep the native viewport zoom out).
+      style={{ touchAction: "none" }}
+      onTouchStart={touchHandlers.onTouchStart}
+      onTouchMove={touchHandlers.onTouchMove}
+      onTouchEnd={touchHandlers.onTouchEnd}
+      onTouchCancel={touchHandlers.onTouchCancel}
+    >
       <button
         type="button"
         className="absolute right-3 top-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
@@ -173,15 +195,23 @@ function MediaLightbox({
       >
         <Icons.close />
       </button>
-      <div className="flex flex-1 items-center justify-center p-3">
+      {/* overflow-hidden + the footer's z-10: a zoomed image visually scales
+          past its box (transform ignores layout) — clip it at the image area so
+          it cannot cover the send bar or the close button. */}
+      <div className="flex flex-1 items-center justify-center overflow-hidden p-3">
         <img
           src={src}
           alt={asset.caption || "Gallery image"}
           className="max-h-full max-w-full select-none object-contain"
           draggable={false}
+          style={{
+            transform: `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`,
+            transition: isPinching ? "none" : "transform 0.15s ease-out",
+          }}
+          onClick={(e) => { e.stopPropagation(); handleTap(); }}
         />
       </div>
-      <div className="shrink-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="relative z-10 shrink-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <button
           type="button"
           className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-accent py-3 text-[length:var(--ui-fs)] font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-50"

@@ -85,11 +85,6 @@ export function ExperienceSessionSwitcher({
     ? sessionLabel(activeSession, sessionFallback, numbersById.get(activeSession.id))
     : sessionFallback;
 
-  const renameInputCls = cn(
-    "w-full rounded-sm border border-border bg-s1 px-1.5 py-0.5 font-ui text-[13px] text-t1",
-    "outline-none focus-visible:border-accent-t",
-  );
-
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -130,7 +125,6 @@ export function ExperienceSessionSwitcher({
                   // Seed with the DISPLAY label: Enter-unchanged aborts (the
                   // auto number is not a stored title), typing replaces it.
                   initialValue={label}
-                  className={renameInputCls}
                   onCommit={(next) => {
                     setRenamingId(null);
                     onRename(session.id, next);

@@ -68,6 +68,21 @@ export type {
   ScriptLink,
 } from './script-store.js';
 
+export { RegexStore } from './regex-store.js';
+export type {
+  CreateRegexPresetData,
+  UpdateRegexPresetData,
+  CreateRegexProfileData,
+  UpdateRegexProfileData,
+  DeleteRegexProfileMode,
+} from './regex-store.js';
+
+export { TtsStore } from './tts-store.js';
+export type { CreateTtsProfileData, UpdateTtsProfileData } from './tts-store.js';
+
+export { SttStore } from './stt-store.js';
+export type { CreateSttProfileData, UpdateSttProfileData } from './stt-store.js';
+
 export { CoauthorModuleStore } from './coauthor-module-store.js';
 export type {
   CoauthorModuleRow,
@@ -76,6 +91,13 @@ export type {
 } from './coauthor-module-store.js';
 
 export { CopilotProfileStore } from './copilot-profile-store.js';
+export { SamplerSetStore } from './sampler-set-store.js';
+export type {
+  SamplerSetRow,
+  SamplerSetPayload,
+  CreateSamplerSetData,
+  UpdateSamplerSetData,
+} from './sampler-set-store.js';
 export type {
   CopilotProfileRow,
   CreateCopilotProfileData,
@@ -123,9 +145,19 @@ export type {
   CopilotContextMetrics,
 } from './experience-copilot-store.js';
 
+export { ServicePromptProfileStore } from './service-prompt-store.js';
+export type { ServicePromptProfile, CreateServicePromptProfileData, UpdateServicePromptProfileData } from './service-prompt-store.js';
+
 export { QuotaStore, defaultQuotaConfigForKind } from './quota-store.js';
 export type {
   QuotaSettingsRecord,
   QuotaSnapshotRecord,
   UpsertQuotaSnapshotData,
 } from './quota-store.js';
+export { FormatTemplateStore } from './format-template-store.js';
+export type {
+  FormatTemplateRow,
+  FormatTemplatePayload,
+  CreateFormatTemplateData,
+  UpdateFormatTemplateData,
+} from './format-template-store.js';

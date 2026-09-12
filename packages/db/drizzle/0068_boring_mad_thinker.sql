@@ -1,0 +1,1 @@
+ALTER TABLE `prompt_presets` ADD `generation_format_json` text DEFAULT '' NOT NULL;

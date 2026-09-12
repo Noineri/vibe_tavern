@@ -36,7 +36,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		);
 	};
 
-	setScriptScope = (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) =>
+	setScriptScope = (scriptId: string, scopeType: 'global' | 'entity' | 'chat', ownerId: string | null) =>
 		this.stores.scripts.setScope(scriptId, scopeType, ownerId);
 
 	deleteScript = async (scriptId: string) => {
@@ -66,7 +66,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 			code,
 			scriptKind: body.scriptKind,
 			enabled: body.scriptKind === "interactive" ? false : undefined,
-			scopeType: body.scopeType ?? "character",
+			scopeType: body.scopeType ?? "entity",
 			characterId: body.characterId,
 			personaId: body.personaId,
 			chatId: body.chatId,

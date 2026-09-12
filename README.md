@@ -6,7 +6,7 @@
 
 **A local AI roleplay client built for good UX, long sessions, and mobile screens that don't feel like an afterthought**
 
-**Windows** (installer and portable `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
+**Windows** (installer and portable `.exe`) • **Linux** • **Docker** • **Android** (native ARM64 launcher)
 
 ![Release](https://www.shieldcn.dev/github/release/Noineri/vibe_tavern.svg?size=sm&theme=zinc)
 ![GitHub Downloads](https://shieldcn.dev/github/downloads/Noineri/vibe_tavern.svg?variant=secondary)
@@ -227,7 +227,7 @@ For phone access, open Mobile Access and scan the QR code. Vibe Tavern runs from
 
 The mobile version is not the desktop UI shrunk until it becomes a punishment. Small screens get their own bottom sheets, panels, carousels, and touch gestures.
 
-An Android build for Termux automates most of the installation work.
+The native Android launcher runs Vibe Tavern locally on supported ARM64 phones and opens the interface in the system browser. See the [Android setup guide](docs/android-setup.md).
 
 ---
 
@@ -251,7 +251,7 @@ docker compose up -d
 
 ### Android
 
-Use the APK build for Termux. See the [Android setup guide](docs/android-setup.md) for details.
+Download the native ARM64 launcher APK from [Releases](https://github.com/Noineri/vibe_tavern/releases). See the [Android setup guide](docs/android-setup.md) for installation, operation, updates, and legacy migration.
 
 ### Run from source
 

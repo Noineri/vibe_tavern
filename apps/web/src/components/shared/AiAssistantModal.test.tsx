@@ -109,11 +109,13 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     name,
     providerPreset: "openaiCompat",
     coauthorTransport: "chat_completions",
+    generationMode: "chat",
     endpoint: "https://api.test/v1",
     defaultModel: null,
     visionModel: null,
     contextBudget: null,
     pinContextBudget: false,
+    tokenPadding: 0,
     bindPerModel: false,
     modelFreeOnly: false,
     modelGroupByOwner: false,
@@ -125,6 +127,12 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     topA: 0,
     typicalP: 1,
     tfsZ: 1,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
+    dynatempRange: 0,
+    dynatempExponent: 1,
+    topNSigma: 0,
+    smoothingFactor: 0,
     repeatLastN: -1,
     mirostat: 0,
     mirostatTau: 5,
@@ -133,6 +141,8 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     dryBase: 1.75,
     dryAllowedLength: 2,
     drySequenceBreakers: [],
+    bannedStrings: [],
+    dryPenaltyLastN: -1,
     xtcThreshold: 0.1,
     xtcProbability: 0,
     frequencyPenalty: 0,
@@ -150,6 +160,8 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     updatedAt: "2026-01-01",
     proxyMode: "inherit",
     proxyId: null,
+    samplerSetId: null,
+    generationFormat: null,
     hasStoredApiKey: true,
     ...over,
   };
@@ -628,5 +640,60 @@ describe("AiAssistantModal — D1 mobile sheet header", () => {
     );
     const occurrences = document.body.textContent?.match(/ai_quickpill_settings/g) ?? [];
     expect(occurrences).toHaveLength(1);
+  });
+});
+
+// ── IMP: the pill's gear tap must open the mobile sheet (full wiring path) ──
+//
+// Pins the ONLY seam not covered elsewhere in this file: the full path
+// <AiQuickPill> (gear focused + tapped like a real pointer interaction) →
+// setSettingsOpen(true) → AiAssistantModal quickpill → mobile BottomSheet
+// mounts and stays. The other blocks render AiAssistantModal directly with
+// isOpen=true; nothing else exercises the pill wiring. (The mid-life
+// re-render regression from the 2026-09-07 impersonation investigation is
+// pinned separately in BottomSheet.test.tsx — container frozen per open
+// session — this block stays as the integration smoke for the wiring.)
+
+describe("AiQuickPill — mobile sheet opens from the focused gear and stays", () => {
+  beforeEach(() => {
+    mobileState.isMobile = true;
+    useProviderDataStore.setState({ profiles: [], favoritesByProfile: {} });
+    seedBootstrap(null, null);
+  });
+
+  afterEach(() => {
+    mobileState.isMobile = false;
+  });
+
+  it("sheet mounts and stays after the gear tap (one backdrop, no leftovers)", async () => {
+    const { AiQuickPill } = await import("./AiQuickPill.js");
+    renderModal(
+      <AiQuickPill
+        onGenerate={() => {}}
+        onSettingsChange={() => {}}
+        settings={{ providerId: "", modelName: "" }}
+        showMessageCount
+        starTooltip="s"
+        gearTooltip="g"
+        size="lg"
+      />,
+    );
+    // The gear is the second button inside the pill (star | gear).
+    const gear = document.querySelectorAll("button")[1] as HTMLButtonElement;
+    expect(gear).toBeTruthy();
+    // A real tap focuses the button before clicking — the phone log showed
+    // focus retained on the gear while the dialog hid its ancestors.
+    gear.focus();
+    await act(async () => { fireEvent.pointerDown(gear); fireEvent.click(gear); });
+
+    // The sheet must appear and STAY: poll past any enter/exit transition
+    // window before asserting.
+    await waitFor(() => {
+      expect(document.querySelector(".bs-popup")).not.toBeNull();
+    });
+    await act(async () => { await new Promise((r) => setTimeout(r, 700)); });
+    expect(document.querySelector(".bs-popup")).not.toBeNull();
+    // No duplicate leftover backdrop beyond the one open sheet's scrim.
+    expect(document.querySelectorAll(".bs-backdrop")).toHaveLength(1);
   });
 });

@@ -180,7 +180,6 @@ export function GalleryLightbox({ characterId, assets, index, onIndexChange, onC
             <AutoTextarea
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
-              className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm leading-relaxed text-white outline-none ring-1 ring-white/20 focus:ring-accent"
               style={{}}
               maxRows={20}
               placeholder={t("gallery_add_description") + "…"}

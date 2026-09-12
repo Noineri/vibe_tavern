@@ -3,7 +3,7 @@
  *
  * Responsible for:
  *   - Navigation between views: pick → list → editor
- *   - Scope selection (global / character / persona / chat)
+ *   - Scope selection (global / entity / chat)
  *   - Switching between lorebooks / scripts tabs
  *   - Lorebook CRUD (create, meta update, delete)
  *   - Entry CRUD (create, autosave, delete)
@@ -198,7 +198,7 @@ export function LorebookEditor({
     null
   );
   const [editLbName, setEditLbName] = useState("");
-  const [editLbScope, setEditLbScope] = useState<Scope>("character");
+  const [editLbScope, setEditLbScope] = useState<Scope>("entity");
   const [createdDraftLorebookId, setCreatedDraftLorebookId] = useState<string | null>(null);
 
   // ── Mobile context menu ──
@@ -366,7 +366,8 @@ export function LorebookEditor({
       groupName: "",
       groupWeight: 100,
       prioritizeInclusion: false,
-      useGroupScoring: false,
+      // Tri-state: new entries inherit the book-level default (ST parity).
+      useGroupScoring: null,
       excludeRecursion: false,
       preventRecursion: false,
       delayUntilRecursion: false,
@@ -459,13 +460,12 @@ export function LorebookEditor({
 
   // ── Scope column (desktop: vertical with icons) ──
   // The "all" label depends on the active tab — "All lorebooks" / "All scripts".
-  // Other scope names (Global/Character/...) are invariant across tabs.
+  // Other scope names (Global/Entity/...) are invariant across tabs.
   const allLabel = tab === "lorebooks" ? t("scope_all") : t("scope_all_scripts");
   const scopeItems: { id: Scope; icon: ReactNode; label: string }[] = [
     { id: "all", icon: <Ic.stack />, label: allLabel },
     { id: "global", icon: <Ic.globe />, label: t("scope_global") },
-    { id: "character", icon: <Ic.book />, label: t("scope_char") },
-    { id: "persona", icon: <Ic.user />, label: t("scope_persona") },
+    { id: "entity", icon: <Ic.book />, label: t("scope_entity") },
     { id: "chat", icon: <Ic.chat />, label: t("scope_chat") },
   ];
 
@@ -604,7 +604,7 @@ export function LorebookEditor({
           <div className="mb-2 text-[13px] text-t3">
             {t("lore_no_entries")}
           </div>
-          <div className="mx-auto flex justify-center gap-2">
+          <div className="mx-auto flex max-md:flex-col max-md:items-stretch justify-center gap-2">
             <AddButton onClick={handleAddLorebook}>
               <Ic.plus /> {t("new_lorebook")}
             </AddButton>
@@ -669,7 +669,7 @@ export function LorebookEditor({
 
       {/* Bottom list buttons */}
       {lorebooks.length > 0 && (
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex gap-2 max-md:flex-col max-md:items-stretch">
           <AddButton onClick={handleAddLorebook}>
             <Ic.plus /> {t("new_lorebook")}
           </AddButton>

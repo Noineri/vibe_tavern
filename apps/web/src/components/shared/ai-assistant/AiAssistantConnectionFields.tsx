@@ -29,8 +29,10 @@ export function AiAssistantConnectionFields({
 }: AiAssistantConnectionFieldsProps) {
   const defaultOption = selectedProfileDefaultModel || "Default";
 
+  // MUI step 17 (owner 2026-09-11): provider + model stack into a list on
+  // mobile — same grid→list rule as the tracker pickers (steps 10/11).
   return (
-    <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
+    <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1" style={{ marginBottom: 16 }}>
       <div>
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
           {labels.connection}

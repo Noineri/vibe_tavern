@@ -5,8 +5,15 @@ import { client } from "./client.js";
 import { unwrapRpc, unwrapError, type RpcResponse } from "./unwrap.js";
 import { DiceApiError } from "./dice-api.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
-import { sendStream, regenerateStream, generateReplyStream, type StreamOpts } from "./stream.js";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { sendStream, regenerateStream, generateReplyStream, continueStream, type StreamOpts } from "./stream.js";
+import type { attachmentSchema } from "@vibe-tavern/api-contracts";
+import type { z } from "zod";
+
+/** Wire attachment shape — the SAME contract the stream path uses
+ *  (z.infer of the shared attachmentSchema: audio + purpose + durationMs
+ *  included, ST-6). */
+export type WireAttachment = z.infer<typeof attachmentSchema>;
+import { getGatewayBaseUrl } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 
 export type CreateMessageVariantInput = {
@@ -125,10 +132,9 @@ export async function setChatPromptPreset(chatId: ChatId, promptPresetId: string
 
 export async function sendChatMessage(
   chatId: ChatId,
-  input: { content: string; attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number }[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
+  input: { content: string; attachments?: WireAttachment[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
-  logClientSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });
   const response = await client.api.chats[":chatId"].messages.$post(
     { param: { chatId }, json: input },
     { init: { signal: options?.signal } },
@@ -185,6 +191,21 @@ export async function generateReply(
   return normalizeSnapshot(data);
 }
 
+export async function continueChatMessage(
+  chatId: ChatId,
+  messageId: string,
+  options?: { signal?: AbortSignal },
+): Promise<AppSnapshot> {
+  // LS-4a: no body — the continuation text resolves server-side from the
+  // target message's selected variant.
+  const response = await client.api.chats[":chatId"].messages[":messageId"].continue.$post(
+    { param: { chatId, messageId } },
+    { init: { signal: options?.signal } },
+  );
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export async function editChatMessage(
   chatId: ChatId,
   messageId: string,
@@ -224,6 +245,22 @@ export async function deleteChatMessage(chatId: ChatId, messageId: string): Prom
 export async function selectMessageVariant(chatId: ChatId, messageId: string, variantIndex: number): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].variants[":variantIndex"].select.$post({
     param: { chatId, messageId, variantIndex: String(variantIndex) },
+  });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
+/** TPE-1 (AN-1): set (or clear) a variant's TTS narration annotation —
+ *  the annotated copy the narrators prefer over the raw content. */
+export async function setVariantTtsAnnotation(
+  chatId: ChatId,
+  messageId: string,
+  variantIndex: number,
+  text: string | null,
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].messages[":messageId"].variants[":variantIndex"]["tts-annotation"].$put({
+    param: { chatId, messageId, variantIndex: String(variantIndex) },
+    json: { text },
   });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
@@ -287,7 +324,7 @@ export async function regenerateAttachmentDescription(
 
 // ─── Streams ────────────────────────────────────────────────────────────
 
-export { sendStream as sendChatMessageStream, regenerateStream as regenerateChatMessageStream, generateReplyStream as generateReplyStream };
+export { sendStream as sendChatMessageStream, regenerateStream as regenerateChatMessageStream, generateReplyStream as generateReplyStream, continueStream as continueChatMessageStream };
 export type { StreamOpts };
 
 // ─── Branches ───────────────────────────────────────────────────────────
@@ -348,6 +385,12 @@ export async function updateChatDynamicPrompt(chatId: ChatId, content: string): 
 
 export async function listChatSummaries(chatId: ChatId): Promise<ChatSummaryRecord[]> {
   const response = await client.api.chats[":chatId"].summaries.$get({ param: { chatId } });
+  return unwrapRpc<ChatSummaryRecord[]>(response);
+}
+
+// SUM-3b: manual reorder of the chat's summary list (active branch).
+export async function reorderChatSummaries(chatId: ChatId, orderedIds: string[]): Promise<ChatSummaryRecord[]> {
+  const response = await client.api.chats[":chatId"].summaries.reorder.$put({ param: { chatId }, json: { orderedIds } });
   return unwrapRpc<ChatSummaryRecord[]>(response);
 }
 
@@ -731,24 +774,4 @@ export async function fetchContextPreview(
     { init: { signal } },
   );
   return unwrapRpc<ContextPreviewResponse>(response);
-}
-
-// ─── Debug ──────────────────────────────────────────────────────────────
-
-function logClientSendDebug(event: string, data: Record<string, unknown> = {}): void {
-  postSendDebug(event, data);
-}
-
-export { logClientSendDebug };
-
-function postSendDebug(event: string, data: Record<string, unknown>): void {
-  const token = getMobileToken();
-  void fetch(`${getGatewayBaseUrl()}/api/debug/send-log`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ event, ...data, clientTs: new Date().toISOString() }),
-  }).catch(() => undefined);
 }

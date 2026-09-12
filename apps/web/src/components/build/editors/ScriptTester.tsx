@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
+import { codeQuoteCls } from "../../../lib/field-tokens.js";
 import { testScript } from "../../../app-client.js";
 import type { PromptScriptTestResult } from "@vibe-tavern/api-contracts";
 
@@ -95,8 +97,8 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 				{t("script_test_panel")}
 			</div>
 			<div className={cn("flex gap-2.5", isMobile && "flex-col")}>
-				<textarea
-					className={cn("flex-1 rounded-md border border-border bg-bg px-3 py-2 font-ui text-t1 outline-none resize-y", isMobile && "min-h-[44px]")}
+				<AutoTextarea
+					className="flex-1"
 					value={testInput}
 					onChange={(e) => setTestInput(e.target.value)}
 					onKeyDown={(e) => {
@@ -106,7 +108,8 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 						}
 					}}
 					placeholder={t("script_test_input_placeholder")}
-					rows={2}
+					minRows={2}
+					maxRows={16}
 				/>
 				<button
 					type="button"
@@ -134,26 +137,26 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 					<div className="mt-2 space-y-2 rounded-md border border-border bg-bg" style={{ padding: 10 }}>
 						<div>
 							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_name")}</label>
-							<input className="h-8 w-full rounded-md border border-border bg-s2 px-2 font-ui text-[12px] text-t1 outline-none focus:border-accent" value={testCharName} onChange={(e) => setTestCharName(e.target.value)} />
+							<TextInput value={testCharName} onChange={(e) => setTestCharName(e.target.value)} />
 						</div>
 						<div>
 							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_personality")}</label>
-							<textarea className="w-full min-h-[60px] resize-y rounded-md border border-border bg-s2 px-2 py-1 font-mono text-[11px] text-t1 outline-none focus:border-accent" value={testCharPersonality} onChange={(e) => setTestCharPersonality(e.target.value)} />
+							<AutoTextarea mono value={testCharPersonality} onChange={(e) => setTestCharPersonality(e.target.value)} minRows={3} maxRows={12} />
 						</div>
 						<div>
 							<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_scenario")}</label>
-							<textarea className="w-full min-h-[60px] resize-y rounded-md border border-border bg-s2 px-2 py-1 font-mono text-[11px] text-t1 outline-none focus:border-accent" value={testCharScenario} onChange={(e) => setTestCharScenario(e.target.value)} />
+							<AutoTextarea mono value={testCharScenario} onChange={(e) => setTestCharScenario(e.target.value)} minRows={3} maxRows={12} />
 						</div>
 						<div className="border-t border-border pt-2">
 							<div className="mb-1 font-ui text-[11px] font-medium text-t2">{t("script_test_persona_fields")}</div>
 							<div className="space-y-2">
 								<div>
 									<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_persona_name")}</label>
-									<input className="h-8 w-full rounded-md border border-border bg-s2 px-2 font-ui text-[12px] text-t1 outline-none focus:border-accent" value={testPersonaName} onChange={(e) => setTestPersonaName(e.target.value)} />
+									<TextInput value={testPersonaName} onChange={(e) => setTestPersonaName(e.target.value)} />
 								</div>
 								<div>
 									<label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_persona_desc")}</label>
-									<textarea className="w-full min-h-[60px] resize-y rounded-md border border-border bg-s2 px-2 py-1 font-mono text-[11px] text-t1 outline-none focus:border-accent" value={testPersonaDesc} onChange={(e) => setTestPersonaDesc(e.target.value)} />
+									<AutoTextarea mono value={testPersonaDesc} onChange={(e) => setTestPersonaDesc(e.target.value)} minRows={3} maxRows={12} />
 								</div>
 							</div>
 						</div>
@@ -191,7 +194,7 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 								<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
 									<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
 									{testResult.personality ? (
-										<AutoTextarea className="mt-1 w-full resize-none rounded-md border-0 bg-s2 px-2 py-1 font-mono text-[12px] leading-[1.5] text-t2 outline-none" style={{}} value={testResult.personality} onChange={() => {}} readOnly maxRows={16} />
+										<pre className={cn(codeQuoteCls, "mt-1 max-h-[288px] overflow-auto")}>{testResult.personality}</pre>
 									) : (
 										<p className="mt-1 font-mono text-[12px] italic text-t3">({t("script_test_no_change")})</p>
 									)}
@@ -199,7 +202,7 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 								<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
 									<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
 									{testResult.scenario ? (
-										<AutoTextarea className="mt-1 w-full resize-none rounded-md border-0 bg-s2 px-2 py-1 font-mono text-[12px] leading-[1.5] text-t2 outline-none" style={{}} value={testResult.scenario} onChange={() => {}} readOnly maxRows={16} />
+										<pre className={cn(codeQuoteCls, "mt-1 max-h-[288px] overflow-auto")}>{testResult.scenario}</pre>
 									) : (
 										<p className="mt-1 font-mono text-[12px] italic text-t3">({t("script_test_no_change")})</p>
 									)}

@@ -4,6 +4,7 @@ import type {
   MessageId,
 } from "./ids.js";
 import type { ActivatedLoreDetail, ProviderResponseTrace } from "./entities.js";
+import type { GenerationFormat } from "./generation-format.js";
 
 export interface PromptLayerDto {
   id: string;
@@ -51,6 +52,11 @@ export interface AssemblePromptResponse {
   retrievedMemories: Array<Record<string, unknown>>;
   finalPayload: Record<string, unknown>;
   prefill?: string | null;
+  /** Generation format of the preset assembly resolved for THIS turn
+   *  (LOCAL_SUPPORT_PLAN LS-3b) — the TC string-shape glue, exported like
+   *  `prefill` so the orchestrator can thread it to the completion seam.
+   *  Null/absent = auto (or no preset resolved). */
+  completionFormat?: GenerationFormat | null;
   /** Human-readable compaction summary shown as a warning badge in the trace UI. Not sent to the model. */
   compactionSummary?: string | null;
   /** Snapshot of what was actually sent to the provider (system role, sampler config, message count). */
@@ -61,7 +67,7 @@ export interface AssemblePromptResponse {
     visionDescriptions?: Array<{
       attachmentId: string;
       name: string;
-      type: "image" | "video";
+      type: "image" | "video" | "audio";
       description: string;
     }>;
   };
@@ -98,8 +104,14 @@ export interface PromptPresetDto {
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   mergeConsecutiveRoles: boolean;
+  /** Per-send prefill entry point (LOCAL_SUPPORT_PLAN LS-8): when true, the
+   *  chat input surfaces the one-shot prefill chip/bubble (capability-gated). */
+  perSendPrefillEnabled: boolean;
   scriptAiSystemPrompt: string;
   aiAssistantPrompts: string;
+  /** Generation format (LOCAL_SUPPORT_PLAN LS-3a): the TC string-shape glue.
+   *  Absent = auto (backward-compatible with pre-LS-3 presets). */
+  generationFormat?: GenerationFormat;
   createdAt: string;
   updatedAt: string;
 }

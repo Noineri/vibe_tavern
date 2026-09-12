@@ -111,6 +111,10 @@ export const googleInteractionsProtocol: ProtocolAdapter = {
 		logitBias: false,
 		samplers: SAMPLER_SETS.minimal_reasoning,
 		textCompletion: false,
+		// LS-3c: no backend template application on this protocol (see
+		// ProviderCapabilityFlags.backendTemplate) — AUTO falls to the documented
+		// default template inside the completion seam.
+		backendTemplate: false,
 	},
 	resolveModel(profile, model, fetch?: ProviderFetch) {
 		const endpoint = (profile.endpoint || "").replace(/\/+$/, "");

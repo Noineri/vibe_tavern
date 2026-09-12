@@ -120,6 +120,23 @@ export interface ExperienceCopilotShellProps {
    *  (`scripts.copilotProfileId`), or null (built-in seed). Drives the gear
    *  button's profile modal highlight + assignment (CP-8/CP-9). */
   assignedProfileId?: string | null;
+  /** E6 (MOBILE_DEFECTS_ROUND_2): back-navigation affordance for the mobile
+   *  tab-bar row (a ← chevron left of [Чат][Правка]). The editor's top bar
+   *  (which used to carry the back button) is desktop-only now, so without
+   *  this leaving the editor from the Chat tab requires a detour through
+   *  Правка. Optional — desktop never passes it, mobile-only by design. */
+  onBack?: () => void;
+  /** E6: management cluster (name / trust / save / duplicate / delete) that
+   *  moved OUT of the (now desktop-only) top bar INTO the mobile Правка tab.
+   *  Rendered at the top of the edit pane, above the editor toolbar.
+   *  Optional — desktop never passes it. */
+  editTabHeader?: ReactNode;
+  /** E6: the draft needs saving (dirty or save failed) — surfaces as a badge
+   *  dot on the Правка tab while the user is on Чат, with a one-shot pulse
+   *  on the clean→dirty edge. Mirrors the co-author Doc-tab primitive (CA-14)
+   *  but deliberately WITHOUT auto-switch — the user just chose to Apply,
+   *  yanking them to the edit tab would be noise. */
+  editTabDirty?: boolean;
 }
 
 type MobileTab = "chat" | "edit";
@@ -127,6 +144,10 @@ type MobileTab = "chat" | "edit";
 /** Stable empty fallback for the turn-store selector (a fresh `[]` per call
  *  would break useShallow's reference equality and re-render every keystroke). */
 const EMPTY_ACTIVITIES: readonly ExperienceCopilotToolActivity[] = [];
+/** E6: how long the Правка-tab pulse plays after the clean→dirty edge.
+ *  Matches the CSS animation total (~2 × 1.1s), same as DOC_PULSE_MS in
+ *  CoauthorMode. */
+const EDIT_TAB_PULSE_MS = 2200;
 // TAG-8: stable empty for the todo panel selector (reference-stable so an
 // absent plan never re-renders the panel).
 const EMPTY_TODO: readonly CopilotTodoItem[] = [];
@@ -148,6 +169,9 @@ export function ExperienceCopilotShell({
   creationMode = false,
   assignedProfileId = null,
   onStepChange,
+  onBack,
+  editTabHeader,
+  editTabDirty = false,
 }: ExperienceCopilotShellProps) {
   const isMobile = useIsMobile();
   const { t } = useT();
@@ -871,6 +895,27 @@ export function ExperienceCopilotShell({
     }
   }, [hasProposal, isMobile]);
 
+  // ── E6: Правка-tab dirty badge + one-shot pulse ───────────────────────
+  // Ref-guarded clean→dirty edge (same shape as the proposal edge above and
+  // co-author's useCoauthorMobileTab, CA-14): the dot appears while dirty and
+  // the user is on Чат; the pulse plays once per edge. NO auto-switch —
+  // unlike the proposal edge (where review is a mandatory step), an Apply
+  // the user just chose doesn't justify yanking them off the chat tab.
+  const [editTabPulse, setEditTabPulse] = useState(false);
+  const prevEditTabDirty = useRef(editTabDirty);
+  useEffect(() => {
+    const was = prevEditTabDirty.current;
+    prevEditTabDirty.current = editTabDirty;
+    if (!was && editTabDirty) setEditTabPulse(true);
+  }, [editTabDirty]);
+  // Clear the highlight once the pulse animation has played
+  // (coauthor-tab-pulse ≈ 2 × 1.1s, same as DOC_PULSE_MS in CoauthorMode).
+  useEffect(() => {
+    if (!editTabPulse) return;
+    const id = setTimeout(() => setEditTabPulse(false), EDIT_TAB_PULSE_MS);
+    return () => clearTimeout(id);
+  }, [editTabPulse]);
+
   // ── Editor toggle options (XU-5) ────────────────────────────────────────
   // The editor pane is now `[Preview | Code (| Try)]` — preview is the default
   // layer; code is the second layer holding the inner `[Rules | Visual]`
@@ -1229,13 +1274,35 @@ export function ExperienceCopilotShell({
        below already pins widths (w-[440px] / min-w-0). */
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div
-          className="flex min-w-0 shrink-0 border-b border-border bg-surface"
-          role="tablist"
-          aria-label={t("experience_copilot_editor_aria")}
-        >
-          <TabButton label={t("experience_copilot_tab_chat")} active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
-          <TabButton label={t("experience_copilot_tab_edit")} active={activeTab === "edit"} onClick={() => setActiveTab("edit")} />
+        {/* E6: back chevron folded into the tab-bar row (zero added height);
+            the tablist proper keeps its role — the chevron is a plain row
+            sibling, not a tab. */}
+        <div className="flex min-w-0 shrink-0 items-stretch border-b border-border bg-surface">
+          {onBack && (
+            <button
+              type="button"
+              aria-label={t("experience_editor_back")}
+              data-testid="copilot-mobile-back"
+              onClick={onBack}
+              className="flex w-11 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-colors hover:bg-s2 hover:text-t1"
+            >
+              <Icons.Caret direction="l" />
+            </button>
+          )}
+          <div
+            className="flex min-w-0 flex-1"
+            role="tablist"
+            aria-label={t("experience_copilot_editor_aria")}
+          >
+            <TabButton label={t("experience_copilot_tab_chat")} active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
+            <TabButton
+              label={t("experience_copilot_tab_edit")}
+              active={activeTab === "edit"}
+              onClick={() => setActiveTab("edit")}
+              badge={editTabDirty && activeTab !== "edit"}
+              pulse={editTabPulse}
+            />
+          </div>
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1243,6 +1310,13 @@ export function ExperienceCopilotShell({
             {chatPane}
           </div>
           <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", activeTab !== "edit" && "hidden")} data-testid="copilot-pane-edit">
+            {/* E6: the management cluster that moved out of the desktop-only
+                top bar renders at the top of the mobile Правка tab. */}
+            {editTabHeader && (
+              <div className="flex shrink-0 flex-col border-b border-border bg-surface" data-testid="copilot-edit-tab-header">
+                {editTabHeader}
+              </div>
+            )}
             {editorPane}
           </div>
         </div>
@@ -1264,9 +1338,13 @@ interface TabButtonProps {
   label: string;
   active: boolean;
   onClick: () => void;
+  /** E6: pending-attention dot (co-author Doc-tab primitive, CA-14). */
+  badge?: boolean;
+  /** E6: one-shot pulse on the clean→dirty edge (`coauthor-tab-pulse`). */
+  pulse?: boolean;
 }
 
-function TabButton({ label, active, onClick }: TabButtonProps) {
+function TabButton({ label, active, onClick, badge = false, pulse = false }: TabButtonProps) {
   return (
     <button
       type="button"
@@ -1276,9 +1354,11 @@ function TabButton({ label, active, onClick }: TabButtonProps) {
       className={cn(
         "relative flex min-h-0 min-w-0 flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[0.9rem] font-medium transition-colors",
         active ? "border-b-2 border-accent text-t1" : "border-b-2 border-transparent text-t3",
+        pulse && "coauthor-tab-pulse",
       )}
     >
       {label}
+      {badge && <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />}
     </button>
   );
 }

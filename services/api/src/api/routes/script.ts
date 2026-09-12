@@ -9,7 +9,7 @@ export function createScriptRoutes(runtime: ScriptRuntimeApi) {
       return c.json(await runtime.listAllScripts());
     })
     .get("/api/scripts", async (c) => {
-      const scopeType = c.req.query("scopeType") ?? "character";
+      const scopeType = c.req.query("scopeType") ?? "entity";
       const ownerId = c.req.query("ownerId") ?? undefined;
       return c.json(await runtime.listScripts(scopeType, ownerId));
     })

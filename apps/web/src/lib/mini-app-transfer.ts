@@ -190,10 +190,13 @@ export interface MiniAppImportResult {
  *  against existing scripts), then bind — default visual first so the store's
  *  first-bind-promotes-to-primary rule restores the exported default.
  *
- *  `nameSuffix` (e.g. " (import)") is appended ONLY on a name collision. */
+ *  `nameSuffix` (e.g. " (import)") is appended ONLY on a name collision.
+ *
+ *  `scope` is the SCRIPT-creation scope — the collapsed lore/script taxonomy
+ *  (the visuals' separate experience-visuals scope union above is unchanged). */
 export async function importMiniAppBundle(
   bundle: MiniAppBundle,
-  scope: { scopeType: "global" | "character" | "persona" | "chat" },
+  scope: { scopeType: "global" | "entity" | "chat" },
   nameSuffix: string,
   deps: MiniAppImportDeps,
 ): Promise<MiniAppImportResult> {

@@ -429,3 +429,64 @@ describe("scene backfill runs (SCN-3)", () => {
     expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
   });
 });
+
+// ─── TTS narration annotation (TPE-1, AN-1) ───────────────────────────────────
+
+describe("MessageStore TTS annotation (TPE-1)", () => {
+  async function makeAnnotatedVariant(): Promise<{ messageId: string; variantId: string }> {
+    const msg = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "She laughed softly.",
+    });
+    const [variant] = await messages.getVariants(msg.id);
+    await messages.setTtsAnnotation(variant!.id, "She [laugh] softly.");
+    return { messageId: msg.id, variantId: variant!.id };
+  }
+
+  test("a freshly created variant carries no annotation", async () => {
+    const msg = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "Hello",
+    });
+    const variants = await messages.getVariants(msg.id);
+    expect(variants[0]!.ttsAnnotation).toBeNull();
+  });
+
+  test("setTtsAnnotation stores; the annotated copy reads back with the variants", async () => {
+    const { messageId } = await makeAnnotatedVariant();
+    const variants = await messages.getVariants(messageId);
+    expect(variants[0]!.ttsAnnotation).toBe("She [laugh] softly.");
+  });
+
+  test("null / empty / whitespace text clears the annotation", async () => {
+    const { messageId, variantId } = await makeAnnotatedVariant();
+    await messages.setTtsAnnotation(variantId, null);
+    expect((await messages.getVariants(messageId))[0]!.ttsAnnotation).toBeNull();
+
+    await messages.setTtsAnnotation(variantId, "She [laugh] softly.");
+    await messages.setTtsAnnotation(variantId, "   ");
+    expect((await messages.getVariants(messageId))[0]!.ttsAnnotation).toBeNull();
+  });
+
+  test("a content edit does NOT clear the annotation (persisted-fact rule, scene precedent)", async () => {
+    const { messageId } = await makeAnnotatedVariant();
+    await messages.editMessage(messageId, "She laughed softly indeed.");
+    const variants = await messages.getVariants(messageId);
+    expect(variants[0]!.content).toBe("She laughed softly indeed.");
+    expect(variants[0]!.ttsAnnotation).toBe("She [laugh] softly.");
+  });
+
+  test("swiping to another variant keeps each variant's own annotation", async () => {
+    const msg = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "First",
+    });
+    const [v0] = await messages.getVariants(msg.id);
+    await messages.setTtsAnnotation(v0!.id, "First [sigh]");
+    await messages.addVariant(msg.id, "Second", "stop");
+    const variants = await messages.getVariants(msg.id);
+    expect(variants).toHaveLength(2);
+    expect(variants[0]!.ttsAnnotation).toBe("First [sigh]");
+    expect(variants[1]!.ttsAnnotation).toBeNull();
+  });
+});

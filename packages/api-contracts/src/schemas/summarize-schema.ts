@@ -78,3 +78,12 @@ export const summarizeChatSchema = z.object({
 export const saveChatSummarySchema = z.object({
   summary: z.string(),
 });
+
+// SUM-3b: manual reorder of the chat's summary list (the store already owns
+// the transactional rewrite; ordering is asc(sortOrder), …).
+export const reorderChatSummariesSchema = z.object({
+  orderedIds: z.array(z.string().trim().min(1)).min(1),
+}).refine(({ orderedIds }) => new Set(orderedIds).size === orderedIds.length, {
+  message: "Summary ids must be unique.",
+  path: ["orderedIds"],
+});

@@ -50,12 +50,49 @@ describe("LorebookStore.listLorebooksByScope", () => {
       { targetType: "persona", targetId: "persona_active" },
     ]);
 
-    const activePersonaLorebooks = await store.listLorebooksByScope("persona", "persona_active");
+    const activePersonaLorebooks = await store.listLorebooksByScope("entity", "persona_active");
     expect(activePersonaLorebooks.map((lb) => lb.id)).toContain(linked.id);
     expect(activePersonaLorebooks.map((lb) => lb.id)).not.toContain(unrelated.id);
 
-    const otherPersonaLorebooks = await store.listLorebooksByScope("persona", "persona_other");
+    const otherPersonaLorebooks = await store.listLorebooksByScope("entity", "persona_other");
     expect(otherPersonaLorebooks.map((lb) => lb.id)).not.toContain(linked.id);
+  });
+
+  test("entity browse (no ownerId) lists every entity-home book regardless of owner kind", async () => {
+    // FK parents first — lorebooks.characterId/personaId are enforced.
+    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+    const db = await createDb(join(dir, "test.db"));
+    const store = new LorebookStore(db, {
+      clock: testClock,
+      idGenerator: testIdGen,
+      content: null,
+    });
+    await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_arachnid', 'C', '2026-01-01', '2026-01-01')`);
+    await db.run(sql`INSERT INTO personas (id, name, description, default_for_new_chats, has_file_on_disk, created_at, updated_at) VALUES ('persona_1', 'P', '', 0, 0, '2026-01-01', '2026-01-01')`);
+    await db.run(sql`INSERT INTO chats (id, character_id, active_branch_id, title, created_at, updated_at) VALUES ('chat_1', 'char_arachnid', 'branch_1', 'T', '2026-01-01', '2026-01-01')`);
+
+    // Regression pin (owner-reported 2026-09-09): the sidebar's Bound tab
+    // used to resolve an owner from context, so a character-bound book was
+    // invisible when a persona context was active. Browse semantics: no
+    // ownerId → every entity-home book, both FK kinds, and nothing else.
+    const charBound = await store.createLorebook({
+      name: "Silk Lair",
+      scopeType: "entity",
+      characterId: "char_arachnid",
+    });
+    const personaBound = await store.createLorebook({
+      name: "Persona notes",
+      scopeType: "entity",
+      personaId: "persona_1",
+    });
+    await store.createLorebook({ name: "Global one", scopeType: "global" });
+    await store.createLorebook({ name: "Chat one", scopeType: "chat", chatId: "chat_1" });
+
+    const browsed = await store.listLorebooksByScope("entity");
+    const ids = browsed.map((lb) => lb.id);
+    expect(ids).toContain(charBound.id);
+    expect(ids).toContain(personaBound.id);
+    expect(ids.filter((id) => id !== charBound.id && id !== personaBound.id)).toEqual([]);
   });
 });
 
@@ -284,7 +321,8 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(read.constant).toBe(false);
     expect(read.ignoreBudget).toBe(false);
     expect(read.prioritizeInclusion).toBe(false);
-    expect(read.useGroupScoring).toBe(false);
+    // Tri-state (LG-4): default is null = inherit the book default, not false.
+    expect(read.useGroupScoring).toBe(null);
     expect(read.excludeRecursion).toBe(false);
     expect(read.preventRecursion).toBe(false);
     expect(read.delayUntilRecursion).toBe(false);
@@ -302,6 +340,21 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     // default is 'after_char'. Pinned so the field-map refactor keeps the
     // normalization as a mapEntryRow post-process.
     expect(read.position).toBe("after_char");
+  });
+
+  // LG-4: the entry flag is tri-state — null (inherit the book default) and
+  // false (explicitly exempt from scoring) must survive the store separately.
+  test("LG-4: entry useGroupScoring tri-state round-trips (null vs false are distinct)", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    const e = await store.createEntry(lb.id, { title: "inherit" });
+    expect((await store.getEntry(e.id))!.useGroupScoring).toBe(null);
+    await store.updateEntry(e.id, { useGroupScoring: false });
+    expect((await store.getEntry(e.id))!.useGroupScoring).toBe(false);
+    await store.updateEntry(e.id, { useGroupScoring: null });
+    expect((await store.getEntry(e.id))!.useGroupScoring).toBe(null);
+    await store.updateEntry(e.id, { useGroupScoring: true });
+    expect((await store.getEntry(e.id))!.useGroupScoring).toBe(true);
   });
 
   test("duplicateLorebook preserves every entry field (LoreEntry→CreateLoreEntryData projection)", async () => {
@@ -346,7 +399,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
   function sampleBundle() {
     return {
       lorebooks: [
-        { id: "lorebook_draft1", name: "World Lore", description: "d", scopeType: "character" as const, enabled: true },
+        { id: "lorebook_draft1", name: "World Lore", description: "d", scopeType: "entity" as const, enabled: true },
       ],
       entries: [
         { id: "lore_entry_draft1", lorebookId: "lorebook_draft1", title: "Castle", content: "Anvil keep.", keys: ["anvil"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
@@ -390,7 +443,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     // An updated field on re-Apply is written (upsert), not a new row.
     const updated = {
       ...sampleBundle(),
-      lorebooks: [{ id: "lorebook_draft1", name: "World Lore v2", description: "d", scopeType: "character" as const, enabled: true }],
+      lorebooks: [{ id: "lorebook_draft1", name: "World Lore v2", description: "d", scopeType: "entity" as const, enabled: true }],
     };
     await store.applyCoauthorLoreDraft("char_1", updated);
     const lb = await store.getLorebook("lorebook_draft1");
@@ -404,7 +457,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
       lorebooks: [
         // A valid book alongside the orphan entry — it must NOT be persisted
         // either; the bundle is rejected as a whole, not partially applied.
-        { id: "lb_valid", name: "Valid", description: "", scopeType: "character" as const, enabled: true },
+        { id: "lb_valid", name: "Valid", description: "", scopeType: "entity" as const, enabled: true },
       ],
       entries: [
         { id: "lore_entry_orphan", lorebookId: "ghost_book", title: "x", content: "y", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
@@ -421,8 +474,8 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const store = await mkStoreWithChar();
     const bundle = {
       lorebooks: [
-        { id: "lb_a", name: "A", description: "", scopeType: "character" as const, enabled: true },
-        { id: "lb_b", name: "B", description: "", scopeType: "character" as const, enabled: true },
+        { id: "lb_a", name: "A", description: "", scopeType: "entity" as const, enabled: true },
+        { id: "lb_b", name: "B", description: "", scopeType: "entity" as const, enabled: true },
       ],
       entries: [
         { id: "le_a1", lorebookId: "lb_a", title: "a1", content: "c", keys: ["k"], secondaryKeys: [], constant: true, position: "before_char", depth: 4, enabled: true },
@@ -441,7 +494,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const store = await mkStoreWithChar();
     const bundle = {
       lorebooks: [
-        { id: "lb_params", name: "Tuned", description: "", scopeType: "character" as const, enabled: true, scanDepth: 25, tokenBudget: 2048, recursiveScanning: true },
+        { id: "lb_params", name: "Tuned", description: "", scopeType: "entity" as const, enabled: true, scanDepth: 25, tokenBudget: 2048, recursiveScanning: true },
       ],
       entries: [],
     };
@@ -459,6 +512,25 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     expect(lb!.scanDepth).toBe(10);
     expect(lb!.tokenBudget).toBe(1000);
     expect(lb!.recursiveScanning).toBe(false);
+    expect(lb!.useGroupScoring).toBe(false);
+  });
+
+  // LG-2: the book-level group-scoring default round-trips through create +
+  // update + read (integer column <-> boolean domain). D1 in the parity map.
+  test("LG-2: useGroupScoring round-trips through the store (default false, update flips it)", async () => {
+    const store = await mkStoreWithChar();
+    const bundle = {
+      lorebooks: [
+        { id: "lb_gs", name: "Scoring book", description: "", scopeType: "entity" as const, enabled: true, useGroupScoring: true },
+      ],
+      entries: [],
+    };
+    await store.applyCoauthorLoreDraft("char_1", bundle);
+    expect((await store.getLorebook("lb_gs"))!.useGroupScoring).toBe(true);
+
+    // Update path flips it back off.
+    await store.updateLorebook("lb_gs", { useGroupScoring: false });
+    expect((await store.getLorebook("lb_gs"))!.useGroupScoring).toBe(false);
   });
 
   test("CE-A1: a character-scoped lorebook is bound to its character via lorebook_links (no manual binding)", async () => {
@@ -518,7 +590,7 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const store = await mkStoreWithChar();
     const bundle = (logic: string, editing = false) => ({
       lorebooks: [
-        { id: "lb_logic", name: "L", description: "", scopeType: "character" as const, enabled: true, ...(editing ? { mode: "edit" as const } : {}) },
+        { id: "lb_logic", name: "L", description: "", scopeType: "entity" as const, enabled: true, ...(editing ? { mode: "edit" as const } : {}) },
       ],
       entries: [
         { id: "le_logic", lorebookId: "lb_logic", title: "t", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, logic, enabled: true, ...(editing ? { mode: "edit" as const } : {}) },

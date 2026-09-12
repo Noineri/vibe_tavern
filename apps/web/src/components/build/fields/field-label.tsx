@@ -16,7 +16,7 @@ interface FieldLabelProps {
 /**
  * The fixed-size uppercase label above a form field in the lore/script editors.
  *
- * NOTE: this is intentionally distinct from `lblCls` in `field-styles.ts`, which
+ * NOTE: this is intentionally distinct from `lblCls` in `lib/field-tokens.ts`, which
  * is the *fluid*-size (`text-[calc(var(--ui-fs)-3px)]`) label used by the
  * CharacterForm field components (TextAreaField, TagsField, …). The two share
  * `uppercase tracking-[0.05em] text-t3` but differ in font-size, spacing, and

@@ -177,6 +177,22 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(form.formState.isDirty).toBe(true);
   });
 
+  it("group scoring is tri-state: inherit ↔ on ↔ off binds to the form (LG-7)", async () => {
+    const { form, getByText } = renderEditor(makeEntry({ useGroupScoring: null }));
+    fireEvent.click(getByText(/lore_advanced_settings/)); // open advanced
+    // Inherit is the default for null — clicking through the cycle writes
+    // true / false / null back into the form (the DB boundary is boolean|null).
+    await userEvent.setup().click(getByText("lore_group_scoring_on"));
+    expect(form.getValues("useGroupScoring")).toBe(true);
+    expect(form.formState.isDirty).toBe(true); // null → true is a real change
+    await userEvent.setup().click(getByText("lore_group_scoring_off"));
+    expect(form.getValues("useGroupScoring")).toBe(false);
+    // Cycling back to null returns to defaultValues — RHF rightly sees the
+    // form as clean again (the DB write already happened via the autosave).
+    await userEvent.setup().click(getByText("lore_group_scoring_inherit"));
+    expect(form.getValues("useGroupScoring")).toBe(null);
+  });
+
   it("constant checkbox binds via ControlledField", () => {
     const { form, getByText } = renderEditor(makeEntry({ constant: false }));
     fireEvent.click(getByText("lore_constant"));

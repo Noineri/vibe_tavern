@@ -83,14 +83,14 @@ function provenanceLabel(
       return t("insights_dice_prov_global");
     case "chat":
       return script.chatId === chatId ? t("insights_dice_prov_chat") : t("insights_dice_prov_linked");
-    case "character":
+    case "entity":
+      // Entity home FK: whichever owner column is set matches the active chat
+      // persona/character; anything else is linked, not chat-local.
       return script.characterId && script.characterId === activeCharacterId
         ? t("insights_dice_prov_character", { name: activeCharacterName ?? "" })
-        : t("insights_dice_prov_linked");
-    case "persona":
-      return script.personaId && script.personaId === activePersonaId
-        ? t("insights_dice_prov_persona", { name: activePersonaName ?? "" })
-        : t("insights_dice_prov_linked");
+        : script.personaId && script.personaId === activePersonaId
+          ? t("insights_dice_prov_persona", { name: activePersonaName ?? "" })
+          : t("insights_dice_prov_linked");
     default:
       return t("insights_dice_prov_linked");
   }

@@ -7,8 +7,9 @@
 // "Manage Modules" footer) and `ToolbarSelect` (favorites) — both BottomSheet, vaul.
 
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
+import type { ChangeEvent } from "react";
 import { cn } from "../../lib/cn.js";
+import { composerCls } from "../../lib/field-tokens.js";
 import { Icons } from "../shared/icons.js";
 import { ToolbarSelect } from "../shared/ToolbarSelect.js";
 import { QuickSwitchPopover } from "../shared/QuickSwitchPopover.js";
@@ -34,15 +35,13 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 			ta.style.height = `${Math.min(ta.scrollHeight, window.innerHeight * 0.4)}px`;
 		}
 	};
+	// E4 (MOBILE_DEFECTS_ROUND_2): NO Enter-to-send on mobile — the on-screen
+	// enter key is the newline key; sending happens via the send button only.
+	// Mirrors the RP MobileInputArea (no keydown handler at all); the desktop
+	// CoauthorInputArea keeps Enter-to-send.
 	const mobileOnChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
 		setDraft(e.target.value);
 		adjustTextareaHeight();
-	};
-	const mobileOnKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-		if (e.key === "Enter" && !e.shiftKey) {
-			e.preventDefault();
-			if (canSend) void chat.handleSend();
-		}
 	};
 	useEffect(() => {
 		if (!draft) adjustTextareaHeight();
@@ -118,11 +117,10 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 					<textarea
 						ref={mobileTextareaRef}
 						data-testid="coauthor-input-textarea"
-						className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto"
+						className={composerCls}
 						placeholder={t("coauthor.input.placeholder")}
 						value={draft}
 						onChange={mobileOnChange}
-						onKeyDown={mobileOnKeyDown}
 						rows={1}
 					/>
 					<div className="flex shrink-0 items-center">

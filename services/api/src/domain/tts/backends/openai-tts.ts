@@ -1,0 +1,824 @@
+/**
+ * @module tts/backends/openai-tts
+ *
+ * OpenAI-compatible TTS adapter (TTS_PLAN TS-4) — ONE adapter for any server
+ * speaking the OpenAI speech protocol: OpenAI cloud, OpenRouter, and local
+ * servers (kokoro-fastapi :8880, openedai-tts :8000, …). The endpoint is the
+ * base URL INCLUDING `/v1` (house `normalizeOpenAiCompatibleBaseUrl` also
+ * tolerates a trailing slash or a pasted `/chat/completions` suffix).
+ *
+ * API facts (verified 2026-08-27, TE2-3 honest):
+ * - POST {endpoint}/audio/speech, body { model, input, voice, response_format,
+ *   speed? } (snake_case). `Authorization: Bearer` ONLY when a key is set —
+ *   local servers run keyless. `instructions` is OpenAI-specific and works
+ *   ONLY on gpt-4o-mini-tts* models (rejected/ignored on tts-1 family), so it
+ *   is included only for that model family.
+ * - Voices: kokoro-fastapi exposes GET /v1/audio/voices → { voices: [{ id, name? }] };
+ *   Honest (TE2-3): listVoices hits ONLY /audio/voices and returns null on
+ *   any failure — no fallback to /models. Known hosts (TPE-9a) discover
+ *   models LIVE from /models through a per-host criterion (no static
+ *   lists — owner rule 2026-09-01); they document no voices endpoint, so
+ *   the manual voice input floor applies; aggregator catalogs carry the
+ *   roster per entry.
+ */
+
+import { TTS_BACKEND } from "@vibe-tavern/domain";
+import type { TtsProfileConfig } from "@vibe-tavern/domain";
+
+import type {
+  TtsAudioResult,
+  TtsBackend,
+  TtsBackendCapabilities,
+  TtsBackendFactory,
+  TtsCloneRequest,
+  TtsGenerateRequest,
+  TtsProbeResult,
+  TtsVoiceInfo,
+} from "../tts-backend.js";
+import { registerTtsBackend } from "../tts-registry.js";
+import {
+  buildHeaders,
+  normalizeOpenAiCompatibleBaseUrl,
+} from "../../providers/provider-transport.js";
+
+const TTS_VOICE_LIST_TIMEOUT_MS = 10_000;
+const TTS_CLONE_TIMEOUT_MS = 60_000;
+const PROBE_TIMEOUT_MS = 5_000;
+
+const DEFAULT_MODEL = "kokoro";
+const DEFAULT_RESPONSE_FORMAT = "mp3";
+const FALLBACK_MIME = "audio/mpeg";
+
+const MIN_SPEED = 0.25;
+const MAX_SPEED = 4.0;
+
+/** Known aggregator that hides speech models behind the
+ *  `output_modalities` query param: the unfiltered catalog is 300+
+ *  chat-only models with none of the TTS ones (verified live — the
+ *  speech-filtered request returns them, the plain one does not).
+ *  Host-based detection heals profiles saved before the preset began
+ *  stamping `modelFilter` into the config bag. */
+const MODALITY_FILTER_HOSTS = new Set(["openrouter.ai"]);
+
+function hostnameOf(endpoint: string): string | null {
+  try {
+    return new URL(endpoint.includes("://") ? endpoint : `https://${endpoint}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isOpenRouterStyleEndpoint(endpoint: string): boolean {
+  const host = hostnameOf(endpoint);
+  return host !== null && MODALITY_FILTER_HOSTS.has(host);
+}
+
+/** NanoGPT serves TTS discovery from a DEDICATED catalog: GET
+ *  /audio-models?type=tts&detailed=true (docs: /api-reference/endpoint/
+ *  audio-models). The plain /models catalog is chat-only and silently
+ *  ignores output_modalities — verified live 2026-08-29 (D23). Host-based
+ *  detection heals profiles saved before the preset stamped `modelFilter:
+ *  "audio-models"`. */
+const AUDIO_MODELS_HOSTS = new Set(["nano-gpt.com"]);
+
+function isNanoGptStyleEndpoint(endpoint: string): boolean {
+  const host = hostnameOf(endpoint);
+  return host !== null && AUDIO_MODELS_HOSTS.has(host);
+}
+
+// ─── Documented catalogs (F8, owner decision 2026-08-29) ─────────────────────
+
+/** Known hosts whose live OpenAI-compatible /models catalog mixes TTS with
+ *  chat models. TPE-9a (owner rule 2026-09-01): no static model lists in
+ *  code — discovery fetches the LIVE catalog and keeps only the entries
+ *  matching a CRITERION over the provider's own documented TTS naming
+ *  (new releases of the family appear without a code change):
+ *  - api.openai.com: the TTS guide names gpt-4o-mini-tts / tts-1 / tts-1-hd
+ *    — every id of that family contains "tts".
+ *  - api.groq.com: the TTS page names the orpheus family (playai retired)
+ *    — every id of that family contains "orpheus".
+ *  ElectronHub is deliberately absent: its TTS roster mixes unrelated
+ *  families (elevenlabs/playai/kokoro/dia/melotts/…) with no unifying
+ *  criterion — its plain /models catalog serves as-is. The host ALWAYS
+ *  wins over legacy stamps (pre-F8 profiles carry preset glue stamps
+ *  that are not a user choice — same healing rule as the nano-gpt fix). */
+const HOST_MODEL_FILTERS: Record<string, (modelId: string) => boolean> = {
+  "api.openai.com": (id) => id.includes("tts"),
+  "api.groq.com": (id) => id.includes("orpheus"),
+};
+
+function hostModelFilterFor(host: string | null): ((modelId: string) => boolean) | null {
+  return host === null ? null : (HOST_MODEL_FILTERS[host] ?? null);
+}
+
+/** SiliconFlow documents a server-side catalog filter: GET /v1/models?type=audio
+ *  (docs.siliconflow.cn/en/api-reference/models/get-model-list — `type`:
+ *  text/image/audio/video; `sub_type` has no text-to-speech option). */
+const AUDIO_TYPE_HOSTS = new Set(["api.siliconflow.cn", "api.siliconflow.com"]);
+
+/** SiliconFlow clone + voice facts (re-read 2026-08-31, TPE-8, live page
+ *  docs.siliconflow.cn/capabilities/text-to-speech — the endpoint reference
+ *  wins over the context7 snapshot's `GET /v1/audio/voices` mention):
+ *  - System preset voices exist only as a docs table with no endpoint —
+ *    NOT hardcoded (TPE-9a owner rule: no static voice lists); the voice
+ *    wire id is the FULL "model:voice" string, entered manually.
+ *  - Custom ("user preset") voices: POST /v1/uploads/audio/voice, multipart
+ *    file + model + customName + text (the reference audio's transcript —
+ *    REQUIRED) → { uri }; the uri rides as `voice` in /audio/speech.
+ *    Real-name verification is a platform prerequisite for custom voices.
+ *  - Custom voice list: GET /v1/audio/voice/list → { voices: [{ uri, name }] }
+ *    (items keyed by uri; a stale `id` field is tolerated).
+ *  - Reference formats: mp3, wav, pcm, opus (192 kbps+ mp3 recommended). */
+
+/** Reference-audio extension for a SiliconFlow upload from the sample mime
+ *  type (documented formats: mp3, wav, pcm, opus). */
+function siliconflowSampleExt(mimeType: string): string {
+  if (mimeType.includes("mpeg")) return "mp3";
+  const sub = mimeType.split("/")[1] ?? "";
+  if (sub === "wav" || sub === "pcm" || sub === "opus") return sub;
+  if (sub === "ogg") return "opus"; // ogg containers usually carry opus
+  return sub !== "" ? sub : "bin";
+}
+
+/** Filename extension for a voice-library upload on chatterbox-style
+ *  servers (they whitelist by FILE EXTENSION: .mp3/.flac/.wav/.m4a/.ogg).
+ *  The naive `mime.split("/")[1]` produced `.x-wav` for the legacy
+ *  `audio/x-wav` subtype (live repro 2026-09-05: the upload 400'd
+ *  "Unsupported audio format: .x-wav") — mime→extension must be a MAP,
+ *  not a split, so every wav-ish/spelled alias lands on a real extension. */
+function librarySampleExt(mimeType: string): string {
+  if (mimeType.includes("mpeg")) return "mp3";
+  const sub = mimeType.split("/")[1]?.toLowerCase() ?? "";
+  if (sub === "wav" || sub === "x-wav" || sub === "wave" || sub === "vnd.wave") return "wav";
+  if (sub === "flac" || sub === "x-flac") return "flac";
+  if (sub === "m4a" || sub === "x-m4a" || sub === "mp4") return "m4a";
+  if (sub === "ogg" || sub === "x-ogg") return "ogg";
+  return sub !== "" ? sub : "bin";
+}
+
+/** Parse GET /v1/audio/voice/list: { voices: [{ uri, name? }] }. Items key
+ *  on `uri`; an `id` field from stale docs is tolerated as the fallback id. */
+function parseSiliconflowCustomVoices(parsed: unknown): TtsVoiceInfo[] {
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const raw = (parsed as Record<string, unknown>).voices;
+  if (!Array.isArray(raw)) return [];
+  const voices: TtsVoiceInfo[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const id = typeof record.uri === "string" && record.uri.length > 0
+      ? record.uri
+      : typeof record.id === "string" && record.id.length > 0
+        ? record.id
+        : null;
+    if (id === null) continue;
+    const name = typeof record.name === "string" && record.name.length > 0 ? record.name : id;
+    voices.push({ id, label: `${name} · mine`, lang: "multi" });
+  }
+  return voices;
+}
+
+/** Reference-audio extension for a SiliconFlow upload from the sample mime
+
+/** Error body excerpt length included in HTTP-failure messages. */
+const ERROR_BODY_EXCERPT_LENGTH = 200;
+
+/** HTTP / transport failure of a speech or voices request. */
+export class OpenAiCompatTtsError extends Error {
+  /** Upstream HTTP status when the failure came from a non-2xx response
+   *  (undefined for transport-level failures — DNS, refused, timeout). */
+  readonly status?: number;
+  constructor(message: string, options?: { cause?: unknown; status?: number }) {
+    super(message, options);
+    this.name = "OpenAiCompatTtsError";
+    this.status = options?.status;
+  }
+}
+
+/** Profile config problem (missing endpoint, empty voice). */
+export class OpenAiCompatTtsConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenAiCompatTtsConfigError";
+  }
+}
+
+// ─── Config accessors (loose TtsProfileConfig bag, house style) ──────────────
+
+interface OpenAiCompatTtsConfig {
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  responseFormat: string;
+}
+
+function readString(config: TtsProfileConfig, key: string): string | undefined {
+  const value = config[key];
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+function parseConfig(config: TtsProfileConfig): OpenAiCompatTtsConfig {
+  const rawEndpoint = readString(config, "endpoint");
+  if (!rawEndpoint) {
+    throw new OpenAiCompatTtsConfigError(
+      "OpenAI-compatible TTS config error: `endpoint` is required",
+    );
+  }
+  const endpoint = normalizeOpenAiCompatibleBaseUrl(rawEndpoint);
+  if (!endpoint) {
+    throw new OpenAiCompatTtsConfigError(
+      "OpenAI-compatible TTS config error: `endpoint` is empty after normalization",
+    );
+  }
+  return {
+    endpoint,
+    apiKey: readString(config, "apiKey") ?? "",
+    model: readString(config, "model") ?? DEFAULT_MODEL,
+    responseFormat: readString(config, "responseFormat") ?? DEFAULT_RESPONSE_FORMAT,
+  };
+}
+
+function clampSpeed(value: number): number {
+  return Math.min(MAX_SPEED, Math.max(MIN_SPEED, value));
+}
+
+// ─── HTTP helpers ────────────────────────────────────────────────────────────
+
+async function readErrorExcerpt(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text.length > ERROR_BODY_EXCERPT_LENGTH
+      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
+      : text;
+  } catch {
+    return "(unreadable error body)";
+  }
+}
+
+function httpErrorMessage(operation: string, response: Response, excerpt: string): string {
+  return `OpenAI-compatible TTS ${operation} failed with HTTP ${response.status}${
+    excerpt ? `: ${excerpt}` : ""
+  }`;
+}
+
+/** Wrap a transport-level failure (DNS, refused connection, timeout) in the
+ *  adapter's typed error so callers get one error surface. */
+async function fetchOrWrap(
+  url: string,
+  init: RequestInit,
+  operation: string,
+): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (cause) {
+    throw new OpenAiCompatTtsError(
+      `OpenAI-compatible TTS ${operation} network error: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`,
+      { cause },
+    );
+  }
+}
+
+// ─── Voice payload parsing (unknown at the fetch edge) ───────────────────────
+
+function toVoiceInfo(id: unknown, name: unknown): TtsVoiceInfo | null {
+  if (typeof id !== "string" || id.length === 0) return null;
+  return {
+    id,
+    label: typeof name === "string" && name.length > 0 ? name : id,
+    lang: "en",
+  };
+}
+
+/** kokoro-fastapi shape: { voices: [{ id, name? }] } (bare array tolerated).
+ *  chatterbox-tts-api voice-library items are { name, language, ... } with
+ *  no id — the name doubles as the id there. */
+function parseVoicesPayload(parsed: unknown): TtsVoiceInfo[] | null {
+  const raw = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>).voices
+      : undefined;
+  if (!Array.isArray(raw)) return null;
+  const voices: TtsVoiceInfo[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const id = typeof record.id === "string" && record.id.length > 0 ? record.id : record.name;
+    const voice = toVoiceInfo(id, record.name);
+    if (voice) {
+      if (typeof record.language === "string" && record.language.length > 0) {
+        voice.lang = record.language;
+      }
+      voices.push(voice);
+    }
+  }
+  return voices.length > 0 ? voices : null;
+}
+
+
+
+// ─── Factory ─────────────────────────────────────────────────────────────────
+
+export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
+  const cfg = parseConfig(config);
+  const siliconflow =
+    hostnameOf(cfg.endpoint) !== null && AUDIO_TYPE_HOSTS.has(hostnameOf(cfg.endpoint)!);
+
+  /** Which voices route last answered — set by listVoices, read by
+   *  capabilities(). "library" = the /voices fallback route exists
+   *  (chatterbox-style voice library with an upload endpoint), which is
+   *  exactly the live fact clone support is detected from (owner-approved
+   *  design point 3, 2026-08-31). "roster" = the kokoro-style
+   *  /audio/voices route; no upload endpoint is known there. */
+  let lastVoicesSource: "library" | "roster" | null = null;
+
+  /** Catalog selection (D15/D23/TPE-9a), shared by listModels and
+   *  listVoices: known-host criteria and audio-type hosts ALWAYS win over
+   *  legacy stamps (the F6 field-fix rule — old profiles carry preset-glue
+   *  stamps that must heal); `plain` = the ordinary OpenAI-compatible
+   *  /models catalog. */
+  const catalogRequest = (): {
+    kind: "audio-models" | "modality" | "audio-type" | "filtered" | "plain";
+    url: string;
+  } => {
+    const modelFilter = readString(config, "modelFilter");
+    const host = hostnameOf(cfg.endpoint);
+    // Known hosts (TPE-9a): the live /models catalog filtered by the
+    // per-host criterion — no static lists (owner rule 2026-09-01). The
+    // host also wins over the retired "documented" preset stamp; on a
+    // host that lost its criterion (ElectronHub) the stamp no longer
+    // matches anything and falls through to plain.
+    if (hostModelFilterFor(host) !== null) {
+      return { kind: "filtered", url: `${cfg.endpoint}/models` };
+    }
+    // SiliconFlow: documented server-side filter beats every stamp.
+    if ((host !== null && AUDIO_TYPE_HOSTS.has(host)) || modelFilter === "audio-type") {
+      return { kind: "audio-type", url: `${cfg.endpoint}/models?type=audio` };
+    }
+    // NanoGPT: the HOST ALWAYS wins (field fix 2026-08-29). Every pre-F6
+    // nanogpt profile carries the OLD preset stamp `modelFilter:
+    // "name-heuristic"` — an explicit-LOOKING value that is not a user
+    // choice (no UI edits modelFilter; it is preset glue only), so healing
+    // only the undefined case missed exactly the live profiles it existed
+    // for (owner field report: chat catalog + no voices). The plain
+    // /models catalog on nano-gpt is chat-only — there is no legitimate
+    // plain case there.
+    if (modelFilter === "audio-models" || isNanoGptStyleEndpoint(cfg.endpoint)) {
+      return { kind: "audio-models", url: `${cfg.endpoint}/audio-models?type=tts&detailed=true` };
+    }
+    // OpenRouter keeps the heal-on-undefined contract: its stamp era began
+    // with "modality" (D15), so undefined is the only legacy shape in the
+    // wild — no stamped-but-wrong class exists here.
+    if (modelFilter === "modality" || (modelFilter === undefined && isOpenRouterStyleEndpoint(cfg.endpoint))) {
+      return { kind: "modality", url: `${cfg.endpoint}/models?output_modalities=speech` };
+    }
+    return { kind: "plain", url: `${cfg.endpoint}/models` };
+  };
+
+  const backend: TtsBackend = {
+    async generate(req: TtsGenerateRequest): Promise<TtsAudioResult> {
+      const voice = req.voiceId.trim();
+      if (!voice) {
+        throw new OpenAiCompatTtsConfigError(
+          "OpenAI-compatible TTS generate requires a non-empty voiceId",
+        );
+      }
+
+      const body: Record<string, unknown> = {
+        model: cfg.model,
+        input: req.text,
+        voice,
+        response_format: cfg.responseFormat,
+      };
+      if (req.speed !== undefined) body.speed = clampSpeed(req.speed);
+      // `instructions` is gpt-4o-mini-tts-only (OpenAI docs: does not work
+      // with tts-1/tts-1-hd) — sending it to other servers risks spoken
+      // leakage, so it is gated on the model family.
+      if (req.instructions && req.instructions.trim() !== "" && cfg.model.startsWith("gpt-4o-mini-tts")) {
+        body.instructions = req.instructions;
+      }
+
+      const response = await fetchOrWrap(
+        `${cfg.endpoint}/audio/speech`,
+        {
+          method: "POST",
+          headers: buildHeaders(cfg.apiKey, true),
+          body: JSON.stringify(body),
+          // TPE-16: chain the caller's abort signal (stop button →
+          // client disconnect → here). Deliberately NO timeout signal —
+          // heavy local models may legally take minutes (TPE-17).
+          signal: req.signal,
+        },
+        "generate",
+      );
+
+      if (!response.ok) {
+        const excerpt = await readErrorExcerpt(response);
+        throw new OpenAiCompatTtsError(httpErrorMessage("generate", response, excerpt), { status: response.status });
+      }
+      const audio = Buffer.from(await response.arrayBuffer());
+      const mime = response.headers.get("content-type") ?? FALLBACK_MIME;
+      return { audio, mime };
+    },
+
+    async listModels(): Promise<import("../tts-backend.js").TtsModelInfo[]> {
+      const { kind, url } = catalogRequest();
+      // Known-host criterion (TPE-9a): drop everything outside the
+      // provider's documented TTS family — live catalog + criterion, no
+      // static list.
+      const hostFilter = kind === "filtered" ? hostModelFilterFor(hostnameOf(cfg.endpoint)) : null;
+      const useModalityParam = kind === "modality";
+      const useAudioModelsCatalog = kind === "audio-models";
+      const response = await fetchOrWrap(
+        url,
+        {
+          method: "GET",
+          headers: buildHeaders(cfg.apiKey),
+          signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+        },
+        "model list",
+      );
+      if (!response.ok) {
+        const excerpt = await readErrorExcerpt(response);
+        throw new OpenAiCompatTtsError(httpErrorMessage("model list", response, excerpt), { status: response.status });
+      }
+      const parsed: unknown = await response.json().catch(() => null);
+      if (typeof parsed !== "object" || parsed === null) return [];
+      // Two shapes in the wild: OpenAI-compatible `{data:[{id}]}` and
+      // openai-edge-tts's `{models:[{id}]}` — accept either.
+      const record = parsed as Record<string, unknown>;
+      const data = Array.isArray(record.data) ? record.data : Array.isArray(record.models) ? record.models : null;
+      if (data === null) return [];
+      const out: import("../tts-backend.js").TtsModelInfo[] = [];
+      for (const entry of data) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const record = entry as Record<string, unknown>;
+        const id = record.id;
+        if (typeof id !== "string" || id.length === 0) continue;
+        if (hostFilter !== null && !hostFilter(id)) continue;
+        // NanoGPT audio-models entries (D23): `type=tts` still returns music
+        // models — only entries with capabilities.text_to_speech === true
+        // synthesize via POST /audio/speech. Docs say to rely on the
+        // capability flag, never hardcode the roster.
+        if (useAudioModelsCatalog) {
+          const capabilities = record.capabilities;
+          const tts =
+            typeof capabilities === "object" && capabilities !== null
+              ? (capabilities as Record<string, unknown>).text_to_speech
+              : undefined;
+          if (tts !== true) continue;
+        }
+        // Enrichment (OpenRouter-style entries; absent on plain OpenAI):
+        // `name` is the display label, `description` human wording,
+        // `pricing.prompt/completion` per-Mtok strings ("0" = free tier),
+        // `context_length` the input window. NanoGPT prices per thousand
+        // CHARS instead (`pricing.per_thousand_chars`).
+        const info: import("../tts-backend.js").TtsModelInfo = {
+          id,
+          label: typeof record.name === "string" && record.name.length > 0 ? record.name : id,
+        };
+        if (typeof record.description === "string" && record.description.length > 0) {
+          info.description = record.description;
+        }
+        if (typeof record.context_length === "number" && Number.isFinite(record.context_length)) {
+          info.contextLength = record.context_length;
+        }
+        // D22: the per-model voice roster rides the catalog entry. Only the
+        // aggregator catalogs carry it (plain /models responses have none —
+        // their voices come from /audio/voices in listVoices).
+        if (useAudioModelsCatalog || useModalityParam) {
+          const voices = catalogEntryVoices(record, useAudioModelsCatalog);
+          if (voices !== undefined) info.voices = voices;
+        }
+        if (useAudioModelsCatalog) {
+          const pricing = record.pricing;
+          if (typeof pricing === "object" && pricing !== null) {
+            const perKCharsRaw = (pricing as Record<string, unknown>).per_thousand_chars;
+            const perKChars =
+              typeof perKCharsRaw === "number"
+                ? perKCharsRaw
+                : typeof perKCharsRaw === "string" && perKCharsRaw.trim() !== ""
+                  ? Number(perKCharsRaw)
+                  : Number.NaN;
+            if (Number.isFinite(perKChars)) info.isFree = perKChars === 0;
+          }
+          out.push(info);
+          continue;
+        }
+        const pricing = record.pricing;
+        if (typeof pricing === "object" && pricing !== null) {
+          const p = pricing as Record<string, unknown>;
+          const toNumber = (v: unknown): number | null => {
+            if (typeof v === "number" && Number.isFinite(v)) return v;
+            if (typeof v === "string" && v.trim() !== "") {
+              const parsed = Number(v);
+              return Number.isFinite(parsed) ? parsed : null;
+            }
+            return null;
+          };
+          const prompt = toNumber(p.prompt);
+          const completion = toNumber(p.completion);
+          if (prompt !== null && completion !== null) info.isFree = prompt === 0 && completion === 0;
+        }
+        out.push(info);
+      }
+      return out;
+    },
+
+    async listVoices(): Promise<TtsVoiceInfo[] | null> {
+      const { kind, url } = catalogRequest();
+      // Known hosts (TPE-9a): no hardcoded voice rosters — these hosts
+      // document no voices endpoint, so the /audio/voices attempt below
+      // answers 404 → null → manual voice input floor.
+      // D22: aggregators (audio-models/modality) have NO /audio/voices
+      // endpoint (404 live-verified on openrouter.ai and nano-gpt.com) —
+      // the roster is PER-MODEL data riding the catalog. Resolve it by
+      // the selected model: refetch the catalog (cacheable upstream per
+      // NanoGPT docs), find the entry, read its voice list. Null (manual
+      // input) when no model is chosen, the model left the catalog, or
+      // the catalog reports none for it. audio-type (SiliconFlow) does
+      // NOT take this path: its /models?type=audio entries carry no
+      // roster, and SF documents no voices endpoint — it falls through
+      // to the plain /audio/voices attempt, which is null → manual there
+      // (wire ids are full "model:voice" strings anyway).
+      if (kind === "audio-models" || kind === "modality") {
+        try {
+          const response = await fetchOrWrap(
+            url,
+            {
+              method: "GET",
+              headers: buildHeaders(cfg.apiKey),
+              signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+            },
+            "voice list",
+          );
+          if (!response.ok) return null;
+          const parsed: unknown = await response.json().catch(() => null);
+          const data =
+            typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>).data : undefined;
+          if (!Array.isArray(data)) return null;
+          const model = readString(config, "model");
+          if (model === undefined) return null;
+          for (const entry of data) {
+            if (typeof entry !== "object" || entry === null) continue;
+            const record = entry as Record<string, unknown>;
+            if (record.id !== model) continue;
+            const voices = catalogEntryVoices(record, kind === "audio-models");
+            if (voices === undefined) return null;
+            return voices.map((voice) => ({ id: voice, label: voice, lang: "en" }));
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      }
+      // SiliconFlow (TPE-9a): custom voices from the LIVE
+      // GET /audio/voice/list — the only voice source the API serves. The
+      // 8 system preset voices are a docs table with no endpoint (owner
+      // rule: no static voice lists in code) → manual voice input; the
+      // wire id is the full "model:voice" string. Host-gated (not
+      // kind-gated): audio-type kind without the SF host keeps the legacy
+      // /audio/voices attempt below.
+      if (siliconflow) {
+        try {
+          const response = await fetch(`${cfg.endpoint}/audio/voice/list`, {
+            headers: buildHeaders(cfg.apiKey),
+            signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+          });
+          if (response.ok) {
+            const parsed: unknown = await response.json().catch(() => null);
+            const custom = parseSiliconflowCustomVoices(parsed);
+            if (custom.length > 0) return custom;
+          }
+        } catch {
+          // Custom list is account state, not a capability probe — degrade.
+        }
+        return null;
+      }
+      try {
+        const voicesResponse = await fetch(`${cfg.endpoint}/audio/voices`, {
+          headers: buildHeaders(cfg.apiKey),
+          signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+        });
+        if (voicesResponse.ok) {
+          lastVoicesSource = "roster";
+          const parsed: unknown = await voicesResponse.json().catch(() => null);
+          const voices = parseVoicesPayload(parsed);
+          if (voices) return voices;
+        }
+        // Full-support rule for recommended local servers: chatterbox-tts-api
+        // serves its voice library at /voices, not the kokoro-style
+        // /audio/voices (live-verified 2026-08-31: /v1/audio/voices 404,
+        // /v1/voices 200 { voices, count }). One fallback attempt when the
+        // primary route misses — plain/unknown hosts only: catalog kinds encode
+        // documented knowledge, and audio-type (SiliconFlow) documents no
+        // voices endpoint, so no second probe there. An empty library parses
+        // to null — the manual voice input floor stays honest.
+        if (kind === "plain") {
+          const libraryResponse = await fetch(`${cfg.endpoint}/voices`, {
+            headers: buildHeaders(cfg.apiKey),
+            signal: AbortSignal.timeout(TTS_VOICE_LIST_TIMEOUT_MS),
+          });
+          if (libraryResponse.ok) {
+            // OK on this route is the capability signal even when the library
+            // is empty (voices null) — the upload endpoint exists (design
+            // point 3: a fresh chatterbox has an empty library and cloning is
+            // still THE feature).
+            lastVoicesSource = "library";
+            const parsed: unknown = await libraryResponse.json().catch(() => null);
+            const voices = parseVoicesPayload(parsed);
+            if (voices) return voices;
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
+
+    capabilities(): TtsBackendCapabilities {
+      // SiliconFlow cloning is documented (TPE-8) — static, host-based,
+      // independent of which voices route last answered.
+      if (siliconflow) {
+        return {
+          supportsCloning: true,
+          // Documented reference formats (the live page recommends 192 kbps+ mp3).
+          formats: ["mp3", "wav", "pcm", "opus"],
+          maxSizeMb: 10,
+          cloneRequiresReferenceText: true,
+          cloneCaveatKey: "siliconflow",
+        };
+      }
+      return {
+        supportsCloning: lastVoicesSource === "library",
+        // chatterbox-tts-api voice-library limits (upstream README).
+        formats: ["mp3", "wav", "flac", "m4a", "ogg"],
+        maxSizeMb: 10,
+      };
+    },
+
+    async cloneVoice(req: TtsCloneRequest): Promise<TtsVoiceInfo> {
+      // SiliconFlow (TPE-8): documented upload — POST /v1/uploads/audio/voice,
+      // multipart file + model + customName + text (the reference audio's
+      // transcript — REQUIRED by the live page; an empty transcript is
+      // rejected client-side with a clear message instead of a bad clone).
+      // The response { uri } IS the voice id for /audio/speech — returned
+      // directly, no re-list round-trip.
+      if (siliconflow) {
+        const transcript = req.referenceText?.trim() ?? "";
+        if (transcript === "") {
+          throw new OpenAiCompatTtsConfigError(
+            "SiliconFlow voice cloning requires the reference audio's transcript (text)",
+          );
+        }
+        const form = new FormData();
+        form.append(
+          "file",
+          new Blob([new Uint8Array(req.referenceAudio)], { type: req.mimeType }),
+          `voice-sample.${siliconflowSampleExt(req.mimeType)}`,
+        );
+        form.append("model", cfg.model);
+        form.append("customName", req.name);
+        form.append("text", transcript);
+        let response: Response;
+        try {
+          response = await fetch(`${cfg.endpoint}/uploads/audio/voice`, {
+            method: "POST",
+            headers: buildHeaders(cfg.apiKey),
+            body: form,
+            signal: AbortSignal.timeout(TTS_CLONE_TIMEOUT_MS),
+          });
+        } catch (error) {
+          throw new OpenAiCompatTtsError(
+            `SiliconFlow voice upload network error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            { cause: error },
+          );
+        }
+        if (!response.ok) {
+          const excerpt = await readErrorExcerpt(response);
+          throw new OpenAiCompatTtsError(
+            `SiliconFlow voice upload failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+            { status: response.status },
+          );
+        }
+        const parsed: unknown = await response.json().catch(() => null);
+        const uri =
+          typeof parsed === "object" && parsed !== null
+            ? (parsed as Record<string, unknown>).uri
+            : undefined;
+        if (typeof uri !== "string" || uri.length === 0) {
+          throw new OpenAiCompatTtsError("SiliconFlow voice upload response is missing `uri`");
+        }
+        return { id: uri, label: `${req.name} · mine`, lang: "multi" };
+      }
+      // chatterbox-tts-api voice-library upload (upstream README + openapi,
+      // live-verified 2026-08-31): POST {endpoint}/voices, multipart
+      // voice_file + voice_name. buildHeaders() without withBody sets no
+      // Content-Type — the FormData boundary is set by fetch itself.
+      const form = new FormData();
+      form.append("voice_name", req.name);
+      form.append(
+        "voice_file",
+        new Blob([new Uint8Array(req.referenceAudio)], { type: req.mimeType }),
+        `voice-sample.${librarySampleExt(req.mimeType)}`,
+      );
+      let response: Response;
+      try {
+        response = await fetch(`${cfg.endpoint}/voices`, {
+          method: "POST",
+          headers: buildHeaders(cfg.apiKey),
+          body: form,
+          signal: AbortSignal.timeout(TTS_CLONE_TIMEOUT_MS),
+        });
+      } catch (error) {
+        throw new Error(`voice clone request failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        // Typed with the upstream status so the route can surface a
+        // user-fixable 4xx as-is instead of an opaque Internal 500
+        // (live repro 2026-09-05: the owner saw a bare "500 Internal
+        // Server Error" with the upstream detail lost on the way).
+        throw new OpenAiCompatTtsError(
+          `voice clone failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, 300)}` : ""}`,
+          { status: response.status },
+        );
+      }
+      // The library is the source of truth: re-list and resolve the entry by
+      // name (its language metadata comes along); fall back to the name when
+      // the fresh entry is not immediately visible (eventual consistency).
+      const voices = await this.listVoices();
+      if (voices !== null) {
+        const found = voices.find((v) => v.id === req.name);
+        if (found !== undefined) return found;
+      }
+      return { id: req.name, label: req.name, lang: "en" };
+    },
+
+    async probe(): Promise<TtsProbeResult> {
+      try {
+        const response = await fetch(`${cfg.endpoint}/models`, {
+          headers: buildHeaders(cfg.apiKey),
+          signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          return { ok: false, detail: `${response.status} ${response.statusText}`.trim() };
+        }
+        const parsed: unknown = await response.json().catch(() => null);
+        const count = countModelIds(parsed);
+        return { ok: true, detail: `${count} models` };
+      } catch (error) {
+        return {
+          ok: false,
+          detail: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+
+    async dispose(): Promise<void> {
+      // Stateless — nothing to release.
+    },
+  };
+
+  return backend;
+};
+
+/** Per-model voice roster off a catalog entry (D22): OpenRouter exposes
+ *  `supported_voices: string[] | null`, NanoGPT
+ *  `supported_parameters.voices`. Returns undefined for absent/null/empty —
+ *  the callers treat that as "no roster" (manual voice input). */
+function catalogEntryVoices(record: Record<string, unknown>, useAudioModelsCatalog: boolean): string[] | undefined {
+	const raw = useAudioModelsCatalog
+		? typeof record.supported_parameters === "object" && record.supported_parameters !== null
+			? (record.supported_parameters as Record<string, unknown>).voices
+			: undefined
+		: record.supported_voices;
+	if (!Array.isArray(raw)) return undefined;
+	const voices: string[] = [];
+	for (const item of raw) {
+		if (typeof item === "string" && item.length > 0) voices.push(item);
+	}
+	return voices.length > 0 ? voices : undefined;
+}
+
+function countModelIds(parsed: unknown): number {
+  if (typeof parsed !== "object" || parsed === null) return 0;
+  const data = (parsed as Record<string, unknown>).data;
+  if (!Array.isArray(data)) return 0;
+  let count = 0;
+  for (const entry of data) {
+    if (typeof entry === "object" && entry !== null) {
+      const id = (entry as Record<string, unknown>).id;
+      if (typeof id === "string" && id.length > 0) count += 1;
+    }
+  }
+  return count;
+}
+
+// Module-scope registration (protocol-registry pattern): importing this module
+// makes the 'openai-compatible' slug creatable via the registry.
+registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);

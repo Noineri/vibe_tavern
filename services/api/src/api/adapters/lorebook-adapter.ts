@@ -67,6 +67,6 @@ export class LorebookAdapter implements LorebookRuntimeApi {
 		return { activatedIds: activated.map(e => e.id), totalEntries: entries.length };
 	};
 
-	importLorebook = (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) =>
+	importLorebook = (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string; enabled?: boolean }) =>
 		importLorebook(this.stores, lorebookId, body);
 }

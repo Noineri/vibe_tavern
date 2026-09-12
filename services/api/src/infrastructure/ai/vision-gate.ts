@@ -23,6 +23,8 @@ import type { ImagePart, TextPart } from "ai";
 import type { SdkMessage } from "./provider-executor-utils.js";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
 import { prepareImageForVision } from "../../shared/image-compress.js";
+import { VoiceTranscribeUnavailableError } from "./stt-gate.js";
+import type { AppDb } from "@vibe-tavern/db";
 import { resolveSystemPrompt } from "../../domain/ai-assistant/ai-assistant-prompts.js";
 import { splitReasoningFromText, type ReasoningSplitState } from "../../domain/ai-assistant/reasoning-split.js";
 
@@ -37,13 +39,12 @@ import { splitReasoningFromText, type ReasoningSplitState } from "../../domain/a
 // where prompt .md files are loaded from.
 
 /**
- * Resolve the vision describe system prompt via the shared assistant fallback
- * chain (preset `vision_describe` override → default `vision-describe-ai-prompt.md`).
+ * Resolve the vision describe system prompt via the service-prompt profile
+ * chain (active profile `vision_describe` override → default
+ * `vision-describe-ai-prompt.md`).
  */
-export async function resolveVisionDescribePrompt(
-  aiAssistantPrompts: Record<string, string> | null,
-): Promise<string> {
-  const { prompt } = await resolveSystemPrompt("vision_describe", { aiAssistantPrompts });
+export async function resolveVisionDescribePrompt(db: AppDb): Promise<string> {
+  const { prompt } = await resolveSystemPrompt(db, "vision_describe");
   return prompt;
 }
 
@@ -134,6 +135,30 @@ export async function resolveMultimodalContent(
 
   if (!message.attachments?.length) return parts;
 
+  // ── Audio routing (STT_PLAN ST-6 — capability-independent, single path) ─
+  // Voice notes (`purpose === "voice"`, the default) are ALWAYS transcribed
+  // first (the executor runs transcribeAttachments before calling us — the
+  // describeAttachments mirror) and arrive here as text. Music/ambient clips
+  // are playback-only media: never transcribed, never prompt-visible — they
+  // exist for the bubble UI alone. No `hasAudio` routing, no AudioPart — the
+  // transcript is computed regardless of the primary model's capabilities.
+  const audioAttachments = message.attachments.filter((a) => a.type === "audio");
+
+  for (const att of audioAttachments) {
+    if ((att.purpose ?? "voice") !== "voice") continue; // playback-only
+    if (att.description?.trim()) {
+      parts.push({
+        type: "text",
+        text: `[Voice message: ${att.name}]\nTranscript: ${att.description}`,
+      });
+    } else {
+      // The executor should have transcribed this (STT profile configured).
+      // Reaching here means no profile was set OR transcription failed —
+      // the honest configuration error, the VisionNotSupportedError mirror.
+      throw new VoiceTranscribeUnavailableError([att.name]);
+    }
+  }
+
   // ── Vision routing (ASYMMETRIC by design) ───────────────────────────────
   // The primary model's vision capability decides how image/video attachments
   // are rendered. `description` presence matters ONLY on the non-vision path.
@@ -158,12 +183,14 @@ export async function resolveMultimodalContent(
     (a) => a.type === "image" || a.type === "video",
   );
   const otherAttachments = message.attachments.filter(
-    (a) => a.type !== "image" && a.type !== "video",
+    (a) => a.type !== "image" && a.type !== "video" && a.type !== "audio",
   );
 
   // Non-image/video attachments (e.g. files) → text when they carry a
   // description; otherwise dropped (no native multimodal handling). Same on
-  // both paths — these never need vision.
+  // both paths — these never need vision. Audio is EXCLUDED: it is fully
+  // handled by the audio branch above (double-emitting a described voice
+  // note here would duplicate the transcript in the prompt).
   for (const att of otherAttachments) {
     if (att.description?.trim()) {
       parts.push({

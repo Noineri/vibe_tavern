@@ -1,0 +1,87 @@
+import { useState } from "react";
+import { Ic } from "./icons.js";
+import { TextInput } from "./text-input.js";
+
+interface MaskedConnectionKeyFieldProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  stored?: boolean;
+  /** Caller-owned test ids — the rendered ids stay byte-identical. */
+  fieldTestId: string;
+  toggleTestId: string;
+  statusTestId: string;
+  /** Caller-resolved text for the existing i18n keys — no new copy is introduced here. */
+  storedPlaceholder: string;
+  storedStatus: string;
+  showLabel: string;
+  hideLabel: string;
+}
+
+/** Shared level-1 masked API-key field (P11).
+ *
+ * The STT and TTS key fields were mechanically identical forks: masked
+ * write-only input, show/hide toggle, and an empty-keeps stored-key status
+ * line. Callers resolve their existing localized strings and test ids; the
+ * DOM contract is unchanged. The LLM header keeps its plain password field
+ * because it has neither the toggle nor the stored-status line — unifying it
+ * would change its markup, not share it.
+ *
+ * Built on `TextInput` (mono variant) since FS-2: the canonical single-line
+ * shape with fixed height, replacing the retired textarea-shaped mono token.
+ * `!pr-10` (important — the established override convention) reserves the
+ * eye-toggle gutter; the label above carries the spacing (lblCls mb), so the
+ * old `mt-1` container smear is gone.
+ *
+ * The toggle anchors to a relative row that holds ONLY the input (F5 fix
+ * 2026-09-11): the stored-status line renders as a sibling BELOW that row,
+ * outside the positioned wrapper — a single relative wrapper around
+ * input+status made the toggle's `top-1/2 -translate-y-1/2` center against
+ * the taller wrapper and visibly drop the eye below the input's edge. */
+export function MaskedConnectionKeyField({
+  value,
+  onChange,
+  placeholder,
+  stored = false,
+  fieldTestId,
+  toggleTestId,
+  statusTestId,
+  storedPlaceholder,
+  storedStatus,
+  showLabel,
+  hideLabel,
+}: MaskedConnectionKeyFieldProps): React.ReactElement {
+  const [visible, setVisible] = useState(false);
+  const emptyStored = value === "" && stored;
+  return (
+    <div>
+      <div className="relative">
+        <TextInput
+          data-testid={fieldTestId}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={emptyStored ? storedPlaceholder : placeholder}
+          mono
+          className="!pr-10"
+        />
+        <button
+          type="button"
+          data-testid={toggleTestId}
+          aria-label={visible ? hideLabel : showLabel}
+          onClick={() => setVisible((v) => !v)}
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1.5 text-t3 hover:bg-s2 hover:text-t1"
+        >
+          <span className="flex h-3.5 w-3.5 items-center justify-center [&>svg]:h-3.5 [&>svg]:w-3.5">
+            <Ic.eye />
+          </span>
+        </button>
+      </div>
+      {emptyStored && (
+        <div data-testid={statusTestId} className="mt-1 font-ui text-[11px] text-t4">
+          {storedStatus}
+        </div>
+      )}
+    </div>
+  );
+}

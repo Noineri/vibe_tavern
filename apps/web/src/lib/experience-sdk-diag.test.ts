@@ -86,9 +86,22 @@ async function createHarness(): Promise<SdkHarness> {
   return harness;
 }
 
-/** Advance past the SDK's flush window (750ms) and settle the macrotask. */
+/** Advance past the SDK's flush window (750ms) and settle the macrotask.
+ * Only for NEGATIVE assertions — where the terminal event is "nothing ever
+ * arrives" and waiting out the window IS the mechanism. */
 async function flushDiag(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, DIAG_FLUSH_MS + 60));
+}
+
+/** Poll until the SDK's periodic flush delivers a sample matching `pred`.
+ * The flush fires on its own 750ms cadence; a fixed 810ms sleep raced it under
+ * CI load (linux run 34665657469 — samples 0 after flushDiag). Sample arrival
+ * is the terminal event; only the bounded deadline tail is timing-sensitive. */
+async function waitForSample(h: SdkHarness, pred: (sample: unknown) => boolean, attempts = 50): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    if (h.samples.some(pred)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 describe("SDK loop diagnostics channel (RM-13)", () => {
@@ -98,7 +111,7 @@ describe("SDK loop diagnostics channel (RM-13)", () => {
     h.dispatchLoop("vt-loop:view", { score: 1 });
     h.dispatchLoop("vt-loop:view", { score: 2 }); // latest wins in the sample
     h.console.error("boom", { x: 1 });
-    await flushDiag();
+    await waitForSample(h, (s) => (s as { view?: { score?: number } }).view?.score === 2);
     expect(h.samples.length).toBeGreaterThanOrEqual(1);
     const last = h.samples[h.samples.length - 1] as {
       view?: unknown;
@@ -119,7 +132,8 @@ describe("SDK loop diagnostics channel (RM-13)", () => {
     // error. No view EVER flows.
     h.dispatchLoop("vt-loop:event", { kind: "round_started", seed: 1 });
     h.dispatchLoop("vt-loop:error", { kind: "boot_failed", message: "no config tag" });
-    await flushDiag();
+    await waitForSample(h, (s) =>
+      (s as { errors: Array<{ kind: string }> }).errors.some((e) => e.kind === "boot_failed"));
     expect(h.samples.length).toBeGreaterThanOrEqual(1);
     const last = h.samples[h.samples.length - 1] as { errors: unknown[]; view?: unknown };
     expect(last.errors.some((e) => (e as { kind: string }).kind === "boot_failed")).toBe(true);

@@ -40,6 +40,9 @@ const realScriptApi = await import("../../api/script-api.js");
 const realAppClient = await import("../../app-client.js");
 const realChatStore = await import("../../stores/chat-store.js");
 
+/** Shared Checkbox exposes its state via aria-checked (role="checkbox"), not input.checked. */
+const ariaChecked = (el: Element) => el.getAttribute("aria-checked") === "true";
+
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
@@ -94,6 +97,11 @@ mock.module("../../app-client.js", () => ({
 		listPersonaScripts: () => Promise.resolve([]),
 		getScriptLinks: () => Promise.resolve([]),
 		setScriptLinks: () => Promise.resolve([]),
+		// RX-12: regex binding functions — same empty/no-op treatment so the
+		// field's regex group renders without the network.
+		listAllRegexPresets: () => Promise.resolve([]),
+		getRegexLinks: () => Promise.resolve([]),
+		setRegexLinks: () => Promise.resolve([]),
 }));
 
 // chat-store: spread the REAL module first (preserves every other export for
@@ -329,6 +337,37 @@ describe("CoauthorCharacterForm", () => {
 		expect(await findByText("coauthor.context.bound_scripts_caption")).toBeTruthy();
 	});
 
+	// ── E5: context block scrolls AWAY, editor fills the phone screen ────────
+
+	it("E5: mobile uses ONE page scroll — the context block rides it and the editor section can fill the screen", async () => {
+		useSnapshotStore.setState({
+			character: makeCharacter(),
+			activeChat: { id: TEST_CHAT } as never,
+		});
+		const { container, getByTestId } = render(<CoauthorCharacterForm />);
+		const block = getByTestId("coauthor-context-block");
+		// The context block must NOT own a scroll or a height cap (owner re-spec
+		// 2026-09-08: it scrolls away with the page — the original fix gave it a
+		// nested 40vh scroll, which pinned the block at half the phone screen).
+		expect(block.className).not.toContain("max-md:overflow");
+		expect(block.className).not.toContain("max-h-");
+		expect(block.className).not.toContain("overflow-y-auto"); // not even desktop — never a scroller
+		// ONE page scroll: the form root itself is the scrolling container on
+		// mobile (block flow — the flex column stays for desktop).
+		const root = container.firstElementChild as HTMLElement;
+		expect(root.className).toContain("max-md:overflow-y-auto");
+		expect(root.className).toContain("max-md:block");
+		// The editor section is at least a full screen tall, so once the context
+		// is scrolled past, the editor occupies the whole phone viewport; the
+		// editor box itself grows toward a full screen (min-height, never clips —
+		// the md bundle is auto-growing by design).
+		const pane = block.nextElementSibling as HTMLElement;
+		expect(pane.className).toContain("max-md:min-h-[100dvh]");
+		const host = pane.querySelector(".vibe-md-editor") as HTMLElement;
+		expect(host.className).toContain("max-md:min-h-[calc(100dvh-140px)]");
+		expect(host.style.minHeight).toBe(""); // inline min-height would beat the mobile class
+	});
+
 	// ── CA-11: reviewing state + Apply/Reject ──────────────────────────────────
 	// The turn store + chatId are what drive reviewing. The Apply RPC is
 	// intercepted via globalThis.fetch (NOT chat-api mock.module — that would
@@ -501,7 +540,7 @@ describe("CoauthorCharacterForm", () => {
 			loreBundle: {
 				lorebooks: [
 					{ id: "lb1", name: "World Lore", description: "", scopeType: "global", enabled: true },
-					{ id: "lb2", name: "Char Lore", description: "", scopeType: "character", enabled: true },
+					{ id: "lb2", name: "Char Lore", description: "", scopeType: "entity", enabled: true },
 				],
 				entries: [
 					{ id: "e1", lorebookId: "lb1", title: "Eldoria", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
@@ -605,10 +644,10 @@ describe("CoauthorCharacterForm", () => {
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
 		const { container } = render(<CoauthorCharacterForm />);
-		const boxes = container.querySelectorAll('input[type="checkbox"]');
+		const boxes = container.querySelectorAll('[role="checkbox"]');
 		// Two hunks (personality + scenario); greetings untouched → no greeting hunk.
 		expect(boxes.length).toBe(2);
-		expect([...boxes].every((b) => (b as HTMLInputElement).checked)).toBe(true); // all on (wholesale default)
+		expect([...boxes].every((b) => ariaChecked(b))).toBe(true); // all on (wholesale default)
 	});
 
 	it("CA-12: toggling a hunk off + Apply sends a PARTIAL request (rejected hunk reverts to canonical)", async () => {
@@ -628,12 +667,12 @@ describe("CoauthorCharacterForm", () => {
 		globalThis.fetch = fetchMock as never;
 
 		const { container, getByText } = render(<CoauthorCharacterForm />);
-		const boxes = container.querySelectorAll('input[type="checkbox"]');
+		const boxes = container.querySelectorAll('[role="checkbox"]');
 		expect(boxes.length).toBe(2);
 		// Deselect the FIRST hunk (personality) — keep the scenario hunk accepted.
 		fireEvent.click(boxes[0]!);
-		expect((boxes[0]! as HTMLInputElement).checked).toBe(false);
-		expect((boxes[1]! as HTMLInputElement).checked).toBe(true);
+		expect(ariaChecked(boxes[0]!)).toBe(false);
+		expect(ariaChecked(boxes[1]!)).toBe(true);
 
 		fireEvent.click(getByText("coauthor.review.apply"));
 
@@ -708,7 +747,7 @@ describe("CoauthorCharacterForm", () => {
 		const { container, getByText } = render(<CoauthorCharacterForm />);
 		// Reviewing entered; exactly one hunk (personality changed; scenario/examples match canonical).
 		expect(getByText("coauthor.review.state")).toBeTruthy();
-		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[role="checkbox"]')).toHaveLength(1);
 
 		fireEvent.click(getByText("coauthor.review.apply"));
 		await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(1); });
@@ -738,8 +777,8 @@ describe("CoauthorCharacterForm", () => {
 		const { container, getByText } = render(<CoauthorCharacterForm />);
 		// Click the "None" button (coauthor.review.select_none label).
 		fireEvent.click(getByText("coauthor.review.select_none"));
-		const boxes = container.querySelectorAll('input[type="checkbox"]');
-		expect([...boxes].every((b) => (b as HTMLInputElement).checked)).toBe(false);
+		const boxes = container.querySelectorAll('[role="checkbox"]');
+		expect([...boxes].every((b) => ariaChecked(b))).toBe(false);
 
 		fireEvent.click(getByText("coauthor.review.apply"));
 
@@ -813,7 +852,7 @@ describe("CoauthorCharacterForm", () => {
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "NEW personality."));
 		const { container, rerender } = render(<CoauthorCharacterForm />);
 		// v1 (OLD) vs proposed (NEW) → exactly 1 hunk (personality changed).
-		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[role="checkbox"]')).toHaveLength(1);
 
 		// Simulate a version folder-swap: SAME character id, NEW canonical content
 		// (description now equals the proposal). key={character.id} is unchanged →
@@ -825,6 +864,6 @@ describe("CoauthorCharacterForm", () => {
 
 		// v2 (NEW) vs proposed (NEW) → 0 hunks (no visible changes).
 		// BUG: the form/diff are stale → the old 1-hunk diff persists.
-		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+		expect(container.querySelectorAll('[role="checkbox"]')).toHaveLength(0);
 	});
 });

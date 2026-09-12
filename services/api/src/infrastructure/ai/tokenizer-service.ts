@@ -10,6 +10,7 @@
 import { join, resolve } from "node:path";
 import { getEncoding, type Tiktoken, type TiktokenEncoding } from "js-tiktoken";
 import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
+import { activeProviderTokenContext, readExactTokenCount } from "./token-count-cache.js";
 
 // ── cl100k_base fallback ─────────────────────────────────────────────────
 // Used when the model name doesn't match any known tokenizer family.
@@ -141,9 +142,21 @@ function resolveTokenizerFamily(model: string): TokenizerFamily {
 /**
  * Count tokens for a string. Synchronous (web-tokenizers are pre-loaded).
  * Falls back to byte estimation if no model or tokenizer fails.
+ *
+ * LS-1b: when a provider token context is in scope (set by the send/preview
+ * orchestrator via `runWithProviderTokenContext`), a cached backend-exact
+ * count wins; on a miss the local ladder below runs and a bounded background
+ * warm fetch is scheduled. See `token-count-cache.ts` for the mechanic.
  */
 export function countTokens(text: string, model?: string): number {
 	if (!text) return 0;
+
+	const providerCtx = activeProviderTokenContext();
+	if (providerCtx) {
+		const exact = readExactTokenCount(text, providerCtx);
+		if (exact !== null) return exact;
+		// Miss → local ladder below; the warm pass fills the cache for next turn.
+	}
 
 	// When no model is specified, use cl100k_base as a universal default.
 	// It's more accurate than byte estimation for all languages.

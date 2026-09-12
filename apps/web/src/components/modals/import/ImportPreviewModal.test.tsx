@@ -100,6 +100,12 @@ describe("ImportPreviewModal", () => {
     expect(view.queryByText("PREVIEW_BODY")).toBeNull();
   });
 
+  it("pins the glass-theme shell: the panel root carries glass-blur-under, not a translucent bg-surface fill (see-through regression in glass themes, owner report 2026-09-10)", () => {
+    const view = renderModal();
+    expect(document.body.querySelector(".glass-blur-under")).not.toBeNull();
+    expect(document.body.querySelector(".glass-blur-under.bg-surface")).toBeNull();
+  });
+
 	it("fires onClose when the header close button is clicked", async () => {
 		const view = renderModal();
 		await waitFor(() => expect(view.baseElement.textContent).toContain("Preview title"));

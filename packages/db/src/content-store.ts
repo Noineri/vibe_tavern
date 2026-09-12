@@ -180,6 +180,18 @@ export class ContentStore {
 	}
 
 	/**
+	 * TPE-18c: absolute path of a named leaf inside an entity folder, for
+	 * hosts that must hand the path to the OS (the narration-library reveal
+	 * spawns the platform file manager). Pure resolve, no I/O — containment
+	 * is still enforced by FileStore.safeResolve (absolute/drive-letter/..
+	 * segments throw), so callers validate ID segments first and this stays
+	 * the second gate, never the only one.
+	 */
+	entityLeafPath(folder: StorageFolder, entityId: string, leafName: string): string {
+		return this.resolveLeafPath(folder, entityId, leafName);
+	}
+
+	/**
 	 * Write a named entity file inside its folder:
 	 * data/{folder}/{entityId}/{name}.json. Atomic (tmp→rename). Returns hash.
 	 */

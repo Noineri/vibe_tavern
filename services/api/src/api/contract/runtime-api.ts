@@ -26,7 +26,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexProfile, RegexProfileLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
@@ -34,6 +34,13 @@ import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
 export type { SkillCatalogEntryDto };
+import type {
+  ServicePromptProfile,
+  ServicePromptProfileListResponse,
+  ServicePromptProfileDetailResponse,
+  CreateServicePromptProfileRequest,
+  UpdateServicePromptProfileRequest,
+} from "@vibe-tavern/api-contracts";
 import type {
 	ChatSummary,
 	FavoriteModel,
@@ -44,7 +51,7 @@ import type {
 } from "@vibe-tavern/db";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
-import type { RegenerateOverride, CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
@@ -139,13 +146,19 @@ export interface ChatRuntimeApi {
 	renameBranch: (chatId: string, branchId: string, label: string) => Promise<BranchMetaResponse>;
 
 	// Messages
-	sendMessage: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => Promise<MessageResponse>;
-	sendMessageStream: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+	sendMessage: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; prefill?: string }, signal?: AbortSignal) => Promise<MessageResponse>;
+	sendMessageStream: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; prefill?: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	regenerateMessage: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => Promise<MessageResponse>;
 	regenerateMessageStream: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+	/** LS-4a: continue the last assistant reply from its selected variant's text
+	 *  (the variant text rides as the pushed-assistant continuation point); the
+	 *  result appends as a NEW variant of the target message. */
+	continueMessage: (chatId: string, messageId: string, signal?: AbortSignal) => Promise<MessageResponse>;
+	continueMessageStream: (chatId: string, messageId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
 	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;
+	setVariantTtsAnnotation: (chatId: string, messageId: string, variantIndex: number, text: string | null) => Promise<VariantResponse>;
 	addEditorVariant: (chatId: string, messageId: string, body: {
 		readonly content: string;
 		readonly sourceVariantIds: readonly MessageVariantId[];
@@ -178,6 +191,7 @@ export interface ChatRuntimeApi {
 	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
 	updateChatSummaryRecord: (chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
 	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SummaryResponse }>;
+	reorderChatSummaries: (chatId: string, body: { orderedIds: string[] }) => Promise<ChatSummary[]>;
 	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean; temperature?: number; maxOutputTokens?: number; contextBudget?: number }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
 	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<ConfigPatchResponse>;
 	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
@@ -311,7 +325,7 @@ export interface LorebookRuntimeApi {
 	exportLorebook: (lorebookId: string) => Promise<Record<string, unknown>>;
 	getLorebookLinks: (lorebookId: string) => Promise<LorebookLink[]>;
 	setLorebookLinks: (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<LorebookLink[]>;
-	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => Promise<LorebookImportResult>;
+	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string; enabled?: boolean }) => Promise<LorebookImportResult>;
 
 	// Entries
 	createLoreEntry: (lorebookId: string, body: Record<string, unknown>) => Promise<LoreEntry>;
@@ -330,7 +344,7 @@ export interface ScriptRuntimeApi {
 	getScript: (scriptId: string) => Promise<Script | null>;
 	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }) => Promise<Script>;
-	setScriptScope: (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) => Promise<Script>;
+	setScriptScope: (scriptId: string, scopeType: 'global' | 'entity' | 'chat', ownerId: string | null) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
 	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
 	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
@@ -342,6 +356,88 @@ export interface ScriptRuntimeApi {
 	bindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
 	/** Unbind a visual (reassigns the silent default if it was the one removed). */
 	unbindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
+}
+
+// ─── Regex presets ───────────────────────────────────────────────────
+
+export interface RegexRuntimeApi {
+	listAllRegexPresets: () => Promise<RegexPreset[]>;
+	getRegexPreset: (id: string) => Promise<RegexPreset | null>;
+	createRegexPreset: (body: CreateRegexPresetInput) => Promise<RegexPreset>;
+	updateRegexPreset: (id: string, body: UpdateRegexPresetInput) => Promise<RegexPreset | null>;
+	deleteRegexPreset: (id: string) => Promise<void>;
+	getRegexLinks: (id: string) => Promise<RegexLink[]>;
+	setRegexLinks: (id: string, links: Array<{ targetType: "character" | "preset"; targetId: string }>) => Promise<RegexLink[]>;
+	resolveActiveRegex: (query: { characterId?: string; presetId?: string }) => Promise<RegexPreset[]>;
+	// R-13 regex profiles.
+	listAllRegexProfiles: () => Promise<RegexProfile[]>;
+	getRegexProfile: (id: string) => Promise<RegexProfile | null>;
+	createRegexProfile: (body: CreateRegexProfileInput) => Promise<RegexProfile>;
+	updateRegexProfile: (id: string, body: UpdateRegexProfileInput) => Promise<RegexProfile | null>;
+	deleteRegexProfile: (id: string, mode: "keep" | "cascade") => Promise<void>;
+	attachRegexRule: (profileId: string, ruleId: string) => Promise<RegexPreset | null>;
+	detachRegexRule: (ruleId: string) => Promise<RegexPreset | null>;
+	getRegexProfileLinks: (id: string) => Promise<RegexProfileLink[]>;
+	setRegexProfileLinks: (id: string, links: Array<{ targetType: "character" | "preset"; targetId: string }>) => Promise<RegexProfileLink[]>;
+	listRegexProfileMemberIds: (profileId: string) => Promise<string[]>;
+}
+
+// ─── TTS profiles (TTS_PLAN TS-6) ──────────────────────────────────────────
+
+export interface TtsRuntimeApi {
+	listTtsProfiles: () => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord[]>;
+	getTtsProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord | null>;
+	createTtsProfile: (body: import("@vibe-tavern/api-contracts").CreateTtsProfileInput) => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord>;
+	updateTtsProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateTtsProfileInput) => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord | null>;
+	deleteTtsProfile: (id: string) => Promise<void>;
+	setTtsDefault: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord | null>;
+	getDefaultTtsProfile: () => Promise<import("@vibe-tavern/api-contracts").ClientTtsProfileRecord | null>;
+	getTtsLinks: (id: string) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
+	setTtsLinks: (id: string, links: Array<{ targetType: import("@vibe-tavern/domain").TtsTargetType; targetId: string; mode?: import("@vibe-tavern/domain").TtsLinkMode }>) => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
+	listAllTtsLinks: () => Promise<import("@vibe-tavern/domain").TtsProfileLink[]>;
+	generateTtsSpeech: (body: import("@vibe-tavern/api-contracts").GenerateTtsInput, signal?: AbortSignal) => Promise<{ audio: Buffer; mime: string } | null>;
+	listTtsVoices: (profileId: string) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null>;
+	/** Transient voices lookup from an unsaved form config (no DB row). Throws
+	 *  KokoroClientSideError for the browser-only backend (route → 400).
+	 *  Response envelope: capabilities ride alongside voices — voices may be
+	 *  null (empty library / manual floor) while the backend still supports
+	 *  cloning (clone field design, 2026-08-31). */
+	draftListTtsVoices: (body: import("@vibe-tavern/api-contracts").DraftTtsVoicesInput) => Promise<{
+		voices: import("../../domain/tts/tts-backend.js").TtsVoiceInfo[] | null;
+		capabilities: import("../../domain/tts/tts-backend.js").TtsBackendCapabilities;
+	}>;
+	/** Transient voice clone from an unsaved form config: upload a reference
+	 *  sample, get the created voice back. Audio passes through memory only.
+	 *  Throws KokoroClientSideError (route → 400) and
+	 *  TtsCloneUnsupportedError when the backend lacks the capability (→ 400). */
+	cloneTtsVoiceDraft: (body: {
+		backend: import("@vibe-tavern/api-contracts").DraftTtsVoicesInput["backend"];
+		config: Record<string, unknown>;
+		profileId?: string;
+		name: string;
+		referenceAudio: Buffer;
+		mimeType: string;
+		/** Reference-audio transcript for providers that require it
+		 *  (SiliconFlow `text`); optional otherwise. */
+		referenceText?: string;
+	}) => Promise<import("../../domain/tts/tts-backend.js").TtsVoiceInfo>;
+	/** Transient one-shot synthesis from an unsaved form config. Throws
+	 *  KokoroClientSideError for the browser-only backend (route → 400). */
+	draftPreviewTts: (body: import("@vibe-tavern/api-contracts").DraftTtsPreviewInput) => Promise<{ audio: Buffer; mime: string }>;
+	draftListTtsModels: (body: import("@vibe-tavern/api-contracts").DraftTtsModelsInput) => Promise<import("../../domain/tts/tts-backend.js").TtsModelInfo[] | null>;
+	/** Honest docker-availability check for the local-server quickstart
+	 *  (D8): `docker --version` bounded by a timeout; never throws. */
+	probeLocalDocker: () => Promise<import("@vibe-tavern/api-contracts").LocalDockerStatus>;
+	discoverLocalTts: () => Promise<import("@vibe-tavern/domain").ProbeOutcome[]>;
+	/** TPE-18c: per-character narration library (one OGG per message).
+	 *  The key already encodes character/chat/branch/message/variant — no
+	 *  manifest, no DB table. Throws NarrationLibraryUnavailableError when
+	 *  no library service is wired (route → 501). */
+	saveNarrationFile: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey, audio: Buffer) => Promise<{ leaf: string }>;
+	getNarrationFile: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey) => Promise<{ audio: Buffer; mime: string } | null>;
+	narrationFileExists: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey) => Promise<boolean>;
+	deleteNarrationFile: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey) => Promise<{ deleted: boolean }>;
+	revealNarrationFile: (key: import("../../domain/tts/narration-library.js").NarrationLibraryKey) => Promise<{ argv: string[] }>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────
@@ -416,6 +512,7 @@ export interface AssetRuntimeApi {
 export interface AiAssistantRuntimeApi {
 	streamAiAssistant: (body: AiAssistantStreamRequest) => AsyncIterable<AiAssistantStreamChunk>;
 	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }>;
+	regexAssist: (body: import("@vibe-tavern/api-contracts").RegexAssistRequest) => Promise<import("@vibe-tavern/api-contracts").RegexAssistResponse>;
 }
 
 // ─── Settings ────────────────────────────────────────────────────────
@@ -863,6 +960,28 @@ export interface ExperienceCopilotRuntimeApi {
 	experienceCopilotCompact: (threadId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ExperienceCopilotCompactResult>;
 }
 
+/** Service-prompt profile CRUD (SERVICE_PROMPTS_PROFILES_PLAN, SP-6). The
+ *  built-in Default profile is READ-ONLY — update/delete reject it with a 403
+ *  at the route layer; the store itself silently refuses Default mutations. */
+export type ServicePromptUpdateResult =
+  | { status: "ok"; profile: ServicePromptProfile }
+  | { status: "not-found" }
+  | { status: "forbidden" };
+
+export type ServicePromptDeleteResult = { status: "ok" } | { status: "not-found" } | { status: "forbidden" };
+
+export type ServicePromptSetActiveResult = { status: "ok" } | { status: "not-found" };
+
+export interface ServicePromptRuntimeApi {
+  listServicePromptProfiles: () => Promise<ServicePromptProfileListResponse>;
+  getServicePromptProfile: (id: string) => Promise<ServicePromptProfileDetailResponse | null>;
+  createServicePromptProfile: (body: CreateServicePromptProfileRequest) => Promise<ServicePromptProfile>;
+  updateServicePromptProfile: (id: string, body: UpdateServicePromptProfileRequest) => Promise<ServicePromptUpdateResult>;
+  deleteServicePromptProfile: (id: string) => Promise<ServicePromptDeleteResult>;
+  setActiveServicePromptProfile: (profileId: string | null) => Promise<ServicePromptSetActiveResult>;
+  reorderServicePromptProfiles: (updates: Array<{ id: string; sortOrder: number }>) => Promise<ServicePromptProfileListResponse>;
+}
+
 /** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The
  *  built-in "Experience Authoring" seed (id "builtin") is READ-ONLY — update /
  *  delete reject it with a 400. */
@@ -874,13 +993,73 @@ export interface CopilotProfileRuntimeApi {
 	deleteCopilotProfile: (id: string) => Promise<void>;
 }
 
+/** Named sampler-set library CRUD (LOCAL_SUPPORT_PLAN LS-5b) — the small-resource
+ *  pattern (CopilotProfileRuntimeApi) with an import endpoint: the backend
+ *  sniffs VT-native vs ST TextGen shape and pre-maps the payload. Delete also
+ *  clears the deleted set's provider_profiles.sampler_set_id references
+ *  (LS-5e — plain column, no FK, app-level clearing). */
+export interface SamplerSetRuntimeApi {
+	listSamplerSets: () => Promise<import("@vibe-tavern/api-contracts").SamplerSetList>;
+	createSamplerSet: (input: import("@vibe-tavern/api-contracts").SamplerSetCreate) => Promise<import("@vibe-tavern/api-contracts").SamplerSet>;
+	updateSamplerSet: (id: string, input: import("@vibe-tavern/api-contracts").SamplerSetUpdate) => Promise<import("@vibe-tavern/api-contracts").SamplerSet>;
+	deleteSamplerSet: (id: string) => Promise<void>;
+	/** Point import (upload button): name + RAW parsed JSON (VT-native set JSON
+	 *  or an ST TextGen Settings file). Returns the created set + the import
+	 *  notes from the ST mapping (skipped fields). Throws Validation (400) when
+	 *  the raw shape is neither VT-native nor ST TextGen. */
+	importSamplerSet: (input: import("@vibe-tavern/api-contracts").SamplerSetImport) => Promise<{ set: import("@vibe-tavern/api-contracts").SamplerSet; notes: string[] }>;
+}
+
+/** Named custom format templates (LOCAL_SUPPORT_PLAN LS-10) — the small-resource
+ *  CRUD pattern (SamplerSetRuntimeApi minus the import endpoint; ST instruct
+ *  import lands through the pane's own file picker, not a raw-JSON route). */
+export interface FormatTemplateRuntimeApi {
+	listFormatTemplates: () => Promise<import("@vibe-tavern/api-contracts").FormatTemplateList>;
+	createFormatTemplate: (input: import("@vibe-tavern/api-contracts").FormatTemplateCreate) => Promise<import("@vibe-tavern/api-contracts").FormatTemplate>;
+	updateFormatTemplate: (id: string, input: import("@vibe-tavern/api-contracts").FormatTemplateUpdate) => Promise<import("@vibe-tavern/api-contracts").FormatTemplate>;
+	deleteFormatTemplate: (id: string) => Promise<void>;
+}
+
+export interface SttRuntimeApi {
+	listSttProfiles: () => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord[]>;
+	getSttProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
+	createSttProfile: (body: import("@vibe-tavern/api-contracts").CreateSttProfileInput) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord>;
+	updateSttProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateSttProfileInput) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
+	deleteSttProfile: (id: string) => Promise<void>;
+	setSttDefault: (id: string) => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
+	getDefaultSttProfile: () => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord | null>;
+	/** Transcribe one audio payload with a saved profile. Returns null for an
+	 *  unknown profile; throws SttClientSideError for the in-browser backend
+	 *  (route → 400). The transcription config (own key, then endpoint
+	 *  auto-match over provider AND TTS profiles) resolves server-side — the
+	 *  secret never crosses the boundary. */
+	transcribeSttAudio: (
+		profileId: string,
+		audio: { buffer: Buffer; mimeType: string; fileName: string },
+		language?: string,
+	) => Promise<{ text: string; language?: string; annotation?: string } | null>;
+	/** Local STT server discovery routed through the API process (ST-8) —
+	 *  never throws; each port's failure mode is a ProbeOutcome. */
+	discoverLocalStt: () => Promise<import("@vibe-tavern/domain").ProbeOutcome[]>;
+	/** Live STT model discovery over the TRANSIENT draft config (P8 — the
+	 *  twin of `draftListTtsModels`): the form's current config plus optional
+	 *  `profileId` for stored-key resolution. Null = the backend exposes no
+	 *  model list (whisper-browser is a fixed local roster — the route maps
+	 *  null to a clean 400). */
+	draftListSttModels: (body: import("@vibe-tavern/api-contracts").DraftSttModelsInput) => Promise<import("@vibe-tavern/api-contracts").SttModelInfoValue[] | null>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
+	servicePrompts: ServicePromptRuntimeApi;
 	chat: ChatRuntimeApi;
 	character: CharacterRuntimeApi & CharacterAssetRuntimeApi;
 	persona: PersonaRuntimeApi;
 	lorebook: LorebookRuntimeApi;
 	script: ScriptRuntimeApi;
+	regex: RegexRuntimeApi;
+	tts: TtsRuntimeApi;
+	stt: SttRuntimeApi;
 	provider: ProviderRuntimeApi;
 	proxy: ProxyRuntimeApi;
 	preset: PresetRuntimeApi;
@@ -897,4 +1076,6 @@ export interface RuntimeApi {
 	experience: ExperienceRuntimeApi;
 	experienceCopilot: ExperienceCopilotRuntimeApi;
 	copilotProfiles: CopilotProfileRuntimeApi;
+	samplerSets: SamplerSetRuntimeApi;
+	formatTemplates: FormatTemplateRuntimeApi;
 }

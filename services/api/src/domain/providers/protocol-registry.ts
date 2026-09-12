@@ -20,8 +20,11 @@
  * edit.
  *
  * Refactor plan: `CODE_REVIEW_REFACTOR_PLAN.md` §5.3.2 (registry) and §5.3.3
- * (the request-mode / `textCompletion` axis — the field is present now, default
- * false; Novel Mode flips it per protocol when text-completion wiring lands).
+ * (the request-mode / `textCompletion` axis — LOCAL_SUPPORT_PLAN LS-2 landed
+ * it: the openai-compat-backed protocols (openai_compat, llamacpp) resolve a
+ * raw completion model when the profile's `generationMode` is "completion";
+ * LS-3 added the `backendTemplate` axis — llama-server offloads the model's
+ * own Jinja template via /apply-template for TC-mode AUTO generation format).
  *
  * NOTE: providers/ imports nothing from ai/. The generation pipeline (ai/)
  * depends on providers/ one-way. Do not invert this.

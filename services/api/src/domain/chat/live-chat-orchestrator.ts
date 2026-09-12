@@ -13,6 +13,20 @@ import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-ta
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
+import { effectiveContextBudget, normalizeProviderType } from "@vibe-tavern/domain";
+import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
+import { resolveProtocol } from "../providers/protocol-registry.js";
+import { validation } from "../../shared/errors.js";
+
+/** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
+export interface RegexHookContext {
+  chatId: string;
+  /** Which hook is firing. */
+  hook: "USER_INPUT" | "AI_OUTPUT" | "REASONING";
+}
+
+/** Text transformer invoked at one hook point. May be async — the live wiring (RegexHookService) resolves active presets from the DB per fire, so every call site awaits it. */
+export type RegexTextHook = (text: string, ctx: RegexHookContext) => string | Promise<string>;
 
 /**
  * Coordinates the prepare → execute → append cycle for all AI generation paths:
@@ -33,7 +47,64 @@ export class LiveChatOrchestrator {
     private readonly resolveStrategy: (chatId: string) => Promise<ChatModeStrategy>,
     /** Join the preceding forward-state job before any new prompt is built. */
     private readonly waitForForwardState?: (chatId: string, signal?: AbortSignal) => Promise<void>,
+    /** RX-5/RX-8/RX-10: regex transformation seam (`RegexHookService.createHooks()`). Absent ⇒ every hook is the identity — byte-for-byte current behavior. Only persist-mode presets transform here; display/prompt-only modes are Wave 3 seams. */
+    private readonly regexHooks?: { onUserInput: RegexTextHook; onAiOutput: RegexTextHook; onReasoning: RegexTextHook },
+    /** Executor injection seam (mock-free test boundary; `deps.streamTextImpl`
+     *  precedent from regex-assist). Absent ⇒ the real infrastructure
+     *  executors run — production behavior byte-for-byte. Tests pass stubs of
+     *  the executor type here instead of `mock.module()` patching, which is
+     *  process-global under bun:test (AGENTS.md tier policy). */
+    private readonly executors?: {
+      nonstreaming: typeof nonstreamingProviderExecute;
+      stream: typeof streamProviderExecutor;
+    },
   ) {}
+
+  /** Executor seam accessors: injected stub (tests) or the real module fn. */
+  private get executeNonstreaming(): typeof nonstreamingProviderExecute {
+    return this.executors?.nonstreaming ?? nonstreamingProviderExecute;
+  }
+
+  /** Executor seam accessor — see {@link executors}. */
+  private get executeStream(): typeof streamProviderExecutor {
+    return this.executors?.stream ?? streamProviderExecutor;
+  }
+
+  /** RX-8/RX-10 regex seam: runs `text` through the injected hook (persist-mode presets only), or returns it unchanged when none is present. */
+  private async applyRegexLayer(hook: "USER_INPUT" | "AI_OUTPUT" | "REASONING", chatId: string, text: string): Promise<string> {
+    if (!this.regexHooks) return text;
+    if (hook === "REASONING") {
+      return await this.regexHooks.onReasoning(text, { chatId, hook });
+    }
+    return hook === "USER_INPUT"
+      ? await this.regexHooks.onUserInput(text, { chatId, hook })
+      : await this.regexHooks.onAiOutput(text, { chatId, hook });
+  }
+
+  /**
+   * LS-4 prefill capability gate: prefill only rides when the resolved
+   * protocol actually supports it (`capabilities.prefill`, the same gate
+   * `prepareSdkMessages` uses to decide whether to PUSH the assistant
+   * message). Without this, a prefill from a capability-less provider would
+   * never reach the model — yet `ensurePrefillInResponse` would still PREPEND
+   * it to the stored reply, silently corrupting the variant with text the
+   * model never wrote. Dropping the prefill here keeps the echo seam
+   * symmetric on every generation path.
+   */
+  private resolveEffectivePrefill(profile: StoredProviderProfileRecord, candidate: string | undefined): string | undefined {
+    if (candidate === undefined) return undefined;
+    if (!resolveProtocol(normalizeProviderType(profile.providerPreset)).capabilities.prefill) return undefined;
+    return candidate;
+  }
+
+  /** LS-4a: Continue is a PREFILL of the existing text — refuse instead of
+   *  silently generating a fresh reply that would masquerade as a
+   *  continuation variant. */
+  private requirePrefillCapability(profile: StoredProviderProfileRecord): void {
+    if (!resolveProtocol(normalizeProviderType(profile.providerPreset)).capabilities.prefill) {
+      throw validation("The active provider does not support assistant prefill, which continuing a reply requires.");
+    }
+  }
 
   // ─── Non-streaming methods ────────────────────────────────────────────
 
@@ -48,6 +119,8 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
+    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"];
     /** DICE-B11: optional commit intent threaded into `prepareLiveTurn` so the
      *  user-message insert and pending-lane bind share one atomic transaction.
      *  Absent ⇒ no-Dice send behavior (byte-for-byte current path). */
@@ -65,7 +138,11 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
+    // RX-8 regex seam: USER_INPUT transform (persist-mode presets only).
+    const transformedContent = await this.applyRegexLayer("USER_INPUT", input.chatId, input.content);
+    const prepared = await this.withTokenContext(provider, () =>
+      this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
+    );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
@@ -74,7 +151,9 @@ export class LiveChatOrchestrator {
     });
     const startedAt = Date.now();
     logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
-    const prefill = prepared.prompt.prefill ?? undefined;
+    // LS-4: the per-send override (input.prefill) wins over the preset value;
+    // both are dropped on protocols without the prefill capability.
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
     let reply: string;
     let reasoning: string | undefined;
     let toolCalls: ExtractedToolCall[] | undefined;
@@ -82,7 +161,7 @@ export class LiveChatOrchestrator {
     try {
       // Non-streaming path: generateText() awaits the full reply, returned as JSON.
       // The streaming equivalent (SSE text/reasoning deltas) lives in sendMessageStream() / startStream().
-      const result = await nonstreamingProviderExecute({
+      const result = await this.executeNonstreaming({
         profile: provider.profile,
         model: provider.model,
         transport: input.transport,
@@ -95,6 +174,7 @@ export class LiveChatOrchestrator {
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
         visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
+        voiceTranscriber: input.voiceTranscriber,
         onAttachmentDescriptions: (prepared.userMessage && input.attachments?.length)
           ? async (descriptions) => {
               await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
@@ -118,6 +198,10 @@ export class LiveChatOrchestrator {
     const { mainContent: sendText, reasoning: sendReasoning } = extractThinkingTags(reply, reasoning);
     reply = sendText;
     reasoning = sendReasoning;
+    // RX-8 regex seam: AI_OUTPUT transform (persist-mode presets, main content only). The variant is created already-transformed — no post-append rewrite, so no variant race by construction.
+    reply = await this.applyRegexLayer("AI_OUTPUT", input.chatId, reply);
+    // RX-10 regex seam: REASONING transform (persist-mode presets, reasoning only; guarded so undefined/empty never fires the hook).
+    if (reasoning) reasoning = await this.applyRegexLayer("REASONING", input.chatId, reasoning);
 
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
@@ -153,19 +237,21 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply.start", { chatId: input.chatId, model: provider.model });
-    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      model: provider.model,
-      contextBudget: provider.profile.contextBudget,
-      responseReserve: provider.profile.maxTokens,
-    });
-    const prefill = prompt.prefill ?? undefined;
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+      }),
+    );
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const startedAt = Date.now();
     let reply: string;
     let reasoning: string | undefined;
     let toolCalls: ExtractedToolCall[] | undefined;
     let toolResults: ExtractedToolResult[] | undefined;
     try {
-      const result = await nonstreamingProviderExecute({
+      const result = await this.executeNonstreaming({
         profile: provider.profile,
         model: provider.model,
         transport: input.transport,
@@ -192,6 +278,8 @@ export class LiveChatOrchestrator {
     const { mainContent: genText, reasoning: genReasoning } = extractThinkingTags(reply, reasoning);
     reply = genText;
     reasoning = genReasoning;
+    // RX-10 regex seam: REASONING transform (persist-mode presets, reasoning only; guarded so undefined/empty never fires the hook).
+    if (reasoning) reasoning = await this.applyRegexLayer("REASONING", input.chatId, reasoning);
 
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.generateReply.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
@@ -233,19 +321,22 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
-    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      excludeMessageId: brandId<MessageId>(input.messageId),
-      model: provider.model,
-      contextBudget: provider.profile.contextBudget,
-      responseReserve: provider.profile.maxTokens,
-      presetId: input.presetId,
-    });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        excludeMessageId: brandId<MessageId>(input.messageId),
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+        presetId: input.presetId,
+      }),
+    );
     logSendDebug("live.regenerate.prompt.ready", {
       chatId: input.chatId,
       messageId: input.messageId,
       promptMessageCount: countPromptMessages(prompt),
     });
-    const prefill = prompt.prefill ?? undefined;
+    // LS-4 capability gate: drop the preset prefill on non-capable protocols.
+    const prefill = this.resolveEffectivePrefill(provider.profile, prompt.prefill ?? undefined);
     const startedAt = Date.now();
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     let reply: string;
@@ -253,7 +344,7 @@ export class LiveChatOrchestrator {
     let toolCalls: ExtractedToolCall[] | undefined;
     let toolResults: ExtractedToolResult[] | undefined;
     try {
-      const result = await nonstreamingProviderExecute({
+      const result = await this.executeNonstreaming({
         profile: provider.profile,
         model: provider.model,
         transport: input.transport,
@@ -280,6 +371,8 @@ export class LiveChatOrchestrator {
     const { mainContent: regenText, reasoning: regenReasoning } = extractThinkingTags(reply, reasoning);
     reply = regenText;
     reasoning = regenReasoning;
+    // RX-10 regex seam: REASONING transform (persist-mode presets, reasoning only; guarded so undefined/empty never fires the hook).
+    if (reasoning) reasoning = await this.applyRegexLayer("REASONING", input.chatId, reasoning);
 
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.regenerate.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
@@ -312,6 +405,8 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
+    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"];
     /** DICE-B11: optional commit intent threaded into `prepareLiveTurn`. See sendMessage. */
     diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
     /** IR-51: optional experience attachment commit intent. See sendMessage. */
@@ -319,9 +414,13 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
+    // RX-8 regex seam: USER_INPUT transform (persist-mode presets only).
+    const transformedContent = await this.applyRegexLayer("USER_INPUT", input.chatId, input.content);
+    const prepared = await this.withTokenContext(provider, () =>
+      this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
+    );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
-    const prefill = prepared.prompt.prefill ?? undefined;
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
       ? async (descriptions: Array<{ attachmentId: string; description: string }>) => {
           await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
@@ -384,12 +483,16 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: provider.model });
-    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      model: provider.model,
-      contextBudget: provider.profile.contextBudget,
-      responseReserve: provider.profile.maxTokens,
-    });
-    const prefill = prompt.prefill ?? undefined;
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+      }),
+    );
+    // Resolved again here for drainStream's echo seam; startStream applies the
+    // same gate to the executor input (LS-4).
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
@@ -450,14 +553,18 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.regenerate-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
-    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      excludeMessageId: brandId<MessageId>(input.messageId),
-      model: provider.model,
-      contextBudget: provider.profile.contextBudget,
-      responseReserve: provider.profile.maxTokens,
-      presetId: input.presetId,
-    });
-    const prefill = prompt.prefill ?? undefined;
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        excludeMessageId: brandId<MessageId>(input.messageId),
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+        presetId: input.presetId,
+      }),
+    );
+    // Resolved again here for drainStream's echo seam; startStream applies the
+    // same gate to the executor input (LS-4).
+    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
@@ -507,6 +614,159 @@ export class LiveChatOrchestrator {
     });
   }
 
+  /** Non-streaming continue (LS-4a): the target assistant variant's text IS
+   *  the continuation point. The prompt excludes the target message (so the
+   *  variant text is not in the history twice) and the variant text rides as
+   *  the executor prefill — `prepareSdkMessages` pushes it as the trailing
+   *  assistant message (the LS-2/LS-3 continuation-point seam: the TC
+   *  completion renderer treats a trailing assistant as the continuation,
+   *  chat-capable providers continue the pushed turn). The reply (echo
+   *  asymmetry handled by `ensurePrefillInResponse`) APPENDS as a NEW variant
+   *  of the target message — the same fork regenerate uses. */
+  async continueMessage(input: {
+    chatId: string;
+    messageId: string;
+    /** The selected variant's text — resolved server-side by the adapter. */
+    continuationText: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+    transport?: CoauthorTransport;
+    signal?: AbortSignal;
+  }): Promise<{
+    promptMessageCount: number;
+    reply: string;
+    snapshot: MessageResponse;
+  }> {
+    const provider = await this.resolveProvider(input);
+    this.requirePrefillCapability(provider.profile);
+    logSendDebug("live.continue.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        excludeMessageId: brandId<MessageId>(input.messageId),
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+      }),
+    );
+    const prefill = input.continuationText;
+    // Trace honesty: the pending draft's `prefill` records what actually rode
+    // as the pushed assistant message — the continuation text, not the preset.
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { prefill });
+    const startedAt = Date.now();
+    let reply: string;
+    let reasoning: string | undefined;
+    try {
+      const result = await this.executeNonstreaming({
+        profile: provider.profile,
+        model: provider.model,
+        transport: input.transport,
+        prompt,
+        signal: input.signal,
+        prefill,
+        tools: prompt.tools,
+        maxSteps: prompt.maxSteps,
+      });
+      reply = ensurePrefillInResponse(result.text, prefill);
+      reasoning = result.reasoning;
+      this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+        ...(result.sentConfig ? { sentConfig: result.sentConfig } : {}),
+        providerResponse: result.providerResponse,
+      });
+    } catch (err) {
+      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      throw err;
+    }
+
+    // Extract thinking tags from content (some models embed <thinking> in text)
+    const { mainContent: contText, reasoning: contReasoning } = extractThinkingTags(reply, reasoning);
+    reply = contText;
+    reasoning = contReasoning;
+    // RX-10 regex seam: REASONING transform (persist-mode presets, reasoning only; guarded so undefined/empty never fires the hook).
+    if (reasoning) reasoning = await this.applyRegexLayer("REASONING", input.chatId, reasoning);
+
+    const latencyMs = Date.now() - startedAt;
+    logSendDebug("live.continue.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
+    // RX-8 regex seam: AI_OUTPUT transform (persist-mode presets, main content only). The variant is created already-transformed.
+    reply = await this.applyRegexLayer("AI_OUTPUT", input.chatId, reply);
+    const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+      content: reply,
+      latencyMs,
+      reasoning,
+    });
+    logSendDebug("live.continue.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
+
+    return {
+      promptMessageCount: countPromptMessages(prompt),
+      reply,
+      snapshot,
+    };
+  }
+
+  /** Streaming continue (LS-4a): same seam as {@link continueMessage} — the
+   *  variant text rides as the executor prefill; deltas stream the raw
+   *  continuation (the same echo asymmetry the preset-prefill send path
+   *  shows), and the full text appends as a new variant on finalize. */
+  async *continueMessageStream(input: {
+    chatId: string;
+    messageId: string;
+    continuationText: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+    transport?: CoauthorTransport;
+    signal?: AbortSignal;
+  }): AsyncGenerator<{ event: string; data: string }> {
+    const provider = await this.resolveProvider(input);
+    this.requirePrefillCapability(provider.profile);
+    logSendDebug("live.continue-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
+    const prompt = await this.withTokenContext(provider, () =>
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+        excludeMessageId: brandId<MessageId>(input.messageId),
+        model: provider.model,
+        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
+        responseReserve: provider.profile.maxTokens,
+      }),
+    );
+    const prefill = input.continuationText;
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { prefill });
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, prefill, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+      ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
+      providerResponse: streamResult.providerResponse,
+    });
+
+    yield* this.drainStream({
+      chatId: input.chatId,
+      streamResult,
+      signal: input.signal,
+      startedAt,
+      debugLabel: "live.continue-stream",
+      omitMessageCountInFinish: true,
+      prefill,
+      onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+        if (text) {
+          await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+            content: text,
+            latencyMs,
+            reasoning: reasoning || undefined,
+            reasoningDurationMs,
+          });
+        }
+      },
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
+        const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+          content: text,
+          latencyMs,
+          reasoning,
+          reasoningDurationMs,
+          toolCalls,
+          toolResults,
+        });
+        logSendDebug("live.continue-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
+        return snapshot;
+      },
+    });
+  }
+
   // ─── Shared streaming helpers ─────────────────────────────────────────
 
   /**
@@ -534,6 +794,24 @@ export class LiveChatOrchestrator {
     });
   }
 
+  /**
+   * LS-1c: run a prompt-assembly-scoped operation with the send profile's
+   * token context in scope (LOCAL_SUPPORT_PLAN). While in scope, every
+   * `countTokens` inside reads the provider-exact LRU (`token-count-cache.ts`)
+   * and schedules bounded background warm fetches on misses — the assembly
+   * itself never awaits a tokenize round-trip. Null context (cloud protocols,
+   * unresolved model) → pure local ladder, byte-identical behavior.
+   */
+  private withTokenContext<T>(
+    provider: { profile: StoredProviderProfileRecord; model: string },
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return runWithProviderTokenContext(
+      providerTokenContextFromProfile(provider.profile, provider.model),
+      fn,
+    );
+  }
+
   private notifyAssistantAppended(chatId: string, branchId: ChatBranchId, messageId: MessageId): void {
     this.events.emit("message.appended", { chatId, branchId, messageId, role: "assistant" });
     // Delegate mode-specific post-append work (no-op for RP/coauthor; future
@@ -544,24 +822,28 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; transport?: CoauthorTransport; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; transport?: CoauthorTransport; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
+    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"]; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
     try {
-      const streamResult = await streamProviderExecutor({
+      const streamResult = await this.executeStream({
         profile: input.profile,
         model: input.model,
         transport: input.transport,
         prompt,
         signal: input.signal,
-        prefill: input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined,
+        // LS-4 capability gate: same rule as the non-stream paths.
+        prefill: this.resolveEffectivePrefill(input.profile, input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined),
         tools: input.tools,
         maxSteps: input.maxSteps,
         cachedModels: input.visionAssets?.cachedModels,
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
         visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
+        voiceTranscriber: input.voiceTranscriber,
         onAttachmentDescriptions: input.onAttachmentDescriptions,
       });
       return { streamResult, startedAt };
@@ -738,12 +1020,18 @@ export class LiveChatOrchestrator {
     // Some providers return <thinking> tags in content instead of reasoning_content
     const textWithPrefill = ensurePrefillInResponse(rawText, prefill);
     const { mainContent: finalText, reasoning: finalReasoning } = extractThinkingTags(textWithPrefill, rawReasoning);
+    // RX-8 regex seam: AI_OUTPUT transform (persist-mode presets, main content only) — covers ALL stream paths funneling through drainStream. Deltas stream raw (ST parity); only the final stored text is transformed.
+    const transformedFinalText = await this.applyRegexLayer("AI_OUTPUT", input.chatId, finalText);
+    // RX-10 regex seam: REASONING transform (persist-mode presets, reasoning only) — same single choke point for every stream path; guarded so undefined/empty never fires the hook.
+    const transformedFinalReasoning = finalReasoning
+      ? await this.applyRegexLayer("REASONING", input.chatId, finalReasoning)
+      : finalReasoning;
 
     if (reasoningStartMs && reasoningDurationMs === null) {
       reasoningDurationMs = Date.now() - reasoningStartMs;
     }
 
-    const snapshot = await onFinal(finalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs, extractedToolCalls.length > 0 ? extractedToolCalls : undefined, extractedToolResults.length > 0 ? extractedToolResults : undefined);
+    const snapshot = await onFinal(transformedFinalText, transformedFinalReasoning, reasoningDurationMs ?? undefined, latencyMs, extractedToolCalls.length > 0 ? extractedToolCalls : undefined, extractedToolResults.length > 0 ? extractedToolResults : undefined);
 
     // ── Yield reasoning-done + finish ──
     if (reasoningAccumulator || streamResult.hasRedactedReasoning) {

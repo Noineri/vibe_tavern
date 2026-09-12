@@ -21,6 +21,7 @@ const STABLE_CONTROLLER = {
   handleDeleteMessage: NOOP_ASYNC,
   handleDeleteVariant: NOOP_ASYNC,
   handleRegenerateMessage: NOOP_ASYNC,
+  handleContinueMessage: NOOP_ASYNC,
   handleSelectMessageVariant: NOOP_ASYNC,
   handleResend: NOOP_ASYNC,
   handleFork: NOOP_ASYNC,
@@ -31,6 +32,7 @@ const STABLE_CONTROLLER = {
 
 const realChatController = await import("../../hooks/use-chat-controller.js");
 const realI18nContext = await import("../../i18n/context.js");
+const realTooltip = await import("../shared/Tooltip.js");
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
   useChatController: () => STABLE_CONTROLLER,
@@ -39,6 +41,16 @@ mock.module("../../hooks/use-chat-controller.js", () => ({
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
+}));
+
+// LS-4a: the Continue button renders a Radix CustomTooltip; this suite renders
+// MessageBlock without a TooltipProvider, so the tooltip is shimmed to a
+// passthrough (same pattern as message-ai-editor-controls.test.tsx). The
+// asserted boundary — which row actions exist per mode — is unchanged.
+mock.module("../shared/Tooltip.js", () => ({
+  ...realTooltip,
+  CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 const { useSnapshotStore } = await import("../../stores/snapshot-store.js");

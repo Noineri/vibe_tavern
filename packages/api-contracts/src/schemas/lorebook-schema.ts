@@ -15,6 +15,7 @@ export const createLorebookSchema = z.object({
   tokenBudget: z.number().optional().default(2048),
   tokenBudgetPercent: z.number().int().min(0).max(100).nullable().optional().default(null),
   recursiveScanning: z.boolean().optional().default(false),
+  useGroupScoring: z.boolean().optional().default(false),
   maxRecursionSteps: z.number().optional().default(5),
   includeNames: z.boolean().optional().default(false),
   minActivations: z.number().optional().default(0),
@@ -31,6 +32,7 @@ export const updateLorebookMetaSchema = z.object({
   tokenBudget: z.number().optional(),
   tokenBudgetPercent: z.number().int().min(0).max(100).nullable().optional(),
   recursiveScanning: z.boolean().optional(),
+  useGroupScoring: z.boolean().optional(),
   maxRecursionSteps: z.number().optional(),
   includeNames: z.boolean().optional(),
   minActivations: z.number().optional(),
@@ -63,6 +65,7 @@ const loreEntryCoreSchema = z.object({
   groupName: z.string().optional().default(""),
   groupWeight: z.number().optional().default(1),
   prioritizeInclusion: z.boolean().optional().default(false),
+  useGroupScoring: z.boolean().nullable().optional().default(null),
   excludeRecursion: z.boolean().optional().default(false),
   preventRecursion: z.boolean().optional().default(false),
   delayUntilRecursion: z.boolean().optional().default(false),
@@ -99,6 +102,7 @@ const loreEntryUpdateSchema = z.object({
   groupName: z.string().optional(),
   groupWeight: z.number().optional(),
   prioritizeInclusion: z.boolean().optional(),
+  useGroupScoring: z.boolean().nullable().optional(),
   excludeRecursion: z.boolean().optional(),
   preventRecursion: z.boolean().optional(),
   delayUntilRecursion: z.boolean().optional(),
@@ -134,11 +138,15 @@ export const importLorebookSchema = z.object({
   // `data?: unknown` this schema has always produced.
   data: z.unknown().optional(),
   mode: z.enum(["merge", "replace", "new"]).optional().default("new"),
-  scopeType: z.string().optional().default("character"),
+  scopeType: z.string().optional().default("entity"),
   characterId: z.string().optional(),
   personaId: z.string().optional(),
   chatId: z.string().optional(),
   fallbackName: z.string().optional(),
+  // Activation state for newly created books (L1 disabled-on-arrival).
+  // Absent → the store default (enabled). Merge/replace into an existing
+  // book ignore it — only the mode:"new" creation path consumes it.
+  enabled: z.boolean().optional(),
 });
 
 // ─── Link management ─────────────────────────────────────────────────────────

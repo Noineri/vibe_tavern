@@ -98,7 +98,7 @@ export function RichChatRow({
       >
         {renaming ? (
           <SidebarChatRename
-            className="mb-px w-full rounded border border-accent bg-bg px-[5px] py-[2px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none"
+            className="mb-px"
             initialValue={chatItem.title}
             onCommit={(title) => { void character.handleRenameChat(chatItem.id, title); setRenaming(false); }}
             onCancel={() => setRenaming(false)}

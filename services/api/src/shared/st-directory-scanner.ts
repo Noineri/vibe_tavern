@@ -17,6 +17,11 @@ import {
 	parseStPreset,
 	parseStPersonas,
 	parseSillyTavernChat,
+	parseStInstruct,
+	parseStContext,
+	parseStSysprompt,
+	parseStTextgen,
+	detectStFileKind,
 	stBlockToCanvasEntry,
 	synthesizeCanvasEntry,
 } from "@vibe-tavern/import-export";
@@ -27,13 +32,30 @@ import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { CharacterId, ChatId, CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────
+
+/** The three ST format/library folders (LOCAL_SUPPORT_PLAN LS-3e storage map,
+ *  kinds 3/4/5). `TextGen Settings/` is NOT here — its sampler-set import is
+ *  this scanner's OWN phase (LOCAL_SUPPORT_PLAN LS-5g), scanned below with the
+ *  same optional-glob pattern. */
+const FORMAT_FOLDERS: Array<[folder: string, kind: "instruct" | "context" | "sysprompt"]> = [
+	["instruct", "instruct"],
+	["context", "context"],
+	["sysprompt", "sysprompt"],
+];
 
 export interface StDirectoryScanResult {
 	characters: StScannedCharacter[];
 	chats: StScannedChat[];
 	lorebooks: StScannedLorebook[];
 	presets: StScannedPreset[];
+	/** ST format/library files (LOCAL_SUPPORT_PLAN LS-3e): instruct/*.json,
+	 *  context/*.json, sysprompt/*.json — the storage map's kinds 3/4/5. */
+	formats: StScannedFormat[];
+	/** ST TextGen Settings/*.json → named sampler sets (LOCAL_SUPPORT_PLAN LS-5g):
+	 *  only files with ST TextGen shape (isStTextgenShape) count; other JSON in
+	 *  the folder is skipped silently, like the OpenAI Settings scan above. */
+	samplerSets: StScannedSamplerSet[];
 	persona: StScannedPersona | null;
 	errors: StScanError[];
 }
@@ -68,6 +90,27 @@ export interface StScannedPreset {
 	imported: boolean;
 }
 
+/** A scanned ST format/library file (LS-3e storage map kinds 3/4/5). */
+export interface StScannedFormat {
+	fileName: string;
+	name: string;
+	kind: "instruct" | "context" | "sysprompt";
+	imported: boolean;
+	/** Partial-mapping notes (context) / not-applied warnings (instruct stops
+	 *  in mass import — no provider profile context to write them to). */
+	warnings: string[];
+}
+
+/** A scanned ST TextGen Settings file (LS-5g): imports as a named sampler set. */
+export interface StScannedSamplerSet {
+	fileName: string;
+	name: string;
+	imported: boolean;
+	/** Skipped-with-note fields from the ST mapping (sampler_order, banned_tokens,
+	 *  grammar_string, json_schema) — surfaced to the user, never silent. */
+	warnings: string[];
+}
+
 export interface StScannedPersona {
 	/** Number of persona entries detected in settings.json. */
 	count: number;
@@ -100,6 +143,8 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 		chats: [],
 		lorebooks: [],
 		presets: [],
+		formats: [],
+		samplerSets: [],
 		persona: null,
 		errors: [],
 	};
@@ -209,6 +254,77 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 		}
 	}
 
+	// ── Scan the three format/library folders (LS-3e storage map) ──
+	// instruct/ + context/ + sysprompt/. Only files whose SHAPE matches the
+	// storage map count (detectStFileKind); other JSON in those folders is
+	// skipped silently, like the OpenAI Settings scan above.
+	for (const [folder, kind] of FORMAT_FOLDERS) {
+		const dir = join(resolved, folder);
+		const files = await scanOptionalGlob(dir, "*.[jJ][sS][oO][nN]");
+		for (const relativePath of files) {
+			const fileName = basename(relativePath);
+			const filePath = join(dir, relativePath);
+			try {
+				const text = await Bun.file(filePath).text();
+				const parsed: unknown = JSON.parse(text);
+				const detected = detectStFileKind(parsed);
+				if (detected !== kind) continue;
+				const raw = parsed as Record<string, unknown>;
+				const name = (typeof raw.name === "string" && raw.name) || basename(fileName, ".json");
+				const warnings: string[] = [];
+				if (kind === "instruct") {
+					const parsedInstruct = parseStInstruct(text);
+					if (parsedInstruct.stopSequences.length > 0) {
+						// Owner correction 2026-09-09: stops land in the provider's
+						// EXISTING stop-sequences setting — mass import has no profile
+						// context, so they are reported, never silently dropped.
+						warnings.push(
+							`stop sequences (${parsedInstruct.stopSequences.join(" | ")}) must be added to the provider's stop-sequences setting`,
+						);
+					}
+				} else if (kind === "context") {
+					const parsedContext = parseStContext(text);
+					warnings.push(...parsedContext.notes);
+				}
+				result.formats.push({ fileName, name, kind, imported: false, warnings });
+			} catch (err) {
+				result.errors.push({
+					file: filePath,
+					stage: "parse",
+					message: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+	}
+
+	// ── Scan TextGen Settings/ (named sampler sets — LOCAL_SUPPORT_PLAN LS-5g) ──
+	// Only files with ST TextGen shape (isStTextgenShape) count; other JSON in
+	// this folder is skipped silently, like the OpenAI Settings scan above.
+	const samplersDir = join(resolved, "TextGen Settings");
+	const samplerFiles = await scanOptionalGlob(samplersDir, "*.[jJ][sS][oO][nN]");
+	for (const relativePath of samplerFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(samplersDir, relativePath);
+		try {
+			const content = await Bun.file(filePath).text();
+			const parsed: unknown = JSON.parse(content);
+			const parsedSet = parseStTextgen(parsed);
+			if (!parsedSet) continue;
+			result.samplerSets.push({
+				fileName,
+				name: basename(fileName, ".json"),
+				imported: false,
+				warnings: parsedSet.notes,
+			});
+		} catch (err) {
+			result.errors.push({
+				file: filePath,
+				stage: "parse",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
 	// ── Scan settings.json (personas) ──
 	const settingsPath = join(resolved, "settings.json");
 	const settingsFiles = await scanOptionalGlob(resolved, "settings.json");
@@ -242,6 +358,12 @@ export interface StDirectoryImportResult {
 	chats: number;
 	lorebooks: number;
 	presets: number;
+	/** Imported ST format/library files (LS-3e): instruct → presets with a
+	 *  manual generation format, context → presets with the mapped canvas
+	 *  order, sysprompt → presets carrying the system prompt. */
+	formats: number;
+	/** Imported ST TextGen Settings files as named sampler sets (LS-5g). */
+	samplerSets: number;
 	personas: number;
 	errors: StScanError[];
 	/** ID of the last imported character's chat — can be used to navigate UI. */
@@ -254,7 +376,7 @@ export interface StDirectoryImportResult {
 // (onProgress omitted); the streaming route awaits each emission so the event
 // is flushed to the wire before the scanner proceeds — giving the browser a
 // live counter instead of a frozen spinner for the whole duration.
-export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "personas";
+export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "formats" | "samplerSets" | "personas";
 export type ImportProgressEvent =
 	| { type: "phase"; phase: ImportPhase }
 	| { type: "progress"; phase: ImportPhase; current: number };
@@ -290,6 +412,8 @@ export async function importSillyTavernDirectory(
 		chats: 0,
 		lorebooks: 0,
 		presets: 0,
+		formats: 0,
+		samplerSets: 0,
 		personas: 0,
 		errors: [],
 		lastActiveChatId: null,
@@ -322,7 +446,7 @@ export async function importSillyTavernDirectory(
 	// Returns a discriminated outcome so the collect pass stays deterministic
 	// (file order preserved for lastActiveChatId / name map).
 	type CharImportOutcome =
-		| { kind: "ok"; nameLower: string; slug: string; characterId: string; chatId: ChatId }
+		| { kind: "ok"; nameLower: string; slug: string; characterId: string; chatId: ChatId; worldName: string | null }
 		| { kind: "skipped" }
 		| { kind: "error"; file: string; message: string };
 
@@ -440,7 +564,13 @@ export async function importSillyTavernDirectory(
 			);
 			deps.chatOrder.add(chat.id as ChatId);
 
-			return { kind: "ok", nameLower, slug, characterId, chatId: chat.id as ChatId };
+			// L1: ST card → world link (data.extensions.world, verbatim
+			// passthrough). Carried on the outcome so the collect pass below
+			// can build the worldName → characterId map deterministically.
+			const extWorld = imported.character.extensions.world;
+			const worldName = typeof extWorld === "string" && extWorld.trim() ? extWorld.trim() : null;
+
+			return { kind: "ok", nameLower, slug, characterId, chatId: chat.id as ChatId, worldName };
 		} catch (err) {
 			return {
 				kind: "error",
@@ -475,12 +605,19 @@ export async function importSillyTavernDirectory(
 
 	// Collect in original file order so lastActiveChatId is the last card by
 	// readdir order that successfully imported (matches pre-parallel behavior).
+	// L1: worldName → characterId ownership map for the lorebook phase (first
+	// card in file order wins a contested world — deterministic by construction).
+	const cardWorldToCharacterId = new Map<string, CharacterId>();
 	for (const o of outcomes) {
 		if (o.kind === "ok") {
 			result.characters++;
 			nameToCharacterId.set(o.nameLower, o.characterId as CharacterId);
 			nameToCharacterId.set(o.slug, o.characterId as CharacterId);
 			result.lastActiveChatId = o.chatId;
+			if (o.worldName) {
+				const key = o.worldName.toLowerCase();
+				if (!cardWorldToCharacterId.has(key)) cardWorldToCharacterId.set(key, o.characterId as CharacterId);
+			}
 		} else if (o.kind === "error") {
 			result.errors.push({ file: o.file, stage: "import", message: o.message });
 		}
@@ -496,6 +633,9 @@ export async function importSillyTavernDirectory(
 	let chatVarCount = 0;
 	const chatsDir = join(resolved, "chats");
 	const chatFiles = await scanOptionalGlob(chatsDir, "*/*.[jJ][sS][oO][nN][lL]");
+	// L1: worldName → chatId ownership map for the lorebook phase (first chat
+	// in file order wins a contested world — the loop below is sequential).
+	const chatWorldToChatId = new Map<string, ChatId>();
 
 	for (const relativePath of chatFiles) {
 		const sub = relativePath.slice(0, relativePath.lastIndexOf("/"));
@@ -548,6 +688,13 @@ export async function importSillyTavernDirectory(
 			deps.chatOrder.add(chat.id as ChatId);
 			result.lastActiveChatId = chat.id as ChatId;
 			result.chats++;
+			// L1: ST chat → world link (first-line world_info, L1b). Recorded
+			// only for successfully imported chats — a skipped chat has no id
+			// to bind a book to.
+			if (typeof parsed.metadata.worldInfo === "string" && parsed.metadata.worldInfo.trim()) {
+				const key = parsed.metadata.worldInfo.trim().toLowerCase();
+				if (!chatWorldToChatId.has(key)) chatWorldToChatId.set(key, chat.id as ChatId);
+			}
 			await onProgress?.({ type: "progress", phase: "chats", current: result.chats });
 		} catch (err) {
 			result.errors.push({
@@ -568,22 +715,91 @@ export async function importSillyTavernDirectory(
 	const worldsDir = join(resolved, "worlds");
 	const worldsFiles = await scanOptionalGlob(worldsDir, "*.[jJ][sS][oO][nN]");
 
+	// ST's group-scoring switch is global client state (settings.json
+	// world_info_use_group_scoring), not part of any world file — map it onto
+	// every imported book (owner decision, 2026-08-31). Absent/unreadable
+	// settings → undefined → books default false.
+	// L1: the same settings.json carries the only true ST "works everywhere"
+	// state — world_info_settings.globalSelect (worlds the user explicitly
+	// selected as global). A worlds/ file selected there imports global+enabled;
+	// a file referenced by an imported card/ chat binds to that owner; a file
+	// referenced nowhere lands global+DISABLED (inert at the source stays inert).
+	let globalUseGroupScoring: boolean | undefined;
+	const globalSelectNames = new Set<string>();
+	try {
+		const settingsRaw: unknown = JSON.parse(await Bun.file(join(resolved, "settings.json")).text());
+		if (typeof settingsRaw === "object" && settingsRaw !== null) {
+			const record = settingsRaw as Record<string, unknown>;
+			const flag = record.world_info_use_group_scoring;
+			if (typeof flag === "boolean") globalUseGroupScoring = flag;
+			const worldInfoSettings = record.world_info_settings;
+			if (typeof worldInfoSettings === "object" && worldInfoSettings !== null) {
+				const select = (worldInfoSettings as Record<string, unknown>).globalSelect;
+				if (Array.isArray(select)) {
+					for (const name of select) {
+						if (typeof name === "string" && name.trim()) globalSelectNames.add(name.trim().toLowerCase());
+					}
+				}
+			}
+		}
+	} catch { /* no settings.json next to worlds/ — leave undefined */ }
+
 	for (const relativePath of worldsFiles) {
 		const fileName = basename(relativePath);
 		const filePath = join(worldsDir, relativePath);
 		try {
 			const content = await Bun.file(filePath).text();
 			const parsed: unknown = JSON.parse(content);
-			const fallbackName = basename(fileName, ".json");
+			// extname-strip (not a hardcoded ".json" suffix) so mixed-case
+			// extensions ("World.JSON") classify by the same stem they import as.
+			const stemFromFile = fileName.slice(0, fileName.length - extname(fileName).length);
+			const fallbackName = stemFromFile;
+			// ST world references (extensions.world, world_info, globalSelect)
+			// name the world — match lowercased against both the file stem and
+			// the JSON name field (either may be what ST stored).
+			const candidates = [stemFromFile.toLowerCase()];
+			if (typeof parsed === "object" && parsed !== null) {
+				const nameField = (parsed as Record<string, unknown>).name;
+				if (typeof nameField === "string") {
+					const normalized = nameField.trim().toLowerCase();
+					if (normalized && normalized !== candidates[0]) candidates.push(normalized);
+				}
+			}
+			// Precedence: globalSelect (strongest explicit signal) > card > chat > none.
+			let scopeType = "global";
+			let characterId: string | undefined;
+			let chatId: string | undefined;
+			let enabled = false;
+			if (candidates.some((c) => globalSelectNames.has(c))) {
+				enabled = true;
+			} else {
+				const cardOwner = candidates.map((c) => cardWorldToCharacterId.get(c)).find((v) => v !== undefined);
+				if (cardOwner !== undefined) {
+					scopeType = "entity";
+					characterId = cardOwner;
+					enabled = true;
+				} else {
+					const chatOwner = candidates.map((c) => chatWorldToChatId.get(c)).find((v) => v !== undefined);
+					if (chatOwner !== undefined) {
+						scopeType = "chat";
+						chatId = chatOwner;
+						enabled = true;
+					}
+				}
+			}
 			// STN-1D: REAL lorebook write (was a TODO no-op that just counted).
-			// Mass-imported worlds are global scope. importLorebook parses +
-			// creates the lorebook + bulk-inserts entries in one call.
+			// importLorebook parses + creates the lorebook + bulk-inserts
+			// entries in one call.
 			await importLorebook(deps.stores, null, {
 				format: "st",
 				data: parsed,
 				mode: "new",
-				scopeType: "global",
+				scopeType,
+				characterId,
+				chatId,
 				fallbackName,
+				globalUseGroupScoring,
+				enabled,
 			});
 			result.lorebooks++;
 			await onProgress?.({ type: "progress", phase: "lorebooks", current: result.lorebooks });
@@ -700,6 +916,100 @@ export async function importSillyTavernDirectory(
 	}
 	console.log(`${ti()} presets: ${((performance.now() - presetsPhaseStart) / 1000).toFixed(2)}s (${result.presets} imported)`);
 
+	// ── Import format/library files (LS-3e storage map kinds 3/4/5) ──
+	await onProgress?.({ type: "phase", phase: "formats" });
+	const formatsPhaseStart = performance.now();
+	// instruct → a prompt preset carrying the manual generation format (the
+	// sequences DSL near 1:1; stop sequences are NOT applied — no provider
+	// profile context in a mass import, the scan preview reports them).
+	// context → a preset with the mapped canvas order (partial story_string
+	// mapping; unrepresentable parts were reported in the scan preview).
+	// sysprompt → a preset whose main system field carries the entry content.
+	for (const [folder, kind] of FORMAT_FOLDERS) {
+		const dir = join(resolved, folder);
+		const files = await scanOptionalGlob(dir, "*.[jJ][sS][oO][nN]");
+		for (const relativePath of files) {
+			const fileName = basename(relativePath);
+			const filePath = join(dir, relativePath);
+			try {
+				const text = await Bun.file(filePath).text();
+				const parsed: unknown = JSON.parse(text);
+				if (detectStFileKind(parsed) !== kind) continue;
+				const raw = parsed as Record<string, unknown>;
+				const name = (typeof raw.name === "string" && raw.name) || fileName.replace(/\.json$/i, "");
+				if (kind === "instruct") {
+					const { format } = parseStInstruct(text);
+					await createPromptPreset(
+						{ presets: deps.stores.presets, chats: deps.stores.chats },
+						{ name, generationFormat: format },
+					);
+				} else if (kind === "context") {
+					const { promptOrder } = parseStContext(text);
+					await createPromptPreset(
+						{ presets: deps.stores.presets, chats: deps.stores.chats },
+						{ name, promptOrder, advancedMode: true },
+					);
+				} else {
+					const { content } = parseStSysprompt(text);
+					await createPromptPreset(
+						{ presets: deps.stores.presets, chats: deps.stores.chats },
+						{ name, system: content },
+					);
+				}
+				result.formats++;
+				await onProgress?.({ type: "progress", phase: "formats", current: result.formats });
+			} catch (err) {
+				result.errors.push({
+					file: filePath,
+					stage: "import",
+					message: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+	}
+	console.log(`${ti()} formats: ${((performance.now() - formatsPhaseStart) / 1000).toFixed(2)}s (${result.formats} imported)`);
+
+	// ── Import TextGen Settings/ as named sampler sets (LOCAL_SUPPORT_PLAN LS-5g) ──
+	await onProgress?.({ type: "phase", phase: "samplerSets" });
+	const samplerSetsPhaseStart = performance.now();
+	// ST TextGen files are pure sampler presets — parseStTextgen maps the ooba
+	// spellings onto VT's sampler overlay payload. Name = the file name (LS-5:
+	// set names default to file names). A set with the SAME name already in the
+	// library is skipped and reported as an import error — mass import never
+	// overwrites existing library entries.
+	const samplersDir = join(resolved, "TextGen Settings");
+	const samplerFiles = await scanOptionalGlob(samplersDir, "*.[jJ][sS][oO][nN]");
+	for (const relativePath of samplerFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(samplersDir, relativePath);
+		try {
+			const text = await Bun.file(filePath).text();
+			const parsed: unknown = JSON.parse(text);
+			const parsedSet = parseStTextgen(parsed);
+			if (!parsedSet) continue;
+			const name = basename(fileName, ".json");
+			const existing = await deps.stores.samplerSets.getByName(name);
+			if (existing) {
+				result.errors.push({
+					file: filePath,
+					stage: "import",
+					message: `sampler set '${name}' already exists — skipped`,
+				});
+				continue;
+			}
+			await deps.stores.samplerSets.create({ name, payload: parsedSet.payload });
+			result.samplerSets++;
+			await onProgress?.({ type: "progress", phase: "samplerSets", current: result.samplerSets });
+		} catch (err) {
+			result.errors.push({
+				file: filePath,
+				stage: "import",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+	console.log(`${ti()} samplerSets: ${((performance.now() - samplerSetsPhaseStart) / 1000).toFixed(2)}s (${result.samplerSets} imported)`);
+
 	// ── Import personas (settings.json + User Avatars/) ──
 	await onProgress?.({ type: "phase", phase: "personas" });
 	const personasPhaseStart = performance.now();
@@ -773,7 +1083,7 @@ export async function importSillyTavernDirectory(
 	console.log(
 		`${ti()} DONE — total ${((performance.now() - T0) / 1000).toFixed(2)}s |`
 		+ ` chars=${result.characters} chats=${result.chats} lore=${result.lorebooks}`
-		+ ` presets=${result.presets} personas=${result.personas}`
+		+ ` presets=${result.presets} formats=${result.formats} samplerSets=${result.samplerSets} personas=${result.personas}`
 		+ ` errors=${result.errors.length}`,
 	);
 

@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from "react";
+import { splitVoiceTranscript } from "@vibe-tavern/domain";
 import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
@@ -18,6 +19,70 @@ interface Attachment {
   mimeType?: string;
   sizeBytes?: number;
   description?: string | null;
+  purpose?: "voice" | "music" | "ambient";
+  durationMs?: number;
+}
+
+/** Audio duration label ("0:07" / "1:23") for the voice bubble meta line. */
+function formatAudioDuration(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** Voice-message bubble (STT_PLAN ST-6): playable audio + expandable
+ *  transcript. `purpose !== "voice"` (music/ambient) is playback-only — the
+ *  transcript block is voice-notes' alone; those clips are never described. */
+function VoiceBubble({ att }: { att: Attachment }) {
+  const { t } = useT();
+  const [showTranscript, setShowTranscript] = useState(false);
+  const isVoiceNote = (att.purpose ?? "voice") === "voice";
+  return (
+    <div
+      data-testid="voice-bubble"
+      data-purpose={att.purpose ?? "voice"}
+      className="mt-0 flex w-full max-w-[340px] flex-col gap-1.5 rounded-lg border border-border/50 bg-s2/50 px-2.5 py-2 shadow-sm"
+    >
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-s3 text-t2"><Icons.audioLines /></span>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{att.name}</span>
+          <span className="font-ui text-[10px] uppercase tracking-wider text-t3">
+            {att.durationMs !== undefined ? formatAudioDuration(att.durationMs) : t("voice_message_audio")}
+          </span>
+        </div>
+      </div>
+      <audio controls preload="metadata" src={`${getGatewayBaseUrl()}/api/assets/${att.assetId}`} className="h-8 w-full" />
+      {isVoiceNote && att.description?.trim() && (
+        <>
+          <button
+            type="button"
+            className="flex cursor-pointer items-center gap-1 self-start font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:text-t1"
+            data-testid="voice-transcript-toggle"
+            aria-expanded={showTranscript}
+            onClick={() => setShowTranscript((v) => !v)}
+          >
+            <Icons.Caret direction={showTranscript ? "d" : "r"} />
+            {t("voice_message_transcript")}
+          </button>
+          {showTranscript && (
+            <div className="flex flex-col gap-1">
+              <p data-testid="voice-transcript-text" className="rounded-md bg-s3/60 px-2 py-1.5 font-body text-[calc(var(--ui-fs)-2px)] leading-snug text-t2 whitespace-pre-wrap">
+                {splitVoiceTranscript(att.description).transcript}
+              </p>
+              {/* ST-7: the tone line the understanding backend appended — the
+                  prompt rides it verbatim; here it renders as its own subtle
+                  row so the transcript block stays the clean transcript. */}
+              {splitVoiceTranscript(att.description).tone !== null && (
+                <p data-testid="voice-tone-text" className="px-2 font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3">
+                  {t("voice_message_tone", { tone: splitVoiceTranscript(att.description).tone ?? "" })}
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 export function AttachmentGrid({ attachments, messageId }: { attachments?: Attachment[]; messageId?: string }) {
@@ -28,7 +93,10 @@ export function AttachmentGrid({ attachments, messageId }: { attachments?: Attac
   return (
     <>
       <div className="mt-2.5 flex flex-wrap gap-2 select-none">
-        {attachments.map((att, idx) => (
+        {attachments.map((att, idx) =>
+          att.type === "audio" ? (
+            <VoiceBubble key={att.id || att.assetId} att={att} />
+          ) : (
           <button
             key={att.id || att.assetId}
             type="button"
@@ -55,7 +123,8 @@ export function AttachmentGrid({ attachments, messageId }: { attachments?: Attac
               </div>
             )}
           </button>
-        ))}
+          )
+        )}
       </div>
 
       {lightboxIndex !== null && (
@@ -305,7 +374,6 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
               <AutoTextarea
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
-                className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm leading-relaxed text-white outline-none ring-1 ring-white/20 focus:ring-accent"
                 style={{}}
                 maxRows={20}
                 placeholder={t("describe_attachment_placeholder")}

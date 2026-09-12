@@ -118,6 +118,8 @@ All paths can be overridden via environment variables:
 | `VIBE_TAVERN_HOST` | `127.0.0.1` | Listen host |
 | `VIBE_TAVERN_PORT` | `8787` | Listen port |
 | `VIBE_TAVERN_OPEN_BROWSER` | `1` | Set to `0` to suppress auto-open |
+| `VIBE_TAVERN_ALLOWED_ORIGINS` | *(unset)* | Comma-separated exact origins allowed for intentional split frontend/API deployments (wildcards/paths/credentials are rejected — fail-closed). See "Cross-origin policy" below |
+| `VIBE_TAVERN_EXTERNAL_HOST` | *(unset)* | One external hostname admitted by the API Host validation (scheme/port stripped). Needed only when the app is served behind a domain name that is not an IP literal |
 
 ## Mobile/LAN Access in Standalone Builds
 
@@ -138,6 +140,15 @@ Security behavior:
 - Generated QR/copy URLs include the current token in the hash; the browser stores it locally and sends it via `Authorization: Bearer` on API requests.
 - Regenerate/revoke takes effect immediately without restarting the executable.
 - `GET`/`HEAD /api/assets/*` are public for image rendering; uploads and API mutations require auth.
+
+Cross-origin policy:
+
+- The API is **same-origin by default** — no wildcard CORS. Browser requests carrying a foreign `Origin` are rejected with 403 at the request boundary, and `Sec-Fetch-Site: cross-site` is rejected as defense in depth.
+- The Host header is validated (DNS-rebinding protection): `localhost`, IP literals, and the configured `VIBE_TAVERN_EXTERNAL_HOST` pass; arbitrary hostnames fail.
+- For an intentional split frontend/API deployment, list the frontend origins exactly in `VIBE_TAVERN_ALLOWED_ORIGINS` (e.g. `https://vt.example.com`). Preflights and CORS headers are granted only to those origins.
+- Non-browser clients (no `Origin` header) pass the origin gate; the mobile token boundary still applies to remote requests.
+
+Outbound provider proxies: provider-bound traffic (generation, probes, model lists, test chats) can route through named HTTP/HTTPS/SOCKS5 proxies managed in **Tweaks → Proxies**; each provider selects `Use global default` / `Direct connection` / a named proxy. SOCKS5 proxies are HTTPS-endpoints-only (see `docs/architecture/backend.md` → *Outbound Provider Proxy*). Update checks and local API calls are never proxied.
 
 If the page loads but mobile requests fail, check that the OS firewall allows inbound TCP traffic on `VIBE_TAVERN_PORT` and that the phone can reach the selected LAN/Tailscale IP.
 

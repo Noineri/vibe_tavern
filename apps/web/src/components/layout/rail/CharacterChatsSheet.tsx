@@ -32,6 +32,8 @@ import type { ChatBranch, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../lib/cn.js";
 import { Ic, Icons } from "../../shared/icons.js";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
+import { SearchInput } from "../../shared/SearchInput.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
 import { ActionSheet, type ActionSheetItem } from "../../shared/ActionSheet.js";
 import { initials } from "../app-shell-helpers.js";
@@ -146,21 +148,18 @@ export function CharacterChatsSheet({
 
 				{/* ── Search ── */}
 				<div className="shrink-0 px-3 pb-2">
-					<div className="flex items-center gap-2 rounded-lg border border-border bg-s2 px-2 py-1 transition-colors focus-within:border-accent/60">
-						<Icons.Search className="h-3.5 w-3.5 shrink-0 text-t3" />
-						<input
-							type="text"
-							value={chatQuery}
-							onChange={(e) => setChatQuery(e.target.value)}
-							placeholder={t("chat_search_placeholder")}
-							className="min-w-0 flex-1 bg-transparent font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none placeholder:text-t4"
-						/>
-						{chatQuery && (
-							<button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1" aria-label={t("chat_search_clear")} onClick={() => setChatQuery("")}>
-								<Ic.close />
-							</button>
-						)}
-					</div>
+					<SearchInput
+						value={chatQuery}
+						onChange={(e) => setChatQuery(e.target.value)}
+						placeholder={t("chat_search_placeholder")}
+						trailing={
+							chatQuery ? (
+								<button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1" aria-label={t("chat_search_clear")} onClick={() => setChatQuery("")}>
+									<Ic.close />
+								</button>
+							) : undefined
+						}
+					/>
 				</div>
 
 				{/* ── Chat list ── */}
@@ -188,8 +187,8 @@ export function CharacterChatsSheet({
 								onClick={() => { onSwitchChat(ch.id); }}
 							>
 								{renamingChatId === ch.id ? (
-									<input
-										className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
+									<InlineRenameInput
+										className="mb-px"
 										value={renameDraft}
 										autoFocus
 										onChange={(e) => setRenameDraft(e.target.value)}
@@ -244,8 +243,8 @@ export function CharacterChatsSheet({
 														>
 															<span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
 															{isRenamingThisBranch ? (
-																<input
-																	className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
+																<InlineRenameInput
+																	className="mb-px"
 																	value={branchRenameDraft}
 																	autoFocus
 																	onChange={(e) => setBranchRenameDraft(e.target.value)}

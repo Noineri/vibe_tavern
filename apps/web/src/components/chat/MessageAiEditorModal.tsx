@@ -47,6 +47,7 @@ import { MessageReasoning } from "./MessageReasoning.js";
 import { TextDiffPreview, buildWordDiff, buildLineDiff, type TextDiffWordSummary, type TextDiffSummary } from "../shared/TextDiffPreview.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { AiAssistantShell } from "../shared/ai-assistant/AiAssistantShell.js";
+import { AiAssistantPanel } from "../shared/ai-assistant/AiAssistantPanel.js";
 import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { type AiAssistantRequestBody } from "../../app-client.js";
@@ -54,15 +55,20 @@ import { useAiAssistantRunner } from "../shared/ai-assistant/use-ai-assistant-ru
 import { useDebouncedTokenCount } from "../shared/ai-assistant/use-debounced-token-count.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { useMessageAiEditorStore, type MessageAiEditorMode } from "../../stores/message-ai-editor-store.js";
+import { useMessageOrder } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useMacroContext } from "../../stores/chat-selectors.js";
+import { replaceUiMacros } from "../../lib/macros.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import {
   createMessageVariantAction,
   editMessageAction,
+  setVariantTtsAnnotationAction,
 } from "../../stores/api-actions/chat-actions.js";
 import type { AppMessage } from "../../api/types.js";
 import {
@@ -113,6 +119,19 @@ export function MessageAiEditorModal() {
   // selected source variant for edit) disappears mid-session, the modal
   // surfaces a non-destructive stale-target state and blocks Apply/Save.
   const targetMessage = targetMessageId !== null ? messagesById[targetMessageId] ?? null : null;
+  // FS-4: row parity for the merge ban. The SAME derivation the rows use —
+  // MessageList.tsx computes firstAssistantMsgId as the first id in
+  // messageOrder whose message has role "assistant", and MessageBlock.tsx:123
+  // reads `isGreeting = !!msg && input.isFirstAssistant`. Reused verbatim
+  // here (live subscription, same source) — no second definition.
+  const messageOrder = useMessageOrder();
+  const firstAssistantMsgId = useMemo(() => {
+    for (const id of messageOrder) {
+      if (messagesById[id]?.role === "assistant") return id;
+    }
+    return null;
+  }, [messageOrder, messagesById]);
+  const isGreetingTarget = targetMessage !== null && targetMessageId === firstAssistantMsgId;
 
   // Active mode starts from the requested mode but the user may switch via
   // the SegmentedControl. Reset whenever a new target opens.
@@ -142,17 +161,22 @@ export function MessageAiEditorModal() {
     }
   }, [target?.targetChatId, target?.targetMessageId, target?.requestedMode]);
 
-  const seedProviderId = bootstrapUiSettings?.aiAssistantProviderId ?? "";
-  const seedModelName = bootstrapUiSettings?.aiAssistantModelName ?? "";
+  // SUM-5: the editor owns its context slot. Seed order: the editor's own
+  // persisted pair, then the legacy ai-assistant pair (upgrade fallback — a
+  // selection made before the split keeps working and STOPS writing there),
+  // then empty (active-profile default resolves downstream).
+  const seedProviderId = bootstrapUiSettings?.messageEditorProviderId ?? bootstrapUiSettings?.aiAssistantProviderId ?? "";
+  const seedModelName = bootstrapUiSettings?.messageEditorModelName ?? bootstrapUiSettings?.aiAssistantModelName ?? "";
 
   const runner = useAiAssistantRunner({
     isOpen,
     seedProviderId,
     seedModelName,
-    // Persist the editor's provider/model choice to uiSettings so the next
-    // editor open (and other AI assistants) inherit it — same UX as the
-    // existing AiAssistantModal "full" path.
+    // Persist the editor's provider/model choice to its OWN ui_settings pair
+    // (SUM-5: it previously wrote the shared ai-assistant slot — picking a
+    // model here silently changed the AI-assistant model and vice versa).
     persistSelection: true,
+    persistContext: "message-editor",
   });
 
   // Reset transient stream/apply state whenever the modal closes so a reopen
@@ -171,6 +195,19 @@ export function MessageAiEditorModal() {
 
   const editSourceVariantId = target?.requestedMode === "message_edit" ? target.selectedSourceVariantId : null;
 
+  // TPE-2 (AN-1): the annotate mode's single source — the variant this
+  // editor session considers "current": the one captured at open when Edit
+  // was the entry point, else the message's currently selected variant (the
+  // annotate mode is picked in-modal, e.g. after opening for Merge).
+  const annotateSourceVariantId: MessageVariantId | null = useMemo(() => {
+    if (!targetMessage) return null;
+    if (editSourceVariantId && targetMessage.variants.some((v) => v.id === editSourceVariantId)) {
+      return editSourceVariantId;
+    }
+    const selected = targetMessage.variants.find((v) => v.isSelected) ?? null;
+    return selected ? selected.id : (targetMessage.variants[0]?.id ?? null);
+  }, [targetMessage, editSourceVariantId]);
+
   /** Edit: the single variant captured at open. Merge: the current starred
    *  set (read live so remove updates immediately). Both null when the
    *  target is absent. */
@@ -181,6 +218,13 @@ export function MessageAiEditorModal() {
       const row = toSourceRow(targetMessage, editSourceVariantId);
       return row ? [row] : [];
     }
+    if (activeMode === "message_tts_annotate") {
+      // Same single-source shape as Edit (read-only row): the annotated copy
+      // is written to the variant's side field, never to its content.
+      if (!annotateSourceVariantId) return [];
+      const row = toSourceRow(targetMessage, annotateSourceVariantId);
+      return row ? [row] : [];
+    }
     const starred = targetMessageId ? (starredByMessage[targetMessageId] ?? []) : [];
     const rows: SourceRow[] = [];
     for (const variantId of starred) {
@@ -188,22 +232,41 @@ export function MessageAiEditorModal() {
       if (row) rows.push(row);
     }
     return rows;
-  }, [targetMessage, activeMode, editSourceVariantId, targetMessageId, starredByMessage]);
+  }, [targetMessage, activeMode, editSourceVariantId, annotateSourceVariantId, targetMessageId, starredByMessage]);
 
-  /** Edit diff base: the canonical text of the variant captured at open.
-   *  Null when the variant has been deleted (stale-source state). */
+  // TPE-19: the same macro context the chat view renders with.
+  const macroContext = useMacroContext();
+  const isCoauthorMode = activeChat?.mode === "coauthor";
+  /** Edit/annotate diff base: the canonical text of the variant being
+   *  worked on. Null when the variant has been deleted (stale-source state).
+   *  TPE-19: in annotate mode the baseline is macro-RESOLVED (the model
+   *  must see real names, not raw {{user}}/{{char}} — it strips braces
+   *  otherwise). The stored annotation therefore carries resolved names;
+   *  raw-variant narration re-resolves at narrate-time (accepted). Edit
+   *  mode keeps the canonical raw text (its flow never sends it raw to a
+   *  model as content-to-copy). */
   const editBaselineText = useMemo(() => {
-    if (activeMode !== "message_edit" || !targetMessage || !editSourceVariantId) return null;
-    const variant = targetMessage.variants.find((v) => v.id === editSourceVariantId);
-    return variant ? variant.content : null;
-  }, [activeMode, targetMessage, editSourceVariantId]);
+    if (!targetMessage) return null;
+    const sourceId = activeMode === "message_edit"
+      ? editSourceVariantId
+      : activeMode === "message_tts_annotate" ? annotateSourceVariantId : null;
+    if (!sourceId) return null;
+    const variant = targetMessage.variants.find((v) => v.id === sourceId);
+    if (!variant) return null;
+    if (activeMode === "message_tts_annotate" && macroContext && !isCoauthorMode) {
+      return replaceUiMacros(variant.content, macroContext);
+    }
+    return variant.content;
+  }, [activeMode, targetMessage, editSourceVariantId, annotateSourceVariantId, macroContext, isCoauthorMode]);
 
   // Stale-target / stale-source detection. Edit is stale when the captured
   // variant is no longer in the message. Merge is never "stale" by variant
   // deletion — `pruneStaleStars` drops deleted IDs and the user can re-star;
   // but if the whole message is gone, nothing is meaningful.
   const staleTarget = !targetMessage;
-  const staleEditSource = activeMode === "message_edit" && !staleTarget && editBaselineText === null;
+  const staleEditSource = (activeMode === "message_edit" || activeMode === "message_tts_annotate")
+    && !staleTarget
+    && editBaselineText === null;
 
   const mergeSourceCount = activeMode === "message_merge" ? sourceRows.length : 0;
   const mergeBelowMinimum = activeMode === "message_merge" && mergeSourceCount < 2;
@@ -213,16 +276,41 @@ export function MessageAiEditorModal() {
   // that there is no way to star anything, so the merge option is hidden rather
   // than offered with an impossible-to-satisfy empty source state.
   const canMerge = (targetMessage?.variants.length ?? 0) > 6;
+  /** FS-4: Merge is forbidden on greeting targets even when the jump
+   *  browser exists (>6 variants) — parity with row-level
+   *  `canAiEdit = !isGreeting` (owner: «конечно запретить»). The in-modal
+   *  mode switcher is the only path that could offer it (annotate-entry on
+   *  a greeting), so hiding the option closes the hole. */
+  const canOfferMerge = canMerge && !isGreetingTarget;
+  // FS-4: clamp a merge session off a greeting target. requestedMode=merge
+  // on a greeting is unreachable through the UI, but the store accepts it —
+  // without the clamp the switcher would hold a value with no matching
+  // segment (a dead modal). Falls back to Edit when the session captured a
+  // variant, else Annotate (always offered). Deliberately merge-on-greeting
+  // only: the pinned below-minimum merge state (≤6 variants) and the
+  // stale-source banner are separate contracts and stay untouched.
+  // Instruction/candidate are untouched: generation must be re-triggered
+  // explicitly, and nothing here mutates canonical state.
+  useEffect(() => {
+    if (target && activeMode === "message_merge" && isGreetingTarget) {
+      setActiveMode(editSourceVariantId !== null ? "message_edit" : "message_tts_annotate");
+    }
+  }, [target, activeMode, isGreetingTarget, editSourceVariantId]);
 
   // ─── Token + assembled-context preview (debounced over the live body) ───
   const previewSourceVariantIds: MessageVariantId[] = activeMode === "message_edit"
     ? (editSourceVariantId ? [editSourceVariantId] : [])
-    : (targetMessageId ? (starredByMessage[targetMessageId] ?? []) : []);
+    : activeMode === "message_tts_annotate"
+      ? (annotateSourceVariantId ? [annotateSourceVariantId] : [])
+      : (targetMessageId ? (starredByMessage[targetMessageId] ?? []) : []);
   const previewBody: AiAssistantRequestBody | null =
     isOpen && targetChatId && targetMessageId && runner.providerId && previewSourceVariantIds.length > 0
       ? {
           mode: activeMode,
-          instruction,
+          // TPE-14: mirror the generate wire so the token estimate matches
+          // what will actually be sent (annotate: "" + variant text).
+          instruction: activeMode === "message_tts_annotate" ? "" : instruction,
+          existingContent: activeMode === "message_tts_annotate" ? (editBaselineText ?? undefined) : undefined,
           providerProfileId: runner.providerId,
           model: runner.modelName || undefined,
           enabledLayers: [],
@@ -238,12 +326,17 @@ export function MessageAiEditorModal() {
 
   // ─── Request construction ──────────────────────────────────────────
 
+  // TPE-14: annotate carries no user instruction — the static prompt asset
+  // plus the variant text (existingContent) are the whole request, so the
+  // non-empty-instruction requirement applies to edit/merge only.
+  const instructionOk = activeMode === "message_tts_annotate" || instruction.trim().length > 0;
+
   const canGenerate =
     !staleTarget
     && !staleEditSource
     && !mergeBelowMinimum
     && runner.providerId !== ""
-    && instruction.trim().length > 0
+    && instructionOk
     && !runner.streaming
     && !applying;
 
@@ -253,10 +346,18 @@ export function MessageAiEditorModal() {
     const sourceVariantIds: MessageVariantId[] =
       activeMode === "message_edit"
         ? editSourceVariantId ? [editSourceVariantId] : []
-        : (starredByMessage[targetMessageId] ?? []);
+        : activeMode === "message_tts_annotate"
+          ? annotateSourceVariantId ? [annotateSourceVariantId] : []
+          : (starredByMessage[targetMessageId] ?? []);
 
     if (activeMode === "message_merge" && sourceVariantIds.length < 2) return;
     if (activeMode === "message_edit" && sourceVariantIds.length !== 1) return;
+    if (activeMode === "message_tts_annotate" && sourceVariantIds.length !== 1) return;
+    // TPE-14: the variant text rides as existingContent; the instruction
+    // slot stays empty (the static annotate prompt asset is the instruction).
+    // editBaselineText is non-null here (staleEditSource gates canGenerate),
+    // the fallback only satisfies the type checker.
+    const annotateText = activeMode === "message_tts_annotate" ? (editBaselineText ?? "") : undefined;
 
     // Reset prior apply/conflict state on a fresh generation.
     setConflict(false);
@@ -264,7 +365,8 @@ export function MessageAiEditorModal() {
 
     void runner.runStream({
       mode: activeMode,
-      instruction,
+      instruction: activeMode === "message_tts_annotate" ? "" : instruction,
+      existingContent: annotateText,
       providerProfileId: runner.providerId,
       model: runner.modelName || undefined,
       enabledLayers: [],
@@ -277,7 +379,7 @@ export function MessageAiEditorModal() {
     });
   }, [
     canGenerate, target, targetMessageId, targetChatId, activeMode,
-    editSourceVariantId, starredByMessage, instruction, runner,
+    editSourceVariantId, annotateSourceVariantId, editBaselineText, starredByMessage, instruction, runner,
   ]);
 
   // ─── Apply (edit): guarded PATCH with expectedVariantId ────────────
@@ -352,6 +454,38 @@ export function MessageAiEditorModal() {
     starredByMessage, closeEditor,
   ]);
 
+  // ─── Save (annotate): write the side field, content stays pristine ──
+
+  const handleSaveAnnotation = useCallback(async () => {
+    if (!target || !targetMessageId || !targetChatId) return;
+    if (!annotateSourceVariantId || !targetMessage) return;
+    const candidate = runner.streamedOutput.trim();
+    if (!candidate || runner.streaming || applying) return;
+    // The route addresses the variant by display index — resolve from the
+    // immutable source id captured for this session.
+    const variantIndex = targetMessage.variants.findIndex((v) => v.id === annotateSourceVariantId);
+    if (variantIndex < 0) return;
+
+    setApplying(true);
+    setApplyError(null);
+    setConflict(false);
+    try {
+      await setVariantTtsAnnotationAction(targetChatId, targetMessageId, variantIndex, candidate);
+      // Success — close. The message content was never touched; the
+      // annotated copy now lives on the variant's side field and narration
+      // prefers it (TPE-1 wiring). Snapshot ingestion already happened in
+      // the action.
+      closeEditor();
+    } catch (err: unknown) {
+      setApplyError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setApplying(false);
+    }
+  }, [
+    target, targetMessageId, targetChatId, targetMessage, annotateSourceVariantId,
+    runner.streamedOutput, runner.streaming, applying, closeEditor,
+  ]);
+
   // ─── Close (cancel) — never mutates canonical state ────────────────
 
   const handleClose = useCallback(() => {
@@ -366,7 +500,7 @@ export function MessageAiEditorModal() {
   const showCandidate = candidateText.length > 0;
 
   const editWordDiff: TextDiffWordSummary | null = useMemo(() => {
-    if (activeMode !== "message_edit") return null;
+    if (activeMode !== "message_edit" && activeMode !== "message_tts_annotate") return null;
     if (!showCandidate || runner.streaming || editBaselineText === null) return null;
     return buildWordDiff(editBaselineText, candidateText);
   }, [activeMode, showCandidate, runner.streaming, editBaselineText, candidateText]);
@@ -381,14 +515,14 @@ export function MessageAiEditorModal() {
   // chain the editor was unusable on any non-trivial rewrite — you'd Apply
   // blind because nothing rendered past the tooLarge notice.
   const editLineDiff: TextDiffSummary | null = useMemo(() => {
-    if (activeMode !== "message_edit") return null;
+    if (activeMode !== "message_edit" && activeMode !== "message_tts_annotate") return null;
     if (!editWordDiff?.tooLarge || editBaselineText === null) return null;
     return buildLineDiff(editBaselineText, candidateText);
   }, [activeMode, editWordDiff, editBaselineText, candidateText]);
 
   // True only when BOTH diffs bailed — the last-resort plain-candidate view.
   const editShowPlainCandidate =
-    activeMode === "message_edit"
+    (activeMode === "message_edit" || activeMode === "message_tts_annotate")
     && !!editWordDiff?.tooLarge
     && (editLineDiff == null || editLineDiff.tooLarge);
 
@@ -457,6 +591,16 @@ export function MessageAiEditorModal() {
                   {applying ? tDynamic("message_ai_editor_applying") : tDynamic("message_ai_editor_save_new_variant")}
                 </button>
               )}
+              {showCandidate && !conflict && !staleEditSource && activeMode === "message_tts_annotate" && (
+                <button
+                  type="button"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void handleSaveAnnotation()}
+                  disabled={applying || runner.streaming}
+                >
+                  {applying ? tDynamic("message_ai_editor_applying") : tDynamic("message_ai_editor_save_annotation")}
+                </button>
+              )}
               <button
                 type="button"
                 className={cn(
@@ -484,12 +628,7 @@ export function MessageAiEditorModal() {
       title={tDynamic("message_ai_editor_title")}
       description={tDynamic("message_ai_editor_description")}
     >
-      <div
-        className={cn(
-          "flex flex-col overflow-hidden border border-border bg-surface",
-          containerCls,
-        )}
-      >
+      <AiAssistantPanel className={containerCls}>
         <AiAssistantShell
           title={(
             <div className="flex min-w-0 items-center gap-2">
@@ -508,7 +647,7 @@ export function MessageAiEditorModal() {
           // guard did before the shell extraction.
           providerCount={staleTarget ? 1 : providerProfiles.length}
           noProvidersLabel={tDynamic("message_ai_editor_no_providers")}
-          headerExtra={!staleTarget && canMerge ? (
+          headerExtra={!staleTarget ? (
             <SegmentedControl
               value={activeMode}
               onChange={(v) => {
@@ -521,8 +660,20 @@ export function MessageAiEditorModal() {
                 setApplyError(null);
               }}
               options={[
-                { value: "message_edit", label: tDynamic("message_ai_editor_mode_edit") },
-                { value: "message_merge", label: tDynamic("message_ai_editor_mode_merge") },
+                // TPE-20: Edit needs the variant captured at open — an
+                // annotate-entry session (greeting "prepare for narration")
+                // carries none, so switching there would render the stale-
+                // source banner with dead buttons. Hide Edit for those
+                // sessions; edit/merge entries keep the full switch set.
+                ...(editSourceVariantId !== null ? [{ value: "message_edit", label: tDynamic("message_ai_editor_mode_edit") }] : []),
+                // Merge stars variants in the jump browser, which only renders
+                // for messages with > 6 variants — below that the option is
+                // hidden rather than offered with an impossible empty source
+                // state. FS-4: merge is additionally forbidden on greeting
+                // targets (canOfferMerge) — Annotate needs only the selected
+                // variant, so it stays available on every message.
+                ...(canOfferMerge ? [{ value: "message_merge", label: tDynamic("message_ai_editor_mode_merge") }] : []),
+                { value: "message_tts_annotate", label: tDynamic("message_ai_editor_mode_annotate") },
               ]}
               compact
             />
@@ -615,29 +766,36 @@ export function MessageAiEditorModal() {
                 recentMessages={{ value: recentMessageCount, onChange: setRecentMessageCount }}
               />
 
-              {/* Instruction */}
-              <div className="mb-4">
-                <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-                  {tDynamic("message_ai_editor_instruction_label")}
-                </label>
-                <MobileExpandTextarea
-                  value={instruction}
-                  onChange={setInstruction}
-                  label={tDynamic("message_ai_editor_instruction_label")}
-                >
-                  <AutoTextarea
-                    className="w-full resize-none rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent"
-                    maxRows={12}
-                    minRows={4}
-                    placeholder={tDynamic("message_ai_editor_instruction_placeholder")}
-                    value={instruction}
-                    onChange={(e) => setInstruction(e.target.value)}
-                  />
-                </MobileExpandTextarea>
-                <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
-                  {tDynamic("message_ai_editor_instruction_hint")}
+              {/* Instruction — TPE-14: annotate carries no user instruction
+                  (the static prompt asset is the instruction), so the field
+                  is hidden and only the annotate hint line remains. */}
+              {activeMode === "message_tts_annotate" ? (
+                <div className="mb-4 font-ui text-[calc(var(--ui-fs)-4px)] text-t2">
+                  {tDynamic("message_ai_editor_annotate_hint")}
                 </div>
-              </div>
+              ) : (
+                <div className="mb-4">
+                  <label className={lblCls}>
+                    {tDynamic("message_ai_editor_instruction_label")}
+                  </label>
+                  <MobileExpandTextarea
+                    value={instruction}
+                    onChange={setInstruction}
+                    label={tDynamic("message_ai_editor_instruction_label")}
+                  >
+                    <AutoTextarea
+                      maxRows={12}
+                      minRows={4}
+                      placeholder={tDynamic("message_ai_editor_instruction_placeholder")}
+                      value={instruction}
+                      onChange={(e) => setInstruction(e.target.value)}
+                    />
+                  </MobileExpandTextarea>
+                  <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
+                    {tDynamic("message_ai_editor_instruction_hint")}
+                  </div>
+                </div>
+              )}
 
               {/* Reasoning */}
               {runner.streamedReasoning && (
@@ -649,7 +807,7 @@ export function MessageAiEditorModal() {
               {/* Preview: edit = word diff, with a line-diff fallback when the
                   word diff bails (large rewrites), and a plain-candidate view
                   as the last resort. Merge = full candidate, no diff. */}
-              {showCandidate && activeMode === "message_edit" && editWordDiff && !editWordDiff.tooLarge && !staleEditSource && (
+              {showCandidate && (activeMode === "message_edit" || activeMode === "message_tts_annotate") && editWordDiff && !editWordDiff.tooLarge && !staleEditSource && (
                 <TextDiffPreview
                   granularity="word"
                   summary={editWordDiff}
@@ -660,7 +818,7 @@ export function MessageAiEditorModal() {
                   }}
                 />
               )}
-              {showCandidate && activeMode === "message_edit" && editWordDiff?.tooLarge && editLineDiff && !editLineDiff.tooLarge && !staleEditSource && (
+              {showCandidate && (activeMode === "message_edit" || activeMode === "message_tts_annotate") && editWordDiff?.tooLarge && editLineDiff && !editLineDiff.tooLarge && !staleEditSource && (
                 <TextDiffPreview
                   granularity="line"
                   summary={editLineDiff}
@@ -724,7 +882,7 @@ export function MessageAiEditorModal() {
             </>
           )}
         </AiAssistantShell>
-      </div>
+      </AiAssistantPanel>
     </Modal>
   );
 }

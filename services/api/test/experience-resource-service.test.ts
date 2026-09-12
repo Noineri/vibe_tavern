@@ -225,8 +225,19 @@ describe("ExperienceResourceService — chat configuration", () => {
   test("getConfig is getOrCreate (stable id across calls)", async () => {
     const a = await service.getConfig(chatId);
     const b = await service.getConfig(chatId);
-    expect(b.id).toBe(a.id);
-    expect(a.enabled).toBe(false);
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(b.data.id).toBe(a.data.id);
+    expect(a.data.enabled).toBe(false);
+  });
+
+  test("getConfig returns a clean chat_not_found for a missing chat — never an insert attempt (owner incident 2026-09-09: a deleted chat's config poll 500'd on the FK)", async () => {
+    const r = await service.getConfig("chat_missing_0001");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("chat_not_found");
+    expect(r.error.status).toBe(404);
   });
 
   test("updateConfig enables, binds the script, and sets grants + context mode", async () => {

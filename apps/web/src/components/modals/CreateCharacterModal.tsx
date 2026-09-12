@@ -10,6 +10,9 @@ import { useIsMobile } from '../../hooks/use-mobile.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
 import { useT } from '../../i18n/context.js';
 import { AutoTextarea } from '../shared/auto-textarea.js';
+import { ChipInput } from '../shared/ChipInput.js';
+import { TextInput } from '../shared/text-input.js';
+import { lblCls } from '../../lib/field-tokens.js';
 import { MobileExpandTextarea } from '../shared/MobileExpandTextarea.js';
 import { AvatarCropModal } from '../shared/AvatarCropModal.js';
 import type { AvatarCropResult } from '../shared/AvatarCropModal.js';
@@ -58,7 +61,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const tags = watch("tags") || [];
 
   const [altGreetIdx, setAltGreetIdx] = useState(0);
-  const [tagInput, setTagInput] = useState('');
   const avaInputRef = useRef<HTMLInputElement>(null);
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
   // Confirmed (post-crop) avatar lives outside the form: BuildCharacterDraft has
@@ -101,20 +103,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
     setPendingAvatar(null);
   }
 
-  function removeTag(tag: string) {
-    patchForm({ tags: tags.filter((tn: string) => tn !== tag) });
-  }
-
-  function handleTagKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && tagInput.trim()) {
-      e.preventDefault();
-      if (!tags.includes(tagInput.trim())) {
-        patchForm({ tags: [...tags, tagInput.trim()] });
-      }
-      setTagInput('');
-    }
-  }
-
   async function handleSave() {
     if (!canSave || submittingRef.current) return;
     submittingRef.current = true;
@@ -148,7 +136,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   return (
     <Modal open={true} onClose={onClose}>
 
-      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[90vh] w-[600px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+      <div className={cn("glass-blur-under flex flex-col overflow-hidden", isMobile ? "w-full h-full" : "max-h-[90vh] w-[600px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
         {/* Header */}
         <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-4")}>
           <div className="flex items-start justify-between">
@@ -195,14 +183,13 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 imageUrl={pendingAvatar.url}
                 onConfirm={handleAvatarCropConfirm}
                 onCancel={handleAvatarCropCancel}
+                stacked
               />
             )}
             <div className="flex-1">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_name_label")}</label>
-              <input
-                type="text"
-                className={cn("w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent", isMobile && "text-base min-h-[44px]")}
-                {...register('name')}
+              <label className={lblCls}>{t("ws_name_label")}</label>
+              <TextInput
+                register={register('name')}
                 autoFocus
               />
               {errors.name && (
@@ -278,10 +265,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                   }}
                 >
                   <AutoTextarea
-                    className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-                    style={{}}
-                    maxRows={20}
                     minRows={6}
+                    maxRows={20}
                     value={alternateGreetings[altGreetIdx] || ''}
                     onChange={e => {
                       const next = [...alternateGreetings];
@@ -377,24 +362,13 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* Tags */}
           <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_tags_label")}</label>
-            <input
-              type="text"
-              className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-              value={tagInput}
-              onChange={e => setTagInput(e.target.value)}
-              onKeyDown={handleTagKey}
+            <label className={lblCls}>{t("char_tags_label")}</label>
+            <ChipInput
+              values={tags}
+              onChange={(next) => patchForm({ tags: next })}
+              mode="words"
               placeholder={t("tags_enter")}
             />
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {tags.map((tag: string) => (
-                <span
-                  key={tag}
-                  className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                  onClick={() => removeTag(tag)}
-                >{tag} ✕</span>
-              ))}
-            </div>
           </div>
 
           {/* TODO: Phase 3 — Capabilities (built-in tools + MCP tools) */}

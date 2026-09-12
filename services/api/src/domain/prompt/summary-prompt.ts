@@ -9,14 +9,10 @@
  *
  * @see SUMMARY_PRIOR_CONTEXT_PLAN Wave 4
  */
-import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
+import type { AppDb } from "@vibe-tavern/db";
+import { resolveServicePrompt } from "../service-prompts/service-prompt-resolver.js";
 
-const DEFAULT_SUMMARY_ASSET = "summary-ai-prompt.md";
-
-export async function resolveSummaryPrompt(
-	presetSummary: string | null | undefined,
-): Promise<string> {
-	const trimmed = presetSummary?.trim();
-	if (trimmed) return trimmed;
-	return loadPromptAsset(DEFAULT_SUMMARY_ASSET);
+export async function resolveSummaryPrompt(db: AppDb): Promise<string> {
+	const { text } = await resolveServicePrompt(db, "summary");
+	return text;
 }

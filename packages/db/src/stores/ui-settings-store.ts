@@ -18,6 +18,14 @@ export interface UiSettings {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  /** Summary-generation model binding (SUM-4/SUM-5) — the Memory tab's
+   *  pinned model, persisted per context instead of ephemeral useState. */
+  summaryProviderId: string | null;
+  summaryModelName: string | null;
+  /** Message AI editor model binding (SUM-5) — no longer shares the
+   *  ai-assistant pair. */
+  messageEditorProviderId: string | null;
+  messageEditorModelName: string | null;
   coauthorProviderId: string | null;
   coauthorModelName: string | null;
   /** Null inherits the bound profile/model's effective max output tokens. */
@@ -36,6 +44,14 @@ export interface UiSettings {
    *  falls back to the first available provider profile (the pre-fix default). */
   copilotProviderId: string | null;
   copilotModelName: string | null;
+  activeServicePromptProfileId: string | null;
+  /** One-time preset→profile migration marker (SP-7) — see db-schema comment. */
+  servicePromptPresetMigrated: boolean;
+  /** STT scenario pointers (STT_PLAN ST-1): dictation + voice-message
+   *  transcription profile ids; may point at the same profile. Null → the
+   *  isDefault fallback / no transcription. */
+  activeDictationProfileId: string | null;
+  activeVoiceMessageProfileId: string | null;
   updatedAt: string;
 }
 
@@ -50,6 +66,10 @@ export interface UiSettingsUpdate {
   activePromptPresetId?: string | null;
   aiAssistantProviderId?: string | null;
   aiAssistantModelName?: string | null;
+  summaryProviderId?: string | null;
+  summaryModelName?: string | null;
+  messageEditorProviderId?: string | null;
+  messageEditorModelName?: string | null;
   coauthorProviderId?: string | null;
   coauthorModelName?: string | null;
   coauthorMaxTokens?: number | null;
@@ -60,6 +80,10 @@ export interface UiSettingsUpdate {
   starPromptDeferrals?: number;
   copilotProviderId?: string | null;
   copilotModelName?: string | null;
+  activeServicePromptProfileId?: string | null;
+  servicePromptPresetMigrated?: boolean;
+  activeDictationProfileId?: string | null;
+  activeVoiceMessageProfileId?: string | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -74,6 +98,10 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   activePromptPresetId: null,
   aiAssistantProviderId: null,
   aiAssistantModelName: null,
+  summaryProviderId: null,
+  summaryModelName: null,
+  messageEditorProviderId: null,
+  messageEditorModelName: null,
   coauthorProviderId: null,
   coauthorModelName: null,
   coauthorMaxTokens: null,
@@ -84,6 +112,10 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   starPromptDeferrals: 0,
   copilotProviderId: null,
   copilotModelName: null,
+  activeServicePromptProfileId: null,
+  servicePromptPresetMigrated: false,
+  activeDictationProfileId: null,
+  activeVoiceMessageProfileId: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -129,6 +161,10 @@ export class UiSettingsStore {
       activePromptPresetId: partial.activePromptPresetId ?? UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: partial.aiAssistantProviderId ?? UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: partial.aiAssistantModelName ?? UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      summaryProviderId: partial.summaryProviderId ?? UI_SETTINGS_DEFAULTS.summaryProviderId,
+      summaryModelName: partial.summaryModelName ?? UI_SETTINGS_DEFAULTS.summaryModelName,
+      messageEditorProviderId: partial.messageEditorProviderId ?? UI_SETTINGS_DEFAULTS.messageEditorProviderId,
+      messageEditorModelName: partial.messageEditorModelName ?? UI_SETTINGS_DEFAULTS.messageEditorModelName,
       coauthorProviderId: partial.coauthorProviderId ?? UI_SETTINGS_DEFAULTS.coauthorProviderId,
       coauthorModelName: partial.coauthorModelName ?? UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: partial.coauthorMaxTokens ?? UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
@@ -139,6 +175,10 @@ export class UiSettingsStore {
       starPromptDeferrals: partial.starPromptDeferrals ?? UI_SETTINGS_DEFAULTS.starPromptDeferrals,
       copilotProviderId: partial.copilotProviderId ?? UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
+      activeServicePromptProfileId: partial.activeServicePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
+      servicePromptPresetMigrated: partial.servicePromptPresetMigrated ?? UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
+      activeDictationProfileId: partial.activeDictationProfileId ?? UI_SETTINGS_DEFAULTS.activeDictationProfileId,
+      activeVoiceMessageProfileId: partial.activeVoiceMessageProfileId ?? UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -160,6 +200,10 @@ export class UiSettingsStore {
       activePromptPresetId: UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      summaryProviderId: UI_SETTINGS_DEFAULTS.summaryProviderId,
+      summaryModelName: UI_SETTINGS_DEFAULTS.summaryModelName,
+      messageEditorProviderId: UI_SETTINGS_DEFAULTS.messageEditorProviderId,
+      messageEditorModelName: UI_SETTINGS_DEFAULTS.messageEditorModelName,
       coauthorProviderId: UI_SETTINGS_DEFAULTS.coauthorProviderId,
       coauthorModelName: UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorMaxTokens: UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
@@ -170,6 +214,10 @@ export class UiSettingsStore {
       starPromptDeferrals: UI_SETTINGS_DEFAULTS.starPromptDeferrals,
       copilotProviderId: UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
+      activeServicePromptProfileId: UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
+      servicePromptPresetMigrated: UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
+      activeDictationProfileId: UI_SETTINGS_DEFAULTS.activeDictationProfileId,
+      activeVoiceMessageProfileId: UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
     }).returning();
 
@@ -189,6 +237,10 @@ export class UiSettingsStore {
       activePromptPresetId: row.activePromptPresetId,
       aiAssistantProviderId: row.aiAssistantProviderId ?? null,
       aiAssistantModelName: row.aiAssistantModelName ?? null,
+      summaryProviderId: row.summaryProviderId ?? null,
+      summaryModelName: row.summaryModelName ?? null,
+      messageEditorProviderId: row.messageEditorProviderId ?? null,
+      messageEditorModelName: row.messageEditorModelName ?? null,
       coauthorProviderId: row.coauthorProviderId ?? null,
       coauthorModelName: row.coauthorModelName ?? null,
       coauthorMaxTokens: row.coauthorMaxTokens ?? null,
@@ -199,6 +251,10 @@ export class UiSettingsStore {
       starPromptDeferrals: row.starPromptDeferrals,
       copilotProviderId: row.copilotProviderId ?? null,
       copilotModelName: row.copilotModelName ?? null,
+      activeServicePromptProfileId: row.activeServicePromptProfileId ?? null,
+      servicePromptPresetMigrated: row.servicePromptPresetMigrated,
+      activeDictationProfileId: row.activeDictationProfileId ?? null,
+      activeVoiceMessageProfileId: row.activeVoiceMessageProfileId ?? null,
       updatedAt: row.updatedAt,
     };
   }

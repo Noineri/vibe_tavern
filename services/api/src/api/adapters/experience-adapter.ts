@@ -142,7 +142,11 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 
 	// ─── Config ──────────────────────────────────────────────────────────────
 
-	getExperienceConfig = async (chatId: string) => this.resources.getConfig(chatId);
+	getExperienceConfig = async (chatId: string) => {
+		const result = await this.resources.getConfig(chatId);
+		if (!result.ok) throw mapError(result.error);
+		return result.data;
+	};
 
 	updateExperienceConfig = async (
 		chatId: string,

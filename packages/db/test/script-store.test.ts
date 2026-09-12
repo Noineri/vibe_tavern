@@ -19,9 +19,11 @@ async function setup() {
 	const db = await createDb(":memory:");
 	const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
 	const store = new ScriptStore(db, { content, clock: fixedClock, idGenerator: idGen });
-	// FK parents (scripts reference characters + personas).
+	// FK parents (scripts reference characters + personas; the chat FK is
+	// exercised by the setScope chat transition).
 	await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_1', 'C', '2026-01-01', '2026-01-01')`);
 	await db.run(sql`INSERT INTO personas (id, name, description, default_for_new_chats, has_file_on_disk, created_at, updated_at) VALUES ('persona_9', 'P', '', 0, 0, '2026-01-01', '2026-01-01')`);
+	await db.run(sql`INSERT INTO chats (id, character_id, active_branch_id, title, created_at, updated_at) VALUES ('chat_x', 'char_1', 'branch_x', 'T', '2026-01-01', '2026-01-01')`);
 	return { store, db, content };
 }
 
@@ -31,27 +33,27 @@ async function setup() {
 // union (FK ∪ junction) rewrite — the junction only ADDS scripts, never
 // removes FK-owned ones.
 describe("ScriptStore.listAllEnabledForChat (FK-only baseline)", () => {
-	test("resolves global + character-FK + persona-FK scripts, sorted by sortOrder", async () => {
+	test("resolves global + entity-FK (character home) + entity-FK (persona home) scripts, sorted by sortOrder", async () => {
 		const { store } = await setup();
 		// sortOrder deliberately out of creation order to prove the sort.
-		await store.create({ name: "char-a", scopeType: "character", characterId: "char_1", sortOrder: 30, enabled: true });
+		await store.create({ name: "char-a", scopeType: "entity", characterId: "char_1", sortOrder: 30, enabled: true });
 		await store.create({ name: "glob", scopeType: "global", sortOrder: 10, enabled: true });
-		await store.create({ name: "persona-a", scopeType: "persona", personaId: "persona_9", sortOrder: 20, enabled: true });
+		await store.create({ name: "persona-a", scopeType: "entity", personaId: "persona_9", sortOrder: 20, enabled: true });
 
 		const resolved = await store.listAllEnabledForChat("char_1", "persona_9", "chat_x");
 		expect(resolved.map((s) => s.name)).toEqual(["glob", "persona-a", "char-a"]);
 	});
 
-	test("persona-FK script is excluded when personaId is null", async () => {
+	test("entity script homed to a persona is excluded when personaId is null", async () => {
 		const { store } = await setup();
-		await store.create({ name: "persona-a", scopeType: "persona", personaId: "persona_9", enabled: true });
+		await store.create({ name: "persona-a", scopeType: "entity", personaId: "persona_9", enabled: true });
 		const resolved = await store.listAllEnabledForChat("char_1", null, "chat_x");
 		expect(resolved.some((s) => s.name === "persona-a")).toBe(false);
 	});
 
 	test("a script homed to a different character is excluded", async () => {
 		const { store } = await setup();
-		await store.create({ name: "char-owned", scopeType: "character", characterId: "char_1", enabled: true });
+		await store.create({ name: "char-owned", scopeType: "entity", characterId: "char_1", enabled: true });
 		// Query as a different character — char_1's script must not leak in.
 		const resolved = await store.listAllEnabledForChat("char_other", null, "chat_x");
 		expect(resolved.some((s) => s.name === "char-owned")).toBe(false);
@@ -96,7 +98,7 @@ describe("ScriptStore link management (script_links junction)", () => {
 	test("listAllEnabledForChat unions FK-owned AND junction-linked (no lorebook-style gap)", async () => {
 		const { store } = await setup();
 		// FK-owned by char_1 (home scope) — never junction-linked.
-		await store.create({ name: "fk-owned", scopeType: "character", characterId: "char_1", enabled: true });
+		await store.create({ name: "fk-owned", scopeType: "entity", characterId: "char_1", enabled: true });
 		// Global script, junction-linked to char_1.
 		const linked = await store.create({ name: "linked", scopeType: "global", enabled: true });
 		await store.addLink(linked.id, "character", "char_1");
@@ -112,7 +114,7 @@ describe("ScriptStore link management (script_links junction)", () => {
 	test("junction-linked script homed to a DIFFERENT character still resolves via link", async () => {
 		const { store } = await setup();
 		// Home scope is char_1, but linked to persona_9 — the link must surface it.
-		const s = await store.create({ name: "cross", scopeType: "character", characterId: "char_1", enabled: true });
+		const s = await store.create({ name: "cross", scopeType: "entity", characterId: "char_1", enabled: true });
 		await store.addLink(s.id, "persona", "persona_9");
 		const resolved = await store.listAllEnabledForChat("char_other", "persona_9", "chat_x");
 		expect(resolved.map((x) => x.name)).toContain("cross");
@@ -126,14 +128,28 @@ describe("ScriptStore link management (script_links junction)", () => {
 		expect(resolved.some((x) => x.name === "off")).toBe(false);
 	});
 
-	test("listByScope unions FK and junction for character/persona tabs", async () => {
+	test("listByScope entity branch unions the typed FK home with junction links of EITHER target type", async () => {
 		const { store } = await setup();
-		await store.create({ name: "fk", scopeType: "character", characterId: "char_1" });
-		const linked = await store.create({ name: "linked", scopeType: "global" });
-		await store.addLink(linked.id, "character", "char_1");
-		const names = (await store.listByScope("character", "char_1")).map((s) => s.name);
+		await store.create({ name: "fk", scopeType: "entity", characterId: "char_1" });
+		const linkedChar = await store.create({ name: "linked-char", scopeType: "global" });
+		await store.addLink(linkedChar.id, "character", "char_1");
+		const linkedPersona = await store.create({ name: "linked-persona", scopeType: "global" });
+		await store.addLink(linkedPersona.id, "persona", "char_1");
+		const names = (await store.listByScope("entity", "char_1")).map((s) => s.name);
 		expect(names).toContain("fk");
-		expect(names).toContain("linked");
+		expect(names).toContain("linked-char");
+		expect(names).toContain("linked-persona");
+	});
+
+	test("listByScope entity browse (no ownerId) lists every entity-home script regardless of owner kind", async () => {
+		const { store } = await setup();
+		// Browse semantics for the sidebar's Bound tab (mirrors LorebookStore):
+		// no ownerId → every entity-home script, both FK kinds, nothing else.
+		await store.create({ name: "char-owned", scopeType: "entity", characterId: "char_1" });
+		await store.create({ name: "persona-owned", scopeType: "entity", personaId: "persona_9" });
+		await store.create({ name: "global-one", scopeType: "global" });
+		const names = (await store.listByScope("entity")).map((s) => s.name).sort();
+		expect(names).toEqual(["char-owned", "persona-owned"]);
 	});
 
 	test("listScriptsLinkedToTarget is the reverse query (persona/character editor view)", async () => {
@@ -157,31 +173,26 @@ describe("ScriptStore link management (script_links junction)", () => {
 	});
 });
 
-describe("ScriptStore.setScope (PR-6)", () => {
-	test("reassigns character → persona atomically (stale FK cleared)", async () => {
+describe("ScriptStore.setScope (PR-6, entity model)", () => {
+	test("flipping to entity keeps the existing owner FK (no owner picker on the flip)", async () => {
 		const { store } = await setup();
-		const created = await store.create({ name: "S1", scopeType: "character", characterId: "char_1" });
-		expect(created.scopeType).toBe("character");
-		expect(created.characterId).toBe("char_1");
+		const created = await store.create({ name: "S1", scopeType: "global", characterId: "char_1" });
+		expect(created.scopeType).toBe("global");
 
-		const moved = await store.setScope(created.id, "persona", "persona_9");
-		expect(moved.scopeType).toBe("persona");
-		expect(moved.personaId).toBe("persona_9");
-		// The stale character FK MUST be cleared — the whole point of setScope
-		// vs a raw update({ scopeType, personaId }).
-		expect(moved.characterId).toBeNull();
-		expect(moved.chatId).toBeNull();
-
-		// listByScope reflects the new scope; the old scope no longer lists it.
-		const personaScripts = await store.listByScope("persona", "persona_9");
-		expect(personaScripts.some((s) => s.id === created.id)).toBe(true);
-		const charScripts = await store.listByScope("character", "char_1");
-		expect(charScripts.some((s) => s.id === created.id)).toBe(false);
+		const flipped = await store.setScope(created.id, "entity", null);
+		expect(flipped.scopeType).toBe("entity");
+		// The typed owner FK pair is NOT cleared by the flip — the home FK is
+		// whichever column is set, and the caller's ownerId alone cannot name
+		// the target type (quirk parity with the lorebook accordion flip).
+		expect(flipped.characterId).toBe("char_1");
+		expect(flipped.personaId).toBeNull();
+		// The entity branch of listByScope still lists it via the kept FK.
+		expect((await store.listByScope("entity", "char_1")).some((s) => s.id === created.id)).toBe(true);
 	});
 
 	test("reassigning to global clears ALL FK columns", async () => {
 		const { store } = await setup();
-		const created = await store.create({ name: "S2", scopeType: "persona", personaId: "persona_9" });
+		const created = await store.create({ name: "S2", scopeType: "entity", personaId: "persona_9" });
 		const globalized = await store.setScope(created.id, "global", null);
 		expect(globalized.scopeType).toBe("global");
 		expect(globalized.characterId).toBeNull();
@@ -189,6 +200,17 @@ describe("ScriptStore.setScope (PR-6)", () => {
 		expect(globalized.chatId).toBeNull();
 		const globalScripts = await store.listByScope("global");
 		expect(globalScripts.some((s) => s.id === created.id)).toBe(true);
+	});
+
+	test("reassigning to chat clears the entity FKs and sets the chat FK", async () => {
+		const { store } = await setup();
+		const created = await store.create({ name: "S3", scopeType: "entity", characterId: "char_1" });
+		const moved = await store.setScope(created.id, "chat", "chat_x");
+		expect(moved.scopeType).toBe("chat");
+		expect(moved.characterId).toBeNull();
+		expect(moved.chatId).toBe("chat_x");
+		// The stale FK is cleared — global/chat transitions keep the PR-6 guarantee.
+		expect((await store.listByScope("entity", "char_1")).some((s) => s.id === created.id)).toBe(false);
 	});
 });
 
@@ -239,7 +261,7 @@ describe("ScriptStore script_kind + creation intent (DICE-B2)", () => {
 	test("setScope preserves scriptKind and does not touch creationIntentId", async () => {
 		const { store } = await setup();
 		const s = await store.create({ name: "Fate", scopeType: "global", scriptKind: "dice", creationIntentId: "intent_1" });
-		const moved = await store.setScope(s.id, "character", "char_1");
+		const moved = await store.setScope(s.id, "chat", "chat_x");
 		expect(moved.scriptKind).toBe("dice");
 		expect(moved.creationIntentId).toBe("intent_1");
 	});
@@ -284,7 +306,7 @@ describe("ScriptStore kind-split resolvers (DICE-B2)", () => {
 
 	test("the dice resolver preserves FK ∪ junction dedup/order (mirrors prompt path)", async () => {
 		const { store } = await setup();
-		await store.create({ name: "dice-fk", scopeType: "character", characterId: "char_1", enabled: true, scriptKind: "dice", sortOrder: 20 });
+		await store.create({ name: "dice-fk", scopeType: "entity", characterId: "char_1", enabled: true, scriptKind: "dice", sortOrder: 20 });
 		const linked = await store.create({ name: "dice-linked", scopeType: "global", enabled: true, scriptKind: "dice", sortOrder: 10 });
 		await store.addLink(linked.id, "character", "char_1");
 		const names = (await store.listAllEnabledDiceScriptsForChat("char_1", null, "chat_x")).map((s) => s.name);

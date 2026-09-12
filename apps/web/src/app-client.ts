@@ -73,6 +73,7 @@ export {
   setChatPromptPreset,
   sendChatMessage,
   regenerateChatMessage,
+  continueChatMessage,
   generateReply,
   editChatMessage,
   deleteChatMessage,
@@ -84,6 +85,7 @@ export {
   sendChatMessageStream,
   regenerateChatMessageStream,
   generateReplyStream,
+  continueChatMessageStream,
   forkBranch,
   activateBranch,
   renameBranch,
@@ -91,6 +93,7 @@ export {
   summarizeChat,
   saveChatSummary,
   listChatSummaries,
+  reorderChatSummaries,
   createChatSummary,
   updateChatSummary,
   deleteChatSummary,
@@ -99,7 +102,6 @@ export {
   updateInsightsConfig,
   exportChatJsonl,
   exportPromptTrace,
-  logClientSendDebug,
   refreshInsightsCompletion,
   previewScene,
   generateScene,
@@ -202,6 +204,18 @@ export {
   getScriptLinks,
   setScriptLinks,
 } from "./api/script-api.js";
+
+// ─── Regex presets ──────────────────────────────────────────────────────────
+export {
+  listAllRegexPresets,
+  getRegexPreset,
+  createRegexPreset,
+  updateRegexPreset,
+  deleteRegexPreset,
+  getRegexLinks,
+  setRegexLinks,
+  resolveActiveRegexPresets,
+} from "./api/regex-api.js";
 
 // ─── Provider ───────────────────────────────────────────────────────────
 export {

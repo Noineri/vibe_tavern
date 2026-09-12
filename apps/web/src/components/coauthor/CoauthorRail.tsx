@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
 import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
-import { Icons } from "../shared/icons.js";
+import { InlineRenameInput } from "../shared/InlineRenameInput.js";
+import { SearchInput } from "../shared/SearchInput.js";
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { initials } from "../layout/app-shell-helpers.js";
@@ -172,7 +173,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
         <div className="flex shrink-0 flex-col items-center gap-1 border-t border-border py-2">
           <Ico icon={<Ic.tool />} onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)} title={t("coauthor.sidebar.modules")} />
           <Ico icon={<Ic.book />} onClick={() => useModalStore.getState().setCoauthorSkillModalOpen(true)} title={t("coauthor.sidebar.skills")} />
-          <Ico icon={<Ic.plug />} onClick={() => useModalStore.getState().setIsProviderModalOpen(true)} title={t("provider_settings_tooltip")} />
+          <Ico icon={<Ic.plug />} onClick={() => useModalStore.getState().setCoauthorProviderModalOpen(true)} title={t("provider_settings_tooltip")} />
           <Ico icon={<Ic.sliders />} onClick={() => useModalStore.getState().setTweaksOpen(true)} title={t("interface_settings_tooltip")} />
         </div>
       </div>
@@ -218,12 +219,11 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
                   {/* Search + sort + tag-filter row. No section header on mobile
                       — just the controls, compact. Tags open a bottom sheet. */}
                   <div className="flex items-center gap-1.5 px-1">
-                    <input
-                      type="text"
+                    <SearchInput
+                      className="min-w-0 flex-1"
                       value={charQuery}
                       onChange={(e) => setCharQuery(e.target.value)}
                       placeholder={t("search_name_placeholder")}
-                      className="min-w-0 flex-1 rounded border border-border bg-s2 px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors placeholder:text-t3/60 focus:border-accent"
                     />
                     <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} className="shrink-0" />
                     <div className="relative shrink-0">
@@ -293,8 +293,8 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
                                  )}
                                  onClick={() => { void chat.handleSwitchChat(ch.id); }}>
                               {renamingChatId === ch.id ? (
-                                <input
-                                  className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
+                                <InlineRenameInput
+                                  className="mb-px"
                                   value={renameDraft}
                                   autoFocus
                                   onChange={(e) => setRenameDraft(e.target.value)}
@@ -343,7 +343,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
             <div className="flex shrink-0 flex-col gap-0.5 border-t border-border bg-s2/30 px-2 py-3">
               <NavRow icon={<Ic.tool />} label={t("coauthor.sidebar.modules")} onClick={() => { useModalStore.getState().setCoauthorModuleModalOpen(true); close(); }} />
               <NavRow icon={<Ic.book />} label={t("coauthor.sidebar.skills")} onClick={() => { useModalStore.getState().setCoauthorSkillModalOpen(true); close(); }} />
-              <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setIsProviderModalOpen(true); close(); }} />
+              <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setCoauthorProviderModalOpen(true); close(); }} />
               <NavRow icon={<Ic.sliders />} label={t("interface_settings_tooltip")} onClick={() => { useModalStore.getState().setTweaksOpen(true); close(); }} />
             </div>
           </Drawer.Popup>

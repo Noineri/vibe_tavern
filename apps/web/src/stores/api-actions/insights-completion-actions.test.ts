@@ -12,14 +12,12 @@ import { useSceneGenerationStore } from "../scene-generation-store.js";
 
 const mocks = {
   refreshInsightsCompletion: mock(),
-  logClientSendDebug: mock(),
 };
 
 const realAppClient = await import("../../app-client.js");
 mock.module("../../app-client.js", () => ({
   ...realAppClient,
   refreshInsightsCompletion: mocks.refreshInsightsCompletion,
-  logClientSendDebug: mocks.logClientSendDebug,
 }));
 
 let cancelInsightsCompletionRefresh: typeof import("./insights-completion-actions.js").cancelInsightsCompletionRefresh;
@@ -107,7 +105,6 @@ function deferred<T>() {
 
 beforeEach(() => {
   mocks.refreshInsightsCompletion.mockReset();
-  mocks.logClientSendDebug.mockReset();
   useSnapshotStore.getState().clear();
   useSceneGenerationStore.getState().clearAll();
 });

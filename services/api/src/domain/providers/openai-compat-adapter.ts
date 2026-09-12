@@ -10,9 +10,10 @@
  * Extracted from protocol-registry.ts (AD-019, colocation at protocol granularity).
  */
 
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { resolveVendor, buildDefaultModelsUrl, type OpenAiModelsResponse } from "./vendor-registry.js";
+import { resolveOpenAiCompatLanguageModel } from "./completion-model.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
+import type { CompletionFormatHandoff } from "./protocol-types.js";
 import {
 	PROBE_TIMEOUT_MS,
 	MODEL_LIST_TIMEOUT_MS,
@@ -187,8 +188,11 @@ export async function listOpenAiCompatModels(input: ListModelsInput): Promise<Pr
 				label: (record.name ?? "").trim() || id,
 			};
 
-			// Context length — try all known field names
+			// Context length — try all known field names (LM Studio reports
+			// max_context_length per model in /v1/models; OpenRouter & co. use
+			// the variants below).
 			const contextLength = record.context_length
+				?? record.max_context_length
 				?? record.context_length_total
 				?? record.tokens
 				?? record.top_provider?.context_length;
@@ -229,28 +233,42 @@ export const openaiCompatProtocol: ProtocolAdapter = {
 		prefill: true,
 		logitBias: true,
 		samplers: SAMPLER_SETS.openai_compat_minimal,
-		textCompletion: false,
+		// LS-2e: OpenAI-compat backends (LM Studio, ooba/TabbyAPI/Aphrodite/vLLM
+		// presets, generic profiles) serve /completions, so the profile's TC
+		// generation mode resolves a raw completion model (see resolveModel).
+		// Cloud presets on this protocol keep the mode hidden in the UI
+		// (resolveTextCompletionSupport) — the toggle is local-only.
+		textCompletion: true,
+		// LS-3c: these backends expose no template-application API — AUTO falls
+		// to the documented default template inside the completion seam.
+		backendTemplate: false,
 	},
-	resolveModel(profile, model, fetch?: ProviderFetch) {
-		const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
-		const apiKey = profile.apiKey ?? "";
+	resolveModel(profile, model, fetch?: ProviderFetch, format?: CompletionFormatHandoff) {
+		// LS-2b: chat by default; generationMode "completion" serves the raw
+		// /completions model (flat prompt via the LS-2c serialization seam).
 		// `openai_compat` is intentionally broad: in this app it covers
 		// aggregators and non-OpenAI model-family providers, not only the real
 		// OpenAI Chat API. The stricter OpenAI-only sampler surface is selected
 		// elsewhere by preset-level resolveSamplerCapabilities("openai", ...).
-		const provider = createOpenAICompatible({
+		return resolveOpenAiCompatLanguageModel({
 			name: "openai_compat",
-			apiKey: apiKey || "not-needed",
-			baseURL: endpoint || "https://api.openai.com/v1",
+			baseURL: (profile.endpoint || "").replace(/\/+$/, "") || "https://api.openai.com/v1",
+			apiKey: profile.apiKey,
+			model,
 			// Many OpenAI-compatible aggregators/models support response_format:
 			// json_schema, but the generic provider defaults this capability to
-			// false unless declared.
+			// false unless declared (chat models only — the completion model is
+			// unaffected).
 			supportsStructuredOutputs: true,
-			// Inject the proxy-aware fetch so generation honors the profile's
-			// proxy policy; omit when direct to keep the SDK's default fetch.
 			...(fetch ? { fetch } : {}),
+			generationMode: profile.generationMode,
+			// LS-3b: the preset's manual sequences render through the seam when TC
+			// mode is active; AUTO stays on the default template (no backend
+			// template API on this protocol).
+			...(profile.generationMode === "completion" && format?.completionFormat
+				? { completionFormat: format.completionFormat }
+				: {}),
 		});
-		return provider.chatModel(model);
 	},
 	limitations: [],
 	probe: probeOpenAiCompatibleConnection,

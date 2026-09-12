@@ -556,7 +556,7 @@ Export a prompt trace as JSON (shows all layers, token counts, the final request
 
 List lorebooks in a scope.
 
-**Query:** `scopeType` (default `character`) + `ownerId` (the character/persona/chat ID).
+**Query:** `scopeType` (default `entity`) + `ownerId` (the character/persona/chat ID — an entity book's typed FK says which kind of owner).
 
 ### `GET /api/lorebooks/all`
 
@@ -571,7 +571,7 @@ Create a lorebook.
 ```json
 {
   "name": "World Lore",
-  "scopeType": "character",
+  "scopeType": "entity",
   "characterId": "char_1",
   "scanDepth": 50,
   "tokenBudget": 2048,
@@ -652,7 +652,7 @@ Import a lorebook from SillyTavern format.
 ```json
 {
   "name": "Imported Lorebook",
-  "scopeType": "character",
+  "scopeType": "entity",
   "characterId": "char_1",
   "entries": [
     { "keys": ["castle"], "content": "An ancient fortress.", "position": "before_char" }
@@ -690,7 +690,7 @@ Deep-copy a lorebook with all entries and links.
 ```json
 {
   "name": "Copy of Lorebook",
-  "scopeType": "character",
+  "scopeType": "entity",
   "characterId": "char_2"
 }
 ```
@@ -978,7 +978,7 @@ Create a script.
   "name": "Mood Tracker",
   "description": "Tracks character mood across messages.",
   "code": "const last = context.chat.lastMessage;\nif (last.includes('angry')) {\n  context.state.set('mood', 'angry');\n}",
-  "scopeType": "character",
+  "scopeType": "entity",
   "characterId": "char_1",
   "enabled": true,
   "sortOrder": 0
@@ -1026,7 +1026,7 @@ Import a script from JS code or JSON.
   "format": "js",
   "code": "// Script code here",
   "name": "Imported Script",
-  "scopeType": "character",
+  "scopeType": "entity",
   "characterId": "char_1"
 }
 ```

@@ -22,6 +22,9 @@ import { Modal } from "../shared/Modal.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
+import { TextInput } from "../shared/text-input.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { updatePersona, createPersona, uploadPersonaAvatar } from "../../app-client.js";
 import { toast } from "sonner";
 import { readCardRaw } from "../modals/import/parse-import-file.js";
@@ -56,11 +59,13 @@ function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
         <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_a_title")}</div>
         <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_a_sub")}</div>
       </button>
-      <button type="button" className={cardBase} onClick={() => onSelect("b")}>
-        <div className="text-[1.4rem] text-accent"><Icons.Import /></div>
-        <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_b_title")}</div>
-        <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_b_sub")}</div>
-      </button>
+      {!isMobile && (
+        <button type="button" className={cardBase} onClick={() => onSelect("b")}>
+          <div className="text-[1.4rem] text-accent"><Icons.Import /></div>
+          <div className="font-ui text-[0.95rem] font-semibold">{t("wizard_path_b_title")}</div>
+          <div className="font-ui text-[0.8rem] text-t2">{t("wizard_path_b_sub")}</div>
+        </button>
+      )}
       <button type="button" className="mt-2 text-t3 hover:text-t2 transition-colors font-ui text-[0.85rem] underline underline-offset-2 hover:underline-offset-4" onClick={() => onSelect("skip")}>
         {t("wizard_skip_all")}
       </button>
@@ -141,6 +146,12 @@ function ProviderStep({
     topA: existingProfile?.topA ?? 0,
     typicalP: existingProfile?.typicalP ?? 1,
     tfsZ: existingProfile?.tfsZ ?? 1,
+    adaptiveTarget: existingProfile?.adaptiveTarget ?? -1,
+    adaptiveDecay: existingProfile?.adaptiveDecay ?? 0.9,
+    dynatempRange: existingProfile?.dynatempRange ?? 0,
+    dynatempExponent: existingProfile?.dynatempExponent ?? 1,
+    topNSigma: existingProfile?.topNSigma ?? 0,
+    smoothingFactor: existingProfile?.smoothingFactor ?? 0,
     repeatLastN: existingProfile?.repeatLastN ?? 0,
     mirostat: existingProfile?.mirostat ?? 0,
     mirostatTau: existingProfile?.mirostatTau ?? 5,
@@ -149,6 +160,7 @@ function ProviderStep({
     dryBase: existingProfile?.dryBase ?? 1.75,
     dryAllowedLength: existingProfile?.dryAllowedLength ?? 2,
     drySequenceBreakers: existingProfile?.drySequenceBreakers ?? [],
+    dryPenaltyLastN: existingProfile?.dryPenaltyLastN ?? -1,
     xtcThreshold: existingProfile?.xtcThreshold ?? 0.1,
     xtcProbability: existingProfile?.xtcProbability ?? 0,
     frequencyPenalty: existingProfile?.frequencyPenalty ?? 0,
@@ -157,11 +169,14 @@ function ProviderStep({
     maxTokens: existingProfile?.maxTokens ?? 512,
     contextBudget: existingProfile?.contextBudget ?? 16000,
     pinContextBudget: existingProfile?.pinContextBudget ?? false,
+    tokenPadding: existingProfile?.tokenPadding ?? 0,
+    generationMode: existingProfile?.generationMode ?? "chat",
     bindPerModel: existingProfile?.bindPerModel ?? false,
     modelFreeOnly: existingProfile?.modelFreeOnly ?? false,
     modelGroupByOwner: existingProfile?.modelGroupByOwner ?? false,
     editingModelId: null,
     stopSequences: existingProfile?.stopSequences ?? [],
+    bannedStrings: existingProfile?.bannedStrings ?? [],
     logitBias: existingProfile?.logitBias ?? [],
     seed: existingProfile?.seed ?? null,
     reasoningEffort: existingProfile?.reasoningEffort ?? "",
@@ -170,6 +185,8 @@ function ProviderStep({
     customSamplers: existingProfile?.customSamplers ?? false,
     proxyMode: existingProfile?.proxyMode ?? "inherit",
     proxyId: existingProfile?.proxyId ?? null,
+    samplerSetId: existingProfile?.samplerSetId ?? null,
+    generationFormat: existingProfile?.generationFormat ?? null,
   }));
 
   const [testOk, setTestOk] = useState<boolean | null>(alreadyHasProfile ? true : null);
@@ -571,33 +588,30 @@ function PersonaStep({
         />
       )}
 
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
-        <input
-          className={cn("w-full rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base min-h-[44px]" : "text-[0.9rem]")}
-          type="text"
+      <div>
+        <label className={lblCls}>{t("ws_name_label")}</label>
+        <TextInput
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("persona_name_placeholder")}
           autoFocus
         />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("persona_desc_placeholder")}</span>
+      </div>
+      <div>
+        <label className={lblCls}>{t("persona_desc_placeholder")}</label>
         <MobileExpandTextarea value={description} onChange={setDescription} label={t("persona_desc_placeholder")}>
-          <textarea
-            className={cn("w-full min-h-[80px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+          <AutoTextarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={t("persona_desc_placeholder")}
-            rows={3}
+            minRows={3}
           />
         </MobileExpandTextarea>
-      </label>
+      </div>
 
       {/* Pronouns */}
       <div className="flex flex-col gap-1.5">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("pronouns_custom_placeholder")}</span>
+        <span className={lblCls + " !mb-0"}>{t("pronouns_custom_placeholder")}</span>
         <div className="flex flex-wrap gap-1.5">
           {PRONOUN_OPTIONS.map((opt) => (
             <button key={opt.v} type="button"
@@ -614,8 +628,7 @@ function PersonaStep({
           ))}
         </div>
         {pronouns === "custom" && (
-          <input
-            className="w-full rounded-lg border border-border2 bg-s2 px-3 py-2 font-ui text-t1 outline-none transition-colors focus:border-accent"
+          <TextInput
             value={pronounsCustom}
             onChange={(e) => setPronounsCustom(e.target.value)}
             placeholder={t("pronouns_custom_placeholder")}
@@ -799,41 +812,37 @@ function CharacterStep({
         />
       )}
 
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
-        <input
-          className={cn("w-full rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base min-h-[44px]" : "text-[0.9rem]")}
-          type="text"
+      <div>
+        <label className={lblCls}>{t("ws_name_label")}</label>
+        <TextInput
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("ws_name_placeholder")}
           autoFocus
         />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_desc_label")}</span>
+      </div>
+      <div>
+        <label className={lblCls}>{t("ws_desc_label")}</label>
         <MobileExpandTextarea value={desc} onChange={setDesc} label={t("ws_desc_label")}>
-          <textarea
-            className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+          <AutoTextarea
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
             placeholder={t("ws_desc_label")}
-            rows={3}
+            minRows={3}
           />
         </MobileExpandTextarea>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_first_msg_label")}</span>
+      </div>
+      <div>
+        <label className={lblCls}>{t("ws_first_msg_label")}</label>
         <MobileExpandTextarea value={firstMsg} onChange={setFirstMsg} label={t("ws_first_msg_label")}>
-          <textarea
-            className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+          <AutoTextarea
             value={firstMsg}
             onChange={(e) => setFirstMsg(e.target.value)}
             placeholder={t("ws_first_msg_label")}
-            rows={3}
+            minRows={3}
           />
         </MobileExpandTextarea>
-      </label>
+      </div>
 
       {/* Import card */}
       <button

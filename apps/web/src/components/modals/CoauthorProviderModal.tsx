@@ -14,6 +14,7 @@ import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ProviderProfileList } from "../settings/provider/ProviderProfileList.js";
 import { ProviderModelList, type ProviderModelListOption } from "../settings/provider/ProviderModelList.js";
 import { Icons } from "../shared/icons.js";
+import { SearchInput } from "../shared/SearchInput.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { cn } from "../../lib/cn.js";
 
@@ -198,7 +199,6 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
     subtitle={t("coauthor.provider.subtitle")}
     detailTitle={selectedProfile?.name ?? t("coauthor.provider.title")}
     dirty={dirty}
-    containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
     masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
     detailClassName={isMobile ? "p-4" : "p-5"}
     headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
@@ -223,7 +223,7 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
       </div>
       <div className="flex shrink-0 flex-col">
         <label className="mb-1.5 block shrink-0 font-ui text-[12px] font-medium text-t3">{t("coauthor.provider.model_label")}</label>
-        <div className="mb-2 flex shrink-0 items-center gap-2"><div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-s2 px-2.5 py-1.5"><Icons.Search /><input className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[13px] text-t1 outline-none placeholder:text-t4" placeholder={t("coauthor.provider.model_search")} value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} /></div><button type="button" disabled={modelsLoading} onClick={() => void refreshModels()} className="shrink-0 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50">{t("refresh_models")}</button></div>
+        <div className="mb-2 flex shrink-0 items-center gap-2"><SearchInput className="min-w-0 flex-1" placeholder={t("coauthor.provider.model_search")} value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} /><button type="button" disabled={modelsLoading} onClick={() => void refreshModels()} className="shrink-0 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50">{t("refresh_models")}</button></div>
         <div className="mb-2 flex shrink-0 flex-wrap gap-1">{filterOptions.map((option) => <button key={option.value} type="button" onClick={() => setCapabilityFilter(option.value)} className={cn("flex items-center gap-1 rounded px-2 py-1 font-ui text-[11px]", capabilityFilter === option.value ? "bg-accent/15 text-accent-t" : "bg-s2 text-t3 hover:text-t1")}>{option.value === "supported" && <Icons.Wrench />}{option.label}</button>)}</div>
         <div data-testid="coauthor-model-list" className="h-[250px] shrink-0 overflow-hidden rounded-lg border border-border">
           {modelsLoading && <div className="flex h-full items-center justify-center font-ui text-[12px] text-t4">{t("loading")}</div>}

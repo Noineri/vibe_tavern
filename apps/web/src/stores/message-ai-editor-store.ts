@@ -26,15 +26,18 @@
 import { create } from "zustand";
 import type { ChatId, MessageId, MessageVariantId } from "@vibe-tavern/domain";
 
-export type MessageAiEditorMode = "message_edit" | "message_merge";
+export type MessageAiEditorMode = "message_edit" | "message_merge" | "message_tts_annotate";
 
 export interface MessageAiEditorTarget {
   targetChatId: ChatId;
   targetMessageId: MessageId;
   requestedMode: MessageAiEditorMode;
   /** Edit mode only: the immutable variant that was selected when the editor
-   *  opened — the diff base for the guarded Apply. Always null for merge,
-   *  whose sources are the current stars read at request time. */
+   *  opened — the diff base for the guarded Apply. Always null for merge
+   *  (sources are the current stars read at request time) and for annotate
+   *  (TPE-14: the modal resolves the source live — the currently selected
+   *  variant, or this captured ID when the editor was opened via Edit and
+   *  the variant is still present). */
   selectedSourceVariantId: MessageVariantId | null;
 }
 
@@ -48,6 +51,14 @@ export type OpenMessageAiEditorArgs =
     }
   | {
       requestedMode: "message_merge";
+      targetChatId: ChatId;
+      targetMessageId: MessageId;
+    }
+  | {
+      /** TPE-14: greeting-row entry — opens the modal directly in annotate
+       *  mode. No source variant is captured; the modal resolves the live
+       *  selected variant as the single source. */
+      requestedMode: "message_tts_annotate";
       targetChatId: ChatId;
       targetMessageId: MessageId;
     };

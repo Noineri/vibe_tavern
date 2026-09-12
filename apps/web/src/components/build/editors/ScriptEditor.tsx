@@ -14,6 +14,8 @@ import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
+import { lblCls } from "../../../lib/field-tokens.js";
+import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
@@ -139,9 +141,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
 
   // ── Queries (replaced with local state + async fetch) ────
+  // "entity" is a BROWSE filter here, not an owner view: the sidebar's
+  // "Bound" tab lists every entity-home script regardless of which
+  // character/persona owns it (symmetric with the Global tab). Owner-scoped
+  // views live in the character/persona build sidebars (explicit ownerId).
   const scopeId = (() => {
-    if (scope === "character") return characterId;
-    if (scope === "persona") return personaId ?? undefined;
     if (scope === "chat") return chatId ?? undefined;
     return undefined;
   })();
@@ -322,7 +326,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     : null;
 
   const handleImportScript = async (code: string) => {
-    const imported = await importScript({ format: "js", code, scopeType: scope, characterId: scope === "character" ? characterId : undefined, personaId: scope === "persona" ? personaId ?? undefined : undefined, chatId: scope === "chat" ? chatId ?? undefined : undefined });
+    const imported = await importScript({ format: "js", code, scopeType: scope, ...(scope === "entity" ? (personaId ? { personaId } : { characterId }) : {}), chatId: scope === "chat" ? chatId ?? undefined : undefined });
     setScripts((prev) => [...prev, imported]);
     ensureDraft(imported);
     setActiveScriptId(imported.id);
@@ -334,10 +338,14 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // "all" — overview mode with no specific owner; creating/importing scripts
   // is disabled there (CTAs are hidden in LorebookEditor), the fallback is purely defensive.
   const scopeBody = () => {
-    const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "character" : scope;
+    const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "entity" : scope;
     const base: Record<string, string | undefined> = { scopeType: effectiveScope };
-    if (effectiveScope === "character") base.characterId = characterId;
-    if (effectiveScope === "persona") base.personaId = personaId ?? undefined;
+    // Entity home FK resolves from the current context: a persona context owns
+    // the script, otherwise the character does (exactly one typed FK).
+    if (effectiveScope === "entity") {
+      if (personaId) base.personaId = personaId;
+      else base.characterId = characterId;
+    }
     if (effectiveScope === "chat") base.chatId = chatId ?? undefined;
     return base;
   };
@@ -393,7 +401,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
               <div className="mb-3 text-[13px] text-t2">{t("script_import_paste")}</div>
               <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
-                <AutoTextarea className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent" style={{}} maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
+                <AutoTextarea mono className="leading-[1.6]" maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
               </MobileExpandTextarea>
               {importCode.trim() && (
                 <div className="mt-2 text-[11px] text-accent-t">
@@ -436,7 +444,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       {scripts.length === 0 ? (
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
-          <div className="flex justify-center gap-2">
+          <div className="flex max-md:flex-col max-md:items-stretch justify-center gap-2">
             <AddButton onClick={() => handleAdd()}>
               <Ic.plus /> {t("new_script")}
             </AddButton>
@@ -466,7 +474,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                 onClick={() => setActiveScriptId(s.id)}
               />
             ))}
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap gap-2 max-md:flex-col max-md:items-stretch">
               <AddButton onClick={() => handleAdd()}><Ic.plus /> {t("new_script")}</AddButton>
               <AddButton onClick={() => handleAdd("dice")}><Ic.dice /> {t("new_dice_script")}</AddButton>
               <AddButton onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</AddButton>
@@ -519,7 +527,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       {/* Header: name + toggle + delete */}
       <div className="flex flex-col gap-3" style={{ marginBottom: 16 }}>
         <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
+          <div className="min-w-0 flex-1"><TextInput value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
           <Toggle checked={activeScript.enabled} onChange={(enabled) => updateDraft({ enabled })} />
           <CustomTooltip content={t("delete_script_confirm")}>
             <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
@@ -539,12 +547,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
       {/* Description */}
       <div style={{ marginBottom: 16 }}>
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
-        <input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent" value={activeScript.description ?? ""} onChange={(e) => updateDraft({ description: e.target.value })} placeholder={t("script_desc_placeholder")} />
+        <label className={lblCls}>{t("script_desc_label")}</label>
+        <TextInput value={activeScript.description ?? ""} onChange={(e) => updateDraft({ description: e.target.value })} placeholder={t("script_desc_placeholder")} />
       </div>
 
       {/* Link binding (forward): bind this script to additional characters/personas */}
-      {scope !== "chat" && (
+      {/* MUI step 13: only entity-owned scripts bind to characters/personas; global (application-scope) scripts run unconditionally and chat scripts are chat-bound. */}
+      {scope === "entity" && (
         <div style={{ marginBottom: 16 }}>
           <div className="mb-1.5 flex items-center gap-1.5">
             <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
@@ -600,9 +609,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       </div>
 
       {activeScript.scriptKind === "dice" ? (
-        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
       ) : (
-        <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+        <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
       )}
     </div>
   ) : (

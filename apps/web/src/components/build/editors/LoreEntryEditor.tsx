@@ -6,9 +6,9 @@
  * reports/lorebook-editor-form-state-gap.md Step 1): `ActivationTestPanel`
  * (the activation tester), `CharacterFilterPicker` (the id-bound character
  * filter), and `LoreKeysAiPill` (AI key generation). This component keeps the
- * local UI state for keyword input (keyInput / secKeyInput), the advanced-
- * settings disclosure (advancedOpen), the AI helper modal (aiHelperOpen),
- * and the delete-confirmation modal (confirmDeleteEntry).
+ * local UI state for the advanced-settings disclosure (advancedOpen), the AI
+ * helper modal (aiHelperOpen), and the delete-confirmation modal
+ * (confirmDeleteEntry).
  *
  * Receives from the parent:
  *   - onDeleted (callback after successful deletion)
@@ -25,8 +25,10 @@ import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
 
 import { useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
-import { Ic, Icons } from "../../shared/icons.js";
+import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
+import { TextInput } from "../../shared/text-input.js";
+import { ChipInput } from "../../shared/ChipInput.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { Checkbox } from "../../shared/Checkbox.js";
@@ -108,8 +110,6 @@ export function LoreEntryEditor({
   const delayUntilRecursion = form.watch("delayUntilRecursion");
   const groupName = form.watch("groupName");
   // ── Local UI state ──
-  const [keyInput, setKeyInput] = useState("");
-  const [secKeyInput, setSecKeyInput] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState(false);
   useKeyDown("Escape", () => setConfirmDeleteEntry(false), { enabled: confirmDeleteEntry });
@@ -134,11 +134,10 @@ export function LoreEntryEditor({
       <div className="mx-auto max-w-[860px] flex flex-col gap-6">
         {/* ── Header: name + enabled toggle + delete ── */}
         <div className="flex items-center gap-3">
-          <input
-            className="flex-1 rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent"
-            type="text"
+          <TextInput
+            className="flex-1"
             placeholder={t("lore_entry_title")}
-            {...form.register("title")}
+            register={form.register("title")}
           />
           <ControlledField name="enabled">
             {(field) => (
@@ -171,38 +170,13 @@ export function LoreEntryEditor({
           <div className="flex items-start gap-2">
             <ControlledField name="keys">
               {(field) => (
-                <div
-                  className="flex flex-1 flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                  style={{ minHeight: 38 }}
-                >
-                  {field.value.map((k) => (
-                    <span
-                      key={k}
-                      className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                      onClick={() => field.onChange(field.value.filter((x) => x !== k))}
-                    >
-                      {k} <Icons.Close />
-                    </span>
-                  ))}
-                  <input
-                    className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
-                    value={keyInput}
-                    onChange={(e) => setKeyInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      e.preventDefault();
-                      const val = keyInput.trim();
-                      if (!val) return;
-                      if (!field.value.includes(val)) field.onChange([...field.value, val]);
-                      setKeyInput("");
-                    }}
-                    placeholder={
-                      field.value.length === 0
-                        ? t("lore_entry_keys_placeholder")
-                        : ""
-                    }
-                  />
-                </div>
+                <ChipInput
+                  className="min-w-0 flex-1"
+                  values={field.value}
+                  onChange={field.onChange}
+                  mode="words"
+                  placeholder={t("lore_entry_keys_placeholder")}
+                />
               )}
             </ControlledField>
             <LoreKeysAiPill />
@@ -264,8 +238,8 @@ export function LoreEntryEditor({
                 label={t("lore_entry_content")}
               >
                 <AutoTextarea
-                  className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[13px] text-t1 outline-none focus:border-accent leading-[1.6]"
-                  style={{}}
+                  className="leading-[1.6]"
+                  minRows={8}
                   maxRows={25}
                   value={field.value}
                   onChange={field.onChange}
@@ -350,33 +324,11 @@ export function LoreEntryEditor({
               </FieldLabel>
               <ControlledField name="secondaryKeys">
                 {(field) => (
-                  <div
-                    className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                    style={{ minHeight: 38 }}
-                  >
-                    {field.value.map((k) => (
-                      <span
-                        key={k}
-                        className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                        onClick={() => field.onChange(field.value.filter((x) => x !== k))}
-                      >
-                        {k} <Icons.Close />
-                      </span>
-                    ))}
-                    <input
-                      className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
-                      value={secKeyInput}
-                      onChange={(e) => setSecKeyInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        const val = secKeyInput.trim();
-                        if (!val) return;
-                        if (!field.value.includes(val)) field.onChange([...field.value, val]);
-                        setSecKeyInput("");
-                      }}
-                    />
-                  </div>
+                  <ChipInput
+                    values={field.value}
+                    onChange={field.onChange}
+                    mode="words"
+                  />
                 )}
               </ControlledField>
             </div>
@@ -538,10 +490,8 @@ export function LoreEntryEditor({
                       {t("lore_group_name")}
                     </FieldLabel>
                   </CustomTooltip>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="text"
-                    {...form.register("groupName")}
+                  <TextInput
+                    register={form.register("groupName")}
                   />
                 </div>
                 <div className="min-w-[100px]">
@@ -564,11 +514,23 @@ export function LoreEntryEditor({
                   </ControlledField>
                 </CustomTooltip>
                 <CustomTooltip content={t("group_scoring_hint")} align="start">
-                  <ControlledField name="useGroupScoring">
-                    {(field) => (
-                      <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_use_group_scoring")} />
-                    )}
-                  </ControlledField>
+                  <div>
+                    <FieldLabel>{t("lore_use_group_scoring")}</FieldLabel>
+                    <ControlledField name="useGroupScoring">
+                      {(field) => (
+                        <SegmentedControl
+                          compact
+                          value={field.value == null ? "inherit" : field.value ? "on" : "off"}
+                          options={[
+                            { value: "inherit", label: t("lore_group_scoring_inherit") },
+                            { value: "on", label: t("lore_group_scoring_on") },
+                            { value: "off", label: t("lore_group_scoring_off") },
+                          ]}
+                          onChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
+                        />
+                      )}
+                    </ControlledField>
+                  </div>
                 </CustomTooltip>
               </div>
               {existingGroups && existingGroups.filter((g) => g !== groupName).length > 0 && (

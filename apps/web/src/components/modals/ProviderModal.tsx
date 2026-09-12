@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { devLog } from "../../lib/dev-log.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
+import { pickContextSourceModelId, shouldAutoFillContextBudget } from "../../lib/context-autofill.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord, ProxyRecord } from "../../app-client.js";
-import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
-import type { ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
+import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveAutoTemplateSource, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
+import type { ProviderGenerationFormat, ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
+import { GENERATION_MODE } from "@vibe-tavern/domain";
+import type { GenerationMode } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
 import {
   ProviderProfileList,
@@ -15,19 +17,27 @@ import {
   ProviderViewHeader,
   ProviderModelSelector,
   ProviderCapabilityPanel,
+  ProviderGenerationModePanel,
   ProviderSamplerPanel,
   ProviderBindingPanel,
   ProviderQuotaPanel,
 } from "../settings/provider/index.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
-import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
-import { useIsMobile } from "../../hooks/use-mobile.js";
+import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { getProviderModelSettingsAction, reorderProviderProfilesAction } from "../../stores/api-actions/provider-actions.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { shouldUsePersistedProviderForTest } from "../../lib/provider-proxy-policy.js";
+import { TtsSection } from "../settings/provider/tts/TtsSection.js";
+import { TtsProfileEditor } from "../settings/provider/tts/TtsProfileEditor.js";
+import { TtsAudioFooter } from "../settings/provider/tts/TtsAudioFooter.js";
+import { useTtsProfiles } from "../settings/provider/tts/use-tts-profiles.js";
+import { SttSection } from "../settings/provider/stt/SttSection.js";
+import { SttProfileEditor } from "../settings/provider/stt/SttProfileEditor.js";
+import { SttFooter } from "../settings/provider/stt/SttFooter.js";
+import { useSttProfiles } from "../settings/provider/stt/use-stt-profiles.js";
 
 export interface FormState {
   id: string;
@@ -45,6 +55,12 @@ export interface FormState {
   topA: number;
   typicalP: number;
   tfsZ: number;
+  adaptiveTarget: number;
+  adaptiveDecay: number;
+  dynatempRange: number;
+  dynatempExponent: number;
+  topNSigma: number;
+  smoothingFactor: number;
   repeatLastN: number;
   mirostat: number;
   mirostatTau: number;
@@ -53,6 +69,7 @@ export interface FormState {
   dryBase: number;
   dryAllowedLength: number;
   drySequenceBreakers: string[];
+  dryPenaltyLastN: number;
   xtcThreshold: number;
   xtcProbability: number;
   frequencyPenalty: number;
@@ -61,6 +78,10 @@ export interface FormState {
   maxTokens: number;
   contextBudget: number;
   pinContextBudget: boolean;
+  /** Token padding (LS-1d) — safety margin subtracted from the context budget. */
+  tokenPadding: number;
+  /** Generation mode (LS-2a): chat (default) vs raw text completion. Profile-level. */
+  generationMode: GenerationMode;
   /** Profile-level toggle: when true, the binding dropdown (Wave 5) is enabled
    *  and saves route sampler writes to the selected model's overlay instead of
    *  the profile base. Persisted on the profile (Wave 1 column). */
@@ -73,6 +94,7 @@ export interface FormState {
    *  "Editing: <model>" badge. Not persisted on the profile — UI-only state. */
   editingModelId: string | null;
   stopSequences: string[];
+  bannedStrings: string[];
   logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
   reasoningEffort: string;
@@ -81,6 +103,14 @@ export interface FormState {
   customSamplers: boolean;
   proxyMode: ProviderProxyMode;
   proxyId: string | null;
+  /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a) — the sampler
+   *  panel's dropdown pre-selection + dirty-dot baseline. Profile-level: never
+   *  routes to a model overlay. null = "no set". */
+  samplerSetId: string | null;
+  /** LS-10: the provider-side generation format (the format block under the
+   *  Чат/Текст switch). Null = unset — the active preset's format keeps
+   *  applying as the fallback source (supervisor decision (c)). */
+  generationFormat: ProviderGenerationFormat | null;
 }
 
 interface ModelOption {
@@ -93,6 +123,8 @@ interface ModelOption {
 }
 
 type HeaderMode = "edit" | "view";
+
+export type ProviderCategoryTab = "llm" | "audio" | "stt";
 
 interface ProviderModalProps {
   providerProfiles: ProviderProfileRecord[];
@@ -118,7 +150,6 @@ interface ProviderModalProps {
 function profileToForm(p: ProviderProfileRecord): FormState {
   const preset = PROVIDER_PRESETS.find((f) => f.id === p.providerPreset)
     ?? PROVIDER_PRESETS.find((f) => f.type === p.providerPreset && f.baseUrl === p.endpoint);
-  devLog('modal.profileToForm', { id: p.id, name: p.name, defaultModel: p.defaultModel, visionModel: p.visionModel });
   return {
     id: p.id, name: p.name, providerPreset: preset?.id ?? "",
     baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
@@ -126,7 +157,14 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     minP: p.minP, topK: p.topK, topA: p.topA,
     typicalP: p.typicalP ?? 1,
     tfsZ: p.tfsZ ?? 1,
+    adaptiveTarget: p.adaptiveTarget ?? -1,
+    adaptiveDecay: p.adaptiveDecay ?? 0.9,
+    dynatempRange: p.dynatempRange ?? 0,
+    dynatempExponent: p.dynatempExponent ?? 1,
+    topNSigma: p.topNSigma ?? 0,
+    smoothingFactor: p.smoothingFactor ?? 0,
     repeatLastN: p.repeatLastN ?? 0,
+    dryPenaltyLastN: p.dryPenaltyLastN ?? -1,
     mirostat: p.mirostat ?? 0,
     mirostatTau: p.mirostatTau ?? 5,
     mirostatEta: p.mirostatEta ?? 0.1,
@@ -140,11 +178,14 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     presencePenalty: p.presencePenalty,
     repetitionPenalty: p.repetitionPenalty,
     maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000, pinContextBudget: p.pinContextBudget ?? false,
+    tokenPadding: p.tokenPadding ?? 0,
+    generationMode: p.generationMode ?? GENERATION_MODE.chat,
     bindPerModel: p.bindPerModel ?? false,
     modelFreeOnly: p.modelFreeOnly ?? false,
     modelGroupByOwner: p.modelGroupByOwner ?? false,
     editingModelId: null,
     stopSequences: p.stopSequences,
+    bannedStrings: p.bannedStrings ?? [],
     logitBias: p.logitBias ?? [],
     seed: p.seed ?? null, showReasoning: p.showReasoning,
     reasoningEffort: p.reasoningEffort,
@@ -152,6 +193,8 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     customSamplers: p.customSamplers ?? false,
     proxyMode: p.proxyMode ?? "inherit",
     proxyId: p.proxyId ?? null,
+    samplerSetId: p.samplerSetId ?? null,
+    generationFormat: p.generationFormat ?? null,
   };
 }
 
@@ -220,6 +263,9 @@ export function ProviderModal({
   const [headerSaving, setHeaderSaving] = useState(false);
   const [coauthorCreatedProfileId, setCoauthorCreatedProfileId] = useState<string | null>(null);
   const isMobile = useIsMobile();
+  const [activeCategory, setActiveCategory] = useState<ProviderCategoryTab>("llm");
+  const tts = useTtsProfiles();
+  const stt = useSttProfiles();
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -237,18 +283,35 @@ export function ProviderModal({
     if (!profileId) return;
 
     // 1. Try cached models from the profile object first (instant, no network)
-    const profile = providerProfiles.find((p) => p.id === profileId);
+    const profile = providerProfiles.find((p) => p.id == profileId);
     const cached = profile?.cachedModels?.models;
     if (cached && cached.length > 0) {
       setModels(cached);
+      autoFillContextBudget(cached);
       return;
     }
 
     // 2. Fall back to live fetch only when cache is empty
     try {
       const c = await onFetchModelsForProfile(profileId);
-      if (c.length > 0) setModels(c);
+      if (c.length > 0) { setModels(c); autoFillContextBudget(c); }
     } catch { /* ignore */ }
+  };
+
+  // ── Context-budget auto-fill (LS-7) ──
+  // When the model list populates, fill the context budget from the selected
+  // model's real backend context — but ONLY while the field is untouched
+  // (still showing the 16 000 default) and unpinned. Never rewrites a
+  // deliberate user value; the pin is the override marker.
+  const autoFillContextBudget = (fetched: ModelOption[]) => {
+    if (!form || fetched.length === 0) return;
+    if (!shouldAutoFillContextBudget({ pinned: form.pinContextBudget, formValue: form.contextBudget })) return;
+    const sourceId = pickContextSourceModelId(form.model || undefined, fetched);
+    if (!sourceId) return;
+    const ctx = fetched.find((m) => m.id === sourceId)?.contextLength;
+    if (ctx != null && Number.isFinite(ctx) && ctx > 0 && ctx !== form.contextBudget) {
+      autoSaveField("contextBudget", ctx);
+    }
   };
 
   // ── Init on open ──
@@ -260,6 +323,7 @@ export function ProviderModal({
       if (p) { setEditingId(p.id); setForm(profileToForm(p)); void loadCached(p.id); }
     }
     setTestOk(null); setHeaderMode("view"); setIsNew(false); setDirty(false); setConfirmClose(false); setConfirmDelete(false);
+    setActiveCategory("llm");
   }, [isOpen]);
 
   useEffect(() => {
@@ -272,17 +336,9 @@ export function ProviderModal({
   }, []);
 
   useEffect(() => {
-    devLog('modal.visionAutoSelectEffect', {
-      isOpen,
-      formId: form?.id,
-      formVisionModel: form?.visionModel,
-      modelsCount: models.length,
-      visionModelsCount: models.filter(m => m.capabilities?.vision).length,
-    });
     if (!isOpen || !form || form.visionModel || models.length === 0) return;
     const fetchedVisionModels = models.filter((m) => m.capabilities?.vision);
     if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < models.length) {
-      devLog('modal.autoSelectingVisionModel', { selected: fetchedVisionModels[0].id, reason: 'form.visionModel was empty' });
       autoSaveField("visionModel", fetchedVisionModels[0].id);
     }
     // Intentionally depend on scalar form fields only: autoSaveField updates form.visionModel,
@@ -322,10 +378,7 @@ export function ProviderModal({
     const draft = { ...computeSavePatch(next), id: next.id };
     const parsed = saveProviderDraftSchema.safeParse(draft);
     if (parsed.success) {
-      devLog('modal.persistForm', { id: next.id, model: next.model, visionModel: next.visionModel });
       void onSaveProfile(next);
-    } else {
-      devLog('modal.persistFormSchemaFail', { issues: JSON.stringify(parsed.error.issues) });
     }
   };
 
@@ -443,7 +496,11 @@ export function ProviderModal({
   };
   const requestClose = (target: "close" | "return") => {
     flushLazyAutoSave();
-    if (dirty) {
+    if (
+      (dirty && activeCategory === "llm") ||
+      (tts.dirty && activeCategory === "audio") ||
+      (stt.dirty && activeCategory === "stt")
+    ) {
       setCloseTarget(target);
       setConfirmClose(true);
     } else completeClose(target);
@@ -483,7 +540,14 @@ export function ProviderModal({
       topA: baseProfile.topA,
       typicalP: baseProfile.typicalP,
       tfsZ: baseProfile.tfsZ,
+      adaptiveTarget: baseProfile.adaptiveTarget,
+      adaptiveDecay: baseProfile.adaptiveDecay,
+      dynatempRange: baseProfile.dynatempRange,
+      dynatempExponent: baseProfile.dynatempExponent,
+      topNSigma: baseProfile.topNSigma,
+      smoothingFactor: baseProfile.smoothingFactor,
       repeatLastN: baseProfile.repeatLastN,
+      dryPenaltyLastN: baseProfile.dryPenaltyLastN,
       mirostat: baseProfile.mirostat,
       mirostatTau: baseProfile.mirostatTau,
       mirostatEta: baseProfile.mirostatEta,
@@ -500,6 +564,7 @@ export function ProviderModal({
       contextBudget: baseProfile.contextBudget,
       pinContextBudget: baseProfile.pinContextBudget,
       stopSequences: baseProfile.stopSequences,
+      bannedStrings: baseProfile.bannedStrings,
       logitBias: baseProfile.logitBias,
       seed: baseProfile.seed,
       reasoningEffort: baseProfile.reasoningEffort,
@@ -519,7 +584,14 @@ export function ProviderModal({
         topA: pick("topA"),
         typicalP: pick("typicalP") ?? 1,
         tfsZ: pick("tfsZ") ?? 1,
+        adaptiveTarget: pick("adaptiveTarget") ?? -1,
+        adaptiveDecay: pick("adaptiveDecay") ?? 0.9,
+        dynatempRange: pick("dynatempRange") ?? 0,
+        dynatempExponent: pick("dynatempExponent") ?? 1,
+        topNSigma: pick("topNSigma") ?? 0,
+        smoothingFactor: pick("smoothingFactor") ?? 0,
         repeatLastN: pick("repeatLastN") ?? 0,
+        dryPenaltyLastN: pick("dryPenaltyLastN") ?? -1,
         mirostat: pick("mirostat") ?? 0,
         mirostatTau: pick("mirostatTau") ?? 5,
         mirostatEta: pick("mirostatEta") ?? 0.1,
@@ -535,7 +607,11 @@ export function ProviderModal({
         maxTokens: pick("maxTokens"),
         contextBudget: pick("contextBudget") ?? 16000,
         pinContextBudget: pick("pinContextBudget") ?? false,
+        // Token padding (LS-1d) is profile-level — never overridden by the
+        // per-model overlay — so it reads straight from the base profile.
+        tokenPadding: baseProfile.tokenPadding,
         stopSequences: pick("stopSequences"),
+        bannedStrings: pick("bannedStrings") ?? [],
         logitBias: pick("logitBias") ?? [],
         seed: pick("seed") ?? null,
         reasoningEffort: pick("reasoningEffort"),
@@ -583,6 +659,7 @@ export function ProviderModal({
       setTestOk(fetched.length > 0);
       setModels(fetched);
       if (fetched.length && (!form.model || !fetched.find((m) => m.id === form.model))) autoSaveField("model", fetched[0].id);
+      autoFillContextBudget(fetched);
       const fetchedVisionModels = fetched.filter((m) => m.capabilities?.vision);
       if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < fetched.length && !form.visionModel) {
         autoSaveField("visionModel", fetchedVisionModels[0].id);
@@ -645,26 +722,74 @@ export function ProviderModal({
         onClose={handleClose}
         title={t("provider_settings_title")}
         subtitle={t("provider_settings_desc")}
-        detailTitle={form?.name ?? t("provider_settings_title")}
-        dirty={dirty}
-        containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        detailTitle={
+          activeCategory === "audio"
+            ? tts.form
+              ? tts.form.name || t("tts_profile_new_title")
+              : t("tts_section_title")
+            : activeCategory === "stt"
+              ? stt.form
+                ? stt.form.name || t("stt_profile_new_title")
+                : t("stt_section_title")
+              : form?.name ?? t("provider_settings_title")
+        }
+        dirty={
+          activeCategory === "audio" ? tts.dirty : activeCategory === "stt" ? stt.dirty : dirty
+        }
+        tabs={{
+          items: [
+            { value: "llm", label: t("providers_category_llm") },
+            { value: "audio", label: t("providers_category_audio") },
+            { value: "stt", label: t("providers_category_stt") },
+          ],
+          active: activeCategory,
+          onChange: (v) => setActiveCategory(v),
+        }}
         masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
         detailClassName={isMobile ? "p-4" : "p-5"}
         headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
         headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
-        masterContent={() => (
-          <ProviderProfileList
-            filteredProfiles={filteredProfiles} editingId={editingId}
-            activeProviderProfileId={activeProviderProfileId} profileSearch={profileSearch}
-        profiles={providerProfiles}
-        onReorder={reorderProviderProfilesAction}
-            onProfileSearchChange={setProfileSearch}
-            onSelectProfile={(id) => { handleSelect(id); }}
-            onAddProfile={() => { void handleAdd(); }}
-          />
-        )}
+        masterContent={() =>
+          activeCategory === "stt" ? (
+            <SttSection stt={stt} />
+          ) : activeCategory === "audio" ? (
+            <TtsSection tts={tts} />
+          ) : (
+            <ProviderProfileList
+              filteredProfiles={filteredProfiles}
+              editingId={editingId}
+              activeProviderProfileId={activeProviderProfileId}
+              profileSearch={profileSearch}
+              profiles={providerProfiles}
+              onReorder={reorderProviderProfilesAction}
+              onProfileSearchChange={setProfileSearch}
+              onSelectProfile={(id) => {
+                handleSelect(id);
+              }}
+              onAddProfile={() => {
+                void handleAdd();
+              }}
+            />
+          )
+        }
         detailContent={
-          !form ? (
+          activeCategory === "stt" ? (
+            stt.form ? (
+              <SttProfileEditor stt={stt} />
+            ) : (
+              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+                {t("stt_section_placeholder")}
+              </div>
+            )
+          ) : activeCategory === "audio" ? (
+            tts.form ? (
+              <TtsProfileEditor tts={tts} />
+            ) : (
+              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+                {t("tts_section_placeholder")}
+              </div>
+            )
+          ) : !form ? (
             <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
               {t("provider_select_profile")}
             </div>
@@ -732,6 +857,10 @@ export function ProviderModal({
 
                   <ProviderCapabilityPanel capabilities={capabilities} />
 
+                  {/* Generation format (LS-2a) + the LS-10 format block (under the
+                      switch; always for native-TC KoboldCPP). */}
+                  <ProviderGenerationModePanel form={form} updateForm={autoSaveField} tcTemplateSource={resolveAutoTemplateSource(form.providerPreset)} />
+
                   {showVisionFallback && (
                     <div className="mt-4 border-t border-border2 pt-2">
                       <ProviderModelSelector form={form} models={models.filter(m => m.capabilities?.vision)} filteredModels={visionFilteredModels}
@@ -773,7 +902,12 @@ export function ProviderModal({
           )
         }
         footer={
-          <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}>
+          activeCategory === "stt" ? (
+            <SttFooter stt={stt} />
+          ) : activeCategory === "audio" ? (
+            <TtsAudioFooter tts={tts} />
+          ) : (
+            <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]" : "px-6 py-4")}>
             <div className={cn("flex items-center gap-3", isMobile && "flex-wrap")}>
               <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
                 <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
@@ -799,11 +933,16 @@ export function ProviderModal({
                   defaultOption={t("proxy_direct")}
                   options={proxies.map((proxy) => ({ id: proxy.id, label: proxy.name, detail: proxy.url }))}
                   onChange={(id) => void onSetDefaultProxy(id || null)}
+                  // MUI W7: on mobile this select sits on the footer's bottom
+                  // row (~45px above the screen edge) — open upward, same as
+                  // the TTS/STT footer selects.
+                  side="top"
                   className="min-w-0 flex-1"
                 />
               </div>
             </div>
           </div>
+          )
         }
       />
     </>

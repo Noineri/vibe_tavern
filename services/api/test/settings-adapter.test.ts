@@ -13,6 +13,37 @@ async function setup(): Promise<{ adapter: SettingsAdapter; stores: StoreContain
 	return { adapter, stores };
 }
 
+describe("SettingsAdapter — per-context secondary-model pairs (SUM-5)", () => {
+	test("persists the summary and message-editor pairs, gated string|null", async () => {
+		const { adapter } = await setup();
+		const result = await adapter.updateUiSettings({
+			summaryProviderId: "prov_s",
+			summaryModelName: "glm-5.2",
+			messageEditorProviderId: "prov_e",
+			messageEditorModelName: "gpt-x",
+		});
+		expect(result.summaryProviderId).toBe("prov_s");
+		expect(result.summaryModelName).toBe("glm-5.2");
+		expect(result.messageEditorProviderId).toBe("prov_e");
+		expect(result.messageEditorModelName).toBe("gpt-x");
+	});
+
+	test("explicit null clears the pair; garbage types are filtered, not crash", async () => {
+		const { adapter } = await setup();
+		await adapter.updateUiSettings({ summaryProviderId: "prov_s", summaryModelName: "m" });
+		const cleared = await adapter.updateUiSettings({ summaryProviderId: null, summaryModelName: null });
+		expect(cleared.summaryProviderId).toBeNull();
+		expect(cleared.summaryModelName).toBeNull();
+
+		const filtered = await adapter.updateUiSettings({
+			messageEditorProviderId: 42 as never,
+			messageEditorModelName: [] as never,
+		});
+		expect(filtered.messageEditorProviderId).toBeNull();
+		expect(filtered.messageEditorModelName).toBeNull();
+	});
+});
+
 describe("SettingsAdapter — coauthor binding whitelist", () => {
 	test("persists coauthor provider + model pair", async () => {
 		const { adapter } = await setup();
