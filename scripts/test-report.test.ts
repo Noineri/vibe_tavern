@@ -104,9 +104,12 @@ describe("final test report", () => {
 		// When
 		const report = formatTestReport(noisyFailure);
 
-		// Then: the (fail) section is inside the window, ahead of the noise.
+		// Then: the (fail) section is inside the window, ahead of the noise
+		// (noise-8/9 fall past the cap — their ABSENCE is asserted via the
+		// omission line, not indexOf, which returns -1 for excluded strings).
 		expect(report).toContain("(fail) real > the one that matters");
-		expect(report.indexOf("(fail) real")).toBeLessThan(report.indexOf("intentional-noise-8"));
+		expect(report.indexOf("(fail) real")).toBeLessThan(report.indexOf("intentional-noise-0"));
+		expect(report).toContain("... 3 additional diagnostic sections omitted");
 	});
 
 	test("bounds unrecognized fallback output", () => {
