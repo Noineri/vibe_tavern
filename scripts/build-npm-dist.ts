@@ -2,7 +2,7 @@
  * npm distribution build for Vibe Tavern.
  *
  * Produces out/npm-dist/ — a publishable package that the user's own bun runs:
- *   - vibe-tavern.js        (bundled server, executable, `#!/usr/bin/env bun`)
+ *   - vibe-tavern.js        (bundled server, executable, `#!/usr/bin/env -S bun --no-env-file`)
  *   - web/                  (pre-built frontend SPA)
  *   - tokenizers/           (runtime tokenizer JSON files)
  *   - drizzle/              (SQLite DB migrations)
@@ -186,7 +186,7 @@ async function main() {
 			naming: BIN_NAME,
 			target: "bun",
 			minify: true,
-			banner: "#!/usr/bin/env bun",
+			banner: "#!/usr/bin/env -S bun --no-env-file",
 			define: {
 				VIBE_TAVERN_VERSION: `"${VERSION}"`,
 				// Not inferable at runtime — see classifyInstallKind. Without

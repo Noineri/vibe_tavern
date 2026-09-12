@@ -29,7 +29,7 @@
     "build:installer": "bun scripts/build-installer.ts",
     "build:npm-dist": "bun scripts/build-npm-dist.ts",
     "dev": "bun apps/web/dev-server.ts",
-    "prod": "bun run build && bun services/api/src/server/prod-server.ts",
+    "prod": "bun run build && bun --no-env-file services/api/src/server/prod-server.ts",
     "typecheck": "bun scripts/type-gate.ts && bunx tsc -p scripts/tsconfig.json && bun run --filter '*' typecheck",
     "test": "bun --no-orphans scripts/test.ts",
     "test:verbose": "bun test scripts && bun run --filter '*' test",
