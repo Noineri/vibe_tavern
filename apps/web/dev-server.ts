@@ -3,9 +3,9 @@
  *
  * One process, one port (default :4173): Bun's HTML dev server with HMR for
  * the frontend, plus the full API mounted IN-PROCESS via createRuntimeApp().
- * No proxy, no second server, no static prod bundle — requests to /api,
- * /assets and /health are handed straight to the Hono app, everything else
- * is the hot-reloading frontend. API initialization (DB, tokenizers,
+ * No proxy, no second server, no static prod bundle — requests to /api and
+ * /health are handed straight to the Hono app, everything else is the
+ * hot-reloading frontend. API initialization (DB, tokenizers,
  * services) runs in the background; API calls get a structured 503 until it
  * completes, exactly like the prod bind-first bootstrap.
  *
@@ -64,10 +64,15 @@ if (apiEnabled) {
 }
 
 function isApiPath(pathname: string): boolean {
+	// /assets/* is deliberately NOT here. It is a path of the built frontend
+	// (hashed chunks, the worker entrypoints, anything copied out of public/),
+	// and the dev API has no static directory at all — routing it to Hono only
+	// ever produced the JSON 404 from the catch-all, even for files that do
+	// exist under apps/web/public/assets/ and are served in production.
+	// /fonts/* was always handled here, on the frontend side; assets now match.
 	return (
 		pathname === "/api" ||
 		pathname.startsWith("/api/") ||
-		pathname.startsWith("/assets/") ||
 		pathname === "/health"
 	);
 }

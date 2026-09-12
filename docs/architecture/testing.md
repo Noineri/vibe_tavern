@@ -17,11 +17,13 @@ bun test -t "name"     # filter by test name
 bun run check          # typecheck + test + i18n:check (the full local gate)
 ```
 
-The web suite is orchestrated by [`scripts/test-web.ts`](../../scripts/test-web.ts): it discovers `apps/web/src/**/*.test.{ts,tsx}` plus the `apps/web/test/harness.smoke.test.tsx` canary and hands them to a single `bun test --parallel=8` run. `--parallel` implies `--isolate`, so every file still gets a fresh global **and** a fresh module registry — the property the suite depends on — without paying for one process per file (18.4s -> 13.8s for 217 files). The orchestrator adds the one guard `bun test` does not: a file that registers zero tests exits 0 on its own, so the run is cross-checked against the JUnit report and any file with no test case fails the suite.
+The web suite is orchestrated by [`scripts/test-web.ts`](../../scripts/test-web.ts): it discovers `apps/web/src/**/*.test.{ts,tsx}` plus `apps/web/test/*.test.{ts,tsx}` (336 files as of this writing), pins the `apps/web/test/harness.smoke.test.tsx` canary last, and hands them to a single `bun test --parallel=8` run. `--parallel` implies `--isolate`, so every file still gets a fresh global **and** a fresh module registry — the property the suite depends on — without paying for one process per file (18.4s -> 13.8s for 217 files). The orchestrator adds the one guard `bun test` does not: a file that registers zero tests exits 0 on its own, so the run is cross-checked against the JUnit report and any file with no test case fails the suite.
 
 `--randomize` (optionally `--seed <n>`) shuffles test order for the run, replacing the old `--reverse` flag: per-file isolation makes in-process file-order dependence structurally impossible, and a seed makes a shuffled failure replayable.
 
-CI runs `typecheck` as the sole blocking gate plus an advisory `test` job (`continue-on-error`) — green CI ≠ tested; the local `bun run check` is the gate that matters. See [CONTRIBUTING.md → Running the gates](../../CONTRIBUTING.md#running-the-gates) for the typecheck caveat (always `bun run typecheck` from the repo root; bare `tsc` from `apps/web/` emits ~80 false errors).
+`bun run test` invokes the runner as `bun --no-orphans scripts/test.ts`. The runner fans out to four suite subprocesses, and `web`'s orchestrator forks eight more, none of which see a signal aimed at the runner: killing it with SIGTERM/SIGKILL (IDE stop button, `kill`, a crashed shell) left **16** live processes behind — the parallel workers, `scripts/test-web.ts`, and whatever a test had spawned, including a `bun add -g` pointed at a hanging registry. With the flag the same kill leaves none. Real Ctrl+C in a terminal was never the problem: the tty sends SIGINT to the whole foreground process group, which already takes the tree down. The flag is not a substitute for signal handlers — it makes bun exit when its *parent* dies and kill its live descendants on the way out, so re-parented grandchildren (a browser launched through `xdg-open`, whose opener already exited) are deliberately out of scope.
+
+CI runs three blocking root jobs — `typecheck`, `test-linux` and `test-windows` (`.github/workflows/ci.yml`; no job carries `continue-on-error`). The local `bun run check` is still the wider gate, because it adds `i18n:types`/`i18n:check` on top. See [CONTRIBUTING.md → Running the gates](../../CONTRIBUTING.md#running-the-gates) for the typecheck caveat (always `bun run typecheck` from the repo root; bare `tsc` from `apps/web/` emits ~80 false errors).
 
 ---
 
@@ -85,7 +87,9 @@ The canonical example is [`services/api/test/gallery-describe.test.ts`](../../se
 
 ### Fake timers — `jest.*` compat from `bun:test`
 
-`jest.useFakeTimers()` and `jest.advanceTimersByTime()` (imported from `bun:test`) work and are the sanctioned way to control `setTimeout`/`setInterval` in tests. **`jest.setSystemTime()` is inert on the pinned Bun build** — it neither throws nor changes the clock, so tests must not rely on faking `Date.now()` through it; inject the clock or seed the time-dependent value instead.
+`jest.useFakeTimers()` and `jest.advanceTimersByTime()` (imported from `bun:test`) work and are the sanctioned way to control `setTimeout`/`setInterval` in tests. **`jest.setSystemTime()` also works** on the pinned Bun build — verified on 1.4.2: under `useFakeTimers()` it moves `Date.now()` to the given date, and `useRealTimers()` restores the real clock. (An earlier note here claimed it was inert; that was wrong.)
+
+That does not make it the default for time-dependent code. The injected `StoreClock` in [`packages/db`](../../packages/db) is a product-level port, not a test workaround — several stores need a clock that *increments* per call so consecutive rows get distinct timestamps, which a frozen system time cannot give. Keep using the injected clock there; reach for `setSystemTime()` only where the code under test reads the ambient `Date` and there is nothing to inject.
 
 ---
 
@@ -97,7 +101,7 @@ Linux runs everything. Windows runs everything with platform-sensitive behaviour
 
 | Skipped on Windows | Declared at | Why |
 |---|---|---|
-| the whole `web` suite | `skipOnWindows` in [`scripts/test.ts`](../../scripts/test.ts) | 160 of its 162 files are React components and stores; two touch `node:fs`/`node:path`/`process.platform`. ~83s for no platform coverage. `bun run test web` still runs it there. |
+| the whole `web` suite | `skipOnWindows` in [`scripts/test.ts`](../../scripts/test.ts) | All but two of its 336 files are React components and stores; exactly two touch `node:fs`/`node:path`/`process.platform`. ~83s for no platform coverage. `bun run test web` still runs it there. |
 | `scripts/cli-args.test.ts` | `test.skipIf(process.platform === "win32")` | Nine cases that each spawn a full `bun` to pin argv parsing — pure Bun/Node semantics. |
 | `scripts/bump-version.test.ts` | `describe.skipIf(process.platform === "win32")` | Builds a disposable workspace and two git repos per case; the release script it covers only ever runs on the Linux release job. |
 
@@ -105,7 +109,7 @@ Linux runs everything. Windows runs everything with platform-sensitive behaviour
 
 Adding to that list is a judgement call with one rule: **do not leave a test green on Windows when its named behaviour is not being exercised there.** Skip the whole thing and say why, or keep it running on both. A test that silently no-ops is worse than a skip.
 
-Suites run several at a time (`suiteConcurrency()` in [`scripts/test.ts`](../../scripts/test.ts): half the cores, floored at 2, capped at 4), so any suite may be competing with `web`'s own 8-way subprocess pool for the box. That is why every `bun test` invocation carries `--timeout 15000` on every platform — bun's 5s default is a product-sized budget, and a test doing a normal amount of SQLite + filesystem work can lose seconds to contention alone. **Do not treat that headroom as a licence for slow tests**; it is a floor for a loaded runner, not a budget.
+Suites run several at a time (`suiteConcurrency()` in [`scripts/test.ts`](../../scripts/test.ts): half the cores, floored at 2, capped at 4), so any suite may be competing with `web`'s own 8-way subprocess pool for the box. That is why every `bun test` invocation carries `--timeout 45000` (`TEST_TIMEOUT_MS` in [`scripts/test.ts`](../../scripts/test.ts)) on every platform — bun's 5s default is a product-sized budget, and a test doing a normal amount of SQLite + filesystem work can lose seconds to contention alone. **Do not treat that headroom as a licence for slow tests**; it is a floor for a loaded runner, not a budget.
 
 Six rules, each one a real failure that has already cost a red build:
 
@@ -113,7 +117,7 @@ Six rules, each one a real failure that has already cost a red build:
 
 **Never inject a failure with POSIX mode bits.** `chmod(dir, 0o555)` is the obvious way to make a rename or an unlink fail on Linux; on Windows the read-only attribute does not block either, so the injection silently does nothing, the operation succeeds, and a test expecting `rejects.toThrow()` goes red. This failure mode is dangerous because it **fails open** — an assertion that passes under a Windows-inert injection is telling you the injection did nothing, not that the code handled the failure.
 
-**Never assert on an RSS or an mtime delta.** Windows reports the process working set, which includes file-cache pages: a correctly-streaming 128 MB download measured +302 MB there against +17 MB on Linux. NTFS likewise bumps mtime even for a read-only SQLite open. Pin the property you actually care about instead — the schema is unchanged, the digest matches, the file on disk is the right size.
+**Never assert on an RSS or an mtime delta.** Windows reports the process working set, which includes file-cache pages: a correctly-streaming 128 MB download measured +302 MB there against +17 MB on Linux. NTFS likewise bumps mtime even for a read-only SQLite open. Pin the property you actually care about instead — the schema is unchanged, the digest matches, the file on disk is the right size. "Streams instead of buffering" is such a property too, and it is observable without a byte counter: in [`updater-download.test.ts`](../../services/api/test/updater-download.test.ts) the fixture `stat`s the destination file at the moment it is about to produce the last chunk of the body, and the test asserts most of the payload is already committed. A streaming downloader reports 86–95 % there; the buffer-everything shape reports 0, because the file does not exist until the response has ended.
 
 **Never assert that something happened within a wall-clock deadline.** The Windows runner stalls for seconds at a time, and whichever test is holding a stopwatch when that happens goes red. The stalls are indiscriminate — over two weeks they took out an asset-store delete, a dice-script resolver, a `bump-version` argument parse, a DOM expand and a SOCKS5 first-chunk deadline, all at 5–22 s for work that takes milliseconds. Widening the deadline only moves the threshold; the stopwatch is the defect. Pin the *ordering* instead, by having the fixture record what it did and asserting on that:
 
@@ -195,7 +199,7 @@ describe("VibeMdView", () => {
 });
 ```
 
-**Why scoped, not a `bunfig.toml` preload:** the repo has DOM-averse tests (`avatar.test.ts`, `gateway-client`, …) that rely on `typeof window === "undefined"` so e.g. `getGatewayBaseUrl()` returns its SSR fallback. A global preload that registers happy-dom permanently injects a `window` into *every* file and breaks those. `useDomEnv()` registers at module load and unregisters in `afterAll`, so pure-logic files never see a `window`. **Never add a `[test] preload = …` happy-dom line to `bunfig.toml`.**
+**Why scoped, not a `bunfig.toml` preload:** the repo has DOM-averse tests (`avatar.test.ts`, `gateway-client`, …) that rely on `typeof window === "undefined"` so e.g. `getGatewayBaseUrl()` returns its SSR fallback. A global preload that registers happy-dom permanently injects a `window` into *every* file and breaks those. `useDomEnv()` registers at module load and **never** unregisters — `GlobalRegistrator.unregister()` closes the window React was evaluated against, after which updates stop flushing for every later DOM file in the process. What keeps pure-logic files windowless is therefore the file scope plus `--isolate`, not a teardown: a file that does not import `dom-env.js` never registers anything, and `--isolate` stops another file's window from reaching it. See the header comment in [`dom-env.ts`](../../apps/web/test/dom-env.ts). **Never add a `[test] preload = …` happy-dom line to `bunfig.toml`.**
 
 ### Import `@testing-library/*` dynamically, after `useDomEnv()`
 
@@ -213,11 +217,23 @@ import { useDomEnv } from "../../test/dom-env.js";
 
 `@testing-library/dom` binds its `screen` export to `document.body` while its own module evaluates. Evaluate it before happy-dom is registered and every `screen` query becomes a throwing stub — permanently, for the rest of the process, no matter what registers a `window` afterwards.
 
-Moving the static import above `useDomEnv()`'s does **not** fix it: Bun does not evaluate a module's static imports in source order, and a bare specifier can win over a relative one. `await import(...)` placed after the `useDomEnv()` call is the only ordering that actually holds.
+Moving the static import *below* `dom-env.js`'s does **not** fix it, and the reason is not what an earlier version of this note claimed. Bun evaluates a module's **CommonJS** dependencies ahead of its ESM ones, out of source order — reproduced on 1.4.2 with a three-import probe: the relative CJS file evaluated first, then the top-level-await ESM module declared *above* it, then a bare ESM package. Specifier kind (bare vs relative) has nothing to do with it; module format does. `@testing-library/dom` — where `screen` is defined, and which `@testing-library/react` re-exports it from — ships a CJS `dist/index.js`, so a static import of either evaluates before *any* ESM module body in the file, `dom-env.ts`'s registration included. `await import(...)` placed after the `useDomEnv()` call is the only ordering that actually holds.
 
 This is not theoretical. `@testing-library/jest-dom` 6.10 began importing `@testing-library/dom`, which turned a previously inert `import * as matchers` at the top of [`dom-env.ts`](../../apps/web/test/dom-env.ts) into a poisoned `screen` in every DOM test file at once — a suite-wide outage that presents as 100+ unrelated assertion failures. The `"the global \`screen\` is bound to a live document"` case in [`harness.smoke.test.tsx`](../../apps/web/test/harness.smoke.test.tsx) pins it; that file is appended to every full run.
 
 Queries destructured from `render()` are bound to the rendered container at call time, so they are immune to this and remain a fine default.
+
+### The DOM environment has no network
+
+`useDomEnv()` replaces `fetch` with one that records the attempt and rejects; happy-dom's own `fetch` opens real sockets. This is not hypothetical tidiness: `message-ai-editor-controls.test.tsx` fired `GET /api/tts/profiles/all`, `/api/tts/links` and `/api/regex/resolve-active` at `127.0.0.1:8787` on every test — measured with a recorder bound to that port, 13 requests per run — and the only symptom was a swallowed `ECONNREFUSED`, because each caller degrades quietly on failure. On a machine where the app is running, a unit test talks to the live server and its real database.
+
+Rejecting is enough to take the socket away, but not enough to make a leak visible, since the callers catch it. A file that must not touch the network at all asks for the strict form:
+
+```tsx
+useDomEnv({ failOnNetwork: true });   // any recorded attempt fails the test that made it
+```
+
+Nineteen of the 336 web files still mount a tree that fires an unmocked request — 34 distinct endpoints (`/api/lorebooks/all`, `/api/personas`, `/api/coauthor/skills`, …). They are safe (no socket) but not strict. When you mock the last fetching module a file needs, add `failOnNetwork` so the mock cannot go missing quietly. Mock with the safe `mock.module` pattern (spread the real module, override the one function) or assign `globalThis.fetch` for the test.
 
 ---
 

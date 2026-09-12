@@ -45,8 +45,12 @@
  * through `workspace:*`, which carries no version number. Nothing to sync.
  *
  * What it does NOT touch:
- *   - `bun.lock` — bun does not record a workspace's own version in a way
- *     that a version bump invalidates; the lockfile is verified, not rewritten.
+ *   - `bun.lock` — bun DOES record every workspace's own version there, but
+ *     `--frozen-lockfile` does not check that field (verified on 1.4.2 with a
+ *     two-package scratch workspace: bump both manifests, `bun install
+ *     --frozen-lockfile` exits 0 with "no changes"). A plain `bun install`
+ *     rewrites it on the next run, so the field simply lags one install behind
+ *     a bump and CI never trips on it. Nothing to sync here.
  *   - `mobile/android/app/build.gradle.kts` — `versionCode`/`versionName`
  *     are injected at BUILD TIME by `release.yml` (`sed` inline) and the
  *     committed file intentionally keeps defaults (`1` / `"0.0.0"`).

@@ -183,6 +183,7 @@ async function main() {
 			},
 			compile: {
 				outfile,
+				autoloadDotenv: false,
 				windows: {
 					icon: iconPath,
 					title: "Vibe Tavern",

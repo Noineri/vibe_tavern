@@ -305,20 +305,61 @@ function pngChunk(type: string, data: Uint8Array): Uint8Array {
 	return out;
 }
 
+function characterCardText(cardName: string): Uint8Array<ArrayBuffer> {
+	return new TextEncoder().encode(
+		btoa(JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: cardName, description: "probe", first_mes: "Hi." } })),
+	);
+}
+
+function concatBytes(...parts: readonly Uint8Array[]): Uint8Array {
+	const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+	let offset = 0;
+	for (const part of parts) {
+		out.set(part, offset);
+		offset += part.length;
+	}
+	return out;
+}
+
+function makePng(...metadataChunks: readonly Uint8Array[]): Uint8Array {
+	const signature = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+	const ihdr = pngChunk("IHDR", new Uint8Array([0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0]));
+	const iend = pngChunk("IEND", new Uint8Array(0));
+	return concatBytes(signature, ihdr, ...metadataChunks, iend);
+}
+
+function charaTextChunk(cardName: string): Uint8Array {
+	return pngChunk("tEXt", concatBytes(new TextEncoder().encode("chara\0"), characterCardText(cardName)));
+}
+
+function charaItxtChunk(cardName: string, compressed: boolean): Uint8Array {
+	const text = characterCardText(cardName);
+	return pngChunk(
+		"iTXt",
+		concatBytes(
+			new TextEncoder().encode("chara\0"),
+			new Uint8Array([compressed ? 1 : 0, 0]),
+			new TextEncoder().encode("en\0Character\0"),
+			compressed ? Bun.deflateSync(text) : text,
+		),
+	);
+}
+
+function malformedCompressedItxtChunk(): Uint8Array {
+	return pngChunk(
+		"iTXt",
+		concatBytes(
+			new TextEncoder().encode("chara\0"),
+			new Uint8Array([1, 0]),
+			new TextEncoder().encode("\0\0"),
+			new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+		),
+	);
+}
+
 /** Synthesize a minimal valid PNG carrying a base64 `chara` tEXt chunk. */
 function makeCharaPng(cardName: string): Uint8Array {
-	const sig = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-	const ihdr = pngChunk("IHDR", new Uint8Array([0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0]));
-	const charaText = new TextEncoder().encode(
-		"chara\0" + btoa(JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: cardName, description: "probe", first_mes: "Hi." } })),
-	);
-	const text = pngChunk("tEXt", charaText);
-	const iend = pngChunk("IEND", new Uint8Array(0));
-	const total = sig.length + ihdr.length + text.length + iend.length;
-	const out = new Uint8Array(total);
-	let o = 0;
-	for (const part of [sig, ihdr, text, iend]) { out.set(part, o); o += part.length; }
-	return out;
+	return makePng(charaTextChunk(cardName));
 }
 
 /** Build a minimal ST dir containing PNG cards with the given names. */
@@ -396,6 +437,56 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 			const full = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, cdir, "avatar-full.png");
 			expect(full, `avatar-full.png for ${name}`).not.toBeNull();
 		}
+	});
+});
+
+describe("ST directory scanner — PNG iTXt character cards", () => {
+	let env: Env;
+
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	beforeEach(async () => {
+		env = await createRuntime();
+	});
+	afterEach(async () => {
+		await env.cleanup();
+	});
+
+	async function writeCard(fileName: string, png: Uint8Array): Promise<string> {
+		const stDir = join(env.tmpDir, fileName);
+		await mkdir(join(stDir, "characters"), { recursive: true });
+		await mkdir(join(stDir, "chats"), { recursive: true });
+		await Bun.write(join(stDir, "characters", `${fileName}.png`), png);
+		return stDir;
+	}
+
+	it("previews an uncompressed iTXt character card", async () => {
+		const stDir = await writeCard("itxt-plain", makePng(charaItxtChunk("iTXt Plain", false)));
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+
+		expect(scan.errors).toEqual([]);
+		expect(scan.characters.map((card) => card.name)).toEqual(["iTXt Plain"]);
+	});
+
+	it("imports a zlib-compressed iTXt character card", async () => {
+		const stDir = await writeCard("itxt-compressed", makePng(charaItxtChunk("iTXt Compressed", true)));
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		expect(result.errors).toEqual([]);
+		expect(result.characters).toBe(1);
+		const imported = (await env.stores.characters.listAll()).find((card) => card.name === "iTXt Compressed");
+		expect(imported).toBeTruthy();
+	});
+
+	it("skips malformed compressed iTXt and reads a later valid tEXt card", async () => {
+		const png = makePng(malformedCompressedItxtChunk(), charaTextChunk("tEXt Fallback"));
+		const stDir = await writeCard("itxt-malformed", png);
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+
+		expect(scan.errors).toEqual([]);
+		expect(scan.characters.map((card) => card.name)).toEqual(["tEXt Fallback"]);
 	});
 });
 

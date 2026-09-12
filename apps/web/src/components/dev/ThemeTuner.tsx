@@ -8,9 +8,9 @@
  * see is exactly what a tuned theme produces.
  *
  * Two modes:
- *   - "edit": load a registered theme's CSS (imported as a raw string via
- *     `?raw`), tweak any color, export a surgically-patched copy (comments
- *     preserved).
+ *   - "edit": load a registered theme's CSS (imported as text via the
+ *     `type: "text"` import attribute), tweak any color, export a
+ *     surgically-patched copy (comments preserved).
  *   - "scratch": start from a neutral grayscale ramp and build a brand-new theme.
  *
  * The tool's own chrome uses a fixed dark palette (`.tt-*` classes) so it stays
@@ -21,12 +21,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Markdown } from "../../lib/markdown.js";
 import { MessageReasoning } from "../chat/MessageReasoning.js";
 import { THEMES, applyThemeClass, type ThemeId } from "../../themes/registry.js";
-import coffeeRaw from "../../themes/coffee.css?raw";
-import milkCoffeeRaw from "../../themes/milk-coffee.css?raw";
-import mysticDawnRaw from "../../themes/mystic-dawn.css?raw";
-import mysticRaw from "../../themes/mystic-night.css?raw";
-import lavaRaw from "../../themes/light-lava.css?raw";
-import darkLavaRaw from "../../themes/dark-lava.css?raw";
+import coffeeRaw from "../../themes/coffee.css" with { type: "text" };
+import milkCoffeeRaw from "../../themes/milk-coffee.css" with { type: "text" };
+import mysticDawnRaw from "../../themes/mystic-dawn.css" with { type: "text" };
+import mysticRaw from "../../themes/mystic-night.css" with { type: "text" };
+import lavaRaw from "../../themes/light-lava.css" with { type: "text" };
+import darkLavaRaw from "../../themes/dark-lava.css" with { type: "text" };
 import {
   GROUPS,
   SCRATCH_VALUES,

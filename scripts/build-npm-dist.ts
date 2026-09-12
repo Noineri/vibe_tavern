@@ -107,7 +107,7 @@ export function manifest(version: string = VERSION) {
 		homepage: "https://github.com/Noineri/vibe_tavern",
 		bugs: { url: "https://github.com/Noineri/vibe_tavern/issues" },
 		keywords: ["ai", "roleplay", "llm", "self-hosted", "sillytavern", "chat"],
-		engines: { bun: ">=1.3.0" },
+		engines: { bun: ">=1.4.2" },
 		publishConfig: { access: "public" },
 	};
 }

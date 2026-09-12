@@ -127,7 +127,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: "1.4.2"
 
       - uses: actions/setup-node@v4
         with:
@@ -155,7 +155,16 @@ jobs:
             echo "already=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        if: steps.published.outputs.already == 'false'
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+
+      - run: bun install --frozen-lockfile --prefer-offline
         if: steps.published.outputs.already == 'false'
 
       - name: Build npm distribution

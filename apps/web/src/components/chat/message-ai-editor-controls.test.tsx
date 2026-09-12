@@ -30,7 +30,10 @@ import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../ap
 import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 
-useDomEnv();
+// failOnNetwork: this file used to fire GET /api/tts/{profiles/all,links} and
+// GET /api/regex/resolve-active at the live API port on every test, so the
+// mocks below are load-bearing and a future one must not go missing quietly.
+useDomEnv({ failOnNetwork: true });
 
 const asChatId = (id: string): ChatId => id as ChatId;
 
@@ -61,6 +64,8 @@ const realChatController = await import("../../hooks/use-chat-controller.js");
 const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
+const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
+const realRegexApi = await import("../../api/regex-api.js");
 mock.module("../../hooks/use-chat-controller.js", () => ({
 	...realChatController,
   useChatController: () => STABLE_CONTROLLER,
@@ -86,6 +91,21 @@ mock.module("../shared/Tooltip.js", () => ({
 	...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+// The narration controls inside a message bubble call useVoiceMapData, whose
+// module-level loader fetches /api/tts/profiles/all + /api/tts/links on mount.
+// Unmocked, that is a real request to the live API port from a unit test.
+mock.module("../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  useVoiceMapData: () => ({ data: null, refresh: async () => {} }),
+}));
+
+// MessageBlock resolves the active regex presets for its chat context on
+// mount (GET /api/regex/resolve-active). Same reason: no live API here.
+mock.module("../../api/regex-api.js", () => ({
+  ...realRegexApi,
+  resolveActiveRegexPresets: async () => [],
 }));
 
 let render: typeof import("@testing-library/react").render;

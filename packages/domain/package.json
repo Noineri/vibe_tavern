@@ -10,6 +10,6 @@
     "test": "bun test"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.0"
+    "@types/bun": "^1.4.2"
   }
 }

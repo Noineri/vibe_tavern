@@ -98,8 +98,15 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run typecheck
       - run: bun run test
 
@@ -112,8 +119,15 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run test
 
   build-linux:
@@ -131,8 +145,15 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun scripts/build-linux-dist.ts
       - name: Rename to release name
         run: |
@@ -204,8 +225,15 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run build:android-native
       - uses: actions/setup-java@v4
         with:
@@ -265,8 +293,15 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - name: Install Inno Setup
         run: choco install innosetup --no-progress --yes
       - run: bun scripts/build-installer.ts

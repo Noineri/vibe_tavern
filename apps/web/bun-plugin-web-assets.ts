@@ -1,4 +1,4 @@
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import type { BunPlugin, OnResolveArgs } from "bun";
 
 const WEB_DIR = import.meta.dir;
@@ -47,15 +47,6 @@ export function webAssetsPlugin(): BunPlugin {
 				const path = await resolvePublicAsset(args);
 				return path === null ? undefined : { path, external: true };
 			});
-
-			builder.onResolve({ filter: /\?raw$/ }, (args) => ({
-				path: resolve(dirname(args.importer), args.path.replace(/\?raw$/, "")),
-				namespace: "raw-string",
-			}));
-			builder.onLoad({ filter: /.*/, namespace: "raw-string" }, async (args) => ({
-				contents: `export default ${JSON.stringify(await Bun.file(args.path).text())};`,
-				loader: "js",
-			}));
 
 			builder.onLoad({ filter: /index\.html$/ }, async (args) => ({
 				contents: rewriteIndexHtml(await Bun.file(args.path).text()),

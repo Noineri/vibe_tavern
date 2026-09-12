@@ -19,7 +19,7 @@
  *   work lowers the number; a cleanup edit updates the budget DOWN, never up.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const repoRoot = join(import.meta.dir, "..");
@@ -56,7 +56,10 @@ export function collectTestFiles(root: string = repoRoot): string[] {
 			if (EXCLUDED_DIRS.has(entry)) continue;
 			const full = join(dir, entry);
 			const st = statSync(full);
-			if (st.isDirectory()) walk(full);
+			if (st.isDirectory()) {
+				// Nested repositories and worktrees own their own test budgets.
+				if (!existsSync(join(full, ".git"))) walk(full);
+			}
 			else {
 				const rel = relative(root, full).replaceAll("\\", "/");
 				if (isTestFilePath(rel)) found.push(rel);
