@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createWebTestCommand, discoverWebTestFiles, filesWithTests, runWebTestCli } from "./test-web.js";
+import { createWebTestCommand, discoverWebTestFiles, failingFiles, filesWithTests, runWebTestCli } from "./test-web.js";
 
 interface CliResult {
 	readonly exitCode: number;
@@ -109,6 +109,29 @@ test("re-slashes the platform separators the JUnit reporter writes", () => {
   </testsuite>
 </testsuites>`;
 	expect([...filesWithTests(windowsReport)]).toEqual(["apps/web/test/a.test.ts"]);
+});
+
+test("counts failing test cases per file, ignoring passes and platform separators", () => {
+	// The truncation-proof failure list (see failingFiles doc comment): GitHub's
+	// "... N additional diagnostic sections omitted" eats the failing test names
+	// on every red CI run of a large suite — twice on PR #39 — so the summary
+	// itself must name the files. Failure bodies contain nested XML and escaped
+	// quotes; passes are self-closing.
+	const report = String.raw`<testsuites>
+  <testsuite name="a" file="apps\web\test\a.test.ts" tests="2">
+    <testcase name="pass" classname="" time="0.1" file="apps\web\test\a.test.ts" assertions="1" />
+    <testcase name="boom" classname="" time="0.1" file="apps\web\test\a.test.ts" assertions="1"><failure>Expected: 1&lt;br&gt;Received: 2 — a &quot;quoted&quot; diff</failure></testcase>
+  </testsuite>
+  <testsuite name="b" file="apps/web/src/b.test.tsx" tests="2">
+    <testcase name="hard" classname="" time="0.1" file="apps/web/src/b.test.tsx" assertions="0"><error>TypeError: undefined is not an object</error></testcase>
+    <testcase name="ok" classname="" time="0.1" file="apps/web/src/b.test.tsx" assertions="1" />
+  </testsuite>
+</testsuites>`;
+	expect([...failingFiles(report).entries()].sort(([a], [b]) => (a < b ? -1 : 1))).toEqual([
+		["apps/web/src/b.test.tsx", 1],
+		["apps/web/test/a.test.ts", 1],
+	]);
+	expect(failingFiles("<testsuites></testsuites>").size).toBe(0);
 });
 
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {

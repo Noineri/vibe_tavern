@@ -179,6 +179,34 @@ export function filesWithTests(report: string): ReadonlySet<string> {
 	);
 }
 
+/**
+ * Per-file failure counts from the same JUnit report: test cases carrying a
+ * `<failure>` or `<error>` child, keyed like `filesWithTests` keys them.
+ *
+ * Why this exists when bun already prints failures on screen: CI log systems
+ * (GitHub Actions) truncate long step output with "... N additional diagnostic
+ * sections omitted" — with 8 parallel workers and a failing suite, the failing
+ * test names are routinely INSIDE the truncated part, and not even a debug
+ * rerun recovers them (verified twice on PR #39, runs 34643719177/34644574473).
+ * The runner itself must name the failing files; the JUnit report it already
+ * collects is the only input that survives truncation.
+ *
+ * Self-closing testcases (`<testcase ... />`) are passes by construction — a
+ * failure always has body content (the assertion diff / message).
+ */
+export function failingFiles(report: string): ReadonlyMap<string, number> {
+	const counts = new Map<string, number>();
+	const blocks = report.match(/<testcase\b[^>]*>[\s\S]*?<\/testcase>|<testcase\b[^>]*\/>/g) ?? [];
+	for (const block of blocks) {
+		if (!/<(?:failure|error)\b/.test(block)) continue;
+		const file = block.match(/\bfile="([^"]+)"/)?.[1];
+		if (file === undefined) continue;
+		const key = file.replaceAll("\\", "/");
+		counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+	return counts;
+}
+
 export async function runWebTestCli(
 	args: readonly string[],
 	root: string = ROOT,
@@ -238,13 +266,29 @@ export async function runWebTestCli(
 		return 1;
 	}
 
-	// Which tests failed and where is already on screen above, printed by bun's
-	// own reporter — re-deriving it from the report would only duplicate it. The
-	// exit code is the verdict; the empty-file list is the part bun cannot tell us.
+	// Which tests failed and where is on screen above, printed by bun's own
+	// reporter — but CI log systems truncate exactly that part (see the comment
+	// on failingFiles), so the runner names the failing files itself from the
+	// JUnit report, which no truncation can eat. The exit code stays the verdict;
+	// the empty-file list remains the part bun cannot tell us.
 	const covered = filesWithTests(outcome.report);
 	const empty = files.filter((file) => !covered.has(file));
 	if (empty.length > 0) {
 		errorWrite(`Web test files declaring zero tests (${empty.length}):\n${empty.join("\n")}`);
+	}
+	if (outcome.exitCode !== 0) {
+		const failing = [...failingFiles(outcome.report).entries()].sort(
+			([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
+		);
+		if (failing.length > 0) {
+			const lines = failing.map(([file, count]) => `FAIL ${file} (${count} failed)`);
+			errorWrite(`Web test files with failures (${failing.length}):\n${lines.join("\n")}`);
+		} else {
+			errorWrite(
+				"Web test failed, but no failing test case was found in the JUnit report — " +
+					"the failure is file-level (unhandled rejection or a crash); see bun's output above.",
+			);
+		}
 	}
 	if (empty.length > 0 || outcome.exitCode !== 0) {
 		write(`\nWeb tests: FAIL (${files.length} files)`);
