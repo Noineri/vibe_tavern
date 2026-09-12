@@ -39,6 +39,14 @@ function resolveRegistryBase(): string {
 	return process.env.VT_NPM_REGISTRY_BASE ?? DEFAULT_REGISTRY_BASE;
 }
 
+// TEST-ONLY OVERRIDE: shorten the install deadline. Without it the timeout
+// branch below is unreachable in a test — a hung package manager takes ten
+// minutes to reach it. Same per-call resolution as the registry base.
+function resolveInstallTimeoutMs(): number {
+	const raw = Number(process.env.VT_NPM_INSTALL_TIMEOUT_MS);
+	return Number.isFinite(raw) && raw > 0 ? raw : INSTALL_TIMEOUT_MS;
+}
+
 export function packageSpec(version: string): string {
 	return `${NPM_PACKAGE_NAME}@${version}`;
 }
@@ -90,46 +98,59 @@ export class NpmInstallError extends Error {
  * Output is captured rather than inherited so the failure reaches the UI —
  * a global install that fails on a permissions or disk-space problem says so
  * on stderr, and that text is the only useful diagnosis the user will get.
+ *
+ * The deadline is `Bun.spawn`'s own `timeout`, not a hand-rolled
+ * setTimeout/kill/flag race. `killSignal: "SIGKILL"` is required for the
+ * deadline to mean anything: measured on Bun 1.4.2, the default SIGTERM is
+ * delivered once and never escalated, so a package manager that ignored it
+ * would keep running and `proc.exited` would never settle — exactly the
+ * "UI spinning on Installing forever" case this timeout exists to prevent.
  */
 export async function installPackageVersion(
 	version: string,
 	onOutput?: (line: string) => void,
 ): Promise<void> {
 	const spec = packageSpec(version);
+	const timeoutMs = resolveInstallTimeoutMs();
 	const command = [process.execPath, "add", "-g", spec];
 	console.log(`[npm-update] running: ${command.join(" ")}`);
 
-	const proc = Bun.spawn(command, { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+	const proc = Bun.spawn(command, {
+		stdout: "pipe",
+		stderr: "pipe",
+		stdin: "ignore",
+		// Explicit, because Bun.spawn's default is the environment as it was at
+		// PROCESS START, not as it is now (measured on 1.4.2: a variable added
+		// to process.env after startup is invisible to the child). A registry
+		// or proxy override applied while the server runs must reach the
+		// package manager that performs the install.
+		env: { ...process.env },
+		timeout: timeoutMs,
+		killSignal: "SIGKILL",
+	});
 
-	let timedOut = false;
-	const timer = setTimeout(() => {
-		timedOut = true;
-		proc.kill();
-	}, INSTALL_TIMEOUT_MS);
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	const output = `${stdout}${stderr}`.trim();
+	if (output.length > 0) onOutput?.(output);
 
-	try {
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		]);
-		const output = `${stdout}${stderr}`.trim();
-		if (output.length > 0) onOutput?.(output);
-
-		if (timedOut) {
-			throw new NpmInstallError(
-				`Installing ${spec} timed out after ${Math.round(INSTALL_TIMEOUT_MS / 60_000)} minutes. The previous version is still installed.`,
-				output,
-			);
-		}
-		if (exitCode !== 0) {
-			throw new NpmInstallError(
-				`bun add -g ${spec} exited with code ${exitCode}. The previous version is still installed.`,
-				output,
-			);
-		}
-	} finally {
-		clearTimeout(timer);
+	// A signal means the deadline fired — nothing else signals this child. The
+	// exit code cannot carry that news: the timeout kill surfaces as
+	// `exitCode: 137`, indistinguishable from an install that failed with 137.
+	if (proc.signalCode !== null) {
+		throw new NpmInstallError(
+			`Installing ${spec} timed out after ${Math.round(timeoutMs / 60_000)} minutes. The previous version is still installed.`,
+			output,
+		);
+	}
+	if (exitCode !== 0) {
+		throw new NpmInstallError(
+			`bun add -g ${spec} exited with code ${exitCode}. The previous version is still installed.`,
+			output,
+		);
 	}
 }
 

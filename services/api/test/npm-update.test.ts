@@ -12,7 +12,7 @@ import { installPackageVersion, isVersionPublished, packageSpec } from "../src/d
 const servers: Array<{ stop: (force?: boolean) => void }> = [];
 const previousBase = process.env.VT_NPM_REGISTRY_BASE;
 
-function startRegistry(handler: (req: Request) => Response): string {
+function startRegistry(handler: (req: Request) => Response | Promise<Response>): string {
 	const server = Bun.serve({ port: 0, fetch: handler });
 	servers.push(server);
 	return `http://127.0.0.1:${server.port}`;
@@ -22,6 +22,8 @@ afterEach(() => {
 	for (const server of servers.splice(0)) server.stop(true);
 	if (previousBase === undefined) delete process.env.VT_NPM_REGISTRY_BASE;
 	else process.env.VT_NPM_REGISTRY_BASE = previousBase;
+	delete process.env.VT_NPM_INSTALL_TIMEOUT_MS;
+	delete process.env.BUN_CONFIG_REGISTRY;
 });
 
 describe("packageSpec", () => {
@@ -79,4 +81,20 @@ describe("installPackageVersion", () => {
 			/still installed/,
 		);
 	}, 120_000);
+
+	it("reports a hung package manager as a timeout, not as an exit code", async () => {
+		// The deadline is the only thing that can end this install: the child
+		// bun is pointed at a registry that accepts the connection and never
+		// answers, so it waits instead of failing fast. Without the signal
+		// check the user would read "exited with code 137" — 137 is what a
+		// SIGKILL looks like from the outside — instead of "timed out".
+		process.env.BUN_CONFIG_REGISTRY = startRegistry(() => new Promise<Response>(() => {}));
+		process.env.VT_NPM_INSTALL_TIMEOUT_MS = "1000";
+
+		const started = Bun.nanoseconds();
+		await expect(installPackageVersion("9.9.9-vt-hang-test")).rejects.toThrow(
+			/timed out.*still installed/s,
+		);
+		expect((Bun.nanoseconds() - started) / 1e6).toBeLessThan(20_000);
+	}, 60_000);
 });
