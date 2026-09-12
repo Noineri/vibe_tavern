@@ -21,6 +21,8 @@ The web suite is orchestrated by [`scripts/test-web.ts`](../../scripts/test-web.
 
 `--randomize` (optionally `--seed <n>`) shuffles test order for the run, replacing the old `--reverse` flag: per-file isolation makes in-process file-order dependence structurally impossible, and a seed makes a shuffled failure replayable.
 
+`bun run test` invokes the runner as `bun --no-orphans scripts/test.ts`. The runner fans out to four suite subprocesses, and `web`'s orchestrator forks eight more, none of which see a signal aimed at the runner: killing it with SIGTERM/SIGKILL (IDE stop button, `kill`, a crashed shell) left **16** live processes behind — the parallel workers, `scripts/test-web.ts`, and whatever a test had spawned, including a `bun add -g` pointed at a hanging registry. With the flag the same kill leaves none. Real Ctrl+C in a terminal was never the problem: the tty sends SIGINT to the whole foreground process group, which already takes the tree down. The flag is not a substitute for signal handlers — it makes bun exit when its *parent* dies and kill its live descendants on the way out, so re-parented grandchildren (a browser launched through `xdg-open`, whose opener already exited) are deliberately out of scope.
+
 CI runs three blocking root jobs — `typecheck`, `test-linux` and `test-windows` (`.github/workflows/ci.yml`; no job carries `continue-on-error`). The local `bun run check` is still the wider gate, because it adds `i18n:types`/`i18n:check` on top. See [CONTRIBUTING.md → Running the gates](../../CONTRIBUTING.md#running-the-gates) for the typecheck caveat (always `bun run typecheck` from the repo root; bare `tsc` from `apps/web/` emits ~80 false errors).
 
 ---
