@@ -8,6 +8,7 @@ import {
 	type ActiveLoreEntry,
 	type RetrievedMemoryHit,
 	type CustomInjection,
+	type GenerationFormat,
 	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
@@ -26,9 +27,14 @@ import {
 	type LoreActivationState,
 } from "./lore-activation-engine.js";
 import { executeScripts } from "../scripts-engine/script-sandbox.js";
+import { RegexHookService } from "../regex/regex-hook-service.js";
 
 export class StaticPromptResolver implements PromptAssemblyResolver {
-	constructor(private readonly stores: StoreContainer) {}
+	constructor(
+		private readonly stores: StoreContainer,
+		/** WORLD_INFO regex hook (RX-9) — transforms activated lore-entry content. */
+		private readonly regexHooks: RegexHookService,
+	) {}
 
 	async getCharacter(characterId: string): Promise<CharacterRecord> {
 		const character = await this.stores.characters.getById(characterId);
@@ -61,6 +67,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		/** Whether this preset is in advanced (canvas) mode. */
 		advancedMode: boolean;
 		mergeConsecutiveRoles: boolean;
+		/** Generation format (LOCAL_SUPPORT_PLAN LS-3a). Absent = auto. */
+		generationFormat?: GenerationFormat;
 		customInjections: CustomInjection[];
 		promptOrder: PromptOrderEntry[];
 	} | null> {
@@ -71,7 +79,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			name: preset.name,
 			text: preset.systemPrompt,
 			jailbreak: preset.postHistoryInstructions,
-			summary: await resolveSummaryPrompt(preset.summaryPrompt),
+			summary: await resolveSummaryPrompt(this.stores.db),
 			tools: preset.toolsPrompt,
 			prefill: preset.assistantPrefix,
 			authorsNote: preset.authorsNote,
@@ -82,6 +90,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			enhanceDefinitions: preset.enhanceDefinitionsPrompt,
 			advancedMode: preset.advancedMode,
 			mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
+			generationFormat: preset.generationFormat,
 			customInjections: preset.customInjections,
 			promptOrder: preset.promptOrder,
 		};
@@ -139,6 +148,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				tokenBudget: lb.lorebook.tokenBudget,
 				tokenBudgetPercent: lb.lorebook.tokenBudgetPercent,
 				recursiveScanning: lb.lorebook.recursiveScanning,
+				useGroupScoring: lb.lorebook.useGroupScoring,
 				maxRecursionSteps: lb.lorebook.maxRecursionSteps,
 				includeNames: lb.lorebook.includeNames,
 				minActivations: lb.lorebook.minActivations,
@@ -168,7 +178,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		//    structured activation reason through for the prompt trace.
 		const reasonById = new Map(result.activatedEntries.map(e => [e.id, e]));
 		const activatedIds = new Set(result.activatedEntries.map(e => e.id));
-		return lorebookSets
+		const activeEntries: ActiveLoreEntry[] = lorebookSets
 			.flatMap(lb => lb.entries)
 			.filter(e => activatedIds.has(e.id))
 			.map(e => {
@@ -213,6 +223,16 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				matchedKeys: detail.matchedKeys,
 				matchCount: detail.matchCount,
 			};
+		});
+
+		// 10. WORLD_INFO regex hook (RX-9): transform activated entry CONTENT in
+		//     the prompt view only — the lorebook row is shared content and is
+		//     never rewritten. The macroMap built above is reused as the engine's
+		//     macro source (no second context is built).
+		return this.regexHooks.transformWorldInfo(input.chatId, activeEntries, {
+			characterId: chat.characterId,
+			presetId: chat.promptPresetId ?? null,
+			macroMap,
 		});
 	}
 

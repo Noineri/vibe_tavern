@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
-import { debugSendLogSchema, importJsonSchema } from "../src/schemas/debug-schema.js";
+import { importJsonSchema } from "../src/schemas/debug-schema.js";
 
 /**
  * Characterization tests for the debug schemas.
@@ -27,34 +27,6 @@ function expectReject(result: z.ZodSafeParseResult<unknown>) {
     expect(result.error.issues.length).toBeGreaterThan(0);
   }
 }
-
-// --- debugSendLogSchema -----------------------------------------------------
-
-describe("debugSendLogSchema", () => {
-  // This schema is `z.any()` — a deliberately permissive sink. The debug
-  // send-log endpoint exists to capture whatever diagnostic payload a client
-  // forwards (an error object, a stack trace, an arbitrary nested structure,
-  // even a raw string or null). Validating it would defeat the purpose: the
-  // server's job is to persist the raw payload verbatim for later inspection,
-  // not to reject malformed diagnostics. These tests pin that permissiveness so
-  // any future tightening (e.g. an accidental `z.object(...)` refactor) is a
-  // conscious, reviewed change with a test failure attached — not a silent
-  // regression that starts dropping debug logs.
-  it("accepts literally anything (z.any()) — object, empty object, array, primitives, null, undefined", () => {
-    expect(debugSendLogSchema.safeParse({ kind: "error", stack: "..." }).success).toBe(true);
-    expect(debugSendLogSchema.safeParse({}).success).toBe(true);
-    expect(debugSendLogSchema.safeParse([1, 2, 3]).success).toBe(true);
-    expect(debugSendLogSchema.safeParse(["a"]).success).toBe(true);
-    expect(debugSendLogSchema.safeParse(42).success).toBe(true);
-    expect(debugSendLogSchema.safeParse(0).success).toBe(true);
-    expect(debugSendLogSchema.safeParse("a raw string").success).toBe(true);
-    expect(debugSendLogSchema.safeParse("").success).toBe(true);
-    expect(debugSendLogSchema.safeParse(true).success).toBe(true);
-    expect(debugSendLogSchema.safeParse(false).success).toBe(true);
-    expect(debugSendLogSchema.safeParse(null).success).toBe(true);
-    expect(debugSendLogSchema.safeParse(undefined).success).toBe(true);
-  });
-});
 
 // --- importJsonSchema -------------------------------------------------------
 

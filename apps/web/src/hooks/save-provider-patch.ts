@@ -15,7 +15,7 @@
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { PROVIDER_TYPE, type ModelSettingsOverlay, type ProviderProxyMode, tag } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, GENERATION_MODE, type GenerationMode, type ModelSettingsOverlay, type ProviderProxyMode, type ProviderGenerationFormat, tag } from "@vibe-tavern/domain";
 
 const saveLog = tag("save");
 
@@ -31,6 +31,10 @@ export interface ProviderSavePatch {
   visionModel: string | null;
   contextBudget: number | null;
   pinContextBudget: boolean;
+  /** Token padding (LS-1d) — safety margin subtracted from the context budget. */
+  tokenPadding: number;
+  /** Generation mode (LS-2a): chat (default) vs raw text completion. */
+  generationMode: GenerationMode;
   bindPerModel: boolean;
   modelFreeOnly: boolean;
   modelGroupByOwner: boolean;
@@ -41,6 +45,12 @@ export interface ProviderSavePatch {
   topA: number;
   typicalP: number;
   tfsZ: number;
+  adaptiveTarget: number;
+  adaptiveDecay: number;
+  dynatempRange: number;
+  dynatempExponent: number;
+  topNSigma: number;
+  smoothingFactor: number;
   repeatLastN: number;
   mirostat: number;
   mirostatTau: number;
@@ -49,6 +59,7 @@ export interface ProviderSavePatch {
   dryBase: number;
   dryAllowedLength: number;
   drySequenceBreakers: string[];
+  dryPenaltyLastN: number;
   xtcThreshold: number;
   xtcProbability: number;
   frequencyPenalty: number;
@@ -56,6 +67,7 @@ export interface ProviderSavePatch {
   repetitionPenalty: number;
   maxTokens: number;
   stopSequences: string[];
+  bannedStrings: string[];
   logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
   reasoningEffort: string;
@@ -64,6 +76,16 @@ export interface ProviderSavePatch {
   customSamplers: boolean;
   proxyMode?: ProviderProxyMode;
   proxyId?: string | null;
+  /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a). Profile-level —
+   *  never routes to a model overlay. Optional: computeSavePatch always sets it
+   *  (from the form), connectionToSavePatch OMITS it (a legacy connection save
+   *  must not wipe the pointer — omitted fields are untouched by the partial
+   *  PATCH). null clears the pointer ("no set"). */
+  samplerSetId?: string | null;
+  /** LS-10: the provider-side generation format (the format block). Same
+   *  omission rule as samplerSetId — a legacy connection save must not wipe
+   *  it. null clears back to the preset fallback. */
+  generationFormat?: ProviderGenerationFormat | null;
 }
 
 // ─── Pure computation ─────────────────────────────────────────────────────────
@@ -85,6 +107,8 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     visionModel: form.visionModel.trim() || null,
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
+    tokenPadding: form.tokenPadding,
+    generationMode: form.generationMode,
     bindPerModel: form.bindPerModel,
     modelFreeOnly: form.modelFreeOnly,
     modelGroupByOwner: form.modelGroupByOwner,
@@ -95,6 +119,12 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     topA: form.topA,
     typicalP: form.typicalP,
     tfsZ: form.tfsZ,
+    adaptiveTarget: form.adaptiveTarget,
+    adaptiveDecay: form.adaptiveDecay,
+    dynatempRange: form.dynatempRange,
+    dynatempExponent: form.dynatempExponent,
+    topNSigma: form.topNSigma,
+    smoothingFactor: form.smoothingFactor,
     repeatLastN: form.repeatLastN,
     mirostat: form.mirostat,
     mirostatTau: form.mirostatTau,
@@ -103,6 +133,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     dryBase: form.dryBase,
     dryAllowedLength: form.dryAllowedLength,
     drySequenceBreakers: form.drySequenceBreakers,
+    dryPenaltyLastN: form.dryPenaltyLastN,
     xtcThreshold: form.xtcThreshold,
     xtcProbability: form.xtcProbability,
     frequencyPenalty: form.frequencyPenalty,
@@ -110,6 +141,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     repetitionPenalty: form.repetitionPenalty,
     maxTokens: form.maxTokens,
     stopSequences: form.stopSequences,
+    bannedStrings: form.bannedStrings,
     logitBias: form.logitBias,
     seed: form.seed,
     reasoningEffort: form.reasoningEffort,
@@ -118,6 +150,8 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     customSamplers: form.customSamplers,
     proxyMode: form.proxyMode ?? "inherit",
     proxyId: form.proxyMode === "proxy" ? form.proxyId ?? null : null,
+    samplerSetId: form.samplerSetId,
+    generationFormat: form.generationFormat,
   };
 
   saveLog.debug("computeSavePatch:", {
@@ -169,6 +203,12 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     topA: form.topA,
     typicalP: form.typicalP,
     tfsZ: form.tfsZ,
+    adaptiveTarget: form.adaptiveTarget,
+    adaptiveDecay: form.adaptiveDecay,
+    dynatempRange: form.dynatempRange,
+    dynatempExponent: form.dynatempExponent,
+    topNSigma: form.topNSigma,
+    smoothingFactor: form.smoothingFactor,
     repeatLastN: form.repeatLastN,
     mirostat: form.mirostat,
     mirostatTau: form.mirostatTau,
@@ -177,6 +217,7 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     dryBase: form.dryBase,
     dryAllowedLength: form.dryAllowedLength,
     drySequenceBreakers: form.drySequenceBreakers,
+    dryPenaltyLastN: form.dryPenaltyLastN,
     xtcThreshold: form.xtcThreshold,
     xtcProbability: form.xtcProbability,
     frequencyPenalty: form.frequencyPenalty,
@@ -186,6 +227,7 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
     stopSequences: form.stopSequences,
+    bannedStrings: form.bannedStrings,
     logitBias: form.logitBias,
     seed: form.seed,
     reasoningEffort: form.reasoningEffort,
@@ -213,8 +255,12 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
     defaultModel: conn.model.trim() || null,
     visionModel: conn.visionModel.trim() || null,
+    // samplerSetId deliberately OMITTED — the legacy connection-based save
+    // path must not touch the sampler-set pointer (partial PATCH semantics).
     contextBudget: conn.maxTokens || null,
     pinContextBudget: false,  // not in ConnectionState yet
+    tokenPadding: 0,  // not in ConnectionState yet — padding is modal-only
+    generationMode: GENERATION_MODE.chat,  // not in ConnectionState — the TC flip is modal-only
     bindPerModel: false,  // not in ConnectionState yet
     modelFreeOnly: false,  // not in ConnectionState yet
     modelGroupByOwner: false,  // not in ConnectionState yet
@@ -225,6 +271,12 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     topA: conn.topA ?? 0,
     typicalP: 1,
     tfsZ: 1,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
+    dynatempRange: 0,
+    dynatempExponent: 1,
+    topNSigma: 0,
+    smoothingFactor: 0,
     repeatLastN: 0,
     mirostat: 0,
     mirostatTau: 5,
@@ -232,6 +284,7 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     dryMultiplier: 0,
     dryBase: 1.75,
     dryAllowedLength: 2,
+    dryPenaltyLastN: -1,
     drySequenceBreakers: [],
     xtcThreshold: 0.1,
     xtcProbability: 0,
@@ -240,6 +293,7 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     repetitionPenalty: conn.repetitionPenalty,
     maxTokens: conn.maxTokens,
     stopSequences: conn.stopSequences,
+    bannedStrings: [],
     logitBias: [],
     seed: conn.seed,
     reasoningEffort: conn.reasoningEffort,

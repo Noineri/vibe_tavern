@@ -18,10 +18,14 @@ import type {
   PersonaId,
   PromptPresetId,
   PromptTraceId,
+  RegexPresetId,
+  RegexProfileId,
   RetrievedMemoryHitId,
   ScriptId,
+  SttProfileId,
   SummaryMemorySnapshotId,
   ToolProfileId,
+  TtsProfileId,
 } from "./ids.js";
 
 import type {
@@ -209,6 +213,8 @@ export interface Lorebook {
   /** Null = fixed token-budget mode (use tokenBudget). 0-100 = percent of model context. See lorebook-st-parity-audit.md §1.4. */
   tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
+  /** Book-level default for entry.useGroupScoring (ST's global switch, scoped to the book). Effective flag: entry.useGroupScoring ?? book.useGroupScoring. See LOREBOOK_GROUP_SCORING_PARITY_REPORT. */
+  useGroupScoring: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
   minActivations: number;
@@ -272,7 +278,8 @@ export interface LoreEntry {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  useGroupScoring: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level useGroupScoring default, true/false = explicit per-entry override. See LOREBOOK_GROUP_SCORING_PARITY_REPORT. */
+  useGroupScoring: boolean | null;
   // Recursion
   excludeRecursion: boolean;
   preventRecursion: boolean;
@@ -354,6 +361,666 @@ export interface Script {
   personaId: string | null;
   chatId: string | null;
   extensions: Record<string, unknown>;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// ─── Regex presets (REGEX_EXTENSION_PLAN, RX-1) ────────────────────────
+//
+// Named SillyTavern-parity find/replace scripts (ST `RegexScriptData`). The
+// engine that runs them lives in `packages/prompt-pipeline` (pure); the store
+// and the chat-context resolver live in `packages/db`. Binding targets are
+// characters and prompt presets only (persona excluded by design) via the
+// `regexLinks` junction — the third instance of the lorebook/script link
+// pattern.
+
+/** ST regex placement codes, preserved numerically for card/preset import
+ *  parity. `SlashCommand` is reserved: VT has no slash-command surface today
+ *  (REGEX_EXTENSION_PLAN constraint). */
+export const REGEX_PLACEMENT = {
+  UserInput: 1,
+  AiOutput: 2,
+  SlashCommand: 3,
+  WorldInfo: 5,
+  Reasoning: 6,
+} as const;
+export type RegexPlacement = (typeof REGEX_PLACEMENT)[keyof typeof REGEX_PLACEMENT];
+
+/** How macros are substituted into the find pattern (ST `substituteRegex`). */
+export const REGEX_SUBSTITUTE = {
+  None: 0,
+  Raw: 1,
+  Escaped: 2,
+} as const;
+export type RegexSubstituteMode = (typeof REGEX_SUBSTITUTE)[keyof typeof REGEX_SUBSTITUTE];
+
+/** Binding targets for a regex preset — character and prompt preset only
+ *  (same vocabulary the `lorebookLinks`/`scriptLinks` junctions use). */
+export const REGEX_TARGET_TYPE = {
+  Character: "character",
+  Preset: "preset",
+} as const;
+export type RegexTargetType = (typeof REGEX_TARGET_TYPE)[keyof typeof REGEX_TARGET_TYPE];
+
+/**
+ * One named SillyTavern-parity regex script (ST `RegexScriptData`).
+ *
+ * `markdownOnly` / `promptOnly` are ST's ephemerality flags; their four
+ * combinations are the apply-target modes (see {@link RegexApplyTarget}):
+ * default = persist into the message, `markdownOnly` = display-only,
+ * `promptOnly` = prompt-only, both = display+prompt without ever writing the
+ * stored message.
+ *
+ * `placement` lists the hooks the preset runs at (see {@link REGEX_PLACEMENT}).
+ * Depth targeting follows ST: depth 0 is the last message, counting backward;
+ * `null` min/max means unlimited.
+ */
+export interface RegexPreset {
+  id: RegexPresetId;
+  name: string;
+  /** Find pattern in ST's `/pattern/flags` notation. */
+  findRegex: string;
+  /** Replacement; supports `{{match}}`, `$1`.. capture groups and `$<name>`. */
+  replaceString: string;
+  /** Substrings stripped from each match before replacement (ST "Trim Out"). */
+  trimStrings: string[];
+  substituteRegex: RegexSubstituteMode;
+  disabled: boolean;
+  markdownOnly: boolean;
+  promptOnly: boolean;
+  runOnEdit: boolean;
+  minDepth: number | null;
+  maxDepth: number | null;
+  placement: RegexPlacement[];
+  /** Applies to every chat regardless of bindings (like global lorebooks). */
+  isGlobal: boolean;
+  sortOrder: number;
+  /** The profile this rule belongs to (R-13), or null for a standalone rule. */
+  profileId: RegexProfileId | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/**
+ * A regex profile (R-13) — an ordered bundle of regex rules with a single
+ * binding + master enable switch (the lorebook analogy). A member rule fires
+ * only if the profile is enabled AND bound (or global); the rule's own
+ * `isGlobal`/`regexLinks` are inert while it is a member (preserved in the DB
+ * and reactivated on detach). Persona is excluded as a binding target by
+ * design — same vocabulary as `RegexPreset`.
+ */
+export interface RegexProfile {
+  id: RegexProfileId;
+  name: string;
+  /** Master switch — when disabled, NO member rule fires. */
+  disabled: boolean;
+  /** Applies to every chat regardless of bindings (like global lorebooks). */
+  isGlobal: boolean;
+  /** Application order within the flat list (shared sort space with presets). */
+  sortOrder: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Many-to-many binding for a regex profile — the fourth instance of the
+ *  lorebook/script junction pattern ({entityId, targetType, targetId}). */
+export interface RegexProfileLink {
+  regexProfileId: RegexProfileId;
+  targetType: RegexTargetType;
+  targetId: string;
+}
+
+/** Many-to-many binding mirroring `lorebookLinks`/`scriptLinks` — the third
+ *  instance of that junction pattern ({entityId, targetType, targetId}). */
+export interface RegexLink {
+  regexPresetId: RegexPresetId;
+  targetType: RegexTargetType;
+  targetId: string;
+}
+
+/** UI-facing union of the four markdownOnly/promptOnly combinations. */
+export type RegexApplyTarget = "persist" | "display" | "prompt" | "display_prompt";
+
+/** Maps the ST ephemerality flags to the apply-target mode. */
+export function regexApplyTargetOf(
+  preset: Pick<RegexPreset, "markdownOnly" | "promptOnly">,
+): RegexApplyTarget {
+  if (preset.markdownOnly && preset.promptOnly) return "display_prompt";
+  if (preset.markdownOnly) return "display";
+  if (preset.promptOnly) return "prompt";
+  return "persist";
+}
+
+/** Inverse of {@link regexApplyTargetOf}: maps an apply-target mode back to
+ *  the ST ephemerality flags. */
+export function applyTargetFlags(target: RegexApplyTarget): { markdownOnly: boolean; promptOnly: boolean } {
+  switch (target) {
+    case "persist":
+      return { markdownOnly: false, promptOnly: false };
+    case "display":
+      return { markdownOnly: true, promptOnly: false };
+    case "prompt":
+      return { markdownOnly: false, promptOnly: true };
+    case "display_prompt":
+      return { markdownOnly: true, promptOnly: true };
+  }
+}
+
+// ─── TTS profiles (TTS_PLAN TS-1) ──────────────────────────────────────────
+//
+// Named text-to-speech voices ("Kokoro — Sarah", "Gemini — Kore"), each pairing
+// a backend with its config + selected voice. TTS config deliberately lives
+// here, NOT on provider profiles — `providerProfiles` is LLM-generation-
+// specific (TTS_DESIGN Resolution, locked). `config` is a loose record on
+// purpose: per-backend shapes are owned by the backend registry's contracts
+// (TS-2+); the domain entity only guarantees JSON round-tripping.
+
+/** Backend discriminators for the v1 roster (TTS_DESIGN tier ladder). */
+export const TTS_BACKEND = {
+  /** Tier 0 — in-browser Kokoro via kokoro-js (Web Worker, no server). */
+  Kokoro: "kokoro",
+  /** Tier 3/1 — any OpenAI-compatible `/v1/audio/speech` endpoint (cloud or local server). */
+  OpenAiCompatible: "openai-compatible",
+  /** Tier 1 — native Gemini TTS (Interactions API). */
+  Gemini: "gemini",
+  /** Tier 2 — native ElevenLabs. */
+  ElevenLabs: "elevenlabs",
+  /** TPE-4 — native Cartesia (Sonic; first Wave A clone-capable provider). */
+  Cartesia: "cartesia",
+  /** TPE-5 — native Inworld (Realtime TTS; IVC cloning, steering tags). */
+  Inworld: "inworld",
+  /** TPE-6 — native LMNT (Blizzard; instant cloning, top_p/temperature tuning). */
+  Lmnt: "lmnt",
+  /** TPE-7 — native MiniMax (speech-2.8; two-step clone, interjection tags). */
+  MiniMax: "minimax",
+  /** TPE-9 — native Volcengine/Doubao (seed-tts; async seed-icl cloning). */
+  Volcengine: "volcengine",
+  /** TPE-10 — native Deepgram Aura (model==voice, live /v1/models catalog). */
+  Deepgram: "deepgram",
+  /** TPE-12 — native Azure Speech (region+key REST, live voices/list, SSML). */
+  Azure: "azure",
+  /** TPE-13 — native Amazon Polly (SigV4 REST, live DescribeVoices roster). */
+  Polly: "polly",
+  /** TPE-14 — native Google Cloud TTS (service-account JWT-bearer, live voices.list). */
+  GoogleCloud: "google-cloud",
+  /** TPE-15 — native xAI Grok Voice TTS (direct /v1/tts, live voice roster). */
+  Xai: "xai",
+  /** TPE-16 — native Mistral Voxtral Mini TTS (direct /v1/audio/speech, clone-capable). */
+  Mistral: "mistral",
+} as const;
+export type TtsBackendSlug = (typeof TTS_BACKEND)[keyof typeof TTS_BACKEND];
+
+/** Voice-map binding targets for a TTS profile — character and persona. The
+ *  voice map answers "who speaks with which voice", so unlike the regex /
+ *  lorebook junctions (character + prompt preset) it carries persona (the
+ *  user's own voice) and has no preset target. */
+export const TTS_TARGET_TYPE = {
+  Character: "character",
+  Persona: "persona",
+} as const;
+export type TtsTargetType = (typeof TTS_TARGET_TYPE)[keyof typeof TTS_TARGET_TYPE];
+
+/** Voice-map binding mode (TTS_PLAN TS-9a-foundation). `voice` = the target
+ *  speaks with the linked profile; `disabled` = the target is explicitly
+ *  excluded from narration (the design's disable-per-character marker —
+ *  expressed as a link row against the DEFAULT profile so the junction keeps
+ *  its FK shape; the resolver treats any disabled-link-on-target as a skip
+ *  regardless of profile). Additive to the TS-1 junction: rows written
+ *  before this column default to `voice`. */
+export const TTS_LINK_MODE = {
+  Voice: "voice",
+  Disabled: "disabled",
+} as const;
+export type TtsLinkMode = (typeof TTS_LINK_MODE)[keyof typeof TTS_LINK_MODE];
+
+/** Backend-specific config bag (model, endpoint, sliders, ...). `unknown`
+ *  values are correct at this type-erased boundary: the real shapes live in
+ *  the per-backend zod contracts + backend registry (TS-2+). The SECRET
+ *  apiKey lives in the typed `TtsProfile.apiKey` column (TE2-16) — it never
+ *  travels inside this bag; store writes strip it defensively. */
+export type TtsProfileConfig = Record<string, unknown>;
+
+/** One named TTS voice profile. */
+export interface TtsProfile {
+  id: TtsProfileId;
+  /** Human-readable profile name ("Kokoro — Sarah"). */
+  name: string;
+  /** Backend discriminator (see {@link TTS_BACKEND}). */
+  backend: TtsBackendSlug;
+  /** Backend-specific config bag, persisted as JSON — carries NO secret (the
+   *  key lives in the typed {@link TtsProfile.apiKey} column; TE2-16). */
+  config: TtsProfileConfig;
+  /** Write-only API key for the backend — typed column (TE2-16), never
+   *  serialized to the client; the wire record reports `hasStoredApiKey`
+   *  instead. Empty string or null = no own key (local servers, or profiles
+   *  that resolve their key from {@link TtsProfile.providerRef}). */
+  apiKey: string | null;
+  /** Optional `providerProfiles.id` link (TE2-16): when set and the profile
+   *  has no own key, synthesis/test requests resolve key + baseUrl from the
+   *  provider store SERVER-SIDE — the provider key never crosses the API
+   *  boundary either. */
+  providerRef: string | null;
+  /** Selected voice id — backend-specific ("af_heart", "Kore", ElevenLabs
+   *  voice_id, ...); empty until the user picks one (the editor gates
+   *  "ready" / preview on it). */
+  voiceId: string;
+  /** Optional narrator voice id for dual-voice profiles — when non-null, quoted
+   *  spans use `voiceId` and the rest uses this id; null = single-voice mode. */
+  narratorVoiceId: string | null;
+  /** Language hint (BCP-47-ish); English-first per owner decision. */
+  lang: string;
+  /** Deterministic order in the profile list. */
+  sortOrder: number;
+  /** The voice map's [Default Voice] — at most one profile at a time
+   *  (store-maintained pointer; the fallback voice when no override binds). */
+  isDefault: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Many-to-many voice-map binding — which characters/personas speak with
+ *  which profile. Junction-pattern instance with a persona-aware target
+ *  vocabulary (see {@link TTS_TARGET_TYPE}). `mode` distinguishes a voice
+ *  binding from an explicit narration-disable for the target. */
+export interface TtsProfileLink {
+  ttsProfileId: TtsProfileId;
+  targetType: TtsTargetType;
+  targetId: string;
+  mode: TtsLinkMode;
+}
+
+// ─── TTS backend capabilities (TTS_PLAN TS-2) ───────────────────────────────
+//
+// Static capability flags per backend slug. The exhaustive Record means adding
+// a TTS_BACKEND slug without flags fails typecheck — the same lock-step
+// prevention property as the providers protocol registry.
+
+export const TTS_TRANSPORT = {
+  Inbrowser: "inbrowser",
+  Local: "local",
+  Cloud: "cloud",
+} as const;
+export type TtsTransport = (typeof TTS_TRANSPORT)[keyof typeof TTS_TRANSPORT];
+
+export interface TtsBackendCapabilities {
+  transport: TtsTransport;
+  openaiCompatible: boolean;
+  supportsStreaming: boolean;
+  supportsCloning: boolean;
+  supportsVoiceList: boolean;
+  supportsSpeed: boolean;
+  requiresApiKey: boolean;
+}
+
+export const TTS_BACKEND_CAPABILITIES: Record<TtsBackendSlug, TtsBackendCapabilities> = {
+  [TTS_BACKEND.Kokoro]: {
+    transport: TTS_TRANSPORT.Inbrowser,
+    openaiCompatible: false,
+    supportsStreaming: true,
+    supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: false,
+  },
+  [TTS_BACKEND.OpenAiCompatible]: {
+    transport: TTS_TRANSPORT.Local,
+    openaiCompatible: true,
+    supportsStreaming: true,
+    supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: false,
+  },
+  [TTS_BACKEND.Gemini]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    supportsStreaming: false,
+    supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: false,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.ElevenLabs]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    supportsStreaming: false,
+    supportsCloning: false,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Cartesia]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // Bytes endpoint streams the HTTP body, but our generate() buffers —
+    // the capability flag describes OUR transport, not Cartesia's.
+    supportsStreaming: false,
+    supportsCloning: true,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Inworld]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // generate() buffers the JSON/base64 response — no streaming on our
+    // side (the streaming endpoint exists, but the buffered path is what
+    // the profile editor's preview/synthesis use).
+    supportsStreaming: false,
+    supportsCloning: true,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Lmnt]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The bytes endpoint streams, but generate() buffers it whole.
+    supportsStreaming: false,
+    supportsCloning: true,
+    supportsVoiceList: true,
+    // LMNT has NO speed parameter — its tuning surface is top_p
+    // (stability) + temperature (expressiveness) instead.
+    supportsSpeed: false,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.MiniMax]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // stream:false on the t2a endpoint; generate() buffers the hex audio.
+    supportsStreaming: false,
+    supportsCloning: true,
+    supportsVoiceList: true,
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Volcengine]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The unidirectional endpoint streams chunked JSON, but generate()
+    // buffers the base64 chunks into one clip (same contract as minimax).
+    supportsStreaming: false,
+    supportsCloning: true,
+    // No list-voices endpoint exists for the synthesis credentials
+    // (get_voice = single-speaker status; ListSpeakers = IAM console API)
+    // — the editor's manual floor applies (TPE-9a owner rule).
+    supportsVoiceList: false,
+    // audio_params.speech_rate [-50,100].
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Deepgram]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The speak endpoint streams audio bytes, but generate() buffers the
+    // whole clip (same contract as every native backend here).
+    supportsStreaming: false,
+    // No cloning in Deepgram's TTS product (docs re-verified 2026-09-02)
+    // — the profile editor's clone section stays hidden (wave-B pin).
+    supportsCloning: false,
+    // Live catalog: GET /v1/models carries the tts array (aura voices) —
+    // the strong form of the TPE-9a owner rule (no hardcoded roster).
+    supportsVoiceList: true,
+    // REST `speed` query param, documented range 0.7–1.5.
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Azure]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The REST endpoint answers the synthesized audio file; generate()
+    // buffers the whole clip (same contract as every native backend).
+    supportsStreaming: false,
+    // Custom Neural Voice is an application-gated program, not self-serve
+    // cloning — supportsCloning false keeps the clone section hidden.
+    supportsCloning: false,
+    // Live catalog: GET …/cognitiveservices/voices/list returns the full
+    // per-region roster (no hardcoded voice list — owner rule).
+    supportsVoiceList: true,
+    // SSML prosody `rate` (documented relative percentage form).
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Polly]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // The REST endpoint answers the synthesized audio stream; generate()
+    // buffers the whole clip (same contract as every native backend).
+    supportsStreaming: false,
+    // The Polly REST API exposes no cloning surface — supportsCloning
+    // false keeps the editor's clone section hidden.
+    supportsCloning: false,
+    // Live catalog: GET /v1/voices (DescribeVoices) paginates the full
+    // per-region roster (no hardcoded voice list — owner rule).
+    supportsVoiceList: true,
+    // SSML prosody `rate` (absolute % — documented range 20–200).
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.GoogleCloud]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // Synchronous synthesize returns the full clip as base64
+    // audioContent — same buffered contract as every native backend.
+    supportsStreaming: false,
+    // Custom Voice is an AutoML enterprise program (gated) — no cloning
+    // surface for a self-hoster; keeps the editor's clone section hidden.
+    supportsCloning: false,
+    // Live catalog: GET /v1/voices returns the full roster in ONE
+    // response (no pagination documented; no hardcoded voice list —
+    // owner rule).
+    supportsVoiceList: true,
+    // audioConfig.speakingRate (documented multiplier range 0.25–2.0).
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Xai]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // POST /v1/tts returns the clip as raw audio bytes — our generate()
+    // buffers, same contract as every native backend. A bidirectional
+    // WebSocket streaming endpoint exists upstream but stays unwired.
+    supportsStreaming: false,
+    // Custom Voices API (POST /v1/custom-voices) is Enterprise-gated and
+    // US-only (docs warning, verified 2026-09-10) — same ruling as Google
+    // Cloud's gated program: clone section hidden, already-created custom
+    // voices still listed via GET /v1/custom-voices in listVoices().
+    supportsCloning: false,
+    // Live catalog: GET /v1/tts/voices (built-ins) + GET /v1/custom-voices
+    // (team customs, paginated) — no hardcoded voice list (owner rule).
+    supportsVoiceList: true,
+    // REST body `speed` — documented range 0.7–1.5, default 1.
+    supportsSpeed: true,
+    requiresApiKey: true,
+  },
+  [TTS_BACKEND.Mistral]: {
+    transport: TTS_TRANSPORT.Cloud,
+    openaiCompatible: false,
+    // Non-stream POST /v1/audio/speech returns {audio_data: base64}; the
+    // SSE stream=true lane (speech.audio.delta/done, float32 PCM) exists
+    // upstream but stays unwired — buffered first per the plan row.
+    supportsStreaming: false,
+    // POST /v1/audio/voices (name + base64 sample_audio) is open to every
+    // account — the first wave-D native WITH a clone section.
+    supportsCloning: true,
+    // Live catalog: GET /v1/audio/voices (offset pagination, type=all —
+    // presets + customs in one list) — no hardcoded voice list (owner
+    // rule).
+    supportsVoiceList: true,
+    // SpeechRequest exposes no speed knob — nothing to tune.
+    supportsSpeed: false,
+    requiresApiKey: true,
+  },
+};
+
+/**
+ * Classify the transport of an OpenAI-compatible TTS endpoint by URL host.
+ *
+ * Local loopback hosts (localhost / 127.0.0.1 / [::1], any port) are
+ * classified as "local"; everything else and unparseable input as "cloud".
+ * Failing toward the stricter tier is intentional: an ambiguous endpoint
+ * should surface cloud-key expectations rather than silently assuming a local
+ * server that is not running.
+ */
+export function classifyOpenAiCompatTransport(endpoint: string): TtsTransport {
+  try {
+    const url = new URL(endpoint);
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") {
+      return TTS_TRANSPORT.Local;
+    }
+    return TTS_TRANSPORT.Cloud;
+  } catch {
+    return TTS_TRANSPORT.Cloud;
+  }
+}
+
+// ─── STT profiles (STT_PLAN ST-1) ────────────────────────────────────────────
+//
+// Named speech-to-text profiles ("Whisper — small", "Local faster-whisper"),
+// each pairing a backend with its config. STT config deliberately lives here,
+// NOT on provider profiles — the same rule as TTS config (TTS_DESIGN
+// Resolution, locked; STT_DESIGN Conclusion 1). `config` is a per-backend
+// discriminated union owned by the v1 roster; `apiKey` is a typed optional
+// top-level field and NEVER travels inside `config` (the TE2-16 key rule
+// applied to STT — see the stt_profiles table comment).
+
+/** Backend discriminators for the STT roster (STT_DESIGN tiers + the
+ *  ST-7 Gemini audio-understanding backend; native vendors beyond it are a
+ *  separate post-base decision). */
+export const STT_BACKENDS = {
+  /** Tier 0 — in-browser Whisper via transformers.js (Web Worker, no server). */
+  WhisperBrowser: "whisper-browser",
+  /** Tier 3/2 — any OpenAI-compatible `/v1/audio/transcriptions` endpoint (cloud or local server). */
+  OpenAiCompat: "openai-compat",
+  /** ST-7 — Google Gemini batch audio understanding: transcript + optional
+   *  tone/emotion annotation in ONE pass over the clip (Interactions REST,
+   *  inline base64 audio — NOT the Live websocket). */
+  Gemini: "gemini",
+  /** SPE-4 — native Deepgram batch transcription (`POST /v1/listen`,
+   *  raw-binary body, `Authorization: Token` — NOT the OpenAI-compat
+   *  multipart surface; wire contract in STT_PROVIDER_EXPANSION_REPORT). */
+  Deepgram: "deepgram",
+  /** SPE-5 — native ElevenLabs Scribe batch transcription (`POST
+   *  /v1/speech-to-text` multipart, `xi-api-key` — NOT the OpenAI-compat
+   *  surface; wire contract in STT_PROVIDER_EXPANSION_REPORT). */
+  ElevenLabs: "elevenlabs",
+  /** SPE-6 — NVIDIA hosted omni chat-audio transcription (`POST
+   *  /v1/chat/completions` with an `audio_url` data-URI content part,
+   *  `Bearer nvapi-…`). EN-ONLY per the model card — built for roster
+   *  completeness (owner decision 2026-09-05); the RU path is OpenRouter
+   * or the local Riva preset. */
+  Nvidia: "nvidia",
+  /** SPE-9 — the whisper.cpp project's OWN local server surface
+   *  (`examples/server`, `POST /inference` multipart `file` field — NOT
+   *  OpenAI-compatible). Keyless localhost; the model is bound at server
+   *  start (`-m`), so the config carries only the endpoint. Also serves
+   *  whisperfile (the llamafile wraps the same server). Wire contract in
+   * STT_PROVIDER_EXPANSION_REPORT. */
+  WhisperCpp: "whisper-cpp",
+} as const;
+export type SttBackendType = (typeof STT_BACKENDS)[keyof typeof STT_BACKENDS];
+
+/** Which backends can annotate tone/emotion alongside the transcript
+ *  (ST-7 capability seam). PURE DATA, shared by the server registry
+ *  (STT_BACKEND_CAPABILITIES) and the web editor (the toggle renders only
+ *  for capable backends; non-capable backends force the flag off — the
+ *  adapter enforces that server-side too). Single source: no divergent
+ *  client/server copies. */
+export const STT_BACKEND_EMOTION_CAPABILITY: Record<SttBackendType, boolean> = {
+  [STT_BACKENDS.WhisperBrowser]: false,
+  [STT_BACKENDS.OpenAiCompat]: false,
+  [STT_BACKENDS.Gemini]: true,
+  // Pure ASR — Deepgram's sentiment feature is per-segment polarity
+  // labels, not a tone phrase in the ST-7 seam's shape, so the seam stays
+  // off (SPE-4).
+  [STT_BACKENDS.Deepgram]: false,
+  // Pure ASR (SPE-5) — Scribe's diarize/tag_audio_events are not the ST-7
+  // tone-phrase seam.
+  [STT_BACKENDS.ElevenLabs]: false,
+  // Chat-audio transcription (SPE-6) — a bare transcript model, no tone
+  // seam; EN-only per the model card.
+  [STT_BACKENDS.Nvidia]: false,
+  // Pure ASR (SPE-9) — the local whisper.cpp server returns a bare
+  // transcript; no tone seam.
+  [STT_BACKENDS.WhisperCpp]: false,
+};
+
+/** Default Gemini STT model (ST-7) — the current docs' flash example; the
+ *  model field stays free text (no hardcoded catalog), this is only the
+ *  switch-into-backend prefill and the empty-field fallback. */
+export const DEFAULT_GEMINI_STT_MODEL = "gemini-3.8-flash";
+
+/** Default Deepgram STT model (SPE-4) — nova-3, the current docs' primary
+ *  transcribe model (RU-capable since the 2025-11 monolingual wave). Same
+ *  role as {@link DEFAULT_GEMINI_STT_MODEL}: switch-into-backend prefill and
+ *  empty-field fallback; the live picker (`GET /v1/models` → `stt[]`) is the
+ *  real roster. */
+export const DEFAULT_DEEPGRAM_STT_MODEL = "nova-3";
+
+/** Default ElevenLabs STT model (SPE-5) — scribe_v2, the reference's own
+ *  example model. Same role as {@link DEFAULT_GEMINI_STT_MODEL}: no
+ *  discovery endpoint exists for the Scribe roster, so the static preset
+ *  list (SPE-7) is the picker and this is the prefill/fallback. */
+export const DEFAULT_ELEVENLABS_STT_MODEL = "scribe_v2";
+
+/** Default NVIDIA STT model (SPE-6) — the hosted omni model of the verified
+ *  reference example (EN-only). Same role as {@link DEFAULT_GEMINI_STT_MODEL}:
+ *  the hosted /v1/models catalog does not mark audio capability, so the
+ *  static omni list (SPE-7) is the picker and this is the prefill/fallback. */
+export const DEFAULT_NVIDIA_STT_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
+
+/** Backend-specific STT config — a per-backend discriminated union (the
+ *  profile's `backend` field discriminates). The Gemini arm (ST-7) is
+ *  structurally identical to the whisper-browser arm (`{ model, language? }` —
+ *  the endpoint is a fixed Gemini API constant, so no endpoint field), so it
+ *  has no separate member here or in the Zod union: the whisper shape IS its
+ *  validation. Only NON-SECRET fields live here; the apiKey is the typed
+ *  top-level `SttProfile.apiKey` and never rides inside config (ST-1, TE2-16
+ *  rule). */
+export type SttProfileConfig =
+  | {
+      /** OpenAI-compatible `/v1/audio/transcriptions` endpoint config. */
+      endpoint: string;
+      /** Model slug ("whisper-1", "gpt-4o-transcribe", ...). P8: optional —
+       *  the model is a LEVEL-2 outer setting (fetched picker), so a fresh
+       *  connection saves without one; the backend factory defaults it
+       *  ("whisper-1" / DEFAULT_GEMINI_STT_MODEL) until a pick lands. */
+      model?: string;
+      /** Optional language hint (BCP-47-ish). */
+      language?: string;
+    }
+  | {
+      /** transformers.js model id ("Xenova/whisper-small", ...). Always
+       *  stamped by the form (roster default on every backend switch); the
+       *  optional mirrors the contract arm after P8. */
+      model?: string;
+      /** Optional language hint (BCP-47-ish). */
+      language?: string;
+    };
+
+/** One named STT profile (transcription backend + config + switches). */
+export interface SttProfile {
+  id: SttProfileId;
+  /** Human-readable profile name ("Whisper — small"). */
+  name: string;
+  /** Backend discriminator (see {@link STT_BACKENDS}). */
+  backend: SttBackendType;
+  /** Backend-specific config — carries NO secret (the key lives in the typed
+   *  {@link SttProfile.apiKey} column; ST-1). */
+  config: SttProfileConfig;
+  /** Write-only API key for the backend — typed column (ST-1), never
+   *  serialized to the client (the wire record reports `hasStoredApiKey`
+   *  instead). Absent = no own key (in-browser Whisper uses none; server
+   *  profiles may resolve their key via auto-key reuse at the adapter). */
+  apiKey?: string;
+  /** When true, the backend annotates tone/emotion into the transcript
+   *  (ST-7 capability seam — v1 pure-ASR backends force it off). */
+  emotionAnnotation: boolean;
+  /** The fallback pointer (mirrors tts_profiles.isDefault) — at most one
+   *  profile at a time (store-maintained; used when neither scenario
+   *  pointer is set). */
+  isDefault: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -1021,6 +1688,11 @@ export interface MessageVariant {
   /** Canonical per-variant Scene record (SCENE_TRACKER_PLAN); null/undefined
    *  when the variant has none. Owned by this variant's immutable id. */
   sceneTracker?: SceneTrackerRecord | null;
+  /** TTS narration annotation (TPE-1, AN-1): the annotated copy of this
+   *  variant's content — expressive tags inserted, text otherwise identical.
+   *  Null/undefined = not annotated; narration then reads the content itself.
+   *  A persisted fact: content edits do NOT clear it. */
+  ttsAnnotation?: string | null;
 }
 
 export interface SummaryMemorySnapshot {
@@ -1136,7 +1808,7 @@ export interface PromptTrace {
     visionDescriptions?: Array<{
       attachmentId: string;
       name: string;
-      type: "image" | "video";
+      type: "image" | "video" | "audio";
       description: string;
     }>;
   } | null;

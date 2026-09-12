@@ -231,6 +231,9 @@ function deriveEntityScope(
   boundScriptIds: Set<string>,
   entityId: string,
   entityKind: "character" | "persona" | "lorebook" | "script",
+  /** Entity scope's home FK is the typed pair — the persona column decides
+   *  which owner label an entity-scoped resource carries. */
+  personaOwnerId?: string | null,
 ): string {
   // Active character itself → character:<id>
   if (entityKind === "character" && entityId === activeScope.activeCharacterId) {
@@ -250,6 +253,8 @@ function deriveEntityScope(
   }
   // Canonical scope
   switch (scopeType) {
+    case "entity":
+      return personaOwnerId ? `persona:${personaOwnerId}` : ownerId ? `character:${ownerId}` : "global";
     case "character":
       return ownerId ? `character:${ownerId}` : "global";
     case "persona":
@@ -268,8 +273,8 @@ function deriveEntryOwner(
 ): string | null {
   switch (parentLorebookScopeType) {
     case "character":
-      return parentLorebookOwnerId;
     case "persona":
+    case "entity":
       return parentLorebookOwnerId;
     default:
       return null;
@@ -337,7 +342,7 @@ async function projectAllRecords(
 
   // Lorebooks + entries
   for (const lb of lorebooks) {
-    const scope = deriveEntityScope(lb.scopeType, lb.characterId ?? lb.personaId ?? null, activeScope, boundLorebookIds, boundScriptIds, lb.id, "lorebook");
+    const scope = deriveEntityScope(lb.scopeType, lb.characterId ?? lb.personaId ?? null, activeScope, boundLorebookIds, boundScriptIds, lb.id, "lorebook", lb.personaId);
     const ownerId = deriveEntryOwner(lb.scopeType, lb.characterId ?? lb.personaId ?? null);
     records.push({
       channel: "entity",
@@ -371,7 +376,7 @@ async function projectAllRecords(
 
   // Scripts
   for (const sc of scripts) {
-    const scope = deriveEntityScope(sc.scopeType, sc.characterId ?? sc.personaId ?? null, activeScope, boundLorebookIds, boundScriptIds, sc.id, "script");
+    const scope = deriveEntityScope(sc.scopeType, sc.characterId ?? sc.personaId ?? null, activeScope, boundLorebookIds, boundScriptIds, sc.id, "script", sc.personaId);
     records.push({
       channel: "entity",
       type: "script",

@@ -76,6 +76,9 @@ jobs:
         with:
           bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
+      # TH-4c guard: instant static scan (hard bans + budget ratchets) before
+      # the expensive suites — see scripts/test-hygiene.ts.
+      - run: bun run test:hygiene
       - run: bun run test
 
   test-windows:
@@ -88,6 +91,9 @@ jobs:
         with:
           bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
+      # TH-4c guard: instant static scan (hard bans + budget ratchets) before
+      # the expensive suites — see scripts/test-hygiene.ts.
+      - run: bun run test:hygiene
       - run: bun run test
 
   build-linux:
@@ -110,12 +116,7 @@ jobs:
         with:
           bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
-      - run: bun scripts/build-android-arm64.ts
-      - name: Stage tarball in Android assets
-        run: |
-          mkdir -p mobile/android/app/src/main/assets
-          cp out/vibe-tavern-android-arm64.tar.gz \
-             mobile/android/app/src/main/assets/vibe-tavern-android-arm64.tgz
+      - run: bun run build:android-native
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

@@ -21,6 +21,8 @@
 
 import { dirname, resolve } from "node:path";
 import { resolvePromptAssetPath, loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
+import type { AppDb } from "@vibe-tavern/db";
+import { resolveServicePrompt } from "../../service-prompts/service-prompt-resolver.js";
 import {
   buildSkillCatalog,
   type ScanRoot,
@@ -154,8 +156,13 @@ export async function resolveExperienceCopilotSkillCatalog(
  * tool set is projected through {@link COPILOT_TOOL_KEYS} so the wire contract
  * stays the single source of truth for the toggleable-tool names.
  */
-export async function resolveBuiltinCopilotProfile(): Promise<CopilotProfile> {
-  const basePrompt = await loadPromptAsset(EXPERIENCE_COPILOT_MODULE.basePromptFile);
+export async function resolveBuiltinCopilotProfile(db?: AppDb): Promise<CopilotProfile> {
+  // SP-5: the global service-prompt profile's `copilot_base` override replaces
+  // the builtin base ONLY on this builtin path — explicit per-script copilot
+  // profiles (basePrompt snapshots) never consult it (see copilot-profile-resolver).
+  const basePrompt = db
+    ? (await resolveServicePrompt(db, "copilot_base")).text
+    : await loadPromptAsset(EXPERIENCE_COPILOT_MODULE.basePromptFile);
   const toolSet: CopilotToolSet = {};
   for (const key of COPILOT_TOOL_KEYS) {
     if (EXPERIENCE_COPILOT_MODULE.toolSet[key] === true) toolSet[key] = true;

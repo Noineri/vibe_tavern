@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { Script, Chat } from "@vibe-tavern/domain";
 import { StaticPromptResolver } from "../src/domain/prompt/prompt-resolver.js";
+import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 
 function makeScript(overrides: Partial<Script> & { id: string }): Script {
   return {
@@ -82,7 +83,10 @@ describe("prompt-assembly Dice boundary", () => {
     });
 
     const stores = makeStoresWithDiceLeak([diceScript]);
-    const resolver = new StaticPromptResolver(stores);
+    // RegexHookService over the fake container is side-effect-free here: it
+    // only stores the reference — its stores are touched when a hook fires,
+    // and executeScripts never fires one (RX-9 wiring).
+    const resolver = new StaticPromptResolver(stores, new RegexHookService(stores));
 
     const result = await resolver.executeScripts({
       chatId: "chat_1" as never,
@@ -116,7 +120,7 @@ describe("prompt-assembly Dice boundary", () => {
     });
 
     const stores = makeStoresWithDiceLeak([promptScript, diceScript]);
-    const resolver = new StaticPromptResolver(stores);
+    const resolver = new StaticPromptResolver(stores, new RegexHookService(stores));
 
     const result = await resolver.executeScripts({
       chatId: "chat_1" as never,

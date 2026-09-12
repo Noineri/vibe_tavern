@@ -1,0 +1,1 @@
+ALTER TABLE `tts_profile_links` ADD `mode` text DEFAULT 'voice' NOT NULL;

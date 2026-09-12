@@ -13,6 +13,7 @@ import {
   slugify,
   stableJson,
 } from "../shared.js";
+import { extractCardRegexScripts, type RegexScriptImportDraft } from "./regex-scripts.js";
 
 export interface CharacterCardV3Normalized {
   spec: "chara_card_v3";
@@ -45,6 +46,11 @@ export interface ImportedCharacterCardBundle {
   character: Character;
   version: CharacterVersion;
   warnings: string[];
+  /** Regex scripts embedded under `extensions.regex_scripts`, extracted into
+   *  importable drafts (REGEX_EXTENSION_PLAN RX-15). Always `disabled: true` —
+   *  the review-before-trust gate for shared-card content. Additive only:
+   *  `normalized.extensions` keeps carrying the raw array (lossless export). */
+  regexScripts: RegexScriptImportDraft[];
 }
 
 export interface ImportCharacterCardOptions {
@@ -250,12 +256,26 @@ export function importCharacterCardV3Json(
     createdAt: importedAt,
   };
 
+  // Embedded ST regex scripts (RX-15). Prefer `data.extensions`; fall back to
+  // a top-level `extensions` block (pure-V2 shape) when the data block carries
+  // none. Extraction never throws and extensions stay untouched (lossless).
+  const dataExtensions = isRecord(data.extensions) ? data.extensions : undefined;
+  const rootExtensions = root !== data && isRecord(root.extensions) ? root.extensions : undefined;
+  const hasScripts = (ext: Record<string, unknown> | undefined): ext is Record<string, unknown> =>
+    ext != null && Array.isArray(ext.regex_scripts);
+  const regexSource = hasScripts(dataExtensions)
+    ? dataExtensions
+    : hasScripts(rootExtensions)
+      ? rootExtensions
+      : dataExtensions ?? rootExtensions;
+
   return {
     format: "chara_card_v3_json",
     normalized,
     character,
     version,
     warnings,
+    regexScripts: extractCardRegexScripts(regexSource),
   };
 }
 
@@ -444,5 +464,7 @@ export function vtfContentToImportedBundle(
     character,
     version,
     warnings,
+    // VTF monoliths may carry regex_scripts in their extensions fence too.
+    regexScripts: extractCardRegexScripts(rawExtensions),
   };
 }

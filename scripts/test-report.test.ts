@@ -41,6 +41,82 @@ describe("final test report", () => {
 		}
 	});
 
+	test("surfaces the web runner's failing-file list even when stdout already has actionable diagnostics", () => {
+		// Given: the shape of the PR #39 incident — bun's stdout carries (fail)
+		// diagnostics (so the old composer never looked at stderr), while the
+		// per-file runner printed its truncation-proof summary to stderr. The
+		// list must lead the failure section, not be dropped.
+		const webFailure = [{
+			name: "web",
+			exitCode: 1,
+			durationMs: 56_400,
+			stdout: [
+				"apps/web/src/components/chat/narration-playlist-panel.test.tsx:",
+				"(fail) RD-1b — playlist scroll > container-scoped",
+				"error: expect(received).toBe(expected)",
+				"",
+				" 3644 pass",
+				"    1 fail",
+			].join("\n"),
+			stderr: [
+				"Web test files with failures (1):",
+				"FAIL apps/web/src/components/chat/narration-playlist-panel.test.tsx (1 failed)",
+				"  · continuous advance auto-scroll (RD-7) — error: expect(received).toBe(true) Expected: true Received: false",
+				"",
+				"Web tests: FAIL (335 files)",
+		].join("\n"),
+		}] satisfies readonly TestSuiteResult[];
+
+		// When
+		const report = formatTestReport(webFailure);
+
+		// Then
+		expect(report).toContain("FAIL apps/web/src/components/chat/narration-playlist-panel.test.tsx (1 failed)");
+		// The per-testcase `· name — message` lines must survive the lift too
+		// (run 34665657469: the orchestrator dropped them — the pattern list
+		// predates the lines — so the CI log showed a bare FAIL with no names).
+		expect(report).toContain("  · continuous advance auto-scroll (RD-7) — error: expect");
+		expect(report.indexOf("FAIL apps/web")).toBeLessThan(report.indexOf("(fail) RD-1b"));
+		expect(report).toContain("Web tests: FAIL (335 files)");
+	});
+
+	test("failing sections survive passing-file diagnostic noise in the excerpt window", () => {
+		// Given: ten passing files whose tests log error-shaped output (an
+		// intentional route-throw, a library TypeError) plus ONE file with a real
+		// (fail) — the failing section arrives LAST, past the 8-section cap.
+		const noisy: string[] = [];
+		for (let i = 0; i < 10; i++) {
+			noisy.push(
+				`src/file${i}.test.ts:`,
+				"(pass) something > noise",
+				`error: intentional-noise-${i}`,
+				"    at <anonymous> (src/file" + i + ".test.ts:1:1)",
+			);
+		}
+		noisy.push(
+			"src/real.test.ts:",
+			"(fail) real > the one that matters",
+			"error: expect(received).toBe(expected)",
+		);
+		const noisyFailure = [{
+			name: "web",
+			exitCode: 1,
+			durationMs: 60_000,
+			stdout: noisy.join("\n"),
+			stderr: "",
+		}] satisfies readonly TestSuiteResult[];
+
+		// When
+		const report = formatTestReport(noisyFailure);
+
+		// Then: the (fail) section is inside the window, ahead of the noise
+		// (noise-8/9 fall past the cap — their ABSENCE is asserted via the
+		// omission line, not indexOf, which returns -1 for excluded strings).
+		expect(report).toContain("(fail) real > the one that matters");
+		expect(report.indexOf("(fail) real")).toBeLessThan(report.indexOf("intentional-noise-0"));
+		expect(report).toContain("... 3 additional diagnostic sections omitted");
+	});
+
 	test("bounds unrecognized fallback output", () => {
 		// Given: a failed suite that produces one oversized line in each output stream.
 		const oversizedFallback = [{

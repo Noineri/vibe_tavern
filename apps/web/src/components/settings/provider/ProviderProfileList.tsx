@@ -4,7 +4,7 @@ import { useIsMobile } from '../../../hooks/use-mobile.js';
 import { useMasterDetail } from '../../shared/MasterDetailModal.js';
 import type { ProviderProfileRecord } from '../../../app-client.js';
 import { PROVIDER_PRESETS, TYPE_LABELS } from '../../../provider-presets.js';
-import { Icons } from '../../shared/icons.js';
+import { SearchInput } from '../../shared/SearchInput.js';
 import { cn } from '../../../lib/cn.js';
 import { MasterDetailMobileDrillDown } from '../../shared/MasterDetailModal.js';
 import { useReorderableList } from '../../../hooks/use-reorderable-list.js';
@@ -74,7 +74,7 @@ const SortableProfileRow = React.memo(({
           {...listeners}
           aria-label="drag"
           onClick={(e) => e.stopPropagation()}
-          className="mr-1 shrink-0 cursor-grab touch-none text-t4 transition-colors hover:text-t1 active:cursor-grabbing"
+          className="mr-1 flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
         >
           <span className="text-base leading-none">≡</span>
         </button>
@@ -183,15 +183,12 @@ export function ProviderProfileList({
         {t('profiles_label')}
       </div>
 
-      <div className="mx-3 mb-3 flex items-center gap-2 rounded-md border border-border bg-s2 px-2.5 py-1.5">
-        <Icons.Search />
-        <input
-          className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[13px] text-t1 outline-none placeholder:text-t4"
-          placeholder={t('search_profiles')}
-          value={profileSearch}
-          onChange={(e) => onProfileSearchChange(e.target.value)}
-        />
-      </div>
+      <SearchInput
+        className="mx-3 mb-3"
+        placeholder={t('search_profiles')}
+        value={profileSearch}
+        onChange={(e) => onProfileSearchChange(e.target.value)}
+      />
 
       <DndContext
         sensors={sensors}

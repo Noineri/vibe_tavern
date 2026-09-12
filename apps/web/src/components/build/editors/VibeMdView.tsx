@@ -58,12 +58,13 @@ import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { Icons } from "../../shared/icons.js";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import { lblCls } from "../fields/field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { TextAreaField } from "../fields/TextAreaField.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
 import { createChatAction, switchChatAction, renameChatAction, deleteChatAction } from "../../../stores/api-actions/chat-actions.js";
@@ -359,10 +360,8 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                       <li key={chat.id} className="group relative">
                         {renamingChatId === chat.id ? (
                           <div className="flex w-full flex-col items-start gap-1 px-3 py-2">
-                            <input
-                              // eslint-disable-next-line jsx-a11y/no-autofocus
+                            <InlineRenameInput
                               autoFocus
-                              className="w-full rounded border border-border bg-s2 px-2 py-1 font-ui text-[0.85rem] font-medium text-t1 outline-none focus:border-border2"
                               value={renameDraft}
                               onChange={(e) => setRenameDraft(e.target.value)}
                               onKeyDown={(e) => {
@@ -449,7 +448,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           `# GREETINGS` heading and each `=== ALT N ===` marker inside the
           editor (vibe-md-greetings.ts) — no separate button here. */}
       <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("vmd_editor_label")}</label>
+        <label className={lblCls}>{t("vmd_editor_label")}</label>
         <div
           ref={editorHostRef}
           // Auto-grow: NO maxHeight, NO overflow-auto (VTF-13 rework). The CM6
@@ -486,7 +485,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
         {/* Example-injection mode (how # EXAMPLES in the editor injects). */}
         <div className="mb-1">
           <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <label className={lblCls}>{t("dialog_examples")}</label>
+            <label className={lblCls + " !mb-0"}>{t("dialog_examples")}</label>
             <div className="flex items-center gap-2">
               <CustomTooltip content={tDynamic(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
                 <SegmentedControl

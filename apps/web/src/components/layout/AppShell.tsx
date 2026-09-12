@@ -6,6 +6,7 @@ import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
+import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
@@ -212,6 +213,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const resolvedActiveChatId = activeChatId ?? activeChat?.id ?? null;
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
+  // LS-10: the generation-format surface moved to the provider settings (the
+  // format block under the Чат/Текст switch) — the prompt-manager tab and its
+  // AppShell activation gate retired. No tc* derivations remain here.
 
   // Shell dispatch via the chat-mode registry (SURFACE_REGISTRY step 2):
   // chatMode drives the package, navMode contributes only the play/build axis,
@@ -399,7 +403,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         }}
         onOpenProxyManager={() => setIsProxyManagerOpen(true)}
       />}
-      {mobileAccessOpen && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
+      {mobileAccessOpen && !isMobile && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
       <ProxyManagerModal
         proxies={proxies}
         defaultProxyId={defaultProxyId}
@@ -461,7 +465,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         onCreate={preset.handleCreatePromptPreset} onUpdate={preset.handleUpdatePromptPreset}
         onDelete={preset.handleDeletePromptPreset} onReorder={preset.handleReorderPromptPresets}
         providerProfiles={provider.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
-        prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(provider.activeProviderProfile?.providerPreset ?? '')}
+        prefillSupported={resolveAssistantPrefillSupport(provider.activeProviderProfile?.providerPreset).supported}
         characterFields={activeCharacter ? {
           systemPrompt: activeCharacter.systemPrompt ?? null,
           postHistoryInstructions: activeCharacter.postHistoryInstructions ?? null,

@@ -1,7 +1,7 @@
 import type { ChatBranchId, ChatId, ChatMode, MessageId, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
-import { createMessageVariant, updateChatDynamicPrompt, type CreateMessageVariantInput } from "../../api/chat-api.js";
+import { createMessageVariant, setVariantTtsAnnotation, updateChatDynamicPrompt, type CreateMessageVariantInput, type WireAttachment } from "../../api/chat-api.js";
 import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../../api/types.js";
 import {
   activateBranch,
@@ -18,6 +18,7 @@ import {
   generateReply,
   generateChatSummary,
   listChatSummaries,
+  reorderChatSummaries,
   createChatSummary,
   updateChatSummary,
   deleteChatSummary,
@@ -50,6 +51,8 @@ import {
   saveChatSummary,
   summarizeChat,
   regenerateChatMessage,
+  continueChatMessage,
+  continueChatMessageStream,
   renameChat,
   setGreetingIndex,
   setCoauthorContextLinks,
@@ -224,14 +227,22 @@ export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string |
   syncSnapshot(snapshot);
 }
 
-export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal, experienceCommit?: ExperienceSendCommitIntent): Promise<void> {
+export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: WireAttachment[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal, experienceCommit?: ExperienceSendCommitIntent, prefill?: string): Promise<void> {
   useCoauthorTurnStore.getState().clearTurn(chatId);
   // Spread the optional commit intents into the wire body; absent ⇒ a plain
   // send, byte-identical to before. DICE-F3 (dice) + IR-51 (experience).
-  const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit, ...experienceCommit }, { signal });
+  // LS-4b: `prefill` is the one-shot per-send override; absent ⇒ the preset
+  // prefill cascade is untouched.
+  const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit, ...experienceCommit, ...(prefill !== undefined ? { prefill } : {}) }, { signal });
   syncSnapshot(snapshot);
   syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
+}
+
+export async function continueMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal): Promise<void> {
+  const snapshot = await continueChatMessage(chatId, messageId, { signal });
+  syncSnapshot(snapshot);
+  syncCommittedCoauthorTurn(chatId);
 }
 
 export async function regenerateMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal, override?: { model?: string; promptPresetId?: string }): Promise<void> {
@@ -271,6 +282,20 @@ export async function deleteVariantAction(chatId: ChatId, messageId: string, var
   // Stars key on immutable variant IDs — prune so compaction can never retarget a star.
   const surviving = useSnapshotStore.getState().messagesById[messageId]?.variants.map((v) => v.id) ?? [];
   useMessageAiEditorStore.getState().pruneStaleStars(brandId<MessageId>(messageId), surviving);
+}
+
+/** TPE-2 (AN-1): write the AI-annotated narration copy to the variant's side
+ *  field. The message content is never touched — narration prefers the
+ *  annotated variant (TPE-1 wiring). The response is a VariantResponse-shaped
+ *  partial snapshot (messages), same as createMessageVariantAction. */
+export async function setVariantTtsAnnotationAction(
+  chatId: ChatId,
+  messageId: string,
+  variantIndex: number,
+  text: string | null,
+): Promise<void> {
+  const snapshot = await setVariantTtsAnnotation(chatId, messageId, variantIndex, text);
+  syncSnapshot(snapshot);
 }
 
 export async function switchChatAction(chatId: ChatId): Promise<void> {
@@ -425,6 +450,11 @@ export async function saveChatSummaryAction(chatId: ChatId, summary: string): Pr
 
 export async function listChatSummariesAction(chatId: ChatId): Promise<ChatSummaryRecord[]> {
   return listChatSummaries(chatId);
+}
+
+// SUM-3b: manual reorder — returns the fresh (server-ordered) list.
+export async function reorderChatSummariesAction(chatId: ChatId, orderedIds: string[]): Promise<ChatSummaryRecord[]> {
+  return reorderChatSummaries(chatId, orderedIds);
 }
 
 export async function createChatSummaryAction(chatId: ChatId, input: Parameters<typeof createChatSummary>[1]): Promise<ChatSummaryRecord> {

@@ -8,7 +8,7 @@
 
 import { streamText, isStepCount } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, SentConfigSnapshot } from "./provider-execution-types.js";
-import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
+import { resolveModel, resolveCompletionFormatHandoff, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { COAUTHOR_TRANSPORT, normalizeProviderType } from "@vibe-tavern/domain";
 import { log } from "@vibe-tavern/domain";
@@ -28,7 +28,11 @@ import { resolveProviderFetchForProfile } from "../../domain/providers/provider-
 export const streamProviderExecutor: ProviderExecutor = async (input) => {
   try {
     const providerFetch = await resolveProviderFetchForProfile(input.profile);
-    const model = resolveModel(input.profile, input.model, input.transport, providerFetch);
+    // LS-3b/c: thread the preset's generation format (TC mode only) to the
+    // completion seam — manual sequences render through it; auto resolves per
+    // protocol capability (backend template on llama-server, default else).
+    const format = resolveCompletionFormatHandoff(input.profile, input.prompt.completionFormat);
+    const model = resolveModel(input.profile, input.model, input.transport, providerFetch, format);
     let messages = toSdkMessages(input.prompt);
 
     // --- Vision attachment handling ---
@@ -84,6 +88,46 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     }
 
     const visionGate: VisionGateConfig = { hasVision, visionModel: visionModelSlug };
+
+    // --- Voice-note transcription (STT_PLAN ST-6) ---
+    // Mirror of the describe step above: voice notes are ALWAYS transcribed
+    // before assembly (no capability routing — the transcript is prompt input
+    // for every model). Music/ambient clips are skipped inside
+    // transcribeAttachments (playback-only). Absent voiceTranscriber = no STT
+    // profile configured — the undescribed note then fails at assembly with
+    // VoiceTranscribeUnavailableError (the honest configuration error).
+    const voiceNotes = messages
+      .filter((m) => m.role === "user")
+      .flatMap((m) => m.attachments ?? [])
+      .filter((a) => a.type === "audio" && (a.purpose ?? "voice") === "voice" && !a.description?.trim());
+
+    if (voiceNotes.length > 0 && input.voiceTranscriber && input.assetLoader) {
+      const { transcribeAttachments } = await import("./stt-gate.js");
+      const transcripts = await transcribeAttachments(voiceNotes, input.voiceTranscriber, input.assetLoader, input.signal);
+      const audioDescriptions = voiceNotes
+        .map((att) => {
+          const transcript = transcripts.get(att.id);
+          return transcript !== undefined && transcript !== ""
+            ? { attachmentId: att.id, name: att.name, type: "audio" as const, description: transcript }
+            : null;
+        })
+        .filter((item): item is { attachmentId: string; name: string; type: "audio"; description: string } => item !== null);
+
+      // Persist transcripts through the SAME seam image descriptions use.
+      if (input.onAttachmentDescriptions && audioDescriptions.length > 0) {
+        await input.onAttachmentDescriptions(audioDescriptions.map((d) => ({ attachmentId: d.attachmentId, description: d.description })));
+      }
+
+      // Patch the in-memory copies so this turn's assembly sees the
+      // transcripts (the DB row was written above via the callback).
+      messages = messages.map((m) => ({
+        ...m,
+        attachments: m.attachments?.map((att) => {
+          const transcript = transcripts.get(att.id);
+          return transcript !== undefined ? { ...att, description: transcript } : att;
+        }),
+      }));
+    }
 
     const { conversationMessages } = await prepareSdkMessages(messages, {
       prefill: input.prefill,

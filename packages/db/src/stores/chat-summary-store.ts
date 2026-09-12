@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, max } from 'drizzle-orm';
 import { chatSummaries } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -88,6 +88,21 @@ export class ChatSummaryStore {
     const content = data.content ?? '';
     const contentHash = await this.content.writeText(STORAGE_FOLDERS.summaries, id, content);
 
+    // SUM-3: new summaries land at the END of the branch's list until
+    // manually reordered. sortOrder auto-increments past the current
+    // branch max (default 0 on an empty branch) — the old `?? 0` default
+    // wedged every new full-range draft between existing entries (ordering
+    // is asc(sortOrder), asc(summarizedFrom), asc(createdAt)).
+    let sortOrder = data.sortOrder;
+    if (sortOrder === undefined) {
+      const [maxRow] = await this.db
+        .select({ maxSortOrder: max(chatSummaries.sortOrder) })
+        .from(chatSummaries)
+        .where(and(eq(chatSummaries.chatId, data.chatId), eq(chatSummaries.branchId, data.branchId)))
+        .all();
+      sortOrder = (maxRow?.maxSortOrder ?? -1) + 1;
+    }
+
     const values: ChatSummaryInsert = {
       id,
       chatId: data.chatId,
@@ -98,7 +113,7 @@ export class ChatSummaryStore {
       includeInContext: (data.includeInContext ?? true) ? 1 : 0,
       excludeSummarized: (data.excludeSummarized ?? true) ? 1 : 0,
       source: data.source ?? 'manual',
-      sortOrder: data.sortOrder ?? 0,
+      sortOrder,
       contentHash,
       createdAt: now,
       updatedAt: now,

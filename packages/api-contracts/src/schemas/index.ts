@@ -7,6 +7,7 @@ export {
   sendMessageSchema,
   attachmentSchema,
   editMessageSchema,
+  setVariantTtsAnnotationSchema,
   createMessageVariantSchema,
   renameChatSchema,
   setGreetingIndexSchema,
@@ -62,6 +63,32 @@ export {
   reorderProviderProfilesSchema,
 } from "./provider-schema.js";
 export {
+  samplerSetSchema,
+  samplerSetListSchema,
+  createSamplerSetSchema,
+  updateSamplerSetSchema,
+  importSamplerSetSchema,
+} from "./sampler-set-schema.js";
+export type {
+  SamplerSet,
+  SamplerSetList,
+  SamplerSetCreate,
+  SamplerSetUpdate,
+  SamplerSetImport,
+} from "./sampler-set-schema.js";
+export {
+  formatTemplateSchema,
+  formatTemplateListSchema,
+  createFormatTemplateSchema,
+  updateFormatTemplateSchema,
+} from "./format-template-schema.js";
+export type {
+  FormatTemplate,
+  FormatTemplateList,
+  FormatTemplateCreate,
+  FormatTemplateUpdate,
+} from "./format-template-schema.js";
+export {
   providerProxyModeSchema,
   saveProxySchema,
   updateProxySchema,
@@ -80,6 +107,7 @@ export {
   createChatSummarySchema,
   updateChatSummarySchema,
   generateChatSummarySchema,
+  reorderChatSummariesSchema,
   updateMemorySettingsSchema,
   summarizeChatSchema,
   saveChatSummarySchema,
@@ -127,7 +155,6 @@ export type {
   ScenePathResolution,
 } from "./tracker-schema.js";
 export {
-  debugSendLogSchema,
   importJsonSchema,
   importJsonBatchSchema,
   stDirectoryPathSchema,
@@ -153,6 +180,12 @@ export {
   type DiceSampleRoll,
   type InteractiveScriptTestResult,
 } from "./script-schema.js";
+export { regexPlacementSchema, regexSubstituteSchema, regexApplyTargetSchema, regexTargetTypeSchema, createRegexPresetSchema, updateRegexPresetSchema, setRegexLinksSchema, resolveActiveRegexQuerySchema, createRegexProfileSchema, updateRegexProfileSchema, deleteRegexProfileQuerySchema, attachRegexRuleSchema, setRegexProfileLinksSchema } from "./regex-schema.js";
+export type { RegexPlacementCode, RegexSubstituteCode, RegexApplyTargetValue, RegexTargetTypeValue, CreateRegexPresetInput, UpdateRegexPresetInput, SetRegexLinksInput, ResolveActiveRegexQuery, CreateRegexProfileInput, UpdateRegexProfileInput, DeleteRegexProfileQuery, AttachRegexRuleInput, SetRegexProfileLinksInput } from "./regex-schema.js";
+export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfileSchema, createTtsProfileSchema, updateTtsProfileSchema, setTtsLinksSchema, generateTtsSchema, draftTtsVoicesSchema, draftTtsPreviewSchema, draftTtsModelsSchema, localDockerStatusSchema, revealNarrationSchema } from "./tts-schema.js";
+export type { TtsBackendValue, TtsTargetTypeValue, TtsProfileValue, CreateTtsProfileInput, UpdateTtsProfileInput, SetTtsLinksInput, GenerateTtsInput, DraftTtsVoicesInput, DraftTtsPreviewInput, DraftTtsModelsInput, LocalDockerStatus, RevealNarrationInput } from "./tts-schema.js";
+export { sttBackendSchema, sttProfileConfigSchema, sttProfileSchema, createSttProfileSchema, updateSttProfileSchema, sttModelInfoSchema, draftSttModelsSchema } from "./stt-schema.js";
+export type { SttBackendValue, SttProfileConfigValue, SttProfileValue, CreateSttProfileInput, UpdateSttProfileInput, SttModelInfoValue, DraftSttModelsInput } from "./stt-schema.js";
 
 export {
   coauthorModuleSchema,
@@ -353,6 +386,37 @@ export {
   type ExperienceChatterRequestDto,
   type ExperienceChatterViewDto,
 } from "./interactive-schema.js";
+
+export {
+  servicePromptFieldKeySchema,
+  servicePromptOverridesSchema,
+  servicePromptProfileSchema,
+  createServicePromptProfileRequestSchema,
+  updateServicePromptProfileRequestSchema,
+  servicePromptProfileListResponseSchema,
+  servicePromptProfileDetailResponseSchema,
+  setActiveServicePromptProfileRequestSchema,
+  reorderServicePromptProfilesSchema,
+} from "./service-prompt-schema.js";
+export type {
+  ServicePromptFieldKeyValue,
+  ServicePromptOverrides,
+  ServicePromptProfile,
+  CreateServicePromptProfileRequest,
+  UpdateServicePromptProfileRequest,
+  ServicePromptProfileListResponse,
+  ServicePromptProfileDetailResponse,
+  SetActiveServicePromptProfileRequest,
+  ReorderServicePromptProfilesRequest,
+} from "./service-prompt-schema.js";
+
+export {
+  regexAssistArchetypeSchema,
+  regexAssistRuleDraftSchema,
+  regexAssistRequestSchema,
+  regexAssistResponseSchema,
+} from "./regex-assist-schema.js";
+export type { RegexAssistArchetype, RegexAssistRuleDraft, RegexAssistRequest, RegexAssistResponse } from "./regex-assist-schema.js";
 
 export {
   canonicalUtcInstantSchema,

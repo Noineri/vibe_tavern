@@ -20,6 +20,7 @@ import { Checkbox } from "../../shared/Checkbox.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { NumberInput } from "../../shared/NumberInput.js";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import {
   listLoreEntries,
   type LorebookRecord,
@@ -45,21 +46,23 @@ function formatTokenCount(n: number): string {
 /**
  * Derive a single binding icon for a lorebook row, showing what it is bound to.
  * Uses the primary-owner FK columns (not the multi-bind `lorebook_links` rows):
- * precedence is chat → character → persona, since chat is the most specific
- * scope. Global lorebooks return null (no binding icon — they are unbound by
+ * precedence is chat → entity (character or persona FK — one home owner per
+ * book). Global lorebooks return null (no binding icon — they are unbound by
  * definition). Multi-bind surface is a follow-up.
+ *
+ * Exported for its colocated test (the pure scope→icon mapping is pinned
+ * directly; the rendered tooltip is hover-gated in happy-dom).
  */
-function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tooltipKey: keyof Resources["en"] } | null {
+export function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tooltipKey: keyof Resources["en"] } | null {
   if (lb.scopeType === "global") return null;
   if (lb.chatId) return { icon: <Ic.chat />, tooltipKey: "scope_chat" };
-  if (lb.characterId) return { icon: <Ic.book />, tooltipKey: "scope_char" };
-  if (lb.personaId) return { icon: <Ic.user />, tooltipKey: "scope_persona" };
+  if (lb.characterId || lb.personaId) return { icon: <Ic.book />, tooltipKey: "scope_entity" };
   return null;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-export type Scope = "global" | "character" | "persona" | "chat" | "all";
+export type Scope = "global" | "entity" | "chat" | "all";
 
 interface LorebookAccordionProps {
   lorebook: LorebookRecord;
@@ -88,6 +91,7 @@ interface LorebookAccordionProps {
     tokenBudget?: number;
     tokenBudgetPercent?: number | null;
     recursiveScanning?: boolean;
+    useGroupScoring?: boolean;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
   onToggleEntryEnabled: (entryId: string, enabled: boolean) => Promise<LoreEntryRecord>;
@@ -242,17 +246,22 @@ export function LorebookAccordion({
           borderRadius: expanded ? "12px 12px 0 0" : 12,
         }}
       >
-        {/* Expand button ▶/▼ */}
-        <div
-          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2"
-          onClick={onToggle}
-        >
-          {expanded ? (
-            <span className="text-[10px]">{"\u25BC"}</span>
-          ) : (
-            <span className="text-[10px]">{"\u25B6"}</span>
-          )}
-        </div>
+        {/* Expand button ▶/▼ — hidden while editing on mobile: the inline
+            create/edit form then owns the full row width and its stacked rows
+            (name / scope / confirm) align with the card edge instead of being
+            pushed right of a caret that is dead weight mid-edit (MUI step 6). */}
+        {(!editing || !isMobile) && (
+          <div
+            className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2"
+            onClick={onToggle}
+          >
+            {expanded ? (
+              <span className="text-[10px]">{"\u25BC"}</span>
+            ) : (
+              <span className="text-[10px]">{"\u25B6"}</span>
+            )}
+          </div>
+        )}
 
         {/* ── Edit mode: inline name + scope form ── */}
         {editing ? (
@@ -263,11 +272,8 @@ export function LorebookAccordion({
             )}
           >
             {/* Lorebook name — takes the full row on mobile */}
-            <input
-              className={cn(
-                "flex-1 rounded border border-accent bg-bg px-2 py-0.5 text-[13px] font-medium text-t1 outline-none",
-                isMobile && "min-w-0 basis-full"
-              )}
+            <InlineRenameInput
+              className={cn("flex-1", isMobile && "basis-full")}
               value={editLbName}
               onChange={(e) => onEditLbName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onSaveEdit()}
@@ -278,8 +284,7 @@ export function LorebookAccordion({
               value={editLbScope}
               options={[
                 { value: "global", label: t("scope_global") },
-                { value: "character", label: t("scope_char") },
-                { value: "persona", label: t("scope_persona") },
+                { value: "entity", label: t("scope_entity") },
                 { value: "chat", label: t("scope_chat") },
               ]}
               onChange={onEditLbScope}
@@ -524,13 +529,22 @@ export function LorebookAccordion({
                 </div>
               </CustomTooltip>
             </div>
-            <div className="pb-0.5">
+            <div className="flex flex-col gap-2 pb-0.5">
               <CustomTooltip content={t("lore_recursive_scanning_hint")}>
                 <div>
                   <Checkbox
                     checked={lorebook.recursiveScanning}
                     onChange={(v) => onUpdateMeta({ recursiveScanning: v })}
                     label={t("lore_recursive_scanning")}
+                  />
+                </div>
+              </CustomTooltip>
+              <CustomTooltip content={t("lore_book_group_scoring_hint")}>
+                <div>
+                  <Checkbox
+                    checked={lorebook.useGroupScoring}
+                    onChange={(v) => onUpdateMeta({ useGroupScoring: v })}
+                    label={t("lore_book_group_scoring")}
                   />
                 </div>
               </CustomTooltip>

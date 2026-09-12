@@ -6,7 +6,7 @@
  * that are pure data/navigation and have no render shape of their own:
  *
  *   - Navigation: view (pick → list → editor), tab (lorebooks / scripts),
- *     scope (all / global / character / persona / chat) + the sticky-tab
+ *     scope (all / global / entity / chat) + the sticky-tab
  *     sessionStorage persistence.
  *   - Active entry: which lorebook's entry is open in the editor, with
  *     ref-mirrored setters so the autosave flush reads non-stale ids.
@@ -82,7 +82,8 @@ const EMPTY_ENTRY_DRAFT: LoreEntryDraft = {
   groupName: "",
   groupWeight: 100,
   prioritizeInclusion: false,
-  useGroupScoring: false,
+  // Tri-state: new entries inherit the book-level default (ST parity).
+  useGroupScoring: null,
   excludeRecursion: false,
   preventRecursion: false,
   delayUntilRecursion: false,
@@ -214,12 +215,15 @@ export function useLorebookEditorState({
   // ── Scope → ownerId ──
   const getOwnerId = useCallback(
     (s: Scope): string | undefined => {
-      if (s === "character") return characterId;
-      if (s === "persona") return personaId ?? undefined;
+      // "entity" is a BROWSE filter here, not an owner view: the sidebar's
+      // "Bound" tab lists every entity-home book regardless of which
+      // character/persona owns it (symmetric with the Global tab). Owner-
+      // scoped views live in the character/persona build sidebars, which
+      // call the API with an explicit ownerId.
       if (s === "chat") return chatId ?? undefined;
       return undefined;
     },
-    [characterId, personaId, chatId],
+    [chatId],
   );
 
   // ═══ Lorebook loading ═══

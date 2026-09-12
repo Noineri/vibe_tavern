@@ -13,16 +13,56 @@ useDomEnv();
  */
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import type { ReactNode } from "react";
+import React from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import { SERVICE_PROMPT_FIELD_KEYS, type ServicePromptFieldKey } from "@vibe-tavern/domain";
+import type { ServicePromptProfile } from "@vibe-tavern/api-contracts";
+import type { RegexPresetRecord } from "../../api/types.js";
 import type { DraftData } from "./PromptManagerModal.js";
 import { useModalStore } from "../../stores/modal-store.js";
 
+class TestBoundary extends React.Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(_error: unknown, _info: { componentStack: string }) {}
+  render() { return this.props.children; }
+}
+
 const realI18nContext = await import("../../i18n/context.js");
 const realTokenizer = await import("../../utils/tokenizer.js");
-const realTooltip = await import("../shared/Tooltip.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
+const realMasterDetail = await import("../shared/MasterDetailModal.js");
+const realTooltip = await import("../shared/Tooltip.js");
 const realPromptCanvasLore = await import("../../lib/prompt-canvas-lore.js");
 const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLoreEntries);
+const realRegexApi = await import("../../api/regex-api.js");
+const listAllRegexPresetsMock = mock(realRegexApi.listAllRegexPresets);
+const createRegexPresetMock = mock(realRegexApi.createRegexPreset);
+const listAllRegexProfilesMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.listAllRegexProfiles>>);
+const createRegexProfileMock = mock(async (body: unknown) => ({ id: "p_new", name: (body as { name?: string })?.name ?? "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>));
+const attachRegexRuleMock = mock(async (_a: unknown, _b: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.attachRegexRule>>);
+const getRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.getRegexProfileLinks>>);
+const updateRegexProfileMock = mock(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }) => {
+  // Merge over a base record so every field stays a primitive (a naive
+  // `body ?? fallback` returns the WHOLE body object when the field is
+  // absent — an object then flows into state and React crashes rendering it).
+  return {
+    id,
+    name: typeof body?.name === "string" ? body.name : "Bundle",
+    disabled: typeof body?.disabled === "boolean" ? body.disabled : false,
+    isGlobal: typeof body?.isGlobal === "boolean" ? body.isGlobal : true,
+    sortOrder: typeof body?.sortOrder === "number" ? body.sortOrder : 0,
+    createdAt: 0,
+    updatedAt: 0,
+  } as unknown as Awaited<ReturnType<typeof realRegexApi.updateRegexProfile>>;
+});
+const deleteRegexProfileMock = mock(async () => undefined as unknown as Awaited<ReturnType<typeof realRegexApi.deleteRegexProfile>>);
+const setRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.setRegexProfileLinks>>);
+const realServiceApi = await import("../../api/service-prompt-api.js");
+const listServiceProfilesMock = mock(realServiceApi.listServicePromptProfiles);
+const getServiceDetailMock = mock(realServiceApi.getServicePromptProfileDetail);
+const realDownload = await import("../../lib/download.js");
+const downloadTextFileMock = mock(realDownload.downloadTextFile);
 
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -40,24 +80,85 @@ mock.module("../shared/Tooltip.js", () => ({
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
+mock.module("../shared/MasterDetailModal.js", () => {
+  return {
+    ...realMasterDetail,
+    MasterDetailMobileDrillDown: (props: { onSelect: () => void }) => <button onClick={() => props.onSelect()}>drill</button>,
+  };
+});
 mock.module("../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
 mock.module("../../lib/prompt-canvas-lore.js", () => ({
   ...realPromptCanvasLore,
   loadPromptCanvasLoreEntries,
 }));
+mock.module("../../api/regex-api.js", () => {
+  return {
+    ...realRegexApi,
+    listAllRegexPresets: listAllRegexPresetsMock,
+    createRegexPreset: createRegexPresetMock,
+    listAllRegexProfiles: listAllRegexProfilesMock,
+    createRegexProfile: createRegexProfileMock,
+    attachRegexRule: attachRegexRuleMock,
+    getRegexProfileLinks: getRegexProfileLinksMock,
+    updateRegexProfile: updateRegexProfileMock,
+    deleteRegexProfile: deleteRegexProfileMock,
+    setRegexProfileLinks: setRegexProfileLinksMock,
+  };
+});
+mock.module("../../api/service-prompt-api.js", () => {
+  return {
+    ...realServiceApi,
+    listServicePromptProfiles: listServiceProfilesMock,
+    getServicePromptProfileDetail: getServiceDetailMock,
+  };
+});
+mock.module("../../lib/download.js", () => ({
+  ...realDownload,
+  downloadTextFile: downloadTextFileMock,
+}));
 
-const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
+const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 
 let PromptManagerModal: typeof import("./PromptManagerModal.js").PromptManagerModal;
 let buildDuplicatePayload: typeof import("./PromptManagerModal.js").buildDuplicatePayload;
+let importStandaloneRegexText: typeof import("./PromptManagerModal.js").importStandaloneRegexText;
 
 beforeAll(async () => {
-  ({ PromptManagerModal, buildDuplicatePayload } = await import("./PromptManagerModal.js"));
+  ({ PromptManagerModal, buildDuplicatePayload, importStandaloneRegexText } = await import("./PromptManagerModal.js"));
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => {});
   cleanup();
   loadPromptCanvasLoreEntries.mockReset();
+  listAllRegexPresetsMock.mockReset();
+  createRegexPresetMock.mockReset();
+  listAllRegexProfilesMock.mockReset();
+  listAllRegexProfilesMock.mockResolvedValue([]);
+  createRegexProfileMock.mockReset();
+  createRegexProfileMock.mockResolvedValue({ id: "p_new", name: "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>);
+  attachRegexRuleMock.mockReset();
+  getRegexProfileLinksMock.mockReset();
+  getRegexProfileLinksMock.mockResolvedValue([]);
+  updateRegexProfileMock.mockReset();
+  updateRegexProfileMock.mockImplementation(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }) =>
+    ({
+      id,
+      name: typeof body?.name === "string" ? body.name : "Bundle",
+      disabled: typeof body?.disabled === "boolean" ? body.disabled : false,
+      isGlobal: typeof body?.isGlobal === "boolean" ? body.isGlobal : true,
+      sortOrder: typeof body?.sortOrder === "number" ? body.sortOrder : 0,
+      createdAt: 0,
+      updatedAt: 0,
+    }) as unknown as Awaited<ReturnType<typeof realRegexApi.updateRegexProfile>>
+  );
+  deleteRegexProfileMock.mockReset();
+  deleteRegexProfileMock.mockResolvedValue(undefined);
+  setRegexProfileLinksMock.mockReset();
+  setRegexProfileLinksMock.mockResolvedValue([]);
+  listServiceProfilesMock.mockReset();
+  getServiceDetailMock.mockReset();
+  downloadTextFileMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
 
@@ -71,6 +172,7 @@ function baseDraft(): DraftData {
     authorsNoteDepth: 4,
     authorsNotePosition: "in_chat",
     authorsNoteRole: "system",
+    perSendPrefillEnabled: false,
     summary: "",
     tools: "",
     nsfw: "",
@@ -81,16 +183,18 @@ function baseDraft(): DraftData {
     promptOrder: [{ identifier: "main", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "built_in" }],
     advancedMode: false,
     mergeConsecutiveRoles: false,
+    generationFormat: null,
   };
 }
 
 function advancedPreset(): PromptPresetDto {
-  const draft = baseDraft();
+  const { generationFormat, ...fields } = baseDraft();
   return {
-    ...draft,
+    ...fields,
     id: "preset-1",
     advancedMode: true,
-    aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
+    perSendPrefillEnabled: false,
+    aiAssistantPrompts: JSON.stringify(fields.aiAssistantPrompts),
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
   };
@@ -486,3 +590,570 @@ describe("PromptManagerModal — chatDynamicPrompt save (Wave 6)", () => {
     });
   });
 });
+
+/**
+ * importStandaloneRegexText — RX-16 UI surface (standalone ST regex JSON).
+ *
+ * Pure-seam pins (no file input, no DOM): a valid array JSON creates one
+ * preset per script with the security gate enforced (disabled: true
+ * regardless of the file's claim); garbage yields zero calls and zero
+ * created. The injected `create` double is the only boundary under test —
+ * the parser itself is pinned in packages/import-export tests.
+ */
+describe("importStandaloneRegexText (RX-16)", () => {
+  test("valid array JSON → create called once per script, all disabled", async () => {
+    const calls: Array<unknown> = [];
+    const created = await importStandaloneRegexText(
+      JSON.stringify([
+        { scriptName: "A", findRegex: "/a/g", replaceString: "", disabled: false },
+        { scriptName: "B", findRegex: "/b/g", replaceString: "x", disabled: false },
+      ]),
+      async (body) => {
+        calls.push(body);
+        return { id: `rx_${calls.length}` } as never;
+      },
+    );
+
+    expect(created).toBe(2);
+    expect(calls).toHaveLength(2);
+    expect((calls[0] as { name?: string })?.name).toBe("A");
+    expect((calls[1] as { name?: string })?.name).toBe("B");
+    // Security gate: never trust the file's `disabled: false`.
+    expect(calls.every((c) => (c as { disabled?: boolean }).disabled === true)).toBe(true);
+  });
+
+  test("garbage JSON → zero creates, no throw", async () => {
+    const calls: unknown[] = [];
+    const created = await importStandaloneRegexText("{ not json", async (body) => {
+      calls.push(body);
+      return { id: "rx_1" } as never;
+    });
+    expect(created).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("single-object shape (the common ST export) is accepted", async () => {
+    const calls: Array<unknown> = [];
+    const created = await importStandaloneRegexText(
+      JSON.stringify({ scriptName: "Solo", findRegex: "/s/g", replaceString: "" }),
+      async (body) => {
+        calls.push(body);
+        return { id: "rx_1" } as never;
+      },
+    );
+    expect(created).toBe(1);
+    expect((calls[0] as { name?: string })?.name).toBe("Solo");
+  });
+});
+
+/**
+ * R-1 regression (REGEX_V13_FOLLOWUP): the regex tab's lazy-load effect must
+ * actually populate the list when the regex tab becomes active. The original
+ * bug: the effect had `regexLoadState` in its deps AND called
+ * `setRegexLoadState("loading")` itself, so its own setState re-triggered the
+ * cleanup (`cancelled = true`), killing the only in-flight fetch; the re-run
+ * then early-returned on the `!== "idle"` guard. State pinned at "loading",
+ * list empty forever — unconditionally, production included.
+ */
+describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
+  function regexRecord(id: string, name: string): RegexPresetRecord {
+    return {
+      id,
+      name,
+      findRegex: "/x+/g",
+      replaceString: "",
+      trimStrings: [],
+      substituteRegex: 0,
+      disabled: false,
+      markdownOnly: false,
+      promptOnly: true,
+      runOnEdit: false,
+      minDepth: null,
+      maxDepth: null,
+      placement: [2],
+      isGlobal: false,
+      sortOrder: 0,
+      profileId: null,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+
+  test("switching to the regex tab populates the preset list", async () => {
+    listAllRegexPresetsMock.mockResolvedValue([
+      regexRecord("rx_a", "Alpha Strip"),
+      regexRecord("rx_b", "Beta Wrap"),
+    ]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+
+    // Switch to the regex tab (SegmentedControl segment labelled by its i18n key).
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+
+    await waitFor(() => {
+      expect(listAllRegexPresetsMock).toHaveBeenCalled();
+      expect(within(view.baseElement).getByText("Alpha Strip")).toBeTruthy();
+      expect(within(view.baseElement).getByText("Beta Wrap")).toBeTruthy();
+    });
+  });
+});
+
+// ── R-12: copy (duplicate in place) & export (standalone ST JSON) ───────
+describe("PromptManagerModal — regex copy & export (R-12)", () => {
+  function fullRecord(id: string, name: string): RegexPresetRecord {
+    return {
+      id,
+      name,
+      findRegex: "/alpha+/gi",
+      replaceString: "$1 [{{match}}]",
+      trimStrings: ["x", "y"],
+      substituteRegex: 2,
+      disabled: false,
+      markdownOnly: true,
+      promptOnly: false,
+      runOnEdit: true,
+      minDepth: 3,
+      maxDepth: null,
+      placement: [2, 5],
+      isGlobal: false,
+      sortOrder: 0,
+      profileId: null,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+
+  async function openRegexTabWith(records: RegexPresetRecord[]) {
+    listAllRegexPresetsMock.mockResolvedValue(records);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => {
+      expect(listAllRegexPresetsMock).toHaveBeenCalled();
+    });
+    return view;
+  }
+
+  test("copy clones the source fields, seeds disabled, and selects the duplicate", async () => {
+    const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
+    createRegexPresetMock.mockResolvedValue({ ...fullRecord("rx_2", "copy"), id: "rx_2" });
+
+    // Footer action on the SELECTED rule (auto-selected first) — desktop span.
+    const copyBtn = within(view.baseElement).getByText("promptManager.regex.copy");
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(createRegexPresetMock).toHaveBeenCalled();
+    });
+    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    // useT is mocked to return keys verbatim, so copySuffix resolves to its key.
+    expect(body.name).toBe("Alpha Strip" + "promptManager.regex.copySuffix");
+    expect(body).toMatchObject({
+      findRegex: "/alpha+/gi",
+      replaceString: "$1 [{{match}}]",
+      trimStrings: ["x", "y"],
+      substituteRegex: 2,
+      // Import-parity security gate: duplicate starts disabled.
+      disabled: true,
+      markdownOnly: true,
+      promptOnly: false,
+      runOnEdit: true,
+      minDepth: 3,
+      maxDepth: null,
+      placement: [2, 5],
+      isGlobal: false,
+    });
+  });
+
+  test("export downloads an ST-compatible array-of-one JSON with the safe filename", async () => {
+    const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
+
+    // Footer action on the SELECTED rule — desktop span.
+    const exportBtn = within(view.baseElement).getByText("promptManager.regex.export");
+    fireEvent.click(exportBtn);
+
+    await waitFor(() => {
+      expect(downloadTextFileMock).toHaveBeenCalled();
+    });
+    const [fileName, json, mime] = downloadTextFileMock.mock.calls[0] as [string, string, string];
+    expect(fileName).toBe("regex-Alpha_Strip.json");
+    expect(mime).toBe("application/json");
+    const parsed = JSON.parse(json) as Array<Record<string, unknown>>;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0]).toMatchObject({
+      scriptName: "Alpha Strip",
+      findRegex: "/alpha+/gi",
+      replaceString: "$1 [{{match}}]",
+      trimStrings: ["x", "y"],
+      substituteRegex: 2,
+      markdownOnly: true,
+      promptOnly: false,
+      runOnEdit: true,
+      minDepth: 3,
+      maxDepth: null,
+      placement: [2, 5],
+    });
+  });
+});
+
+// ── R-13b: profiles in master list ─────────────────────────────────────
+describe("PromptManagerModal — regex profiles (R-13b)", () => {
+  function profileRecord(id: string, name: string, sortOrder = 0) {
+    return { id, name, disabled: false, isGlobal: true, sortOrder, createdAt: 0, updatedAt: 0 };
+  }
+  function regexRecord(id: string, name: string, profileId: string | null = null): RegexPresetRecord {
+    return {
+      id, name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId, createdAt: 0, updatedAt: 0,
+    };
+  }
+  test("switching to regex tab fetches profiles", async () => {
+    listAllRegexPresetsMock.mockResolvedValue([regexRecord("rx1", "R1")]);
+    listAllRegexProfilesMock.mockResolvedValue([profileRecord("p1", "Bundle")]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => { expect(listAllRegexProfilesMock).toHaveBeenCalled(); });
+    await waitFor(() => { expect(within(view.baseElement).getByText("Bundle")).toBeTruthy(); });
+  });
+  test("creating a new profile calls the API", async () => {
+    listAllRegexPresetsMock.mockResolvedValue([]);
+    listAllRegexProfilesMock.mockResolvedValue([]);
+    createRegexProfileMock.mockResolvedValue(profileRecord("p2", "MyProf"));
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(listAllRegexProfilesMock).toHaveBeenCalled());
+    const newProfileBtn = within(view.baseElement).getByText("promptManager.regex.newProfile");
+    fireEvent.click(newProfileBtn);
+    const input = within(view.baseElement).getByPlaceholderText("promptManager.regex.newProfilePlaceholder") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "MyProf" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => { expect(createRegexProfileMock).toHaveBeenCalled(); });
+    expect((createRegexProfileMock.mock.calls[0][0] as unknown as { name: string }).name).toBe("MyProf");
+  });
+
+  test("creating a new rule under an expanded profile makes it appear in the member list (regression: map-over-never-added state dropped the rule)", async () => {
+    listAllRegexPresetsMock.mockResolvedValue([]);
+    listAllRegexProfilesMock.mockResolvedValue([profileRecord("p1", "Bundle")]);
+    getRegexProfileLinksMock.mockResolvedValue([]);
+    createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "NewInProf"));
+    attachRegexRuleMock.mockResolvedValue(regexRecord("rx_new", "NewInProf", "p1"));
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    // Expand the profile → the “+ new rule” member button appears.
+    fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
+    await waitFor(() => expect(within(view.baseElement).getByText("promptManager.regex.memberNewRule")).toBeTruthy());
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.memberNewRule"));
+    const input = within(view.baseElement).getByPlaceholderText("promptManager.regex.newNamePlaceholder") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "NewInProf" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => { expect(attachRegexRuleMock).toHaveBeenCalledWith("p1", "rx_new"); });
+    // THE regression pin: the created rule must land in the list state and
+    // render as a member row (the old map() over never-added state dropped it).
+    await waitFor(() => { expect(within(view.baseElement).getByText("NewInProf")).toBeTruthy(); });
+  });
+
+  test("member rule's status dot reflects the PROFILE gate: enabled-but-unbound profile → red dot on both the profile row and its member (R-13b owner spec)", async () => {
+    // Enabled, non-global, zero profile links → applies in NO chat: the
+    // profile row dot is red AND the member's dot must be red too (a green
+    // member dot would claim the rule fires while the gate keeps it dead).
+    const unboundProfile = { id: "pu", name: "UnboundProf", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 };
+    listAllRegexPresetsMock.mockResolvedValue([regexRecord("m1", "MemRule", "pu")]);
+    listAllRegexProfilesMock.mockResolvedValue([unboundProfile]);
+    getRegexProfileLinksMock.mockResolvedValue([]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(within(view.baseElement).getByText("UnboundProf")).toBeTruthy());
+    // Expand the profile so the member row renders.
+    fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
+    await waitFor(() => expect(within(view.baseElement).getByText("MemRule")).toBeTruthy());
+    // Both the profile row and the member row carry the red "unbound" dot.
+    await waitFor(() => {
+      expect(view.getAllByLabelText("promptManager.regex.badgeUnboundReason").length).toBe(2);
+    });
+  });
+});
+
+// ── R-13c: profile pane + member chip + profile export ────────────────────
+describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () => {
+  function profileRecord(id: string, name: string, overrides: Partial<Record<string, unknown>> = {}) {
+    return { id, name, disabled: false, isGlobal: true, sortOrder: 0, createdAt: 0, updatedAt: 0, ...overrides };
+  }
+  function regexRecord(id: string, name: string, profileId: string | null = null, overrides: Partial<Record<string, unknown>> = {}): RegexPresetRecord {
+    return {
+      id, name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId, createdAt: 0, updatedAt: 0, ...overrides,
+    };
+  }
+
+  async function openRegexTab(profiles: ReturnType<typeof profileRecord>[], presets: RegexPresetRecord[]) {
+    listAllRegexPresetsMock.mockResolvedValue(presets);
+    listAllRegexProfilesMock.mockResolvedValue(profiles);
+    getRegexProfileLinksMock.mockResolvedValue([]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(listAllRegexProfilesMock).toHaveBeenCalled());
+    return view;
+  }
+
+  test("selecting a profile renders the profile pane (name field, export button)", async () => {
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    const profileEl = within(view.baseElement).getByText("Bundle");
+    await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
+    await waitFor(() => expect((within(view.baseElement).getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle"));
+    expect(within(view.baseElement).getByText("promptManager.regex.profileExport")).toBeTruthy();
+    expect(within(view.baseElement).getByText("promptManager.regex.profileDelete")).toBeTruthy();
+  });
+
+  test("profile enable toggle PATCHes updateRegexProfile with disabled", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    const view = await openRegexTab([profileRecord("p1", "Bundle", { disabled: false })], []);
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    const profileEl = within(view.baseElement).getByText("Bundle");
+    await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
+    await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
+    const switches = within(view.baseElement).getAllByRole("switch");
+    const toggle = switches[0] as HTMLButtonElement;
+    await act(async () => { await user.click(toggle); });
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalled());
+    const args = updateRegexProfileMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(args[0]).toBe("p1");
+    expect(args[1]).toHaveProperty("disabled", true);
+    // Allow the optimistic state update to settle before unmount
+    await new Promise((r) => setTimeout(r, 20));
+  });
+
+  test("delete profile dialog offers BOTH options and chosen one calls deleteRegexProfile with right mode", async () => {
+    const presets = [regexRecord("r1", "R1", "p1"), regexRecord("r2", "R2", "p1")];
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], presets);
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    const profileEl = within(view.baseElement).getByText("Bundle");
+    await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
+    await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
+    await act(async () => { fireEvent.click(within(view.baseElement).getByText("promptManager.regex.profileDelete")); });
+    await waitFor(() => expect(within(document.body).getByText("promptManager.regex.profileDeleteTitle")).toBeTruthy());
+    const keepBtn = within(document.body).getByText("promptManager.regex.profileDeleteKeep");
+    const cascadeBtn = within(document.body).getByText("promptManager.regex.profileDeleteCascade");
+    expect(keepBtn).toBeTruthy();
+    expect(cascadeBtn).toBeTruthy();
+    listAllRegexPresetsMock.mockResolvedValue([]);
+    listAllRegexProfilesMock.mockResolvedValue([]);
+    await act(async () => { fireEvent.click(keepBtn); });
+    await waitFor(() => expect(deleteRegexProfileMock).toHaveBeenCalled());
+    const lastCall = deleteRegexProfileMock.mock.calls.at(-1) as [string, string] | undefined;
+    expect(lastCall?.[0]).toBe("p1");
+    expect(lastCall?.[1]).toBe("keep");
+    await new Promise((r) => setTimeout(r, 20));
+  });
+
+  test("member rule editor shows chip instead of own scope segmented control", async () => {
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], [regexRecord("r1", "MemRule", "p1", { isGlobal: false })]);
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    await act(async () => { fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]); });
+    await waitFor(() => expect(within(view.baseElement).getByText("MemRule")).toBeTruthy());
+    const memEl = within(view.baseElement).getByText("MemRule");
+    await act(async () => { fireEvent.pointerDown(memEl); fireEvent.click(memEl); });
+    await waitFor(() => expect(within(view.baseElement).getByText("promptManager.regex.memberViaProfile")).toBeTruthy());
+    // Own scope controls should be absent for a member (the chip replaces them)
+    // The scope label stays but the bind-add button (scoped to rule) must not appear
+    expect(within(view.baseElement).queryByText("promptManager.regex.bindingsAdd")).toBeNull();
+  });
+
+  test("standalone rule editor still shows own scope controls (no chip)", async () => {
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], [regexRecord("r1", "Standalone", null, { isGlobal: true })]);
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    const standEl = within(view.baseElement).getByText("Standalone");
+    await act(async () => { fireEvent.pointerDown(standEl); fireEvent.click(standEl); });
+    await waitFor(() => expect(within(view.baseElement).queryByText("promptManager.regex.memberViaProfile")).toBeNull());
+    // Scope segmented should be present (label exists)
+    expect(within(view.baseElement).getByText("promptManager.regex.scopeLabel")).toBeTruthy();
+  });
+
+  test("profile export calls downloadTextFile with regex-profile-<name>.json and array body", async () => {
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], [
+      regexRecord("r1", "R1", "p1", { findRegex: "/a/g", replaceString: "x" }),
+      regexRecord("r2", "R2", "p1", { findRegex: "/b/g", replaceString: "y" }),
+    ]);
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    const profileEl = within(view.baseElement).getByText("Bundle");
+    await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
+    await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
+    await act(async () => { fireEvent.click(within(view.baseElement).getByText("promptManager.regex.profileExport")); });
+    await waitFor(() => expect(downloadTextFileMock).toHaveBeenCalled());
+    const [fileName, json, mime] = downloadTextFileMock.mock.calls[0] as [string, string, string];
+    expect(fileName).toBe("regex-profile-Bundle.json");
+    expect(mime).toBe("application/json");
+    const parsed = JSON.parse(json) as Array<Record<string, unknown>>;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(2);
+    expect(parsed.every((o) => typeof o.scriptName === "string")).toBe(true);
+  });
+});
+
+// ── SP-9: service prompts tab ───────────────────────────────────────────
+describe("PromptManagerModal — service prompts tab (SP-9)", () => {
+  function makeServiceProfile(overrides: Partial<ServicePromptProfile> = {}): ServicePromptProfile {
+    return {
+      id: "default",
+      name: "Default",
+      isDefault: true,
+      sortOrder: 0,
+      overrides: {},
+      createdAt: "",
+      updatedAt: "",
+      ...overrides,
+    };
+  }
+  function makeResolved(overrides: Partial<Record<ServicePromptFieldKey, string>> = {}): Record<ServicePromptFieldKey, { override: string | null; default: string }> {
+    const map: Record<string, { override: string | null; default: string }> = {};
+    for (const k of SERVICE_PROMPT_FIELD_KEYS) {
+      map[k] = { override: overrides[k] ?? null, default: `default-${k}-value` };
+    }
+    return map;
+  }
+
+  test("three tab labels render", async () => {
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    expect(within(view.baseElement).getByText("promptManager.tabPresets")).toBeTruthy();
+    expect(within(view.baseElement).getByText("promptManager.regex.tabLabel")).toBeTruthy();
+    expect(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel")).toBeTruthy();
+  });
+
+  test("service tab stays lazy: no service fetch until switched", async () => {
+    listServiceProfilesMock.mockResolvedValue({ profiles: [makeServiceProfile()], activeProfileId: null });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    // Rendered on presets tab — service API not touched.
+    expect(listServiceProfilesMock).not.toHaveBeenCalled();
+    expect(getServiceDetailMock).not.toHaveBeenCalled();
+  });
+
+  test("switching to service tab fetches list and renders master + footer", async () => {
+    const def = makeServiceProfile();
+    const p2 = { ...makeServiceProfile(), id: "p2", name: "Alpha", isDefault: false };
+    listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+    getServiceDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel"));
+    await waitFor(() => expect(listServiceProfilesMock).toHaveBeenCalled());
+    await waitFor(() => expect(within(view.baseElement).getByText("promptManager.servicePrompts.masterTitle")).toBeTruthy());
+    // Master shows both profiles (Default + Alpha)
+    await waitFor(() => expect(within(view.baseElement).getByText("Alpha")).toBeTruthy());
+    // Detail and footer from pane are rendered
+    await waitFor(() => expect(getServiceDetailMock).toHaveBeenCalled());
+  });
+
+  test("service detail switches dirty tracking via pane", async () => {
+    const def = makeServiceProfile();
+    const p2 = { ...makeServiceProfile(), id: "p2", name: "Alpha", isDefault: false, overrides: { summary: "hi" } };
+    listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+    getServiceDetailMock.mockImplementation(async (id: string) => {
+      if (id === "default") return { profile: def, resolved: makeResolved() };
+      return { profile: p2, resolved: makeResolved({ summary: "hi" }) };
+    });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel"));
+    await waitFor(() => expect(listServiceProfilesMock).toHaveBeenCalled());
+    // Click Alpha row to load its detail
+    await waitFor(() => expect(within(view.baseElement).getByText("Alpha")).toBeTruthy());
+    const alphaEl = within(view.baseElement).getByText("Alpha");
+    await act(async () => { fireEvent.click(alphaEl); });
+    await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+    // Detail shows the service editor: family accordion headings render
+    // collapsed by default; opening them reveals the field textareas.
+    await waitFor(() => {
+      expect(view.baseElement.textContent).toContain("promptManager.servicePrompts.family.assistant");
+    });
+    const familyButtons = Array.from(view.baseElement.querySelectorAll("button")).filter((b) =>
+      b.textContent?.includes("promptManager.servicePrompts.family."),
+    );
+    expect(familyButtons.length).toBeGreaterThan(0);
+    for (const btn of familyButtons) {
+      await act(async () => { fireEvent.click(btn); });
+    }
+    await waitFor(() => {
+      const tas = view.baseElement.querySelectorAll("textarea");
+      expect(tas.length).toBeGreaterThan(0);
+    });
+  });
+});
+

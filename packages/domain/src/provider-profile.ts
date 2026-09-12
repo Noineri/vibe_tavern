@@ -1,4 +1,24 @@
 import type { CoauthorTransport } from "./coauthor-transport-capabilities.js";
+import type { ProviderGenerationFormat } from "./generation-format.js";
+
+/** Generation mode (LOCAL_SUPPORT_PLAN LS-2a): how the server talks to the
+ *  provider backend for this profile's generations.
+ *  - `chat`       — chat-completions messages (default; every protocol).
+ *  - `completion` — raw text completion: one flat prompt string to the
+ *    OpenAI-style `/completions` endpoint (llama-server, LM Studio,
+ *    ooba/TabbyAPI/Aphrodite via the generic openai_compat protocol).
+ *
+ *  The flip is SILENT and fully backward-compatible (owner 2026-09-09):
+ *  switching modes changes only how FUTURE generations are sent — chat
+ *  history, messages, presets, settings are never rewritten or migrated,
+ *  and flipping back is instant. KoboldCPP native is always text completion
+ *  (its own adapter serializes the flat prompt) and carries no toggle. */
+export const GENERATION_MODE = {
+  chat: "chat",
+  completion: "completion",
+} as const;
+
+export type GenerationMode = typeof GENERATION_MODE[keyof typeof GENERATION_MODE];
 
 /**
  * Canonical provider profile type — single source of truth.
@@ -36,11 +56,20 @@ export interface StoredProviderProfileRecord {
   providerPreset: string;
   /** Co-Author-only OpenAI-compatible transport preference; RP ignores this field. */
   coauthorTransport: CoauthorTransport;
+  /** Generation mode (LS-2a) — see {@link GENERATION_MODE}. Profile-level
+   *  (never a per-model overlay field): the mode is a property of the
+   *  connection, not of a bound model. */
+  generationMode: GenerationMode;
   endpoint: string;
   apiKey: string | null;
   defaultModel: string | null;
   contextBudget: number | null;
   pinContextBudget: boolean;
+  /** Token padding (LOCAL_SUPPORT_PLAN LS-1d): tokens subtracted from the
+   *  effective context budget as a safety margin for chat-template overhead
+   *  the estimator cannot see. 0 = disabled. Consumed via
+   *  {@link effectiveContextBudget}. */
+  tokenPadding: number;
   /** When true, the modal routes sampler/context edits to a per-model overlay
    *  (see {@link ModelSettingsSettings}) instead of the profile base. The active
    *  model's overlay merges over the base at generation time via
@@ -57,6 +86,18 @@ export interface StoredProviderProfileRecord {
   topA: number;
   typicalP: number;
   tfsZ: number;
+  /** Adaptive-p (llama.cpp/KoboldCPP): target probability; −1 = disabled. */
+  adaptiveTarget: number;
+  /** Adaptive-p decay rate (0.0–0.99); applies only when adaptiveTarget ≥ 0. */
+  adaptiveDecay: number;
+  /** DynaTemp range (llama-server); 0 = disabled (upstream default). */
+  dynatempRange: number;
+  /** DynaTemp exponent (llama-server); applies only when dynatempRange > 0. */
+  dynatempExponent: number;
+  /** Top n-sigma (llama-server); 0 = disabled (upstream default). */
+  topNSigma: number;
+  /** Smoothing factor (llama-server); 0 = disabled (upstream default). */
+  smoothingFactor: number;
   repeatLastN: number;
   mirostat: number;
   mirostatTau: number;
@@ -65,6 +106,10 @@ export interface StoredProviderProfileRecord {
   dryBase: number;
   dryAllowedLength: number;
   drySequenceBreakers: string[];
+  /** DRY penalty window (llama-server); −1 = disabled (field omitted from the request — llama-server rejects −1), 0 = zero window (DRY inert), > 0 = real window. */
+  dryPenaltyLastN: number;
+  /** Antislop phrase banning (KoboldCPP only, native `banned_strings` request field). Exact-match strings; leading/trailing spaces are significant (" purr" ≠ "purr"). Empty = nothing sent. */
+  bannedStrings: string[];
   xtcThreshold: number;
   xtcProbability: number;
   frequencyPenalty: number;
@@ -84,8 +129,34 @@ export interface StoredProviderProfileRecord {
   isActive: boolean;
   /** Optional vision model slug from the same provider profile, used for image description fallback. */
   visionModel: string | null;
+  /** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a): the provider
+   *  sampler panel's dropdown pre-selection + dirty-dot baseline. Null = no set
+   *  applied. Set deletion clears the pointer (copy-on-select — the values live
+   *  on the profile, the set is an inert template). */
+  samplerSetId: string | null;
+  /** LS-10: the provider-side generation format (the format block in provider
+   *  settings). Null = unset — the active preset's format keeps applying as the
+   *  fallback source (supervisor decision (c) 2026-09-09; preset formats are
+   *  NOT migrated). */
+  generationFormat: ProviderGenerationFormat | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Effective context budget for generation: the profile's `contextBudget` minus
+ * its `tokenPadding` (LS-1d), floored at 0. Null budget passes through as null
+ * ("auto" — the backend's model context length rules). Padding is a
+ * profile-level knob (NOT a per-model overlay field): the chat template
+ * overhead it compensates for is a property of the connection, not the model.
+ */
+export function effectiveContextBudget(
+  contextBudget: number | null | undefined,
+  tokenPadding: number | null | undefined,
+): number | null {
+  if (contextBudget == null) return null;
+  const padding = tokenPadding ?? 0;
+  return Math.max(0, contextBudget - (Number.isFinite(padding) ? padding : 0));
 }
 
 // ─── Per-model settings overlay ───────────────────────────────────────────────
@@ -114,6 +185,12 @@ export type ModelSettingsOverlay = Partial<
     | 'topA'
     | 'typicalP'
     | 'tfsZ'
+    | 'adaptiveTarget'
+    | 'adaptiveDecay'
+    | 'dynatempRange'
+    | 'dynatempExponent'
+    | 'topNSigma'
+    | 'smoothingFactor'
     | 'repeatLastN'
     | 'mirostat'
     | 'mirostatTau'
@@ -122,6 +199,8 @@ export type ModelSettingsOverlay = Partial<
     | 'dryBase'
     | 'dryAllowedLength'
     | 'drySequenceBreakers'
+    | 'dryPenaltyLastN'
+    | 'bannedStrings'
     | 'xtcThreshold'
     | 'xtcProbability'
     | 'frequencyPenalty'
@@ -143,8 +222,9 @@ export type ModelSettingsOverlay = Partial<
  * Returns `base` unchanged (same reference) when `overlay` is `null`/`undefined`
  * — so callers with no overlay pay nothing. When an overlay is present, returns
  * a NEW profile object with every present overlay field overriding the base;
- * arrays/objects (`stopSequences`, `logitBias`, `drySequenceBreakers`) are
- * replaced wholesale (NOT deep-merged) — the overlay owns them entirely.
+ * arrays/objects (`stopSequences`, `logitBias`, `drySequenceBreakers`,
+ * `bannedStrings`) are replaced wholesale (NOT deep-merged) — the overlay owns
+ * them entirely.
  *
  * Contract: an ABSENT field means "inherit base" (NOT an explicit `undefined`
  * field). The settingsJson round-trip via JSON.stringify/parse guarantees this

@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-export const debugSendLogSchema = z.any();
-
 export const importJsonSchema = z.object({
   fileName: z.string(),
   // ST V2/V3 card JSON or SillyTavern JSONL chat text. Optional when a native

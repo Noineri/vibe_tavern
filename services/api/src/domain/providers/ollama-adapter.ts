@@ -26,6 +26,7 @@ import {
   PROBE_TIMEOUT_MS,
   MODEL_LIST_TIMEOUT_MS,
   TEST_CHAT_TIMEOUT_MS,
+  TOKENIZE_TIMEOUT_MS,
   wrapProviderNetworkError,
   type ProviderConnectionInput,
   type ProviderModelOption,
@@ -33,7 +34,7 @@ import {
   type TestChatResult,
 } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
-import type { ProtocolAdapter, ProbeInput, ListModelsInput } from "./protocol-types.js";
+import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput } from "./protocol-types.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -583,6 +584,46 @@ function extractOllamaContextLength(payload: {
   return undefined;
 }
 
+// ─── Tokenize (LS-1a) ───────────────────────────────────────────────────
+
+/** Ollama `/api/tokenize` response. */
+interface OllamaTokenizeResponse {
+  tokens?: unknown;
+}
+
+/**
+ * Exact token count via Ollama's native `POST /api/tokenize` (docs shape:
+ * body `{model, input}` → `{model, tokens}`). Not V1f-probed (no instance that
+ * session) — implemented per docs; any transport/HTTP/shape error falls back
+ * to the local tokenizer ladder in the counting layer.
+ */
+export async function tokenizeOllama(input: TokenizeInput): Promise<number> {
+  const base = (input.baseUrl || "").replace(/\/+$/, "");
+  if (!base) throw new Error("Ollama tokenize: provider endpoint is required.");
+  const doFetch: typeof fetch = input.fetch ?? fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TOKENIZE_TIMEOUT_MS);
+  try {
+    const response = await doFetch(`${base}/api/tokenize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ model: input.modelId ?? "", input: input.text }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(`Ollama tokenize failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+    }
+    const payload = (await response.json()) as OllamaTokenizeResponse;
+    if (!Array.isArray(payload.tokens)) {
+      throw new Error("Ollama tokenize: unexpected response shape (missing tokens array).");
+    }
+    return payload.tokens.length;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const ollamaProtocol: ProtocolAdapter = {
   id: PROVIDER_TYPE.ollama,
   capabilities: {
@@ -593,6 +634,10 @@ export const ollamaProtocol: ProtocolAdapter = {
     logitBias: true,
     samplers: SAMPLER_SETS.openai_local,
     textCompletion: false,
+    // LS-3c: no backend template application on this protocol (see
+    // ProviderCapabilityFlags.backendTemplate) — AUTO falls to the documented
+    // default template inside the completion seam.
+    backendTemplate: false,
   },
   resolveModel(profile, model, fetch?: ProviderFetch) {
     const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:11434";
@@ -605,4 +650,5 @@ export const ollamaProtocol: ProtocolAdapter = {
   probe: probeOllamaConnection,
   testChat: testOllamaChat,
   listModels: listOllamaModels,
+  tokenize: tokenizeOllama,
 };

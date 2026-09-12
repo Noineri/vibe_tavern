@@ -106,6 +106,7 @@ async function buildStDir(root: string) {
 	await Bun.write(
 		join(root, "settings.json"),
 		JSON.stringify({
+			world_info_use_group_scoring: true,
 			power_user: {
 				personas: { "default.png": "Test User" },
 				persona_descriptions: { "default.png": { description: "A test persona." } },
@@ -203,6 +204,9 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 
 		// ── gap-1: lorebook row + entries actually landed ──
 		const loreAfter = await env.stores.lorebooks.listAllLorebooks();
+		// LG-8 amendment: ST's GLOBAL group-scoring switch (settings.json
+		// world_info_use_group_scoring: true above) maps onto the imported book.
+		expect(loreAfter[0]?.useGroupScoring).toBe(true);
 		expect(loreAfter.length).toBe(loreBefore + 1);
 		const importedLore = loreAfter.find((lb) => lb.name === "Test World");
 		expect(importedLore).toBeTruthy();
@@ -444,7 +448,9 @@ describe("ST directory scanner — streaming progress events", () => {
 		// Every phase has exactly one `phase` start event, and it precedes that
 		// phase's `progress` events. Phases fire in fixed import order.
 		const phaseStarts = events.filter((e) => e.type === "phase").map((e) => e.phase);
-		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "personas"]);
+		// LS-5g adds the samplerSets phase between formats and personas (this
+		// fixture has no TextGen Settings/ folder, so it emits no progress events).
+		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "formats", "samplerSets", "personas"]);
 
 		// Granular counts: one progress per imported item, current strictly
 		// increasing, never exceeding the done count for that surface.
@@ -485,6 +491,168 @@ function scannerCard(name: string): string {
 		data: { name, description: "scanner fixture", first_mes: "Hello." },
 	});
 }
+
+// ── L1 ownership-aware lorebook import ───────────────────────────────────────
+//
+// ST worlds/ files are inert until selected at the source; the mass importer
+// must not convert them into always-on globals. The fixture below covers all
+// four classification branches plus the enabled bit per branch:
+//
+//   GlobalTome → global+enabled (globalSelect hit; ALSO card-referenced, so
+//                  this pins globalSelect > card precedence)
+//   CardTome   → character+enabled (card extensions.world only)
+//   ChatTome   → chat+enabled (chat first-line world_info only)
+//   BothTome   → character+enabled (card AND chat → card wins, pins card > chat)
+//   OrphanTome → global+DISABLED (referenced nowhere — inert stays inert)
+//
+// Runs through the REAL runtime import (same boundary as the STN-1D tests
+// above) so the character/chat/world wiring is exercised end-to-end.
+
+function ownershipCard(name: string, world?: string): string {
+	return JSON.stringify({
+		spec: "chara_card_v2",
+		spec_version: "2.0",
+		data: {
+			name,
+			description: "ownership fixture",
+			first_mes: "Hello.",
+			...(world ? { extensions: { world } } : {}),
+		},
+	});
+}
+
+function ownershipChat(characterName: string, worldInfo?: string): string {
+	const meta: Record<string, unknown> = { user_name: "User", character_name: characterName };
+	if (worldInfo) meta.world_info = worldInfo;
+	return [
+		JSON.stringify(meta),
+		JSON.stringify({ name: "User", is_user: true, mes: "Hello.", send_date: Date.now() }),
+	].join("\n");
+}
+
+function ownershipWorld(name: string): string {
+	return JSON.stringify({
+		name,
+		entries: {
+			"0": {
+				uid: 0, key: [`key-${name}`], keysecondary: [],
+				content: `Entry for ${name}.`, comment: "test",
+				constant: false, vectorized: false, selective: true,
+				selectiveLogic: 0, addMemo: false, order: 100, position: 0,
+				disable: false, excludeRecursion: false, preventRecursion: false,
+				delayUntilRecursion: false, probability: 100, useProbability: true,
+				depth: 4, group: "", groupOverride: false, groupWeight: 100,
+				scanDepth: null, caseSensitive: null, matchWholeWords: null,
+				useGroupScoring: null, automationId: "", role: null, sticky: null,
+				cooldown: null, delay: null, displayIndex: 0,
+			},
+		},
+	});
+}
+
+async function buildOwnershipStDir(root: string) {
+	await mkdir(join(root, "characters"), { recursive: true });
+	await Bun.write(join(root, "characters", "GlobalChar.json"), ownershipCard("Global Char", "GlobalTome"));
+	await Bun.write(join(root, "characters", "CardChar.json"), ownershipCard("Card Char", "CardTome"));
+	await Bun.write(join(root, "characters", "BothChar.json"), ownershipCard("Both Char", "BothTome"));
+	await Bun.write(join(root, "characters", "ChatChar.json"), ownershipCard("Chat Char"));
+
+	await mkdir(join(root, "chats", "Chat Char"), { recursive: true });
+	await Bun.write(join(root, "chats", "Chat Char", "history.jsonl"), ownershipChat("Chat Char", "ChatTome"));
+	await mkdir(join(root, "chats", "Both Char"), { recursive: true });
+	await Bun.write(join(root, "chats", "Both Char", "other.jsonl"), ownershipChat("Both Char", "BothTome"));
+
+	await mkdir(join(root, "worlds"), { recursive: true });
+	for (const world of ["GlobalTome", "CardTome", "ChatTome", "BothTome", "OrphanTome"]) {
+		await Bun.write(join(root, "worlds", `${world}.json`), ownershipWorld(world));
+	}
+
+	await Bun.write(
+		join(root, "settings.json"),
+		JSON.stringify({
+			world_info_use_group_scoring: true,
+			world_info_settings: { globalSelect: ["GlobalTome"] },
+		}),
+	);
+	return root;
+}
+
+describe("ST directory scanner — ownership-aware lorebook import (L1)", () => {
+	let env: Env;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("classifies each world by ownership: globalSelect > card > chat > none (disabled)", async () => {
+		env = await createRuntime();
+		const stDir = await buildOwnershipStDir(join(env.tmpDir, "st-ownership"));
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		expect(result.errors).toEqual([]);
+		expect(result.characters).toBe(4);
+		expect(result.chats).toBe(2);
+		expect(result.lorebooks).toBe(5);
+
+		const books = await env.stores.lorebooks.listAllLorebooks();
+		const byName = (name: string) => {
+			const book = books.find((b) => b.name === name);
+			expect(book, `lorebook ${name} should exist`).toBeTruthy();
+			return book!;
+		};
+		const characters = await env.stores.characters.listAll();
+		const charId = (name: string) => {
+			const c = characters.find((x) => x.name === name);
+			expect(c, `character ${name} should exist`).toBeTruthy();
+			return c!.id;
+		};
+		const chats = await env.stores.chats.listAll();
+		const chatIdByTitle = (title: string) => {
+			const chat = chats.find((x) => x.title === title);
+			expect(chat, `chat ${title} should exist`).toBeTruthy();
+			return chat!.id;
+		};
+
+		// GlobalTome: globalSelect hit (card reference loses) → global+enabled.
+		const global = byName("GlobalTome");
+		expect(global.scopeType).toBe("global");
+		expect(global.enabled).toBe(true);
+		expect(global.characterId).toBeNull();
+		expect(global.chatId).toBeNull();
+		// The settings-block rewrite must not drop the group-scoring passthrough.
+		expect(global.useGroupScoring).toBe(true);
+
+		// CardTome: card extensions.world only → character+enabled, bound to Card Char.
+		const card = byName("CardTome");
+		expect(card.scopeType).toBe("entity");
+		expect(card.enabled).toBe(true);
+		expect(card.characterId).toBe(charId("Card Char"));
+		expect(card.chatId).toBeNull();
+
+		// ChatTome: chat world_info only → chat+enabled, bound to the history chat.
+		const chat = byName("ChatTome");
+		expect(chat.scopeType).toBe("chat");
+		expect(chat.enabled).toBe(true);
+		expect(chat.chatId).toBe(chatIdByTitle("history"));
+		expect(chat.characterId).toBeNull();
+
+		// BothTome: card AND chat → character wins (card > chat).
+		const both = byName("BothTome");
+		expect(both.scopeType).toBe("entity");
+		expect(both.enabled).toBe(true);
+		expect(both.characterId).toBe(charId("Both Char"));
+		expect(both.chatId).toBeNull();
+
+		// OrphanTome: referenced nowhere → global+DISABLED (inert stays inert).
+		const orphan = byName("OrphanTome");
+		expect(orphan.scopeType).toBe("global");
+		expect(orphan.enabled).toBe(false);
+		expect(orphan.characterId).toBeNull();
+		expect(orphan.chatId).toBeNull();
+		// The orphan still imports its entries — only activation is withheld.
+		const orphanEntries = await env.stores.lorebooks.listEntries(orphan.id);
+		expect(orphanEntries.length).toBe(1);
+	});
+});
 
 function scannerChat(name: string): string {
 	return [
@@ -654,5 +822,213 @@ describe("ST directory scanner — filesystem characterization", () => {
 		expect(scan.characters).toEqual([]);
 		expect(scan.chats).toEqual([]);
 		expect(scan.errors).toEqual([]);
+	});
+});
+
+// ─── LS-3e: format/library files (instruct / context / sysprompt) ──────────
+// LOCAL_SUPPORT_PLAN LS-3e storage map kinds 3/4/5: instruct/*.json → a
+// preset carrying the manual generation format; context/*.json → a preset
+// with the mapped canvas order (partial story_string mapping, notes as
+// warnings); sysprompt/*.json → a preset whose main system field carries the
+// content. TextGen Settings/ is deliberately NOT scanned here (LS-5's
+// sampler-set surface).
+
+describe("ST directory scanner — format/library files (LS-3e)", () => {
+	let env: Env;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	async function buildFormatsDir(root: string) {
+		await mkdir(join(root, "instruct"), { recursive: true });
+		await mkdir(join(root, "context"), { recursive: true });
+		await mkdir(join(root, "sysprompt"), { recursive: true });
+		// instruct: ChatML-shaped (matches the owner's real ST install).
+		await Bun.write(
+			join(root, "instruct", "TestInstruct.json"),
+			JSON.stringify({
+				name: "Test Instruct",
+				input_sequence: "<|im_start|>user",
+				output_sequence: "<|im_start|>assistant",
+				system_sequence: "<|im_start|>system",
+				stop_sequence: "<|im_end|>",
+				wrap: true,
+				names_behavior: "always",
+				input_suffix: "<|im_end|>\n",
+				output_suffix: "<|im_end|>\n",
+				system_suffix: "<|im_end|>\n",
+			}),
+		);
+		// context: Default-shaped story_string (all mapped slots + literal glue
+		// text — "'s personality: " is unrepresentable in the layer pipeline and
+		// must be reported, never silent).
+		await Bun.write(
+			join(root, "context", "TestContext.json"),
+			JSON.stringify({
+				name: "Test Context",
+				story_string: "{{#if system}}{{system}}\n{{/if}}{{#if description}}{{description}}\n{{/if}}{{#if personality}}{{char}}'s personality: {{personality}}\n{{/if}}{{#if persona}}{{persona}}\n{{/if}}",
+				name2: "unused",
+			}),
+		);
+		// sysprompt: one entry.
+		await Bun.write(
+			join(root, "sysprompt", "TestSysprompt.json"),
+			JSON.stringify({ name: "Test Sysprompt", content: "Stay in character." }),
+		);
+		// A non-format JSON in the instruct folder is skipped silently.
+		await Bun.write(join(root, "instruct", "NotAFormat.json"), JSON.stringify({ hello: "world" }));
+		return root;
+	}
+
+	it("scan previews the three kinds with import notes (context literal glue, instruct stops)", async () => {
+		env = await createRuntime();
+		const stDir = await buildFormatsDir(join(env.tmpDir, "st-formats"));
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+		expect(scan.formats.length).toBe(3);
+		const instruct = scan.formats.find((f) => f.kind === "instruct");
+		const context = scan.formats.find((f) => f.kind === "context");
+		const sysprompt = scan.formats.find((f) => f.kind === "sysprompt");
+		expect(instruct?.name).toBe("Test Instruct");
+		// Instruct stops are reported for the provider's EXISTING stop-sequences
+		// setting — mass import has no profile context to write them to.
+		expect(instruct?.warnings.some((w) => w.includes("stop sequences"))).toBe(true);
+		expect(context?.warnings.some((w) => w.includes("literal_text"))).toBe(true);
+		expect(sysprompt?.warnings).toEqual([]);
+	});
+
+	it("import writes all three kinds as presets (format / canvas order / system field)", async () => {
+		const presetBefore = (await env.stores.presets.listAll()).length;
+		const result = await env.runtime.importSillyTavernDirectory(join(env.tmpDir, "st-formats"));
+
+		expect(result.errors).toEqual([]);
+		expect(result.formats).toBe(3);
+
+		const presets = await env.stores.presets.listAll();
+		expect(presets.length).toBe(presetBefore + 3);
+
+		const instructPreset = presets.find((p) => p.name === "Test Instruct");
+		expect(instructPreset?.generationFormat).toEqual({
+			mode: "manual",
+			inputSequence: "<|im_start|>user",
+			outputSequence: "<|im_start|>assistant",
+			systemSequence: "<|im_start|>system",
+			inputSuffix: "<|im_end|>\n",
+			outputSuffix: "<|im_end|>\n",
+			systemSuffix: "<|im_end|>\n",
+			wrap: true,
+			namesBehavior: "always",
+		});
+
+		const contextPreset = presets.find((p) => p.name === "Test Context");
+		expect(contextPreset?.promptOrder.map((e) => e.identifier)).toEqual([
+			"charSystemPrompt", "charDescription", "charPersonality", "personaDescription", "chatHistory",
+		]);
+		expect(contextPreset?.advancedMode).toBe(true);
+
+		const syspromptPreset = presets.find((p) => p.name === "Test Sysprompt");
+		expect(syspromptPreset?.systemPrompt).toBe("Stay in character.");
+	});
+});
+
+// ─── LS-5g: TextGen Settings/ mass phase (named sampler sets) ───────────────
+// ST TextGen Settings/*.json are pure sampler presets — parseStTextgen maps
+// the ooba spellings onto VT's sampler-set payload; the set name defaults to
+// the file name. Only files with ST TextGen shape count (other JSON in the
+// folder is skipped silently, like the OpenAI Settings scan), and a set whose
+// name already exists in the library is SKIPPED with an import error — mass
+// import never overwrites existing library entries.
+
+/** Divine Intellect-shaped ooba preset (real spellings; see the parser
+ *  fixtures in packages/import-export/test/st-textgen.test.ts). */
+function stTextgenPreset(): string {
+	return JSON.stringify({
+		temp: 1.31,
+		top_p: 0.14,
+		top_k: 49,
+		min_p: 0,
+		rep_pen: 1.17,
+		dry_sequence_breakers: '["\\n", ":", "\\\"", "*"]',
+		sampler_order: [6, 0, 1, 3, 4, 2, 5],
+	});
+}
+
+async function buildTextgenDir(root: string): Promise<string> {
+	await mkdir(join(root, "TextGen Settings"), { recursive: true });
+	await Bun.write(join(root, "TextGen Settings", "Divine Intellect.json"), stTextgenPreset());
+	// Not TextGen-shaped → silently skipped by BOTH phases.
+	await Bun.write(join(root, "TextGen Settings", "NotATextgen.json"), JSON.stringify({ hello: "world" }));
+	// Malformed → reported as a parse error.
+	await Bun.write(join(root, "TextGen Settings", "broken.json"), "{not-json");
+	return root;
+}
+
+describe("ST directory scanner — TextGen Settings sampler sets (LS-5g)", () => {
+	let env: Env;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("scan previews TextGen-shaped files with import notes, skips the rest", async () => {
+		env = await createRuntime();
+		const stDir = await buildTextgenDir(join(env.tmpDir, "st-textgen"));
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+
+		expect(scan.samplerSets.length).toBe(1);
+		expect(scan.samplerSets[0]?.fileName).toBe("Divine Intellect.json");
+		expect(scan.samplerSets[0]?.name).toBe("Divine Intellect");
+		expect(scan.samplerSets[0]?.imported).toBe(false);
+		// sampler_order carries a value the mapping can't land — surfaced, never silent.
+		expect(scan.samplerSets[0]?.warnings.some((w) => w.startsWith("sampler_order"))).toBe(true);
+
+		// Malformed JSON is reported; the non-TextGen JSON is silently skipped.
+		expect(scan.errors.map((e) => e.file)).toEqual([
+			join(stDir, "TextGen Settings", "broken.json"),
+		]);
+		expect(scan.errors.every((e) => e.stage === "parse")).toBe(true);
+	});
+
+	it("import writes the set with the mapped payload, named after the file", async () => {
+		env = await createRuntime();
+		const stDir = await buildTextgenDir(join(env.tmpDir, "st-textgen-import"));
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		// Only the parse error (broken.json) — not the skipped non-TextGen file.
+		expect(result.errors.map((e) => e.file)).toEqual([
+			join(stDir, "TextGen Settings", "broken.json"),
+		]);
+		expect(result.samplerSets).toBe(1);
+
+		const sets = await env.stores.samplerSets.list();
+		expect(sets.map((s) => s.name)).toEqual(["Divine Intellect"]);
+		expect(sets[0]?.payload).toEqual({
+			temperature: 1.31,
+			topP: 0.14,
+			topK: 49,
+			minP: 0,
+			repetitionPenalty: 1.17,
+			drySequenceBreakers: ["\n", ":", '"', "*"],
+		});
+	});
+
+	it("re-import skips an existing set name with an import error, never overwrites", async () => {
+		env = await createRuntime();
+		const stDir = await buildTextgenDir(join(env.tmpDir, "st-textgen-twice"));
+
+		const first = await env.runtime.importSillyTavernDirectory(stDir);
+		// broken.json fails at the import loop's own JSON.parse (stage "import",
+		// unlike the scan phase's "parse") - filter it out; it must not affect
+		// the set counter.
+		expect(first.errors.filter((e) => e.message.includes("already exists"))).toEqual([]);
+		expect(first.samplerSets).toBe(1);
+
+		const second = await env.runtime.importSillyTavernDirectory(stDir);
+		expect(second.samplerSets).toBe(0);
+		expect(second.errors.some((e) => e.message.includes("already exists"))).toBe(true);
+
+		// The stored payload is still the FIRST import's — no overwrite.
+		const sets = await env.stores.samplerSets.list();
+		expect(sets).toHaveLength(1);
+		expect(sets[0]?.payload.topP).toBe(0.14);
 	});
 });

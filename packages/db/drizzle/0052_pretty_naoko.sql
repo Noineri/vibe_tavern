@@ -1,0 +1,1 @@
+ALTER TABLE `service_prompt_profiles` ADD `sort_order` integer DEFAULT 0 NOT NULL;

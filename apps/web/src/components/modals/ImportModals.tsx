@@ -9,7 +9,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { loadPromptPresetsAction } from "../../stores/api-actions/preset-actions.js";
-import { inputCls } from "../build/fields/field-styles.js";
+import { TextInput } from "../shared/text-input.js";
 import {
   openNativeDialog,
   scanStDirectory,
@@ -114,6 +114,8 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
         result.chats.length +
         result.lorebooks.length +
         result.presets.length +
+        result.formats.length +
+        result.samplerSets.length +
         (result.persona?.count ?? 0);
       if (totalImportable === 0 && result.errors.length === 0) {
         setError(t("st_no_files"));
@@ -153,6 +155,8 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
         chats: result.chats,
         lorebooks: result.lorebooks,
         presets: result.presets,
+        formats: result.formats,
+        samplerSets: result.samplerSets,
         personas: result.personas,
       });
       toast.success(msg);
@@ -180,6 +184,8 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       scanResult.chats.length +
       scanResult.lorebooks.length +
       scanResult.presets.length +
+      scanResult.formats.length +
+      scanResult.samplerSets.length +
       (scanResult.persona?.count ?? 0)
     : 0;
 
@@ -198,14 +204,13 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
           <div>SillyTavern/data/default-user/characters <span className="text-t4">← {t("st_hint_characters")}</span></div>
           <div>SillyTavern/data/default-user/chats <span className="text-t4">← {t("st_hint_chats")}</span></div>
           <div>SillyTavern/data/default-user/worlds <span className="text-t4">← {t("st_hint_worlds")}</span></div>
+          <div>SillyTavern/data/default-user/TextGen Settings <span className="text-t4">← {t("st_hint_samplers")}</span></div>
         </div>
       </details>
 
       {/* Path row: editable text input + native-picker Browse button. */}
       <div className="mb-2 flex gap-2">
-        <input
-          type="text"
-          className={inputCls + " h-[38px] px-3 font-ui text-[calc(var(--ui-fs)-2px)]"}
+        <TextInput
           placeholder={t("st_path_placeholder")}
           value={path}
           onChange={(e) => setPath(e.target.value)}
@@ -245,6 +250,8 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
               characters: scanResult.characters.length,
               chats: scanResult.chats.length,
               presets: scanResult.presets.length,
+              formats: scanResult.formats.length,
+              samplerSets: scanResult.samplerSets.length,
               lorebooks: scanResult.lorebooks.length,
             })}
           </div>
@@ -292,6 +299,8 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
               chats: importResult.chats,
               lorebooks: importResult.lorebooks,
               presets: importResult.presets,
+              formats: importResult.formats,
+              samplerSets: importResult.samplerSets,
               personas: importResult.personas,
             })}
           </div>
@@ -518,7 +527,7 @@ function BusyLine(props: { label: string }) {
 }
 
 // Fixed import order (matches the scanner's phase sequence).
-const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "lorebooks", "presets", "personas"];
+const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "lorebooks", "presets", "formats", "samplerSets", "personas"];
 
 /** Per-phase progress breakdown for a streaming ST directory import. Reuses
  *  the old bar visual (animated accent dots + width:% fill) but drives it from
@@ -535,6 +544,8 @@ function StImportProgress(props: {
     chats: props.scanResult.chats.length,
     lorebooks: props.scanResult.lorebooks.length,
     presets: props.scanResult.presets.length,
+    formats: props.scanResult.formats.length,
+    samplerSets: props.scanResult.samplerSets.length,
     personas: props.scanResult.persona?.count ?? 0,
   };
   const activeIdx = props.progress.activePhase ? IMPORT_PHASES.indexOf(props.progress.activePhase) : -1;

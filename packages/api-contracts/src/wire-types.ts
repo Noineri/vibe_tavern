@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderGenerationFormat, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -48,6 +48,12 @@ export interface ClientProviderProfileRecord {
 	visionModel: string | null;
 	contextBudget: number | null;
 	pinContextBudget: boolean;
+	/** Token padding (LS-1d): safety margin subtracted from the context budget.
+	 *  Profile-level — see `effectiveContextBudget` in @vibe-tavern/domain. */
+	tokenPadding: number;
+	/** Generation mode (LS-2a): `chat` (default) vs raw text `completion`.
+	 *  Profile-level — see `GENERATION_MODE` in @vibe-tavern/domain. */
+	generationMode: GenerationMode;
 	bindPerModel: boolean;
 	/** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, round-trip like bindPerModel. */
 	modelFreeOnly: boolean;
@@ -60,6 +66,18 @@ export interface ClientProviderProfileRecord {
 	topA: number;
 	typicalP: number;
 	tfsZ: number;
+	/** Adaptive-p (llama.cpp/KoboldCPP): target probability; −1 = disabled. */
+	adaptiveTarget: number;
+	/** Adaptive-p decay rate (0.0–0.99); applies only when adaptiveTarget ≥ 0. */
+	adaptiveDecay: number;
+	/** DynaTemp range (llama-server); 0 = disabled (upstream default). */
+	dynatempRange: number;
+	/** DynaTemp exponent (llama-server); applies only when dynatempRange > 0. */
+	dynatempExponent: number;
+	/** Top n-sigma (llama-server); 0 = disabled (upstream default). */
+	topNSigma: number;
+	/** Smoothing factor (llama-server); 0 = disabled (upstream default). */
+	smoothingFactor: number;
 	repeatLastN: number;
 	mirostat: number;
 	mirostatTau: number;
@@ -68,12 +86,16 @@ export interface ClientProviderProfileRecord {
 	dryBase: number;
 	dryAllowedLength: number;
 	drySequenceBreakers: string[];
+	/** DRY penalty window (llama-server); −1 = disabled (field omitted — llama-server rejects −1), 0 = zero window (DRY inert), > 0 = real window. */
+	dryPenaltyLastN: number;
 	xtcThreshold: number;
 	xtcProbability: number;
 	frequencyPenalty: number;
 	presencePenalty: number;
 	repetitionPenalty: number;
 	stopSequences: string[];
+	/** Antislop phrase banning (KoboldCPP only, native `banned_strings` request field); exact-match phrases, leading/trailing spaces significant. */
+	bannedStrings: string[];
 	logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
 	seed: string | null;
 	reasoningEffort: string;
@@ -83,6 +105,12 @@ export interface ClientProviderProfileRecord {
 	proxyMode: ProviderProxyMode;
 	proxyId: string | null;
 	isActive: boolean;
+	/** Last-applied named sampler set (LOCAL_SUPPORT_PLAN LS-5a) — panel dropdown pre-selection + dirty-dot baseline. */
+	samplerSetId: string | null;
+	/** LS-10: the provider-side generation format (the format block in provider
+	 *  settings). Null = unset — the active preset's format keeps applying as
+	 *  the fallback source (supervisor decision (c) 2026-09-09). */
+	generationFormat: ProviderGenerationFormat | null;
 	createdAt: string;
 	updatedAt: string;
 	hasStoredApiKey: boolean;
@@ -195,6 +223,63 @@ export interface PersonaRecord {
 	updatedAt: string;
 }
 
+// ─── TTS ──────────────────────────────────────────────────────────────
+
+/** TTS profile as sent to the client — security projection of the stored
+ *  domain row (mirrors `ClientProviderProfileRecord`): the secret lives in
+ *  the typed api_key column (TE2-16) and is reported as `hasStoredApiKey`;
+ *  `config` never carries it. The projection lives here so BOTH sides
+ *  compile against the same wire truth (drift = compile error, not runtime
+ *  bug). */
+export interface ClientTtsProfileRecord {
+	id: string;
+	name: string;
+	backend: import("@vibe-tavern/domain").TtsBackendSlug;
+	/** Backend-specific bag — never carries the apiKey (see {@link hasStoredApiKey}). */
+	config: Record<string, unknown>;
+	/** True when the typed api_key column holds a non-empty key. */
+	hasStoredApiKey: boolean;
+	/** Optional providerProfiles.id link — key + baseUrl resolve server-side
+	 *  at synthesis/test time (TE2-16); the provider key never crosses either. */
+	providerRef: string | null;
+	/** Provider profile name whose endpoint auto-matches (default-on key
+	 *  reuse) — UI hint only; the key itself never crosses the boundary. */
+	autoKeyProviderName: string | null;
+	voiceId: string;
+	narratorVoiceId: string | null;
+	lang: string;
+	sortOrder: number;
+	isDefault: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
+
+// ─── Speech-to-text ───────────────────────────────────────────────────
+
+/** Client-facing STT profile record (STT_PLAN ST-5b) — the TE2-16 wire
+ *  projection of the stored SttProfile: the secret lives in the typed
+ *  `api_key` column and is reported as `hasStoredApiKey`; `config` comes
+ *  back exactly as stored (never carried a key; ST-1). The endpoint-matching
+ *  hint mirrors ClientTtsProfileRecord.autoKeyProviderName. */
+export interface ClientSttProfileRecord {
+	id: string;
+	name: string;
+	backend: import("@vibe-tavern/domain").SttBackendType;
+	/** Backend-specific config — carries NO secret (see {@link hasStoredApiKey}). */
+	config: Record<string, unknown>;
+	/** True when the typed api_key column holds a non-empty key. */
+	hasStoredApiKey: boolean;
+	/** Provider profile name whose endpoint auto-matches (default-on key
+	 *  reuse) — UI hint only; the key itself never crosses the boundary. */
+	autoKeyProviderName: string | null;
+	/** ST-7 capability seam — never true for the v1 pure-ASR backends. */
+	emotionAnnotation: boolean;
+	/** The fallback pointer (store-maintained invariant, at most one). */
+	isDefault: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
+
 // ─── Chat ──────────────────────────────────────────────────────────────
 
 /** Sidebar chat-list entry. `characterId` is branded on the wire. */
@@ -222,7 +307,7 @@ export interface ChatListItem {
 // RuntimeUpdateStatus.phase before serialising; if the two drift, the
 // frontend's exhaustive switch will fail to typecheck.
 
-export type RuntimeInstallKind = "standalone" | "inno-setup" | "docker" | "npm" | "dev";
+export type RuntimeInstallKind = "standalone" | "inno-setup" | "docker" | "npm" | "android" | "dev";
 
 export interface RuntimeInfo {
 	currentVersion: string;

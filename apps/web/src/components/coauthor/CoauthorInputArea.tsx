@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cn } from "../../lib/cn.js";
+import { composerCls } from "../../lib/field-tokens.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
@@ -68,7 +69,8 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 		>
 			<div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
 				<AutoTextarea
-					className="min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
+					bare
+					className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
 					maxRows={12}
 					minRows={3}
 					placeholder={t("coauthor.input.placeholder")}

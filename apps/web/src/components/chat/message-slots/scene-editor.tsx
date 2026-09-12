@@ -12,13 +12,15 @@
  * correctness boundary — a save that the server rejects surfaces as a toast
  * (the caller owns the error UX), leaving the prior valid record untouched.
  *
- * Reuses shared primitives: `Toggle` and the `inputCls`/`lblCls` field styles.
- * No bespoke input chrome — see AGENTS.md §9.
+ * Reuses shared primitives: `Toggle`, `NumberInput`, `AutoTextarea` and the
+ * canon field tokens (`lib/field-tokens.ts`). No bespoke input chrome — see AGENTS.md §9.
  */
 import { useState, type ReactNode } from "react";
 import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import { Toggle } from "../../shared/Toggle.js";
-import { inputCls, lblCls } from "../../build/fields/field-styles.js";
+import { NumberInput } from "../../shared/NumberInput.js";
+import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import type { TFunc } from "../../../i18n/context.js";
 
 export function SceneEditorBody({ schema, initial, onSave, onCancel, t }: {
@@ -34,10 +36,10 @@ export function SceneEditorBody({ schema, initial, onSave, onCancel, t }: {
     <div className="flex flex-col gap-3">
       <FieldsEditor schema={schema} value={draft} onChange={setDraft} t={t} />
       <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
-        <button type="button" onClick={onCancel} className="rounded px-3 py-1.5 text-sm text-t3 transition-colors hover:bg-s2">
+        <button type="button" onClick={onCancel} className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1">
           {t("scn_edit_cancel")}
         </button>
-        <button type="button" onClick={() => onSave(draft)} className="rounded bg-accent px-3 py-1.5 text-sm text-white transition-opacity hover:opacity-90">
+        <button type="button" onClick={() => onSave(draft)} className="h-[37px] cursor-pointer rounded-md bg-accent px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110">
           {t("scn_edit_save")}
         </button>
       </div>
@@ -74,7 +76,7 @@ function FieldRow({ label, node, value, onChange, t }: {
   if (node.$type === "object") {
     const obj = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
     return (
-      <fieldset className="flex flex-col gap-2 rounded-lg border border-border p-2.5">
+      <fieldset className="flex flex-col rounded-lg border border-border p-2.5">
         <legend className={lblCls + " px-1"}>{label}</legend>
         <FieldsEditor schema={node.properties} value={obj} onChange={onChange} t={t} />
       </fieldset>
@@ -85,7 +87,7 @@ function FieldRow({ label, node, value, onChange, t }: {
   }
   // Leaves
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col">
       <label className={lblCls}>{label}{node.$type === "number" && (node.min != null || node.max != null) ? ` (${rangeHint(node)})` : ""}</label>
       <LeafInput node={node} value={value} onChange={onChange} />
     </div>
@@ -98,27 +100,21 @@ function LeafInput({ node, value, onChange }: { node: Extract<SceneTrackerSchema
   }
   if (node.$type === "number") {
     return (
-      <input
-        type="number"
-        inputMode="decimal"
+      <NumberInput
         value={typeof value === "number" ? value : Number(value) || 0}
+        onChange={onChange}
         min={node.min}
         max={node.max}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          onChange(Number.isFinite(n) ? n : 0);
-        }}
-        className={inputCls}
+        className="w-full"
       />
     );
   }
   return (
-    <input
-      type="text"
+    <AutoTextarea
       value={typeof value === "string" ? value : value == null ? "" : String(value)}
       maxLength={4000}
       onChange={(e) => onChange(e.target.value)}
-      className={inputCls}
+      minRows={1}
     />
   );
 }
@@ -146,7 +142,7 @@ function ArrayEditor({ label, items, value, onChange, t }: {
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col">
       <div className="flex items-center justify-between">
         <label className={lblCls}>{label}</label>
         <button type="button" onClick={add} className="rounded px-2 py-0.5 text-[11px] text-accent transition-colors hover:bg-s2">

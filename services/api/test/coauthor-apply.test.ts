@@ -219,12 +219,12 @@ describe("Co-Author Apply RPC — lore bundle (CTX-L2)", () => {
 	it("applies a lore bundle: persists lorebooks + entries with preallocated ids, returns them", async () => {
 		env = await createTestRuntime();
 		// Before Apply: no lorebooks exist for this character.
-		expect(await env.stores.lorebooks.listLorebooksByScope("character", env.characterId)).toEqual([]);
+		expect(await env.stores.lorebooks.listLorebooksByScope("entity", env.characterId)).toEqual([]);
 
 		const res = await env.runtime.applyCoauthorDraft(env.coauthorChatId, {
 			loreBundle: {
 				lorebooks: [
-					{ id: "lorebook_draft1", name: "World Lore", description: "d", scopeType: "character", enabled: true },
+					{ id: "lorebook_draft1", name: "World Lore", description: "d", scopeType: "entity", enabled: true },
 				],
 				entries: [
 					{ id: "lore_entry_draft1", lorebookId: "lorebook_draft1", title: "Castle", content: "Anvil keep.", keys: ["anvil"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
@@ -247,7 +247,7 @@ describe("Co-Author Apply RPC — lore bundle (CTX-L2)", () => {
 		const bundle = {
 			loreBundle: {
 				lorebooks: [
-					{ id: "lorebook_draft2", name: "LB2", description: "", scopeType: "character" as const, enabled: true },
+					{ id: "lorebook_draft2", name: "LB2", description: "", scopeType: "entity" as const, enabled: true },
 				],
 				entries: [
 					{ id: "lore_entry_draft2", lorebookId: "lorebook_draft2", title: "E", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
@@ -256,7 +256,7 @@ describe("Co-Author Apply RPC — lore bundle (CTX-L2)", () => {
 		};
 		await env.runtime.applyCoauthorDraft(env.coauthorChatId, bundle);
 		await env.runtime.applyCoauthorDraft(env.coauthorChatId, bundle);
-		const lbs = await env.stores.lorebooks.listLorebooksByScope("character", env.characterId);
+		const lbs = await env.stores.lorebooks.listLorebooksByScope("entity", env.characterId);
 		// lorebook_draft2 appears once (not duplicated), alongside lorebook_draft1 from the prior test.
 		expect(lbs.filter((l) => l.id === "lorebook_draft2")).toHaveLength(1);
 		expect(await env.stores.lorebooks.listEntries("lorebook_draft2")).toHaveLength(1);

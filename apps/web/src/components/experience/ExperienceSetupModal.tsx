@@ -48,6 +48,7 @@ import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Checkbox } from "../shared/Checkbox.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { TextInput } from "../shared/text-input.js";
 import { Ic } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
@@ -1404,9 +1405,8 @@ function RosterRow({
   return (
     <div className="flex flex-col gap-1.5 rounded-md bg-s2 px-2.5 py-2" data-seat-id={seat.id}>
       <div className="flex items-center gap-2">
-        <input
-          type="text"
-          className="min-w-0 flex-1 rounded-md border border-border bg-s2 px-2 py-1 font-ui text-[12px] text-t1 outline-none focus:border-accent"
+        <TextInput
+          className="min-w-0 flex-1"
           value={seat.label}
           maxLength={INTERACTIVE_SCHEMA_MAX_LABEL}
           placeholder={t("experience_setup_participant_name_placeholder")}
@@ -1595,7 +1595,6 @@ function PreparationBody(props: PreparationBodyProps) {
             <div className="flex flex-col gap-1">
               <label className="font-ui text-[11px] font-medium text-t2">{t("experience_setup_overrides_global")}</label>
               <AutoTextarea
-                className="rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-[12px] text-t1 outline-none focus:border-accent"
                 value={overrideDrafts.global}
                 onChange={(e) => onGlobalOverride(e.target.value)}
                 minRows={2}
@@ -1607,7 +1606,6 @@ function PreparationBody(props: PreparationBodyProps) {
             <div className="flex flex-col gap-1">
               <label className="font-ui text-[11px] font-medium text-t2">{t("experience_setup_overrides_character")}</label>
               <AutoTextarea
-                className="rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-[12px] text-t1 outline-none focus:border-accent"
                 value={overrideDrafts.character}
                 onChange={(e) => onCharacterOverride(e.target.value)}
                 minRows={2}

@@ -1,0 +1,9 @@
+# Generated frame-runtime artifacts are BYTE-CHECKED by
+# apps/web/src/lib/experience-frame-runtime.test.ts (the generator runs in
+# --check mode and byte-compares its in-memory build against the file on
+# disk). With core.autocrlf=true a checkout/stash smudges these files to
+# CRLF while the generator writes LF — the freshness gate then fails on
+# every git operation until a manual regen. Pin LF for the generated dir
+# so the working-tree bytes always equal the generator's output.
+# Scoped to this directory on purpose — repo-wide EOL policy is not ours.
+apps/web/src/generated/** text eol=lf

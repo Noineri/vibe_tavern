@@ -1,4 +1,4 @@
-import { COAUTHOR_TRANSPORT, type CoauthorTransport, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay } from '@vibe-tavern/domain';
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, type CoauthorTransport, type GenerationMode, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay, type ProviderGenerationFormat } from '@vibe-tavern/domain';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -56,6 +56,8 @@ export interface CreateProviderData {
   name: string;
   providerPreset: string;
   coauthorTransport?: CoauthorTransport;
+  /** Generation mode (LS-2a) — see StoredProviderProfileRecord. Defaults to 'chat'. */
+  generationMode?: GenerationMode;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -68,6 +70,12 @@ export interface CreateProviderData {
   topA?: number;
   typicalP?: number;
   tfsZ?: number;
+  adaptiveTarget?: number;
+  adaptiveDecay?: number;
+  dynatempRange?: number;
+  dynatempExponent?: number;
+  topNSigma?: number;
+  smoothingFactor?: number;
   repeatLastN?: number;
   mirostat?: number;
   mirostatTau?: number;
@@ -75,6 +83,7 @@ export interface CreateProviderData {
   dryMultiplier?: number;
   dryBase?: number;
   dryAllowedLength?: number;
+  dryPenaltyLastN?: number;
   drySequenceBreakers?: string[];
   xtcThreshold?: number;
   xtcProbability?: number;
@@ -82,6 +91,7 @@ export interface CreateProviderData {
   presencePenalty?: number;
   repetitionPenalty?: number;
   stopSequences?: string[];
+  bannedStrings?: string[];
   logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed?: string | null;
   reasoningEffort?: string;
@@ -89,6 +99,8 @@ export interface CreateProviderData {
   streamResponse?: boolean;
   customSamplers?: boolean;
   pinContextBudget?: boolean;
+  /** Token padding (LS-1d) — see StoredProviderProfileRecord. */
+  tokenPadding?: number;
   /** Per-model binding toggle — when true, sampler/context edits route to a per-model overlay. */
   bindPerModel?: boolean;
   /** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, no backend logic. */
@@ -96,6 +108,10 @@ export interface CreateProviderData {
   modelGroupByOwner?: boolean;
   /** Optional vision model for image description fallback. */
   visionModel?: string | null;
+  /** Last-applied sampler set (LOCAL_SUPPORT_PLAN LS-5a). Nullable — null clears the pointer ("no set"). */
+  samplerSetId?: string | null;
+  /** LS-10: the provider-side generation format (the format block). Nullable — null clears back to the preset fallback. */
+  generationFormat?: ProviderGenerationFormat | null;
   /** Per-provider proxy selection policy. */
   proxyMode?: ProviderProxyMode;
   proxyId?: string | null;
@@ -139,11 +155,7 @@ export class ProviderStore {
 
   async listAll(): Promise<ProviderProfile[]> {
     const rows = await this.db.select().from(providerProfiles).orderBy(asc(providerProfiles.sortOrder), asc(providerProfiles.createdAt)).all();
-    const result = rows.map((row) => this.mapRow(row));
-    for (const p of result) {
-      console.log(`[DB] provider.listAll id=${p.id} visionModel=${p.visionModel}`);
-    }
-    return result;
+    return rows.map((row) => this.mapRow(row));
   }
 
   async getActive(): Promise<ProviderProfile | null> {
@@ -172,6 +184,7 @@ export class ProviderStore {
         sortOrder: nextSortOrder,
         providerPreset: data.providerPreset,
         coauthorTransport: data.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions,
+        generationMode: data.generationMode ?? GENERATION_MODE.chat,
         endpoint: data.endpoint,
         apiKey: data.apiKey ?? null,
         defaultModel: data.defaultModel ?? null,
@@ -184,6 +197,12 @@ export class ProviderStore {
         topA: data.topA ?? 0,
         typicalP: data.typicalP ?? 1.0,
         tfsZ: data.tfsZ ?? 1.0,
+        adaptiveTarget: data.adaptiveTarget ?? -1,
+        adaptiveDecay: data.adaptiveDecay ?? 0.9,
+        dynatempRange: data.dynatempRange ?? 0,
+        dynatempExponent: data.dynatempExponent ?? 1.0,
+        topNSigma: data.topNSigma ?? 0,
+        smoothingFactor: data.smoothingFactor ?? 0,
         repeatLastN: data.repeatLastN ?? 0,
         mirostat: data.mirostat ?? 0,
         mirostatTau: data.mirostatTau ?? 5.0,
@@ -191,6 +210,7 @@ export class ProviderStore {
         dryMultiplier: data.dryMultiplier ?? 0,
         dryBase: data.dryBase ?? 1.75,
         dryAllowedLength: data.dryAllowedLength ?? 2,
+        dryPenaltyLastN: data.dryPenaltyLastN ?? -1,
         drySequenceBreakersJson: data.drySequenceBreakers?.length ? JSON.stringify(data.drySequenceBreakers) : null,
         xtcThreshold: data.xtcThreshold ?? 0.1,
         xtcProbability: data.xtcProbability ?? 0,
@@ -198,6 +218,7 @@ export class ProviderStore {
         presencePenalty: data.presencePenalty ?? 0,
         repetitionPenalty: data.repetitionPenalty ?? 1.0,
         stopSequencesJson: data.stopSequences ? JSON.stringify(data.stopSequences) : null,
+        bannedStringsJson: data.bannedStrings?.length ? JSON.stringify(data.bannedStrings) : null,
         logitBiasJson: data.logitBias?.length ? JSON.stringify(data.logitBias) : null,
         seed: data.seed ?? null,
         reasoningEffort: data.reasoningEffort ?? 'auto',
@@ -205,12 +226,15 @@ export class ProviderStore {
         streamResponse: data.streamResponse !== undefined ? (data.streamResponse ? 1 : 0) : 1,
         customSamplers: data.customSamplers ? 1 : 0,
         pinContextBudget: data.pinContextBudget ?? false,
+        tokenPadding: data.tokenPadding ?? 0,
         bindPerModel: data.bindPerModel ?? false,
         modelFreeOnly: data.modelFreeOnly ?? false,
         modelGroupByOwner: data.modelGroupByOwner ?? false,
         proxyMode: data.proxyMode ?? 'inherit',
         proxyId: data.proxyId ?? null,
         visionModel: data.visionModel ?? null,
+        samplerSetId: data.samplerSetId ?? null,
+        generationFormatJson: data.generationFormat ? JSON.stringify(data.generationFormat) : '',
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -228,6 +252,7 @@ export class ProviderStore {
     if (data.name !== undefined) values.name = data.name;
     if (data.providerPreset !== undefined) values.providerPreset = data.providerPreset;
     if (data.coauthorTransport !== undefined) values.coauthorTransport = data.coauthorTransport;
+    if (data.generationMode !== undefined) values.generationMode = data.generationMode;
     if (data.endpoint !== undefined) values.endpoint = data.endpoint;
     if (data.apiKey !== undefined) values.apiKey = data.apiKey;
     if (data.defaultModel !== undefined) values.defaultModel = data.defaultModel;
@@ -240,6 +265,12 @@ export class ProviderStore {
     if (data.topA !== undefined) values.topA = data.topA;
     if (data.typicalP !== undefined) values.typicalP = data.typicalP;
     if (data.tfsZ !== undefined) values.tfsZ = data.tfsZ;
+    if (data.adaptiveTarget !== undefined) values.adaptiveTarget = data.adaptiveTarget;
+    if (data.adaptiveDecay !== undefined) values.adaptiveDecay = data.adaptiveDecay;
+    if (data.dynatempRange !== undefined) values.dynatempRange = data.dynatempRange;
+    if (data.dynatempExponent !== undefined) values.dynatempExponent = data.dynatempExponent;
+    if (data.topNSigma !== undefined) values.topNSigma = data.topNSigma;
+    if (data.smoothingFactor !== undefined) values.smoothingFactor = data.smoothingFactor;
     if (data.repeatLastN !== undefined) values.repeatLastN = data.repeatLastN;
     if (data.mirostat !== undefined) values.mirostat = data.mirostat;
     if (data.mirostatTau !== undefined) values.mirostatTau = data.mirostatTau;
@@ -247,6 +278,7 @@ export class ProviderStore {
     if (data.dryMultiplier !== undefined) values.dryMultiplier = data.dryMultiplier;
     if (data.dryBase !== undefined) values.dryBase = data.dryBase;
     if (data.dryAllowedLength !== undefined) values.dryAllowedLength = data.dryAllowedLength;
+    if (data.dryPenaltyLastN !== undefined) values.dryPenaltyLastN = data.dryPenaltyLastN;
     if (data.drySequenceBreakers !== undefined) values.drySequenceBreakersJson = data.drySequenceBreakers.length ? JSON.stringify(data.drySequenceBreakers) : null;
     if (data.xtcThreshold !== undefined) values.xtcThreshold = data.xtcThreshold;
     if (data.xtcProbability !== undefined) values.xtcProbability = data.xtcProbability;
@@ -254,6 +286,7 @@ export class ProviderStore {
     if (data.presencePenalty !== undefined) values.presencePenalty = data.presencePenalty;
     if (data.repetitionPenalty !== undefined) values.repetitionPenalty = data.repetitionPenalty;
     if (data.stopSequences !== undefined) values.stopSequencesJson = JSON.stringify(data.stopSequences);
+    if (data.bannedStrings !== undefined) values.bannedStringsJson = data.bannedStrings.length ? JSON.stringify(data.bannedStrings) : null;
     if (data.logitBias !== undefined) values.logitBiasJson = data.logitBias.length ? JSON.stringify(data.logitBias) : null;
     if (data.seed !== undefined) values.seed = data.seed;
     if (data.reasoningEffort !== undefined) values.reasoningEffort = data.reasoningEffort;
@@ -261,14 +294,16 @@ export class ProviderStore {
     if (data.streamResponse !== undefined) values.streamResponse = data.streamResponse ? 1 : 0;
     if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
     if (data.pinContextBudget !== undefined) values.pinContextBudget = data.pinContextBudget;
+    if (data.tokenPadding !== undefined) values.tokenPadding = data.tokenPadding;
     if (data.bindPerModel !== undefined) values.bindPerModel = data.bindPerModel;
     if (data.modelFreeOnly !== undefined) values.modelFreeOnly = data.modelFreeOnly;
     if (data.modelGroupByOwner !== undefined) values.modelGroupByOwner = data.modelGroupByOwner;
     if (data.proxyMode !== undefined) values.proxyMode = data.proxyMode;
     if (data.proxyId !== undefined) values.proxyId = data.proxyId;
     if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
+    if (data.samplerSetId !== undefined) values.samplerSetId = data.samplerSetId ?? null;
+    if (data.generationFormat !== undefined) values.generationFormatJson = data.generationFormat ? JSON.stringify(data.generationFormat) : '';
 
-    console.log(`[DB] provider.update id=${id} visionModel_in=${data.visionModel} visionModel_set=${values.visionModel} fields=${Object.keys(values).join(',')}`);
     const [row] = await this.db
       .update(providerProfiles)
       .set(values)
@@ -278,12 +313,22 @@ export class ProviderStore {
     if (!row) {
       throw new Error(`ProviderProfile '${id}' not found after update`);
     }
-    console.log(`[DB] provider.update.returning id=${row.id} visionModel_db=${row.visionModel}`);
     return this.mapRow(row);
   }
 
   async delete(id: string): Promise<void> {
     await this.db.delete(providerProfiles).where(eq(providerProfiles.id, id)).run();
+  }
+
+  /** Null out `sampler_set_id` on every profile pointing at the given set
+   *  (LOCAL_SUPPORT_PLAN LS-5e): the sampler-set delete path clears dangling
+   *  references BEFORE removing the set row (plain column, no FK — see the
+   *  samplerSetId comment in db-schema). Idempotent. */
+  async clearSamplerSetReference(setId: string): Promise<void> {
+    await this.db.update(providerProfiles)
+      .set({ samplerSetId: null })
+      .where(eq(providerProfiles.samplerSetId, setId))
+      .run();
   }
 
   async activate(id: string): Promise<void> {
@@ -333,6 +378,7 @@ export class ProviderStore {
         sortOrder: nextSortOrder,
         providerPreset: original.providerPreset,
         coauthorTransport: original.coauthorTransport,
+        generationMode: original.generationMode,
         endpoint: original.endpoint,
         apiKey: original.apiKey,
         defaultModel: original.defaultModel,
@@ -345,6 +391,12 @@ export class ProviderStore {
         topA: original.topA,
         typicalP: original.typicalP,
         tfsZ: original.tfsZ,
+        adaptiveTarget: original.adaptiveTarget,
+        adaptiveDecay: original.adaptiveDecay,
+        dynatempRange: original.dynatempRange,
+        dynatempExponent: original.dynatempExponent,
+        topNSigma: original.topNSigma,
+        smoothingFactor: original.smoothingFactor,
         repeatLastN: original.repeatLastN,
         mirostat: original.mirostat,
         mirostatTau: original.mirostatTau,
@@ -352,6 +404,7 @@ export class ProviderStore {
         dryMultiplier: original.dryMultiplier,
         dryBase: original.dryBase,
         dryAllowedLength: original.dryAllowedLength,
+        dryPenaltyLastN: original.dryPenaltyLastN,
         drySequenceBreakersJson: original.drySequenceBreakersJson,
         xtcThreshold: original.xtcThreshold,
         xtcProbability: original.xtcProbability,
@@ -359,6 +412,7 @@ export class ProviderStore {
         presencePenalty: original.presencePenalty,
         repetitionPenalty: original.repetitionPenalty,
         stopSequencesJson: original.stopSequencesJson,
+        bannedStringsJson: original.bannedStringsJson,
         logitBiasJson: original.logitBiasJson,
         seed: original.seed,
         reasoningEffort: original.reasoningEffort,
@@ -366,12 +420,15 @@ export class ProviderStore {
         streamResponse: original.streamResponse,
         customSamplers: original.customSamplers,
         pinContextBudget: original.pinContextBudget,
+        tokenPadding: original.tokenPadding,
         bindPerModel: original.bindPerModel,
         modelFreeOnly: original.modelFreeOnly,
         modelGroupByOwner: original.modelGroupByOwner,
         proxyMode: original.proxyMode,
         proxyId: original.proxyId,
         visionModel: original.visionModel,
+        samplerSetId: original.samplerSetId,
+        generationFormatJson: original.generationFormatJson,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -608,11 +665,13 @@ export class ProviderStore {
       name: row.name,
       providerPreset: row.providerPreset,
       coauthorTransport: row.coauthorTransport,
+      generationMode: row.generationMode,
       endpoint: row.endpoint,
       apiKey: row.apiKey,
       defaultModel: row.defaultModel,
       contextBudget: row.contextBudget,
       pinContextBudget: row.pinContextBudget,
+      tokenPadding: row.tokenPadding,
       bindPerModel: row.bindPerModel,
       modelFreeOnly: row.modelFreeOnly,
       modelGroupByOwner: row.modelGroupByOwner,
@@ -624,6 +683,12 @@ export class ProviderStore {
       topA: row.topA,
       typicalP: row.typicalP,
       tfsZ: row.tfsZ,
+      adaptiveTarget: row.adaptiveTarget,
+      adaptiveDecay: row.adaptiveDecay,
+      dynatempRange: row.dynatempRange,
+      dynatempExponent: row.dynatempExponent,
+      topNSigma: row.topNSigma,
+      smoothingFactor: row.smoothingFactor,
       repeatLastN: row.repeatLastN,
       mirostat: row.mirostat,
       mirostatTau: row.mirostatTau,
@@ -631,6 +696,7 @@ export class ProviderStore {
       dryMultiplier: row.dryMultiplier,
       dryBase: row.dryBase,
       dryAllowedLength: row.dryAllowedLength,
+      dryPenaltyLastN: row.dryPenaltyLastN,
       drySequenceBreakers: safeParseJson<string[]>(row.drySequenceBreakersJson),
       xtcThreshold: row.xtcThreshold,
       xtcProbability: row.xtcProbability,
@@ -638,6 +704,7 @@ export class ProviderStore {
       presencePenalty: row.presencePenalty,
       repetitionPenalty: row.repetitionPenalty,
       stopSequences: row.stopSequencesJson ? JSON.parse(row.stopSequencesJson) : [],
+      bannedStrings: safeParseJson<string[]>(row.bannedStringsJson),
       logitBias: safeParseJson<Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>>(row.logitBiasJson),
       seed: row.seed,
       reasoningEffort: row.reasoningEffort,
@@ -648,6 +715,8 @@ export class ProviderStore {
       proxyId: row.proxyId ?? null,
       isActive: row.isActive === 1,
       visionModel: row.visionModel ?? null,
+      samplerSetId: row.samplerSetId ?? null,
+      generationFormat: parseGenerationFormat(row.generationFormatJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -680,5 +749,20 @@ export class ProviderStore {
       contextLength: row.contextLength,
       createdAt: row.createdAt,
     };
+  }
+}
+
+/** Parse the LS-10 provider generation-format JSON column, defending against
+ *  malformed rows (empty string = unset = the preset fallback applies). */
+function parseGenerationFormat(text: string): ProviderGenerationFormat | null {
+  if (!text) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const record = parsed as { mode?: unknown };
+    if (record.mode !== 'auto' && record.mode !== 'manual') return null;
+    return parsed as ProviderGenerationFormat;
+  } catch {
+    return null;
   }
 }

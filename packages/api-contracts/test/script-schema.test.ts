@@ -28,7 +28,7 @@ import {
 // --- factories --------------------------------------------------------------
 
 function validCreateScript(): { name: string; scopeType: string } {
-  return { name: "Greeter", scopeType: "character" };
+  return { name: "Greeter", scopeType: "entity" };
 }
 
 // --- helpers ----------------------------------------------------------------
@@ -89,7 +89,7 @@ describe("createScriptSchema", () => {
   });
 
   it("rejects an empty name (min(1))", () => {
-    expectReject(createScriptSchema.safeParse({ name: "", scopeType: "character" }));
+    expectReject(createScriptSchema.safeParse({ name: "", scopeType: "entity" }));
   });
 
   it("rejects a payload missing the required scopeType", () => {
@@ -98,7 +98,7 @@ describe("createScriptSchema", () => {
   });
 
   it("rejects a non-string name / scopeType", () => {
-    expectReject(createScriptSchema.safeParse({ name: 1, scopeType: "character" }));
+    expectReject(createScriptSchema.safeParse({ name: 1, scopeType: "entity" }));
     expectReject(createScriptSchema.safeParse({ name: "s", scopeType: 2 }));
   });
 
@@ -205,8 +205,8 @@ describe("importScriptSchema", () => {
     const data = expectData(result) as Record<string, unknown>;
     expect(data.format).toBe("js");
     expect(data.code).toBe("console.log(1)");
-    // default scopeType = "character" when omitted.
-    expect(data.scopeType).toBe("character");
+    // default scopeType = "entity" when omitted.
+    expect(data.scopeType).toBe("entity");
   });
 
   it("accepts a js payload overriding scopeType", () => {
@@ -245,7 +245,7 @@ describe("importScriptSchema", () => {
     const data = expectData(result) as Record<string, unknown>;
     expect(data.format).toBe("json");
     expect(data.jsonText).toBe("{}");
-    expect(data.scopeType).toBe("character");
+    expect(data.scopeType).toBe("entity");
   });
 
   it("rejects a json payload missing the required jsonText", () => {

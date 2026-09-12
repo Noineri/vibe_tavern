@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { Modal } from "./Modal.js";
-import { inputCls, lblCls } from "../build/fields/field-styles.js";
-import { useIsMobile } from "../../hooks/use-mobile.js";
+import { TextInput } from "./text-input.js";
+import { lblCls } from "../../lib/field-tokens.js";
 
 interface PromptModalProps {
   /** Modal heading. */
@@ -30,7 +30,6 @@ interface PromptModalProps {
  */
 export function PromptModal(input: PromptModalProps) {
   const { t } = useT();
-  const isMobile = useIsMobile();
   const [value, setValue] = useState(input.defaultValue ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -55,11 +54,9 @@ export function PromptModal(input: PromptModalProps) {
         <div className="mb-4 text-base font-medium text-t1">
           {input.title}
         </div>
-        <label className={lblCls + " mb-1.5 block"}>{input.label}</label>
-        <input
+        <label className={lblCls}>{input.label}</label>
+        <TextInput
           ref={inputRef}
-          type="text"
-          className={inputCls + (isMobile ? " text-base" : "")}
           value={value}
           placeholder={input.placeholder}
           onChange={(e) => setValue(e.target.value)}

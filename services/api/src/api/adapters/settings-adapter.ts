@@ -15,6 +15,12 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.activePromptPresetId === "string" || body.activePromptPresetId === null ? { activePromptPresetId: body.activePromptPresetId } : {}),
 		...(typeof body.aiAssistantProviderId === "string" || body.aiAssistantProviderId === null ? { aiAssistantProviderId: body.aiAssistantProviderId } : {}),
 		...(typeof body.aiAssistantModelName === "string" || body.aiAssistantModelName === null ? { aiAssistantModelName: body.aiAssistantModelName } : {}),
+		// SUM-5: per-context secondary-model pairs — same string|null gate as the
+		// ai-assistant pair above them.
+		...(typeof body.summaryProviderId === "string" || body.summaryProviderId === null ? { summaryProviderId: body.summaryProviderId } : {}),
+		...(typeof body.summaryModelName === "string" || body.summaryModelName === null ? { summaryModelName: body.summaryModelName } : {}),
+		...(typeof body.messageEditorProviderId === "string" || body.messageEditorProviderId === null ? { messageEditorProviderId: body.messageEditorProviderId } : {}),
+		...(typeof body.messageEditorModelName === "string" || body.messageEditorModelName === null ? { messageEditorModelName: body.messageEditorModelName } : {}),
 		...(typeof body.coauthorProviderId === "string" || body.coauthorProviderId === null ? { coauthorProviderId: body.coauthorProviderId } : {}),
 		...(typeof body.coauthorModelName === "string" || body.coauthorModelName === null ? { coauthorModelName: body.coauthorModelName } : {}),
 		...(isPositiveIntegerOrNull(body.coauthorMaxTokens) ? { coauthorMaxTokens: body.coauthorMaxTokens } : {}),

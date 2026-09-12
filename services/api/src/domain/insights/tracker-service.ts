@@ -54,7 +54,8 @@ import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import { buildSceneDataSchema, validateSceneData } from "@vibe-tavern/api-contracts";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
-import { resolveInsightsPrompt } from "./insights-prompts.js";
+import { INSIGHTS_FIELD_MAP, resolveInsightsPrompt } from "./insights-prompts.js";
+import { resolveServicePromptText } from "../service-prompts/service-prompt-resolver.js";
 import { insightsAssemblyToPromptResponse } from "./objective-service.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
@@ -294,6 +295,18 @@ class TrackerKeyedCoordinator {
 }
 
 export class SceneTrackerService {
+  private async resolveSceneBase(override: string | null | undefined): Promise<string> {
+    // Injected test double keeps the two-arg contract — when the seam is
+    // overridden, it alone decides the base (no profile tier).
+    if (this.resolvePrompt !== resolveInsightsPrompt) {
+      return this.resolvePrompt("sceneGenerate", override);
+    }
+    const trimmed = override?.trim();
+    if (trimmed) return trimmed;
+    const text = await resolveServicePromptText(this.stores.db, INSIGHTS_FIELD_MAP["sceneGenerate"]);
+    return text.trim();
+  }
+
 	/** Target-keyed in-flight generate jobs (resolved/rejected → undefined). Used
 	 *  by the join seams; the chat-level wait composes over these in SCN-8. */
 	private readonly targetJobs = new Map<string, Promise<void>>();
@@ -386,7 +399,7 @@ export class SceneTrackerService {
 			promptFormat: config.promptFormat,
 		};
 
-		const instructionBase = await this.resolvePrompt("sceneGenerate", config.generatePrompt);
+		const instructionBase = await this.resolveSceneBase(config.generatePrompt);
 		const instruction = composeSceneInstruction(instructionBase, config.schema, input.continuity ?? [], config.rulesPrompt);
 		const prompt = this.buildPrompt(input.context, instruction);
 		const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal });
@@ -761,7 +774,7 @@ export class SceneTrackerService {
 			model: resolved.model,
 			recentMessageLimit: draftConfig.contextWindow,
 		});
-		const instructionBase = await this.resolvePrompt("sceneGenerate", draftConfig.generatePrompt);
+		const instructionBase = await this.resolveSceneBase(draftConfig.generatePrompt);
 		const instruction = composeSceneInstruction(instructionBase, draftConfig.schema, continuity, draftConfig.rulesPrompt);
 		const prompt = this.buildPrompt(built.context, instruction);
 		const result = await this.execute({ profile: resolved.profile, model: resolved.model, prompt, signal });

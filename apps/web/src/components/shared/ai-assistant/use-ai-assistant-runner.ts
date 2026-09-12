@@ -7,6 +7,11 @@ import {
   type AiAssistantRequestBody,
 } from "../../../app-client.js";
 
+/** SUM-5: the secondary-model contexts that own a ui_settings persistence
+ *  pair. "summary" is consumed by the Memory tab directly (it is not an
+ *  ai-assistant runner consumer); the runner serves the other two. */
+export type SecondaryModelContext = "ai-assistant" | "message-editor" | "summary";
+
 /** MAE-22 wire shape: metadata the backend attaches to the stream `done`
  *  chunk for message-editor completions. `null` fields mean the backend
  *  emitted a bare `{ type: "done" }` (no metadata) — existing modes. */
@@ -21,6 +26,10 @@ export interface AiAssistantRunnerParams {
   seedProviderId: string;
   seedModelName: string;
   persistSelection: boolean;
+  /** SUM-5: which ui_settings context slot the persisted selection writes.
+   *  "ai-assistant" (default) keeps the legacy pair; "message-editor" owns
+   *  its own pair so the two modals stop sharing one slot. */
+  persistContext?: SecondaryModelContext;
   onPartialJson?: (json: Record<string, unknown>) => void;
 }
 
@@ -61,6 +70,7 @@ export function useAiAssistantRunner({
   seedProviderId,
   seedModelName,
   persistSelection,
+  persistContext = "ai-assistant",
   onPartialJson,
 }: AiAssistantRunnerParams): AiAssistantRunner {
   const providerProfiles = useProviderDataStore((s) => s.profiles);
@@ -103,12 +113,19 @@ export function useAiAssistantRunner({
   const persistModelSelection = useCallback(
     (pId: string, mName: string | null) => {
       if (!persistSelection) return;
+      if (persistContext === "message-editor") {
+        void updateUiSettings({
+          messageEditorProviderId: pId || null,
+          messageEditorModelName: mName,
+        }).catch(() => {});
+        return;
+      }
       void updateUiSettings({
         aiAssistantProviderId: pId || null,
         aiAssistantModelName: mName,
       }).catch(() => {});
     },
-    [persistSelection],
+    [persistSelection, persistContext],
   );
 
   const handleProviderChange = useCallback(

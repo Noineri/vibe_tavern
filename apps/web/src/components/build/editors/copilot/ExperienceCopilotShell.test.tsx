@@ -1934,3 +1934,47 @@ describe("ExperienceCopilotShell — pinned context (CX-6)", () => {
     await waitFor(() => expect(queryByTestId("copilot-context-pill-character-ch1")).toBeNull());
   });
 });
+
+describe("ExperienceCopilotShell — E6 mobile management surfaces (MOBILE_DEFECTS_ROUND_2)", () => {
+  it("onBack renders a chevron left of the tablist; editTabHeader renders at the top of the edit pane", async () => {
+    mobileOverride = true;
+    const onBack = mock();
+    const { getByTestId } = renderShell({ onBack, editTabHeader: <div data-testid="e6-header-node">management cluster</div> });
+
+    const chevron = getByTestId("copilot-mobile-back");
+    expect(chevron.getAttribute("aria-label")).toBe("experience_editor_back");
+    // The tablist proper is the chevron's next row sibling.
+    expect(chevron.nextElementSibling?.getAttribute("role")).toBe("tablist");
+
+    // The header node lives INSIDE the edit pane, above the editor pane.
+    const editPane = getByTestId("copilot-pane-edit");
+    const header = getByTestId("e6-header-node");
+    expect(header.closest('[data-testid="copilot-pane-edit"]')).not.toBeNull();
+    expect(editPane.firstElementChild).toBe(header.parentElement);
+
+    fireEvent.click(chevron);
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("editTabDirty badges the Правка tab while Чат is active — and neither renders on desktop", async () => {
+    mobileOverride = true;
+    const { getByTestId, findByRole } = renderShell({ editTabDirty: true });
+    await flushSessionLoad();
+
+    const editTab = await findByRole("tab", { name: "experience_copilot_tab_edit" });
+    expect(editTab.querySelector("span[aria-hidden]")).not.toBeNull();
+    // Чат stays the visible pane (no auto-switch — the deliberate difference
+    // from co-author's CA-14).
+    expect(hasHiddenClass(getByTestId("copilot-pane-chat"))).toBe(false);
+    expect(hasHiddenClass(getByTestId("copilot-pane-edit"))).toBe(true);
+
+    // Desktop: neither the chevron slot nor the header slot renders, and the
+    // dirty flag produces no badge.
+    mobileOverride = false;
+    const desktop = renderShell({ editTabDirty: true });
+    await flushSessionLoad();
+    expect(desktop.queryByTestId("copilot-mobile-back")).toBeNull();
+    expect(desktop.queryByTestId("copilot-edit-tab-header")).toBeNull();
+    expect(desktop.container.querySelector('[role="tablist"] span[aria-hidden]')).toBeNull();
+  });
+});

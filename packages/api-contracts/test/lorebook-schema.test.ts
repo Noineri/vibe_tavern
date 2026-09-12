@@ -56,7 +56,7 @@ function expectSuccessData<T>(result: z.ZodSafeParseResult<T>): T {
 // --- factories --------------------------------------------------------------
 
 function validCreateLorebook() {
-  return { name: "World Lore", scopeType: "character" };
+  return { name: "World Lore", scopeType: "entity" };
 }
 
 // --- testActivationSchema ---------------------------------------------------
@@ -83,11 +83,11 @@ describe("createLorebookSchema", () => {
   });
 
   it("rejects a payload missing the required name", () => {
-    expectReject(createLorebookSchema.safeParse({ scopeType: "character" }));
+    expectReject(createLorebookSchema.safeParse({ scopeType: "entity" }));
   });
 
   it("rejects an empty name (min(1))", () => {
-    expectReject(createLorebookSchema.safeParse({ name: "", scopeType: "character" }));
+    expectReject(createLorebookSchema.safeParse({ name: "", scopeType: "entity" }));
   });
 
   it("rejects a payload missing the required scopeType", () => {
@@ -108,6 +108,8 @@ describe("createLorebookSchema", () => {
     expect(data.enabled).toBe(true);
     expect(data.tokenBudget).toBe(2048);
     expect(data.recursiveScanning).toBe(false);
+    // LG-2: book-level group-scoring default mirrors ST's global switch (off).
+    expect(data.useGroupScoring).toBe(false);
   });
 
   it("accepts a full payload overriding the defaults", () => {
@@ -117,6 +119,7 @@ describe("createLorebookSchema", () => {
       scanDepth: 10,
       tokenBudget: 500,
       recursiveScanning: true,
+      useGroupScoring: true,
       maxRecursionSteps: 9,
       includeNames: true,
       minActivations: 2,
@@ -128,6 +131,7 @@ describe("createLorebookSchema", () => {
     const data = expectSuccessData(createLorebookSchema.safeParse(payload)) as Record<string, unknown>;
     expect(data.scanDepth).toBe(10);
     expect(data.enabled).toBe(false);
+    expect(data.useGroupScoring).toBe(true);
   });
 
   it("rejects a non-number scanDepth and a non-boolean enabled", () => {
@@ -316,7 +320,7 @@ describe("importLorebookSchema", () => {
       const data = result.data as Record<string, unknown>;
       expect(data.format).toBe("st");
       expect(data.mode).toBe("new");
-      expect(data.scopeType).toBe("character");
+      expect(data.scopeType).toBe("entity");
     }
   });
 
@@ -460,7 +464,7 @@ describe("duplicateLorebookSchema", () => {
     expect(
       duplicateLorebookSchema.safeParse({
         name: "Copy",
-        scopeType: "character",
+        scopeType: "entity",
         characterId: "c1",
         personaId: "p1",
       }).success,

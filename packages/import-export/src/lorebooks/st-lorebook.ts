@@ -77,6 +77,14 @@ export interface ImportLorebookOptions {
   scopeType?: LoreScopeType;
   defaultDepth?: number;
   fallbackName?: string;
+  /**
+   * ST's group-scoring switch (world_info_use_group_scoring) is GLOBAL client
+   * state, not part of any lorebook file — so it cannot ride the book payload.
+   * When the caller knows it (the ST directory import reads settings.json),
+   * it maps onto the imported book's useGroupScoring (owner decision,
+   * 2026-08-31). Absent → false. See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
+   */
+  globalUseGroupScoring?: boolean;
 }
 
 function mapSelectiveLogic(value: unknown): LoreLogic {
@@ -186,11 +194,13 @@ export function importStLorebookJson(
     id: lorebookId,
     name: normalized.name,
     description: normalized.description,
-    scopeType: options.scopeType ?? "character",
+    scopeType: options.scopeType ?? "entity",
     scanDepth: normalized.scanDepth,
     tokenBudget: normalized.tokenBudget,
     tokenBudgetPercent: normalized.tokenBudgetPercent,
     recursiveScanning: normalized.recursiveScanning,
+    // Maps the ST global switch when the caller knows it; default false.
+    useGroupScoring: options.globalUseGroupScoring ?? false,
     maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
     includeNames: false,
     minActivations: 0,
@@ -247,7 +257,11 @@ export function importStLorebookJson(
       groupName: asString(entry.group),
       groupWeight: 0,
       prioritizeInclusion: false,
-      useGroupScoring: asBoolean(entry.useGroupScoring, false),
+      // Tri-state preserve (ST parity): ST stores null (inherit the global
+      // switch) / true / false — collapsing null to false would permanently
+      // pin imported entries against the book default. See
+      // LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-4).
+      useGroupScoring: entry.useGroupScoring === true ? true : entry.useGroupScoring === false ? false : null,
       excludeRecursion: asBoolean(entry.excludeRecursion, false),
       preventRecursion: asBoolean(entry.preventRecursion, false),
       delayUntilRecursion: asBoolean(entry.delayUntilRecursion, false),

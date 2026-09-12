@@ -5,6 +5,7 @@ import { useT } from "../../i18n/context.js";
 import { Modal } from "./Modal.js";
 import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
+import { SegmentedControl } from "./SegmentedControl.js";
 
 interface MasterDetailContextValue {
   isMobile: boolean;
@@ -38,7 +39,105 @@ export function MasterDetailMobileDrillDown({ onSelect, className }: { onSelect?
   );
 }
 
-export interface MasterDetailModalProps {
+/** Optional segmented tabs docked at the bottom of the modal header.
+ *  Generic over the tab-id union so consumers pass their `Tab` type straight
+ *  through with no casts. Rendered as a `SegmentedControl`; on mobile it stays
+ *  on the main (non-drill-down) header, exactly like hand-placed header tabs. */
+export interface MasterDetailModalTabs<T extends string = string> {
+  items: Array<{ value: T; label: ReactNode; disabled?: boolean; tooltip?: ReactNode }>;
+  active: T;
+  onChange: (value: T) => void;
+}
+
+export interface MasterDetailFooterAction {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}
+
+export function MasterDetailFooter({
+  actions = [],
+  onClose,
+  right,
+  mobileBottomRow,
+}: {
+  actions?: MasterDetailFooterAction[];
+  onClose?: () => void;
+  right?: ReactNode;
+  /** MOBILE-ONLY second footer row, rendered full-width below the action row
+   *  (MUI W7, owner 2026-09-11). The `right` slot is one atomic line next to
+   *  the icon actions — whatever must NOT share that line on a phone (the
+   *  provider footers' inline settings blocks) goes here instead. Desktop
+   *  never renders it; consumers keep their desktop-inline copy inside
+   *  `right` behind `!isMobile`. */
+  mobileBottomRow?: ReactNode;
+}) {
+  const isMobile = useIsMobile();
+  const { t } = useT();
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-2.5 border-t border-border",
+        // MUI step 1 (owner 2026-09-11): on phones the modal is h-[100dvh] and
+        // the browser's bottom bar / system gesture curtain covers the footer's
+        // bottom edge — Save sat behind it and the owner had to switch to
+        // desktop view. The footer expands UPWARD via safe-area-aware bottom
+        // padding (the house pattern: MediaModal / LorebookEditor /
+        // ExperienceModal / BottomSheet), keeping the 10px base padding.
+        isMobile
+          ? "flex-wrap px-3 pt-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+0.625rem)]"
+          : "py-3.5 px-5",
+      )}
+    >
+      {actions.map((a) =>
+        isMobile ? (
+          <button
+            key={a.label}
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+            onClick={a.onClick}
+            aria-label={a.label}
+          >
+            {a.icon}
+          </button>
+        ) : (
+          <span
+            key={a.label}
+            className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+            onClick={a.onClick}
+          >
+            {a.icon} {a.label}
+          </span>
+        ),
+      )}
+      {/* MUI W7 (owner 2026-09-11): the right slot stays ONE atomic line —
+          consumers pass only what fits a phone row next to the icon actions
+          (Cancel + icon-mode Save). Step 18 wrapped THIS group instead; the
+          auto-width group ballooned to its max-content size (~610px) and
+          justify-end pushed the settings past the viewport edge. */}
+      <div className="ml-auto flex min-w-0 items-center gap-2.5">
+        {!isMobile && onClose && (
+          <button
+            type="button"
+            className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
+            onClick={onClose}
+          >
+            {t("close")}
+          </button>
+        )}
+        {right}
+      </div>
+      {isMobile && mobileBottomRow ? (
+        // Definite-width row: w-full resolves against the flex-wrap FOOTER
+        // (336px at a 360px viewport), not against an auto-width group —
+        // that resolution difference was the step-18 failure mode.
+        <div className="w-full min-w-0">{mobileBottomRow}</div>
+      ) : null}
+    </div>
+  );
+}
+
+export interface MasterDetailModalProps<T extends string = string> {
   isOpen: boolean;
   onClose: () => void;
 
@@ -50,8 +149,12 @@ export interface MasterDetailModalProps {
   detailTitle?: ReactNode;
   /** Extra buttons to place next to the close icon on the desktop header and mobile main header. */
   headerActions?: ReactNode;
-  /** Extra content to place at the very bottom of the global header (e.g. tabs). */
+  /** Extra content to place at the very bottom of the global header. For plain
+   *  segmented tabs prefer the declarative `tabs` prop instead. */
   headerBottom?: ReactNode;
+  /** Segmented tabs docked at the bottom of the global header (desktop and
+   *  mobile main view). Optional — omit for tab-less master-detail modals. */
+  tabs?: MasterDetailModalTabs<T>;
   /** Shows an unsaved orange dot next to the title. */
   dirty?: boolean;
 
@@ -78,7 +181,7 @@ export interface MasterDetailModalProps {
   headerClassName?: string;
 }
 
-export function MasterDetailModal({
+export function MasterDetailModal<T extends string = string>({
   isOpen,
   onClose,
   title,
@@ -86,17 +189,18 @@ export function MasterDetailModal({
   detailTitle,
   headerActions,
   headerBottom,
+  tabs,
   dirty,
   masterContent,
   detailContent,
   footer,
   onBack,
-  containerClassName = "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]",
+  containerClassName = "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[880px] w-[1080px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]",
   masterClassName = "flex w-[220px] shrink-0 flex-col border-r border-border",
   detailClassName = "p-6",
   mobileDetailClassName = "p-4",
   headerClassName,
-}: MasterDetailModalProps) {
+}: MasterDetailModalProps<T>) {
   const isMobile = useIsMobile();
   const { t } = useT();
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -117,7 +221,7 @@ export function MasterDetailModal({
 
   const desktopHeader = (
     <div className={cn("shrink-0 border-b border-border", headerClassName || (isMobile ? "px-3 py-2.5" : "px-6 pt-5"))}>
-      <div className={cn("flex items-start justify-between", !isMobile && !headerBottom && !headerClassName && "pb-4")}>
+      <div className={cn("flex items-start justify-between", !isMobile && !headerBottom && !tabs && !headerClassName && "pb-4")}>
         <div>
           <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[18px] mb-1")}>
             {title}
@@ -146,6 +250,14 @@ export function MasterDetailModal({
         </div>
       </div>
       {headerBottom}
+      {tabs && (
+        <div className="mt-3 max-md:pr-1">
+          {/* MUI step 20: on narrow screens the provider tabs (LLM/TTS/STT)
+              exceed the row — the control becomes a horizontal drag with no
+              scrollbar strip instead of cramming its labels. */}
+          <SegmentedControl value={tabs.active} options={tabs.items} onChange={tabs.onChange} mobileScroll />
+        </div>
+      )}
     </div>
   );
 
@@ -187,10 +299,16 @@ export function MasterDetailModal({
       >
         <div
           className={cn(
-            // Frosted on glass themes (lava): --glass-bg is a translucent fill
-            // tuned to survive .glass-blur; in opaque themes both resolve to
-            // --surface / blur 0 — byte-identical to the old plain bg-surface.
-            "glass-blur flex flex-col overflow-hidden bg-glass-bg",
+            // Frost UNDER the content (R-8): any non-none backdrop-filter on
+            // the panel — even blur(0) in opaque themes — makes the panel a
+            // containing block for position:fixed descendants, so dnd-kit's
+            // DragOverlay (fixed, rendered inline in the panel tree) resolved
+            // against the panel box and appeared offset right/down of the
+            // cursor in every master-detail list. .glass-blur-under moves the
+            // fill + frost to a z:-1 ::before underlayer — same frost rect and
+            // look, panel itself keeps backdrop-filter: none. Opaque themes
+            // remain byte-identical (--glass-bg == --surface, blur 0).
+            "glass-blur-under flex flex-col overflow-hidden",
             isMobile ? "h-[100dvh] w-[100dvw]" : containerClassName,
           )}
           onClick={(e) => e.stopPropagation()}

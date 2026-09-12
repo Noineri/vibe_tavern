@@ -30,8 +30,12 @@ export const unslothProtocol: ProtocolAdapter = {
 		streaming: true,
 		prefill: true,
 		logitBias: true,
-		samplers: SAMPLER_SETS.openai_local,
+		samplers: SAMPLER_SETS.llamacpp_native,
 		textCompletion: false,
+		// LS-3c: unsloth has no OpenAI-compat completion surface (textCompletion
+		// false), so no template application either — the flag is irrelevant for
+		// chat models; declared for the exhaustive capability shape.
+		backendTemplate: false,
 	},
 	resolveModel(profile, model, fetch?: ProviderFetch) {
 		const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint || "http://localhost:8888");

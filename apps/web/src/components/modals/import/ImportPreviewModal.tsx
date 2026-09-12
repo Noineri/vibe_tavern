@@ -61,7 +61,7 @@ export function ImportPreviewModal({
     <Modal open={open} onClose={onClose} title={title} description={subtitle}>
       <div
         className={cn(
-          "flex flex-col overflow-hidden bg-surface",
+          "glass-blur-under flex flex-col overflow-hidden",
           isMobile
             ? "w-full h-full"
             : "max-h-[calc(100vh-60px)] w-[500px] max-w-[calc(100vw-32px)] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]",

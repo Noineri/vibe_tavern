@@ -57,7 +57,7 @@ async function buildSyntheticMigrations(): Promise<{ folder: string; rebuildHash
   // lore_entries has ON DELETE CASCADE on lorebooks.id.
   const rebuildSql = [
     "PRAGMA foreign_keys=OFF;",
-    'CREATE TABLE `__new_lorebooks` (`id` text PRIMARY KEY NOT NULL, `name` text NOT NULL, `description` text NOT NULL DEFAULT \'\', `scope_type` text NOT NULL, `scan_depth` integer NOT NULL DEFAULT 10, `token_budget` integer NOT NULL DEFAULT 1000, `token_budget_percent` integer, `recursive_scanning` integer NOT NULL DEFAULT 0, `max_recursion_steps` integer NOT NULL DEFAULT 5, `include_names` integer NOT NULL DEFAULT 0, `min_activations` integer NOT NULL DEFAULT 0, `min_activations_depth_max` integer NOT NULL DEFAULT 0, `overflow_alert` integer NOT NULL DEFAULT 0, `character_strategy` integer NOT NULL DEFAULT 0, `sort_order` integer NOT NULL DEFAULT 0, `character_id` text, `persona_id` text, `chat_id` text, `enabled` integer NOT NULL DEFAULT 1, `extensions_json` text NOT NULL DEFAULT \'{}\', `content_hash` text, `has_file_on_disk` integer NOT NULL DEFAULT 0, `created_at` text NOT NULL, `updated_at` text NOT NULL, FOREIGN KEY (`character_id`) REFERENCES `characters`(`id`) ON UPDATE no action ON DELETE cascade, FOREIGN KEY (`persona_id`) REFERENCES `personas`(`id`) ON UPDATE no action ON DELETE cascade, FOREIGN KEY (`chat_id`) REFERENCES `chats`(`id`) ON UPDATE no action ON DELETE cascade);',
+    'CREATE TABLE `__new_lorebooks` (`id` text PRIMARY KEY NOT NULL, `name` text NOT NULL, `description` text NOT NULL DEFAULT \'\', `scope_type` text NOT NULL, `scan_depth` integer NOT NULL DEFAULT 10, `token_budget` integer NOT NULL DEFAULT 1000, `token_budget_percent` integer, `recursive_scanning` integer NOT NULL DEFAULT 0, `use_group_scoring` integer NOT NULL DEFAULT 0, `max_recursion_steps` integer NOT NULL DEFAULT 5, `include_names` integer NOT NULL DEFAULT 0, `min_activations` integer NOT NULL DEFAULT 0, `min_activations_depth_max` integer NOT NULL DEFAULT 0, `overflow_alert` integer NOT NULL DEFAULT 0, `character_strategy` integer NOT NULL DEFAULT 0, `sort_order` integer NOT NULL DEFAULT 0, `character_id` text, `persona_id` text, `chat_id` text, `enabled` integer NOT NULL DEFAULT 1, `extensions_json` text NOT NULL DEFAULT \'{}\', `content_hash` text, `has_file_on_disk` integer NOT NULL DEFAULT 0, `created_at` text NOT NULL, `updated_at` text NOT NULL, FOREIGN KEY (`character_id`) REFERENCES `characters`(`id`) ON UPDATE no action ON DELETE cascade, FOREIGN KEY (`persona_id`) REFERENCES `personas`(`id`) ON UPDATE no action ON DELETE cascade, FOREIGN KEY (`chat_id`) REFERENCES `chats`(`id`) ON UPDATE no action ON DELETE cascade);',
     'INSERT INTO `__new_lorebooks`(`id`,`name`,`description`,`scope_type`,`scan_depth`,`token_budget`,`token_budget_percent`,`recursive_scanning`,`max_recursion_steps`,`include_names`,`min_activations`,`min_activations_depth_max`,`overflow_alert`,`character_strategy`,`sort_order`,`character_id`,`persona_id`,`chat_id`,`enabled`,`extensions_json`,`content_hash`,`has_file_on_disk`,`created_at`,`updated_at`) SELECT `id`,`name`,`description`,`scope_type`,`scan_depth`,`token_budget`,`token_budget_percent`,`recursive_scanning`,`max_recursion_steps`,`include_names`,`min_activations`,`min_activations_depth_max`,`overflow_alert`,`character_strategy`,`sort_order`,`character_id`,`persona_id`,`chat_id`,`enabled`,`extensions_json`,`content_hash`,`has_file_on_disk`,`created_at`,`updated_at` FROM `lorebooks`;',
     "DROP TABLE `lorebooks`;",
     "ALTER TABLE `__new_lorebooks` RENAME TO `lorebooks`;",
@@ -102,8 +102,12 @@ describe("createDb rebuild-migration safety", () => {
     let db = await createDb(dbPath, folder);
     const store = new LorebookStore(db, { clock: testClock, idGenerator: testIdGen, content: null });
     const lb = await store.createLorebook({ name: "Sentinel lorebook", scopeType: "global" });
-    await store.createEntry(lb.id, { title: "e1", content: "content", keys: ["k1"] });
-    await store.createEntry(lb.id, { title: "e2", content: "content", keys: ["k2"] });
+    // Explicit tri-state values, not the null default: the synthetic folder's
+    // frozen baseline still has the pre-LG-4 NOT NULL column, and this test
+    // guards rebuild safety, not schema currency. The explicit 1/0 values are
+    // additionally pinned post-rebuild below.
+    await store.createEntry(lb.id, { title: "e1", content: "content", keys: ["k1"], useGroupScoring: true });
+    await store.createEntry(lb.id, { title: "e2", content: "content", keys: ["k2"], useGroupScoring: false });
 
     expect(countLorebooks(dbPath)).toBe(1);
     expect((await store.listEntries(lb.id)).length).toBe(2);
@@ -136,6 +140,10 @@ describe("createDb rebuild-migration safety", () => {
     const survivingEntries = await afterStore.listEntries(lb.id);
     (db as unknown as { $client: Database }).$client.close();
     expect(survivingEntries.length).toBe(2);
+    // The explicit tri-state values survive the rebuild byte-for-byte.
+    const byTitle = new Map(survivingEntries.map(e => [e.title, e.useGroupScoring]));
+    expect(byTitle.get("e1")).toBe(true);
+    expect(byTitle.get("e2")).toBe(false);
 
     if (threw) console.log("[rebuild-safety] createDb fail-stopped (acceptable); data preserved.");
   });

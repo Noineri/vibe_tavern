@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, afterEach } from "bun:test";
-import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, GENERATION_MODE } from "@vibe-tavern/domain";
 import {
   resolveModel,
   toSdkMessages,
@@ -9,6 +9,22 @@ import type { SdkMessage } from "../src/infrastructure/ai/provider-executor-util
 
 // Capture real modules before any mock overrides (safe mock pattern — see AGENTS gotcha).
 const realAiSdkOpenai = await import("@ai-sdk/openai");
+// Capture the FUNCTION reference too: bun's mock.module MUTATES the real
+// module's export slots at registration, so `realAiSdkOpenai.createOpenAI`
+// read later resolves to the mock (infinite recursion).
+const realCreateOpenAI = realAiSdkOpenai.createOpenAI;
+
+// T2 third-party mock (AGENTS.md tier policy): @ai-sdk/openai is not
+// parameterizable, so mock.module with ...real spread is the sanctioned form.
+// Audit (2026-09-07): the registration below is process-global and permanent,
+// and provider-executor-utils' STATIC import resolves it for every later file
+// in this bun test process. Today no later file reaches createOpenAI (the only
+// src call site is resolveResponsesModel; all later-file resolveModel calls
+// pass the default chatCompletions transport via @ai-sdk/openai-compatible).
+// To keep it safe if that ever changes, the override DELEGATES to the real
+// factory outside this one test's call window — later files get genuine
+// behavior, never the spy (which returns a responses-only provider).
+let routeCreateOpenAIToSpy = false;
 
 afterEach(() => {
   mock.restore();
@@ -269,9 +285,9 @@ describe("prepareSdkMessages", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// resolveModel — transport routing (CAP-42)
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// resolveModel — transport routing (CAP-42) + completion mode (LS-2b)
+// ═══════════════════════════════════════════════════════════════════
 
 describe("resolveModel", () => {
   const baseProfile = {
@@ -303,6 +319,44 @@ describe("resolveModel", () => {
     expect(model.modelId).toBe("custom-model");
   });
 
+  it("resolves the raw completion model when the profile's generationMode is completion (LS-2b)", () => {
+    const model = resolveModel({ ...baseProfile, generationMode: GENERATION_MODE.completion }, "gpt-4o");
+    expect(model.provider).toBe("openai_compat.completion");
+    expect(model.modelId).toBe("gpt-4o");
+
+    const llama = resolveModel({
+      providerPreset: "llamacpp",
+      endpoint: "http://127.0.0.1:8080/v1",
+      apiKey: null,
+      generationMode: GENERATION_MODE.completion,
+    }, "local-model");
+    expect(llama.provider).toBe("llamacpp.completion");
+  });
+
+  it("chat stays the default when generationMode is absent or 'chat' (silent backward compat)", () => {
+    expect(resolveModel(baseProfile, "gpt-4o").provider).toBe("openai_compat.chat");
+    expect(resolveModel({ ...baseProfile, generationMode: GENERATION_MODE.chat }, "gpt-4o").provider).toBe("openai_compat.chat");
+    expect(resolveModel({ ...baseProfile, generationMode: undefined }, "gpt-4o").provider).toBe("openai_compat.chat");
+  });
+
+  it("a completion mode on a protocol WITHOUT a /completions capability silently resolves chat", () => {
+    // koboldcpp is ALWAYS text completion natively (its own flat-prompt
+    // serializer) and carries no toggle; anthropic/google have no completion
+    // surface — the profile flag must not change what they resolve.
+    expect(resolveModel({
+      providerPreset: "koboldcpp",
+      endpoint: "http://127.0.0.1:5001",
+      apiKey: null,
+      generationMode: GENERATION_MODE.completion,
+    }, "kob").provider).toBe("koboldcpp");
+    expect(resolveModel({
+      providerPreset: "anthropic",
+      endpoint: "https://api.anthropic.com/v1",
+      apiKey: "k",
+      generationMode: GENERATION_MODE.completion,
+    }, "claude").provider).toBe("anthropic.messages");
+  });
+
   it("rejects Responses for native provider protocols instead of silently falling back", () => {
     expect(() => resolveModel({
       ...baseProfile,
@@ -325,20 +379,28 @@ describe("resolveModel", () => {
 
     mock.module("@ai-sdk/openai", () => ({
       ...realAiSdkOpenai,
-      createOpenAI: createOpenAISpy,
+      createOpenAI: (...args: Parameters<typeof realCreateOpenAI>) => {
+        if (!routeCreateOpenAIToSpy) return realCreateOpenAI(...args);
+        return createOpenAISpy(args[0]) as ReturnType<typeof realCreateOpenAI>;
+      },
     }));
 
-    resolveModel(
-      {
-        providerPreset: "openai",
-        endpoint: "https://custom-proxy.example.com/v1",
-        apiKey: "sk-custom",
-        coauthorTransport: COAUTHOR_TRANSPORT.responses,
-      },
-      "gpt-5.2",
-      COAUTHOR_TRANSPORT.responses,
-      customFetch,
-    );
+    routeCreateOpenAIToSpy = true;
+    try {
+      resolveModel(
+        {
+          providerPreset: "openai",
+          endpoint: "https://custom-proxy.example.com/v1",
+          apiKey: "sk-custom",
+          coauthorTransport: COAUTHOR_TRANSPORT.responses,
+        },
+        "gpt-5.2",
+        COAUTHOR_TRANSPORT.responses,
+        customFetch,
+      );
+    } finally {
+      routeCreateOpenAIToSpy = false;
+    }
 
     expect(createOpenAISpy).toHaveBeenCalledTimes(1);
     const callArgs = createOpenAISpy.mock.calls[0][0] as Record<string, unknown>;

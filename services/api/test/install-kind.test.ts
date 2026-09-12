@@ -1,5 +1,11 @@
+// hygiene:allow-abs-path-inputs — execPaths are classifier inputs (dev/prod/install detection), never loaded
 import { describe, expect, it } from "bun:test";
-import { classifyInstallKind, detectInstallKind } from "../src/domain/update/update-orchestrator.js";
+import {
+	canSelfUpdateInstallKind,
+	classifyInstallKind,
+	detectInstallKind,
+	UpdateOrchestrator,
+} from "../src/domain/update/update-orchestrator.js";
 
 const baseInput = {
 	declaredKind: undefined,
@@ -36,6 +42,16 @@ describe("classifyInstallKind", () => {
 			dockerEnv: "1",
 		});
 		expect(result).toBe("npm");
+	});
+
+	it("returns 'android' when the native build declares it before runtime inference", () => {
+		const result = classifyInstallKind({
+			...baseInput,
+			declaredKind: "android",
+			dockerEnv: "1",
+			isCompiled: false,
+		});
+		expect(result).toBe("android");
 	});
 
 	it("ignores an unrecognised declared kind and falls back to inference", () => {
@@ -118,6 +134,31 @@ describe("classifyInstallKind", () => {
 			hasInnoMarker: false,
 		});
 		expect(result).toBe("inno-setup");
+	});
+});
+
+describe("self-update install-kind policy", () => {
+	it("allows only standalone and npm installs to self-update", () => {
+		expect(canSelfUpdateInstallKind("standalone")).toBe(true);
+		expect(canSelfUpdateInstallKind("npm")).toBe(true);
+		expect(canSelfUpdateInstallKind("android")).toBe(false);
+		expect(canSelfUpdateInstallKind("docker")).toBe(false);
+		expect(canSelfUpdateInstallKind("inno-setup")).toBe(false);
+		expect(canSelfUpdateInstallKind("dev")).toBe(false);
+	});
+
+	it("refuses every non-self-updatable kind before starting an update pipeline", () => {
+		const cases = [
+			["android", "Self-update is unavailable for android installations."],
+			["docker", "Self-update is unavailable for docker installations."],
+			["inno-setup", "Self-update is unavailable for inno-setup installations."],
+			["dev", "Self-update is unavailable in dev builds."],
+		] as const;
+
+		for (const [kind, reason] of cases) {
+			const result = new UpdateOrchestrator(() => kind).triggerUpdate();
+			expect(result).toEqual({ accepted: false, reason });
+		}
 	});
 });
 

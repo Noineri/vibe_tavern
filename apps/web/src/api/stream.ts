@@ -51,6 +51,15 @@ export async function streamChatEndpoint(
     if (error && typeof error === "object" && error.code === "VISION_NOT_SUPPORTED") {
       throw new Error("VISION_NOT_SUPPORTED");
     }
+    // Typed 422 bodies from the chat message routes carry the discriminator in
+    // a top-level `type` field — mirror unwrap.ts's sentinel mapping.
+    const typed = (errBody as { type?: unknown } | null)?.type;
+    if (typed === "vision_not_supported") {
+      throw new Error("VISION_NOT_SUPPORTED");
+    }
+    if (typed === "voice_transcribe_unavailable") {
+      throw new Error("VOICE_TRANSCRIBE_UNAVAILABLE");
+    }
     const errorObj = typeof error === "object" ? error : undefined;
     const message =
       errorObj?.message
@@ -81,7 +90,7 @@ export async function streamChatEndpoint(
 /** Convenience: send message stream */
 export const sendStream = (
   chatId: string,
-  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
+  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string },
   opts: StreamOpts,
 ) => streamChatEndpoint(`/api/chats/${chatId}/messages/stream`, input, opts);
 
@@ -99,3 +108,11 @@ export const generateReplyStream = (
   chatId: string,
   opts: StreamOpts,
 ) => streamChatEndpoint(`/api/chats/${chatId}/generate-reply/stream`, {}, opts);
+
+/** Convenience: continue message stream (LS-4a) — no body; the continuation
+ *  text resolves server-side from the target message's selected variant. */
+export const continueStream = (
+  chatId: string,
+  messageId: string,
+  opts: StreamOpts,
+) => streamChatEndpoint(`/api/chats/${chatId}/messages/${messageId}/continue/stream`, {}, opts);

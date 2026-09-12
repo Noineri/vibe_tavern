@@ -1,0 +1,1 @@
+ALTER TABLE `provider_profiles` ADD `generation_mode` text DEFAULT 'chat' NOT NULL;

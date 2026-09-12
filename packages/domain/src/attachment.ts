@@ -7,7 +7,13 @@
 import { log } from "./logger.js";
 
 /** Determines how the prompt pipeline processes this attachment. */
-export type AttachmentType = "image" | "file" | "video";
+export type AttachmentType = "image" | "file" | "video" | "audio";
+
+/** Intent of an audio attachment (STT_PLAN ST-1): `voice` notes are
+ *  transcribed and prompt-visible; `music`/`ambient` clips are playback-only
+ *  and never transcribed or injected into the prompt. Absent purpose means
+ *  "voice" — the default (the executor transcribes only `purpose === "voice"`). */
+export type AudioPurpose = "voice" | "music" | "ambient";
 
 /** A single file attached to a chat message. */
 export interface Attachment {
@@ -15,7 +21,7 @@ export interface Attachment {
   id: string;
   /** Reference to the stored asset file in AssetService. */
   assetId: string;
-  /** Kind of attachment — determines pipeline handling (image → ImagePart, file → TextPart, video → frame extraction). */
+  /** Kind of attachment — determines pipeline handling (image → ImagePart, file → TextPart, video → frame extraction, audio → voice transcript). */
   type: AttachmentType;
   /** Original filename as provided by the client. */
   name: string;
@@ -27,8 +33,49 @@ export interface Attachment {
    * Text description of the attachment, populated by the vision model
    * when the primary model lacks vision but a vision fallback model is configured.
    * Null = not yet described or not applicable.
+   * For audio attachments this field carries the STT transcript (STT_PLAN ST-6).
    */
   description?: string | null;
+  /** Audio-only: intent discriminator (`voice` | `music` | `ambient`).
+   *  Absent = "voice" (the default — see {@link AudioPurpose}). */
+  purpose?: AudioPurpose;
+  /** Audio-only: clip length in milliseconds (voice-message bubble UI). */
+  durationMs?: number;
+}
+
+// ─── Voice transcript + tone line (STT_PLAN ST-7) ─────────────────────────────
+
+/** Marker prefix of the tone line a Gemini-class understanding backend
+ *  appends to the persisted transcript (ST-7). Literal ENGLISH — stored data
+ *  is literal English (house rule); the tone VALUE itself is model-generated
+ *  text in the speech's language. */
+export const VOICE_TONE_MARKER = "[Voice tone: ";
+
+/** Compose the persisted `Attachment.description` for a transcribed voice
+ *  note: the verbatim transcript, plus — when the backend produced a tone
+ *  annotation and the profile toggle was on — a trailing bracketed line the
+ *  prompt audio branch emits verbatim ("rides the prompt as a bracketed
+ *  context line", ST-7). */
+export function composeVoiceTranscript(transcript: string, tone?: string): string {
+  const text = transcript.trim();
+  const annotation = tone?.trim();
+  if (text === "") return "";
+  if (annotation === undefined || annotation === "") return text;
+  return `${text}\n${VOICE_TONE_MARKER}${annotation}]`;
+}
+
+/** Split a persisted voice-note description back into transcript + tone.
+ *  The inverse of {@link composeVoiceTranscript} — the chat bubble uses it to
+ *  render the transcript block and the tone line separately. Tolerates
+ *  descriptions without a tone line (pure-ASR backends) and a tone line in
+ *  the middle of the text (treats everything after the marker as tone). */
+export function splitVoiceTranscript(description: string): { transcript: string; tone: string | null } {
+  const idx = description.indexOf(VOICE_TONE_MARKER);
+  if (idx === -1) return { transcript: description, tone: null };
+  const transcript = description.slice(0, idx).trim();
+  let tone = description.slice(idx + VOICE_TONE_MARKER.length);
+  if (tone.endsWith("]")) tone = tone.slice(0, -1);
+  return { transcript, tone: tone.trim() === "" ? null : tone.trim() };
 }
 
 // ─── MIME classification ────────────────────────────────────────────────────
@@ -44,6 +91,19 @@ const IMAGE_MIMES = new Set([
 const VIDEO_MIMES = new Set([
   "video/webm",
   "video/mp4",
+]);
+
+// STT_PLAN ST-1: audio attachments (voice notes, music, ambient loops). Only
+// `purpose === "voice"` clips are transcribed (ST-6); music/ambient stay
+// playback-only. `audio/x-m4a` and `audio/m4a` both listed — iOS/FFmpeg
+// exporters disagree on the canonical m4a type (STT_DESIGN AUDIO_MIMES).
+const AUDIO_MIMES = new Set([
+  "audio/webm",
+  "audio/mp3",
+  "audio/wav",
+  "audio/ogg",
+  "audio/x-m4a",
+  "audio/m4a",
 ]);
 
 const TEXT_MIMES = new Set([
@@ -63,6 +123,7 @@ const TEXT_MIMES = new Set([
 export function classifyAttachment(mimeType: string): AttachmentType {
   if (IMAGE_MIMES.has(mimeType)) return "image";
   if (VIDEO_MIMES.has(mimeType)) return "video";
+  if (AUDIO_MIMES.has(mimeType)) return "audio";
   return "file";
 }
 

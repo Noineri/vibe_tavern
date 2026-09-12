@@ -1,0 +1,1 @@
+ALTER TABLE `prompt_presets` ADD `per_send_prefill_enabled` integer DEFAULT false NOT NULL;

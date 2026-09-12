@@ -64,7 +64,7 @@ describe("ProxyManagerModal behavior", () => {
     await waitFor(() => expect(view.getByDisplayValue("Office")).toBeTruthy());
     const proxyInputs = Array.from(view.baseElement.querySelectorAll("input"));
     expect(proxyInputs).toHaveLength(4);
-    for (const input of proxyInputs) expect(input.classList.contains("field-input-pad")).toBe(true);
+    for (const input of proxyInputs) expect(input.classList.contains("px-[13px]")).toBe(true);
 
     const saveButton = view.getByRole("button", { name: "save" }) as HTMLButtonElement;
     expect(saveButton.classList.contains("min-w-[124px]")).toBe(true);

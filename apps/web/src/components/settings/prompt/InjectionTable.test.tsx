@@ -158,6 +158,7 @@ function canvasEl(props: CanvasProps & { spies: Spies }): ReactElement {
       loreAnchorLoadState={props.loreAnchorLoadState ?? "idle"}
       summaryEntries={props.summaryEntries}
       summaryLoadState={props.summaryLoadState}
+      prefillSupported={props.prefillSupported}
       promptOrder={props.promptOrder ?? []}
       onPromptOrderChange={props.onPromptOrderChange ?? props.spies.onPromptOrderChange}
     />
@@ -786,5 +787,45 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(persona?.role).toBe("assistant");
     // …and so does every other committed entry's (commitList rebuilds ALL).
     expect(main?.role).toBe("user");
+  });
+
+  // ── LS-8: per-send prefill toggle — INSIDE the prefill accordion card ──
+  // Owner design 2026-09-09: the advanced-mode home of the entry-point toggle
+  // is the prefill CanvasCard body («не под него, внутрь»), gated on the
+  // provider's prefill channel. This pins the moved boundary (the former
+  // standalone toggle in PromptFields is gone; its advanced pin moved here).
+  it("renders the per-send prefill toggle inside the prefill card body when prefillSupported", async () => {
+    const spies = makeSpies();
+    const view = renderCanvas({
+      prefillSupported: true,
+      draft: { ...baseDraft, perSendPrefillEnabled: true },
+      spies,
+    });
+    const q = within(view.baseElement);
+    const card = view.baseElement.querySelector('[data-canvas-identifier="assistantPrefill"]') as HTMLElement | null;
+    expect(card).toBeTruthy();
+    // Collapsed body — AnimatedDisclosure unmounts children, so no switch yet.
+    expect(q.queryByRole("switch")).toBeNull();
+    // Expand: the header is the click target (cursor-pointer when expandable).
+    fireEvent.click(card!.querySelector(".canvas-card-header")!);
+    await new Promise((r) => setTimeout(r, 10));
+    const toggle = q.getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    // The toggle + hint render INSIDE the card, below the prefill editor.
+    expect(within(card!).getByText("per_send_prefill_enable")).toBeTruthy();
+    expect(within(card!).getByText("per_send_prefill_enable_hint")).toBeTruthy();
+    // Write path: emits through the canvas onUpdateField seam.
+    fireEvent.click(toggle);
+    expect(spies.onUpdateField).toHaveBeenLastCalledWith("perSendPrefillEnabled", false);
+  });
+
+  it("renders NO per-send prefill toggle in the prefill card without prefillSupported", async () => {
+    const view = renderCanvas({ draft: { ...baseDraft, perSendPrefillEnabled: true } });
+    const card = view.baseElement.querySelector('[data-canvas-identifier="assistantPrefill"]') as HTMLElement | null;
+    expect(card).toBeTruthy();
+    fireEvent.click(card!.querySelector(".canvas-card-header")!);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(within(view.baseElement).queryByRole("switch")).toBeNull();
+    expect(within(card!).queryByText("per_send_prefill_enable")).toBeNull();
   });
 });

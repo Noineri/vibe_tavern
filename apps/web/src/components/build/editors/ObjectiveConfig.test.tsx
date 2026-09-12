@@ -378,4 +378,17 @@ describe("ObjectiveConfig (INS-5)", () => {
     expect(modelDropdown.className).toContain("opacity-40");
     expect((getByTitle("obj_model_unpin") as HTMLButtonElement).disabled).toBe(true);
   });
+
+  // MUI-W3 (MOBILE_UI_DEFECTS_REPORT step 10): the Objective model picker row
+  // (provider | model+pin) stacks to a single full-width column on phones — each
+  // DropdownSelect is w-full by default — while the desktop 2-column grid is
+  // unchanged (max-md only ADDS a rule).
+  it("max-md: the provider/model picker row is a single full-width column", () => {
+    withState(EMPTY);
+    const view = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const pickerRow = view.getByRole("button", { name: /^Active$/ }).parentElement!;
+    expect(pickerRow.className).toContain("grid-cols-2");
+    expect(pickerRow.className).toContain("max-md:grid-cols-1");
+    view.unmount();
+  });
 });

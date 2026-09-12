@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useWatch, type Control, type UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 
 import { cn } from "../../../lib/cn";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
@@ -22,9 +23,10 @@ import { promoteSourceAsFull } from "./thumbnail-crop.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { BoundResourcesField } from "../../shared/BoundResourcesField.js";
+import { TextInput } from "../../shared/text-input.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
-import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { TextAreaField } from "../fields/TextAreaField.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
@@ -157,9 +159,10 @@ function TokenSummary({ control }: { control: Control<BuildCharacterDraft> }) {
 function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildCharacterDraft>; isSaving: boolean }) {
   const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
-  const mInput = isMobile ? " text-base" : "";
   const { register, setValue } = form;
   const [altGreetIdx, setAltGreetIdx] = useState(0);
+  // E2: alt-greeting deletion goes through the shared destructive confirm.
+  const [pendingGreetingDelete, setPendingGreetingDelete] = useState<number | null>(null);
   const [description, firstMessage, mesExample, mesExampleMode, mesExampleDepth, scenario, personalitySummary, altGreetingsRaw] = useWatch({
     control: form.control,
     name: ["description", "firstMessage", "mesExample", "mesExampleMode", "mesExampleDepth", "scenario", "personalitySummary", "alternateGreetings"],
@@ -169,25 +172,25 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
     <>
       {/* Description */}
       <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
+        <label className={lblCls}>{t("char_desc_label")}</label>
         <MobileExpandTextarea value={description || ""} onChange={(v) => setValue("description", v)} label={t("char_desc_label")}>
-          <AutoTextarea className={inputCls + mInput} disabled={isSaving} register={register("description")} minRows={5} />
+          <AutoTextarea disabled={isSaving} register={register("description")} minRows={5} />
         </MobileExpandTextarea>
         <TokenCounter text={description || ""} />
       </div>
 
       {/* First Message */}
       <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
+        <label className={lblCls}>{t("first_message_greeting")}</label>
         <MobileExpandTextarea value={firstMessage || ""} onChange={(v) => setValue("firstMessage", v)} label={t("first_message_label")}>
-          <AutoTextarea className={inputCls + mInput} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
+          <AutoTextarea disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
         </MobileExpandTextarea>
         <TokenCounter text={firstMessage || ""} />
       </div>
 
       {/* Alternate Greetings */}
       <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("alternate_greetings")}</label>
+        <label className={lblCls}>{t("alternate_greetings")}</label>
         <div className="mb-2 flex flex-wrap gap-1">
           {alternateGreetings.map((_: string, idx: number) => (
             <span
@@ -200,12 +203,26 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
               onClick={() => setAltGreetIdx(idx)}
             >
               Alt {idx + 1}
-              <span className="ml-0.5 cursor-pointer text-[10px]" onClick={(e) => {
-                e.stopPropagation();
-                const next = [...alternateGreetings]; next.splice(idx, 1);
-                setValue("alternateGreetings", next, { shouldDirty: true });
-                if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
-              }}>✕</span>
+              {/* E2 (MOBILE_DEFECTS_ROUND_2): the ✕ is a real button with its own
+                  hit area — on mobile 36×36 (the chip itself is min-h-9, so the
+                  longer chip is exactly the owner's ask) instead of a 10px inline
+                  glyph sharing the chip's tap target — and deleting goes through
+                  the shared DestructiveConfirmModal instead of firing instantly. */}
+              <button
+                type="button"
+                aria-label={t("alternate_greeting_delete")}
+                data-testid={`alt-greeting-remove-${idx}`}
+                className={cn(
+                  "ml-0.5 flex items-center justify-center rounded text-t4 transition-colors hover:text-danger",
+                  isMobile ? "h-9 w-9" : "h-4 w-4",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingGreetingDelete(idx);
+                }}
+              >
+                <Ic.close />
+              </button>
             </span>
           ))}
           <span
@@ -223,7 +240,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
               const next = [...alternateGreetings]; next[altGreetIdx] = v;
               setValue("alternateGreetings", next, { shouldDirty: true });
             }} label={t("alternate_greeting_placeholder")}>
-              <AutoTextarea className={inputCls + mInput} minRows={6} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+              <AutoTextarea minRows={6} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
                 const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
                 setValue("alternateGreetings", next, { shouldDirty: true });
               }} placeholder={t("alternate_greeting_placeholder")} />
@@ -236,7 +253,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
       {/* Message Examples */}
       <div className="mb-5">
         <div className="mb-1.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <label className={lblCls}>{t("dialog_examples")}</label>
+          <label className={lblCls + " !mb-0"}>{t("dialog_examples")}</label>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
               <CustomTooltip content={tDynamic(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
@@ -269,25 +286,25 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
           </div>
         </div>
         <MobileExpandTextarea value={mesExample || ""} onChange={(v) => setValue("mesExample", v)} label={t("char_mes_example_label")}>
-          <AutoTextarea className={monoCls + mInput} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} minRows={6} />
+          <AutoTextarea mono disabled={isSaving} placeholder="<START>..." register={register("mesExample")} minRows={6} />
         </MobileExpandTextarea>
         <TokenCounter text={mesExample || ""} />
       </div>
 
       {/* Scenario */}
       <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
+        <label className={lblCls}>{t("scenario")}</label>
         <MobileExpandTextarea value={scenario || ""} onChange={(v) => setValue("scenario", v)} label={t("char_scenario_label")}>
-          <AutoTextarea className={inputCls + mInput} disabled={isSaving} register={register("scenario")} minRows={5} />
+          <AutoTextarea disabled={isSaving} register={register("scenario")} minRows={5} />
         </MobileExpandTextarea>
         <TokenCounter text={scenario || ""} />
       </div>
 
       {/* Personality Summary */}
       <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
+        <label className={lblCls}>{t("char_personality_label")}</label>
         <MobileExpandTextarea value={personalitySummary || ""} onChange={(v) => setValue("personalitySummary", v)} label={t("char_personality_summary_label")}>
-          <AutoTextarea className={inputCls + mInput} disabled={isSaving} register={register("personalitySummary")} minRows={3} />
+          <AutoTextarea disabled={isSaving} register={register("personalitySummary")} minRows={3} />
         </MobileExpandTextarea>
         <TokenCounter text={personalitySummary || ""} />
       </div>
@@ -334,6 +351,21 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
         placeholder={t("system_prompt_override_placeholder")}
         isSaving={isSaving}
       />
+
+      {pendingGreetingDelete !== null && (
+        <DestructiveConfirmModal
+          title={t("alternate_greeting_delete_title")}
+          body={t("alternate_greeting_delete_msg")}
+          onConfirm={() => {
+            const next = [...alternateGreetings];
+            next.splice(pendingGreetingDelete, 1);
+            setValue("alternateGreetings", next, { shouldDirty: true });
+            if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
+            setPendingGreetingDelete(null);
+          }}
+          onCancel={() => setPendingGreetingDelete(null)}
+        />
+      )}
     </>
   );
 }
@@ -385,7 +417,6 @@ export function CharacterForm({
 
 
   const isMobile = useIsMobile();
-  const mInput = isMobile ? " text-base" : "";
 
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -758,8 +789,8 @@ export function CharacterForm({
           </CustomTooltip>
           <div className="w-full flex flex-col gap-3">
             <div>
-              <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-              <input type="text" className={inputCls + mInput} disabled={isSaving} {...register("name")} />
+              <label className={lblCls}>{t("char_name_label")}</label>
+              <TextInput disabled={isSaving} register={register("name")} />
             </div>
             <TagsField form={form} isSaving={isSaving} />
             <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />
@@ -799,8 +830,8 @@ export function CharacterForm({
         </CustomTooltip>
         <div className={cn("flex min-w-0 flex-1 flex-col gap-3", isMobile && "w-full")}>
           <div>
-            <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-            <input type="text" className={inputCls + mInput} disabled={isSaving} {...register("name")} />
+            <label className={lblCls}>{t("char_name_label")}</label>
+            <TextInput disabled={isSaving} register={register("name")} />
           </div>
           <TagsField form={form} isSaving={isSaving} />
           <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />

@@ -366,6 +366,29 @@ describe("pinContextBudget + bindPerModel survive zod validation", () => {
   });
 });
 
+// ── Generation mode (LOCAL_SUPPORT_PLAN LS-2a) ───────────────────────────
+
+describe("generationMode survives zod validation (LS-2a)", () => {
+  it("updateProviderProfileSchema preserves generationMode and rejects unknown values", () => {
+    const parsed = updateProviderProfileSchema.parse({ generationMode: "completion" });
+    expect(parsed.generationMode).toBe("completion");
+    expectReject(updateProviderProfileSchema.safeParse({ generationMode: "raw" }));
+  });
+
+  it("saveProviderDraftSchema preserves generationMode (default 'chat' is the store's, not the schema's)", () => {
+    const parsed = saveProviderDraftSchema.parse({
+      name: "x", providerPreset: "y", endpoint: "z",
+      generationMode: "completion",
+    });
+    expect(parsed.generationMode).toBe("completion");
+  });
+
+  it("the per-model overlay does NOT carry generationMode (profile-level, never a per-model field)", () => {
+    const parsed = modelSettingsOverlaySchema.parse({ generationMode: "completion" } as unknown);
+    expect(parsed).not.toHaveProperty("generationMode");
+  });
+});
+
 // ── Per-model overlay + clipboard payload ─────────────────────────────────
 
 describe("modelSettingsOverlaySchema", () => {
@@ -394,6 +417,7 @@ describe("modelSettingsOverlaySchema", () => {
     const parsed = modelSettingsOverlaySchema.parse({
       stopSequences: ["\n\nUser:"],
       drySequenceBreakers: ["\n"],
+      bannedStrings: [" finger"],
       logitBias: [{ tokenId: 1, bias: 5 }],
     });
     expect(parsed.stopSequences).toEqual(["\n\nUser:"]);
@@ -457,8 +481,8 @@ describe("sampler single-source invariant (ERA-1)", () => {
   // Pin the documented count so a duplicate or accidental union shrink is
   // caught loudly. Update this number only when SamplerFieldId genuinely gains
   // or loses a field.
-  it("SAMPLER_FIELDS has the expected cardinality (24)", () => {
-    expect(SAMPLER_FIELDS.length).toBe(24);
+  it("SAMPLER_FIELDS has the expected cardinality (32)", () => {
+    expect(SAMPLER_FIELDS.length).toBe(32);
     expect(new Set(SAMPLER_FIELDS).size).toBe(SAMPLER_FIELDS.length); // no dupes
   });
 
@@ -473,6 +497,12 @@ describe("sampler single-source invariant (ERA-1)", () => {
       minP: 0.05,
       typicalP: 0.88,
       tfsZ: 0.97,
+      adaptiveTarget: 0.55,
+      adaptiveDecay: 0.9,
+      dynatempRange: 0.8,
+      dynatempExponent: 1.1,
+      topNSigma: 0.95,
+      smoothingFactor: 0.7,
       repeatLastN: 64,
       mirostat: 2,
       mirostatTau: 5.5,
@@ -480,7 +510,9 @@ describe("sampler single-source invariant (ERA-1)", () => {
       dryMultiplier: 0.8,
       dryBase: 1.77,
       dryAllowedLength: 3,
+      dryPenaltyLastN: 512,
       drySequenceBreakers: ["\\n"],
+      bannedStrings: [" finger"],
       xtcThreshold: 0.13,
       xtcProbability: 0.05,
       frequencyPenalty: 0.2,

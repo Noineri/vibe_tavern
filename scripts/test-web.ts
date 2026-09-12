@@ -179,6 +179,94 @@ export function filesWithTests(report: string): ReadonlySet<string> {
 	);
 }
 
+/**
+ * Per-file failure info from the same JUnit report: test cases carrying a
+ * `<failure>` or `<error>` child, keyed like `filesWithTests` keys them.
+ *
+ * Why this exists when bun already prints failures on screen: CI log systems
+ * (GitHub Actions) truncate long step output with "... N additional diagnostic
+ * sections omitted" — with 8 parallel workers and a failing suite, the failing
+ * test names are routinely INSIDE the truncated part, and not even a debug
+ * rerun recovers them (verified twice on PR #39, runs 34643719177/34644574473).
+ * The runner itself must name the failing files; the JUnit report it already
+ * collects is the only input that survives truncation.
+ *
+ * Names and messages are kept because bun's on-screen tally counts TEST
+ * failures only — a file-level error (afterAll crash, worker-level throw)
+ * lands in the JUnit report as an error-carrying test case bun never names
+ * (PR #39 run 34664917488: gallery-api.test.ts carried a JUnit failure while
+ * bun's "N tests failed" listed a different file). The message attribute is
+ * the only surviving trace of such errors.
+ *
+ * Self-closing testcases (`<testcase ... />`) are passes by construction — a
+ * failure always has body content (the assertion diff / message).
+ */
+export interface FailingFile {
+	readonly file: string;
+	readonly count: number;
+	readonly entries: readonly { readonly name: string; readonly message: string }[];
+}
+
+function parseFailingEntry(block: string): { name: string; message: string } | null {
+	if (!/<(?:failure|error)\b/.test(block)) return null;
+	const file = block.match(/\bfile="([^"]+)"/)?.[1];
+	if (file === undefined) return null;
+	const name = block.match(/\bname="([^"]*)"/)?.[1] ?? "(unnamed)";
+	const rawMessage = block.match(/<(?:failure|error)\b[^>]*>([\s\S]*?)<\/(?:failure|error)>/)?.[1] ?? "";
+	// XML-unescape the essentials; escaped stack frames render as &lt;at ...&gt;
+	// blobs — collapse them, keep the readable first line of the message.
+	const message = rawMessage
+		.replace(/&lt;[\s\S]*?&gt;/g, " ")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, 200);
+	return { name: name === "" ? "(unnamed)" : name, message };
+}
+
+export function failingFiles(report: string): ReadonlyMap<string, FailingFile> {
+	const byFile = new Map<string, FailingFile>();
+	const blocks = report.match(/<testcase\b[^>]*>[\s\S]*?<\/testcase>|<testcase\b[^>]*\/>/g) ?? [];
+	for (const block of blocks) {
+		const entry = parseFailingEntry(block);
+		if (entry === null) continue;
+		const key = (block.match(/\bfile="([^"]+)"/)?.[1] ?? "").replaceAll("\\", "/");
+		if (key === "") continue;
+		const existing = byFile.get(key);
+		if (existing === undefined) {
+			byFile.set(key, { file: key, count: 1, entries: [entry] });
+		} else {
+			const entries = [...existing.entries, entry].slice(0, 5);
+			byFile.set(key, { file: key, count: existing.count + 1, entries });
+		}
+	}
+	return byFile;
+}
+
+/**
+ * Bun 1.4.0 with `--parallel=N` + `--reporter=junit` can CROSS-ATTRIBUTE a
+ * JUnit entry: the testcase NAME comes from one worker's file while the
+ * failure MESSAGE (and its stack frame) comes from another (observed on PR #39,
+ * runs 34664917488 / 34665657469 / 34668434046: gallery-api.test.ts entries
+ * whose messages point into TtsProfileEditor/experience-sdk-diag — a chase
+ * that cost four CI cycles before the pattern was named). bun's on-screen
+ * tally is correct; the JUnit file path is not. When the failing message's
+ * first stack frame names a DIFFERENT test file than the JUnit `file=`
+ * attribute, say so in the summary line — the stack is the thing to trust.
+ */
+export function junitCrossAttribution(file: string, message: string): string | null {
+	const frame = message.match(/\bat +(\S+\.test\.tsx?):\d+:\d+/)?.[1];
+	if (frame === undefined) return null;
+	const frameFile = frame.replaceAll("\\", "/").replace(/^\(/, "");
+	if (frameFile === file || !frameFile.endsWith(".test.ts") && !frameFile.endsWith(".test.tsx")) return null;
+	return `junit filed under ${file}, stack points to ${frameFile} — parallel junit cross-attribution, trust the stack`;
+}
+
 export async function runWebTestCli(
 	args: readonly string[],
 	root: string = ROOT,
@@ -238,13 +326,41 @@ export async function runWebTestCli(
 		return 1;
 	}
 
-	// Which tests failed and where is already on screen above, printed by bun's
-	// own reporter — re-deriving it from the report would only duplicate it. The
-	// exit code is the verdict; the empty-file list is the part bun cannot tell us.
+	// Which tests failed and where is on screen above, printed by bun's own
+	// reporter — but CI log systems truncate exactly that part (see the comment
+	// on failingFiles), so the runner names the failing files itself from the
+	// JUnit report, which no truncation can eat. The exit code stays the verdict;
+	// the empty-file list remains the part bun cannot tell us.
 	const covered = filesWithTests(outcome.report);
 	const empty = files.filter((file) => !covered.has(file));
 	if (empty.length > 0) {
 		errorWrite(`Web test files declaring zero tests (${empty.length}):\n${empty.join("\n")}`);
+	}
+	if (outcome.exitCode !== 0) {
+		const failing = [...failingFiles(outcome.report).values()].sort(
+			(a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0),
+		);
+		if (failing.length > 0) {
+			const lines = failing.flatMap((entry) => [
+				`FAIL ${entry.file} (${entry.count} failed)`,
+				...entry.entries.map(
+				(e) =>
+					`  · ${e.name}${e.message === "" ? "" : ` — ${e.message}`}${
+						(() => {
+							const note = junitCrossAttribution(entry.file, e.message);
+							return note === null ? "" : `
+  ⚠ ${note}`;
+						})()
+					}`,
+			),
+			]);
+			errorWrite(`Web test files with failures (${failing.length}):\n${lines.join("\n")}`);
+		} else {
+			errorWrite(
+				"Web test failed, but no failing test case was found in the JUnit report — " +
+					"the failure is file-level (unhandled rejection or a crash); see bun's output above.",
+			);
+		}
 	}
 	if (empty.length > 0 || outcome.exitCode !== 0) {
 		write(`\nWeb tests: FAIL (${files.length} files)`);

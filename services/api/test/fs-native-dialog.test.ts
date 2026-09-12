@@ -1,4 +1,5 @@
 /**
+// hygiene:allow-abs-path-inputs — paths are mocked kdialog/powershell stdout strings, never loaded
  * Characterization tests for the native folder-dialog route
  * (ST_NATIVE_DIALOG_IMPORT_PLAN Wave 1, STN-1C; Linux support added later).
  *

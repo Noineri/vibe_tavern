@@ -81,7 +81,7 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="w-[360px] rounded-lg border border-border2 bg-surface p-5 shadow-xl">
+      <div className="glass-blur-under w-[360px] overflow-hidden rounded-lg border border-border2 p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">{t("mobile_access")}</h2>
           <button type="button" onClick={onClose} className="text-t3 hover:text-t1"><Icons.Close /></button>

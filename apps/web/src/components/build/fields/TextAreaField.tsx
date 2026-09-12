@@ -16,11 +16,10 @@
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 
-import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
-import { inputCls, monoCls, lblCls } from "./field-styles.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 
 /** Draft field names whose value is a plain string rendered as a textarea. */
 export type CharacterStringField =
@@ -72,15 +71,12 @@ export function TextAreaField({
 }: TextAreaFieldProps) {
   const { register, watch, setValue } = form;
   const value = watch(field);
-  const isMobile = useIsMobile();
-  const mInput = isMobile ? " text-base" : "";
-  const cls = (mono ? monoCls : inputCls) + mInput;
   return (
     <div className="mb-5">
-      <label className={lblCls + " mb-1.5 block"}>{label}</label>
+      <label className={lblCls}>{label}</label>
       <MobileExpandTextarea value={value || ""} onChange={(v) => setValue(field, v)} label={mobileExpandLabel}>
         <AutoTextarea
-          className={cls}
+          mono={mono}
           disabled={isSaving}
           placeholder={placeholder}
           register={register(field)}

@@ -27,6 +27,41 @@ async function mkSettingsStore() {
 	};
 }
 
+describe("UiSettingsStore — per-context secondary-model pairs (SUM-5)", () => {
+	test("defaults are null for the summary and message-editor pairs", async () => {
+		const { settings } = await mkSettingsStore();
+		const got = await settings.get();
+		expect(got.summaryProviderId).toBeNull();
+		expect(got.summaryModelName).toBeNull();
+		expect(got.messageEditorProviderId).toBeNull();
+		expect(got.messageEditorModelName).toBeNull();
+	});
+
+	test("persists and clears each context pair independently", async () => {
+		const { settings } = await mkSettingsStore();
+		await settings.update({
+			summaryProviderId: "prov_a",
+			summaryModelName: "glm-5.2",
+			messageEditorProviderId: "prov_b",
+			messageEditorModelName: "gpt-x",
+		});
+		let got = await settings.get();
+		expect(got.summaryProviderId).toBe("prov_a");
+		expect(got.summaryModelName).toBe("glm-5.2");
+		expect(got.messageEditorProviderId).toBe("prov_b");
+		expect(got.messageEditorModelName).toBe("gpt-x");
+
+		// Clearing the summary pin leaves the editor pair untouched — the two
+		// contexts no longer share one slot (the SUM-5 leak).
+		await settings.update({ summaryProviderId: null, summaryModelName: null });
+		got = await settings.get();
+		expect(got.summaryProviderId).toBeNull();
+		expect(got.summaryModelName).toBeNull();
+		expect(got.messageEditorProviderId).toBe("prov_b");
+		expect(got.messageEditorModelName).toBe("gpt-x");
+	});
+});
+
 describe("UiSettingsStore — coauthor binding fields", () => {
 	test("defaults are null for both coauthorProviderId and coauthorModelName", async () => {
 		const { settings } = await mkSettingsStore();
@@ -115,5 +150,59 @@ describe("UiSettingsStore — coauthor binding fields", () => {
 		expect(seeded.coauthorModelName).toBeNull();
 		expect(seeded.coauthorMaxTokens).toBeNull();
 		expect(seeded.coauthorContextBudget).toBeNull();
+	});
+});
+
+describe("UiSettingsStore — STT scenario pointers (ST-1)", () => {
+	test("defaults are null for both activeDictationProfileId and activeVoiceMessageProfileId", async () => {
+		const { settings } = await mkSettingsStore();
+		const got = await settings.get();
+		expect(got.activeDictationProfileId).toBeNull();
+		expect(got.activeVoiceMessageProfileId).toBeNull();
+	});
+
+	test("persists both pointers independently and round-trips a fresh read", async () => {
+		const { settings } = await mkSettingsStore();
+		const updated = await settings.update({
+			activeDictationProfileId: "stt_profile_fast",
+			activeVoiceMessageProfileId: "stt_profile_emotive",
+		});
+		expect(updated.activeDictationProfileId).toBe("stt_profile_fast");
+		expect(updated.activeVoiceMessageProfileId).toBe("stt_profile_emotive");
+
+		const reread = await settings.get();
+		expect(reread.activeDictationProfileId).toBe("stt_profile_fast");
+		expect(reread.activeVoiceMessageProfileId).toBe("stt_profile_emotive");
+
+		// Same profile may back both scenarios.
+		const same = await settings.update({
+			activeDictationProfileId: "stt_profile_shared",
+			activeVoiceMessageProfileId: "stt_profile_shared",
+		});
+		expect(same.activeDictationProfileId).toBe(same.activeVoiceMessageProfileId);
+	});
+
+	test("partial pointer update preserves the other pointer and legacy fields", async () => {
+		const { settings } = await mkSettingsStore();
+		await settings.update({ activeDictationProfileId: "stt_profile_a" });
+		const updated = await settings.update({ activeVoiceMessageProfileId: "stt_profile_b" });
+		expect(updated.activeDictationProfileId).toBe("stt_profile_a");
+		expect(updated.activeVoiceMessageProfileId).toBe("stt_profile_b");
+		expect(updated.theme).toBe("dark"); // untouched legacy field survived
+	});
+
+	test("clearing a pointer back to null round-trips", async () => {
+		const { settings } = await mkSettingsStore();
+		await settings.update({ activeDictationProfileId: "stt_profile_a" });
+		const cleared = await settings.update({ activeDictationProfileId: null });
+		expect(cleared.activeDictationProfileId).toBeNull();
+		expect(await settings.get()).toMatchObject({ activeDictationProfileId: null });
+	});
+
+	test("ensureDefaults seeds both STT pointers as null", async () => {
+		const { settings } = await mkSettingsStore();
+		const seeded = await settings.ensureDefaults();
+		expect(seeded.activeDictationProfileId).toBeNull();
+		expect(seeded.activeVoiceMessageProfileId).toBeNull();
 	});
 });

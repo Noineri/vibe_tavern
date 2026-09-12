@@ -1,4 +1,4 @@
-import type { ChatRuntimeApi } from "../contract/runtime-api.js";
+import type { ChatRuntimeApi, SttRuntimeApi } from "../contract/runtime-api.js";
 import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, COAUTHOR_TRANSPORT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type CoauthorTransport, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -24,6 +24,11 @@ export class ChatAdapter implements ChatRuntimeApi {
 		private readonly chatSummaryService: ChatSummaryService,
 		private readonly providerProfileService: ProviderProfileService,
 		private readonly assetService: AssetService,
+		/** STT_PLAN ST-6: the SttAdapter's profile-bound transcription path —
+		 *  injected here (not reached via imports) so the adapter graph stays
+		 *  acyclic; the voice-message profile pointer resolves from ui_settings
+		 *  with the isDefault fallback. */
+		private readonly transcribeSttAudio: SttRuntimeApi["transcribeSttAudio"],
 	) {}
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
@@ -113,7 +118,26 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	// ─── Messages (AI) ──────────────────────────────────────────────────
 
-	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
+	/** STT_PLAN ST-6: resolve the voice-message transcription seam. Pointer in
+	 *  ui_settings wins; the isDefault STT profile is the fallback (the ST-1
+	 *  pointer contract). Absent profile → undefined → an undescribed voice
+	 *  note fails at assembly with the honest configuration error. */
+	private async resolveVoiceTranscriber(): Promise<import("../../infrastructure/ai/stt-gate.js").VoiceTranscriber | undefined> {
+		const settings = await this.stores.uiSettings.get();
+		const profileId = settings.activeVoiceMessageProfileId ?? (await this.stores.stt.getDefault())?.id ?? null;
+		if (profileId === null) return undefined;
+		const transcribe = this.transcribeSttAudio;
+		return async (audio) => {
+			const result = await transcribe(profileId, audio);
+			if (result === null) throw new Error(`STT profile not found: ${profileId}`);
+			return {
+				transcript: result.text,
+				...(result.annotation !== undefined ? { annotation: result.annotation } : {}),
+			};
+		};
+	}
+
+	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -132,6 +156,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			signal,
+			// LS-4b: the one-shot per-send prefill override (validated by
+			// sendMessageSchema). Absent ⇒ the preset prefill cascade unchanged.
+			prefill: body.prefill,
 			diceCommit: resolveDiceCommit(body),
 			experienceCommit: resolveExperienceCommit(body),
 			visionAssets: {
@@ -140,6 +167,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
 				visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
 			},
+			voiceTranscriber: await this.resolveVoiceTranscriber(),
 		});
 		logSendDebug("api.runtime.send.success", {
 			chatId,
@@ -150,7 +178,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string }, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -161,6 +189,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 				model: profile.defaultModel,
 				transport,
 				signal,
+				// LS-4b: the one-shot per-send prefill override. See sendMessage.
+				prefill: body.prefill,
 				diceCommit: resolveDiceCommit(body),
 				experienceCommit: resolveExperienceCommit(body),
 				visionAssets: {
@@ -169,10 +199,15 @@ export class ChatAdapter implements ChatRuntimeApi {
 					assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
 					visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
 				},
+				voiceTranscriber: await this.resolveVoiceTranscriber(),
 			});
 		} catch (err) {
 			if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
 				yield { event: "error", data: JSON.stringify({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }) };
+				return;
+			}
+			if (err instanceof (await import("../../infrastructure/ai/stt-gate.js")).VoiceTranscribeUnavailableError) {
+				yield { event: "error", data: JSON.stringify({ type: "voice_transcribe_unavailable", message: err.message, attachments: err.attachmentNames }) };
 				return;
 			}
 			throw err;
@@ -206,6 +241,62 @@ export class ChatAdapter implements ChatRuntimeApi {
 		});
 	};
 
+	/** LS-4a: continue the target assistant message from its SELECTED variant's
+	 *  text. The variant text resolves server-side (message.content IS the
+	 *  selected variant's content — see MessageStore.mapRowMessage) so the
+	 *  client never ships it. Prefill capability is the same registry gate the
+	 *  executor pushes under; a capability-less provider cannot accept a
+	 *  continuation, so the request fails honestly instead of silently
+	 *  generating a fresh reply. */
+	continueMessage = async (chatId: string, messageId: string, signal?: AbortSignal) => {
+		const message = await this.stores.messages.getMessageById(messageId);
+		if (!message || message.chatId !== chatId) {
+			throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
+		}
+		if (message.role !== "assistant") {
+			throw validation("Only assistant messages can be continued.");
+		}
+		const continuationText = message.content;
+		if (!continuationText.trim()) {
+			throw validation("The selected variant has no content to continue from.");
+		}
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
+		const result = await this.liveChatOrchestrator.continueMessage({
+			chatId,
+			messageId,
+			continuationText,
+			profile,
+			model: profile.defaultModel,
+			transport,
+			signal,
+		});
+		return result.snapshot;
+	};
+
+	continueMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, signal?: AbortSignal) {
+		const message = await this.stores.messages.getMessageById(messageId);
+		if (!message || message.chatId !== chatId) {
+			throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
+		}
+		if (message.role !== "assistant") {
+			throw validation("Only assistant messages can be continued.");
+		}
+		const continuationText = message.content;
+		if (!continuationText.trim()) {
+			throw validation("The selected variant has no content to continue from.");
+		}
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
+		yield* this.liveChatOrchestrator.continueMessageStream({
+			chatId,
+			messageId,
+			continuationText,
+			profile,
+			model: profile.defaultModel,
+			transport,
+			signal,
+		});
+	};
+
 	generateReply = async (chatId: string, signal?: AbortSignal) => {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		const result = await this.liveChatOrchestrator.generateReply({
@@ -233,6 +324,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	selectVariant = (chatId: string, messageId: string, variantIndex: number) =>
 		this.sessionRuntime.chatRuntime.selectMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex);
+
+	setVariantTtsAnnotation = (chatId: string, messageId: string, variantIndex: number, text: string | null) =>
+		this.sessionRuntime.chatRuntime.setVariantTtsAnnotation(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex, text);
 
 	addEditorVariant = (
 		chatId: string,
@@ -347,6 +441,14 @@ export class ChatAdapter implements ChatRuntimeApi {
 	listChatSummaries = async (chatId: string) => {
 		const chat = await this.stores.chats.getById(chatId);
 		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		return this.stores.chatSummaries.listByChatBranch(chat.id, chat.activeBranchId);
+	};
+
+	// SUM-3b: reorder over the ACTIVE branch (the same scope the list reads).
+	reorderChatSummaries = async (chatId: string, body: { orderedIds: string[] }) => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		await this.stores.chatSummaries.reorder(chat.id, chat.activeBranchId, body.orderedIds);
 		return this.stores.chatSummaries.listByChatBranch(chat.id, chat.activeBranchId);
 	};
 
@@ -478,22 +580,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	// ─── Private helpers ────────────────────────────────────────────────
 
 	private async resolveVisionDescribePromptFromPreset(): Promise<string> {
-		const settings = await this.stores.uiSettings.get();
-		let aiAssistantPrompts: Record<string, string> | null = null;
-		if (settings?.activePromptPresetId) {
-			const preset = await this.stores.presets.getById(settings.activePromptPresetId);
-			if (preset?.aiAssistantPrompts) {
-				try {
-					const parsed = JSON.parse(preset.aiAssistantPrompts);
-					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-						aiAssistantPrompts = Object.fromEntries(
-							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
-						) as Record<string, string>;
-					}
-				} catch { /* preset.aiAssistantPrompts may hold malformed JSON; skip and fall back to the default vision-describe prompt */ }
-			}
-		}
-		return resolveVisionDescribePrompt(aiAssistantPrompts);
+		return resolveVisionDescribePrompt(this.stores.db);
 	}
 
 	private async resolveActiveProfileOrThrow() {

@@ -17,7 +17,7 @@ import { MessageScroller, useDisplayMessageIds } from "./MessageScroller.js";
  * (CS-30 author identity, CS-31 turn grouping). Touching this file does NOT
  * affect Co-Author, and vice versa.
  */
-export function MessageList() {
+export function MessageList({ bottomInset }: { bottomInset?: number }) {
   const messageOrder = useMessageOrder();
   const displayMessageIds = useDisplayMessageIds();
 
@@ -55,6 +55,6 @@ export function MessageList() {
   }, [firstAssistantMsgId, messageOrder]);
 
   return (
-    <MessageScroller displayIds={displayMessageIds} renderItem={renderItem} />
+    <MessageScroller displayIds={displayMessageIds} renderItem={renderItem} bottomInset={bottomInset} />
   );
 }

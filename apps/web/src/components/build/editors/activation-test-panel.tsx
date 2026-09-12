@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
+import { TextInput } from "../../shared/text-input.js";
 import type { TFunc } from "../../../i18n/context.js";
 import { testLoreActivation } from "../../../app-client.js";
 
@@ -52,12 +53,8 @@ export function ActivationTestPanel({
   return (
     <>
       <div className={cn("flex gap-2", isMobile && "flex-col")}>
-        <input
-          className={cn(
-            "h-8 flex-1 rounded-md border border-border bg-s2 px-3 text-[13px] text-t1 outline-none focus:border-accent",
-            isMobile && "min-h-[44px]"
-          )}
-          type="text"
+        <TextInput
+          className="flex-1"
           value={testText}
           onChange={(e) => setTestText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && runTest()}

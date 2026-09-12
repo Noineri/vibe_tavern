@@ -1,167 +1,85 @@
 # Mobile Orchestrator Decisions
 
-This document records the implementation decisions for the Vibe Tavern Android launcher.
+This document retains the Android-launcher decision history. The current policy is at the top; all Termux/proot-runtime material below the historical divider is superseded record, not a setup or support instruction.
 
-## Product role
+## Current decision — native launcher addendum (2026-09-11)
 
-The APK is a local-server orchestrator, not a web client.
+The Bun-on-Android PIE approach was proven by the native Android PoC recorded in the sibling planning report `reports/MOBILE_NATIVE_PORT_RESEARCH.md`. Vibe Tavern now maintains one current Android distribution: a native ARM64 APK for Android 10 and later. There is no supported parallel Termux edition.
 
-Responsibilities:
+The native APK remains `com.vibetavern.launcher`, keeps the GitHub Releases APK updater, and retains the permanent signing identity so official releases can update in place. The system browser renders the Vibe Tavern UI; the launcher is not a WebView client.
 
-- install or update the bundled Vibe Tavern ARM64 server inside Termux/proot Ubuntu;
-- start the local server in a visible Termux session;
-- stop the local server;
-- open the system browser at `http://127.0.0.1:8787`;
-- discover launcher updates from public GitHub Releases;
-- hand approved APK updates to Android's system installer;
-- remove Vibe Tavern files or the full Ubuntu container when requested.
+The launcher executes the bundled Bun Android binary from `nativeLibraryDir` and extracts the bundled payload into app-private storage. Its child lifecycle is owned by a `dataSync` foreground service: the starting thread remains parked on `waitFor()`, readiness is successful `GET /api/runtime/version`, and the native process receives the frozen local host, port, data, payload, home, temporary-directory, and no-orphans environment contract. A server on port 8787 that is not the launcher's own child is reported as foreign and is never stopped automatically.
 
-Non-goals:
+Foreground service operation and notification permission do not overcome every OEM freezer. The launcher requests battery-exemption guidance at first server start, and user guidance is to set Vibe Tavern to unrestricted battery use where available, keep it in recents, and disable aggressive manufacturer power saving if browser requests lag or freeze.
 
-- no WebView or in-app rendering of the web UI;
-- no silent APK installation;
-- no automatic APK download;
-- no on-device `git clone`, dependency installation, or source build.
+Chats, settings, keys, and assets are native app-private data. Uninstalling the native launcher removes that data, so users must export important data first. APK replacement and bundled-payload extraction do not intentionally replace it.
 
-## Runtime model
+Termux survives only as a non-destructive, one-time migration source for an eligible user upgrading from the old launcher: the user produces an archive, the launcher validates it into staging, keeps a backup until API health succeeds, and restores native data on failure. The old installation is never written by migration; clean native installs never see or need it.
 
-The Android app launches commands through Termux `RUN_COMMAND`.
+The surviving partial Termux source is frozen under [`mobile/legacy-termux/`](../legacy-termux/README.md). It is unsupported and excluded from active build, CI, test, release, and distribution paths. Commit `965da98d` is the complete buildable pre-native resurrection snapshot and will receive a permanent tag separately; future restoration must branch from that snapshot rather than revive the partial archive.
 
-The server runs inside `proot-distro` Ubuntu with `VIBE_TAVERN_HOST=127.0.0.1` and `VIBE_TAVERN_PORT=8787`.
+## Current release identity and APK updater
 
-The APK opens the UI with a normal Android browser intent, which keeps cookies, downloads, keyboard handling, and rendering in the user's browser.
+Official releases use package ID `com.vibetavern.launcher` and the permanent release signing key restored only in release CI. Release builds fail without their required signing inputs, and CI verifies the assembled APK signature before publication. A launcher signed with a different historical/debug key cannot be replaced in place; it must be uninstalled once before an official APK is installed.
 
-Native Android execution remains out of scope while Bun's Android runtime is not production-ready; Termux plus proot Ubuntu is the supported runtime boundary.
+The launcher checks the latest stable GitHub Release without a token and also offers a manual check. It only downloads after user consent, validates package ID, version name, and increasing version code before handoff, and Android separately confirms installation. If Android requires unknown-app permission, the launcher opens the appropriate system settings page and resumes when the user returns.
 
-## Release identity and signing
+Debug builds alone may use the same-LAN update fixture. It builds matching native payloads for both base and update APKs; release builds remain fixed to the public GitHub HTTPS endpoint.
 
-The release APK uses the permanent application ID `com.vibetavern.launcher` and a permanent signing key restored only inside GitHub Actions.
+## Current native payload and lifecycle
 
-Release builds fail closed unless all four signing inputs are present:
+`bun run build:android-native` generates the uncommitted ARM64 `libvibetavern.so` and the uncommitted `assets/payload/{web,drizzle,tokenizers,prompts}` tree before Gradle assembly. Gradle packages the server as extracted JNI content and packages the payload in the APK. Each APK version causes the launcher to ensure its matching payload is extracted, without replacing native data.
 
-- `ANDROID_KEYSTORE_BASE64`;
-- `ANDROID_KEYSTORE_PASSWORD`;
-- `ANDROID_KEY_ALIAS`;
-- `ANDROID_KEY_PASSWORD`.
+The native server binds locally on `127.0.0.1:8787`; **Open in Browser** uses the system browser only after API readiness. The foreground service owns start, stop, current-launch log capture, exit-code reporting, and the notification Stop action. The launcher exposes copy/clear-log controls and reports a foreign port owner rather than trying to terminate it.
 
-The keystore is reconstructed under `RUNNER_TEMP`, never committed, and the resulting APK is verified with `apksigner` before publication.
+## Current migration policy
 
-An APK signed by an old debug key cannot be updated in place to the permanent release key, so users of a pre-release debug build must uninstall that launcher once and install the first official release.
+A migration panel is limited to the old-launcher marker plus absent native database, and is hidden after successful migration or **Start fresh instead**. An eligible user stops the old server, uses `termux-setup-storage` if storage access is needed, creates the archive through the command shown by the launcher, and selects it with Android's document picker. The source remains untouched. Archive validation rejects unsafe content before activation; a staged import is promoted only with rollback protection and post-start API health checking.
 
-Uninstalling only the Android launcher does not remove Vibe Tavern data stored inside Termux; using the launcher's destructive Delete actions does.
+The exact user instructions live in the [current English setup guide](../../docs/android-setup.md) and [Russian setup guide](../../docs/android-setup-ru.md). They do not claim that final release-APK migration verification on every device has already happened.
 
-All later official releases keep the same package ID and signing identity and therefore install in place.
+---
 
-## Launcher update policy
+# Superseded historical record — Termux/proot runtime (pre-2026-09-11)
 
-The launcher checks the latest public stable GitHub Release without a token.
+**Status:** Historical only. The following decisions describe the retired launcher runtime and must not be read as a supported installation, build, update, or troubleshooting path. The frozen archive README and the current setup guides are the only valid references for its historical relationship to the native launcher.
 
-It checks once per process and also exposes a manual **Check for launcher update** action.
+## Historical product role
 
-An automatic check may report availability but never starts a download.
+The former APK was a local-server orchestrator rather than a web client. It installed and updated a bundled ARM64 server inside a Termux/proot Ubuntu environment, started and stopped it through Termux commands, opened `http://127.0.0.1:8787` in the system browser, offered GitHub Releases APK updates, and exposed destructive cleanup actions. It never intended to embed a WebView, install APKs silently, or build application source on the device.
 
-The user must approve the release dialog before `DownloadManager` is used, and Android's system installer always requires a separate confirmation.
+## Historical runtime model
 
-Before installer handoff, the downloaded APK must have the expected package ID, expected version name, and a strictly higher version code.
+The old Android app issued Termux `RUN_COMMAND` operations and the server ran in `proot-distro` Ubuntu with a local host and port. The browser was deliberately kept separate for cookies, downloads, keyboard behavior, and rendering. This boundary was superseded when the native Bun Android executable proved viable.
 
-If Android requires per-app permission to install unknown apps, the launcher opens the system settings page and resumes the pending installation after permission is granted.
+## Historical release identity and signing
 
-Download state is persisted so process recreation reconnects to the same `DownloadManager` job instead of starting a duplicate.
+The former design already established the lasting release identity: package `com.vibetavern.launcher`, permanent signing inputs restored only in CI, fail-closed release signing, `apksigner` verification, and in-place updates for later official releases. It also documented that debug-signed builds needed a one-time uninstall before the permanent release key could take over. The native launcher retains these decisions.
 
-Production discovery is fixed to the GitHub HTTPS endpoint; private-LAN HTTP endpoints and version overrides exist only in explicit debug builds, and release builds reject every local-test override.
+## Historical updater policy
 
-## Server payload policy
+The earlier updater also used the latest stable public GitHub Release, required consent before `DownloadManager`, required Android installer confirmation, validated package/version identity, persisted download state, and restricted private-LAN endpoints to debug builds. Those updater decisions remain current; only the retired server-payload behavior has changed.
 
-Each release APK bundles the CI-built `vibe-tavern-android-arm64.tgz` archive.
+## Historical payload policy
 
-The launcher passes the maintained `install.sh` asset directly to a visible Termux command and streams the archive through a temporary localhost foreground service that survives Activity backgrounding, stops after a successful transfer, and does not require shared-storage permission or a Downloads copy.
+The retired payload was a bundled `vibe-tavern-android-arm64.tgz` archive delivered through a temporary localhost foreground transfer service and installed into a Termux/proot program directory, with data kept separately. It performed an explicit server-payload update after APK replacement and used swap/validation logic. This entire archive/transfer/install runtime is superseded by native `.so` execution and app-private payload extraction.
 
-The archive contains a `version.txt` marker matching the APK release and an executable `vibe-tavern` ARM64 server.
+## Historical Termux requirements
 
-Replacing the APK never silently applies its bundled server payload.
+The old runtime required F-Droid Termux, Android permission to run external Termux commands, an `allow-external-apps` Termux setting, a restarted shell, and an Ubuntu container. None of these are requirements for the native launcher. They matter only to a legacy user producing the one-time migration archive.
 
-The launcher stores the last applied payload version separately from the launcher version and shows **Install server vX.Y.Z** or **Update server to vX.Y.Z** when explicit application is required.
+## Historical visible-session and process handling
 
-The program directory is `~/vibe-tavern` inside proot Ubuntu.
+The retired launcher used a visible Termux session for diagnostics and exact process-name matching to avoid terminating its diagnostic shell. Its stop action polled the local server after sending Termux/proot commands. Native lifecycle ownership is now in `ServerService.kt`, so these details are historical only.
 
-The user data directory is `~/.local/share/vibe-tavern` and remains outside the program swap.
+## Historical deletion and localization
 
-Installation extracts into `~/vibe-tavern.next`, validates the archive, version marker, and server binary, stops only the exact server process, then swaps program directories.
+The retired launcher offered separate Vibe Tavern and full-container deletion flows, logged their Termux diagnostics, and provided English/Russian launcher UI with the canonical visual identity. The native launcher retains bilingual launcher UI and system-browser architecture, but its native data follows Android uninstall semantics instead of the retired container cleanup model.
 
-This preserves chats, characters, settings, summaries, and assets across server updates.
+## Historical build and verification
 
-## Termux requirements
+The old builder used `bun run build:android-arm64`, staged a `.tgz` asset, and built the Gradle APK around it. The release workflow verified the embedded archive and executable mode, then published an Android APK. This is superseded by `bun run build:android-native`, which generates the Android PIE executable plus payload and has Gradle package those inputs directly.
 
-Termux is an external dependency and must be installed from F-Droid rather than the abandoned Play Store build.
+## Historical accepted lifecycle
 
-The launcher requires Android's **Run commands in Termux environment** permission.
-
-Termux must allow external app commands through `allow-external-apps=true` in `~/.termux/termux.properties`.
-
-The installer preserves this setting and calls `termux-reload-settings`, but a first-time user must still set it before the launcher can issue its first command, grant Android permission, and restart Termux manually when required by the installed Termux/Android combination.
-
-## Visible start session and process handling
-
-Starting the server uses `RUN_COMMAND_BACKGROUND=false` so failures remain visible and copyable in Termux.
-
-Never use `pkill -f`, `pgrep -f`, or `pgrep -af` in launcher lifecycle code because pattern matching can terminate the parent diagnostic shell.
-
-Use exact process-name matching such as `pkill -TERM -x 'vibe-tavern'`, `pkill -KILL -x 'vibe-tavern'`, and `pgrep -ax 'vibe-tavern'`.
-
-The start path does not perform cleanup; cleanup belongs to the Stop action.
-
-Stop sends exact-name termination commands in the required Termux and proot contexts, then polls `http://127.0.0.1:8787` until the server is unavailable.
-
-## Uninstall behavior
-
-**Delete Vibe Tavern** stops the server and removes program files, user data, and the generated start script while retaining the Ubuntu container.
-
-**Delete everything** stops the server and removes the full proot Ubuntu container.
-
-Both flows write `~/vibe-tavern-uninstall.log` and keep the Termux session visible long enough to copy diagnostics.
-
-## Localization and identity
-
-The launcher provides English and Russian UI selected through an in-app language control and persisted in `SharedPreferences`.
-
-The initial language follows the Android system language, defaulting to English outside Russian locales.
-
-Active setup, lifecycle, update, help, and uninstall states are bilingual; Termux diagnostics remain primarily English for support and copy/paste.
-
-The launcher and adaptive icon use the canonical book-and-stars mark, coffee palette, Alegreya headings, and Inter controls generated from the web application's source assets.
-
-## Build and verification
-
-Build the ARM64 payload from the repository root:
-
-```sh
-bun run build:android-arm64
-```
-
-For a local APK build, copy `out/vibe-tavern-android-arm64.tar.gz` to `mobile/android/app/src/main/assets/vibe-tavern-android-arm64.tgz`, then run:
-
-```sh
-cd mobile/android
-./gradlew testDebugUnitTest assembleDebug
-```
-
-On Windows, use `gradlew.bat` instead of `./gradlew`.
-
-The tag-driven release workflow builds the ARM payload, stages it into the APK, runs Android tests, assembles the permanently signed release APK, verifies the embedded payload marker and executable mode, verifies the APK signature, renames it to `Vibe-Tavern-vX.Y.Z-android.apk`, and only then uploads it for publication.
-
-The debug-only same-LAN harness in `mobile/android/scripts/serve-local-update.ts` exercises discovery, consent, download, unknown-source recovery, system installation, and explicit payload application without a public test release.
-
-## Accepted lifecycle
-
-The launcher is considered successful when a device can complete:
-
-- fresh Termux/proot installation from the bundled archive;
-- visible server start and browser opening;
-- exact-name stop and restart;
-- no-update and update-available launcher checks;
-- explicit APK download and Android-confirmed in-place installation;
-- launcher/server version mismatch display after APK replacement;
-- explicit matching server payload application with existing data preserved;
-- process recreation during download without duplication;
-- both uninstall modes;
-- English/Russian switching and canonical branding.
+The former acceptance path covered fresh Termux/proot installation, visible-session start/stop, launcher update, explicit archive payload application, two container deletion modes, and bilingual state. It is historical evidence for the former orchestrator only. Current acceptance is defined by the native launcher plan and current Android setup guides.

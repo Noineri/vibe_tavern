@@ -1,0 +1,1 @@
+ALTER TABLE `ui_settings` ADD `service_prompt_preset_migrated` integer DEFAULT false NOT NULL;

@@ -1,3 +1,4 @@
+// hygiene:allow-abs-path-inputs — absolute path is an attack input the tool must reject, never loaded
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, mkdir, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

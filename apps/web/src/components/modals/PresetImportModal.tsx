@@ -3,6 +3,8 @@ import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
+import { InlineRenameInput } from "../shared/InlineRenameInput.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
 import { inferSlot } from "@vibe-tavern/domain";
@@ -191,7 +193,11 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
   return (
     <Modal open={true} onClose={onClose}>
       <div className={cn(
-        "flex flex-col overflow-hidden bg-surface",
+        // glass-blur-under (not bg-surface): --surface is translucent in glass
+        // themes, which made this shell see-through (owner defect 2026-09-10).
+        // The class paints an opaque-in-solid-themes --glass-bg fill + frost on
+        // a z:-1 ::before — byte-identical to bg-surface in opaque themes.
+        "glass-blur-under flex flex-col overflow-hidden",
         isMobile
           ? "w-full h-full"
           : "max-h-[calc(100vh-60px)] w-[640px] max-w-[calc(100vw-32px)] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
@@ -275,17 +281,22 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
         {/* Import target */}
         {parsed && phase === "preview" && (
           <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-2.5">
-            <label className="flex cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 select-none">
-              <input type="radio" name="importTarget" className="accent-accent" checked={importTarget === "current"} onChange={() => setImportTarget("current")} />
-              {t("preset_import_to_current")}
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 select-none">
-              <input type="radio" name="importTarget" className="accent-accent" checked={importTarget === "new"} onChange={() => setImportTarget("new")} />
-              {t("preset_import_to_new")}
-            </label>
+            {/* R-2a: import-target radios are the shared SegmentedControl
+                (regex-tab idiom: wrap + mobileFill + mobileSelect). */}
+            <SegmentedControl
+              value={importTarget}
+              onChange={(v) => setImportTarget(v)}
+              wrap
+              mobileFill
+              mobileSelect
+              options={[
+                { value: "current", label: t("preset_import_to_current") },
+                { value: "new", label: t("preset_import_to_new") },
+              ]}
+            />
             {importTarget === "new" && (
-              <input
-                className="ml-2 h-[30px] flex-1 rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4 focus:border-accent"
+              <InlineRenameInput
+                className="ml-2 flex-1"
                 placeholder={t("preset_import_new_name_placeholder")}
                 value={newPresetName}
                 onChange={(e) => setNewPresetName(e.target.value)}

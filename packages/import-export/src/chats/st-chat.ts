@@ -18,6 +18,8 @@ export interface ImportedChatMetadata {
   userName?: string;
   characterName?: string;
   chatMetadata?: Record<string, unknown>;
+  /** ST first-line `world_info`: the world book selected for this chat. */
+  worldInfo?: string;
 }
 
 export interface ParseSillyTavernChatResult {
@@ -42,11 +44,14 @@ export function parseSillyTavernChat(
       // Often the first line contains chat metadata in SillyTavern JSONL
       if (
         i === 0 &&
-        (data.user_name || data.character_name || data.chat_metadata)
+        (data.user_name || data.character_name || data.chat_metadata || data.world_info)
       ) {
         metadata.userName = data.user_name;
         metadata.characterName = data.character_name;
         metadata.chatMetadata = data.chat_metadata;
+        if (typeof data.world_info === "string" && data.world_info) {
+          metadata.worldInfo = data.world_info;
+        }
 
         // If this line doesn't have a message body, skip message processing
         if (!data.mes) {

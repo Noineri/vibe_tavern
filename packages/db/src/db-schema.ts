@@ -1,5 +1,6 @@
 import type {
   CoauthorTransport,
+  GenerationMode,
   ProviderProxyMode,
   ProviderQuotaErrorKind,
   ProviderQuotaEvent,
@@ -251,6 +252,11 @@ export const lorebooks = sqliteTable('lorebooks', {
   // lorebook-st-parity-audit.md §1.4.
   tokenBudgetPercent: integer('token_budget_percent'),
   recursiveScanning: integer('recursive_scanning').notNull().default(0),
+  // Book-level default for entry.useGroupScoring (ST's global
+  // world_info_use_group_scoring switch, scoped to the book). Effective
+  // per-entry flag: entry.useGroupScoring ?? book.useGroupScoring.
+  // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-2).
+  useGroupScoring: integer('use_group_scoring').notNull().default(0),
   maxRecursionSteps: integer('max_recursion_steps').notNull().default(5),
   includeNames: integer('include_names').notNull().default(0),
   minActivations: integer('min_activations').notNull().default(0),
@@ -297,7 +303,10 @@ export const loreEntries = sqliteTable('lore_entries', {
   groupName: text('group_name').notNull().default(''),
   groupWeight: integer('group_weight').notNull().default(100),
   prioritizeInclusion: integer('prioritize_inclusion').notNull().default(0),
-  useGroupScoring: integer('use_group_scoring').notNull().default(0),
+  // Tri-state (ST parity): null = inherit the book-level useGroupScoring
+  // default, true/false = explicit per-entry override. See
+  // LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-4).
+  useGroupScoring: integer('use_group_scoring'),
   excludeRecursion: integer('exclude_recursion').notNull().default(0),
   preventRecursion: integer('prevent_recursion').notNull().default(0),
   delayUntilRecursion: integer('delay_until_recursion').notNull().default(0),
@@ -447,6 +456,200 @@ export const scriptVisuals = sqliteTable('script_visuals', {
   visualIdx: index('idx_script_visuals_visual').on(table.visualId),
 }));
 
+// ─── regexPresets / regexLinks ────────────────────────────────────────────────
+//
+// Named SillyTavern-parity find/replace scripts (ST `RegexScriptData`;
+// REGEX_EXTENSION_PLAN, RX-2). Columns map 1:1 onto the `RegexPreset` domain
+// interface in packages/domain/src/entities.ts: array fields persist as JSON
+// (`trimStringsJson`, `placementJson` — placement codes stay numerically
+// ST-parity), ST's ephemerality flags (`markdownOnly`/`promptOnly`) persist as
+// their own columns, depth bounds are nullable (null = unlimited).
+//
+// `regexLinks` is the third instance of the `lorebookLinks`/`scriptLinks`
+// junction pattern ({presetId, targetType, targetId}, composite PK, cascade
+// FK). Binding targets are characters and prompt presets only — persona is
+// excluded by design (a regex preset is content-transforming machinery, not
+// persona-scoped knowledge).
+export const regexPresets = sqliteTable('regex_presets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  findRegex: text('find_regex').notNull(),
+  replaceString: text('replace_string').notNull().default(''),
+  trimStringsJson: text('trim_strings_json').notNull().default('[]'),
+  substituteRegex: integer('substitute_regex').notNull().default(0),
+  disabled: integer('disabled').notNull().default(0),
+  markdownOnly: integer('markdown_only').notNull().default(0),
+  promptOnly: integer('prompt_only').notNull().default(0),
+  runOnEdit: integer('run_on_edit').notNull().default(1),
+  minDepth: integer('min_depth'),
+  maxDepth: integer('max_depth'),
+  // RegexPlacement[] as JSON; default = [AI_OUTPUT] only.
+  placementJson: text('placement_json').notNull().default('[2]'),
+  isGlobal: integer('is_global').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  // R-13 profile membership: null = standalone rule. FK is ON DELETE SET NULL
+  // (profile deletion keeps rules as standalone by default — folder metaphor;
+  // the cascade variant is an explicit store-level operation, not the FK).
+  profileId: text('profile_id').references(() => regexProfiles.id, { onDelete: 'set null' }),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  globalIdx: index('idx_regex_presets_global').on(table.isGlobal),
+  profileIdx: index('idx_regex_presets_profile').on(table.profileId),
+}));
+
+/**
+ * Regex profiles (R-13): an ordered bundle of regex rules with a single
+ * binding + master enable switch (the lorebook analogy). Rows in this table
+ * and `regex_presets` participate in ONE flat sort sequence — both tables
+ * carry their own `sort_order` and the client (R-13b list) interleaves them
+ * by sending explicit sortOrder values; there is deliberately NO combined
+ * reorder endpoint (cross-table ordering is orchestrated by the client).
+ * `regexProfileLinks` is the fourth instance of the lorebook/script junction
+ * pattern; binding targets are characters and prompt presets only.
+ */
+export const regexProfiles = sqliteTable('regex_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  disabled: integer('disabled').notNull().default(0),
+  isGlobal: integer('is_global').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  globalIdx: index('idx_regex_profiles_global').on(table.isGlobal),
+}));
+
+export const regexLinks = sqliteTable('regex_links', {
+  regexPresetId: text('regex_preset_id').notNull().references(() => regexPresets.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // 'character' | 'preset'
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  // Composite PK: one link per (preset, target) pair
+  pk: primaryKey({ columns: [table.regexPresetId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_regex_links_target').on(table.targetType, table.targetId),
+  presetIdx: index('idx_regex_links_preset').on(table.regexPresetId),
+}));
+
+export const regexProfileLinks = sqliteTable('regex_profile_links', {
+  regexProfileId: text('regex_profile_id').notNull().references(() => regexProfiles.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // 'character' | 'preset'
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.regexProfileId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_regex_profile_links_target').on(table.targetType, table.targetId),
+  profileIdx: index('idx_regex_profile_links_profile').on(table.regexProfileId),
+}));
+
+// ─── servicePromptProfiles ────────────────────────────────────────────────────
+//
+// Independent profiles overriding the app's 21 base system prompts
+// (SERVICE_PROMPTS_PROFILES_PLAN, SP-2). Overrides persist as JSON
+// (partial map field→text, strict-object schema). The seeded row
+// id "default" is the live Default profile — self-healed by
+// ServicePromptProfileStore.ensureDefault(). No folder/file coupling.
+export const servicePromptProfiles = sqliteTable('service_prompt_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  isDefault: integer('is_default').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  overrides: text('overrides').notNull().default('{}'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// ─── ttsProfiles / ttsProfileLinks ──────────────────────────────────────
+//
+// Named TTS voice profiles (TTS_PLAN TS-1; design TTS_DESIGN). Standalone
+// entity — NOT providerProfiles, which is LLM-generation-specific. Columns
+// map 1:1 onto the `TtsProfile` domain interface: the backend-specific config
+// bag persists as JSON (`configJson`) and is validated per-backend by the
+// registry contracts (TS-2+), not by the DB. `isDefault` is the voice map's
+// [Default Voice] pointer — at most one row, store-maintained.
+//
+// TE2-16: the secret lives in the typed `api_key` column (same rule as
+// providerProfiles.api_key — keys are NEVER stored inside JSON blobs);
+// `provider_ref` optionally links a providerProfiles row for server-side
+// key + baseUrl resolution. `configJson` carries everything else.
+//
+// `ttsProfileLinks` is the voice-map junction ({profileId, targetType,
+// targetId}, composite PK, cascade FK); targets are characters AND personas
+// (the user's own voice) — a deliberately different vocabulary from the
+// regex/lorebook junctions, which bind characters and prompt presets.
+export const ttsProfiles = sqliteTable('tts_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  backend: text('backend').notNull(),  // TTS_BACKEND slug
+  configJson: text('config_json').notNull().default('{}'),
+  // TE2-16 typed key columns — the secret left config_json for good:
+  // api_key is write-only across the API (hasStoredApiKey on the wire),
+  // provider_ref resolves key + baseUrl from providerProfiles at synthesis
+  // time. Both nullable: local servers need neither.
+  apiKey: text('api_key'),
+  providerRef: text('provider_ref'),
+  voiceId: text('voice_id').notNull().default(''),
+  narratorVoiceId: text('narrator_voice_id'),
+  lang: text('lang').notNull().default('en'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isDefault: integer('is_default').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  defaultIdx: index('idx_tts_profiles_default').on(table.isDefault),
+  backendIdx: index('idx_tts_profiles_backend').on(table.backend),
+}));
+
+export const ttsProfileLinks = sqliteTable('tts_profile_links', {
+  ttsProfileId: text('tts_profile_id').notNull().references(() => ttsProfiles.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // 'character' | 'persona'
+  targetId: text('target_id').notNull(),
+  // TS-9a-foundation: 'voice' | 'disabled' (design's disable-per-character);
+  // additive column, default keeps pre-existing rows as voice bindings.
+  mode: text('mode').notNull().default('voice'),
+}, (table) => ({
+  // Composite PK: one link per (profile, target) pair.
+  pk: primaryKey({ columns: [table.ttsProfileId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_tts_profile_links_target').on(table.targetType, table.targetId),
+  profileIdx: index('idx_tts_profile_links_profile').on(table.ttsProfileId),
+}));
+
+// ─── sttProfiles ──────────────────────────────────────────────────────
+//
+// Named speech-to-text profiles (STT_PLAN ST-1; design STT_DESIGN).
+// Standalone entity — NOT providerProfiles (LLM-generation-specific), the
+// same rule as ttsProfiles. Columns map 1:1 onto the `SttProfile` domain
+// interface: the backend-specific config (endpoint/model/language — the
+// NON-SECRET union) persists as JSON (`configJson`), validated per-backend by
+// the STT backend registry contracts (ST-2+), not by the DB. `isDefault` is
+// the fallback profile pointer (mirrors tts_profiles.isDefault — at most one
+// row, store-maintained); the two scenario pointers
+// (`ui_settings.active_dictation_profile_id` /
+// `ui_settings.active_voice_message_profile_id`) are the per-scenario
+// selection (may point at the same profile).
+//
+// ST-1 secret rule (the TE2-16 key rule applied to STT): the API key lives in
+// the typed `api_key` column — keys are NEVER stored inside JSON blobs.
+// `configJson` carries everything else; writes strip it defensively.
+export const sttProfiles = sqliteTable('stt_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  backend: text('backend').notNull(),  // STT_BACKENDS slug
+  configJson: text('config_json').notNull().default('{}'),
+  // ST-1 typed key column — the secret never enters config_json: api_key is
+  // write-only across the API (hasStoredApiKey on the wire). Nullable:
+  // in-browser Whisper needs no key at all.
+  apiKey: text('api_key'),
+  // ST-7 capability seam — v1 pure-ASR backends force it off; audio-
+  // understanding backends annotate tone/emotion into the transcript.
+  emotionAnnotation: integer('emotion_annotation', { mode: 'boolean' }).notNull().default(false),
+  isDefault: integer('is_default').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  defaultIdx: index('idx_stt_profiles_default').on(table.isDefault),
+  backendIdx: index('idx_stt_profiles_backend').on(table.backend),
+}));
+
 // ─── chatBranches ──────────────────────────────────────────────────────────────
 
 export const chatBranches = sqliteTable('chat_branches', {
@@ -532,6 +735,14 @@ export const messageVariants = sqliteTable('message_variants', {
   // from the currently selected valid variant. Owned by the immutable variant
   // id, never by variantIndex (variantIndex is display order only).
   sceneTrackerJson: text('scene_tracker_json'),
+  // TTS narration annotation (TPE-1, AN-1): the annotated copy of this
+  // variant's content for narration — expressive tags inserted, text
+  // otherwise identical. Null = not annotated; narration then reads the
+  // variant content itself. A PERSISTED FACT like the Scene record: a
+  // content edit does NOT clear it (typo-fix precedent — wiping user
+  // authored side-data on edit proved awful UX). Owned by the immutable
+  // variant id, same as scene_tracker_json.
+  ttsAnnotation: text('tts_annotation'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),
@@ -564,8 +775,16 @@ export const promptPresets = sqliteTable('prompt_presets', {
   aiAssistantPrompts: text('ai_assistant_prompts').notNull().default('{}'),
   customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
   promptOrderJson: text('prompt_order_json').notNull().default('[]'),
+  // Generation format (LOCAL_SUPPORT_PLAN LS-3a): the TC string-shape glue,
+  // stored as a JSON GenerationFormat object. Empty string = absent = auto
+  // (backward-compatible with pre-LS-3 presets).
+  generationFormatJson: text('generation_format_json').notNull().default(''),
   advancedMode: integer('advanced_mode').notNull().default(0),
   mergeConsecutiveRoles: integer('merge_consecutive_roles').notNull().default(0),
+  // Per-send prefill entry point (LOCAL_SUPPORT_PLAN LS-8): when true, the
+  // chat input surfaces the one-shot prefill chip/bubble (capability-gated).
+  // The preset's persistent prefill value is untouched by it.
+  perSendPrefillEnabled: integer('per_send_prefill_enabled', { mode: 'boolean' }).notNull().default(false),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
@@ -602,6 +821,43 @@ export const proxySettings = sqliteTable('proxy_settings', {
   singletonIdCheck: check('proxy_settings_singleton_id_check', sql`${table.id} = 'default'`),
 }));
 
+// ─── samplerSets ──────────────────────────────────────────────────────────────
+// Named sampler sets (LOCAL_SUPPORT_PLAN LS-5a): a global library of inert
+// sampler value bundles the provider sampler panel applies copy-on-select.
+// The payload is a serialized ModelSettingsOverlay (the same bundle the
+// sampler clipboard carried — the clipboard trio IS the set engine; only the
+// copy/paste buttons were replaced by the set row). Sets are inert templates:
+// applying one writes the values into the profile/overlay; editing the set
+// later never rewrites profiles that already applied it. Named-library
+// precedent: regex_profiles / tts_profiles (no links, no enabled flag).
+export const samplerSets = sqliteTable('sampler_sets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** Stringified samplerPresetPayloadSchema JSON (a partial ModelSettingsOverlay). */
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// ─── formatTemplates ─────────────────────────────────────────────────────
+
+/**
+ * Named custom format templates (LOCAL_SUPPORT_PLAN LS-10) — the format-block
+ * counterpart of the sampler-set library (same small-resource shape): a
+ * user-saved sequence bundle selectable in the provider format block's auto
+ * dropdown. The payload is the ST instruct DSL shape (generationFormatSchema).
+ */
+export const formatTemplates = sqliteTable('format_templates', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** Stringified generationFormatSchema JSON (mode stored as "manual"). */
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── providerProfiles ──────────────────────────────────────────────────────────
 
 export const providerProfiles = sqliteTable('provider_profiles', {
@@ -611,11 +867,23 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   sortOrder: integer('sort_order').notNull().default(0),
   providerPreset: text('provider_preset').notNull(),
   coauthorTransport: text('coauthor_transport').$type<CoauthorTransport>().notNull().default('chat_completions'),
+  // Generation mode (LOCAL_SUPPORT_PLAN LS-2a): 'chat' (default) vs raw text
+  // 'completion' (OpenAI-style /completions). The flip is silent — only how
+  // FUTURE generations are sent changes; nothing is rewritten or migrated.
+  generationMode: text('generation_mode').$type<GenerationMode>().notNull().default('chat'),
+  // LS-10: the provider-side generation format (the format block in provider
+  // settings). Empty string = unset = the active preset's format keeps
+  // applying as the fallback source (supervisor decision (c) 2026-09-09 —
+  // preset formats are NOT migrated; the fallback preserves them).
+  generationFormatJson: text('generation_format_json').notNull().default(''),
   endpoint: text('endpoint').notNull(),
   apiKey: text('api_key'),
   defaultModel: text('default_model'),
   contextBudget: integer('context_budget'),
   pinContextBudget: integer('pin_context_budget', { mode: 'boolean' }).notNull().default(false),
+  // Token padding (LOCAL_SUPPORT_PLAN LS-1d): safety margin subtracted from the
+  // context budget at generation time (effectiveContextBudget). Profile-level.
+  tokenPadding: integer('token_padding').notNull().default(0),
   /** When true, sampler/context edits in the modal write to a per-model overlay
    *  (providerModelSettings) instead of the profile base. See resolveEffectiveSettings. */
   bindPerModel: integer('bind_per_model', { mode: 'boolean' }).notNull().default(false),
@@ -631,6 +899,20 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   topA: real('top_a').notNull().default(0),
   typicalP: real('typical_p').notNull().default(1.0),
   tfsZ: real('tfs_z').notNull().default(1.0),
+  // Adaptive-p (llama.cpp/KoboldCPP, LOCAL_SAMPLERS_ADDITION_REPORT B1).
+  // adaptive_target −1 = disabled (llama.cpp default), 0.0–1.0 active.
+  adaptiveTarget: real('adaptive_target').notNull().default(-1),
+  adaptiveDecay: real('adaptive_decay').notNull().default(0.9),
+  // llama-server numeric tail (LOCAL_SAMPLERS_ADDITION_REPORT B2). Off
+  // defaults read like upstream: dynatemp_range 0 / top_n_sigma 0 /
+  // smoothing_factor 0 = disabled, dynatemp_exponent 1 = upstream default
+  // (applies only when range > 0). dry_penalty_last_n −1 = disabled: the
+  // mapper omits the field entirely (llama-server rejects −1 with HTTP 400
+  // and 0 means a zero window — DRY inert), > 0 is a real window.
+  dynatempRange: real('dynatemp_range').notNull().default(0),
+  dynatempExponent: real('dynatemp_exponent').notNull().default(1.0),
+  topNSigma: real('top_n_sigma').notNull().default(0),
+  smoothingFactor: real('smoothing_factor').notNull().default(0),
   repeatLastN: integer('repeat_last_n').notNull().default(0),
   mirostat: integer('mirostat').notNull().default(0),
   mirostatTau: real('mirostat_tau').notNull().default(5.0),
@@ -638,6 +920,7 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   dryMultiplier: real('dry_multiplier').notNull().default(0),
   dryBase: real('dry_base').notNull().default(1.75),
   dryAllowedLength: integer('dry_allowed_length').notNull().default(2),
+  dryPenaltyLastN: integer('dry_penalty_last_n').notNull().default(-1),
   drySequenceBreakersJson: text('dry_sequence_breakers_json'),
   xtcThreshold: real('xtc_threshold').notNull().default(0.1),
   xtcProbability: real('xtc_probability').notNull().default(0),
@@ -645,6 +928,10 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   presencePenalty: real('presence_penalty').notNull().default(0),
   repetitionPenalty: real('repetition_penalty').notNull().default(1.0),
   stopSequencesJson: text('stop_sequences_json'),
+  // KoboldCPP antislop phrase list (LOCAL_SAMPLERS_ADDITION_REPORT B3) — native
+  // `banned_strings` request field; exact-match phrases, leading spaces
+  // significant. Same JSON-array pattern as stop_sequences_json.
+  bannedStringsJson: text('banned_strings_json'),
   logitBiasJson: text('logit_bias_json'),
   seed: text('seed'),
   reasoningEffort: text('reasoning_effort').notNull().default('auto'),
@@ -659,6 +946,14 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   proxyMode: text('proxy_mode').$type<ProviderProxyMode>().notNull().default('inherit'),
   proxyId: text('proxy_id').references(() => proxyProfiles.id, { onDelete: 'set null' }),
   visionModel: text('vision_model'),
+  /** Last-applied sampler set (LOCAL_SUPPORT_PLAN LS-5a): drives the panel's
+   *  dropdown pre-selection + dirty-dot computation across sessions. Deliberately
+   *  a PLAIN column (no FK): drizzle-kit 0.31 emits no ON DELETE clause on
+   *  ALTER ADD COLUMN, and FK enforcement is ON at runtime — an FK here would
+   *  make set deletion throw instead of clearing. The clearing is app-level:
+   *  SamplerSetStore.delete callers clear dangling references first
+   *  (ProviderStore.clearSamplerSetReference, LOCAL_SUPPORT_PLAN LS-5e). */
+  samplerSetId: text('sampler_set_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -791,6 +1086,34 @@ export const promptTraces = sqliteTable('prompt_traces', {
   chatBranchIdx: index('idx_prompt_traces_chat_branch').on(table.chatId, table.branchId, table.createdAt),
 }));
 
+// ─── promptTraceChunks / promptTraceChunkRefs ──────────────────────────────
+
+/**
+ * Content-addressed store for the large payload strings of prompt traces
+ * (see trace-chunking.ts). One row per unique string (sha256 id); many traces
+ * reference the same chunk — the chat history shared by every later trace in
+ * a chat is stored once. No FK: chunks may be shared by traces across chats;
+ * orphaned chunks are reclaimed by sweepOrphanChunks after trace deletions.
+ */
+export const promptTraceChunks = sqliteTable('prompt_trace_chunks', {
+  id: text('id').primaryKey(),
+  byteSize: integer('byte_size').notNull(),
+  content: text('content').notNull(),
+});
+
+/**
+ * Inverted index trace→chunk, written in the same transaction as the trace
+ * row. Powers orphan-chunk sweeps without parsing skeleton JSON. Derived
+ * data — deliberately no FK to prompt_traces (deletions cascade in SQL before
+ * the sweep runs).
+ */
+export const promptTraceChunkRefs = sqliteTable('prompt_trace_chunk_refs', {
+  traceId: text('trace_id').notNull(),
+  chunkId: text('chunk_id').notNull(),
+}, (table) => ({
+  refPk: primaryKey({ columns: [table.traceId, table.chunkId] }),
+}));
+
 // ─── uiSettings ────────────────────────────────────────────────────────────────
 
 export const uiSettings = sqliteTable('ui_settings', {
@@ -803,6 +1126,14 @@ export const uiSettings = sqliteTable('ui_settings', {
   activePromptPresetId: text('active_prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
   aiAssistantProviderId: text('ai_assistant_provider_id'),
   aiAssistantModelName: text('ai_assistant_model_name'),
+  // Secondary-model bindings per CONTEXT (SUM-5): summary generation and the
+  // message AI editor stop sharing the ai-assistant pair — each context owns
+  // its slot so picking a model in one place never leaks into another.
+  // Same dangling-policy as aiAssistantProviderId (no FK; adapter resolves).
+  summaryProviderId: text('summary_provider_id'),
+  summaryModelName: text('summary_model_name'),
+  messageEditorProviderId: text('message_editor_provider_id'),
+  messageEditorModelName: text('message_editor_model_name'),
   // Co-Author generation binding — app-wide, independent of RP active profile.
   // Null (or dangling after profile deletion) falls back to the RP active
   // profile/default model at the adapter boundary. No DB-level FK: like
@@ -829,6 +1160,23 @@ export const uiSettings = sqliteTable('ui_settings', {
   // available profile; no DB-level FK).
   copilotProviderId: text('copilot_provider_id'),
   copilotModelName: text('copilot_model_name'),
+  // Service prompt profiles — globally active profile id (SP-2). Null/dangling
+  // → Default profile (id "default") is used. No DB-level FK — mirrors
+  // coauthor/copilot bindings.
+  activeServicePromptProfileId: text('active_service_prompt_profile_id'),
+  // One-time marker (SP-7): the preset→profile service-prompt migration has
+  // completed. False on fresh installs (migration runs, finds nothing, flips
+  // to true) and on pre-SP-7 upgrades (migration snapshots preset overrides
+  // into named profiles). Written once by the startup hook, never reset.
+  servicePromptPresetMigrated: integer('service_prompt_preset_migrated', { mode: 'boolean' }).notNull().default(false),
+  // STT scenario pointers (STT_PLAN ST-1): the profile used by dictation
+  // (mic → transcript) and by voice-message transcription respectively; may
+  // point at the same profile. Null → the isDefault fallback profile / no
+  // transcription. No DB-level FK — mirrors coauthor/copilot/service-prompt
+  // bindings (a dangling id resolves back to the fallback rather than
+  // blocking the profile delete).
+  activeDictationProfileId: text('active_dictation_profile_id'),
+  activeVoiceMessageProfileId: text('active_voice_message_profile_id'),
 
   updatedAt: text('updated_at').notNull(),
 });

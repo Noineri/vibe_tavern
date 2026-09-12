@@ -11,6 +11,14 @@ import {
   useMacroAutocompleteStore,
 } from "./macro-autocomplete-store.js";
 
+/** The canonical auto-grow field class (see `lib/field-tokens.ts`).
+ *  `className` is an EXTENSION — the base always composes (FS-8b flip,
+ *  2026-09-10): a passed className adds to the base instead of replacing
+ *  it, killing the silent-unstyled-field bug class permanently. The one
+ *  escape hatch is the explicit `bare` mode below. */
+import { cn, } from "../../lib/cn.js";
+import { monoMod, textareaCls } from "../../lib/field-tokens.js";
+
 /** Native HTML textarea attributes that AutoTextarea doesn't consume itself. */
 export type AutoTextareaPassthrough = Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
@@ -20,7 +28,18 @@ export type AutoTextareaPassthrough = Omit<
 >;
 
 export interface AutoTextareaProps extends AutoTextareaPassthrough {
-  className: string;
+  /** Optional — a bare AutoTextarea IS the canonical field (textareaCls,
+   *  lib/field-tokens.ts). Since the FS-8b flip a passed className EXTENDS
+   *  the base (base always composes) — the silent-replace window is closed. */
+  className?: string;
+  /** Explicit no-base mode — the composer-family escape hatch (FS-8b).
+   *  When set, the primitive applies NO base at all: the caller's className
+   *  carries everything (borderless composer chrome, bubble/strip shells).
+   *  This is the one visible, greppable opt-out — composing a field base
+   *  under a composer chrome would fight it (border-inside-border, UI font
+   *  under prose font), so the composer family opts out DELIBERATELY.
+   *  Regular fields never set this. */
+  bare?: boolean;
   /** Inline styles. NOTE: `minHeight` / `maxHeight` / `height` are NOT supported
    *  here — the underlying library owns element height and throws at runtime if
    *  they appear in `style`. Use `minRows` / `maxRows` for size control. */
@@ -45,6 +64,11 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
    *  Macros resolve harmlessly at chat time, so the picker is on everywhere;
    *  surfaces where `{{` is literal (rare) can opt out. */
   macroAutocomplete?: boolean;
+  /** Mono variant for opaque technical content (regex patterns, DSL,
+   *  template sequences) — composes the canon base with `monoMod`. The mono
+   *  style NEVER carries its own size (the `text-xs` mono of the retired
+   *  build tokens is dead — see lib/field-tokens.ts). */
+  mono?: boolean;
 }
 
 /** The native `value` setter on HTMLTextAreaElement, used to programmatically
@@ -90,6 +114,8 @@ const textareaValueSetter = typeof window === "undefined"
  */
 export function AutoTextarea({
   className,
+  bare,
+  mono,
   style,
   disabled,
   placeholder,
@@ -271,7 +297,11 @@ export function AutoTextarea({
         {...rest}
         {...(register ? { name: register.name } : {})}
         ref={setRef}
-        className={className}
+        className={
+          bare
+            ? className
+            : cn(mono ? cn(textareaCls, monoMod) : textareaCls, className)
+        }
         style={style as TextareaAutosizeProps["style"]}
         disabled={disabled}
         placeholder={placeholder}

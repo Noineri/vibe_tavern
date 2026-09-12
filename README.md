@@ -6,7 +6,7 @@
 
 **A local AI roleplay client built for good UX, long sessions, and mobile screens that don't feel like an afterthought**
 
-**Windows** (installer and portable `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
+**Windows** (installer and portable `.exe`) • **Linux** • **Docker** • **Android** (native ARM64 launcher)
 
 ![Release](https://www.shieldcn.dev/github/release/Noineri/vibe_tavern.svg?size=sm&theme=zinc)
 ![GitHub Downloads](https://shieldcn.dev/github/downloads/Noineri/vibe_tavern.svg?variant=secondary)
@@ -93,6 +93,8 @@ Vibe Tavern is a local AI roleplay client I am building around everyday comfort,
 
 I wanted routine actions to stop requiring a trip through five menus, prompt assembly to stop happening inside a black box, and character creation to become something you can actually do inside the app instead of merely importing a finished card.
 
+It is not only text roleplay, either. Mini-apps turn a chat into a scriptable game or guided scene, and a full voice stack covers synthesis, recognition, dictation, and narration.
+
 You bring your own API keys, your data stays on your machine, and nearly everything important can be inspected, changed, or turned off.
 
 
@@ -109,6 +111,8 @@ You bring your own API keys, your data stays on your machine, and nearly everyth
 - **Prompts without the black box** — a simple mode, a visual canvas for advanced assembly, and an honest Prompt Trace of the final request.
 - **Memory and game systems** — summaries, Objective Tracker, Scene Tracker, and dice rolls whose accepted results belong to a specific turn.
 - **Lorebooks and JavaScript scripts** — from quick entry editing to conditional logic, random events, and persistent character state.
+- **Mini-apps with an AI assistant** — scriptable games, tools, and guided scenes inside the chat, with dice checks, timers, and model-driven participants; an AI pair-programmer writes and revises app code as reviewable diffs.
+- **Voice** — speech synthesis and recognition, dictation, voice messages, and narration with a narrator voice per profile.
 - **Local runtime and mobile access** — one process, your providers, QR access over your network, and a purpose-built mobile UI.
 
 ---
@@ -153,6 +157,18 @@ System prompt, jailbreak, prefill, author's note, summary prompt, tools prompt, 
 
 Macros such as `{{user}}`, `{{char}}`, `{{if}}`, `{{setvar}}`, `{{roll}}`, and nested blocks are handled by a real parser rather than a pile of regular-expression replacements.
 
+The Service tab makes all 22 built-in AI prompts editable — the summarizer, impersonation, the lore and image helpers, co-author, the regex assistant, and the rest. Service prompt profiles switch the whole set at once; summaries, assistant modes, and co-author resolve through the active profile.
+
+Generation control sits next to it: per-profile text-completion mode, a generation-format library with SillyTavern template import and live preview, a sampler-set library with TextGen import (adaptive-p, banned strings, and llama-server samplers included), plus continue generation and per-send prefill directly in the composer.
+
+---
+
+## Regexes
+
+A SillyTavern-compatible find/replace engine runs live at four hooks: user input, AI output, reasoning, and world info. The Regex Presets tab in the Prompt Manager holds the rules, with a live test pane next to the editor.
+
+Preset profiles bind rules to characters and lorebooks, and `regex_scripts` from SillyTavern cards import directly — arriving disabled until you review them. When a pattern refuses to cooperate, the regex AI assistant can draft it from a plain-language description.
+
 ---
 
 ## Memory is the brain
@@ -179,6 +195,18 @@ Scene Tracker maintains structured scene state: location, participants, objects,
 
 ---
 
+## Voice
+
+Text-to-speech covers 14 engines: browser-side Kokoro on WebGPU with no server round-trips, edge-tts, and direct cloud APIs — OpenAI-compatible, SiliconFlow, Cartesia, Inworld, LMNT, MiniMax, Volcengine, Deepgram, Azure, Amazon Polly, Google Cloud, xAI Grok Voice, and Mistral Voxtral. Each profile has its own editor with live voice and model discovery, and several engines support cloning a voice from your own audio samples right in the app.
+
+Speech-to-text works with cloud providers, local servers — whisper.cpp, Speaches, Whisperfile, LocalAI, vLLM, and NVIDIA Riva, each with a full setup guide — and an in-browser Whisper lane on WebGPU.
+
+The mic in the chat input takes dictation in append, replace, or auto-send modes, and voice messages record, transcribe, and play back as bubbles.
+
+Narration gives the conversation a voice of its own: a narrator voice per profile with role-aware dual-voice synthesis, text modes (everything, skip the asterisks, or quoted speech only), and an AI mode that annotates the text before synthesis. Segments are cached so re-narrating never re-pays for audio, a per-chat playlist plays through with transport and volume controls, and finished narration lands in a library you can replay or reveal on disk.
+
+---
+
 ## Lorebooks
 
 By default, the entry editor shows only what you need to get started quickly: keys and content. Full mode reveals advanced activation settings, position, depth, probability, sticky windows, cooldown, delay, recursion, and the rest of the machinery.
@@ -188,6 +216,8 @@ Entries sharing an insertion position can be reordered by dragging. Activated en
 If the blank page wins, the built-in AI assistant can write the entry and generate primary or secondary keys separately.
 
 The engine supports AND/OR/NOT logic, probability, delay, cooldown, priority eviction, and recursive scanning where one activated piece of lore helps discover another.
+
+Inclusion groups work the SillyTavern way: entries in a group compete by score, one winner fires per recursion pass, sticky winners keep their seat, and cooldown hands the spotlight to the next candidate. Entries expose the full set of group flags, including the tri-state controls.
 
 Lorebooks can belong to characters, personas, or the global scope. Import and export are compatible with SillyTavern's format.
 
@@ -205,6 +235,20 @@ You can start from built-in templates, import compatible scripts, or ask the AI 
 
 ---
 
+## Mini-apps
+
+Mini-apps are scriptable scenes that live inside the chat: games, tools, and guided interactions with their own rules and visualization. Dice checks, timers, and persistent state are built in, seats can be driven by the model or bound to real characters, and each app chooses where its roleplay context comes from.
+
+Apps are written in the authoring editor in the Build section and tried immediately in the live playground, with setup forms rendered straight from the app's own schema. Finished apps export and import as `.vtapp.json` files.
+
+Realtime mini-apps go further: rounds run frame-side in the browser kernel with zero server round-trips. Catch/Breakout and a playable Tetris ship built-in.
+
+When a session ends, you can restart with the same settings or change them without leaving the sandbox.
+
+The AI assistant is a pair-programmer for mini-apps: it works in sessions, follows @-mentions with pinned context, watches its own context meter with auto-compaction, and proposes changes as reviewable inline diffs. Assistant profiles carry their own system prompt, skills, tools, and turn budget.
+
+---
+
 ## Providers and personas
 
 Provider setup starts with three things: choose a protocol, paste the key, and test the connection. OpenAI-compatible profiles cover OpenRouter, DeepSeek, Groq, xAI, Mistral, and other compatible services; Anthropic, Google, Ollama, and llama.cpp are supported separately.
@@ -213,7 +257,9 @@ The main settings contain model selection, response size, context, and reasoning
 
 Different models in one profile can have different sampler overlays. Favorite models stay pinned for quick switching from chat.
 
-Each persona has a name, description, pronouns, and avatar. A vision model can optionally describe the avatar's appearance and inject that description as its own prompt layer. Personas can also have their own lorebooks.
+The provider tab counts tokens exactly through backend tokenize endpoints where the provider offers them, auto-detects the model's context size, and includes a one-click preset for LM Studio. Google Interactions is supported as a native provider type, and each chat can pick its own secondary model for summaries.
+
+Personas live in a master–detail modal with explicit activation — you always see which persona is speaking into the chat. Each persona has a name, description, pronouns, and avatar. A vision model can optionally describe the avatar's appearance and inject that description as its own prompt layer. Personas can also have their own lorebooks.
 
 ---
 
@@ -227,7 +273,7 @@ For phone access, open Mobile Access and scan the QR code. Vibe Tavern runs from
 
 The mobile version is not the desktop UI shrunk until it becomes a punishment. Small screens get their own bottom sheets, panels, carousels, and touch gestures.
 
-An Android build for Termux automates most of the installation work.
+The native Android launcher runs Vibe Tavern locally on supported ARM64 phones and opens the interface in the system browser. See the [Android setup guide](docs/android-setup.md).
 
 ---
 
@@ -251,7 +297,7 @@ docker compose up -d
 
 ### Android
 
-Use the APK build for Termux. See the [Android setup guide](docs/android-setup.md) for details.
+Download the native ARM64 launcher APK from [Releases](https://github.com/Noineri/vibe_tavern/releases). See the [Android setup guide](docs/android-setup.md) for installation, operation, updates, and legacy migration.
 
 ### Run from source
 

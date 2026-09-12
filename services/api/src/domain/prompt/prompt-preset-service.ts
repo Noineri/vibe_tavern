@@ -1,5 +1,5 @@
 import type { PresetStore } from "@vibe-tavern/db";
-import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import type { CustomInjection, GenerationFormat, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import {
   listPromptPresets,
   reorderPromptPresets,
@@ -44,7 +44,11 @@ export class PromptPresetService {
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
     mergeConsecutiveRoles?: boolean;
+    /** Per-send prefill entry point (LS-8). Default false. */
+    perSendPrefillEnabled?: boolean;
     scriptAiSystemPrompt?: string;
+    /** Generation format (LS-3a). Undefined = absent = auto. */
+    generationFormat?: GenerationFormat;
   }): Promise<PromptPresetDto> {
     return createPromptPreset(this.deps, input);
   }
@@ -66,7 +70,11 @@ export class PromptPresetService {
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
     mergeConsecutiveRoles?: boolean;
+    /** Per-send prefill entry point (LS-8). Default false. */
+    perSendPrefillEnabled?: boolean;
     scriptAiSystemPrompt?: string;
+    /** Generation format (LS-3a). `null` clears back to auto; undefined = untouched. */
+    generationFormat?: GenerationFormat | null;
   }): Promise<PromptPresetDto> {
     return updatePromptPreset(this.deps, presetId, patch);
   }

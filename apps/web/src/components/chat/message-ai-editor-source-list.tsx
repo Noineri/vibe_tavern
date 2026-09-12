@@ -45,7 +45,7 @@ export function toSourceRow(message: AppMessage, variantId: MessageVariantId): S
 interface MessageAiEditorSourceListProps {
   rows: SourceRow[];
   /** "message_edit" rows are read-only; "message_merge" rows show an unstar button. */
-  mode: "message_edit" | "message_merge";
+  mode: "message_edit" | "message_merge" | "message_tts_annotate";
   /** Unstar handler — only invoked in merge mode. The messageId is the
    *  store key for `toggleStar(messageId, variantId)`. */
   messageId: MessageId;

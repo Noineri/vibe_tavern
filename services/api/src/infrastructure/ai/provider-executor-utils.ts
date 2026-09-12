@@ -7,9 +7,13 @@
  */
 
 import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
-import { COAUTHOR_TRANSPORT, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type ProviderType, log } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, PROVIDER_TYPE, normalizeProviderType, resolveNativeTextCompletion, type CoauthorTransport, type GenerationMode, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
+import type { CompletionFormatHandoff } from "../../domain/providers/protocol-types.js";
+import { generationFormatToTemplate, DEFAULT_COMPLETION_TEMPLATE } from "../../domain/providers/completion-prompt.js";
+import { builtinFormatTemplateBySelection } from "@vibe-tavern/domain";
+import type { GenerationFormat } from "@vibe-tavern/domain";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { VisionGateConfig } from "./vision-gate.js";
 import { resolveMultimodalContent } from "./vision-gate.js";
@@ -79,10 +83,11 @@ function resolveResponsesModel(
  * reaches the Responses resolver.
  */
 export function resolveModel(
-  profile: { providerPreset: string; endpoint: string; apiKey: string | null },
+  profile: { providerPreset: string; endpoint: string; apiKey: string | null; generationMode?: GenerationMode },
   model: string,
   transport: CoauthorTransport = COAUTHOR_TRANSPORT.chatCompletions,
   fetch?: ProviderFetch,
+  format?: CompletionFormatHandoff,
 ): LanguageModel {
   const providerType = normalizeProviderType(profile.providerPreset);
   if (transport === COAUTHOR_TRANSPORT.responses) {
@@ -91,7 +96,55 @@ export function resolveModel(
     }
     return resolveResponsesModel(profile, model, fetch);
   }
-  return resolveProtocol(providerType).resolveModel(profile, model, fetch);
+  return resolveProtocol(providerType).resolveModel(profile, model, fetch, format);
+}
+
+// ---------------------------------------------------------------------------
+// Completion format handoff (LS-3b/c)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the LS-3/LS-10 completion-format handoff for one generation call:
+ * the EFFECTIVE generation format (threaded from assembly via
+ * `AssemblePromptResponse.completionFormat` — already the decision-(c)
+ * resolution: the profile's format when set, else the preset fallback)
+ * mapped onto the seam's template source. Chat-mode profiles get `undefined`
+ * — the chat model ignores the format entirely.
+ *
+ * Mapping (LS-9/LS-10 owner rule — authorship decides the implied stops):
+ *  - manual sequences → `{ kind: "manual" }` (the user owns the template —
+ *    nothing is auto-stopped beyond their own stops);
+ *  - auto + a builtin/custom `selection` → `{ kind: "vt-template" }` (the
+ *    sequences were inlined by the assembly resolver — VT-curated bucket,
+ *    its markers auto-stop);
+ *  - auto otherwise → `{ kind: "auto" }` (backend template on llama-server,
+ *    documented default elsewhere, native serializer on KoboldCPP).
+ */
+export function resolveCompletionFormatHandoff(
+  profile: { providerPreset?: string | null; generationMode?: GenerationMode },
+  completionFormat: GenerationFormat | null | undefined,
+): CompletionFormatHandoff | undefined {
+  // LS-6a: native-TC presets (koboldcpp) are ALWAYS text completion — the
+  // format threads even though no generation-mode flip exists there.
+  if (profile.generationMode !== GENERATION_MODE.completion && !resolveNativeTextCompletion(profile.providerPreset).supported) return undefined;
+  if (completionFormat?.mode === "manual") {
+    return { completionFormat: { kind: "manual", template: generationFormatToTemplate(completionFormat) } };
+  }
+  // LS-10: auto + a builtin/custom selection renders THAT template through
+  // the seam (the assembly resolver already inlined the sequences); a custom
+  // id that failed to resolve falls back to plain auto inside the adapters.
+  if (completionFormat && completionFormat.mode === "auto") {
+    const selection = completionFormat.selection;
+    if (selection && selection !== "backend") {
+      const template = generationFormatToTemplate(completionFormat);
+      // A custom payload that never got inlined (no sequences at all) must not
+      // render an all-empty template — degrade to plain auto semantics.
+      if (template.userPrefix || template.assistantPrefix || template.systemPrefix) {
+        return { completionFormat: { kind: "vt-template", template } };
+      }
+    }
+  }
+  return { completionFormat: { kind: "auto" } };
 }
 
 // ---------------------------------------------------------------------------

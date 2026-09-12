@@ -1,4 +1,5 @@
 import { eq, and, isNull } from 'drizzle-orm';
+import { log } from '@vibe-tavern/domain';
 import {
   experienceVisuals,
   experienceChatConfigs,
@@ -114,6 +115,8 @@ export interface UpdateChatConfigData {
  * Trust invalidation after an edit is recorded by the changing sourceHash; the
  * Wave 8 trust layer compares stored-vs-trusted hashes.
  */
+const logger = log.tag('experience-resource-db');
+
 export class ExperienceResourceStore {
   private readonly db: AppDb;
   private readonly clock: StoreClock;
@@ -335,8 +338,18 @@ export class ExperienceResourceStore {
         })
         .returning();
       return this.mapRowConfig(row!);
-    } catch {
-      // Racing insert on unique(chatId) — the winner is now persisted; read it.
+    } catch (error) {
+      // Expected: a racing insert violated unique(chatId) — the winner is now
+      // persisted; read it. Anything else (e.g. an FK violation on a deleted
+      // chat) must stay diagnosable: the winner read below returns null for
+      // those and the wrapped error alone hides the cause (owner incident
+      // 2026-09-09).
+      logger.warn(
+        'getOrCreateConfigForChat(%s): insert failed (%s: %s) — re-reading as race fallback',
+        chatId,
+        error instanceof Error ? error.name : typeof error,
+        error instanceof Error ? error.message : String(error),
+      );
       const winner = await this.getConfigForChat(chatId);
       if (winner) return winner;
       throw new Error(`Failed to create experience config for chat '${chatId}'`);

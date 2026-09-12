@@ -4,7 +4,8 @@ import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-mod
 import { EmptyState } from "../../../shared/empty-state.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { Icons } from "../../../shared/icons.js";
-import { inputCls, monoCls, lblCls } from "../../fields/field-styles.js";
+import { TextInput } from "../../../shared/text-input.js";
+import { lblCls } from "../../../../lib/field-tokens.js";
 import { useCopilotProfileStore } from "../../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../../stores/copilot-skill-store.js";
 import { setCopilotProfile } from "../../../../api/copilot-profile-api.js";
@@ -288,7 +289,6 @@ export function CopilotProfileModal({ scriptId, assignedProfileId, isOpen, onClo
 						{t("copilot_profile_manage_skills")}
 					</button>
 				}
-				containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[760px] w-[1040px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
 				masterClassName="flex w-[260px] shrink-0 flex-col border-r border-border"
 				masterContent={({ openDetail }) => (
 					<ProfileList
@@ -591,22 +591,20 @@ interface ProfileEditorProps {
 function ProfileEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool }: ProfileEditorProps) {
 	return (
 		<div className="flex flex-col gap-4" data-testid="copilot-profile-editor">
-			<div className="flex flex-col gap-1">
+			<div className="flex flex-col">
 				<label className={lblCls}>{t("copilot_profile_name_label")}</label>
-				<input
-					type="text"
+				<TextInput
 					data-testid="copilot-profile-name-input"
-					className={inputCls}
 					placeholder={t("copilot_profile_name_placeholder")}
 					value={draft.name}
 					onChange={(e) => onUpdate("name", e.target.value)}
 				/>
 			</div>
 
-			<div className="flex flex-col gap-1">
+			<div className="flex flex-col">
 				<label className={lblCls}>{t("copilot_profile_base_prompt")}</label>
 				<AutoTextarea
-					className={monoCls}
+					mono
 					minRows={6}
 					value={draft.basePrompt}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}

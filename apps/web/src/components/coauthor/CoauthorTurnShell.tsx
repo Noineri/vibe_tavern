@@ -281,8 +281,7 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
             label={t("edit")}
           >
             <AutoTextarea
-              className="w-full resize-none overflow-y-auto rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
-              style={{}}
+              className="!border-accent !px-3.5 !py-3 !font-body !text-[length:var(--mfs)] !text-msg-t1 leading-[1.65]"
               minRows={7}
               value={editingDraft}
               onChange={e => useChatStore.getState().setEditingDraft(e.target.value)}

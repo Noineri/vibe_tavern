@@ -368,3 +368,26 @@ describe("TrackerConfig (SCN-11)", () => {
     await waitFor(() => expect(mocks.previewSceneAction).not.toHaveBeenCalled());
   });
 });
+
+// MUI-W3 (MOBILE_UI_DEFECTS_REPORT steps 10+11): on phones the scalar-controls
+// grid and the provider/model picker row stack to a single full-width column
+// (each DropdownSelect is w-full by default, so it fills its own row); the
+// desktop grids return above the max-md breakpoint (sm:grid-cols-3 on the
+// scalar row). Desktop behavior is unchanged — max-md only ADDS a rule.
+describe("TrackerConfig mobile grid stacking (MUI-W3)", () => {
+  it("max-md: the scalar row and the provider/model picker row are single full-width columns", () => {
+    seed();
+    const view = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    // Scalar controls (context window / continuity / inject-last-N): 2 cols on
+    // tablet+, 3 on desktop, one full-width column on phones.
+    const scalarRow = view.getByText("scn_context_window_label").parentElement!.parentElement!;
+    expect(scalarRow.className).toContain("grid-cols-2");
+    expect(scalarRow.className).toContain("max-md:grid-cols-1");
+    expect(scalarRow.className).toContain("sm:grid-cols-3");
+    // Provider | model+pin picker row inside SceneModelSelector.
+    const pickerRow = view.getByRole("button", { name: /\bActive\b/ }).parentElement!;
+    expect(pickerRow.className).toContain("grid-cols-2");
+    expect(pickerRow.className).toContain("max-md:grid-cols-1");
+    view.unmount();
+  });
+});

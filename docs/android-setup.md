@@ -1,201 +1,96 @@
 # Android Setup Guide
 
-Vibe Tavern runs locally on ARM64 Android devices through Termux and proot Ubuntu.
+Vibe Tavern for Android is one native ARM64 launcher APK for Android 10 and later. It runs the server locally on your phone and opens the Vibe Tavern interface in your normal system browser; it is not a WebView app and does not require Termux for a clean installation.
 
-The APK installs and controls the local server, while the Vibe Tavern interface opens in the phone's normal browser.
+## Before you install
 
-## Requirements
+- Use an ARM64 phone or tablet running Android 10 or later.
+- Download the Android APK from [GitHub Releases](https://github.com/Noineri/vibe_tavern/releases).
+- Keep enough free device storage for the APK to extract its bundled server files and for your chats and media.
+- Back up or export data you cannot lose before uninstalling the native launcher: its chats, settings, provider keys, and assets are private app data and Android removes them when the app is uninstalled.
 
-- an ARM64 Android device;
-- Termux from [F-Droid](https://f-droid.org/packages/com.termux/), not the abandoned Play Store build;
-- roughly 500 MB of free space for Ubuntu and Vibe Tavern;
-- permission to install an APK downloaded from GitHub Releases.
+## Install and first run
 
-## First-time setup
+1. Download the `Vibe-Tavern-vX.Y.Z-android.apk` asset from GitHub Releases and open it.
+2. If Android blocks the install, allow installs from the app you used to download or open the APK, then return to the installer and confirm it.
+3. Open Vibe Tavern after installation. On first run, the launcher extracts its bundled server payload into private app storage; this can take a little while.
+4. Grant notification permission if Android asks. The launcher uses a visible foreground-service notification while the local server is running.
+5. Tap **Start Server** and wait for the launcher to report that the server is ready.
+6. Tap **Open in Browser**. This is a separate action and opens `http://127.0.0.1:8787` in your system browser.
 
-### 1. Install and prepare Termux
+The start button changes to **Stop Server** while Vibe Tavern owns the running server. Stop it there or with the notification action. The browser interface is separate from the launcher, so your browser keeps its usual keyboard, downloads, cookies, and rendering behavior.
 
-Install Termux from F-Droid, open it, and wait until the initial shell prompt appears.
+## Keeping the server responsive
 
-You do not need to update packages manually during normal setup; the Vibe Tavern installer performs a noninteractive package update with retries before installing its required tools.
+The launcher offers Android's battery-optimization exemption when you first start the server. Allow it if your device offers the option, especially if the browser UI slows down after you switch apps.
 
-### 2. Allow Vibe Tavern to run Termux commands
+For reliable background use:
 
-Run inside Termux:
+- set Vibe Tavern's battery use to **Unrestricted** or disable battery optimization in Android settings when your phone provides that control;
+- keep the Vibe Tavern launcher in your recent-apps list while using the browser UI;
+- disable aggressive manufacturer battery-saver modes for Vibe Tavern.
 
-```sh
-mkdir -p ~/.termux
-printf '%s\n' \
-  'allow-external-apps=true' \
-  >> ~/.termux/termux.properties
-termux-reload-settings
-```
+A foreground notification helps keep the server alive, but some manufacturer power managers can still freeze background apps.
 
-Then type `exit`, swipe Termux away from recent apps, reopen it, and wait for the shell prompt so the setting takes effect before you return to Vibe Tavern.
+## Updating the launcher
 
-### 3. Handle the one-time signing transition if necessary
-
-If an old pre-release or debug-signed Vibe Tavern launcher is installed, Android cannot update it to the permanently signed official build.
-
-Uninstall only the old Android launcher once, then install the first official APK from GitHub Releases.
-
-Do not use **Delete Vibe Tavern** or **Delete everything** for this signing transition because those actions intentionally remove server data.
-
-Removing only the Android launcher leaves data stored inside Termux intact.
-
-All later official APKs use the same package and signing key and update in place.
-
-### 4. Install the official APK
-
-Download the exact `Vibe-Tavern-vX.Y.Z-android.apk` asset from [GitHub Releases](https://github.com/Noineri/vibe_tavern/releases), install it, and open Vibe Tavern.
-
-Grant **Run commands in Termux environment** when Android requests it.
-
-If Android hides that permission behind restricted settings, use the launcher's settings button, choose **Allow restricted settings** from the app-settings menu, enable **Run commands in Termux environment** under all permissions, then return and tap **Continue**.
-
-If the launcher reports that Termux or its permission is missing, use the shown setup/settings action and return to the launcher afterward.
-
-### 5. Install the bundled server
-
-Tap **Install server vX.Y.Z**.
-
-The launcher opens a visible Termux session that:
-
-- updates required Termux packages noninteractively while keeping local configuration files;
-- installs `curl`, `tar`, `proot-distro`, and `procps`;
-- creates or reuses the pinned Ubuntu 24.04 container;
-- streams the bundled archive through a temporary localhost foreground service, without storage permission or a Downloads copy;
-- validates and extracts the ARM64 server bundled in the APK;
-- installs program files into `~/vibe-tavern` inside Ubuntu;
-- keeps user data in `~/.local/share/vibe-tavern`;
-- starts the server.
-
-Initial Ubuntu setup can take several minutes depending on the device and network.
-
-The temporary **Preparing the bundled server for Termux** notification disappears after Termux receives the archive.
-
-## Daily use
-
-Tap **Start Server in Termux** to open a visible diagnostic session and launch the local server.
-
-Tap **Open in Browser** to open `http://127.0.0.1:8787`.
-
-Keep Termux running while using Vibe Tavern because force-closing or swiping it away can stop the server.
-
-Tap **Stop Server** to stop the exact Vibe Tavern process.
-
-## Updating the launcher and server
-
-Launcher and server updates are two explicit steps.
-
-### Launcher APK update
-
-The launcher checks the latest public stable GitHub Release once per process, and **Check for launcher update** performs a manual check.
-
-No GitHub token is required.
-
-Automatic checks never download anything.
+The launcher checks the latest stable GitHub Release and also provides **Check for launcher update**. It never downloads an APK without your approval.
 
 When an update is available:
 
-1. review the version and release notes;
-2. choose **Download APK** to give consent;
-3. wait for Android `DownloadManager` to finish;
-4. if prompted, allow Vibe Tavern to install unknown apps in Android settings;
-5. confirm the update in Android's system installer;
-6. reopen Vibe Tavern after installation.
+1. review the offered version and notes;
+2. choose **Download APK**;
+3. wait for the Android download to finish;
+4. if Android requests it, allow Vibe Tavern to install unknown apps in its app settings;
+5. confirm replacement in Android's system installer;
+6. reopen Vibe Tavern so it can extract the matching bundled server payload if necessary.
 
-Cancelling the offer or Android installer leaves the currently installed launcher working.
+Official releases keep package ID `com.vibetavern.launcher` and the permanent release signing identity, so they install over the existing official launcher and retain native app-private data. An old launcher built with a different historical/debug signing key cannot update in place; uninstall that old launcher once and install the official APK. Export any native data first if it matters to you.
 
-The launcher reconnects to an in-progress download after reopening instead of downloading a duplicate.
+## Migrating from the old launcher only
 
-### Bundled server update
+This section is only for people who previously used the old Termux-based launcher. Clean native installs never need Termux and should skip this section.
 
-Installing a newer APK does not silently replace the running server payload.
+The migration panel appears only when the launcher recognizes the old installation marker and no native database is present. It does not read from or write to the old installation itself.
 
-After reopening the new launcher, it shows **Update server to vX.Y.Z** when the installed server version is older or unknown.
+1. Stop the old server first, so it does not keep port 8787 occupied.
+2. In Termux, run `termux-setup-storage` and grant storage access if Android asks.
+3. In the old Ubuntu guest, run the exact command shown by the launcher:
 
-Tap that action explicitly and wait for the visible Termux installation to complete.
+```sh
+proot-distro login ubuntu -- bash -lc 'set -eu; test -f "$HOME/.local/share/vibe-tavern/vibe-tavern.db"; tar -czf /sdcard/Download/vt-migration.tar.gz -C "$HOME/.local/share" vibe-tavern'
+```
 
-The update replaces only `~/vibe-tavern`; chats, characters, settings, summaries, and assets remain under `~/.local/share/vibe-tavern`.
+4. Return to Vibe Tavern, choose the archive from Android's document picker, and start the import.
 
-After completion, start or open Vibe Tavern and confirm that launcher and server versions match.
-
-## Uninstall options
-
-**Delete Vibe Tavern** removes program files and all Vibe Tavern user data while retaining the Ubuntu container.
-
-**Delete everything** removes the entire proot Ubuntu container, including Vibe Tavern data.
-
-Uninstalling only the Android APK through Android settings does not run either destructive cleanup action.
+The old installation remains untouched. The launcher validates the archive and extracts it to private staging before replacing native data, retains a backup until the new server passes its API health check, and restores the previous native data if activation fails. **Start fresh instead** dismisses migration and leaves the old installation untouched; after a successful import, remove the old installation only when you are satisfied that the migrated data is present.
 
 ## Troubleshooting
 
-### `CANNOT LINK EXECUTABLE curl` or SSL errors
+### Port 8787 is already in use
 
-Update Termux packages with `apt update && apt full-upgrade`, then fully restart Termux and retry.
+If the launcher says another server is ready on port 8787, it will not stop that process. This is commonly an old server left running during an upgrade. Stop the old server, then return to the launcher and tap **Start Server** again.
 
-### The launcher buttons do nothing
+### The server does not become ready
 
-Verify that Termux came from F-Droid, `allow-external-apps=true` is present, Termux was restarted, and Android granted **Run commands in Termux environment** to Vibe Tavern.
+Wait for bundled-file extraction to finish, then copy the server log with **Copy server log** and inspect its last lines. **Open in Browser** only works after the local API reports ready; a browser response alone is not enough. Try starting again after addressing the reported error.
 
-If Termux was force-stopped, open it once, wait for the shell prompt, return to Vibe Tavern, and retry the action.
+### The browser UI lags, hangs, or stops saving after switching apps
 
-### The installer reports no mirror, a repository hash mismatch, or a mirror sync error
+Set Vibe Tavern to **Unrestricted** battery use or disable battery optimization, keep the launcher in recents, and turn off aggressive OEM battery saving. Then stop and start the server again.
 
-Run `termux-change-repo` in Termux, choose a different mirror, then retry **Install server** or **Update server**.
+### Android will not install a launcher update
 
-### The installer reports that the `ubuntu` container is not installed
+When prompted, allow Vibe Tavern to install unknown apps in Android settings, then return to the launcher. If an older launcher was signed with a different key, Android cannot replace it in place; export any needed native data, uninstall that old launcher, and install the official release APK manually.
 
-Return to Vibe Tavern and retry the installation with the current launcher; it checks exact container names and installs the pinned Ubuntu 24.04 image when `ubuntu` is absent.
+### Migration fails
 
-### The bundled archive transfer is interrupted
+Read the error in the launcher and verify that the selected archive was made with the displayed command and contains the old `vibe-tavern` data directory. Migration validation happens before native data is replaced. If startup after activation fails, the launcher restores the prior native data; the old installation was never modified and remains available as rollback.
 
-Return to Vibe Tavern and retry **Install server** or **Update server**. The archive is streamed privately over `127.0.0.1`; Termux storage permission and a file in Downloads are not required.
+## Data and logs
 
-### Android refuses the launcher update
+The native launcher stores its data in Android app-private storage. The extracted payload is replaceable program material; your chats, settings, provider keys, and assets are separate private data. Removing the app through Android uninstalls that native data, so export what you need before uninstalling.
 
-For the first official permanently signed release, remove an older debug-signed launcher once and install the official APK manually.
+The launcher records the current server launch in `server.log`. Use **Copy server log** for support or **Clear server log** before reproducing a problem.
 
-For later releases, confirm that the downloaded asset is the exact Android APK from the official GitHub Release and that Android allows Vibe Tavern to install unknown apps.
-
-### A download was interrupted
-
-Reopen Vibe Tavern; it reconciles the persisted `DownloadManager` job and offers installation when the APK is ready.
-
-### The server update fails
-
-Read or copy the visible Termux diagnostics and check `~/vibe-tavern-install.log` in the Termux home directory.
-
-A failed validation stops before the atomic program-directory swap, leaving the previous installed program and separate user data intact.
-
-### The browser does not open
-
-Open `http://127.0.0.1:8787` manually in any browser after the server starts.
-
-### The web UI lags or stops
-
-Disable battery optimization for Termux, keep its session in recent apps, and disable aggressive vendor battery-saving modes.
-
-## Architecture and file locations
-
-The APK is a server orchestrator rather than a WebView client.
-
-It runs the precompiled ARM64 server in proot Ubuntu and delegates UI rendering, keyboard behavior, downloads, and cookies to the system browser.
-
-No `git clone`, `bun install`, or source build runs on the device.
-
-During installation, a temporary foreground service streams the bundled archive to Termux over `127.0.0.1` and stops after a successful transfer; the archive is not staged in shared storage.
-
-| Path inside proot Ubuntu | Contents |
-|---|---|
-| `~/vibe-tavern/` | Replaceable program files: server binary, web assets, migrations, prompts, and tokenizers |
-| `~/.local/share/vibe-tavern/` | Persistent user data: database, characters, chats, summaries, settings, and assets |
-| `~/start-vibe-tavern.sh` | Generated server start script |
-
-| Log in Termux home | Purpose |
-|---|---|
-| `~/vibe-tavern-install.log` | Server installation and payload updates |
-| `~/vibe-tavern-start.log` | Server startup diagnostics |
-| `~/vibe-tavern-stop.log` | Stop diagnostics |
-| `~/vibe-tavern-uninstall.log` | Destructive cleanup diagnostics |
+For developer build and updater-fixture details, see [`mobile/README.md`](../mobile/README.md). The retained historical source is documented in [`mobile/legacy-termux/README.md`](../mobile/legacy-termux/README.md).

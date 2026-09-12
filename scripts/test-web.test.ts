@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createWebTestCommand, discoverWebTestFiles, filesWithTests, runWebTestCli } from "./test-web.js";
+import { createWebTestCommand, discoverWebTestFiles, failingFiles, filesWithTests, junitCrossAttribution, runWebTestCli } from "./test-web.js";
 
 interface CliResult {
 	readonly exitCode: number;
@@ -109,6 +109,55 @@ test("re-slashes the platform separators the JUnit reporter writes", () => {
   </testsuite>
 </testsuites>`;
 	expect([...filesWithTests(windowsReport)]).toEqual(["apps/web/test/a.test.ts"]);
+});
+
+test("counts failing test cases per file with names and messages, ignoring passes and platform separators", () => {
+	// The truncation-proof failure list (see failingFiles doc comment): GitHub's
+	// "... N additional diagnostic sections omitted" eats the failing test names
+	// on every red CI run of a large suite — twice on PR #39 — so the summary
+	// itself must name the files. Failure bodies contain nested XML and escaped
+	// quotes; passes are self-closing. Names+messages matter because a
+	// file-level error lands in JUnit WITHOUT bun ever naming it in the tally.
+	const report = String.raw`<testsuites>
+  <testsuite name="a" file="apps\web\test\a.test.ts" tests="2">
+    <testcase name="pass" classname="" time="0.1" file="apps\web\test\a.test.ts" assertions="1" />
+    <testcase name="boom" classname="" time="0.1" file="apps\web\test\a.test.ts" assertions="1"><failure>Expected: 1&lt;br&gt;Received: 2 — a &quot;quoted&quot; diff&lt;stack frame hidden&gt;</failure></testcase>
+  </testsuite>
+  <testsuite name="b" file="apps/web/src/b.test.tsx" tests="2">
+    <testcase name="hard" classname="" time="0.1" file="apps/web/src/b.test.tsx" assertions="0"><error message="TypeError: undefined is not an object"></error></testcase>
+    <testcase name="ok" classname="" time="0.1" file="apps/web/src/b.test.tsx" assertions="1" />
+  </testsuite>
+</testsuites>`;
+	const failing = [...failingFiles(report).values()].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+	expect(failing.map((f) => [f.file, f.count])).toEqual([
+		["apps/web/src/b.test.tsx", 1],
+		["apps/web/test/a.test.ts", 1],
+	]);
+	expect(failing[0]?.entries[0]?.name).toBe("hard");
+	expect(failing[1]?.entries[0]?.message).toContain('Received: 2 — a "quoted" diff');
+	expect(failing[1]?.entries[0]?.message).not.toContain("stack frame hidden");
+	expect(failingFiles("<testsuites></testsuites>").size).toBe(0);
+});
+
+test("junitCrossAttribution flags a junit file that disagrees with the failing stack frame", () => {
+	// Bun 1.4.0 --parallel junit cross-attribution (PR #39, runs 34664917488 /
+	// 34668434046): the testcase name+file come from one worker while the failure
+	// message (and its stack frame) come from another — a four-CI-cycle chase
+	// before the pattern was named. The stack is the thing to trust.
+	const galleryFile = "apps/web/src/api/gallery-api.test.ts";
+	const crossMsg = 'AssertionError: expect(received).toBe(expected)\n\nExpected: "https://x/v1"\nReceived: "https://x"\n at apps/web/src/components/settings/provider/tts/TtsProfileEditor.test.tsx:364:34';
+	expect(junitCrossAttribution(galleryFile, crossMsg)).toBe(
+		"junit filed under apps/web/src/api/gallery-api.test.ts, stack points to apps/web/src/components/settings/provider/tts/TtsProfileEditor.test.tsx — parallel junit cross-attribution, trust the stack",
+	);
+	// Agreement → silent.
+	expect(junitCrossAttribution("apps/web/src/components/settings/provider/tts/TtsProfileEditor.test.tsx", crossMsg)).toBeNull();
+	// No stack frame, or a non-test frame (e.g. source file) → silent.
+	expect(junitCrossAttribution(galleryFile, "plain assertion failure, no frame")).toBeNull();
+	expect(junitCrossAttribution(galleryFile, " at services/api/src/shared/foo.ts:1:2")).toBeNull();
+	// Windows-slashed and parenthesized frames normalize.
+	expect(
+		junitCrossAttribution(galleryFile, " at (apps\\web\\src\\lib\\x.test.ts:5:6"),
+	).toBe("junit filed under apps/web/src/api/gallery-api.test.ts, stack points to apps/web/src/lib/x.test.ts — parallel junit cross-attribution, trust the stack");
 });
 
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {

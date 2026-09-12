@@ -23,9 +23,9 @@
 
   /* ─── Interface text (plum ink) ─── */
   --t1:       oklch(0.240 0.040 292);
-  --t2:       oklch(0.400 0.045 292);
-  --t3:       oklch(0.550 0.040 292);
-  --t4:       oklch(0.680 0.030 292);
+  --t2:       oklch(0.291 0.045 292);
+  --t3:       oklch(0.344 0.040 292);
+  --t4:       oklch(0.395 0.030 292);
 
   /* Mystic Night's book typography, retained for the light twin. */
   --font-body: 'Literata-MN', Georgia, serif;

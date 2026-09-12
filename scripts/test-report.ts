@@ -21,6 +21,25 @@ const BUN_STACK_FRAME_PATTERN = /^\s+at\s/;
 const BUN_UNATTRIBUTED_BANNER = "# Unhandled error between tests";
 /** A summary tally line: ` 1861 pass`, ` 0 fail`, ` 8 errors`. */
 const BUN_SUMMARY_PATTERN = /^\s*\d+\s+(?:pass|fail|skip|error)/;
+/**
+ * Lines a suite's OWN runner prints in its final summary — currently the web
+ * per-file runner (`scripts/test-web.ts`): the truncation-proof failing-file
+ * list, the zero-test guard, the file-level fallback, the verdict line. These
+ * lines are the ONE thing a red run must never lose: bun's `(fail)` details are
+ * routinely collapsed by MAX_DIAGNOSTIC_SECTIONS ("... N additional diagnostic
+ * sections omitted", PR #39), and without this extraction the runner's list —
+ * printed to the suite's stderr — is dropped whenever stdout already yielded
+ * actionable bun diagnostics (formatFailure composes stdout-first and never
+ * looked at stderr in that case).
+ */
+const RUNNER_SUMMARY_PATTERNS: readonly RegExp[] = [
+	/^Web test files with failures \(\d+\):$/,
+	/^FAIL \S+ \(\d+ failed\)$/,
+	/^ {2}· /,
+	/^Web test files declaring zero tests \(\d+\):$/,
+	/^Web test failed, but no failing test case was found/,
+	/^Web tests: (?:PASS|FAIL) /,
+];
 const MAX_FALLBACK_LINES = 120;
 const MAX_FALLBACK_CHARACTERS = 2_000;
 const MAX_SUMMARY_LINES = 20;
@@ -165,16 +184,41 @@ function extractBunFailure(stderr: string): string | null {
 		.filter((section) => section.some((line) => line.trim() !== ""));
 	if (diagnosticSections.length === 0) return null;
 
-	const sections = diagnosticSections.slice(0, MAX_DIAGNOSTIC_SECTIONS).map((section) => limitCharacters(
+	// Failed-test sections lead: error-shaped output from PASSING files (an
+	// intentional route-throw test logging `error: boom`, a library TypeError
+	// under happy-dom) is diagnostic too, but it must never crowd the actual
+	// `(fail)` sections out of the capped window (observed on PR #39: the only
+	// failing section was omitted behind 8 sections of passing-file noise).
+	const rank = (section: readonly string[]): number =>
+		section.some((line) => BUN_FAILURE_PATTERN.test(line)) ? 0 : 1;
+	const ordered = [...diagnosticSections].sort((a, b) => rank(a) - rank(b));
+
+	const sections = ordered.slice(0, MAX_DIAGNOSTIC_SECTIONS).map((section) => limitCharacters(
 		limitLines(section, MAX_FALLBACK_LINES, "diagnostic output"),
 		MAX_DIAGNOSTIC_CHARACTERS,
 		"diagnostic output",
 	));
-	if (diagnosticSections.length > MAX_DIAGNOSTIC_SECTIONS) {
-		sections.push(`... ${diagnosticSections.length - MAX_DIAGNOSTIC_SECTIONS} additional diagnostic sections omitted`);
+	if (ordered.length > MAX_DIAGNOSTIC_SECTIONS) {
+		sections.push(`... ${ordered.length - MAX_DIAGNOSTIC_SECTIONS} additional diagnostic sections omitted`);
 	}
 	if (summaryStart !== -1) sections.push(formatBunSummary(lines, summaryStart));
 	return sections.filter((section) => section !== "").join("\n\n");
+}
+
+/**
+ * The suite runner's own summary lines (see RUNNER_SUMMARY_PATTERNS), in output
+ * order, deduplicated across stdout and stderr. Never length-capped — the whole
+ * point is that these survive when everything else is excerpted away.
+ */
+function extractRunnerSummary(stdout: string, stderr: string): string | null {
+	const seen = new Set<string>();
+	const hits: string[] = [];
+	for (const line of [...stdout.split("\n"), ...stderr.split("\n")]) {
+		if (seen.has(line) || !RUNNER_SUMMARY_PATTERNS.some((pattern) => pattern.test(line))) continue;
+		seen.add(line);
+		hits.push(line);
+	}
+	return hits.length === 0 ? null : hits.join("\n");
 }
 
 function formatFailure(result: TestSuiteResult): string {
@@ -182,7 +226,9 @@ function formatFailure(result: TestSuiteResult): string {
 	const stderr = stripTerminalControls(result.stderr);
 	const stdoutActionable = extractBunFailure(stdout);
 	const stderrActionable = extractBunFailure(stderr);
+	const runnerSummary = extractRunnerSummary(stdout, stderr);
 	const actionable = [
+		runnerSummary,
 		stdoutActionable,
 		stderrActionable,
 		stdoutActionable === null ? extractBunSummary(stdout) : null,

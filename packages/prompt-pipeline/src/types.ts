@@ -1,4 +1,4 @@
-import type { DiceRollSnapshot, ExperienceReportSnapshot, PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, ExperienceReportSnapshot, GenerationFormat, PromptLayerPosition, PronounForms, RegexPreset } from "@vibe-tavern/domain";
 
 export type { PromptLayerPosition };
 
@@ -8,7 +8,7 @@ export type { PromptLayerPosition };
  * Each mode determines the system prompt, user message format, output parsing,
  * and which context layers are available.
  */
-export type AiAssistantMode = "script" | "dice_script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge";
+export type AiAssistantMode = "script" | "dice_script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "message_tts_annotate" | "regex";
 
 export interface PromptLayer {
   id: string;
@@ -150,6 +150,10 @@ export interface PromptAssemblyContext {
       role: string;
     }>;
     promptOrder?: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom"; zone?: "before_chat" | "in_chat" | "after_chat"; depth?: number | null }>;
+    /** Generation format (LOCAL_SUPPORT_PLAN LS-3a): the TC string-shape glue.
+     *  Passed through untouched (no macros apply — sequences are template
+     *  syntax, not prose). Absent = auto. */
+    generationFormat?: GenerationFormat;
   } | null;
   /** AI assistant context. Only used when mode is "ai_assistant". */
   aiAssistant?: {
@@ -223,6 +227,14 @@ export interface PromptAssemblyContext {
    *  prior implications into a coherent continuation, NOT repeat or re-summarize
    *  the block (compounding drift guard lives in the default summary prompt). */
   priorSummaries?: Array<{ id: string; label?: string; content: string }>;
+  /** Active regex presets for this chat (RX-13): the server resolves the full
+   *  3-source union (global + character-bound + preset-bound, RX-4) and hands
+   *  it here unfiltered by mode — the MODE filter is the pipeline's job and is
+   *  authoritative: only prompt-affecting apply-targets (ST `promptOnly`, i.e.
+   *  "prompt" and "display+prompt") transform history content during assembly;
+   *  persist presets already applied at generation time (RX-5/8), display-only
+   *  presets belong to the client render seam. Absent/empty = no transform. */
+  regexPresets?: RegexPreset[];
   config?: {
     contextBudget?: number | null;
     /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */
@@ -246,6 +258,10 @@ export interface PromptAssemblyResult {
   finalPayload: Record<string, unknown>;
   /** Assistant prefill text, passed through from preset for executor use. */
   prefill?: string | null;
+  /** Generation format of the preset assembly (LOCAL_SUPPORT_PLAN LS-3b) —
+   *  exported like `prefill` so the orchestrator can thread it to the TC
+   *  completion seam. Null/absent = auto (or no preset resolved). */
+  completionFormat?: GenerationFormat | null;
   /** Human-readable compaction summary for the trace UI. Not sent to the model. */
   compactionSummary?: string | null;
 }

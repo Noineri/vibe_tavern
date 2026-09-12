@@ -10,7 +10,7 @@ import { generateText, isStepCount } from "ai";
 import type { ProviderMetadata } from "ai";
 import type { ExtractedToolCall, ExtractedToolResult, GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
-import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
+import { resolveModel, resolveCompletionFormatHandoff, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { COAUTHOR_TRANSPORT, normalizeProviderType } from "@vibe-tavern/domain";
 import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
@@ -109,7 +109,11 @@ export async function nonstreamingProviderExecute(
 ): Promise<GenerationResult> {
   try {
     const providerFetch = await resolveProviderFetchForProfile(input.profile);
-    const model = resolveModel(input.profile, input.model, input.transport, providerFetch);
+    // LS-3b/c: thread the preset's generation format (TC mode only) to the
+    // completion seam — manual sequences render through it; auto resolves per
+    // protocol capability (backend template on llama-server, default else).
+    const format = resolveCompletionFormatHandoff(input.profile, input.prompt.completionFormat);
+    const model = resolveModel(input.profile, input.model, input.transport, providerFetch, format);
     let messages = toSdkMessages(input.prompt);
     const activeModel = input.cachedModels?.find((m) => m.modelSlug === input.model);
     const hasVision = activeModel?.capabilities?.vision ?? false;
@@ -166,6 +170,41 @@ export async function nonstreamingProviderExecute(
     }
 
     const visionGate = { hasVision, visionModel: visionModelSlug };
+
+    // --- Voice-note transcription (STT_PLAN ST-6) --- streaming executor's
+    // twin block: always transcribe voice notes before assembly; music/
+    // ambient skipped (playback-only); absent transcriber → the honest
+    // VoiceTranscribeUnavailableError at assembly.
+    const voiceNotes = messages
+      .filter((m) => m.role === "user")
+      .flatMap((m) => m.attachments ?? [])
+      .filter((a) => a.type === "audio" && (a.purpose ?? "voice") === "voice" && !a.description?.trim());
+
+    if (voiceNotes.length > 0 && input.voiceTranscriber && input.assetLoader) {
+      const { transcribeAttachments } = await import("./stt-gate.js");
+      const transcripts = await transcribeAttachments(voiceNotes, input.voiceTranscriber, input.assetLoader, input.signal);
+      const audioDescriptions = voiceNotes
+        .map((att) => {
+          const transcript = transcripts.get(att.id);
+          return transcript !== undefined && transcript !== ""
+            ? { attachmentId: att.id, name: att.name, type: "audio" as const, description: transcript }
+            : null;
+        })
+        .filter((item): item is { attachmentId: string; name: string; type: "audio"; description: string } => item !== null);
+
+      if (input.onAttachmentDescriptions && audioDescriptions.length > 0) {
+        await input.onAttachmentDescriptions(audioDescriptions.map((d) => ({ attachmentId: d.attachmentId, description: d.description })));
+      }
+
+      messages = messages.map((m) => ({
+        ...m,
+        attachments: m.attachments?.map((att) => {
+          const transcript = transcripts.get(att.id);
+          return transcript !== undefined ? { ...att, description: transcript } : att;
+        }),
+      }));
+    }
+
     const { conversationMessages } = await prepareSdkMessages(messages, {
       prefill: input.prefill,
       providerType: normalizeProviderType(input.profile.providerPreset),

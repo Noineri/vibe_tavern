@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CustomInjection, GenerationFormat, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
@@ -10,9 +10,10 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
-import { serializeStPreset, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
+import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { MasterDetailModal } from "../shared/MasterDetailModal.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
+import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import {
   loadPromptCanvasLoreEntries,
@@ -23,8 +24,69 @@ import {
   loadPromptCanvasSummaries,
   type CanvasSummaryEntry,
 } from "../../lib/prompt-canvas-summary.js";
+import { RegexPresetList } from "../settings/prompt/RegexPresetList.js";
+import { RegexPresetEditor, regexDraftFromRecord, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/RegexPresetEditor.js";
+import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
+import {
+  listAllRegexPresets,
+  createRegexPreset,
+  updateRegexPreset,
+  deleteRegexPreset,
+  getRegexLinks,
+  listAllRegexProfiles,
+  createRegexProfile,
+  updateRegexProfile,
+  deleteRegexProfile,
+  attachRegexRule,
+  detachRegexRule,
+  getRegexProfileLinks,
+  setRegexProfileLinks,
+} from "../../api/regex-api.js";
+import { invalidateActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
+import { downloadTextFile } from "../../lib/download.js";
+import { applyTargetFlags, type RegexPlacement, type RegexSubstituteMode } from "@vibe-tavern/domain";
+import { toast } from "sonner";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+/**
+ * RX-16 UI surface: import standalone ST regex JSON as presets.
+ *
+ * Pure seam (unit-testable without the DOM): parse + create via the injected
+ * creator. Every imported preset lands `disabled: true` — the security gate
+ * is already enforced by the parser, but we assert it here too so this import
+ * path can never re-enable a script. Returns the created count; callers
+ * surface 0 / failures as a non-blocking message.
+ */
+export async function importStandaloneRegexText(
+  jsonText: string,
+  create: (body: Parameters<typeof createRegexPreset>[0]) => Promise<RegexPresetRecord>,
+): Promise<number> {
+  const drafts = parseStandaloneRegexJson(jsonText);
+  let created = 0;
+  for (const draft of drafts) {
+    await create({
+      name: draft.name,
+      findRegex: draft.findRegex,
+      replaceString: draft.replaceString,
+      trimStrings: draft.trimStrings,
+      substituteRegex: draft.substituteRegex,
+      disabled: true,
+      markdownOnly: draft.markdownOnly,
+      promptOnly: draft.promptOnly,
+      runOnEdit: draft.runOnEdit,
+      minDepth: draft.minDepth,
+      maxDepth: draft.maxDepth,
+      placement: draft.placement,
+      isGlobal: draft.isGlobal,
+    });
+    created += 1;
+  }
+  return created;
+}
+
+type PromptManagerTab = "presets" | "regex" | "service";
 
 export type DraftData = {
   name: string;
@@ -45,6 +107,10 @@ export type DraftData = {
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   mergeConsecutiveRoles: boolean;
+  /** Per-send prefill entry point (LS-8): gates the chat input's one-shot prefill UI. */
+  perSendPrefillEnabled: boolean;
+  /** Generation format (LS-3a). Null = never configured (= auto). */
+  generationFormat: GenerationFormat | null;
 };
 
 interface PromptManagerModalProps {
@@ -109,6 +175,8 @@ const emptyDraft: DraftData = {
   promptOrder: [],
   advancedMode: false,
   mergeConsecutiveRoles: false,
+  perSendPrefillEnabled: false,
+  generationFormat: null,
 };
 
 /**
@@ -122,9 +190,12 @@ const emptyDraft: DraftData = {
  * (PRESET_COPY_DELETE_CORRUPTION bug 1). */
 export function buildDuplicatePayload(draft: DraftData, fallbackName: string) {
   const copy = structuredClone(draft);
+  // A null format (= auto) is absent on the wire — strip it from the clone.
+  const { generationFormat, ...copyFields } = copy;
   return {
-    ...copy,
+    ...copyFields,
     aiAssistantPrompts: JSON.stringify(copy.aiAssistantPrompts),
+    ...(generationFormat ? { generationFormat } : {}),
     name: `${draft.name || fallbackName} (copy)`,
   };
 }
@@ -288,6 +359,489 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const isMobile = useIsMobile();
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
+  // ─── Regex Presets tab (RX-11) ────────────────────────────────────────────
+  // Local state only — no Zustand store in this unit. Presets load lazily on
+  // first Regex-tab activation.
+  const [activeTab, setActiveTab] = useState<PromptManagerTab>("presets");
+  const [serviceDirty, setServiceDirty] = useState(false);
+  const [regexPresets, setRegexPresets] = useState<RegexPresetRecord[]>([]);
+  const [regexLoadState, setRegexLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [activeRegexPresetId, setActiveRegexPresetId] = useState<string | null>(null);
+  const [activeRegexProfileId, setActiveRegexProfileId] = useState<string | null>(null);
+  const [regexDraft, setRegexDraft] = useState<RegexPresetDraft>(emptyRegexDraft);
+  const [regexDirty, setRegexDirty] = useState(false);
+  const [regexSaveState, setRegexSaveState] = useState<SaveState>("idle");
+  const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
+  const [profileConfirmDeleteId, setProfileConfirmDeleteId] = useState<string | null>(null);
+  const regexImportInputRef = useRef<HTMLInputElement>(null);
+  // R-7 list badge («Не применяется»): link counts for non-global presets —
+  // a bind-mode preset with zero links applies in no chat. Fetched lazily per
+  // unknown id; undefined = not loaded yet (badge withheld until known), so
+  // rows never flash a false «unbound» while links load.
+  const [regexLinkCounts, setRegexLinkCounts] = useState<Record<string, number | undefined>>({});
+  const [regexProfiles, setRegexProfiles] = useState<RegexProfileRecord[]>([]);
+  const [expandedProfileIds, setExpandedProfileIds] = useState<Set<string>>(new Set());
+  const [regexProfileLinkCounts, setRegexProfileLinkCounts] = useState<Record<string, number | undefined>>({});
+
+  const activeRegexPreset = regexPresets.find((p) => p.id === activeRegexPresetId) ?? null;
+  const activeRegexProfile = regexProfiles.find((p) => p.id === activeRegexProfileId) ?? null;
+
+  // Lazy-load regex presets on first tab activation (R-1 fix).
+  // NOTE: `regexLoadState` must NOT be in the deps — the effect itself writes
+  // it ("loading"), so a state dep re-triggers the effect's cleanup and kills
+  // the only in-flight fetch (the original bug: the list stayed empty forever).
+  // Once-guard is a ref; re-running the fetch (StrictMode double-invoke, tab
+  // re-entry) is harmless — the apply is idempotent.
+  const regexLoadStartedRef = useRef(false);
+  useEffect(() => {
+    if (activeTab !== "regex" || regexLoadStartedRef.current) return;
+    regexLoadStartedRef.current = true;
+    setRegexLoadState("loading");
+    void listAllRegexPresets()
+      .then((list) => {
+        setRegexPresets(list);
+        setRegexLoadState("ready");
+        if (list.length > 0 && activeRegexPresetId === null) {
+          setActiveRegexPresetId(list[0].id);
+        }
+      })
+      .catch(() => {
+        setRegexLoadState("error");
+      });
+    void listAllRegexProfiles()
+      .then((list) => setRegexProfiles(list.sort((a, b) => a.sortOrder - b.sortOrder)))
+      .catch(() => {});
+  }, [activeTab, activeRegexPresetId, listAllRegexPresets]);
+
+  // Sync the editor draft when the selected regex preset changes.
+  useEffect(() => {
+    if (activeRegexPreset) {
+      setRegexDraft(regexDraftFromRecord(activeRegexPreset));
+    } else {
+      setRegexDraft(emptyRegexDraft());
+    }
+    setRegexDirty(false);
+    setRegexSaveState("idle");
+  }, [activeRegexPresetId]);
+
+  // R-7: fetch link counts for non-global, enabled presets whose count is not
+  // known yet (disabled/global rows get their badge reason for free). Runs on
+  // list changes (load / create / active-toggle patch); the editor reports
+  // binding edits directly via onLinksChanged. Failures leave the id unknown —
+  // no badge (and a retry on the next list change) rather than a false «unbound».
+  useEffect(() => {
+    for (const p of regexPresets) {
+      if (p.isGlobal || p.disabled) continue;
+      if (regexLinkCounts[p.id] !== undefined) continue;
+      getRegexLinks(p.id)
+        .then((rows) => setRegexLinkCounts((prev) => ({ ...prev, [p.id]: rows.length })))
+        .catch(() => {});
+    }
+  }, [regexPresets, regexLinkCounts]);
+
+  // R-13: profile link counts for triad dots
+  useEffect(() => {
+    for (const pr of regexProfiles) {
+      if (pr.isGlobal || pr.disabled) continue;
+      if (regexProfileLinkCounts[pr.id] !== undefined) continue;
+      getRegexProfileLinks(pr.id)
+        .then((rows) => setRegexProfileLinkCounts((prev) => ({ ...prev, [pr.id]: rows.length })))
+        .catch(() => {});
+    }
+  }, [regexProfiles, regexProfileLinkCounts]);
+
+  /** R-7 «Активен» instant toggle: patch ONLY `disabled` server-side right
+   *  away — never blocked by a dirty draft (the unsaved-changes indicator
+   *  keeps carrying the draft≠saved story). List row and draft follow the
+   *  patch optimistically; a failure reverts both and toasts. */
+  function handleRegexActiveToggle(nextActive: boolean) {
+    if (!activeRegexPreset) return;
+    const id = activeRegexPreset.id;
+    const prevDisabled = activeRegexPreset.disabled;
+    setRegexPresets((prev) => prev.map((p) => (p.id === id ? { ...p, disabled: !nextActive } : p)));
+    // Direct set, NOT handleRegexDraftChange: the toggle is already persisted,
+    // so it must not mark the draft dirty.
+    setRegexDraft((cur) => ({ ...cur, disabled: !nextActive }));
+    void updateRegexPreset(id, { disabled: !nextActive })
+      .then((updated) => {
+        if (updated) setRegexPresets((prev) => prev.map((p) => (p.id === id ? updated : p)));
+        invalidateActiveRegexPresets();
+      })
+      .catch(() => {
+        setRegexPresets((prev) => prev.map((p) => (p.id === id ? { ...p, disabled: prevDisabled } : p)));
+        setRegexDraft((cur) => ({ ...cur, disabled: prevDisabled }));
+        toast.error(t("promptManager.regex.toggleFailed"));
+      });
+  }
+
+  function handleRegexDraftChange(next: RegexPresetDraft) {
+    setRegexDraft(next);
+    setRegexDirty(true);
+    setRegexSaveState("idle");
+  }
+
+  function handleRegexSelect(id: string) {
+    setActiveRegexPresetId(id);
+    setActiveRegexProfileId(null);
+  }
+
+  function handleRegexProfileSelect(id: string) {
+    setActiveRegexProfileId(id);
+    setActiveRegexPresetId(null);
+    setRegexDirty(false);
+    setRegexSaveState("idle");
+  }
+
+  function handleRegexProfileActiveToggle(nextActive: boolean) {
+    if (!activeRegexProfileId) return;
+    const id = activeRegexProfileId;
+    const prev = regexProfiles.find((p) => p.id === id);
+    if (!prev) return;
+    const nextDisabled = !nextActive;
+    setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, disabled: nextDisabled } : p)));
+    void updateRegexProfile(id, { disabled: nextDisabled })
+      .then((updated) => {
+        if (updated) setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? updated : p)));
+        invalidateActiveRegexPresets();
+      })
+      .catch(() => {
+        setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, disabled: prev.disabled } : p)));
+        toast.error(t("promptManager.regex.profileActiveFailed"));
+      });
+  }
+
+  function handleRegexProfileScopeToggle(nextIsGlobal: boolean) {
+    if (!activeRegexProfileId) return;
+    const id = activeRegexProfileId;
+    const prev = regexProfiles.find((p) => p.id === id);
+    if (!prev) return;
+    setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, isGlobal: nextIsGlobal } : p)));
+    void updateRegexProfile(id, { isGlobal: nextIsGlobal })
+      .then((updated) => {
+        if (updated) setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? updated : p)));
+        invalidateActiveRegexPresets();
+      })
+      .catch(() => {
+        setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, isGlobal: prev.isGlobal } : p)));
+        toast.error(t("promptManager.regex.profileActiveFailed"));
+      });
+  }
+
+  const handleProfileExport = useCallback(() => {
+    if (!activeRegexProfileId) return;
+    const profile = regexProfiles.find((p) => p.id === activeRegexProfileId);
+    if (!profile) return;
+    const members = regexPresets.filter((r) => r.profileId === activeRegexProfileId);
+    if (members.length === 0) {
+      toast.error(t("promptManager.regex.profileExportFailed"));
+      return;
+    }
+    try {
+      const json = serializeStandaloneRegexJson(
+        members.map((m) => ({
+          name: m.name,
+          findRegex: m.findRegex,
+          replaceString: m.replaceString,
+          trimStrings: [...m.trimStrings],
+          substituteRegex: m.substituteRegex as RegexSubstituteMode,
+          disabled: m.disabled,
+          markdownOnly: m.markdownOnly,
+          promptOnly: m.promptOnly,
+          runOnEdit: m.runOnEdit,
+          minDepth: m.minDepth,
+          maxDepth: m.maxDepth,
+          placement: [...m.placement] as RegexPlacement[],
+          isGlobal: m.isGlobal,
+          sortOrder: m.sortOrder,
+          profileId: null,
+        })),
+      );
+      const safeName = profile.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      downloadTextFile(`regex-profile-${safeName}.json`, json, "application/json");
+      toast.success(t("promptManager.regex.profileExported"));
+    } catch {
+      toast.error(t("promptManager.regex.profileExportFailed"));
+    }
+  }, [activeRegexProfileId, regexPresets, regexProfiles, t]);
+
+  function handleProfileDelete(mode: "keep" | "cascade") {
+    if (!profileConfirmDeleteId) return;
+    const id = profileConfirmDeleteId;
+    const wasActive = activeRegexProfileId === id;
+    setProfileConfirmDeleteId(null);
+    if (wasActive) {
+      setActiveRegexProfileId(null);
+    }
+    void deleteRegexProfile(id, mode)
+      .then(async () => {
+        const [presets, profiles] = await Promise.all([listAllRegexPresets(), listAllRegexProfiles()]);
+        setRegexPresets(presets);
+        setRegexProfiles(profiles.sort((a, b) => a.sortOrder - b.sortOrder));
+        // Clear active preset if it was deleted via cascade
+        if (activeRegexPresetId && presets.every((p) => p.id !== activeRegexPresetId)) {
+          setActiveRegexPresetId(presets.length > 0 ? presets[0].id : null);
+        }
+        invalidateActiveRegexPresets();
+        toast.success(t("promptManager.regex.profileDelete"));
+      })
+      .catch(() => {
+        toast.error(t("promptManager.regex.profileDeleteFailed"));
+      });
+  }
+
+  // RX-16 UI surface: standalone ST regex JSON import. Hidden file input
+  // reads text → the pure helper parses + creates (all disabled) → the list
+  // refreshes and the display-regex cache is invalidated so a newly-created
+  // preset is picked up immediately.
+  function handleRegexImportFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      void handleRegexImportText(String(reader.result ?? ""));
+    };
+    reader.onerror = () => {
+      toast.error(t("promptManager.regex.importFailed"));
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleRegexImportText(jsonText: string) {
+    try {
+      const created = await importStandaloneRegexText(jsonText, createRegexPreset);
+      if (created === 0) {
+        toast.error(t("promptManager.regex.importNone"));
+        return;
+      }
+      const refreshed = await listAllRegexPresets();
+      setRegexPresets(refreshed.sort((a, b) => a.sortOrder - b.sortOrder));
+      invalidateActiveRegexPresets();
+      toast.success(t("promptManager.regex.imported", { n: String(created) }));
+    } catch {
+      toast.error(t("promptManager.regex.importFailed"));
+    }
+  }
+
+  function handleRegexAdd(name: string) {
+    const flags = applyTargetFlags("persist");
+    void createRegexPreset({
+      name,
+      findRegex: "/.*/g",
+      replaceString: "",
+      markdownOnly: flags.markdownOnly,
+      promptOnly: flags.promptOnly,
+    }).then((created) => {
+      setRegexPresets((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
+      setActiveRegexPresetId(created.id);
+      setActiveRegexProfileId(null);
+      invalidateActiveRegexPresets();
+    });
+  }
+
+  function handleRegexRename(id: string, newName: string) {
+    void updateRegexPreset(id, { name: newName }).then((updated) => {
+      if (updated) {
+        setRegexPresets((prev) => prev.map((p) => (p.id === id ? updated : p)));
+        invalidateActiveRegexPresets();
+      }
+    });
+  }
+
+  // R-12: duplicate + export. Both read the latest preset list through a ref
+  // (the row is memoized and ignores callback identity), so the clone/export
+  // always sees current fields even if the row never re-rendered.
+  const regexPresetsRef = useRef(regexPresets);
+  regexPresetsRef.current = regexPresets;
+
+  // R-12→footer: copy/export act on the SELECTED rule, exactly like the
+  // presets tab's duplicate/export footer actions (owner correction — the
+  // per-row buttons were a pattern deviation).
+  const handleRegexCopy = useCallback(() => {
+    const source = regexPresetsRef.current.find((p) => p.id === activeRegexPresetId);
+    if (!source) return;
+    void createRegexPreset({
+      name: `${source.name}${t("promptManager.regex.copySuffix")}`,
+      findRegex: source.findRegex,
+      replaceString: source.replaceString,
+      trimStrings: [...source.trimStrings],
+      substituteRegex: source.substituteRegex as RegexSubstituteMode,
+      // Import-parity security gate: a duplicate starts disabled for review.
+      disabled: true,
+      markdownOnly: source.markdownOnly,
+      promptOnly: source.promptOnly,
+      runOnEdit: source.runOnEdit,
+      minDepth: source.minDepth,
+      maxDepth: source.maxDepth,
+      placement: [...source.placement] as RegexPlacement[],
+      isGlobal: source.isGlobal,
+    })
+      .then((created) => {
+        setRegexPresets((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
+        setActiveRegexPresetId(created.id);
+        invalidateActiveRegexPresets();
+        toast.success(t("promptManager.regex.copied"));
+      })
+      .catch(() => toast.error(t("promptManager.regex.copyFailed")));
+  }, [t, activeRegexPresetId]);
+
+  const handleRegexExport = useCallback(() => {
+    const source = regexPresetsRef.current.find((p) => p.id === activeRegexPresetId);
+    if (!source) return;
+    try {
+      // ST-compatible standalone export: an array-of-one RegexScriptData
+      // (the ST bulk shape; the RX-16 import accepts arrays too).
+      const json = serializeStandaloneRegexJson([{
+        name: source.name,
+        findRegex: source.findRegex,
+        replaceString: source.replaceString,
+        trimStrings: [...source.trimStrings],
+        substituteRegex: source.substituteRegex as RegexSubstituteMode,
+        disabled: source.disabled,
+        markdownOnly: source.markdownOnly,
+        promptOnly: source.promptOnly,
+        runOnEdit: source.runOnEdit,
+        minDepth: source.minDepth,
+        maxDepth: source.maxDepth,
+        placement: [...source.placement] as RegexPlacement[],
+        isGlobal: source.isGlobal,
+        sortOrder: source.sortOrder,
+        // Standalone export: ST has no profiles; the rule leaves the bundle.
+        profileId: null,
+      }]);
+      const safeName = source.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      downloadTextFile(`regex-${safeName}.json`, json, "application/json");
+      toast.success(t("promptManager.regex.exported"));
+    } catch {
+      toast.error(t("promptManager.regex.exportFailed"));
+    }
+  }, [t, activeRegexPresetId]);
+
+  // R-13 profile handlers
+  function handleRegexProfileAdd(name: string) {
+    void createRegexProfile({ name }).then((created) => {
+      setRegexProfiles((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
+      setExpandedProfileIds((prev) => new Set([...prev, created.id]));
+      setActiveRegexProfileId(created.id);
+      setActiveRegexPresetId(null);
+    });
+  }
+  function handleRegexProfileRename(id: string, newName: string) {
+    void updateRegexProfile(id, { name: newName }).then((updated) => {
+      if (updated) setRegexProfiles((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    });
+  }
+  function handleRegexAddRuleToProfile(profileId: string, name: string) {
+    const flags = applyTargetFlags("persist");
+    void createRegexPreset({
+      name,
+      findRegex: "/.*/g",
+      replaceString: "",
+      markdownOnly: flags.markdownOnly,
+      promptOnly: flags.promptOnly,
+    }).then((created) => {
+      void attachRegexRule(profileId, created.id).then((attached) => {
+        // `created` was never added to state, so a map() "replace" finds
+        // nothing and the new rule silently vanishes from the list (it exists
+        // on the server only — "rule not created" symptom). Append the record
+        // attach returned (it carries profileId); the flat builder groups
+        // members by profileId regardless of array position, so append order
+        // is safe.
+        setRegexPresets((prev) => [...prev, attached ?? created].sort((a, b) => a.sortOrder - b.sortOrder));
+        setActiveRegexPresetId(attached?.id ?? created.id);
+        setActiveRegexProfileId(null);
+        setExpandedProfileIds((prev) => new Set([...prev, profileId]));
+        invalidateActiveRegexPresets();
+      });
+    });
+  }
+  const handleRegexToggleProfile = useCallback((id: string) => {
+    setExpandedProfileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  function handleRegexAttach(profileId: string, ruleId: string) {
+    void attachRegexRule(profileId, ruleId).then((updated) => {
+      if (updated) setRegexPresets((prev) => prev.map((p) => p.id === ruleId ? updated : p));
+      setExpandedProfileIds((prev) => new Set([...prev, profileId]));
+      invalidateActiveRegexPresets();
+    });
+  }
+  function handleRegexDetach(ruleId: string) {
+    void detachRegexRule(ruleId).then((updated) => {
+      if (updated) setRegexPresets((prev) => prev.map((p) => p.id === ruleId ? updated : p));
+      invalidateActiveRegexPresets();
+    });
+  }
+  function handleRegexProfileReorder(updates: Array<{ id: string; sortOrder: number }>) {
+    for (const u of updates) {
+      void updateRegexProfile(u.id, { sortOrder: u.sortOrder }).then((updated) => {
+        if (updated) setRegexProfiles((prev) => prev.map((p) => p.id === updated.id ? updated : p).sort((a, b) => a.sortOrder - b.sortOrder));
+      });
+    }
+  }
+
+  function handleRegexReorder(updates: Array<{ id: string; sortOrder: number }>) {
+    for (const u of updates) {
+      void updateRegexPreset(u.id, { sortOrder: u.sortOrder }).then((updated) => {
+        if (updated) {
+          setRegexPresets((prev) =>
+            prev.map((p) => (p.id === updated.id ? updated : p)).sort((a, b) => a.sortOrder - b.sortOrder),
+          );
+        }
+      });
+    }
+  }
+
+  function handleRegexDelete() {
+    if (!activeRegexPresetId) return;
+    const deleteId = activeRegexPresetId;
+    const remaining = regexPresets.filter((p) => p.id !== deleteId);
+    const fallbackId = remaining.length > 0 ? remaining[0].id : null;
+    setActiveRegexPresetId(fallbackId);
+    setRegexConfirmDeleteOpen(false);
+    setRegexDirty(false);
+    setRegexSaveState("idle");
+    void deleteRegexPreset(deleteId).then(() => {
+      setRegexPresets((prev) => prev.filter((p) => p.id !== deleteId));
+      invalidateActiveRegexPresets();
+    });
+  }
+
+  function handleRegexSave() {
+    if (!activeRegexPresetId || !regexDirty) return;
+    setRegexSaveState("saving");
+    const flags = applyTargetFlags(regexDraft.applyTarget);
+    const trimStrings = regexDraft.trimStrings.split("\n").filter((s) => s.length > 0);
+    const minDepth = regexDraft.minDepth === "" ? null : Number(regexDraft.minDepth);
+    const maxDepth = regexDraft.maxDepth === "" ? null : Number(regexDraft.maxDepth);
+    void updateRegexPreset(activeRegexPresetId, {
+      name: regexDraft.name,
+      findRegex: regexDraft.findRegex,
+      replaceString: regexDraft.replaceString,
+      trimStrings,
+      substituteRegex: regexDraft.substituteRegex,
+      disabled: regexDraft.disabled,
+      isGlobal: regexDraft.isGlobal,
+      placement: regexDraft.placement,
+      minDepth: Number.isNaN(minDepth) ? null : minDepth,
+      maxDepth: Number.isNaN(maxDepth) ? null : maxDepth,
+      markdownOnly: flags.markdownOnly,
+      promptOnly: flags.promptOnly,
+      applyTarget: regexDraft.applyTarget,
+    }).then((updated) => {
+      if (!updated) {
+        setRegexSaveState("error");
+        return;
+      }
+      setRegexPresets((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setRegexDirty(false);
+      setRegexSaveState("saved");
+      invalidateActiveRegexPresets();
+      setTimeout(() => setRegexSaveState("idle"), 2200);
+    });
+  }
+
   useEffect(() => {
     if (activePreset) {
       setDraft({
@@ -309,6 +863,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         promptOrder: activePreset.promptOrder ?? [],
         advancedMode: activePreset.advancedMode ?? false,
         mergeConsecutiveRoles: activePreset.mergeConsecutiveRoles ?? false,
+        perSendPrefillEnabled: activePreset.perSendPrefillEnabled ?? false,
+        generationFormat: activePreset.generationFormat ?? null,
       });
     } else {
       setDraft({ ...emptyDraft });
@@ -326,7 +882,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   if (!isOpen) return null;
 
   const handleClose = () => {
-    if (dirty) {
+    if (dirty || regexDirty || serviceDirty) {
       setConfirmCloseOpen(true);
     } else {
       onClose();
@@ -336,9 +892,14 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const handleSave = () => {
     if (!input.activePresetId || !dirty) return;
     setSaveState("saving");
+    const { generationFormat, ...draftFields } = draft;
     const patch = {
-      ...draft,
+      ...draftFields,
       aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
+      // LS-3a: null = the preset has no stored format — omit (absent = auto);
+      // a stored {mode:"auto"} object persists the explicit auto choice while
+      // keeping the manual fields for a future switch-back.
+      ...(generationFormat ? { generationFormat } : {}),
     };
     void input.onUpdate(input.activePresetId, patch).then(async (ok) => {
       if (!ok) {
@@ -487,6 +1048,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           promptOrder: ext.promptOrder,
           advancedMode: ext.advancedMode,
           mergeConsecutiveRoles: ext.mergeConsecutiveRoles ?? false,
+          perSendPrefillEnabled: ext.perSendPrefillEnabled ?? false,
+          generationFormat: ext.generationFormat ?? null,
         });
         setDirty(true);
         setSaveState("idle");
@@ -554,7 +1117,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           onCancel={() => setConfirmCloseOpen(false)}
           onConfirm={() => {
             setDirty(false);
+            setRegexDirty(false);
+            setServiceDirty(false);
             setSaveState("idle");
+            setRegexSaveState("idle");
             setConfirmCloseOpen(false);
             onClose();
           }}
@@ -573,31 +1139,181 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           onCancel={() => setConfirmDeleteOpen(false)}
         />
       )}
+      {regexConfirmDeleteOpen && (
+        <DestructiveConfirmModal
+          title={t("promptManager.regex.deleteTitle")}
+          body={<>{t("promptManager.regex.deleteBody", { name: activeRegexPreset?.name || t("unnamed") })}</>}
+          confirmLabel={t("promptManager.regex.deleteConfirm")}
+          onConfirm={handleRegexDelete}
+          onCancel={() => setRegexConfirmDeleteOpen(false)}
+        />
+      )}
+      {profileConfirmDeleteId && (() => {
+        const target = regexProfiles.find((p) => p.id === profileConfirmDeleteId);
+        const count = regexPresets.filter((r) => r.profileId === profileConfirmDeleteId).length;
+        return (
+          <DestructiveConfirmModal
+            title={t("promptManager.regex.profileDeleteTitle")}
+            body={<>{t("promptManager.regex.profileDeleteBody", { name: target?.name || t("unnamed"), count })}</>}
+            confirmLabel={t("promptManager.regex.profileDeleteCascade", { count })}
+            secondaryLabel={t("promptManager.regex.profileDeleteKeep", { count })}
+            onConfirm={() => handleProfileDelete("cascade")}
+            onSecondary={() => handleProfileDelete("keep")}
+            onCancel={() => setProfileConfirmDeleteId(null)}
+          />
+        );
+      })()}
 
-      <MasterDetailModal
-        isOpen={true}
+      {/* RX-16 UI surface: hidden file input for standalone regex JSON import. */}
+      <input
+        ref={regexImportInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleRegexImportFile(file);
+          e.target.value = "";
+        }}
+      />
+
+      {/* LS-3d/e hidden file input removed with the format-tab import picker
+          (owner 2026-09-09): instruct imports live in the provider format
+          block; preset-side ST kinds await PresetImportModal compatibility. */}
+
+      <ServicePromptsPane
+        active={activeTab === "service"}
+        renderRowDrillDown={(id, selectRow) => (
+          <MasterDetailMobileDrillDown onSelect={selectRow} className="py-1" />
+        )}
+        onDirtyChange={setServiceDirty}
+        onClose={handleClose}
+      >
+        {(slots) => (
+          <MasterDetailModal
+            isOpen={true}
         onClose={handleClose}
         title={t("prompt_manager_title")}
         subtitle={t("prompt_manager_sub")}
-        detailTitle={t("prompt_manager_title")}
-        dirty={dirty}
-        containerClassName="max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[920px] h-[880px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        detailTitle={activeTab === "presets" ? t("prompt_manager_title") : activeTab === "regex" ? t("promptManager.regex.tabLabel") : t("promptManager.servicePrompts.tabLabel")}
+        dirty={activeTab === "service" ? slots.dirty : activeTab === "regex" ? regexDirty : dirty}
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
-        detailClassName="p-0"
-        mobileDetailClassName="p-2 scrollbar-hide"
+        detailClassName="p-3 sm:p-5"
+        mobileDetailClassName="p-3 scrollbar-hide"
         headerClassName={isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-[14px]"}
-        masterContent={() => (
-          <PresetList
-            presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
-            activePresetId={input.activePresetId}
-            onSelect={(id) => { input.setActivePresetId(id); }}
-            onAdd={handleAdd}
-            onRename={handleRename}
-            onImportPreset={() => setImportModalOpen(true)}
-            onReorder={input.onReorder}
-          />
-        )}
+        tabs={{
+          items: [
+            { value: "presets", label: t("promptManager.tabPresets") },
+            { value: "regex", label: t("promptManager.regex.tabLabel") },
+            { value: "service", label: t("promptManager.servicePrompts.tabLabel") },
+          ],
+          active: activeTab,
+          onChange: (v) => setActiveTab(v),
+        }}
+        masterContent={
+          activeTab === "service"
+            ? slots.master
+            : activeTab === "regex"
+            ? () => (
+                <RegexPresetList
+                  presets={regexPresets.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    disabled: p.disabled,
+                    sortOrder: p.sortOrder,
+                    notApplied: (() => {
+                      // R-13b: a member's dot reflects the PROFILE gate — green
+                      // only when the profile actually fires in some chat. Gray
+                      // when the rule OR its profile is disabled; red when the
+                      // profile is enabled but applies nowhere (not global,
+                      // no bindings). Standalone rules keep the R-7 logic.
+                      if (p.profileId !== null) {
+                        const profile = regexProfiles.find((pr) => pr.id === p.profileId);
+                        if (p.disabled || profile?.disabled) return "disabled" as const;
+                        if (profile && !profile.isGlobal && regexProfileLinkCounts[profile.id] === 0) return "unbound" as const;
+                        return null;
+                      }
+                      return p.disabled
+                        ? ("disabled" as const)
+                        : !p.isGlobal && regexLinkCounts[p.id] === 0
+                          ? ("unbound" as const)
+                          : null;
+                    })(),
+                    profileId: p.profileId,
+                    shadowed: p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0),
+                  }))}
+                  profiles={regexProfiles.map((pr) => ({
+                    id: pr.id,
+                    name: pr.name,
+                    disabled: pr.disabled,
+                    isGlobal: pr.isGlobal,
+                    sortOrder: pr.sortOrder,
+                    notApplied: pr.disabled ? ("disabled" as const) : !pr.isGlobal && regexProfileLinkCounts[pr.id] === 0 ? ("unbound" as const) : null,
+                    memberCount: regexPresets.filter((r) => r.profileId === pr.id).length,
+                  }))}
+                  activePresetId={activeRegexPresetId}
+                  activeProfileId={activeRegexProfileId}
+                  expandedProfileIds={[...expandedProfileIds]}
+                  onToggleProfile={handleRegexToggleProfile}
+                  onSelect={handleRegexSelect}
+                  onSelectProfile={handleRegexProfileSelect}
+                  onAdd={handleRegexAdd}
+                  onAddProfile={handleRegexProfileAdd}
+                  onAddRuleToProfile={handleRegexAddRuleToProfile}
+                  onRename={handleRegexRename}
+                  onRenameProfile={handleRegexProfileRename}
+                  onReorder={handleRegexReorder}
+                  onReorderProfiles={handleRegexProfileReorder}
+                  onAttach={handleRegexAttach}
+                  onDetach={handleRegexDetach}
+                  onImportRegex={() => regexImportInputRef.current?.click()}
+                />
+              )
+            : () => (
+                <PresetList
+                  presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
+                  activePresetId={input.activePresetId}
+                  onSelect={(id) => { input.setActivePresetId(id); }}
+                  onAdd={handleAdd}
+                  onRename={handleRename}
+                  onImportPreset={() => setImportModalOpen(true)}
+                  onReorder={input.onReorder}
+                />
+              )
+        }
         detailContent={
+          activeTab === "service"
+            ? slots.detail
+            : activeTab === "regex"
+              ? (
+            activeRegexProfile ? (
+              <RegexProfileEditor
+                profile={activeRegexProfile}
+                memberCount={regexPresets.filter((r) => r.profileId === activeRegexProfile.id).length}
+                onNameCommit={(newName) => handleRegexProfileRename(activeRegexProfile.id, newName)}
+                onActiveToggle={handleRegexProfileActiveToggle}
+                onScopeChange={handleRegexProfileScopeToggle}
+                onLinksChanged={(pid, count) => setRegexProfileLinkCounts((prev) => ({ ...prev, [pid]: count }))}
+                onExport={handleProfileExport}
+                onDeleteClick={() => setProfileConfirmDeleteId(activeRegexProfile.id)}
+              />
+            ) : activeRegexPreset ? (
+              <RegexPresetEditor
+                preset={activeRegexPreset}
+                draft={regexDraft}
+                onDraftChange={handleRegexDraftChange}
+                onActiveChange={handleRegexActiveToggle}
+                onLinksChanged={(presetId, count) =>
+                  setRegexLinkCounts((prev) => ({ ...prev, [presetId]: count }))
+                }
+                profileName={activeRegexPreset.profileId ? (regexProfiles.find((p) => p.id === activeRegexPreset.profileId)?.name ?? null) : null}
+              />
+            ) : regexLoadState === "loading" ? (
+              <div className="flex h-full items-center justify-center p-5">
+                <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("loading")}</span>
+              </div>
+            ) : null
+          ) : (
           <>
             <div className={cn("mt-4 flex shrink-0 gap-3", isMobile ? "flex-col px-2" : "mx-5 flex-row items-center justify-between")}>
               <div>
@@ -655,6 +1371,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   loreAnchorLoadState={loreAnchorLoadState}
                   summaryEntries={summaryEntries}
                   summaryLoadState={summaryLoadState}
+                  prefillSupported={input.prefillSupported}
                 />
               </div>
             )}
@@ -667,80 +1384,63 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               hideChatPrompts={advancedMode}
             />
           </>
+          )
         }
         footer={
-          <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
-            {activePreset && isMobile && (
-            <button type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
-              onClick={handleDuplicate}
-              aria-label={t("duplicate_preset_btn")}
-            >
-              <Icons.Copy />
-            </button>
-            )}
-            {activePreset && !isMobile && (
-            <span
-              className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-              onClick={handleDuplicate}
-            >
-              <Icons.Copy /> {t("duplicate_preset_btn")}
-            </span>
-            )}
-            {activePreset && isMobile && (
-            <button type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
-              onClick={handleExportPreset}
-              aria-label={t("export_preset_btn")}
-            >
-              <Icons.Download />
-            </button>
-            )}
-            {activePreset && !isMobile && (
-            <span
-              className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-              onClick={handleExportPreset}
-            >
-              <Icons.Download /> {t("export_preset_btn")}
-            </span>
-            )}
-            {activePreset && input.presets.length > 1 && isMobile && (
-            <button type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
-              onClick={() => setConfirmDeleteOpen(true)}
-              aria-label={t("delete_preset")}
-            >
-              <Icons.Trash />
-            </button>
-            )}
-            {activePreset && input.presets.length > 1 && !isMobile && (
-              <span
-                className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-                onClick={() => setConfirmDeleteOpen(true)}
-              >
-                <Icons.Trash /> {t("delete_preset")}
-              </span>
-            )}
-            <div className="ml-auto flex min-w-0 items-center gap-2.5">
-              {!isMobile && (
-              <button type="button"
-                className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
-                onClick={handleClose}
-              >
-                {t("close")}
-              </button>
-              )}
-              <SaveButton
-                dirty={dirty}
-                saveState={saveState}
-                resetKey={input.activePresetId}
-                onClick={handleSave}
-                label={t("save")}
-              />
-            </div>
-          </div>
+          activeTab === "service"
+            ? slots.footer
+            : activeTab === "regex"
+              ? (
+            <MasterDetailFooter
+              actions={
+                activeRegexPreset
+                  ? [
+                      { icon: <Icons.Copy />, label: t("promptManager.regex.copy"), onClick: handleRegexCopy },
+                      { icon: <Icons.Download />, label: t("promptManager.regex.export"), onClick: handleRegexExport },
+                      { icon: <Icons.Trash />, label: t("promptManager.regex.deleteConfirm"), onClick: () => setRegexConfirmDeleteOpen(true) },
+                    ]
+                  : []
+              }
+              onClose={handleClose}
+              right={
+                <SaveButton
+                  dirty={regexDirty}
+                  saveState={regexSaveState}
+                  resetKey={activeRegexPresetId}
+                  onClick={handleRegexSave}
+                  label={t("save")}
+                />
+              }
+            />
+          ) : (
+          <MasterDetailFooter
+              actions={
+                activePreset
+                  ? [
+                      { icon: <Icons.Copy />, label: t("duplicate_preset_btn"), onClick: handleDuplicate },
+                      { icon: <Icons.Download />, label: t("export_preset_btn"), onClick: handleExportPreset },
+                      ...(input.presets.length > 1
+                        ? [{ icon: <Icons.Trash />, label: t("delete_preset"), onClick: () => setConfirmDeleteOpen(true) } as const]
+                        : []),
+                    ]
+                  : []
+              }
+              onClose={handleClose}
+              right={
+                <SaveButton
+                  dirty={dirty}
+                  saveState={saveState}
+                  resetKey={input.activePresetId}
+                  onClick={handleSave}
+                  label={t("save")}
+                />
+              }
+            />
+          )
         }
-      />
+          />
+        )}
+      </ServicePromptsPane>
     </>
   );
 }

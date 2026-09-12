@@ -1,3 +1,4 @@
+// hygiene:allow-abs-path-inputs — quoted ISCC/exec paths are mocked build-script inputs, never loaded
 import { expect, test } from "bun:test";
 import { FAST_COMPRESSION_FLAG, isccArgs } from "./build-installer.js";
 

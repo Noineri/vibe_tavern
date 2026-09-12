@@ -197,12 +197,42 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const gen = runtime.regenerateMessageStream(chatId, messageId, override, abortBridge.signal);
       return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
     })
+    .post("/api/chats/:chatId/messages/:messageId/continue", async (c) => {
+      // LS-4a: continue the last assistant reply from its selected variant's
+      // text — the variant rides as the pushed-assistant continuation point
+      // and the result appends as a new variant of the target message. No
+      // body: the continuation text resolves server-side.
+      const chatId = c.req.param("chatId");
+      const messageId = c.req.param("messageId");
+      logSendDebug("api.route.continue.start", { chatId, messageId });
+      return c.json(await runtime.continueMessage(chatId, messageId, c.req.raw.signal));
+    })
+    .post("/api/chats/:chatId/messages/:messageId/continue/stream", async (c) => {
+      const chatId = c.req.param("chatId");
+      const messageId = c.req.param("messageId");
+      logSendDebug("api.route.continue-stream.start", { chatId, messageId });
+      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.continue-stream", { chatId, messageId });
+      const gen = runtime.continueMessageStream(chatId, messageId, abortBridge.signal);
+      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
+    })
     .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {
       return c.json(
         await runtime.selectVariant(
           c.req.param("chatId"),
           c.req.param("messageId"),
           Number(c.req.param("variantIndex")),
+        ),
+      );
+    })
+    .put("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/tts-annotation", zValidator("json", schemas.setVariantTtsAnnotationSchema), async (c) => {
+      // TPE-1 (AN-1): set/clear the per-variant narration annotation — the
+      // AI editor's "prepare for narration" button writes here (TPE-2).
+      return c.json(
+        await runtime.setVariantTtsAnnotation(
+          c.req.param("chatId"),
+          c.req.param("messageId"),
+          Number(c.req.param("variantIndex")),
+          c.req.valid("json").text,
         ),
       );
     })
@@ -258,6 +288,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
           return c.json({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }, 422);
         }
+        if (err instanceof (await import("../../infrastructure/ai/stt-gate.js")).VoiceTranscribeUnavailableError) {
+          return c.json({ type: "voice_transcribe_unavailable", message: err.message, attachments: err.attachmentNames }, 422);
+        }
         throw err;
       }
     })
@@ -286,6 +319,11 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       logSendDebug("api.route.summaries.generate", { chatId, providerProfileId: body.providerProfileId, model: body.model ?? null, from: body.summarizedFrom, to: body.summarizedTo });
       return c.json(await runtime.generateChatSummary(chatId, body, c.req.raw.signal));
+    })
+    .put("/api/chats/:chatId/summaries/reorder", zValidator("json", schemas.reorderChatSummariesSchema), async (c) => {
+      // SUM-3b: manual summary-list order (store-side transactional rewrite
+      // over the ACTIVE branch, matching listChatSummaries' branch scope).
+      return c.json(await runtime.reorderChatSummaries(c.req.param("chatId"), c.req.valid("json")));
     })
     .patch("/api/chats/:chatId/memory-settings", zValidator("json", schemas.updateMemorySettingsSchema), async (c) => {
       return c.json(await runtime.updateMemorySettings(c.req.param("chatId"), c.req.valid("json")));

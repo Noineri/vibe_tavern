@@ -395,7 +395,7 @@ function SceneEditorModal({ open, isMobile, schema, state, onClose, onSave, t }:
   }
   return (
     <Modal open={open} onClose={onClose} title={t("scn_zone_edit")}>
-      <div className="w-[min(92vw,560px)] max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-surface p-4">
+      <div className="w-[min(92vw,560px)] max-h-[80vh] overflow-y-auto rounded-xl border border-border2 bg-surface p-4 shadow-[0_24px_60px_rgba(0,0,0,.5)]">
         {body}
       </div>
     </Modal>
@@ -413,15 +413,15 @@ function ConfirmDelete({ open, isMobile, onCancel, onConfirm, t }: {
     <div className="flex flex-col gap-3 p-4">
       <p className="text-sm text-t2">{t("scn_zone_delete_confirm")}</p>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="rounded px-3 py-1.5 text-sm text-t3 hover:bg-s2">{t("scn_zone_delete_cancel")}</button>
-        <button type="button" onClick={onConfirm} className="rounded bg-danger px-3 py-1.5 text-sm text-white hover:opacity-90">{t("scn_zone_delete")}</button>
+        <button type="button" onClick={onCancel} className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1">{t("scn_zone_delete_cancel")}</button>
+        <button type="button" onClick={onConfirm} className="h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110">{t("scn_zone_delete")}</button>
       </div>
     </div>
   );
   if (isMobile) {
     return <BottomSheet open={open} onClose={onCancel} title={t("scn_zone_delete")}>{body}</BottomSheet>;
   }
-  return <Modal open={open} onClose={onCancel} compact title={t("scn_zone_delete")}><div className="w-[min(92vw,400px)] rounded-xl border border-border bg-surface">{body}</div></Modal>;
+  return <Modal open={open} onClose={onCancel} compact title={t("scn_zone_delete")}><div className="w-[min(92vw,400px)] rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">{body}</div></Modal>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

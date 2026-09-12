@@ -118,6 +118,43 @@ describe("LinkBindingPopover — responsive resource row", () => {
 		expect(onSetLinks).toHaveBeenLastCalledWith([]);
 	});
 
+	// RX-12: preset/regex target types render bound pills and unlink exactly
+	// like the pre-existing kinds — the union extension must not fork pill
+	// behavior. (Popover chip sections can't mount in happy-dom — see the
+	// skipped toggle-on test below — so coverage here is the pill row.)
+	it("renders a bound preset pill and unlinks it on click", () => {
+		const onSetLinks = mock();
+		const { getByText } = renderRow({
+			...baseProps,
+			links: [
+				{ targetType: "preset", targetId: "pp1" },
+				{ targetType: "character", targetId: "c1" },
+			],
+			characters: [makeTarget("c1", "Seraphina")],
+			presets: [makeTarget("pp1", "Deep RP")],
+			onSetLinks,
+			isMobile: false,
+		});
+		fireEvent.click(getByText("Deep RP"));
+		expect(onSetLinks).toHaveBeenCalledTimes(1);
+		// Only the preset link is removed; the character link survives.
+		expect(onSetLinks).toHaveBeenLastCalledWith([{ targetType: "character", targetId: "c1" }]);
+	});
+
+	it("renders a bound regex pill and unlinks it on click", () => {
+		const onSetLinks = mock();
+		const { getByText } = renderRow({
+			...baseProps,
+			links: [{ targetType: "regex", targetId: "rx1" }],
+			regexes: [makeTarget("rx1", "No Italics")],
+			onSetLinks,
+			isMobile: false,
+		});
+		fireEvent.click(getByText("No Italics"));
+		expect(onSetLinks).toHaveBeenCalledTimes(1);
+		expect(onSetLinks).toHaveBeenLastCalledWith([]);
+	});
+
 	it("empty state: no pills but the add-trigger stays visible in the row", () => {
 		const { getByTestId, getByRole } = renderRow({
 			...baseProps,

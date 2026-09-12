@@ -45,7 +45,7 @@ function loreActivity(toolCallId: string): CoauthorToolActivity {
 		status: "done",
 		summary: "Drafted lore.",
 		loreBundle: {
-			lorebooks: [{ id: "lb1", name: "Lore", description: "", scopeType: "character", enabled: true }],
+			lorebooks: [{ id: "lb1", name: "Lore", description: "", scopeType: "entity", enabled: true }],
 			entries: [{ id: "e1", lorebookId: "lb1", title: "Fear", content: "Backstory.", keys: ["name"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true }],
 		},
 	};

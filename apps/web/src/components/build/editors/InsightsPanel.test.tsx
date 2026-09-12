@@ -317,7 +317,7 @@ describe("InsightsPanel (INS-2)", () => {
       insightsConfig: { objectiveEnabled: false, trackerEnabled: false, diceEnabled: true, diceMode: "normal" },
     };
     mocks.listAllScripts.mockResolvedValue([
-      { id: "s1", name: "Fate Die", description: "", code: "", scriptKind: "dice", scopeType: "persona", characterId: null, personaId: "persona_1", chatId: null, enabled: true, sortOrder: 0 },
+      { id: "s1", name: "Fate Die", description: "", code: "", scriptKind: "dice", scopeType: "entity", characterId: null, personaId: "persona_1", chatId: null, enabled: true, sortOrder: 0 },
       { id: "s2", name: "Stealth", description: "", code: "", scriptKind: "dice", scopeType: "global", characterId: null, personaId: null, chatId: null, enabled: true, sortOrder: 1 },
       // Prompt scripts must never appear in the dice assignment surface.
       { id: "s3", name: "Prompt Helper", description: "", code: "", scriptKind: "prompt", scopeType: "global", characterId: null, personaId: null, chatId: null, enabled: true, sortOrder: 2 },
@@ -371,7 +371,7 @@ describe("InsightsPanel (INS-2)", () => {
       insightsConfig: { objectiveEnabled: false, trackerEnabled: false, diceEnabled: true, diceMode: "normal" },
     };
     mocks.listAllScripts.mockResolvedValue([
-      { id: "s1", name: "Fate Die", description: "", code: "", scriptKind: "dice", scopeType: "persona", characterId: null, personaId: "persona_1", chatId: null, enabled: true, sortOrder: 0 },
+      { id: "s1", name: "Fate Die", description: "", code: "", scriptKind: "dice", scopeType: "entity", characterId: null, personaId: "persona_1", chatId: null, enabled: true, sortOrder: 0 },
       { id: "s2", name: "Stealth", description: "", code: "", scriptKind: "dice", scopeType: "global", characterId: null, personaId: null, chatId: null, enabled: true, sortOrder: 1 },
     ]);
     mocks.getDiceDefinitions.mockResolvedValue({
@@ -396,7 +396,7 @@ describe("InsightsPanel (INS-2)", () => {
       insightsConfig: { objectiveEnabled: false, trackerEnabled: false, diceEnabled: true, diceMode: "normal", diceScriptIds: ["s1"] },
     };
     mocks.listAllScripts.mockResolvedValue([
-      { id: "s1", name: "Fate Die", description: "", code: "", scriptKind: "dice", scopeType: "persona", characterId: null, personaId: "persona_1", chatId: null, enabled: true, sortOrder: 0 },
+      { id: "s1", name: "Fate Die", description: "", code: "", scriptKind: "dice", scopeType: "entity", characterId: null, personaId: "persona_1", chatId: null, enabled: true, sortOrder: 0 },
     ]);
     mocks.getDiceDefinitions.mockResolvedValue({
       scripts: [

@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { createPersona, uploadPersonaAvatar } from "../app-client.js";
 import { fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
 import { cn } from "../lib/cn.js";
-import { useIsMobile } from "./use-mobile.js";
 import { useT } from "../i18n/context.js";
 import { Icons } from "../components/shared/icons.js";
 import { CustomTooltip } from "../components/shared/Tooltip.js";
@@ -34,7 +33,6 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
   hiddenInputs: ReactNode;
 } {
   const { t } = useT();
-  const isMobile = useIsMobile();
 
   const [stImportPreview, setStImportPreview] = useState<StPersonaEntry[] | null>(null);
   // PR-9: defer enabling the import tooltip until after the modal opening
@@ -179,8 +177,7 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
       {importTooltipReady ? (
         <CustomTooltip content={t("st_persona_import_hint")}>
           <button type="button"
-            className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] flex-1 px-2 text-[14px]" : "h-[44px] px-4 text-sm")}
-            style={{ color: "var(--t2)" }}
+            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
             onClick={() => stFileRef.current?.click()}
           >
             <Icons.Import /> {t("st_import_personas_btn")}
@@ -188,8 +185,7 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
         </CustomTooltip>
       ) : (
         <button type="button"
-          className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] flex-1 px-2 text-[14px]" : "h-[44px] px-4 text-sm")}
-          style={{ color: "var(--t2)" }}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
           onClick={() => stFileRef.current?.click()}
         >
           <Icons.Import /> {t("st_import_personas_btn")}
@@ -197,8 +193,7 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
       )}
       <CustomTooltip content={t("st_folder_import_hint")}>
         <button type="button"
-          className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] flex-1 px-2 text-[14px]" : "h-[44px] px-3 text-sm")}
-          style={{ color: "var(--t2)" }}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
           onClick={() => stFolderRef.current?.click()}
         >
           <Icons.Import /> {t("st_folder_import_btn")}

@@ -44,6 +44,7 @@ export interface CreateLorebookData {
   tokenBudget?: number;
   tokenBudgetPercent?: number | null;
   recursiveScanning?: boolean;
+  useGroupScoring?: boolean;
   maxRecursionSteps?: number;
   includeNames?: boolean;
   minActivations?: number;
@@ -79,7 +80,8 @@ export interface CreateLoreEntryData {
   groupName?: string;
   groupWeight?: number;
   prioritizeInclusion?: boolean;
-  useGroupScoring?: boolean;
+  /** Tri-state (ST parity): null = inherit the book default, true/false = explicit. */
+  useGroupScoring?: boolean | null;
   excludeRecursion?: boolean;
   preventRecursion?: boolean;
   delayUntilRecursion?: boolean;
@@ -109,7 +111,7 @@ export type UpdateLoreEntryData = Partial<CreateLoreEntryData>;
  *
  * `id`s are PREALLOCATED in the request-local draft engine and become the DB
  * primary keys; Apply is idempotent (re-Apply upserts the same rows). The
- * scopeType→owner mapping mirrors `createLorebook`: a 'character'-scoped draft
+ * scopeType→owner mapping mirrors `createLorebook`: an 'entity'-scoped draft
  * book is written with `characterId` set so the activation engine (FK ∪
  * junction) finds it.
  */
@@ -118,12 +120,13 @@ export interface CoauthorLoreDraftBundle {
     id: string;
     name: string;
     description: string;
-    scopeType: 'global' | 'character' | 'persona' | 'chat';
+    scopeType: 'global' | 'entity' | 'chat';
     enabled: boolean;
     /** CE-A1: activation overrides authored by the co-author. Apply falls back to `LOREBOOK_DEFAULTS` when absent. */
     scanDepth?: number;
     tokenBudget?: number;
     recursiveScanning?: boolean;
+    useGroupScoring?: boolean;
     /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
     mode?: 'create' | 'edit';
   }>;
@@ -162,6 +165,7 @@ export interface Lorebook {
   tokenBudget: number;
   tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
+  useGroupScoring: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
   minActivations: number;
@@ -202,7 +206,8 @@ export interface LoreEntry {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  useGroupScoring: boolean;
+  /** Tri-state (ST parity): null = inherit the book default, true/false = explicit. */
+  useGroupScoring: boolean | null;
   excludeRecursion: boolean;
   preventRecursion: boolean;
   delayUntilRecursion: boolean;
@@ -245,7 +250,7 @@ export interface LorebookLink {
 // transforms (it is LoreEntry→CreateLoreEntryData, same domain types) so it is
 // a structural destructure, not a spec loop — type-safe and auto-exhaustive.
 
-type EntryCoerce = 'bool' | 'json' | 'raw';
+type EntryCoerce = 'bool' | 'bool3' | 'json' | 'raw';
 
 interface EntryFieldSpec {
   /** Drizzle column on `loreEntries`. */
@@ -275,7 +280,7 @@ const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldS
   groupName:              { column: 'groupName',              coerce: 'raw',  insertDefault: '' },
   groupWeight:            { column: 'groupWeight',            coerce: 'raw',  insertDefault: 100 },
   prioritizeInclusion:    { column: 'prioritizeInclusion',    coerce: 'bool', insertDefault: false },
-  useGroupScoring:        { column: 'useGroupScoring',        coerce: 'bool', insertDefault: false },
+  useGroupScoring:        { column: 'useGroupScoring',        coerce: 'bool3', insertDefault: null },
   excludeRecursion:       { column: 'excludeRecursion',       coerce: 'bool', insertDefault: false },
   preventRecursion:       { column: 'preventRecursion',       coerce: 'bool', insertDefault: false },
   delayUntilRecursion:    { column: 'delayUntilRecursion',    coerce: 'bool', insertDefault: false },
@@ -296,6 +301,7 @@ const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldS
 function encodeEntryField(coerce: EntryCoerce, value: unknown): number | string | null {
   switch (coerce) {
     case 'bool': return value ? 1 : 0;
+    case 'bool3': return value === null || value === undefined ? null : value ? 1 : 0;
     case 'json': return JSON.stringify(value);
     case 'raw':  return value as number | string | null;
   }
@@ -305,6 +311,7 @@ function encodeEntryField(coerce: EntryCoerce, value: unknown): number | string 
 function decodeEntryField(coerce: EntryCoerce, value: unknown): unknown {
   switch (coerce) {
     case 'bool': return value === 1;
+    case 'bool3': return value === null || value === undefined ? null : value === 1;
     case 'json': return JSON.parse(value as string);
     case 'raw':  return value;
   }
@@ -452,22 +459,33 @@ export class LorebookStore {
       return rows.map((r) => this.mapLorebookRow(r));
     }
 
-    if (!ownerId) return [];
-
-    const fkCol = scopeType === 'character' ? lorebooks.characterId
-      : scopeType === 'persona' ? lorebooks.personaId
-      : lorebooks.chatId;
-
-    const directCondition = and(eq(lorebooks.scopeType, scopeType), eq(fkCol, ownerId));
-
-    // Character/persona tabs show both directly scoped lorebooks and lorebooks
-    // linked via the junction table. Chat scope remains direct-only because
-    // lorebook_links currently supports character/persona targets only.
-    if (scopeType === 'character' || scopeType === 'persona') {
+    // Entity scope: the home FK is whichever owner column is set
+    // (characterId OR personaId), so the direct match covers both.
+    // Without an ownerId this is a BROWSE view — every entity-home book
+    // regardless of which owner it is bound to (the editor sidebar's
+    // "entity" tab is a scope filter, symmetric with the global tab).
+    // Owner views (character/persona build sidebars) always pass ownerId.
+    if (scopeType === 'entity') {
+      if (!ownerId) {
+        const rows = await this.db
+          .select()
+          .from(lorebooks)
+          .where(eq(lorebooks.scopeType, 'entity'))
+          .orderBy(asc(lorebooks.scopeType), asc(lorebooks.sortOrder), asc(lorebooks.name))
+          .all();
+        return rows.map((r) => this.mapLorebookRow(r));
+      }
+      const directCondition = and(
+        eq(lorebooks.scopeType, 'entity'),
+        or(eq(lorebooks.characterId, ownerId), eq(lorebooks.personaId, ownerId)),
+      );
+      // The owner view shows both directly scoped lorebooks and lorebooks
+      // linked via the junction table (either target type — a book bound to
+      // the owner through any link belongs to the owner's view).
       const linkedRows = await this.db
         .select({ lorebookId: lorebookLinks.lorebookId })
         .from(lorebookLinks)
-        .where(and(eq(lorebookLinks.targetType, scopeType), eq(lorebookLinks.targetId, ownerId)))
+        .where(and(inArray(lorebookLinks.targetType, ['character', 'persona']), eq(lorebookLinks.targetId, ownerId)))
         .all();
 
       const linkedIds = [...new Set(linkedRows.map((row) => row.lorebookId))];
@@ -484,10 +502,18 @@ export class LorebookStore {
       return rows.map((r) => this.mapLorebookRow(r));
     }
 
+    // Chat scope remains direct-only because lorebook_links supports
+    // character/persona targets only. Any other (legacy) scope value falls
+    // through to the same direct-FK read — no junction union. These are
+    // owner views by definition — no ownerId means nothing to match.
+    if (!ownerId) return [];
+    const fkCol = scopeType === 'persona' ? lorebooks.personaId
+      : scopeType === 'chat' ? lorebooks.chatId
+      : lorebooks.characterId;
     const rows = await this.db
       .select()
       .from(lorebooks)
-      .where(directCondition)
+      .where(and(eq(lorebooks.scopeType, scopeType), eq(fkCol, ownerId)))
       .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name))
       .all();
     return rows.map((r) => this.mapLorebookRow(r));
@@ -507,6 +533,7 @@ export class LorebookStore {
         tokenBudget: data.tokenBudget ?? 1000,
         tokenBudgetPercent: data.tokenBudgetPercent ?? null,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
+        useGroupScoring: (data.useGroupScoring ?? false) ? 1 : 0,
         maxRecursionSteps: data.maxRecursionSteps ?? 5,
         includeNames: data.includeNames ? 1 : 0,
         minActivations: data.minActivations ?? 0,
@@ -542,6 +569,7 @@ export class LorebookStore {
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
     if (data.tokenBudgetPercent !== undefined) values.tokenBudgetPercent = data.tokenBudgetPercent;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
+    if (data.useGroupScoring !== undefined) values.useGroupScoring = data.useGroupScoring ? 1 : 0;
     if (data.maxRecursionSteps !== undefined) values.maxRecursionSteps = data.maxRecursionSteps;
     if (data.includeNames !== undefined) values.includeNames = data.includeNames ? 1 : 0;
     if (data.minActivations !== undefined) values.minActivations = data.minActivations;
@@ -708,7 +736,7 @@ export class LorebookStore {
   }
 
   /**
-   * CTX-L2: persist a co-author lore draft bundle as character-scoped lorebooks
+   * CTX-L2: persist a co-author lore draft bundle as entity-scoped lorebooks
    * + entries using the PREALLOCATED draft ids, IDEMPOTENTLY. This is the sole
    * persistence boundary for lore proposals — tool execution only mutates the
    * request-local draft state; nothing reaches SQLite until Apply. Re-Apply
@@ -716,8 +744,9 @@ export class LorebookStore {
    * Apply inserts. Runs in ONE transaction so a partial failure rolls back the
    * whole graph. Dependency validation: every entry's parent lorebook must be
    * present in the bundle (the draft engine enforces this, but Apply re-checks
-   * defensively). The scopeType→owner mapping mirrors `createLorebook` (a
-   * 'character'-scoped book sets `characterId`), so the activation engine (FK ∪
+   * defensively). The scopeType→owner mapping mirrors `createLorebook` (an
+   * 'entity'-scoped book sets the owner FK — the draft engine targets the
+   * chat's character, so `characterId`), so the activation engine (FK ∪
    * junction) discovers the new book.
    */
   async applyCoauthorLoreDraft(
@@ -752,7 +781,7 @@ export class LorebookStore {
     // the DB callback — only synchronous bun:sqlite work happens here.
     this.db.transaction((tx) => {
       for (const lb of bundle.lorebooks) {
-        const charScoped = lb.scopeType === 'character';
+        const entityScoped = lb.scopeType === 'entity';
         tx
           .insert(lorebooks)
           .values({
@@ -764,6 +793,7 @@ export class LorebookStore {
             tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
             tokenBudgetPercent: null,
             recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
+            useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
             maxRecursionSteps: 5,
             includeNames: 0,
             minActivations: 0,
@@ -772,7 +802,7 @@ export class LorebookStore {
             characterStrategy: 0,
             sortOrder: 0,
             enabled: lb.enabled ? 1 : 0,
-            characterId: charScoped ? characterId : null,
+            characterId: entityScoped ? characterId : null,
             personaId: null,
             chatId: null,
             extensionsJson: '{}',
@@ -789,17 +819,18 @@ export class LorebookStore {
               scanDepth: lb.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
               tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
               recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
+              useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
               enabled: lb.enabled ? 1 : 0,
-              characterId: charScoped ? characterId : null,
+              characterId: entityScoped ? characterId : null,
               updatedAt: now,
             },
           })
           .run();
-        // CE-A1: a character-scoped lorebook is bound to its character via
+        // CE-A1: an entity-scoped lorebook is bound to its character via
         // lorebook_links (idempotent), so the co-author's book is discoverable
         // by the activation engine (FK ∪ junction) without the user binding it
-        // manually. Non-character scopes do not create a character link.
-        if (charScoped) {
+        // manually. Non-entity scopes do not create a character link.
+        if (entityScoped) {
           tx
             .insert(lorebookLinks)
             .values({ lorebookId: lb.id, targetType: 'character', targetId: characterId })
@@ -850,8 +881,9 @@ export class LorebookStore {
    * Returns all lorebooks visible to a chat session across all scopes,
    * plus their enabled entries.
    *
-   * Resolution: global lorebooks + lorebooks linked to the character (via lorebook_links)
-   * + lorebooks linked to the persona (via lorebook_links) + chat-scoped lorebooks (direct FK).
+   * Resolution: global lorebooks + entity-scoped lorebooks homed to the
+   * character or persona (home FK) + lorebooks linked to either owner (via
+   * lorebook_links) + chat-scoped lorebooks (direct FK).
    * Only enabled entries are included.
    */
   async listAllActiveForChat(
@@ -870,18 +902,24 @@ export class LorebookStore {
       .all();
     for (const r of globalRows) lorebookIds.add(r.id);
 
-    // 2. Character-scoped lorebooks: FK-owned (home scope) AND junction-linked.
+    // 2. Entity-scoped lorebooks: FK-owned (home scope) AND junction-linked.
     //    The resolver consults BOTH — the previous junction-only query silently
     //    dropped FK-owned lorebooks because `createLorebook` does NOT mirror the
-    //    FK into `lorebook_links`, so a persona/character-FK lorebook created
-    //    the normal way was visible in editor tabs but never activated in chat.
+    //    FK into `lorebook_links`, so an entity-FK lorebook created the normal
+    //    way was visible in editor tabs but never activated in chat.
     //    Mirrors `ScriptStore.listAllEnabledForChat` (FK ∪ junction, Set dedup).
-    const charFkRows = await this.db
+    //    The home FK is whichever owner column is set, so one pass covers both:
+    //    (characterId = :cid OR personaId = :pid) — a book M:N-bound to BOTH a
+    //    character and a persona activates for a chat matching either target.
+    const entityFkCondition = personaId
+      ? and(eq(lorebooks.scopeType, 'entity'), or(eq(lorebooks.characterId, characterId), eq(lorebooks.personaId, personaId)), eq(lorebooks.enabled, 1))
+      : and(eq(lorebooks.scopeType, 'entity'), eq(lorebooks.characterId, characterId), eq(lorebooks.enabled, 1));
+    const entityFkRows = await this.db
       .select({ id: lorebooks.id })
       .from(lorebooks)
-      .where(and(eq(lorebooks.scopeType, 'character'), eq(lorebooks.characterId, characterId), eq(lorebooks.enabled, 1)))
+      .where(entityFkCondition)
       .all();
-    for (const r of charFkRows) lorebookIds.add(r.id);
+    for (const r of entityFkRows) lorebookIds.add(r.id);
     const charLinks = await this.db
       .select({ lorebookId: lorebookLinks.lorebookId })
       .from(lorebookLinks)
@@ -893,14 +931,8 @@ export class LorebookStore {
       .all();
     for (const r of charLinks) lorebookIds.add(r.lorebookId);
 
-    // 3. Persona-scoped lorebooks: FK-owned AND junction-linked (same reason).
+    // 3. Persona junction links (target-typed, unchanged by the collapse).
     if (personaId) {
-      const personaFkRows = await this.db
-        .select({ id: lorebooks.id })
-        .from(lorebooks)
-        .where(and(eq(lorebooks.scopeType, 'persona'), eq(lorebooks.personaId, personaId), eq(lorebooks.enabled, 1)))
-        .all();
-      for (const r of personaFkRows) lorebookIds.add(r.id);
       const personaLinks = await this.db
         .select({ lorebookId: lorebookLinks.lorebookId })
         .from(lorebookLinks)
@@ -1079,6 +1111,7 @@ export class LorebookStore {
       tokenBudget: source.tokenBudget,
       tokenBudgetPercent: source.tokenBudgetPercent ?? null,
       recursiveScanning: source.recursiveScanning,
+      useGroupScoring: source.useGroupScoring ?? false,
       maxRecursionSteps: source.maxRecursionSteps,
       includeNames: source.includeNames,
       minActivations: source.minActivations,
@@ -1139,6 +1172,7 @@ export class LorebookStore {
       tokenBudget: row.tokenBudget,
       tokenBudgetPercent: row.tokenBudgetPercent,
       recursiveScanning: row.recursiveScanning === 1,
+      useGroupScoring: row.useGroupScoring === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,
@@ -1202,6 +1236,7 @@ export class LorebookStore {
       tokenBudget: row.tokenBudget,
       tokenBudgetPercent: row.tokenBudgetPercent,
       recursiveScanning: row.recursiveScanning === 1,
+      useGroupScoring: row.useGroupScoring === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, mock, beforeEach } from "bun:test";
+import { afterEach, describe, expect, test, beforeEach } from "bun:test";
 import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,23 +12,15 @@ import {
 	setProviderFetchFactory,
 	type ProviderFetch,
 } from "../src/domain/providers/provider-fetch-factory.js";
+import type { describeAttachments, resolveVisionDescribePrompt } from "../src/infrastructure/ai/vision-gate.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-// ─── Vision-gate mock: capture calls, return deterministic descriptions ────
-// IMPORTANT (Bun): `mock.module` persists for the whole process. The factory
-// MUST spread the real module's exports so that other test files (notably
-// vision-gate.test.ts, which exercises `resolveMultimodalContent` directly)
-// still get the real implementation. We only override `describeAttachments`
-// and `resolveVisionDescribePrompt` — everything else passes through. Without
-// this spread, resolveMultimodalContent would be `undefined` and vision-gate's
-// suite would collapse with a cross-file leak.
-//
-// The real module is imported BEFORE the mock is registered, so `real` holds
-// the genuine function references; the mock factory then spreads them back.
-const real = await import("../src/infrastructure/ai/vision-gate.js");
-
+// ─── Vision-describe stubs: capture calls, return deterministic descriptions
+// Injected through the adapters' `visionDescribeDeps` constructor seam (same
+// tier-policy pattern as the orchestrator `executors` seam) — no mock.module,
+// so vision-gate.test.ts and every other file keep the real module.
 let lastDescribeArgs: { count: number; ids: string[]; visionModel: string | null; prompt: string | null; providerFetch: ProviderFetch | undefined } = {
 	count: 0,
 	ids: [],
@@ -38,24 +30,25 @@ let lastDescribeArgs: { count: number; ids: string[]; visionModel: string | null
 };
 let describeOverride: ((ids: string[]) => Map<string, string>) | null = null;
 
-await mock.module("../src/infrastructure/ai/vision-gate.js", () => ({
-	...real,
-	describeAttachments: async (
-		attachments: Array<{ id: string }>,
-		_visionModel: string,
-		_profile: unknown,
-		_assetLoader: unknown,
-		_prompt?: string,
-		_signal?: AbortSignal,
-		providerFetch?: ProviderFetch,
-	) => {
-		const ids = attachments.map((a) => a.id);
-		lastDescribeArgs = { count: ids.length, ids, visionModel: lastDescribeArgs.visionModel, prompt: lastDescribeArgs.prompt, providerFetch };
-		// load buffers via the loader to exercise the preloaded-loader path
-		return describeOverride ? describeOverride(ids) : new Map(ids.map((id) => [id, `DESC(${id})`] as const));
-	},
-	resolveVisionDescribePrompt: async () => "MOCK_VISION_PROMPT",
-}));
+const describeStub: typeof describeAttachments = async (
+	attachments,
+	_visionModel,
+	_profile,
+	_assetLoader,
+	_prompt,
+	_signal,
+	providerFetch,
+) => {
+	const ids = attachments.map((a) => a.id);
+	lastDescribeArgs = { count: ids.length, ids, visionModel: lastDescribeArgs.visionModel, prompt: lastDescribeArgs.prompt, providerFetch };
+	// load buffers via the loader to exercise the preloaded-loader path
+	return describeOverride ? describeOverride(ids) : new Map(ids.map((id) => [id, `DESC(${id})`] as const));
+};
+
+const VISION_DEPS = {
+	describeAttachments: describeStub,
+	resolveVisionDescribePrompt: (async () => "MOCK_VISION_PROMPT") as typeof resolveVisionDescribePrompt,
+};
 
 const sentinelProviderFetch = (async () => new Response("unused")) as ProviderFetch;
 sentinelProviderFetch.preconnect = () => {};
@@ -102,8 +95,8 @@ async function setup(opts: { visionModel?: string | null; active?: boolean } = {
 		(id) => stores.characters.resolveFolderName(id),
 	);
 	const providerProfileService = makeProfileService(opts);
-	const characters = new CharacterAdapter(noopSession, stores, assetService, providerProfileService);
-	const personas = new PersonaAdapter(noopSession, stores, assetService, providerProfileService);
+	const characters = new CharacterAdapter(noopSession, stores, assetService, providerProfileService, VISION_DEPS);
+	const personas = new PersonaAdapter(noopSession, stores, assetService, providerProfileService, VISION_DEPS);
 	return { dataRoot, stores, assetService, characters, personas };
 }
 

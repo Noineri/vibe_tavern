@@ -1,5 +1,7 @@
 import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings, type DiceRoll } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
+import { effectiveContextBudget } from "@vibe-tavern/domain";
+import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
 import {
 	type CharacterId,
 	type ChatBranchId,
@@ -21,6 +23,7 @@ import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
+import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
 import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
@@ -143,7 +146,7 @@ export function pickBootstrapChatId<T extends string>(
 		},
 	) {
 		this.stores = stores;
-		this.resolver = new StaticPromptResolver(stores);
+		this.resolver = new StaticPromptResolver(stores, new RegexHookService(stores));
 		this.chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences);
 		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =
@@ -314,10 +317,17 @@ export function pickBootstrapChatId<T extends string>(
 		}
 		try {
 			const profile = await this.getActiveProviderProfile();
-			const assembled = await this.assemblePrompt(chatId, branchId, {
-				contextBudget: profile?.contextBudget ?? null,
-				responseReserve: profile?.maxTokens ?? 0,
-			});
+			// LS-1c mirror: the preview assembles under the active profile's token
+			// context (exact-count cache + warm scheduling) and its PADDED budget —
+			// the same effective budget the send orchestrator compacts against, so
+			// the meter percentages match generation-time trimming.
+			const tokenCtx = profile ? providerTokenContextFromProfile(profile, profile.defaultModel) : null;
+			const assembled = await runWithProviderTokenContext(tokenCtx, () =>
+				this.assemblePrompt(chatId, branchId, {
+					contextBudget: effectiveContextBudget(profile?.contextBudget ?? null, profile?.tokenPadding),
+					responseReserve: profile?.maxTokens ?? 0,
+				}),
+			);
 			return {
 				layers: assembled.promptTraceDraft.assembledLayers as import("@vibe-tavern/domain").PromptLayerDto[],
 				tokenAccounting: assembled.promptTraceDraft.tokenAccounting,
@@ -876,6 +886,11 @@ export function pickBootstrapChatId<T extends string>(
 		const contextSearchSession = this.stores ? this.buildContextSearchSession(chatId) : undefined;
 		return strategy.assemble({
 			promptService: this.promptService,
+			// SP-5: co-author base resolves through the active service-prompt profile
+			// when a db handle is reachable; `stores` is absent in minimal/test contexts
+			// (same defensiveness as contextSearchSession above) — the base then
+			// falls back to the bundled asset inside coauthor-prompt.
+			db: this.stores?.db,
 			loaders: this.buildChatModeLoaders(),
 			loreDelegate,
 			loreEntityLookup,
@@ -890,6 +905,10 @@ export function pickBootstrapChatId<T extends string>(
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,
 			priorSummaries: options?.priorSummaries,
+			// LS-10: the ACTIVE profile's stored generation format — the assembly
+			// applies the decision-(c) resolution (profile wins when set, else the
+			// preset fallback) and inlines custom-template selections.
+			providerGenerationFormat: profile?.generationFormat ?? null,
 		});
 	}
 
@@ -1102,6 +1121,7 @@ export function pickBootstrapChatId<T extends string>(
 			promptOrder: preset.promptOrder,
 			advancedMode: preset.advancedMode,
 			mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
+			perSendPrefillEnabled: preset.perSendPrefillEnabled,
 			scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? "",
 			aiAssistantPrompts: (preset as { aiAssistantPrompts?: string }).aiAssistantPrompts ?? "{}",
 			createdAt: preset.createdAt,

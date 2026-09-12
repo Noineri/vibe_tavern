@@ -49,6 +49,11 @@ export interface MessageVariant {
    *  (just created, or cleared on content edit). Owned by this variant's
    *  immutable id. Parsed from scene_tracker_json at this boundary. */
   sceneTracker: MessageVariantSceneRecord | null;
+  /** TTS narration annotation (TPE-1, AN-1): the annotated copy of this
+   *  variant's content (expressive tags inserted, text otherwise identical).
+   *  Null = not annotated — narration reads the content itself. A persisted
+   *  fact like the Scene record: content edits do NOT clear it. */
+  ttsAnnotation: string | null;
 }
 
 /**
@@ -862,6 +867,18 @@ export class MessageStore {
       .run();
   }
 
+  /** TTS narration annotation (TPE-1): id-keyed side field on the immutable
+   *  variant row — same ownership rule as the Scene record. An empty/whitespace
+   *  text clears the field (annotation OFF), mirroring how the editor treats
+   * "no annotation". */
+  async setTtsAnnotation(variantId: string, text: string | null): Promise<void> {
+    const value = typeof text === "string" ? text.trim() : "";
+    await this.db.update(messageVariants)
+      .set({ ttsAnnotation: value.length > 0 ? value : null })
+      .where(eq(messageVariants.id, variantId))
+      .run();
+  }
+
   /**
    * The active branch's latest assistant message + its selected variant's raw
    * Scene record — the source for the derived current-Scene cache (SCN-6).
@@ -1037,6 +1054,7 @@ export class MessageStore {
       toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : null,
       toolCallId: row.toolCallId,
       sceneTracker: row.sceneTrackerJson ? JSON.parse(row.sceneTrackerJson) : null,
+      ttsAnnotation: row.ttsAnnotation ?? null,
       createdAt: row.createdAt,
     };
   }

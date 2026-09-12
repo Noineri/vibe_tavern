@@ -10,16 +10,19 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     baseUrl: "http://localhost", apiKey: "sk-test", hasStoredApiKey: true,
     model: "gpt-4o", visionModel: "gpt-4o-mini",
     temperature: 0.8, topP: 0.95, minP: 0.05, topK: 40, topA: 0.1,
-    typicalP: 1, tfsZ: 1, repeatLastN: 64, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-    dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, drySequenceBreakers: ["\n"],
+    typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, dynatempRange: 0, dynatempExponent: 1, topNSigma: 0, smoothingFactor: 0, repeatLastN: 64, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
+    dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: ["\n"], bannedStrings: [" finger"],
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
-    pinContextBudget: false, bindPerModel: false,
+    pinContextBudget: false, tokenPadding: 0, bindPerModel: false,
+    generationMode: "chat",
     modelFreeOnly: false, modelGroupByOwner: false,
     editingModelId: null,
     stopSequences: ["<end>"], logitBias: [], seed: null,
     reasoningEffort: "auto", showReasoning: false, streamResponse: true, customSamplers: false,
     proxyMode: "inherit", proxyId: null,
+    samplerSetId: null,
+    generationFormat: null,
     ...over,
   };
 }
@@ -103,6 +106,23 @@ describe("buildFavoriteModelSwitchPatch", () => {
 // ===========================================================================
 
 describe("computeSavePatch", () => {
+  test("carries adaptive-p fields into the save patch (B1: llama.cpp/KoboldCPP)", () => {
+    const form = makeForm({ adaptiveTarget: 0.55, adaptiveDecay: 0.75 });
+    const patch = computeSavePatch(form);
+    expect(patch.adaptiveTarget).toBe(0.55);
+    expect(patch.adaptiveDecay).toBe(0.75);
+  });
+
+  test("carries the llama-server numeric tail into the save patch (B2)", () => {
+    const form = makeForm({ dynatempRange: 1.5, dynatempExponent: 0.8, topNSigma: 0.95, smoothingFactor: 0.7, dryPenaltyLastN: 512 });
+    const patch = computeSavePatch(form);
+    expect(patch.dynatempRange).toBe(1.5);
+    expect(patch.dynatempExponent).toBe(0.8);
+    expect(patch.topNSigma).toBe(0.95);
+    expect(patch.smoothingFactor).toBe(0.7);
+    expect(patch.dryPenaltyLastN).toBe(512);
+  });
+
   test("includes bindPerModel in the base patch (Wave 1 column)", () => {
     const form = makeForm({ bindPerModel: true });
     const patch = computeSavePatch(form);
@@ -113,6 +133,17 @@ describe("computeSavePatch", () => {
     const form = makeForm({ bindPerModel: false });
     const patch = computeSavePatch(form);
     expect(patch.bindPerModel).toBe(false);
+  });
+
+  test("carries tokenPadding into the base patch (LS-1d — profile-level knob)", () => {
+    const form = makeForm({ tokenPadding: 250 });
+    const patch = computeSavePatch(form);
+    expect(patch.tokenPadding).toBe(250);
+  });
+
+  test("carries generationMode into the base patch (LS-2a — profile-level, the silent flip)", () => {
+    expect(computeSavePatch(makeForm()).generationMode).toBe("chat");
+    expect(computeSavePatch(makeForm({ generationMode: "completion" })).generationMode).toBe("completion");
   });
 
   test("pinContextBudget still in the base patch (Wave 0 strip-gap regression)", () => {
@@ -172,11 +203,15 @@ describe("connectionToSavePatch", () => {
 
 describe("computeOverlayPatch", () => {
   test("includes sampler/context fields", () => {
-    const form = makeForm({ temperature: 0.3, contextBudget: 8000, maxTokens: 8192 });
+    const form = makeForm({ temperature: 0.3, contextBudget: 8000, maxTokens: 8192, adaptiveTarget: 0.6, adaptiveDecay: 0.8, dynatempRange: 1.5, dryPenaltyLastN: 512 });
     const overlay = computeOverlayPatch(form);
     expect(overlay.temperature).toBe(0.3);
     expect(overlay.contextBudget).toBe(8000);
     expect(overlay.maxTokens).toBe(8192);
+    expect(overlay.adaptiveTarget).toBe(0.6);
+    expect(overlay.adaptiveDecay).toBe(0.8);
+    expect(overlay.dynatempRange).toBe(1.5);
+    expect(overlay.dryPenaltyLastN).toBe(512);
   });
 
   test("NEVER includes identity fields (name/endpoint/apiKey/defaultModel/visionModel)", () => {
@@ -192,6 +227,13 @@ describe("computeOverlayPatch", () => {
     expect(overlay).not.toHaveProperty("defaultModel");
     expect(overlay).not.toHaveProperty("visionModel");
     expect(overlay).not.toHaveProperty("providerPreset");
+    // tokenPadding (LS-1d) is profile-level — the chat-template overhead it
+    // compensates for is a property of the connection, not the model — so it
+    // must NEVER route into a per-model overlay.
+    expect(overlay).not.toHaveProperty("tokenPadding");
+    // generationMode (LS-2a) is likewise profile-level — the connection's
+    // mode, not a bound model's.
+    expect(overlay).not.toHaveProperty("generationMode");
     expect(overlay).not.toHaveProperty("bindPerModel");
   });
 

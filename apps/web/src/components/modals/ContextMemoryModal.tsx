@@ -54,7 +54,6 @@ export function ContextMemoryModal(props: ContextMemoryModalProps) {
         subtitle={t("context_memory_sub")}
         detailTitle={summary.detailTitle}
         dirty={summary.dirty}
-        containerClassName="h-[min(86vh,780px)] w-[min(920px,calc(100vw-32px))] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
         detailClassName="p-5"
         headerBottom={!isMobile && tabs}

@@ -1,0 +1,548 @@
+import { describe, expect, it, afterEach, mock } from "bun:test";
+import React from "react";
+import { useDomEnv } from "../../../../../test/dom-env.js";
+
+useDomEnv();
+
+const realTtsApi = await import("../../../../api/tts-api.js");
+const realI18n = await import("../../../../i18n/context.js");
+const realProviderApi = await import("../../../../api/provider-api.js");
+// Voice-map cache seam: the hook must invalidate the chat-side snapshot
+// after every successful mutation (live incident 2026-09-05 — default
+// switch narrated with the OLD profile until a link mutation refreshed).
+// Safe mock.module pattern: real module first, spread, override one fn.
+const realVoiceMapData = await import("../../../../lib/tts/voice-map-data.js");
+const refreshVoiceMapMock = mock(async () => {});
+mock.module("../../../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  refreshVoiceMapData: refreshVoiceMapMock,
+}));
+
+mock.module("../../../../i18n/context.js", () => ({
+  ...realI18n,
+  useT: () => ({
+    t: (key: string, params?: Record<string, unknown>) => {
+      if (params && typeof params === "object" && "name" in params) {
+        return `${key}:${String(params.name)}`;
+      }
+      return key;
+    },
+    tDynamic: (key: string) => key,
+    locale: "en",
+    setLocale: () => {},
+    ready: true,
+  }),
+}));
+
+type TtsRecord = import("../../../../api/tts-api.js").TtsProfileRecord;
+
+function makeRecord(overrides: Partial<TtsRecord> = {}): TtsRecord {
+  return {
+    id: "p1",
+    name: "Voice One",
+    backend: "kokoro",
+    config: {},
+    voiceId: "af_heart",
+    narratorVoiceId: null,
+    hasStoredApiKey: false,
+    providerRef: null,
+    autoKeyProviderName: null,
+    lang: "en",
+    sortOrder: 0,
+    isDefault: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+// Mutable store that the mocked API closes over — changing it per test affects the already-imported hook
+let store: TtsRecord[] = [];
+let failUpdate = false;
+let failMessage = "save boom";
+
+const listAllMock = mock(async () => [...store]);
+const createMock = mock(async (body: { name: string; backend: string; config?: Record<string, unknown>; voiceId?: string; narratorVoiceId?: string | null }) => {
+  const rec = makeRecord({
+    id: `p${store.length + 1}`,
+    name: body.name,
+    backend: body.backend,
+    config: body.config ?? {},
+    voiceId: body.voiceId ?? "",
+    narratorVoiceId: body.narratorVoiceId ?? null,
+  });
+  store.push(rec);
+  return rec;
+});
+const updateMock = mock(async (id: string, body: Partial<{ name: string; backend: string; config: Record<string, unknown>; voiceId: string; narratorVoiceId: string | null }>) => {
+  if (failUpdate) throw new Error(failMessage);
+  const idx = store.findIndex((p) => p.id === id);
+  if (idx === -1) throw new Error("not found");
+  const updated = { ...store[idx], ...body } as TtsRecord;
+  store[idx] = updated;
+  return updated;
+});
+const deleteMock = mock(async (id: string) => {
+  store = store.filter((p) => p.id !== id);
+});
+const setDefaultMock = mock(async (id: string) => {
+  store = store.map((p) => ({ ...p, isDefault: p.id === id }));
+  const updated = store.find((p) => p.id === id);
+  if (!updated) throw new Error("not found");
+  return updated;
+});
+
+mock.module("../../../../api/tts-api.js", () => ({
+  ...realTtsApi,
+  listAllTtsProfiles: listAllMock,
+  createTtsProfile: createMock,
+  updateTtsProfile: updateMock,
+  deleteTtsProfile: deleteMock,
+  setTtsDefault: setDefaultMock,
+}));
+
+// D21: the hook fetches the provider wire list once for the client-side
+// auto-key hint. Same safe pattern as above — real module first, spread,
+// override only the one function the hook touches.
+let providerStore: Array<{ endpoint: string; hasStoredApiKey: boolean; name: string }> = [];
+const listProvidersMock = mock(async () => providerStore);
+mock.module("../../../../api/provider-api.js", () => ({
+  ...realProviderApi,
+  listProviderProfiles: listProvidersMock,
+}));
+
+const { act, cleanup, waitFor, render } = await import("@testing-library/react");
+const { useTtsProfiles } = await import("./use-tts-profiles.js");
+
+afterEach(async () => {
+  await act(async () => {});
+  cleanup();
+  // reset mutable state
+  store = [];
+  providerStore = [];
+  failUpdate = false;
+  // clear mock call history
+  listAllMock.mockClear();
+  createMock.mockClear();
+  updateMock.mockClear();
+  deleteMock.mockClear();
+  setDefaultMock.mockClear();
+  listProvidersMock.mockClear();
+  refreshVoiceMapMock.mockClear();
+});
+
+describe("useTtsProfiles", () => {
+  it("D21 draft auto-key hint: a draft endpoint matching a keyful provider resolves the name client-side", async () => {
+    providerStore = [
+      { endpoint: "NanoGPT", hasStoredApiKey: false, name: "NoKey" },
+      { endpoint: "https://nano-gpt.com/api/v1/", hasStoredApiKey: true, name: "NanoLLM" },
+      { endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OpenRouter" },
+    ];
+    store = [];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    await waitFor(() => expect(listProvidersMock).toHaveBeenCalled());
+    // Draft: create flow + openai-compat backend + matching endpoint (trim,
+    // scheme, trailing slash and case all normalize) → FIRST keyful match.
+    act(() => hook!.startCreate());
+    // Two separate patches: a backend switch wipes config by design
+    // (stale keys must not leak into the new backend's config).
+    act(() => hook!.setForm({ backend: "openai-compatible" as never }));
+    act(() => hook!.setForm({ config: { endpoint: "https://NANO-GPT.com/api/v1//" } as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("NanoLLM"));
+    // A decorated saved record still wins over the live computation.
+    act(() => hook!.setForm({ autoKeyProviderName: "Decorated" as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Decorated"));
+    // No match → null (no fake hint).
+    act(() => hook!.setForm({ autoKeyProviderName: null as never, config: { endpoint: "https://nowhere.example/v1" } as never }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
+  });
+
+  it("loads profiles on mount and supports select + startCreate", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" }), makeRecord({ id: "p2", name: "Beta", backend: "gemini" })];
+
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+    expect(hook?.loading).toBe(false);
+    expect(hook?.error).toBeNull();
+
+    hook!.select("p1");
+    await waitFor(() => expect(hook!.editingId).toBe("p1"));
+    expect(hook!.form?.name).toBe("Alpha");
+    expect(hook!.form?.backend).toBe("kokoro");
+    expect(hook!.dirty).toBe(false);
+
+    hook!.setForm({ name: "Alpha-2" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    expect(hook!.form?.name).toBe("Alpha-2");
+
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    expect(hook!.form?.backend).toBe("kokoro");
+    // D20: prefilled localized default name. This probe renders without an
+    // i18n provider, so the context default `t` is the raw-key identity.
+    expect(hook!.form?.name).toBe("tts_profile_default_name");
+    expect(hook!.editingId).toBeNull();
+  });
+
+  it("save creates a new profile when form.id is null and updates when id exists", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" })];
+
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    hook!.setForm({ name: "NewOne", backend: "gemini" as never });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+    expect(createMock).toHaveBeenCalled();
+    const createArg = (createMock.mock.calls[0] as unknown[])[0] as { name: string; backend: string };
+    expect(createArg.name).toBe("NewOne");
+    expect(createArg.backend).toBe("gemini");
+
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+    hook!.setForm({ name: "Alpha-renamed" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(hook?.profiles.find((p: TtsRecord) => p.id === "p1")?.name).toBe("Alpha-renamed"));
+    expect(updateMock).toHaveBeenCalled();
+  });
+
+  it("save failure sets error", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" })];
+    failUpdate = true;
+
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+    hook!.setForm({ name: "BadName" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(hook?.error).toContain("save boom"));
+    failUpdate = false;
+  });
+
+  it("remove deletes the selected profile and clears selection", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" }), makeRecord({ id: "p2", name: "Beta", backend: "gemini" })];
+
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+    await hook!.remove();
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    expect(hook?.form).toBeNull();
+    expect(hook?.editingId).toBeNull();
+  });
+
+  it("backend switch resets config and voiceId (kokoro defaults af_heart)", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro", config: { speed: 1.5 }, voiceId: "af_heart" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.backend).toBe("kokoro"));
+    expect(hook!.form?.config).toEqual({ speed: 1.5 });
+    expect(hook!.form?.voiceId).toBe("af_heart");
+    hook!.setForm({ backend: "gemini" as never });
+    await waitFor(() => expect(hook?.form?.backend).toBe("gemini"));
+    expect(hook!.form?.config).toEqual({});
+    expect(hook!.form?.voiceId).toBe("");
+    hook!.setForm({ backend: "kokoro" as never });
+    await waitFor(() => expect(hook?.form?.backend).toBe("kokoro"));
+    expect(hook!.form?.config).toEqual({});
+    expect(hook!.form?.voiceId).toBe("af_heart");
+  });
+
+  it("narratorVoiceId round-trips through select/startCreate/backend-switch/save", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro", narratorVoiceId: "af_bella" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe("af_bella"));
+    // Backend switch resets narratorVoiceId
+    hook!.setForm({ backend: "gemini" as never });
+    await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe(""));
+    // Set narrator and save — payload maps "" -> null and value -> string
+    hook!.setForm({ narratorVoiceId: "Kore" });
+    await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe("Kore"));
+    hook!.setForm({ name: "Alpha2" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(updateMock).toHaveBeenCalled());
+    const updateArg = (updateMock.mock.calls[updateMock.mock.calls.length - 1] as unknown[])[1] as { narratorVoiceId: string | null };
+    expect(updateArg.narratorVoiceId).toBe("Kore");
+    // Empty narrator maps to null
+    hook!.setForm({ narratorVoiceId: "" });
+    await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe(""));
+    hook!.setForm({ name: "Alpha3" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(updateMock.mock.calls.length).toBe(2));
+    const secondArg = (updateMock.mock.calls[1] as unknown[])[1] as { narratorVoiceId: string | null };
+    expect(secondArg.narratorVoiceId).toBeNull();
+    // startCreate defaults narratorVoiceId to ""
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    expect(hook!.form?.narratorVoiceId).toBe("");
+    cleanup();
+  });
+
+  it("save passes config and voiceId through create and update", async () => {
+    store = [];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    // Set config + voiceId on the new form
+    hook!.setForm({ config: { endpoint: "https://x", speed: 1.2 } as never, voiceId: "test-voice" });
+    await waitFor(() => expect(hook?.form?.voiceId).toBe("test-voice"));
+    hook!.setForm({ name: "NewOne" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    const created = store[0];
+    expect(created.config).toEqual({ endpoint: "https://x", speed: 1.2 });
+    expect(created.voiceId).toBe("test-voice");
+    // Update path
+    hook!.select(created.id);
+    await waitFor(() => expect(hook?.form?.id).toBe(created.id));
+    hook!.setForm({ config: { apiKey: "k123" } as never, voiceId: "new-voice" });
+    await waitFor(() => expect(hook?.form?.voiceId).toBe("new-voice"));
+    hook!.setForm({ name: "Renamed" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    await hook!.save();
+    await waitFor(() => expect(store.find((p) => p.id === created.id)?.voiceId).toBe("new-voice"));
+    expect(store.find((p) => p.id === created.id)?.config).toEqual({ apiKey: "k123" });
+  });
+
+  it("startCreate defaults to kokoro + af_heart", async () => {
+    store = [];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.loading).toBe(false));
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    expect(hook!.form?.backend).toBe("kokoro");
+    expect(hook!.form?.voiceId).toBe("af_heart");
+    expect(hook!.form?.config).toEqual({});
+  });
+});
+
+// ─── F5/F2b: the form mirrors the record's hasStoredApiKey and drops it on
+// a backend switch — the UI must never believe a stored key survives a
+// backend change (server-side merge has the same guard, pinned in
+// services/api/test/tts-routes.test.ts). ─────────────────────────────────
+
+describe("useTtsProfiles — hasStoredApiKey lifecycle (F2b)", () => {
+  it("select() mirrors the record's hasStoredApiKey into the form", async () => {
+    store = [
+      makeRecord({
+        id: "p1",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1" },
+        hasStoredApiKey: true,
+      }),
+      makeRecord({ id: "p2", backend: "gemini", config: {}, hasStoredApiKey: false }),
+    ];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+
+    hook!.select("p1");
+    await waitFor(() => expect(hook!.editingId).toBe("p1"));
+    expect(hook!.form?.hasStoredApiKey).toBe(true);
+
+    hook!.select("p2");
+    await waitFor(() => expect(hook!.form?.backend).toBe("gemini"));
+    expect(hook!.form?.hasStoredApiKey).toBe(false);
+    cleanup();
+  });
+
+  it("switching the backend resets hasStoredApiKey to false", async () => {
+    store = [
+      makeRecord({
+        id: "p1",
+        backend: "openai-compatible",
+        config: { endpoint: "https://api.example.com/v1", apiKey: "" },
+        hasStoredApiKey: true,
+      }),
+    ];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook!.form?.hasStoredApiKey).toBe(true));
+
+    hook!.setForm({ backend: "gemini", config: {}, voiceId: "" });
+    await waitFor(() => expect(hook!.form?.backend).toBe("gemini"));
+    expect(hook!.form?.hasStoredApiKey).toBe(false);
+    cleanup();
+  });
+});
+
+describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mechanism)", () => {
+  it("select() -> view; setForm keeps view; save() from edit -> view; startCreate/startEdit -> edit; cancelEdit -> view", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    // No form yet — the modal shows the empty placeholder, not the editor.
+    expect(hook?.form).toBeNull();
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+    // Selecting a SAVED profile opens in view mode (the base card), not the form.
+    expect(hook?.headerMode).toBe("view");
+    expect(hook?.dirty).toBe(false);
+    // Config-section edits (voice, tuning) mark dirty but do NOT open the
+    // connection form screen — LLM mechanism: the edit screen is a separate
+    // menu entered only via Edit settings / New.
+    hook!.setForm({ name: "Alpha-2" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    expect(hook?.headerMode).toBe("view");
+    // Edit settings opens the connection screen.
+    hook!.startEdit();
+    await waitFor(() => expect(hook?.headerMode).toBe("edit"));
+    // Save returns to the view card.
+    await hook!.save();
+    await waitFor(() => expect(hook?.headerMode).toBe("view"));
+    expect(hook?.dirty).toBe(false);
+    // New profile opens straight in edit mode.
+    hook!.startCreate();
+    await waitFor(() => expect(hook?.form?.id).toBeNull());
+    expect(hook?.headerMode).toBe("edit");
+    // Canceling a NEW profile drops the draft entirely (form null — the
+    // modal placeholder), view mode.
+    hook!.cancelEdit();
+    await waitFor(() => expect(hook?.form).toBeNull());
+    expect(hook?.headerMode).toBe("view");
+    // Canceling an EDIT of a saved profile restores the saved values.
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+    hook!.startEdit();
+    await waitFor(() => expect(hook?.headerMode).toBe("edit"));
+    hook!.setForm({ name: "Discard me" });
+    await waitFor(() => expect(hook?.dirty).toBe(true));
+    hook!.cancelEdit();
+    await waitFor(() => expect(hook?.headerMode).toBe("view"));
+    expect(hook?.form?.name).toBe("Alpha-2");
+    expect(hook?.dirty).toBe(false);
+    cleanup();
+  });
+
+  it("setDefault() calls the API and refreshes profiles", async () => {
+    store = [makeRecord({ id: "p1", isDefault: true }), makeRecord({ id: "p2", isDefault: false })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+    expect(store.find((p) => p.id === "p1")?.isDefault).toBe(true);
+    expect(store.find((p) => p.id === "p2")?.isDefault).toBe(false);
+    await hook!.setDefault("p2");
+    await waitFor(() => expect(setDefaultMock).toHaveBeenCalled());
+    expect(setDefaultMock.mock.calls[0][0]).toBe("p2");
+    await waitFor(() => expect(hook?.profiles.find((p: TtsRecord) => p.id === "p2")?.isDefault).toBe(true));
+    expect(hook?.profiles.find((p: TtsRecord) => p.id === "p1")?.isDefault).toBe(false);
+    // The chat-side voice-map snapshot was invalidated (the actual bug).
+    expect(refreshVoiceMapMock).toHaveBeenCalled();
+    cleanup();
+  });
+
+  it("profile mutations (save/remove) invalidate the chat-side voice-map cache", async () => {
+    store = [makeRecord({ id: "p1", isDefault: true, name: "Old" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useTtsProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    expect(refreshVoiceMapMock).not.toHaveBeenCalled();
+
+    // Save (rename) → cache invalidated. Each step wrapped in act: the
+    // hook's callbacks close over state from the LAST render, so the form
+    // updates must flush before save() is invoked.
+    await act(async () => {
+      hook!.select("p1");
+    });
+    await act(async () => {
+      hook!.setForm({ name: "New" });
+    });
+    await act(async () => {
+      await hook!.save();
+    });
+    await waitFor(() => expect(updateMock).toHaveBeenCalled());
+    expect(refreshVoiceMapMock).toHaveBeenCalledTimes(1);
+
+    // Remove → cache invalidated again.
+    await act(async () => {
+      await hook!.remove();
+    });
+    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
+    expect(refreshVoiceMapMock).toHaveBeenCalledTimes(2);
+    cleanup();
+  });
+});
+

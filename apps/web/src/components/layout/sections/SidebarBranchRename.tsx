@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icons } from "../../shared/icons.js";
+import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { useT } from "../../../i18n/context.js";
 
 /**
@@ -27,9 +28,8 @@ export function SidebarBranchRename({ branchId, initialLabel, onRename }: { bran
 
   if (editing) {
     return (
-      <input
+      <InlineRenameInput
         ref={inputRef}
-        className="w-full min-w-0 rounded border border-accent bg-s2 px-1 py-0.5 text-[calc(var(--ui-fs)-3px)] text-t1 outline-none"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => {

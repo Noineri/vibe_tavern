@@ -42,7 +42,7 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 			id: "lorebook_1",
 			name: "World Lore",
 			description: "",
-			scopeType: "character",
+			scopeType: "entity",
 			enabled: true,
 			scanDepth: LOREBOOK_DEFAULTS.scanDepth,
 			tokenBudget: LOREBOOK_DEFAULTS.tokenBudget,
@@ -235,7 +235,7 @@ describe("LoreDraftState — edit + import (CE-B1)", () => {
 		const draft = makeDraft();
 		const bundle = await draft.importLorebook({
 			id: "lb_persisted", name: "Old", description: "d",
-			scopeType: "character", enabled: true, scanDepth: 5, tokenBudget: 500, recursiveScanning: true,
+			scopeType: "entity", enabled: true, scanDepth: 5, tokenBudget: 500, recursiveScanning: true,
 		});
 		expect(bundle.lorebooks[0]).toMatchObject({ id: "lb_persisted", name: "Old", mode: "edit" });
 		expect(draft.hasLorebook("lb_persisted")).toBe(true);
@@ -251,8 +251,8 @@ describe("LoreDraftState — edit + import (CE-B1)", () => {
 
 	it("re-importing the same id replaces the node (idempotent)", async () => {
 		const draft = makeDraft();
-		await draft.importLorebook({ id: "lb_x", name: "A", description: "", scopeType: "character", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });
-		const bundle = await draft.importLorebook({ id: "lb_x", name: "B", description: "", scopeType: "character", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });
+		await draft.importLorebook({ id: "lb_x", name: "A", description: "", scopeType: "entity", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });
+		const bundle = await draft.importLorebook({ id: "lb_x", name: "B", description: "", scopeType: "entity", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });
 		expect(bundle.lorebooks).toHaveLength(1);
 		expect(bundle.lorebooks[0]!.name).toBe("B");
 	});

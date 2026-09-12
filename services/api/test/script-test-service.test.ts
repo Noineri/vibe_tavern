@@ -20,7 +20,7 @@ function storesWithStoredCode(code: string): StoreContainer {
         description: "",
         code,
         enabled: true,
-        scopeType: "character",
+        scopeType: "entity",
         sortOrder: 0,
         characterId: "character_1",
         personaId: null,

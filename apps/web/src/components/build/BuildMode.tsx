@@ -6,8 +6,8 @@ import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-taver
 import type { AssemblePromptResponse, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { AppCharacter } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
-import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
+import { SearchInput } from "../shared/SearchInput.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
 import { TracePayloadView } from "./trace-payload-view.js";
 import { TraceJsonDownloads } from "./trace-json-downloads.js";
@@ -305,14 +305,11 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
 
           {renderTraceFetchStatus()}
 
-          <label className="mb-3 flex h-8 items-center gap-2 rounded-md border border-border bg-s2 px-2.5 font-ui text-[13px] text-t3">
-            <span className="text-t4">⌕</span>
-            <input
-              type="search"
+          <label className="mb-3 block">
+            <SearchInput
               value={traceSearch}
               onChange={(e) => setTraceSearch(e.target.value)}
               placeholder={t("trace_search_placeholder")}
-              className="min-w-0 flex-1 bg-transparent text-t1 outline-none placeholder:text-t4"
             />
           </label>
 

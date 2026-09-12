@@ -49,6 +49,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: "ooba", label: "text-generation-webui", type: PROVIDER_TYPE.openaiCompat, baseUrl: "http://localhost:5000/v1", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
   { id: "tabby", label: "TabbyAPI", type: PROVIDER_TYPE.openaiCompat, baseUrl: "http://localhost:5000/v1", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
   { id: "aphrodite", label: "Aphrodite", type: PROVIDER_TYPE.openaiCompat, baseUrl: "http://localhost:2242/v1", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
+  { id: "lmstudio", label: "LM Studio", type: PROVIDER_TYPE.openaiCompat, baseUrl: "http://localhost:1234/v1", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
 ];
 
 export const TYPE_LABELS: Record<string, string> = {

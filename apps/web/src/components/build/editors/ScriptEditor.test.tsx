@@ -193,12 +193,17 @@ beforeEach(() => {
 });
 
 function Harness() {
-  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "character" });
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity" });
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 
 function HarnessAll() {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "all" });
+  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+}
+
+function HarnessGlobal() {
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "global" });
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 
@@ -342,6 +347,25 @@ describe("useScriptPanel explicit save", () => {
   });
 });
 
+// ── MUI step 7: phone-width creation-button rows ──────────────────────────────
+// Three AddButtons in one row («Новый скрипт» + dice + import) do not fit a
+// phone: RU labels run 20–30% longer than EN (AD-022). The empty-state row
+// stacks on mobile (`max-md:flex-col` + `max-md:items-stretch`), so each
+// AddButton becomes a full-width touch row; desktop keeps the centered row.
+describe("useScriptPanel empty-state creation buttons (mobile stack, MUI-W2b)", () => {
+  it("stacks the empty-state AddButton row on mobile", async () => {
+    listScripts.mockResolvedValue([]);
+    const { findByText } = render(<Harness />);
+
+    const addButton = await findByText("new_script");
+    const row = addButton.parentElement;
+    if (!row) throw new Error("AddButton row not found");
+    expect(row.className).toContain("max-md:flex-col");
+    expect(row.className).toContain("max-md:items-stretch");
+    expect(row.querySelectorAll("button")).toHaveLength(3);
+  });
+});
+
 // ── IR-90A: interactive scripts are owned exclusively by the Experience editor ─
 describe("useScriptPanel interactive-script filtering", () => {
   it("never lists an interactive script returned by listScripts (character scope)", async () => {
@@ -369,6 +393,25 @@ describe("useScriptPanel interactive-script filtering", () => {
 
     expect(await findByText("Prompt All")).toBeTruthy();
     expect(queryByText("Interactive All")).toBeNull();
+  });
+});
+
+// ── MUI step 13: link binding is entity-scope only ────────────────────────────
+// Global (application-scope) scripts run everywhere, so a character/persona
+// link is never consulted for them; chat scripts are already chat-bound.
+describe("useScriptPanel link-binding scope filter", () => {
+  it("omits the character/persona link binding for global (application-scope) scripts", async () => {
+    const { container, findByText, queryByText } = render(<HarnessGlobal />);
+
+    await openEditor(container, findByText);
+    expect(queryByText("script_links_label")).toBeNull();
+  });
+
+  it("keeps the character/persona link binding for entity-scope scripts", async () => {
+    const { container, findByText } = render(<Harness />);
+
+    await openEditor(container, findByText);
+    expect(await findByText("script_links_label")).toBeTruthy();
   });
 });
 

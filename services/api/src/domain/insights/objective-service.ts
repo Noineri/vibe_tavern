@@ -41,7 +41,8 @@ import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
 import type { PromptAssemblyContext, PromptAssemblyResult } from "@vibe-tavern/prompt-pipeline";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
-import { resolveInsightsPrompt } from "./insights-prompts.js";
+import { INSIGHTS_FIELD_MAP, resolveInsightsPrompt } from "./insights-prompts.js";
+import { resolveServicePromptText } from "../service-prompts/service-prompt-resolver.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
@@ -393,11 +394,24 @@ export class ObjectiveService {
     });
   }
 
+  /** Three-tier base resolution for objective one-shots (SP-5): per-chat
+   *  override → active service-prompt profile → asset. When the resolvePrompt
+   *  seam is an injected test double, it alone decides the base. */
+  private async resolveBase(key: "objectiveGenerate" | "objectiveGenerateGoals" | "objectiveCheck", override: string | null | undefined): Promise<string> {
+    if (this.resolvePrompt !== resolveInsightsPrompt) {
+      return this.resolvePrompt(key, override);
+    }
+    const trimmed = override?.trim();
+    if (trimmed) return trimmed;
+    const text = await resolveServicePromptText(this.stores.db, INSIGHTS_FIELD_MAP[key]);
+    return text.trim();
+  }
+
   /** Route mode: generate an ordered task route from the conversation. */
   private async generateRouteTasks(input: ObjectiveGenerateInput, state: ObjectiveState): Promise<ObjectiveState> {
     input.signal?.throwIfAborted();
     const revision = routeRevision(state);
-    const instructionBase = await this.resolvePrompt("objectiveGenerate", state.generatePrompt);
+    const instructionBase = await this.resolveBase("objectiveGenerate", state.generatePrompt);
     const instruction = composeGenerateInstruction(instructionBase, state.objectiveDescription);
     const prompt = this.buildPrompt(input.context, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
@@ -425,7 +439,7 @@ export class ObjectiveService {
   private async generateGoalsTasks(input: ObjectiveGenerateInput, state: ObjectiveState): Promise<ObjectiveState> {
     input.signal?.throwIfAborted();
     const revision = goalsRevision(state);
-    const instructionBase = await this.resolvePrompt("objectiveGenerateGoals", state.generatePrompt);
+    const instructionBase = await this.resolveBase("objectiveGenerateGoals", state.generatePrompt);
     const instruction = composeGenerateGoalsInstruction(instructionBase);
     const prompt = this.buildPrompt(input.context, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
@@ -464,7 +478,7 @@ export class ObjectiveService {
     input.signal?.throwIfAborted();
     const target = selectActiveTask(state.tasks);
     if (!target) return state;
-    const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
+    const instructionBase = await this.resolveBase("objectiveCheck", state.checkPrompt);
     const instruction = composeCheckInstruction(instructionBase, state.objectiveDescription, target.description);
     const prompt = this.buildPrompt(input.context, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
@@ -495,7 +509,7 @@ export class ObjectiveService {
     input.signal?.throwIfAborted();
     const target = selectActiveTask(state.shortTermGoals);
     if (!target) return state;
-    const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
+    const instructionBase = await this.resolveBase("objectiveCheck", state.checkPrompt);
     const instruction = composeCheckGoalsInstruction(instructionBase, state.longTermGoal?.description ?? null, target.description);
     const prompt = this.buildPrompt(input.context, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });

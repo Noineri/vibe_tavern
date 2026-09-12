@@ -182,15 +182,20 @@ export class ChatRuntime {
     this.pendingPromptTraceByChat.delete(chatId);
   }
 
-  /** Patch the pending prompt trace with executor-level request/response data. */
+  /** Patch the pending prompt trace with executor-level request/response data.
+   *  `prefill` (LS-4a) records what actually rode as the pushed assistant
+   *  message — the Continue path's continuation text replaces the draft's
+   *  preset prefill so the trace stays honest about the prompt that was sent. */
   patchPendingTrace(chatId: ChatId, patch: {
     sentConfig?: AssemblePromptResponse["sentConfig"];
     providerResponse?: ProviderResponseTrace;
+    prefill?: string;
   }): void {
     const pending = this.pendingPromptTraceByChat.get(chatId);
     if (!pending) return;
     if (patch.sentConfig) pending.draft.sentConfig = patch.sentConfig;
     if (patch.providerResponse) pending.draft.providerResponse = patch.providerResponse;
+    if (patch.prefill !== undefined) pending.draft.prefill = patch.prefill;
   }
 
   async appendAssistantReply(
@@ -409,6 +414,32 @@ export class ChatRuntime {
     return await this.deps.buildVariantResponse(chatId);
   }
 
+  /** TPE-1 (AN-1): set/clear the per-variant TTS narration annotation. The
+   *  route addresses the variant by display index (same as select/delete);
+   *  the write itself is id-keyed on the immutable variant row (same
+   *  ownership rule as the Scene record). VariantResponse: a variant-field
+   *  change, exactly like selection. */
+  async setVariantTtsAnnotation(
+    chatId: ChatId,
+    messageId: MessageId,
+    variantIndex: number,
+    text: string | null,
+  ): Promise<VariantResponse> {
+    const variants = await this.deps.messages.getVariants(messageId);
+    const variant = variants.find((v) => v.variantIndex === variantIndex) ?? null;
+    if (variant === null) {
+      // TH-2: a stale variant index is client-addressing staleness (variant
+      // deleted in another window), not a server fault — a plain Error here
+      // surfaced as an anonymous 500 through the generic onError path. The
+      // strict reject stays (no silent write to a sibling — pinned by the
+      // TPE-1 test); the shape becomes a structured 404 the editor can react
+      // to, same vocabulary as the other DomainError mappings.
+      throw notFound("variant", `Variant ${variantIndex} not found on message ${messageId}`);
+    }
+    await this.deps.messages.setTtsAnnotation(variant.id, text);
+    return await this.deps.buildVariantResponse(chatId);
+  }
+
   async deleteMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<MessageResponse> {
     await this.deps.messages.deleteVariant(messageId, variantIndex);
     return await this.deps.buildMessageResponse(chatId);
@@ -427,6 +458,8 @@ export class ChatRuntime {
 
   async deleteMessage(chatId: ChatId, messageId: string): Promise<MessageResponse> {
     await this.deps.chatApp.deleteMessage(messageId);
+    // Traces died with the message (FK cascade) — reclaim chunks they alone referenced.
+    await this.deps.traces.sweepOrphanedChunks();
     return await this.deps.buildMessageResponse(chatId, { summaries: true });
   }
 
@@ -463,6 +496,7 @@ export class ChatRuntime {
     const typedChatId = brandId<ChatId>(chatId);
     const typedBranchId = brandId<ChatBranchId>(branchId);
     await this.deps.chatApp.deleteBranch(typedChatId, typedBranchId);
+    await this.deps.traces.sweepOrphanedChunks();
     this.pendingPromptTraceByChat.delete(typedChatId);
     return await this.deps.buildBranchResponse(typedChatId);
   }
@@ -486,6 +520,7 @@ export class ChatRuntime {
     this.deps.chatOrder.remove(typedChatId);
     this.pendingPromptTraceByChat.delete(typedChatId);
     await this.deps.chats.delete(typedChatId);
+    await this.deps.traces.sweepOrphanedChunks();
     // Return the refreshed chats list so the sidebar deterministically drops
     // the deleted chat. Previously the route returned 204 with no body, so the
     // frontend relied on a racy fire-and-forget bootstrap to refresh the list

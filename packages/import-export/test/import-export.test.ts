@@ -52,7 +52,7 @@ describe("importCharacterCardV3Json", () => {
     ).toThrow("Unsupported character card spec");
   });
 
-  it.skip("throws on missing name", () => {
+  it("throws on missing name (revived 2026-09-12: the importer trims to empty and throws)", () => {
     expect(() =>
       importCharacterCardV3Json({ spec: "chara_card_v3", data: {} }),
     ).toThrow("missing `name`");
@@ -304,6 +304,41 @@ describe("parseSillyTavernChat", () => {
     const result = parseSillyTavernChat("");
     expect(result.messages).toHaveLength(0);
   });
+
+  // L1: the ST first-line `world_info` (world selected for this chat) must
+  // survive parsing — the directory scanner classifies chat-bound lorebooks
+  // from it. Export serialization is untouched (no world_info written back).
+  it("captures first-line world_info into metadata.worldInfo", () => {
+    const jsonl = [
+      JSON.stringify({ user_name: "User", character_name: "Bot", world_info: "Chat Tome" }),
+      JSON.stringify({ name: "User", is_user: true, mes: "Hi", send_date: Date.now() }),
+    ].join("\n");
+
+    const result = parseSillyTavernChat(jsonl);
+    expect(result.metadata.worldInfo).toBe("Chat Tome");
+    expect(result.messages).toHaveLength(1);
+  });
+
+  it("captures world_info from a metadata-only first line carrying no other keys", () => {
+    const jsonl = [
+      JSON.stringify({ world_info: "Lonely World" }),
+      JSON.stringify({ name: "User", is_user: true, mes: "Hi", send_date: Date.now() }),
+    ].join("\n");
+
+    const result = parseSillyTavernChat(jsonl);
+    expect(result.metadata.worldInfo).toBe("Lonely World");
+    expect(result.messages).toHaveLength(1);
+  });
+
+  it("leaves worldInfo undefined when the first line carries none", () => {
+    const jsonl = [
+      JSON.stringify({ user_name: "User", character_name: "Bot" }),
+      JSON.stringify({ name: "User", is_user: true, mes: "Hi", send_date: Date.now() }),
+    ].join("\n");
+
+    const result = parseSillyTavernChat(jsonl);
+    expect(result.metadata.worldInfo).toBeUndefined();
+  });
 });
 
 describe("serializeSillyTavernChat", () => {
@@ -358,10 +393,9 @@ describe("importStLorebookJson", () => {
     expect(result.warnings).toHaveLength(0);
   });
 
-  it.skip("throws on missing name", () => {
-    expect(() =>
-      importStLorebookJson({ entries: [] }),
-    ).toThrow("missing `name`");
+  it("missing name falls back to 'Imported Lorebook' (revived 2026-09-12: tolerant contract, it.skip predated the fallback)", () => {
+    const bundle = importStLorebookJson({ entries: [] });
+    expect(bundle.lorebook.name).toBe("Imported Lorebook");
   });
 
   it("handles entries as object (ST format)", () => {
@@ -460,6 +494,53 @@ describe("importStLorebookJson", () => {
     };
     const result = importStLorebookJson(lorebook);
     expect(result.warnings.some((w) => w.includes("no primary keys"))).toBe(false);
+  });
+
+  // ── LG-8: group-scoring import regression pins ──
+  // ST standalone WI files store runtime field names top-level; ST ALSO
+  // mirrors spec names into `extensions.*` (setWIOriginalDataValue) for V2
+  // card round-trips. The loader reads top-level, so the mirror is irrelevant
+  // on import — pinned below. See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
+
+  it("preserves per-entry useGroupScoring tri-state on import (LG-8)", () => {
+    const lorebook = {
+      name: "Group Scoring Tri-state",
+      entries: [
+        // Realistic ST export entry: top-level runtime flag + extensions mirror.
+        { key: ["on"], content: "Explicit on", useGroupScoring: true, extensions: { use_group_scoring: true } },
+        { key: ["off"], content: "Explicit off", useGroupScoring: false, extensions: { use_group_scoring: false } },
+        // Flag absent → null (inherit the book default), never collapsed to false.
+        { key: ["inherit"], content: "Inherits", extensions: { position: 0 } },
+      ],
+    };
+    const result = importStLorebookJson(lorebook);
+    expect(result.entries.map((e) => e.useGroupScoring)).toEqual([true, false, null]);
+  });
+
+  it("imports books with useGroupScoring defaulting to false (D9: ST's switch is global, not in files)", () => {
+    const result = importStLorebookJson(minimalLorebook);
+    expect(result.lorebook.useGroupScoring).toBe(false);
+  });
+
+  it("maps the ST global switch onto the book when the caller knows it (LG-8 amendment)", () => {
+    // The ST directory import reads settings.json's world_info_use_group_scoring
+    // and passes it here — the switch is global client state absent from the
+    // book file itself (owner decision, 2026-08-31).
+    expect(importStLorebookJson(minimalLorebook, { globalUseGroupScoring: true }).lorebook.useGroupScoring).toBe(true);
+    expect(importStLorebookJson(minimalLorebook, { globalUseGroupScoring: false }).lorebook.useGroupScoring).toBe(false);
+  });
+
+  it("top-level useGroupScoring is authoritative over the extensions mirror (ST load parity)", () => {
+    // ST saves maintain BOTH spellings in sync; on load the runtime (top-level)
+    // field is read. If they disagree (hand-edited file), ST's shape wins.
+    const lorebook = {
+      name: "Disagree",
+      entries: [
+        { key: ["a"], content: "Test", useGroupScoring: false, extensions: { use_group_scoring: true } },
+      ],
+    };
+    const result = importStLorebookJson(lorebook);
+    expect(result.entries[0].useGroupScoring).toBe(false);
   });
 
   it("generates deterministic IDs", () => {

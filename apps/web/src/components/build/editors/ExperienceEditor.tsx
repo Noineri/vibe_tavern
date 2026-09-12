@@ -47,12 +47,13 @@ import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
-import { inputCls } from "../fields/field-styles.js";
+import { TextInput } from "../../shared/text-input.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import {
   isScriptDraftDirty,
   useScriptDraftStore,
+  type ScriptDraftSaveState,
   type ScriptDraftValues,
 } from "../../../stores/script-draft-store.js";
 import {
@@ -120,6 +121,136 @@ function errorMessage(error: unknown): string {
 /** XU-6 creation stepper: the authoring order the shell reports (rules →
  *  appearance → try). */
 const CREATION_STEP_ORDER: readonly ExperienceCopilotStep[] = ["rules", "appearance", "try"];
+
+/** E6 (MOBILE_DEFECTS_ROUND_2): the editor's management cluster (name input,
+ *  trust pill + toggle, save-state, save, duplicate, delete) as ONE component
+ *  rendered both in the desktop top bar and as the mobile Правка-tab header —
+ *  the two surfaces cannot drift. Module-level (not an inner function) so the
+ *  name input keeps focus across parent re-renders. */
+interface ExperienceManagementControlsProps {
+  name: string;
+  onNameChange: (name: string) => void;
+  scriptEnabled: boolean;
+  enableLocked: boolean;
+  onToggle: (enabled: boolean) => void;
+  scriptSaveState: ScriptDraftSaveState;
+  scriptDirty: boolean;
+  saveError: string | null;
+  isMobile: boolean;
+  resetKey: string | null;
+  onSave: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  canDelete: boolean;
+}
+
+function ExperienceManagementControls({
+  name,
+  onNameChange,
+  scriptEnabled,
+  enableLocked,
+  onToggle,
+  scriptSaveState,
+  scriptDirty,
+  saveError,
+  isMobile,
+  resetKey,
+  onSave,
+  onDuplicate,
+  onDelete,
+  canDelete,
+}: ExperienceManagementControlsProps) {
+  const { t } = useT();
+  return (
+    <>
+      <TextInput
+        className="min-w-0 max-md:w-auto flex-1 !text-[15px] font-semibold"
+        type="text"
+        value={name}
+        onChange={(e) => onNameChange(e.target.value)}
+        placeholder={t("script_name")}
+      />
+
+      {/* The action cluster (pill → delete) is a flat `display:contents`
+          group on desktop — a single flex-wrap row with the name — and becomes
+          a nested flex row on mobile, so the header composes into exactly two
+          rows: [имя] / [статус, тумблер, сохранить(flex-1), дубль, удалить].
+          (A plain `flex-1` on the name cannot force this: basis-0 lets the
+          shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
+      <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
+        <CustomTooltip content={t("experience_editor_trust_hint")}>
+          <span
+            className={cn(
+              "shrink-0 cursor-help rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase",
+              scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
+            )}
+          >
+            {/* Mobile: the status pill uses the short form (вкл/выкл · on/off)
+                below 768px so the whole action cluster fits one row; desktop
+                keeps the full word. */}
+            {t(
+              scriptEnabled
+                ? isMobile ? "experience_editor_enabled_short" : "experience_editor_enabled"
+                : isMobile ? "experience_editor_disabled_short" : "experience_editor_disabled",
+            )}
+          </span>
+        </CustomTooltip>
+        <Toggle
+          checked={scriptEnabled}
+          disabled={enableLocked}
+          onChange={onToggle}
+        />
+
+        {/* Save-state text is desktop-only: on mobile the state is conveyed by
+            the SaveButton's visual state + the Правка-tab dirty badge (E6). */}
+        <span
+          className={cn("shrink-0 max-md:hidden font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
+          title={saveError ?? undefined}
+        >
+          {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
+        </span>
+        <SaveButton
+          icon={isMobile ? <Ic.floppy /> : undefined}
+          dirty={scriptDirty}
+          saveState={scriptSaveState}
+          resetKey={resetKey}
+          onClick={onSave}
+          label={scriptSaveState === "error" ? t("retry") : t("save")}
+        />
+
+        {/* The icon pair moves as ONE unit (display:contents on desktop) so
+            mobile wrapping never strands a lone icon on its own row. */}
+        <div className="contents max-md:flex max-md:gap-1.5">
+          <CustomTooltip content={t("experience_editor_duplicate")}>
+            <button
+              type="button"
+              aria-label={t("experience_editor_duplicate")}
+              className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
+              onClick={onDuplicate}
+            >
+              <Ic.copy />
+            </button>
+          </CustomTooltip>
+          {/* IR-90A: delete the experience (its rules script). Reachable only for
+              a saved script — an unsaved/local draft is discarded by navigating
+              back. */}
+          {canDelete && (
+            <CustomTooltip content={t("experience_editor_delete")}>
+              <button
+                type="button"
+                aria-label={t("experience_editor_delete")}
+                className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
+                onClick={onDelete}
+              >
+                <Ic.del />
+              </button>
+            </CustomTooltip>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
 
 // ── Component ──────────────────────────────────────────────────────────────
 
@@ -860,120 +991,65 @@ export function ExperienceEditor() {
   // (name / trust / save / duplicate / delete / back) in a sticky top bar. The
   // tester / preview / sandbox surfaces are the shell's top-button modals
   // (ER-13b′); the inline editors and playground moved into the shell.
+  // E6 (MOBILE_DEFECTS_ROUND_2): back handler shared by the desktop top bar's
+  // back button and the mobile tab-bar chevron (passed to the shell as onBack).
+  const handleBackFromEditor = () => {
+    setActiveScriptId(null);
+    // TF-1: leaving the editor must also drop the visual selection —
+    // otherwise persist-on-create inherits it into a NEW experience.
+    setActiveVisualId(null);
+    setCreatingScriptId(null);
+    setChosenRulesStarterId(null);
+  };
+
+  // E6: the trust-blocked hint renders below the bar on desktop and inside
+  // the mobile Правка-tab header — one definition, two placements.
+  const trustBlockedHint = enableLocked && (
+    <div className="shrink-0 border-b border-warning/40 bg-warning-dim/30 px-3 py-1 text-[11px] leading-[1.4] text-t3">
+      {t("experience_editor_trust_blocked_hint")}
+    </div>
+  );
+
+  // E6: the management cluster is ONE shared component — desktop top bar and
+  // mobile Правка-tab header render the same node, so they cannot drift.
+  const managementControls = (
+    <ExperienceManagementControls
+      name={activeScript.name}
+      onNameChange={(name) => updateScriptDraft({ name })}
+      scriptEnabled={scriptEnabled}
+      enableLocked={enableLocked}
+      onToggle={(enabled) => updateScriptDraft({ enabled })}
+      scriptSaveState={scriptSaveState}
+      scriptDirty={scriptDirty}
+      saveError={activeScriptDraft?.error ?? null}
+      isMobile={isMobile}
+      resetKey={activeScriptId}
+      onSave={() => void handleSaveRules()}
+      onDuplicate={handleDuplicateScript}
+      onDelete={() => setExperienceDeleteOpen(true)}
+      canDelete={!isNewScript}
+    />
+  );
+
   return (
     <div className="flex h-full w-full flex-col">
-      {/* Top bar: back, name, trust, save, duplicate, delete. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
-        <button
-          type="button"
-          aria-label={t("experience_editor_back")}
-          className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
-          onClick={() => {
-            setActiveScriptId(null);
-            // TF-1: leaving the editor must also drop the visual selection —
-            // otherwise persist-on-create inherits it into a NEW experience.
-            setActiveVisualId(null);
-            setCreatingScriptId(null);
-            setChosenRulesStarterId(null);
-          }}
-        >
-          {Ic.caret("l")} {t("experience_editor_back")}
-        </button>
-
-        {/* 4a follow-up mobile composition: row 1 = back + name (flex-1);
-            row 2 = status pill + toggle + save (flex-1, fills) + duplicate +
-            delete. Two tight rows instead of the ragged 3–4 the one-container
-            flex-wrap produced. Desktop unchanged (single wrap row). */}
-        <input
-          className={cn(inputCls, "min-w-0 max-md:w-auto flex-1 text-[15px] font-semibold")}
-          type="text"
-          value={activeScript.name}
-          onChange={(e) => updateScriptDraft({ name: e.target.value })}
-          placeholder={t("script_name")}
-        />
-
-        {/* 4a follow-up mobile composition: the action cluster (pill → delete)
-            is a flat `display:contents` group on desktop — the toolbar stays
-            the SAME single flex-wrap row as before — and becomes a nested flex
-            row on mobile, so the header composes into exactly two rows:
-            [← назад + имя] / [статус, тумблер, сохранить(flex-1), дубль, удалить].
-            (A plain `flex-1` on the name cannot force this: basis-0 lets the
-            shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
-        <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
-        <CustomTooltip content={t("experience_editor_trust_hint")}>
-          <span
-            className={cn(
-              "shrink-0 cursor-help rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase",
-              scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
-            )}
-          >
-            {/* Mobile follow-up round 3: the status pill uses the short form
-                (вкл/выкл · on/off) below 768px so the whole action cluster
-                fits one row; desktop keeps the full word. */}
-            {t(
-              scriptEnabled
-                ? isMobile ? "experience_editor_enabled_short" : "experience_editor_enabled"
-                : isMobile ? "experience_editor_disabled_short" : "experience_editor_disabled",
-            )}
-          </span>
-        </CustomTooltip>
-        <Toggle
-          checked={scriptEnabled}
-          disabled={enableLocked}
-          onChange={(enabled) => updateScriptDraft({ enabled })}
-        />
-
-        <span
-          className={cn("shrink-0 max-md:hidden font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
-          title={activeScriptDraft?.error ?? undefined}
-        >
-          {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
-        </span>
-        <SaveButton
-          icon={isMobile ? <Ic.floppy /> : undefined}
-          dirty={scriptDirty}
-          saveState={scriptSaveState}
-          resetKey={activeScriptId}
-          onClick={() => void handleSaveRules()}
-          label={scriptSaveState === "error" ? t("retry") : t("save")}
-        />
-
-        {/* The icon pair moves as ONE unit (display:contents on desktop) so
-            mobile wrapping never strands a lone icon on its own row. */}
-        <div className="contents max-md:flex max-md:gap-1.5">
-        <CustomTooltip content={t("experience_editor_duplicate")}>
+      {/* Top bar is desktop-only (E6): on mobile the management cluster moved
+          into the Правка tab and back lives in the shell's tab-bar row, so the
+          chat tab keeps its full height. */}
+      {!isMobile && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
           <button
             type="button"
-            aria-label={t("experience_editor_duplicate")}
-            className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
-            onClick={handleDuplicateScript}
+            aria-label={t("experience_editor_back")}
+            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
+            onClick={handleBackFromEditor}
           >
-            <Ic.copy />
+            {Ic.caret("l")} {t("experience_editor_back")}
           </button>
-        </CustomTooltip>
-        {/* IR-90A: delete the experience (its rules script). Reachable only for a
-            saved script — an unsaved/local draft is discarded by navigating back. */}
-        {!isNewScript && (
-          <CustomTooltip content={t("experience_editor_delete")}>
-            <button
-              type="button"
-              aria-label={t("experience_editor_delete")}
-              className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
-              onClick={() => setExperienceDeleteOpen(true)}
-            >
-              <Ic.del />
-            </button>
-          </CustomTooltip>
-        )}
-        </div>
-        </div>
-      </div>
-
-      {enableLocked && (
-        <div className="shrink-0 border-b border-warning/40 bg-warning-dim/30 px-3 py-1 text-[11px] leading-[1.4] text-t3">
-          {t("experience_editor_trust_blocked_hint")}
+          {managementControls}
         </div>
       )}
+      {!isMobile && trustBlockedHint}
 
       {/* XU-6 creation stepper: a slim presentational strip above the editor
           pane. The active step mirrors the shell's current position (reported
@@ -1024,6 +1100,16 @@ export function ExperienceEditor() {
           assignedProfileId={activeScript.copilotProfileId ?? null}
           creationMode={creationMode}
           onStepChange={handleStepChange}
+          onBack={isMobile ? handleBackFromEditor : undefined}
+          editTabHeader={
+            isMobile ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2">{managementControls}</div>
+                {trustBlockedHint}
+              </>
+            ) : undefined
+          }
+          editTabDirty={scriptDirty}
           rulesCode={activeScript.code}
           onRulesChange={(code) => updateScriptDraft({ code })}
           visualSource={activeVisual?.source ?? ""}
@@ -1056,8 +1142,7 @@ export function ExperienceEditor() {
                 </div>
               )}
               <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
-              <input
-                className={inputCls}
+              <TextInput
                 value={activeScript.description}
                 onChange={(e) => updateScriptDraft({ description: e.target.value })}
                 placeholder={t("script_desc_placeholder")}
@@ -1191,7 +1276,7 @@ export function ExperienceEditor() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                  className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
                   onClick={handleNewBlankVisual}
                 >
                   <Ic.plus /> {t("experience_editor_visual_blank")}
@@ -1227,8 +1312,8 @@ export function ExperienceEditor() {
               {activeVisual ? (
                 <>
                   <div className="flex max-md:flex-wrap items-center gap-2">
-                    <input
-                      className={cn(inputCls, "min-w-0 flex-1")}
+                    <TextInput
+                      className="min-w-0 flex-1"
                       type="text"
                       value={activeVisual.name}
                       onChange={(e) => updateVisualDraft({ name: e.target.value })}

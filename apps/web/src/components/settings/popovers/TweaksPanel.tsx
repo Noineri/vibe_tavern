@@ -6,6 +6,7 @@ import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
 import { Toggle } from '../../shared/Toggle.js';
 import { THEMES, type ThemeMode } from '../../../themes/registry.js';
+import { useIsMobile } from '../../../hooks/use-mobile.js';
 
 interface TweaksSettings {
   theme: ThemeMode;
@@ -35,6 +36,7 @@ interface TweaksPanelProps {
 
 export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess, proxyCount = 0, defaultProxyName = null, onOpenProxyManager = () => {} }: TweaksPanelProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
 
   // Theme options derive from the registry — a newly added theme appears
   // here automatically (no hardcoded icon list to keep in sync).
@@ -132,16 +134,18 @@ export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess, prox
       </div>
 
       <div className="mt-2 border-t border-border2 pt-2">
-        <div className="flex items-center justify-between gap-3 py-2">
-          <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2">
-            <Icons.phone />
-            {t("mobile_access")}
-          </span>
-          <button type="button"
-            className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90"
-            onClick={onOpenMobileAccess}
-          >{t("mobile_access_enable")}</button>
-        </div>
+        {!isMobile && (
+          <div className="flex items-center justify-between gap-3 py-2">
+            <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2">
+              <Icons.phone />
+              {t("mobile_access")}
+            </span>
+            <button type="button"
+              className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90"
+              onClick={onOpenMobileAccess}
+            >{t("mobile_access_enable")}</button>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-3 py-2">
           <div className="min-w-0">
             <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2"><Icons.Globe />{t("proxies")}</span>

@@ -1,0 +1,113 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  getPresetGroup,
+  getTtsPresetGroup,
+  getVisiblePresetGroups,
+  getVisibleProviderPresets,
+  getVisibleTtsPresetGroups,
+  getVisibleTtsPresets,
+  TTS_PRESETS,
+} from "./tts-presets.js";
+
+describe("tts-presets", () => {
+  test("has exactly 19 entries with unique ids", () => {
+    expect(TTS_PRESETS.length).toBe(19);
+    const ids = TTS_PRESETS.map((p) => p.id);
+    expect(new Set(ids).size).toBe(19);
+    expect(ids).toEqual(["openai", "openrouter", "groq", "siliconflow", "nanogpt", "electronhub", "gemini", "elevenlabs", "cartesia", "inworld", "lmnt", "minimax", "volcengine", "deepgram", "azure", "polly", "google-cloud", "xai", "mistral"]);
+  });
+
+  test("every openai-compat entry has a baseUrl", () => {
+    const compat = TTS_PRESETS.filter((p) => p.backend === "openai-compat");
+    expect(compat.length).toBe(6);
+    for (const p of compat) {
+      expect(p.baseUrl).toBeDefined();
+      expect(p.baseUrl!.length).toBeGreaterThan(0);
+      expect(p.baseUrl!.startsWith("https://")).toBe(true);
+    }
+  });
+
+  test("backend distribution is 6 openai-compat + 1 gemini + 1 elevenlabs", () => {
+    const counts = { compat: 0, gemini: 0, elevenlabs: 0 };
+    for (const p of TTS_PRESETS) {
+      if (p.backend === "openai-compat") counts.compat++;
+      else if (p.backend === "gemini") counts.gemini++;
+      else if (p.backend === "elevenlabs") counts.elevenlabs++;
+    }
+    expect(counts.compat).toBe(6);
+    expect(counts.gemini).toBe(1);
+    expect(counts.elevenlabs).toBe(1);
+  });
+
+  test("no preset carries static voice data (D20: fetched lists are the only source)", () => {
+    for (const p of TTS_PRESETS) {
+      expect(Object.hasOwn(p, "staticVoices")).toBe(false);
+      expect(Object.hasOwn(p, "voiceMode")).toBe(false);
+      expect(JSON.stringify(p)).not.toContain("alloy");
+    }
+  });
+
+  test("group split mirrors the LLM-tab taxonomy (SPE-8): 6 cloud transports + 13 native wires", () => {
+    // Cloud = the OpenAI-compatible transport rows; native = own-wire
+    // backends (the group the level-1 segment renders).
+    expect(getTtsPresetGroup("openai")).toBe("cloud");
+    expect(getTtsPresetGroup("openrouter")).toBe("cloud");
+    expect(getTtsPresetGroup("gemini")).toBe("native");
+    expect(getTtsPresetGroup("elevenlabs")).toBe("native");
+    expect(getTtsPresetGroup("google-cloud")).toBe("native");
+    expect(getTtsPresetGroup("unknown")).toBeNull();
+    // Alias parity
+    expect(getPresetGroup("openai")).toBe("cloud");
+    expect(getPresetGroup("gemini")).toBe("native");
+    expect(getPresetGroup("unknown")).toBeNull();
+
+    const visible = getVisibleTtsPresets();
+    expect(visible.length).toBe(19);
+    expect(visible.filter((p) => p.group === "cloud").map((p) => p.id)).toEqual([
+      "openai",
+      "openrouter",
+      "groq",
+      "siliconflow",
+      "nanogpt",
+      "electronhub",
+    ]);
+    expect(visible.filter((p) => p.group === "native").length).toBe(13);
+    // Native rows ride their own backend slugs — never openai-compat.
+    for (const p of visible.filter((p) => p.group === "native")) {
+      expect(p.backend).not.toBe("openai-compat");
+    }
+
+    const visibleWithFlag = getVisibleTtsPresets(true);
+    expect(visibleWithFlag.length).toBe(19);
+    expect(getVisibleProviderPresets(false).length).toBe(19);
+
+    const groups = getVisibleTtsPresetGroups();
+    expect(groups.map((g) => g.id)).toEqual(["cloud", "native"]);
+    expect(getVisiblePresetGroups(true).length).toBe(2);
+    expect(getVisibleTtsPresetGroups(false).length).toBe(2);
+  });
+
+  test("modelFilter values are within the declared union", () => {
+    // TPE-9a: name-heuristic and documented are both retired; the allowed
+    // set is optional (known hosts/custom servers need no stamp at all).
+    const allowedFilters = new Set(["modality", "audio-models", "audio-type", "none", undefined]);
+    for (const p of TTS_PRESETS) {
+      expect(allowedFilters.has(p.modelFilter)).toBe(true);
+      expect(p.modelFilter).not.toBe("name-heuristic");
+      expect(p.modelFilter).not.toBe("documented");
+    }
+    expect(TTS_PRESETS.find((p) => p.id === "openrouter")?.modelFilter).toBe("modality");
+    // D23: NanoGPT discovery comes from /audio-models, not the chat catalog.
+    expect(TTS_PRESETS.find((p) => p.id === "nanogpt")?.modelFilter).toBe("audio-models");
+    expect(TTS_PRESETS.find((p) => p.id === "gemini")?.modelFilter).toBe("none");
+    // TPE-9a: the retired "documented" stamp is gone — openai/groq discover
+    // live via the per-host criteria (server-side), electronhub serves its
+    // plain live catalog; no preset carries a static catalog stamp anymore.
+    expect(TTS_PRESETS.find((p) => p.id === "openai")?.modelFilter).toBeUndefined();
+    expect(TTS_PRESETS.find((p) => p.id === "groq")?.modelFilter).toBeUndefined();
+    expect(TTS_PRESETS.find((p) => p.id === "electronhub")?.modelFilter).toBeUndefined();
+    // F8 audio-type: SiliconFlow's documented server-side ?type=audio filter.
+    expect(TTS_PRESETS.find((p) => p.id === "siliconflow")?.modelFilter).toBe("audio-type");
+  });
+});

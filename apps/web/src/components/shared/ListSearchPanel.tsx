@@ -31,6 +31,7 @@
 import { useRef, useState, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../../lib/cn.js";
+import { SearchInput } from "./SearchInput.js";
 
 import { useT } from "../../i18n/context.js";
 
@@ -211,12 +212,10 @@ export function ListSearchPanel({
     <div className={cn("flex flex-col gap-1.5 px-2.5 pb-1.5 pt-0.5", className)}>
       {/* Name search */}
       <div className="relative">
-        <input
-          type="text"
+        <SearchInput
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder={t("search_name_placeholder")}
-          className="w-full rounded border border-border bg-s2 px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors placeholder:text-t3/60 focus:border-accent"
         />
       </div>
 

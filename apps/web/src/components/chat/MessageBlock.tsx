@@ -11,6 +11,7 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useIsSending } from "../../stores/index.js";
+import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
 import type { MessageBlockProps } from "../play/play-mode-types.js";
@@ -18,7 +19,14 @@ import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, REGEX_PLACEMENT, resolveAssistantPrefillSupport, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
+import {
+  applyRegexLayer,
+  createValueEscapingMacroSource,
+  filterRegexPresets,
+  type RegexMacroSource,
+} from "@vibe-tavern/prompt-pipeline";
+import { useActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import "./MessageReasoning.js";
 import "./CoauthorToolActivitySlot.js";
 import "./message-slots/objective-zone.js";
@@ -29,6 +37,7 @@ import { useChatController } from "../../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MessageShell, type MessageShellAuthorInfo } from "./MessageShell.js";
+import { useMessageNarration } from "./use-message-narration.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { AttachmentGrid } from "./AttachmentGrid.js";
@@ -41,6 +50,9 @@ import { PendingAssistantMessage } from "./pending/pending-assistant-message.js"
 
 /** Stable empty array for the pickerItems fallback (variantCount <= 6). */
 const EMPTY_PICKER_ITEMS: VariantPickerItem[] = [];
+
+/** Stable empty array for the display-regex fallback (no applicable presets). */
+const EMPTY_REGEX_PRESETS: RegexPreset[] = [];
 
 type VariantControlsOverlayState = {
   rect: DOMRectReadOnly;
@@ -64,6 +76,11 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const editingDraft = useChatStore(s => s.editingDraft);
   const isSending = useIsSending();
   const messageActionId = useChatStore(s => s.messageActionId);
+  // LS-4a: Continue rides the SAME prefill capability the backend registry
+  // resolves per protocol (a continuation IS a prefill of the existing text).
+  // Narrow primitive selector — no re-render on unrelated profile mutations.
+  const activeProfilePreset = useProviderDataStore((s) => s.profiles.find((p) => p.isActive)?.providerPreset ?? null);
+  const canContinueByCapability = resolveAssistantPrefillSupport(activeProfilePreset).supported;
   const isCoauthorMode = useSnapshotStore(s => s.activeChat?.mode === "coauthor");
   // Narrow primitive selector — only the active chat's pending user content.
   // Replaces reading it off the whole activeGen object (which mutated every tick).
@@ -71,6 +88,15 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     if (!s.activeChatId) return null;
     return s.generations[s.activeChatId]?.pendingUserMessageContent ?? null;
   });
+  const activeCharacterId = useSnapshotStore((s) => s.activeChat?.characterId ?? null);
+  const activePersonaId = useSnapshotStore((s) => s.activeChat?.personaId ?? null);
+  const narrationTextRef = useRef("");
+  const narrationHook = useMessageNarration(
+    input.messageId,
+    activeCharacterId ? String(activeCharacterId) : null,
+    activePersonaId ? String(activePersonaId) : null,
+    () => narrationTextRef.current,
+  );
   // Source-agnostic streaming identity: reads streamingMessageId, so non-target
   // blocks get `false` / EMPTY and never re-render on a streaming tick.
   const isStreamingTarget = useIsStreamingTarget(input.messageId);
@@ -161,6 +187,67 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     }));
   }, [variants, variantCount]);
 
+  // ── Display-mode regex seam (RX-13) ──────────────────────────────────────
+  // Display-affecting presets (ST `markdownOnly` — apply-target "display" and
+  // "display+prompt") transform the RENDERED text only; the store is never
+  // written. Placement maps to this message's role (USER_INPUT = user pane,
+  // AI_OUTPUT = assistant pane); depth counts from the end of history (ST:
+  // depth 0 = last message). Selectors stay primitive / reference-stable
+  // (messageOrder.LENGTH, not the array) so the render-isolation invariant
+  // (message-block-isolation.test.tsx) keeps holding.
+  const regexCharacterId = useSnapshotStore((s) => s.activeChat?.characterId ?? null);
+  const regexPresetId = useSnapshotStore((s) => s.activeChat?.promptPresetId ?? null);
+  const regexHistoryLength = useSnapshotStore((s) => s.messageOrder.length);
+  const displayRegexPresets = useActiveRegexPresets(regexCharacterId, regexPresetId);
+  const displayRegexMacroSource = useMemo<RegexMacroSource>(
+    () =>
+      createValueEscapingMacroSource((text) =>
+        macroContext ? replaceUiMacros(text, macroContext) : text,
+      ),
+    [macroContext],
+  );
+  const applicableDisplayRegex = useMemo(() => {
+    if (!msg) return EMPTY_REGEX_PRESETS;
+    const placement =
+      msg.role === "user"
+        ? REGEX_PLACEMENT.UserInput
+        : msg.role === "assistant"
+          ? REGEX_PLACEMENT.AiOutput
+          : null;
+    if (placement === null) return EMPTY_REGEX_PRESETS;
+    // Depth of THIS message from the end of history (ST: 0 = last message).
+    const depth = regexHistoryLength - 1 - input.index;
+    const applicable = filterRegexPresets(displayRegexPresets, { placement, depth })
+      // Display seam: only display-affecting modes (ST markdownOnly).
+      // promptOnly-only presets belong to the assembled-prompt seam and must
+      // NOT change the render; persist presets already wrote the stored text.
+      .filter((preset) => preset.markdownOnly);
+    return applicable.length > 0 ? applicable : EMPTY_REGEX_PRESETS;
+  }, [msg, displayRegexPresets, regexHistoryLength, input.index]);
+  // Fully memoized so regex compilation reruns only when the variant content,
+  // the applicable preset set, or the macro context actually changes. The
+  // display text here is already macro-resolved (useDisplayMessage / variant
+  // memo); find-pattern macros still resolve via the preset's substituteRegex
+  // mode through the macro source above.
+  const regexDisplayContent = useMemo(() => {
+    if (!msg) return null;
+    const base = selectedVariant ? selectedVariant.content : msg.displayContent;
+    if (!base || applicableDisplayRegex.length === 0) return base;
+    const layerOutput = applyRegexLayer(base, applicableDisplayRegex, displayRegexMacroSource);
+    // ST parity (R-14 bug 3): ST resolves macros on the replacement RESULT at
+    // regex time (engine.js:444 substituteParams(replaceWithGroups)), while
+    // this seam macro-resolves the base BEFORE the regex — so a macro born in
+    // the replacement would otherwise stay literal on screen. Resolve the
+    // layer OUTPUT with the same UI resolver, once after all scripts.
+    // Accepted micro-divergence vs ST's per-script timing: a later script's
+    // find pattern sees the pre-resolution text (ST would see per-script
+    // resolved text); in practice find-pattern macros are governed per-preset
+    // by its substituteRegex mode anyway. replaceUiMacros is idempotent —
+    // pure static value substitutions (names, descriptions, pronoun forms),
+    // no random/time/stateful macros — so re-resolving the already-resolved
+    // base text is a no-op except for the regex-introduced tokens.
+    return macroContext ? replaceUiMacros(layerOutput, macroContext) : layerOutput;
+  }, [msg, selectedVariant, applicableDisplayRegex, displayRegexMacroSource, macroContext]);
 
   if (input.messageId === "__pending-user") {
     return <PendingUserMessage />;
@@ -194,9 +281,16 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const canBranch = !isGreeting && !isCoauthorMode;
   const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
+  // LS-4a: same last-message gate as regenerate (owner: Continue lives on the
+  // LAST AI reply) + the shared prefill capability gate. Coauthor chats are
+  // excluded alongside the other row actions.
+  const canContinue = canRegenerate && canContinueByCapability;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
   const canSwitchVariant = isLast && !isCoauthorMode;
   const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
+  // TPE-14: the inverse gate — "prepare for narration" is offered on
+  // greetings only (the editor opens directly in annotate mode).
+  const canAiAnnotate = isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
 
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
@@ -205,7 +299,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const activeContent = selectedVariant ? selectedVariant.content : msg.displayContent;
 
-  const renderContent = activeContent;
+  // Display regex (RX-13): transformed render text when display-affecting
+  // presets apply; identical to activeContent otherwise. The STREAMING path
+  // (activeStreamingRevealedText → StreamingMarkdown) is deliberately NOT
+  // transformed — a partial stream would double-apply partial matches; the
+  // settled render picks the transform up the moment streaming ends.
+  const renderContent = regexDisplayContent ?? activeContent;
+  // TPE-1 (AN-1): narration prefers the selected variant's TTS annotation —
+  // it's the content plus inserted expressive tags, authored FOR narration,
+  // so it's used verbatim (the tag-preservation wrapper downstream keeps the
+  // tags alive through the D26 mode filters). No annotation → screen text.
+  narrationTextRef.current = selectedVariant?.ttsAnnotation ?? renderContent ?? "";
   const greetingActive = isGreeting && !isUser && variantCount > 1;
 
   const isStreamingHere = !isUser && isStreamingTarget && !!(globalStreamingRevealedText || globalStreamingReasoning);
@@ -292,8 +396,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         label={t("edit")}
       >
         <AutoTextarea
-          className="w-full resize-none overflow-y-auto rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
-          style={{}}
+          className="!border-accent !px-3.5 !py-3 !font-body !text-[length:var(--mfs)] !text-msg-t1 leading-[1.65]"
           minRows={7}
           value={editingDraft}
           onChange={e => useChatStore.getState().setEditingDraft(e.target.value)}
@@ -416,6 +519,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     });
   };
 
+  // TPE-14: greeting-only entry into annotate mode. No variant is captured
+  // — the modal resolves the live selected variant as its single source.
+  const handleAiAnnotateClick = () => {
+    if (isBusy) return;
+    useMessageAiEditorStore.getState().openEditor({
+      requestedMode: "message_tts_annotate",
+      targetChatId: brandId<ChatId>(authorInfo.activeChatId),
+      targetMessageId: msg.id,
+    });
+  };
+
   // ── Message metadata context (variant-scoped provenance) ──
   const metaCtx: MessageMetaContext = {
     chatId: authorInfo.activeChatId,
@@ -462,7 +576,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canBranch={canBranch}
       canRegenerate={canRegenerate}
       canResend={canResend}
+      canContinue={canContinue}
       canAiEdit={canAiEdit}
+      canAiAnnotate={canAiAnnotate}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={isCoauthorMode ? 1 : variantCount}
       canSwitchVariant={canSwitchVariant}
@@ -474,6 +590,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       greetingControls={greetingControls}
       desktopVariantControls={desktopVariantControls}
       mobileVariantControls={mobileVariantControls}
+      narrating={narrationHook.narrating}
       actions={{
         onCopy: async () => {
           const result = await copyText(msg.displayContent);
@@ -484,10 +601,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         },
         onEdit: () => void handleEditClick(),
         onAiEdit: () => handleAiEditClick(),
+        onAiAnnotate: () => handleAiAnnotateClick(),
         onDelete: () => setDeleteConfirmOpen(true),
         onBranch: () => void chat.handleFork(msg.id),
         onRegenerate: () => void chat.handleRegenerateMessage(msg.id),
+        onContinue: () => void chat.handleContinueMessage(msg.id),
         onResend: () => void chat.handleResend(),
+        ...(msg.role === "assistant" && narrationHook.available ? { onNarrate: narrationHook.onNarrate } : {}),
       }}
     >
       {messageContent}

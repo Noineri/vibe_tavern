@@ -33,7 +33,7 @@ The script step is the only pipeline stage that runs **arbitrary user code**. Ev
 
 | Field | Purpose |
 |-------|---------|
-| `scopeType` | `global` / `character` / `persona` / `chat` — the script's **home scope** (its primary owner) |
+| `scopeType` | `global` / `entity` / `chat` — the script's **home scope** (its primary owner). `entity` covers both character and persona homes (collapsed from two scope values 2026-09; the typed FK says which) |
 | `sortOrder` | Execution order within a turn — ascending. The resolver sorts the active set by this before running |
 | `enabled` | Master switch. Disabled scripts are never loaded by the resolver |
 | `code` | Raw JavaScript source, run verbatim in `node:vm` |
