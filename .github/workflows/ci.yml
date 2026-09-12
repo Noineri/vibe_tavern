@@ -63,8 +63,39 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run typecheck
+
+  dependency-policy:
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      # Existing transitive findings stay explicit until BUN14-30 updates
+      # their owners. Every advisory outside this baseline remains fatal.
+      - name: Audit dependencies
+        run: >-
+          bun audit
+          --ignore GHSA-xcpc-8h2w-3j85
+          --ignore GHSA-vwc7-r8mq-g2x9
+          --ignore GHSA-f88m-g3jw-g9cj
+          --ignore GHSA-rgj7-g3m4-5g8c
+      - run: bun dedupe --check
+      # Inventory only: this reports the production license set but does not
+      # decide compatibility with AGPL-3.0.
+      - name: Report production licenses
+        run: bun pm licenses --prod
 
   test-linux:
     # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
@@ -75,7 +106,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       # TH-4c guard: instant static scan (hard bans + budget ratchets) before
       # the expensive suites — see scripts/test-hygiene.ts.
       - run: bun run test:hygiene
@@ -90,7 +128,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       # TH-4c guard: instant static scan (hard bans + budget ratchets) before
       # the expensive suites — see scripts/test-hygiene.ts.
       - run: bun run test:hygiene
@@ -104,7 +149,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun scripts/build-linux-dist.ts
 
   build-android:
@@ -115,7 +167,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run build:android-native
       - uses: actions/setup-java@v4
         with:
@@ -134,7 +193,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - name: Install Inno Setup
         run: choco install innosetup --no-progress --yes
       # --fast-compression: this installer is never uploaded (see the note at the
@@ -159,7 +225,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun scripts/build-npm-dist.ts
       # Validates the generated manifest and the file list against the registry's
       # rules without publishing anything. Catches a malformed `bin`, a missing
@@ -209,7 +282,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun scripts/smoke-npm-selfupdate.ts
 
   build-docker:
