@@ -33,7 +33,6 @@
     "js-tiktoken": "^1.0.21",
     "proxy-chain": "^3.0.1",
     "tar-stream": "^3.2.1",
-    "yaml": "^2.9.1",
     "zod": "^4.6.2"
   },
   "devDependencies": {
