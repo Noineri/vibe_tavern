@@ -182,6 +182,8 @@ const protocols: Record<ProviderType, ProtocolAdapter> = {
 
 If the protocol has a **native (non-SDK)** request shape like KoboldCPP or Ollama, keep its native model wrapper in this same `vertex-adapter.ts` module and call it from `resolveModel`. See `ollama-adapter.ts` / `koboldcpp-adapter.ts` for the pattern; do not split a single protocol's adapter description across files.
 
+A native `doStream` must emit the **full** `LanguageModelV3` protocol sequence: `stream-start`, then `text-start` before the first `text-delta`, then `text-end` before `finish`. ai@7's `streamText` recorder answers bare deltas with `text part 0 not found`, and `infrastructure/ai/stream-helpers.ts` turns that error part into a failed chat — so a missing frame breaks every streamed reply, not just the trace. Read the body with `response.textStream()`: it decodes UTF-8 and joins characters split across chunk boundaries, leaving only line reassembly (NDJSON for Ollama, SSE for KoboldCPP) to the adapter. Pin both with a `streamText` test, not only raw-part assertions.
+
 ### Step 4 — Sampler set
 
 Pick or add a `SAMPLER_SETS` entry (`packages/domain/src/sampler-params.ts`) and reference it via `adapter.capabilities.samplers`. Then wire the type in `resolveSamplerSet`:
