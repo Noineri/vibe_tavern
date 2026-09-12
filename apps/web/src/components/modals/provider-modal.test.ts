@@ -69,6 +69,28 @@ mock.module("../../stores/api-actions/provider-actions.js", () => ({
 const realTtsProfiles = await import("../settings/provider/tts/use-tts-profiles.js");
 void realTtsProfiles;
 
+// TH-4b: the modal mounts useTtsProfiles + useSttProfiles unconditionally, so
+// rendering with the real api modules fires live fetches at the gateway base
+// URL (on a machine with the dev server up they would return REAL profiles
+// into the test DOM). The three list functions are the complete fetch surface
+// of both hooks' load paths; stub them at the api-module seam — the hook logic
+// (matching, state, effects) keeps running for real.
+const realProviderApi = await import("../../api/provider-api.js");
+const realTtsApi = await import("../../api/tts-api.js");
+const realSttApi = await import("../../api/stt-api.js");
+mock.module("../../api/provider-api.js", () => ({
+  ...realProviderApi,
+  listProviderProfiles: async () => [],
+}));
+mock.module("../../api/tts-api.js", () => ({
+  ...realTtsApi,
+  listAllTtsProfiles: async () => [],
+}));
+mock.module("../../api/stt-api.js", () => ({
+  ...realSttApi,
+  listAllSttProfiles: async () => [],
+}));
+
 const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { useModalStore } = await import("../../stores/modal-store.js");
 const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js");
