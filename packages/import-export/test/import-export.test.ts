@@ -52,7 +52,7 @@ describe("importCharacterCardV3Json", () => {
     ).toThrow("Unsupported character card spec");
   });
 
-  it.skip("throws on missing name", () => {
+  it("throws on missing name (revived 2026-09-12: the importer trims to empty and throws)", () => {
     expect(() =>
       importCharacterCardV3Json({ spec: "chara_card_v3", data: {} }),
     ).toThrow("missing `name`");
@@ -393,10 +393,9 @@ describe("importStLorebookJson", () => {
     expect(result.warnings).toHaveLength(0);
   });
 
-  it.skip("throws on missing name", () => {
-    expect(() =>
-      importStLorebookJson({ entries: [] }),
-    ).toThrow("missing `name`");
+  it("missing name falls back to 'Imported Lorebook' (revived 2026-09-12: tolerant contract, it.skip predated the fallback)", () => {
+    const bundle = importStLorebookJson({ entries: [] });
+    expect(bundle.lorebook.name).toBe("Imported Lorebook");
   });
 
   it("handles entries as object (ST format)", () => {
