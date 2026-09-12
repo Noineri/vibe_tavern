@@ -183,13 +183,22 @@ function extractBunFailure(stderr: string): string | null {
 		.filter((section) => section.some((line) => line.trim() !== ""));
 	if (diagnosticSections.length === 0) return null;
 
-	const sections = diagnosticSections.slice(0, MAX_DIAGNOSTIC_SECTIONS).map((section) => limitCharacters(
+	// Failed-test sections lead: error-shaped output from PASSING files (an
+	// intentional route-throw test logging `error: boom`, a library TypeError
+	// under happy-dom) is diagnostic too, but it must never crowd the actual
+	// `(fail)` sections out of the capped window (observed on PR #39: the only
+	// failing section was omitted behind 8 sections of passing-file noise).
+	const rank = (section: readonly string[]): number =>
+		section.some((line) => BUN_FAILURE_PATTERN.test(line)) ? 0 : 1;
+	const ordered = [...diagnosticSections].sort((a, b) => rank(a) - rank(b));
+
+	const sections = ordered.slice(0, MAX_DIAGNOSTIC_SECTIONS).map((section) => limitCharacters(
 		limitLines(section, MAX_FALLBACK_LINES, "diagnostic output"),
 		MAX_DIAGNOSTIC_CHARACTERS,
 		"diagnostic output",
 	));
-	if (diagnosticSections.length > MAX_DIAGNOSTIC_SECTIONS) {
-		sections.push(`... ${diagnosticSections.length - MAX_DIAGNOSTIC_SECTIONS} additional diagnostic sections omitted`);
+	if (ordered.length > MAX_DIAGNOSTIC_SECTIONS) {
+		sections.push(`... ${ordered.length - MAX_DIAGNOSTIC_SECTIONS} additional diagnostic sections omitted`);
 	}
 	if (summaryStart !== -1) sections.push(formatBunSummary(lines, summaryStart));
 	return sections.filter((section) => section !== "").join("\n\n");

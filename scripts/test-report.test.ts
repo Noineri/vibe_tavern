@@ -75,6 +75,40 @@ describe("final test report", () => {
 		expect(report).toContain("Web tests: FAIL (335 files)");
 	});
 
+	test("failing sections survive passing-file diagnostic noise in the excerpt window", () => {
+		// Given: ten passing files whose tests log error-shaped output (an
+		// intentional route-throw, a library TypeError) plus ONE file with a real
+		// (fail) — the failing section arrives LAST, past the 8-section cap.
+		const noisy: string[] = [];
+		for (let i = 0; i < 10; i++) {
+			noisy.push(
+				`src/file${i}.test.ts:`,
+				"(pass) something > noise",
+				`error: intentional-noise-${i}`,
+				"    at <anonymous> (src/file" + i + ".test.ts:1:1)",
+			);
+		}
+		noisy.push(
+			"src/real.test.ts:",
+			"(fail) real > the one that matters",
+			"error: expect(received).toBe(expected)",
+		);
+		const noisyFailure = [{
+			name: "web",
+			exitCode: 1,
+			durationMs: 60_000,
+			stdout: noisy.join("\n"),
+			stderr: "",
+		}] satisfies readonly TestSuiteResult[];
+
+		// When
+		const report = formatTestReport(noisyFailure);
+
+		// Then: the (fail) section is inside the window, ahead of the noise.
+		expect(report).toContain("(fail) real > the one that matters");
+		expect(report.indexOf("(fail) real")).toBeLessThan(report.indexOf("intentional-noise-8"));
+	});
+
 	test("bounds unrecognized fallback output", () => {
 		// Given: a failed suite that produces one oversized line in each output stream.
 		const oversizedFallback = [{
