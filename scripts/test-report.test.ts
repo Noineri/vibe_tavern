@@ -61,6 +61,7 @@ describe("final test report", () => {
 			stderr: [
 				"Web test files with failures (1):",
 				"FAIL apps/web/src/components/chat/narration-playlist-panel.test.tsx (1 failed)",
+				"  · continuous advance auto-scroll (RD-7) — error: expect(received).toBe(true) Expected: true Received: false",
 				"",
 				"Web tests: FAIL (335 files)",
 		].join("\n"),
@@ -71,6 +72,10 @@ describe("final test report", () => {
 
 		// Then
 		expect(report).toContain("FAIL apps/web/src/components/chat/narration-playlist-panel.test.tsx (1 failed)");
+		// The per-testcase `· name — message` lines must survive the lift too
+		// (run 34665657469: the orchestrator dropped them — the pattern list
+		// predates the lines — so the CI log showed a bare FAIL with no names).
+		expect(report).toContain("  · continuous advance auto-scroll (RD-7) — error: expect");
 		expect(report.indexOf("FAIL apps/web")).toBeLessThan(report.indexOf("(fail) RD-1b"));
 		expect(report).toContain("Web tests: FAIL (335 files)");
 	});

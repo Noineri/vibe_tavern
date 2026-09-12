@@ -35,6 +35,7 @@ const BUN_SUMMARY_PATTERN = /^\s*\d+\s+(?:pass|fail|skip|error)/;
 const RUNNER_SUMMARY_PATTERNS: readonly RegExp[] = [
 	/^Web test files with failures \(\d+\):$/,
 	/^FAIL \S+ \(\d+ failed\)$/,
+	/^ {2}· /,
 	/^Web test files declaring zero tests \(\d+\):$/,
 	/^Web test failed, but no failing test case was found/,
 	/^Web tests: (?:PASS|FAIL) /,
