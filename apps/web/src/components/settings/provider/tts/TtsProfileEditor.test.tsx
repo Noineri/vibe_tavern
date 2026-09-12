@@ -333,6 +333,11 @@ describe("TtsProfileEditor", () => {
   });
 
   it("F1 draft contract: unsaved server form loads voices via draft endpoint, preview button enabled, no save-first hints", async () => {
+    // Shared file-level mock: under CI load an earlier tier-gating test can
+    // outlive its own 400ms debounce and leak a recorded call (endpoint
+    // "https://x" — run 34668434046), making calls[0] someone else's. Clear
+    // before this test's own effect fires (same pattern as the F3 test below).
+    (listTtsDraftVoicesMock as unknown as { mockClear: () => void }).mockClear?.();
     const tts = viewTts({
       form: {
         id: null,

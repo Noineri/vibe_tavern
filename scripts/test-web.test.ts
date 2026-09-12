@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createWebTestCommand, discoverWebTestFiles, failingFiles, filesWithTests, runWebTestCli } from "./test-web.js";
+import { createWebTestCommand, discoverWebTestFiles, failingFiles, filesWithTests, junitCrossAttribution, runWebTestCli } from "./test-web.js";
 
 interface CliResult {
 	readonly exitCode: number;
@@ -137,6 +137,27 @@ test("counts failing test cases per file with names and messages, ignoring passe
 	expect(failing[1]?.entries[0]?.message).toContain('Received: 2 — a "quoted" diff');
 	expect(failing[1]?.entries[0]?.message).not.toContain("stack frame hidden");
 	expect(failingFiles("<testsuites></testsuites>").size).toBe(0);
+});
+
+test("junitCrossAttribution flags a junit file that disagrees with the failing stack frame", () => {
+	// Bun 1.4.0 --parallel junit cross-attribution (PR #39, runs 34664917488 /
+	// 34668434046): the testcase name+file come from one worker while the failure
+	// message (and its stack frame) come from another — a four-CI-cycle chase
+	// before the pattern was named. The stack is the thing to trust.
+	const galleryFile = "apps/web/src/api/gallery-api.test.ts";
+	const crossMsg = 'AssertionError: expect(received).toBe(expected)\n\nExpected: "https://x/v1"\nReceived: "https://x"\n at apps/web/src/components/settings/provider/tts/TtsProfileEditor.test.tsx:364:34';
+	expect(junitCrossAttribution(galleryFile, crossMsg)).toBe(
+		"junit filed under apps/web/src/api/gallery-api.test.ts, stack points to apps/web/src/components/settings/provider/tts/TtsProfileEditor.test.tsx — parallel junit cross-attribution, trust the stack",
+	);
+	// Agreement → silent.
+	expect(junitCrossAttribution("apps/web/src/components/settings/provider/tts/TtsProfileEditor.test.tsx", crossMsg)).toBeNull();
+	// No stack frame, or a non-test frame (e.g. source file) → silent.
+	expect(junitCrossAttribution(galleryFile, "plain assertion failure, no frame")).toBeNull();
+	expect(junitCrossAttribution(galleryFile, " at services/api/src/shared/foo.ts:1:2")).toBeNull();
+	// Windows-slashed and parenthesized frames normalize.
+	expect(
+		junitCrossAttribution(galleryFile, " at (apps\\web\\src\\lib\\x.test.ts:5:6"),
+	).toBe("junit filed under apps/web/src/api/gallery-api.test.ts, stack points to apps/web/src/lib/x.test.ts — parallel junit cross-attribution, trust the stack");
 });
 
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {

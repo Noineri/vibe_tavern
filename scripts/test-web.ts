@@ -248,6 +248,25 @@ export function failingFiles(report: string): ReadonlyMap<string, FailingFile> {
 	return byFile;
 }
 
+/**
+ * Bun 1.4.0 with `--parallel=N` + `--reporter=junit` can CROSS-ATTRIBUTE a
+ * JUnit entry: the testcase NAME comes from one worker's file while the
+ * failure MESSAGE (and its stack frame) comes from another (observed on PR #39,
+ * runs 34664917488 / 34665657469 / 34668434046: gallery-api.test.ts entries
+ * whose messages point into TtsProfileEditor/experience-sdk-diag — a chase
+ * that cost four CI cycles before the pattern was named). bun's on-screen
+ * tally is correct; the JUnit file path is not. When the failing message's
+ * first stack frame names a DIFFERENT test file than the JUnit `file=`
+ * attribute, say so in the summary line — the stack is the thing to trust.
+ */
+export function junitCrossAttribution(file: string, message: string): string | null {
+	const frame = message.match(/\bat +(\S+\.test\.tsx?):\d+:\d+/)?.[1];
+	if (frame === undefined) return null;
+	const frameFile = frame.replaceAll("\\", "/").replace(/^\(/, "");
+	if (frameFile === file || !frameFile.endsWith(".test.ts") && !frameFile.endsWith(".test.tsx")) return null;
+	return `junit filed under ${file}, stack points to ${frameFile} — parallel junit cross-attribution, trust the stack`;
+}
+
 export async function runWebTestCli(
 	args: readonly string[],
 	root: string = ROOT,
@@ -324,7 +343,16 @@ export async function runWebTestCli(
 		if (failing.length > 0) {
 			const lines = failing.flatMap((entry) => [
 				`FAIL ${entry.file} (${entry.count} failed)`,
-				...entry.entries.map((e) => `  · ${e.name}${e.message === "" ? "" : ` — ${e.message}`}`),
+				...entry.entries.map(
+				(e) =>
+					`  · ${e.name}${e.message === "" ? "" : ` — ${e.message}`}${
+						(() => {
+							const note = junitCrossAttribution(entry.file, e.message);
+							return note === null ? "" : `
+  ⚠ ${note}`;
+						})()
+					}`,
+			),
 			]);
 			errorWrite(`Web test files with failures (${failing.length}):\n${lines.join("\n")}`);
 		} else {
