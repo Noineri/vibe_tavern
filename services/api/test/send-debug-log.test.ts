@@ -55,10 +55,15 @@ describe("logSendDebug (TH-1 race fix)", () => {
 	it("subsequent writes append after the ensured dir; unhandled rejections would fail this file", async () => {
 		logSendDebug("evt-two", {});
 		logSendDebug("evt-three", {});
-		// evt-three is the terminal event — once it is on disk, evt-two must be
-		// there too (both chain on the same dir-ensure; containment, not order,
-		// is pinned: the two appends may legally interleave).
-		const text = await waitForContent(resolve(coldDir, "send-debug.log"), "evt-three");
+		// Containment, NOT order: two concurrent appendFile calls may complete in
+		// either order (run 34665657469 — evt-three landed while evt-two was still
+		// in flight, and reading at the first evt-three sighting raced it). Each
+		// event gets its own terminal wait; the assertions then read one durable
+		// snapshot.
+		const path = resolve(coldDir, "send-debug.log");
+		await waitForContent(path, "evt-two");
+		await waitForContent(path, "evt-three");
+		const text = await readFile(path, "utf8");
 		expect(text).toContain("evt-probe");
 		expect(text).toContain("evt-two");
 		expect(text).toContain("evt-three");
