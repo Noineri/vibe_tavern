@@ -197,7 +197,7 @@ describe("VibeMdView", () => {
 });
 ```
 
-**Why scoped, not a `bunfig.toml` preload:** the repo has DOM-averse tests (`avatar.test.ts`, `gateway-client`, …) that rely on `typeof window === "undefined"` so e.g. `getGatewayBaseUrl()` returns its SSR fallback. A global preload that registers happy-dom permanently injects a `window` into *every* file and breaks those. `useDomEnv()` registers at module load and unregisters in `afterAll`, so pure-logic files never see a `window`. **Never add a `[test] preload = …` happy-dom line to `bunfig.toml`.**
+**Why scoped, not a `bunfig.toml` preload:** the repo has DOM-averse tests (`avatar.test.ts`, `gateway-client`, …) that rely on `typeof window === "undefined"` so e.g. `getGatewayBaseUrl()` returns its SSR fallback. A global preload that registers happy-dom permanently injects a `window` into *every* file and breaks those. `useDomEnv()` registers at module load and **never** unregisters — `GlobalRegistrator.unregister()` closes the window React was evaluated against, after which updates stop flushing for every later DOM file in the process. What keeps pure-logic files windowless is therefore the file scope plus `--isolate`, not a teardown: a file that does not import `dom-env.js` never registers anything, and `--isolate` stops another file's window from reaching it. See the header comment in [`dom-env.ts`](../../apps/web/test/dom-env.ts). **Never add a `[test] preload = …` happy-dom line to `bunfig.toml`.**
 
 ### Import `@testing-library/*` dynamically, after `useDomEnv()`
 

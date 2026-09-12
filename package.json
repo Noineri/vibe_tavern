@@ -30,7 +30,6 @@
     "typecheck": "bun scripts/type-gate.ts && bunx tsc -p scripts/tsconfig.json && bun run --filter '*' typecheck",
     "test": "bun scripts/test.ts",
     "test:verbose": "bun test scripts && bun run --filter '*' test",
-    "test:parallel": "bun test --parallel",
     "i18n:types": "cd apps/web && bunx i18next-cli types",
     "i18n:check": "cd apps/web && bunx i18next-cli extract --ci && bunx i18next-cli status",
     "i18n:lint": "cd apps/web && bunx i18next-cli lint",
