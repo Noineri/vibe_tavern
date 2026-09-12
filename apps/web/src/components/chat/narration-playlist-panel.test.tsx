@@ -2557,19 +2557,35 @@ describe("narration playlist transport bar (RD-5)", () => {
 
 describe("narration playlist advance auto-scroll (RD-7)", () => {
   /** Prototype-level scrollIntoView stub (happy-dom has no scroll
-   *  implementation): records the scrolled element per call. Restored
-   *  per test — the show-in-chat test above stubs per element instead,
-   *  but the advance edge fires from a store effect, so the call site
-   *  cannot be reached to stub the instance first. */
-  function stubCardScrolling(): { calls: Element[]; restore: () => void } {
+   *  implementation): records the scrolled element per call, plus — captured
+   *  AT SCROLL TIME — whether the element was inside the playlist list.
+   *  Post-hoc containment checks race React remounts: a card can be scrolled
+   *  and then replaced before the assertion reads it, leaving a detached node
+   *  that no longer has the list as an ancestor (linux CI flake, PR #39 runs
+   *  34663319106/34664917488). The invariant the RD-7 pin means — the target
+   *  was a card IN the list when the scroll fired — is only provable at the
+   *  moment of the scroll itself. */
+  function stubCardScrolling(): {
+    calls: Element[];
+    cardScrollsInList: { id: string | null; inListAtScrollTime: boolean }[];
+    restore: () => void;
+  } {
     const calls: Element[] = [];
+    const cardScrollsInList: { id: string | null; inListAtScrollTime: boolean }[] = [];
     const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (options?: unknown) => void };
     const prev = proto.scrollIntoView;
     proto.scrollIntoView = function (this: Element): void {
       calls.push(this);
+      if (this instanceof Element && this.getAttribute("data-playlist-message-id") !== null) {
+        cardScrollsInList.push({
+          id: this.getAttribute("data-playlist-message-id"),
+          inListAtScrollTime: this.closest('[data-testid="playlist-row-list"]') !== null,
+        });
+      }
     };
     return {
       calls,
+      cardScrollsInList,
       restore: () => {
         if (prev === undefined) delete proto.scrollIntoView;
         else proto.scrollIntoView = prev;
@@ -2651,17 +2667,11 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       // m1 was started manually (direct startNarration, no advance edge)
       // — its own start must never owe a scroll.
       expect(ids).not.toContain("m1");
-      // Container-scoped: every scrolled CARD lives inside the list.
-      // The population is card elements only — the prototype stub records
-      // EVERY scrollIntoView in the process (an ancestor reveal scroll, a
-      // focus scroll, anything), and those legitimate non-card scrolls must
-      // not fail this pin on slow CI runners (linux flake, PR #39 run
-      // 34663319106: line 2657 failed with an out-of-list element while the
-      // card assertions above held).
-      const list = getByTestId("playlist-row-list");
-      for (const el of scrolling.calls) {
-        if (el.getAttribute("data-playlist-message-id") === null) continue;
-        expect(list.contains(el)).toBe(true);
+      // Container-scoped at scroll time: every scrolled CARD was inside the
+      // list WHEN it scrolled (captured by the stub — a post-hoc contains()
+      // races remounts; see the stub's doc comment).
+      for (const card of scrolling.cardScrollsInList) {
+        expect(card.inListAtScrollTime).toBe(true);
       }
     } finally {
       scrolling.restore();
