@@ -1143,6 +1143,36 @@ async function readCharacterFile(filePath: string): Promise<{ raw: Record<string
 	return { raw: null };
 }
 
+function decodePngItxtChunk(
+	chunkData: Uint8Array,
+	decoder: TextDecoder,
+): { keyword: string; text: string } | null {
+	const keywordEnd = chunkData.indexOf(0);
+	if (keywordEnd === -1 || keywordEnd + 3 > chunkData.length) return null;
+
+	const compressionFlag = chunkData[keywordEnd + 1];
+	const compressionMethod = chunkData[keywordEnd + 2];
+	if ((compressionFlag !== 0 && compressionFlag !== 1) || compressionMethod !== 0) return null;
+
+	const languageEnd = chunkData.indexOf(0, keywordEnd + 3);
+	if (languageEnd === -1) return null;
+	const translatedKeywordEnd = chunkData.indexOf(0, languageEnd + 1);
+	if (translatedKeywordEnd === -1) return null;
+
+	const keyword = decoder.decode(chunkData.slice(0, keywordEnd));
+	const textBytes = chunkData.slice(translatedKeywordEnd + 1);
+	if (compressionFlag === 0) {
+		return { keyword, text: decoder.decode(textBytes) };
+	}
+
+	try {
+		return { keyword, text: decoder.decode(Bun.inflateSync(textBytes)) };
+	} catch {
+		// A malformed metadata chunk must not hide a valid card chunk later in the PNG.
+		return null;
+	}
+}
+
 /**
  * Extract character JSON from PNG tEXt/iTXt chunks.
  * Mirrors the frontend png-reader.ts logic but runs server-side with Bun.
@@ -1151,6 +1181,7 @@ async function readCharacterFile(filePath: string): Promise<{ raw: Record<string
  */
 function parsePngCharacterCard(uint8: Uint8Array): Record<string, unknown> | null {
 	const view = new DataView(uint8.buffer, uint8.byteOffset, uint8.byteLength);
+	const decoder = new TextDecoder();
 
 	// Check PNG signature
 	if (view.getUint32(0) !== 0x89504E47 || view.getUint32(4) !== 0x0D0A1A0A) {
@@ -1170,11 +1201,16 @@ function parsePngCharacterCard(uint8: Uint8Array): Record<string, unknown> | nul
 			const chunkData = uint8.slice(dataStart, dataEnd);
 			const nullIndex = chunkData.indexOf(0);
 			if (nullIndex !== -1) {
-				const keyword = new TextDecoder().decode(chunkData.slice(0, nullIndex));
+				const keyword = decoder.decode(chunkData.slice(0, nullIndex));
 				if (keyword === "ccv3" || keyword === "chara") {
-					const text = new TextDecoder().decode(chunkData.slice(nullIndex + 1));
+					const text = decoder.decode(chunkData.slice(nullIndex + 1));
 					return decodeCardText(text);
 				}
+			}
+		} else if (type === "iTXt") {
+			const metadata = decodePngItxtChunk(uint8.slice(dataStart, dataEnd), decoder);
+			if (metadata && (metadata.keyword === "ccv3" || metadata.keyword === "chara")) {
+				return decodeCardText(metadata.text);
 			}
 		}
 
