@@ -44,6 +44,51 @@ function installNodeInspector(): void {
   });
 }
 
+/** Network attempts recorded since the current test's `afterEach`. */
+interface BlockedRequest {
+  readonly method: string;
+  readonly url: string;
+}
+
+const blockedRequests: BlockedRequest[] = [];
+
+function describeRequest(input: RequestInfo | URL, init?: RequestInit): BlockedRequest {
+  if (typeof input === "string") return { method: init?.method ?? "GET", url: input };
+  if (input instanceof URL) return { method: init?.method ?? "GET", url: input.href };
+  return { method: init?.method ?? input.method, url: input.url };
+}
+
+/**
+ * Replace `fetch` with one that refuses to open a socket.
+ *
+ * happy-dom's `fetch` is a REAL one: a component that fires a request on mount
+ * reaches the host network from a unit test. `message-ai-editor-controls` did
+ * exactly that — 11 connects to 127.0.0.1:8787 per run, one per test — and the
+ * only symptom was a swallowed `ECONNREFUSED` warning, because the caller
+ * catches its own failures. On a developer box with the app running, those
+ * requests hit the live server and its real database instead.
+ *
+ * Measured across the suite: 336 files, ~50 of them mount a tree that fires at
+ * least one request the file never mocked (`/api/lorebooks/all`,
+ * `/api/personas`, `/api/coauthor/skills`, …). Every one of those degrades
+ * silently by design, so rejecting here is invisible to them — it only takes
+ * the socket away. A file that wants the stronger property ("this tree mounts
+ * without reaching for the network at all") passes `failOnNetwork` to
+ * `useDomEnv`, and every recorded attempt fails the test that made it.
+ *
+ * Files that install their own `fetch` double never reach this guard.
+ */
+function installNetworkGuard(): void {
+  const guard = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const request = describeRequest(input, init);
+    blockedRequests.push(request);
+    return Promise.reject(
+      new TypeError(`DOM test network access blocked: ${request.method} ${request.url}`),
+    );
+  };
+  globalThis.fetch = Object.assign(guard, { preconnect: () => {} });
+}
+
 function ensureDomEnvRegistration(): void {
   if (typeof globalThis.window === "undefined") {
     GlobalRegistrator.register();
@@ -58,6 +103,7 @@ function ensureDomEnvRegistration(): void {
       });
       cancel.call(this);
     };
+    installNetworkGuard();
   }
   installNodeInspector();
 }
@@ -162,11 +208,25 @@ async function flushSchedulerQueue(): Promise<void> {
  */
 expect.extend(matchers);
 
-export function useDomEnv(): void {
+export interface DomEnvOptions {
+  /** Fail any test that reached for the network (see `installNetworkGuard`). */
+  readonly failOnNetwork?: boolean;
+}
+
+export function useDomEnv(options: DomEnvOptions = {}): void {
   ensureDomEnvRegistration();
 
   afterEach(() => {
     cleanup();
+    const blocked = blockedRequests.splice(0);
+    if (options.failOnNetwork === true && blocked.length > 0) {
+      const targets = [...new Set(blocked.map((r) => `${r.method} ${r.url}`))].join(", ");
+      throw new Error(
+        `This test reached for the network ${blocked.length} time(s): ${targets}. ` +
+          "Mock the module that fetches (spread the real module, override the one function), " +
+          "or assign globalThis.fetch for the duration of the test.",
+      );
+    }
   });
 
   afterAll(async () => {

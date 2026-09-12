@@ -223,6 +223,18 @@ This is not theoretical. `@testing-library/jest-dom` 6.10 began importing `@test
 
 Queries destructured from `render()` are bound to the rendered container at call time, so they are immune to this and remain a fine default.
 
+### The DOM environment has no network
+
+`useDomEnv()` replaces `fetch` with one that records the attempt and rejects; happy-dom's own `fetch` opens real sockets. This is not hypothetical tidiness: `message-ai-editor-controls.test.tsx` fired `GET /api/tts/profiles/all`, `/api/tts/links` and `/api/regex/resolve-active` at `127.0.0.1:8787` on every test — measured with a recorder bound to that port, 13 requests per run — and the only symptom was a swallowed `ECONNREFUSED`, because each caller degrades quietly on failure. On a machine where the app is running, a unit test talks to the live server and its real database.
+
+Rejecting is enough to take the socket away, but not enough to make a leak visible, since the callers catch it. A file that must not touch the network at all asks for the strict form:
+
+```tsx
+useDomEnv({ failOnNetwork: true });   // any recorded attempt fails the test that made it
+```
+
+Nineteen of the 336 web files still mount a tree that fires an unmocked request — 34 distinct endpoints (`/api/lorebooks/all`, `/api/personas`, `/api/coauthor/skills`, …). They are safe (no socket) but not strict. When you mock the last fetching module a file needs, add `failOnNetwork` so the mock cannot go missing quietly. Mock with the safe `mock.module` pattern (spread the real module, override the one function) or assign `globalThis.fetch` for the test.
+
 ---
 
 ## Test factories
