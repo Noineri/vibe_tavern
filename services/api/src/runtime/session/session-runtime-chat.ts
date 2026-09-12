@@ -428,7 +428,13 @@ export class ChatRuntime {
     const variants = await this.deps.messages.getVariants(messageId);
     const variant = variants.find((v) => v.variantIndex === variantIndex) ?? null;
     if (variant === null) {
-      throw new Error(`Variant ${variantIndex} not found on message ${messageId}`);
+      // TH-2: a stale variant index is client-addressing staleness (variant
+      // deleted in another window), not a server fault — a plain Error here
+      // surfaced as an anonymous 500 through the generic onError path. The
+      // strict reject stays (no silent write to a sibling — pinned by the
+      // TPE-1 test); the shape becomes a structured 404 the editor can react
+      // to, same vocabulary as the other DomainError mappings.
+      throw notFound("variant", `Variant ${variantIndex} not found on message ${messageId}`);
     }
     await this.deps.messages.setTtsAnnotation(variant.id, text);
     return await this.deps.buildVariantResponse(chatId);
