@@ -1,17 +1,13 @@
 /**
  * Image compression for vision API payloads.
  *
- * Providers like NanoGPT reject requests with large base64 images.
- * This module compresses raster images to JPEG and resizes to a max dimension
- * before sending to the vision model.
+ * Providers like NanoGPT reject requests with large base64 images, so an
+ * attachment is downscaled to a max dimension and re-encoded as JPEG before it
+ * goes to the vision model.
  *
- * Uses Bun.Image (native codecs) — decodes JPEG/PNG/WebP/BMP/TIFF/AVIF/HEIC,
- * never upscales (only images over the cap are resized), re-encodes as JPEG.
- *
- * GIF stays passthrough: it is the one accepted image MIME whose payload can be
- * animated, and Bun.Image would silently flatten it to the first frame — a
- * too-big GIF fails at the provider exactly as before, which beats silently
- * destroying content the user attached. SVG stays passthrough (not raster).
+ * Uses Bun.Image (native codecs): decode → resize → JPEG encode is recorded as
+ * one pipeline and runs on a worker thread when the terminal `bytes()` is
+ * awaited.
  */
 
 /** Max dimension (width or height) for vision images. */
@@ -20,48 +16,49 @@ const MAX_VISION_DIMENSION = 1536;
 /** JPEG quality (0-100). 80 is a good balance for vision. */
 const JPEG_QUALITY = 80;
 
-const COMPRESSIBLE_MIMES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/bmp",
-  "image/tiff",
-  "image/avif",
-  "image/heic",
-  "image/heif",
-]);
-
 /**
- * Check whether a MIME type can be compressed by this module.
- * Raster formats Bun.Image decodes — GIF (animation) and SVG (vector) excluded.
- */
-export function isCompressibleImage(mimeType: string): boolean {
-  return COMPRESSIBLE_MIMES.has(mimeType);
-}
-
-/**
- * Compress an image buffer for vision API consumption.
+ * MIMEs this module compresses.
  *
- * - Decodes any supported raster format (format sniffed from bytes, not the
- *   MIME label)
- * - Resizes to fit {@link MAX_VISION_DIMENSION} — ONLY when oversized; Bun's
- *   `resize` upscales a smaller source even with `fit: "inside"` (verified on
- *   Bun 1.4.2: an 8×8 PNG through `resize(1536, 1536, { fit: "inside" })` comes
- *   back 1536×1536), so the over-cap check is explicit. The option that
- *   suppresses this is `withoutEnlargement: true`
- * - Re-encodes as JPEG at quality 80
+ * The bound is the upload gate, not Bun.Image: `ALLOWED_MIMES` in
+ * `domain/asset/asset-service.ts` admits only jpeg/png/gif/webp, and every
+ * attachment gets its `mimeType` from that gate, so no other image MIME can
+ * reach here. GIF is excluded deliberately — it is the one accepted image MIME
+ * whose payload can be animated, and Bun.Image would silently flatten it to
+ * the first frame; a too-big GIF failing at the provider beats destroying
+ * content the user attached.
+ *
+ * bmp/tiff/avif/heic/heif used to be listed and were unreachable twice over:
+ * no upload can carry them, and on Linux Bun.Image cannot even decode them
+ * (measured on 1.4.2 — tiff/avif/heic throw `ERR_IMAGE_FORMAT_UNSUPPORTED`,
+ * "HEIC/AVIF/TIFF require the OS codec"; bmp throws `ERR_IMAGE_DECODE_FAILED`
+ * for every variant except 24-bit BMP3).
  */
-export async function compressForVision(
-  input: Buffer,
-  _inputMimeType: string,
-): Promise<{ buffer: Buffer; mimeType: string }> {
-  const source = new Bun.Image(input);
-  const meta = await source.metadata();
-  const pipeline =
-    meta.width > MAX_VISION_DIMENSION || meta.height > MAX_VISION_DIMENSION
-      ? source.resize(MAX_VISION_DIMENSION, MAX_VISION_DIMENSION, { fit: "inside" })
-      : source;
-  const jpeg = await pipeline.jpeg({ quality: JPEG_QUALITY }).bytes();
+const COMPRESSIBLE_MIMES: Record<string, true> = {
+  "image/jpeg": true,
+  "image/png": true,
+  "image/webp": true,
+};
+
+/**
+ * Compress an image buffer for vision API consumption: decode (format sniffed
+ * from the bytes, not the MIME label), downscale to fit
+ * {@link MAX_VISION_DIMENSION}, re-encode as JPEG at quality 80.
+ *
+ * `withoutEnlargement` is what keeps a small image small: `fit: "inside"`
+ * alone upscales a smaller source (measured on Bun 1.4.2 — an 8×8 PNG through
+ * `resize(1536, 1536, { fit: "inside" })` comes back 1536×1536 / 37KB, with
+ * `withoutEnlargement: true` it stays 8×8 / 631 bytes). An oversized source
+ * resizes identically either way (2000×1000 → 1536×768), so the option
+ * replaces the former manual over-cap gate and its `metadata()` round-trip.
+ * That is a simplification, not a speed-up: `metadata()` reads the header
+ * only, and interleaved timings on a 3000×2000 JPEG are indistinguishable
+ * (median 48.9ms before, 49.3ms after, identical output bytes).
+ */
+export async function compressForVision(input: Buffer): Promise<{ buffer: Buffer; mimeType: string }> {
+  const jpeg = await new Bun.Image(input)
+    .resize(MAX_VISION_DIMENSION, MAX_VISION_DIMENSION, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: JPEG_QUALITY })
+    .bytes();
   return {
     buffer: Buffer.from(jpeg),
     mimeType: "image/jpeg",
@@ -90,9 +87,9 @@ export async function prepareImageForVision(
   buffer: Buffer,
   mimeType: string,
 ): Promise<{ buffer: Buffer; mimeType: string }> {
-  if (!isCompressibleImage(mimeType)) return { buffer, mimeType };
+  if (COMPRESSIBLE_MIMES[mimeType] !== true) return { buffer, mimeType };
   try {
-    return await compressForVision(buffer, mimeType);
+    return await compressForVision(buffer);
   } catch {
     return { buffer, mimeType };
   }

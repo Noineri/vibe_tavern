@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  compressForVision,
-  isCompressibleImage,
-  prepareImageForVision,
-} from "../src/shared/image-compress.js";
+import { compressForVision, prepareImageForVision } from "../src/shared/image-compress.js";
 
 // prepareImageForVision is the shared seam between the vision-primary path
 // (resolveMultimodalContent) and the fallback describe path
@@ -50,59 +46,39 @@ function expectJpegMagic(buf: Buffer): void {
   expect(buf[1]).toBe(0xd8);
 }
 
-describe("image-compress: isCompressibleImage", () => {
-  test("raster formats Bun.Image decodes are compressible; GIF/SVG are not", () => {
-    for (const mime of [
-      "image/png",
-      "image/jpeg",
-      "image/webp",
-      "image/bmp",
-      "image/tiff",
-      "image/avif",
-      "image/heic",
-      "image/heif",
-    ] as const) {
-      expect(isCompressibleImage(mime)).toBe(true);
-    }
-    // GIF: animated payload — flattening to the first frame would silently
-    // destroy it, so it passes through exactly as before this module existed.
-    expect(isCompressibleImage("image/gif")).toBe(false);
-    expect(isCompressibleImage("image/svg+xml")).toBe(false);
-    expect(isCompressibleImage("application/octet-stream")).toBe(false);
-  });
-});
-
 describe("image-compress: compressForVision", () => {
   test("PNG → JPEG with magic bytes", async () => {
     const png = await makeImage(8, 8, "png");
-    const out = await compressForVision(png, "image/png");
+    const out = await compressForVision(png);
     expect(out.mimeType).toBe("image/jpeg");
     expectJpegMagic(out.buffer);
     expect(out.buffer.length).toBeGreaterThan(0);
   });
 
-  test("oversized image is resized to <= 1536 (never upscaled beyond the cap)", async () => {
+  test("oversized image is resized to <= 1536", async () => {
     const png = await makeImage(2000, 1000, "png");
-    const out = await compressForVision(png, "image/png");
+    const out = await compressForVision(png);
     const meta = await dims(out.buffer);
-    expect(Math.max(meta.width, meta.height)).toBeLessThanOrEqual(1536);
+    expect(meta.width).toBe(1536);
+    expect(meta.height).toBe(768);
     expect(meta.format).toBe("jpeg");
   });
 
-  test("image below the cap is NOT upscaled (Bun resize would, the module guards)", async () => {
+  test("image below the cap is NOT upscaled", async () => {
     const png = await makeImage(8, 8, "png");
-    const out = await compressForVision(png, "image/png");
+    const out = await compressForVision(png);
     const meta = await dims(out.buffer);
-    // fit:"inside" upscales a smaller source (verified on Bun 1.4.2: an 8×8
-    // PNG resized to 1536×1536 comes back 1536×1536) — this pin protects the
-    // explicit over-cap gate in the module.
+    // `fit: "inside"` alone upscales a smaller source (measured on Bun 1.4.2:
+    // an 8×8 PNG resized to 1536×1536 comes back 1536×1536 / 37KB) — this pin
+    // protects the `withoutEnlargement: true` the module relies on.
     expect(meta.width).toBe(8);
     expect(meta.height).toBe(8);
+    expect(out.buffer.length).toBeLessThan(2000);
   });
 
   test("JPEG input is re-encoded (old pure-JS codec could not decode JPEG at all)", async () => {
     const jpeg = await makeImage(640, 480, "jpeg");
-    const out = await compressForVision(jpeg, "image/jpeg");
+    const out = await compressForVision(jpeg);
     expect(out.mimeType).toBe("image/jpeg");
     expectJpegMagic(out.buffer);
     const meta = await dims(out.buffer);
@@ -111,7 +87,7 @@ describe("image-compress: compressForVision", () => {
 
   test("WEBP input is re-encoded as JPEG", async () => {
     const webp = await makeImage(32, 32, "webp");
-    const out = await compressForVision(webp, "image/webp");
+    const out = await compressForVision(webp);
     expect(out.mimeType).toBe("image/jpeg");
     expectJpegMagic(out.buffer);
   });
@@ -126,9 +102,22 @@ describe("image-compress: prepareImageForVision (shared seam)", () => {
     expect(out.buffer).not.toBe(png); // a new buffer was produced
   });
 
-  test("non-compressible formats (GIF/SVG) pass through untouched", async () => {
+  test("formats outside the compressible set pass through untouched", async () => {
+    // The upload gate (ALLOWED_MIMES in domain/asset/asset-service.ts) admits
+    // only jpeg/png/gif/webp, so these are the only other MIMEs an attachment
+    // can carry — plus the exotic ones no upload can produce, kept here to pin
+    // that widening the gate is a deliberate act, not an accident.
     const raw = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
-    for (const mime of ["image/gif", "image/svg+xml"] as const) {
+    for (const mime of [
+      "image/gif",
+      "image/svg+xml",
+      "image/bmp",
+      "image/tiff",
+      "image/avif",
+      "image/heic",
+      "image/heif",
+      "application/octet-stream",
+    ] as const) {
       const out = await prepareImageForVision(raw, mime);
       expect(out.buffer).toBe(raw); // same reference — no copy, no work
       expect(out.mimeType).toBe(mime);
