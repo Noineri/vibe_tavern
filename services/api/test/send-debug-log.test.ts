@@ -27,18 +27,25 @@ afterAll(async () => {
 	try { await rm(root, { recursive: true, force: true }); } catch { /* temp cleanup best-effort */ }
 });
 
-async function waitForFile(path: string, attempts = 40): Promise<string> {
+async function waitForContent(path: string, marker: string, attempts = 40): Promise<string> {
 	for (let i = 0; i < attempts; i++) {
-		try { return await readFile(path, "utf8"); } catch { await new Promise((r) => setTimeout(r, 25)); }
+		try {
+			const text = await readFile(path, "utf8");
+			// Readiness = the TERMINAL event landed, not "file exists": existence
+		// alone races the in-flight appends of earlier events (seen on the fast
+		// CI filesystem, run 34664108932 — evt-probe present, evt-two mid-flight).
+			if (text.includes(marker)) return text;
+		} catch { /* not created yet */ }
+		await new Promise((r) => setTimeout(r, 25));
 	}
-	throw new Error(`log file did not appear within ${attempts * 25}ms: ${path}`);
+	throw new Error(`marker "${marker}" did not land within ${attempts * 25}ms: ${path}`);
 }
 
 describe("logSendDebug (TH-1 race fix)", () => {
 	it("first write to a cold nested dir eventually lands, with secrets redacted", async () => {
 		configureLogDir(coldDir);
 		logSendDebug("evt-probe", { apiKey: "hunter2", plain: 7 });
-		const text = await waitForFile(resolve(coldDir, "send-debug.log"));
+		const text = await waitForContent(resolve(coldDir, "send-debug.log"), "evt-probe");
 		expect(text).toContain("evt-probe");
 		expect(text).toContain("[redacted]");
 		expect(text).not.toContain("hunter2");
@@ -48,7 +55,10 @@ describe("logSendDebug (TH-1 race fix)", () => {
 	it("subsequent writes append after the ensured dir; unhandled rejections would fail this file", async () => {
 		logSendDebug("evt-two", {});
 		logSendDebug("evt-three", {});
-		const text = await waitForFile(resolve(coldDir, "send-debug.log"));
+		// evt-three is the terminal event — once it is on disk, evt-two must be
+		// there too (both chain on the same dir-ensure; containment, not order,
+		// is pinned: the two appends may legally interleave).
+		const text = await waitForContent(resolve(coldDir, "send-debug.log"), "evt-three");
 		expect(text).toContain("evt-probe");
 		expect(text).toContain("evt-two");
 		expect(text).toContain("evt-three");
