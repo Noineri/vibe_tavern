@@ -1,3 +1,4 @@
+// hygiene:allow-abs-path-inputs — execPaths are classifier inputs (dev/prod/install detection), never loaded
 import { describe, expect, it } from "bun:test";
 import {
 	canSelfUpdateInstallKind,

@@ -1,4 +1,5 @@
 /**
+// hygiene:allow-abs-path-inputs — absolute paths are zip-slip ATTACK inputs passed to the resolver, never loaded
  * Round-trip and hostile-archive coverage for in-process extraction.
  *
  * Fixtures are built in the test rather than committed: the tar fixtures come

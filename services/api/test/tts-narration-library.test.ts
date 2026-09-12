@@ -1,3 +1,4 @@
+// hygiene:allow-abs-path-inputs — paths are hostile inputs for validation/reveal-command mapping, never loaded
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

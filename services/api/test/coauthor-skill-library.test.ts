@@ -1,3 +1,4 @@
+// hygiene:allow-abs-path-inputs — absolute paths are traversal-attack inputs rejected by validation, never loaded
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { symlinkSync } from "node:fs";
 import { mkdtemp, mkdir, rm, lstat, readdir } from "node:fs/promises";
