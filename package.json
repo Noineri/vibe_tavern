@@ -45,7 +45,7 @@
   "devDependencies": {
     "@types/bun": "^1.4.2",
     "bun-plugin-tailwind": "^0.1.2",
-    "typescript": "^7.0.2"
+    "typescript": "7.1.0-dev.20260912.1"
   },
   "dependencies": {
     "hono": "^4.13.7",

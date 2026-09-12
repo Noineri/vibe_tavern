@@ -11,8 +11,8 @@
  * `getComputedStyle(document.documentElement).getPropertyValue('--surface')`
  * would give us the resolved value, but it loses the original authoring format
  * (oklch vs hex, alpha-as-percent, surrounding comments). We instead parse the
- * raw CSS source (imported as a raw string via `?raw`) so export can do surgical,
- * comment-preserving replacements.
+ * CSS source itself (imported as text via `with { type: "text" }`) so export
+ * can do surgical, comment-preserving replacements.
  *
  * ## Parsing safety
  *
