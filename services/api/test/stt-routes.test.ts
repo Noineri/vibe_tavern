@@ -92,6 +92,10 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  // Seam nulls on every exit path (TH-7): a thrown assertion between set and
+  // the old inline last-line reset would leak the discovery stub into every
+  // later file in this shared bun process.
+  __setSttDiscoveryFetchForTests(null);
 });
 
 describe("STT routes — local discovery (server-side, ST-8)", () => {
@@ -125,7 +129,6 @@ describe("STT routes — local discovery (server-side, ST-8)", () => {
     expect(found?.server?.baseUrl).toBe("http://127.0.0.1:8880");
     expect(found?.server?.modelIds).toEqual(["Systran/faster-whisper-base"]);
     expect(found?.server?.voiceIds).toEqual([]);
-    __setSttDiscoveryFetchForTests(null);
   });
 
   test("all ports refused → 200 with refused outcomes (no 500, no throw)", async () => {
@@ -138,7 +141,6 @@ describe("STT routes — local discovery (server-side, ST-8)", () => {
     const outcomes = (await res.json()) as Array<{ status: string }>;
     expect(outcomes.length).toBe(7);
     expect(outcomes.every((o) => o.status === "refused")).toBe(true);
-    __setSttDiscoveryFetchForTests(null);
   });
 });
 

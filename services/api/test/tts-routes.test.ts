@@ -27,6 +27,14 @@ afterAll(() => {
   __restoreTtsRegistryForTests(registrySnapshot);
 });
 
+// Seams null even when a test throws mid-flight: a leaked discovery/probe
+// stub would poison every later file in this shared bun process (TH-7). The
+// old inline last-line resets only ran on the happy path.
+afterEach(() => {
+  __setDockerProbeRunnerForTests(null);
+  __setDiscoveryFetchForTests(null);
+});
+
 const fixedClock = { now: () => "2026-08-27T00:00:00.000Z" };
 
 function makeIdGen() {
@@ -807,7 +815,6 @@ describe("TTS routes — D8 docker probe", () => {
     const res = await app.request("/api/tts/local/docker");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ available: true, version: "27.3.1" });
-    __setDockerProbeRunnerForTests(null);
   });
 
   test("GET /api/tts/local/docker → not available when the CLI cannot run", async () => {
@@ -816,7 +823,6 @@ describe("TTS routes — D8 docker probe", () => {
     const res = await app.request("/api/tts/local/docker");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ available: false, version: null });
-    __setDockerProbeRunnerForTests(null);
   });
 
   test("a throwing probe degrades to not-available instead of a 500", async () => {
@@ -827,7 +833,6 @@ describe("TTS routes — D8 docker probe", () => {
     const res = await app.request("/api/tts/local/docker");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ available: false, version: null });
-    __setDockerProbeRunnerForTests(null);
   });
 });
 
@@ -860,7 +865,6 @@ describe("TTS routes — local discovery (server-side, CORS-less servers)", () =
     expect(found?.server?.kind).toBe("openai-compatible");
     expect(found?.server?.modelIds).toEqual(["tts-1", "gpt-4o-mini-tts"]);
     expect(found?.server?.voiceIds).toEqual(["alloy"]);
-    __setDiscoveryFetchForTests(null);
   });
 
   test("all ports refused → 200 with refused outcomes (no 500, no throw)", async () => {
@@ -873,7 +877,6 @@ describe("TTS routes — local discovery (server-side, CORS-less servers)", () =
     const outcomes = (await res.json()) as Array<{ status: string }>;
     expect(outcomes.length).toBe(7);
     expect(outcomes.every((o) => o.status === "refused")).toBe(true);
-    __setDiscoveryFetchForTests(null);
   });
 });
 
