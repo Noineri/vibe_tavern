@@ -24,16 +24,9 @@
 
 import { join, resolve } from "node:path";
 import { cp, mkdir, rm } from "node:fs/promises";
-import { statSync, writeFileSync } from "node:fs";
 import { pathExists } from "./_fs.js";
 import { copyPromptAssets } from "./_prompt-assets.js";
 import { VERSION } from "./_version.js";
-import {
-	generateEmbeddedWebManifest,
-	writeEmbeddedWebStub,
-	MANIFEST_PATH,
-	STUB_CONTENT,
-} from "./generate-embedded-web-manifest.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const STANDALONE_OUT = join(ROOT, "out", "standalone");
@@ -126,40 +119,7 @@ async function main() {
 		console.log(`   → ${drizzleTarget}`);
 	});
 
-	// ── Step 4: Generate embedded-web manifest ─────────────────────────
-	//
-	// Bake the entire frontend (out/apps/web/**) into the .exe via Bun's
-	// `import ... with { type: "file" }` mechanism. The generated manifest
-	// replaces the committed stub just for the duration of the compile step
-	// below; it's restored to the stub afterward so the working tree stays
-	// clean and dev/typecheck remains unaffected.
-	await step("Generating embedded web manifest", async () => {
-		const { fileCount } = await generateEmbeddedWebManifest();
-		console.log(`   → ${fileCount} file(s) will be embedded into the binary.`);
-	});
-
-	// Safety net: if anything below calls process.exit() (e.g. a failed `step`
-	// calls process.exit(1)), the finally below won't run. Restore the stub
-	// synchronously in an exit handler so the working tree is never left with
-	// a generated manifest referencing out/apps/web/** (which may be cleaned).
-	process.on("exit", () => {
-		// Exit handlers cannot await, so keep metadata and restoration on Node's
-		// synchronous APIs. Registration follows successful generation, so stat the
-		// recovery target and restore the known-good stub without a size heuristic.
-		try {
-			if (!statSync(MANIFEST_PATH).isFile()) {
-				console.error("[build-standalone] Cannot restore embedded-web-manifest.ts: recovery target is not a file.");
-				return;
-			}
-			writeFileSync(MANIFEST_PATH, STUB_CONTENT, "utf-8");
-			console.log("[build-standalone] Restored embedded-web-manifest.ts stub (exit handler).");
-		} catch (error) {
-			const detail = error instanceof Error ? error.message : String(error);
-			console.error(`[build-standalone] Failed to restore embedded-web-manifest.ts stub: ${detail}`);
-		}
-	});
-
-	// ── Step 5: Compile standalone server ────────────────────────
+	// ── Step 4: Compile standalone server ────────────────────────
 
 	await step("Compiling standalone binary (Bun.build API)", async () => {
 		const entrypoint = join(ROOT, "services", "api", "src", "server", "standalone-server.ts");
@@ -184,6 +144,18 @@ async function main() {
 			compile: {
 				outfile,
 				autoloadDotenv: false,
+				// Bakes the built frontend into the binary: Bun copies the tree
+				// in and exposes each file through `Bun.embeddedFiles` under
+				// "web/<path inside the directory>" (the asset directory's
+				// basename, NOT the path passed here). The server maps those
+				// names back to URL pathnames in embedded-web-assets.ts.
+				//
+				// Why the frontend is embedded at all: a user who extracted only
+				// the .exe — or whose antivirus quarantined one JS chunk — got a
+				// silently frozen splash screen, because the browser refused to
+				// execute an SPA bundle it could not fetch. With the bundle
+				// inside the binary that failure mode cannot happen.
+				assets: [WEB_SOURCE],
 				windows: {
 					icon: iconPath,
 					title: "Vibe Tavern",
@@ -206,11 +178,6 @@ async function main() {
 		}
 
 		console.log(`   → ${finalOutfile}`);
-	});
-
-	// ── Step 6: Restore embedded-web-manifest.ts stub ────────────────────
-	await step("Restoring embedded-web-manifest.ts stub", async () => {
-		await writeEmbeddedWebStub();
 	});
 
 	// ── Done ─────────────────────────────────────────────────────────────

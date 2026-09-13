@@ -45,7 +45,7 @@ export async function startServerRuntime(config: { readonly mode: string; readon
 	console.log(\`stub:runtime \${config.mode} \${config.host}:\${config.port}\`);
 }
 `);
-	await Bun.write(join(serverDir, "embedded-web-manifest.ts"), "export const embeddedWebFiles: Record<string, string> = {};\n");
+	await Bun.write(join(serverDir, "embedded-web-assets.ts"), "export function loadEmbeddedWebFiles(): ReadonlyMap<string, Blob> { return new Map(); }\n");
 	await Bun.write(join(serverDir, "updater.ts"), `
 export function getCurrentVersion(): string { return "fixture-version"; }
 export function printVersion(): void { console.log("stub:version"); }

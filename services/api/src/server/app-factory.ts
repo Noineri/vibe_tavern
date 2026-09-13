@@ -38,12 +38,11 @@ export interface AppDeps {
 	 *  mirror route is mounted, caching the in-browser TTS model under
 	 *  <dataDir>/kokoro-model-cache. */
 	dataDir?: string;
-	/** Embedded frontend files baked into the standalone .exe via
-	 *  `import ... with { type: "file" }`. Map of URL pathname → embedded
-	 *  file path. When non-empty, the SPA is served from the binary itself
-	 *  and no on-disk web/ folder is required. Sourced from
-	 *  embedded-web-manifest.ts (regenerated at build time). */
-	embeddedWebFiles?: Record<string, string>;
+	/** Frontend files baked into the standalone binary, keyed by the URL
+	 *  pathname each answers. When non-empty, the SPA is served from the
+	 *  binary itself and no on-disk web/ folder is required. Sourced from
+	 *  embedded-web-assets.ts. */
+	embeddedWebFiles?: ReadonlyMap<string, Blob>;
 }
 
 /**
@@ -194,8 +193,8 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	// ─── Static frontend ─────────────────────────────────────────────────
 	// Two compatible modes:
 	//   1. Embedded (single-binary standalone): deps.embeddedWebFiles is a
-	//      non-empty map of URL → embedded-file path baked into the .exe via
-	//      `import ... with { type: "file" }`. No web/ folder on disk needed.
+	//      non-empty map of URL pathname → the file's bytes inside the .exe.
+	//      No web/ folder on disk needed.
 	//   2. On-disk (classic standalone/installer): deps.staticDir points at a
 	//      web/ folder next to the binary; hono serveStatic serves it.
 	// Both can be active: serveStatic handles whatever it finds on disk first,
@@ -203,7 +202,7 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	// build ship a self-contained .exe while still allowing a hot-swappable
 	// web/ folder for rapid frontend patches without recompiling.
 
-	const hasEmbedded = !!deps.embeddedWebFiles && Object.keys(deps.embeddedWebFiles).length > 0;
+	const hasEmbedded = (deps.embeddedWebFiles?.size ?? 0) > 0;
 	const hasDiskStatic = !!deps.staticDir
 		&& await Bun.file(resolve(deps.staticDir, "index.html")).exists();
 
@@ -217,8 +216,9 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 		let indexHtml: string | null = null;
 		if (hasDiskStatic && deps.staticDir) {
 			indexHtml = await Bun.file(resolve(deps.staticDir, "index.html")).text();
-		} else if (deps.embeddedWebFiles?.["/index.html"]) {
-			indexHtml = await Bun.file(deps.embeddedWebFiles["/index.html"]).text();
+		} else {
+			const embeddedIndex = deps.embeddedWebFiles?.get("/index.html");
+			if (embeddedIndex) indexHtml = await embeddedIndex.text();
 		}
 
 		// SPA fallback + embedded-file lookup + clear 404 for missing assets.
@@ -227,9 +227,11 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 			// Embedded lookup (serves files baked into the .exe). Wins only when
 			// serveStatic above didn't finalize — i.e. disk static is absent or
 			// the file isn't on disk.
-			const embedded = deps.embeddedWebFiles?.[pathname];
+			const embedded = deps.embeddedWebFiles?.get(pathname);
 			if (embedded) {
-				return new Response(Bun.file(embedded));
+				// Content-Type comes from the blob: Bun records each embedded
+				// file's MIME at compile time from its extension.
+				return new Response(embedded);
 			}
 			// Don't serve index.html for missing static assets — that returns
 			// HTML with MIME text/html, which the browser rejects as a module
