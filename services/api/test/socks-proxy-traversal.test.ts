@@ -12,13 +12,17 @@
  *
  * Test-only isolation choices that differ from the HTTP(S) traversal suite:
  *  - The provider target hostname is `provider.test` (a non-loopback RFC 2606
- *    reserved name). Bun bypasses the explicit `proxy` option for loopback
- *    targets (standard no_proxy behaviour), so a loopback target would let the
- *    request slip past the bridge and invalidate the test. `provider.test` is
- *    not loopback, so Bun honours the proxy; it never resolves the name locally
- *    because CONNECT carries the hostname to the bridge (remote DNS). The SOCKS
- *    fixture's custom connector routes that recorded hostname/port to the real
- *    loopback test target. No `NO_PROXY` / proxy-cache mutation is used.
+ *    reserved name), so the suite also covers remote DNS: the name has no local
+ *    resolution, CONNECT carries it to the bridge, and the SOCKS fixture's
+ *    custom connector routes the recorded hostname/port to the real loopback
+ *    test target. An earlier version of this note justified the hostname by
+ *    claiming Bun bypasses the explicit `proxy` option for loopback targets
+ *    (no_proxy behaviour) — that is NOT true on 1.4.2, measured with a
+ *    recording proxy: `http://127.0.0.1`, `http://localhost` and `https://`
+ *    loopback targets all traverse the explicit proxy, and so does an
+ *    internally followed redirect (the HTTP(S) pin lives in
+ *    provider-proxy-traversal.test.ts). No `NO_PROXY` / proxy-cache mutation is
+ *    used here either way.
  *  - The SOCKS5 upstream itself is a real SOCKS5 server from the maintained,
  *    test-only `@e9x/simple-socks` library (auth + custom connect). Production
  *    never implements SOCKS protocol bytes; it uses `proxy-chain`.
@@ -56,8 +60,8 @@ const TARGET_KEY = Bun.file(new URL("./fixtures/provider-proxy-key.pem", import.
 
 const SOCKS_USER = "socks-upstream-user";
 const SOCKS_PASS = "socks-upstream-secret";
-/** Non-loopback target hostname (in the test cert SAN). Bun will NOT bypass the
- *  explicit proxy for it, and CONNECT carries it to the bridge unresolved. */
+/** Target hostname (in the test cert SAN) with no local DNS entry, so CONNECT
+ *  has to carry it to the bridge unresolved — that is the remote-DNS coverage. */
 const TARGET_HOST = "provider.test";
 
 // ─── Delayed-stream constants ──────────────────────────────────────────────
@@ -329,9 +333,9 @@ describe("SOCKS5 provider proxy traversal", () => {
 	let fixture: SocksFixture;
 
 	beforeAll(() => {
-		// No NO_PROXY / proxy-cache mutation: provider.test is non-loopback, so
-		// Bun honours the explicit per-request proxy and CONNECT carries the
-		// hostname unresolved to the bridge.
+		// No NO_PROXY / proxy-cache mutation: Bun honours the explicit per-request
+		// proxy for every target, and CONNECT carries provider.test unresolved to
+		// the bridge.
 		fixture = startSocksFixture();
 	});
 
