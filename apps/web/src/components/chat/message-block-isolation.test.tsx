@@ -1,4 +1,5 @@
 import { beforeEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from "react";
 
@@ -193,6 +194,7 @@ const asBranchId = (id: string): ChatBranchId => id as ChatBranchId;
 
 function makeCharacter(id: string, name = `Char ${id}`): AppCharacter {
   return {
+    ...wireCharacter(),
     id, name, avatarExt: null, avatarFullExt: null, description: "", scenario: "",
     systemPrompt: "", subtitle: "", firstMessage: null, mesExample: null,
     mesExampleMode: "always", mesExampleDepth: 4, alternateGreetings: [],

@@ -425,8 +425,8 @@ function RealtimeLoopDiagSection(props: {
  *  the retired InteractiveTester (XU-4); renders only when the run carried a
  *  roster AND the server supplied the matrix (older builds omit it). */
 function SeatLegalityBlock({ matrix, completed }: { matrix: ExperienceSeatLegalityMatrix; completed: boolean }) {
-  if (matrix.seats.length === 0) return null;
   const { t } = useT();
+  if (matrix.seats.length === 0) return null;
   return (
     <div className={blockCls} style={{ padding: 10 }}>
       <div className={blockLabelCls}>{t("experience_tester_seat_legality")}</div>
@@ -525,9 +525,7 @@ function TestRunResultBlock({ result }: { result: ExperienceTestRunData }) {
         )}
       </div>
 
-      {result.seatLegality !== undefined && (
-        <SeatLegalityBlock matrix={result.seatLegality} completed={result.status === "completed"} />
-      )}
+      <SeatLegalityBlock matrix={result.seatLegality} completed={result.status === "completed"} />
 
       {result.events.length > 0 && (
         <div className={blockCls} style={{ padding: 10 }}>

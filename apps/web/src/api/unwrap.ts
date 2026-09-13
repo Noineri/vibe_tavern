@@ -8,7 +8,7 @@ export interface RpcErrorBody {
 }
 
 /** Success body of a Hono RPC response: error-status variants are dropped. */
-type RpcBody<R> = R extends { ok: false } ? never : R extends { json(): Promise<infer T> } ? T : never;
+export type RpcBody<R> = R extends { ok: false } ? never : R extends { json(): Promise<infer T> } ? T : never;
 
 /** Success body of an RPC endpoint method, e.g. `RpcData<typeof client.api.scripts.all.$get>`. */
 export type RpcData<F extends (...args: never[]) => Promise<RpcResponse>> = RpcBody<Awaited<ReturnType<F>>>;

@@ -209,7 +209,8 @@ function makeTestRunData(): ExperienceTestRunData {
           effects: [],
           console: [],
           steps: [],
-  } as ExperienceTestRunData;
+          seatLegality: { seats: [], turnOwners: [] },
+  };
 }
 
 /** XU-4: a create-only discover result (the absorbed tester's run shape): a
@@ -240,6 +241,7 @@ function makeDiscoverData(overrides: Partial<ExperienceTestRunData> = {}): Exper
     effects: [],
     console: [],
     steps: [],
+    seatLegality: { seats: [], turnOwners: [] },
     ...overrides,
   };
 }
@@ -774,6 +776,7 @@ describe("ExperiencePlayground", () => {
       effects: [],
       console: [],
       steps: [],
+      seatLegality: { seats: [], turnOwners: [] },
     }));
 
     // Start: initial state with reply + finish actions.
@@ -940,6 +943,7 @@ describe("ExperiencePlayground", () => {
       effects: [],
       console: [],
       steps: [],
+      seatLegality: { seats: [], turnOwners: [] },
     }));
 
     const { getByText, container } = renderPlayground(VALID_CODE);
@@ -1776,6 +1780,7 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
       effects: [],
       console: [],
       steps: [],
+      seatLegality: { seats: [], turnOwners: [] },
     };
   }
 

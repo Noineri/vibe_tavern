@@ -418,6 +418,9 @@ export {
 } from "./regex-assist-schema.js";
 export type { RegexAssistArchetype, RegexAssistRuleDraft, RegexAssistRequest, RegexAssistResponse } from "./regex-assist-schema.js";
 
+export { aiAssistantModeSchema, aiAssistantRequestSchema } from "./ai-assistant-schema.js";
+export type { AiAssistantRequest, AiAssistantStreamChunk, AiAssistantTokenCount } from "./ai-assistant-schema.js";
+
 export {
   canonicalUtcInstantSchema,
   canonicalDecimalSchema,

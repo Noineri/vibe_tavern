@@ -28,6 +28,7 @@
  * directly.
  */
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { createElement, type ReactNode } from "react";
 
@@ -154,6 +155,7 @@ function record(variantId: string): SceneTrackerRecord {
 
 function makeCharacter(): AppCharacter {
   return {
+    ...wireCharacter(),
     id: "c1", name: "Char", avatarExt: null, avatarFullExt: null, description: "",
     scenario: "", systemPrompt: "", subtitle: "", firstMessage: null, mesExample: null,
     mesExampleMode: "always", mesExampleDepth: 4, alternateGreetings: [],

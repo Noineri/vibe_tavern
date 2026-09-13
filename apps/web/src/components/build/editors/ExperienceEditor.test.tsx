@@ -74,6 +74,7 @@ function makeTestRunData(): ExperienceTestRunData {
     effects: [],
     console: [],
     steps: [],
+    seatLegality: { seats: [], turnOwners: [] },
   };
 }
 

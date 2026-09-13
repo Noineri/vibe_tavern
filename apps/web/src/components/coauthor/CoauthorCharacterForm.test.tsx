@@ -18,6 +18,7 @@
  * header affordance text is the always-present primary assertion.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
@@ -121,6 +122,7 @@ beforeAll(async () => {
 
 function makeCharacter(over: Partial<AppCharacter> = {}): AppCharacter {
 	return {
+		...wireCharacter(),
 		id: "char_test",
 		name: "Kira",
 		description: "A reserved arachnid weaver.",

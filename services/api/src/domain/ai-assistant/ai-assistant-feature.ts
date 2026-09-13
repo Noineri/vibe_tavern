@@ -1,3 +1,5 @@
+import { zValidator } from "@hono/zod-validator";
+import { aiAssistantRequestSchema, regexAssistRequestSchema } from "@vibe-tavern/api-contracts";
 import type { FeatureDeps, FeatureModule } from "../../shared/feature-module.js";
 import type { AiAssistantRuntimeApi } from "../../api/contract/runtime-api.js";
 
@@ -11,19 +13,16 @@ export function createAiAssistantFeature(
     id: "ai-assistant",
 
     activate({ router }: FeatureDeps): void {
-      router.post("/api/ai-assistant/tokens", async (c) => {
-        const body = await c.req.json();
-        return c.json(await runtime.countAiAssistantTokens(body));
+      router.post("/api/ai-assistant/tokens", zValidator("json", aiAssistantRequestSchema), async (c) => {
+        return c.json(await runtime.countAiAssistantTokens(c.req.valid("json")));
       });
 
-      router.post("/api/ai/regex-assist", async (c) => {
-        const body = await c.req.json();
-        return c.json(await runtime.regexAssist(body));
+      router.post("/api/ai/regex-assist", zValidator("json", regexAssistRequestSchema), async (c) => {
+        return c.json(await runtime.regexAssist(c.req.valid("json")));
       });
 
-      router.post("/api/ai-assistant", async (c) => {
-        const body = await c.req.json();
-        const stream = runtime.streamAiAssistant(body);
+      router.post("/api/ai-assistant", zValidator("json", aiAssistantRequestSchema), async (c) => {
+        const stream = runtime.streamAiAssistant(c.req.valid("json"));
 
         return new Response(
           new ReadableStream({

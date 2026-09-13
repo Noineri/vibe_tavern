@@ -34,4 +34,40 @@ describe("feature routes", () => {
 
     features.deactivateAll();
   });
+
+  test("ai-assistant routes reject a body that fails aiAssistantRequestSchema", async () => {
+    let streamed = false;
+    let counted = false;
+    const runtime = {
+      async *streamAiAssistant() {
+        streamed = true;
+        yield { type: "done" };
+      },
+      async countAiAssistantTokens() {
+        counted = true;
+        return { tokens: 0, model: "m", layerCount: 0, messageCount: 0, activatedLoreCount: 0 };
+      },
+    } as unknown as AiAssistantRuntimeApi;
+
+    const events = new EventBus();
+    const features = new FeatureRegistry();
+    features.register(createAiAssistantFeature(runtime));
+    const app = await createApp({
+      runtime,
+      configureFeatures: (router) => features.activateAll({ events, router }),
+    });
+
+    for (const path of ["/api/ai-assistant", "/api/ai-assistant/tokens"]) {
+      const response = await app.request(path, {
+        method: "POST",
+        body: JSON.stringify({ mode: "not_a_mode", instruction: "test" }),
+        headers: { "Content-Type": "application/json" },
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(streamed).toBe(false);
+    expect(counted).toBe(false);
+
+    features.deactivateAll();
+  });
 });

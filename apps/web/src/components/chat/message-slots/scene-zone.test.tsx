@@ -29,7 +29,6 @@ import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansi
 import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 import { resolveMessageSlots, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
 import type { AppMessage, AppSnapshot } from "../../../api/types.js";
-import type { SceneTrackerRecord } from "@vibe-tavern/domain";
 
 const mocks = {
   generateSceneAction: mock(),
@@ -100,7 +99,9 @@ const SCHEMA = { mood: { $type: "string" as const }, tension: { $type: "number" 
 const SCHEMA_HASH = "h1";
 const REVISION = 1;
 
-function record(variantId: string, sceneState: Record<string, unknown>, opts?: { stale?: boolean }): SceneTrackerRecord {
+type SceneTrackerRecord = NonNullable<AppMessage["sceneTracker"]>;
+
+function record(variantId: string, sceneState: SceneTrackerRecord["sceneState"], opts?: { stale?: boolean }): SceneTrackerRecord {
   return {
     variantId: variantId as never,
     schemaHash: opts?.stale ? "old" : SCHEMA_HASH,

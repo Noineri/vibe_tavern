@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ReactNode } from "react";
 
@@ -142,6 +143,7 @@ const CHAT = "chat-1" as ChatId;
 
 function makeCharacter(id: string): AppCharacter {
   return {
+    ...wireCharacter(),
     id, name: `Char ${id}`, avatarExt: null, avatarFullExt: null, description: "", scenario: "",
     systemPrompt: "", subtitle: "", firstMessage: null, mesExample: null,
     mesExampleMode: "always", mesExampleDepth: 4, alternateGreetings: [],

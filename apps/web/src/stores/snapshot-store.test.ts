@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { ChatId, ChatBranchId, MessageVariantId, SceneTrackerRecord, Timestamp } from "@vibe-tavern/domain";
+import { wireCharacter } from "../../test/wire-fixtures.js";
+import type { ChatId, ChatBranchId, MessageVariantId, Timestamp } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
 import type { AppCharacter, AppMessage, AppSnapshot } from "../api/types.js";
 
@@ -21,6 +22,7 @@ const asTimestamp = (value: string): Timestamp => value as Timestamp;
 
 function makeCharacter(id: string, name = `Char ${id}`): AppCharacter {
   return {
+    ...wireCharacter(),
     id,
     name,
     avatarExt: null,
@@ -255,8 +257,8 @@ describe("ingestSnapshot — dedup / reference stability (Wave B2)", () => {
 
 describe("selectVariant — Scene swap (SCN-4)", () => {
   test("selecting a variant swaps the active Scene record locally without a fetch", () => {
-    const sceneA: SceneTrackerRecord = { variantId: asVariantId("var_0"), schemaHash: "h0", configRevision: 1, sourceHash: "s0", sceneState: { mood: "calm" }, modelId: null, generatedAt: asTimestamp("2026-01-01T00:00:00.000Z") };
-    const sceneB: SceneTrackerRecord = { variantId: asVariantId("var_1"), schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "tense" }, modelId: null, generatedAt: asTimestamp("2026-01-01T00:00:00.000Z") };
+    const sceneA: NonNullable<AppMessage["sceneTracker"]> = { variantId: asVariantId("var_0"), schemaHash: "h0", configRevision: 1, sourceHash: "s0", sceneState: { mood: "calm" }, modelId: null, generatedAt: asTimestamp("2026-01-01T00:00:00.000Z") };
+    const sceneB: NonNullable<AppMessage["sceneTracker"]> = { variantId: asVariantId("var_1"), schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "tense" }, modelId: null, generatedAt: asTimestamp("2026-01-01T00:00:00.000Z") };
     const message = {
       id: "m1",
       role: "assistant",

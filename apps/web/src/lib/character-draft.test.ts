@@ -10,6 +10,7 @@
  * (non-null) fields preserved verbatim.
  */
 import { describe, it, expect } from "bun:test";
+import { wireCharacter } from "../../test/wire-fixtures.js";
 import { buildCharacterDraftSchema } from "@vibe-tavern/api-contracts";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import type { AppCharacter } from "../api/types.js";
@@ -17,6 +18,7 @@ import { characterDefaults, EMPTY_BUILD_DRAFT } from "./character-draft.js";
 
 function makeCharacter(over: Partial<AppCharacter> = {}): AppCharacter {
 	return {
+		...wireCharacter(),
 		id: "char_test",
 		name: "Kira",
 		description: "A reserved arachnid weaver.",

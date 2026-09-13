@@ -4,9 +4,44 @@
  * breaks this file once instead of every fixture. Spread a factory first, then
  * override only what the test pins.
  */
-import type { LoreEntryRecord, LorebookRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
+import type { AppCharacter, LoreEntryRecord, LorebookRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
 
 const EPOCH = "2026-01-01T00:00:00.000Z";
+
+export function wireCharacter(): AppCharacter {
+	return {
+		id: "char-1",
+		name: "Character",
+		description: "",
+		scenario: "",
+		systemPrompt: "",
+		personality: null,
+		personalitySummary: null,
+		firstMessage: null,
+		mesExample: null,
+		mesExampleMode: "always",
+		mesExampleDepth: 4,
+		alternateGreetings: [],
+		postHistoryInstructions: null,
+		creatorNotes: null,
+		characterBook: null,
+		depthPrompt: null,
+		depthPromptDepth: null,
+		depthPromptRole: null,
+		extensions: {},
+		tags: [],
+		subtitle: "",
+		avatarAssetId: null,
+		avatarFullAssetId: null,
+		avatarCropJson: null,
+		avatarExt: null,
+		avatarFullExt: null,
+		updatedAt: EPOCH,
+		avatarDescription: null,
+		includeAvatarInPrompt: false,
+		includeGalleryInPrompt: false,
+	};
+}
 
 export function wireUiSettings(): UiSettingsRecord {
 	return {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { wireUiSettings } from "../../../test/wire-fixtures.js";
+import { wireUiSettings, wireCharacter } from "../../../test/wire-fixtures.js";
 import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
@@ -55,6 +55,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
     summaries: [],
     promptTrace: null,
     character: {
+      ...wireCharacter(),
       id: "char-1",
       name: "Character",
       avatarExt: null,

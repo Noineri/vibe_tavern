@@ -1,28 +1,19 @@
 /**
  * Frontend-specific view types for the API client layer.
  *
- * These are NOT DB types — they represent the wire format the frontend
- * receives and normalizes. DB/domain types live in @vibe-tavern/domain
- * and @vibe-tavern/db.
+ * Response shapes are inferred from the Hono routes (`RpcData`); request bodies
+ * derive from the api-contracts schemas. Hand-written interfaces remain only
+ * where no route or schema declares the shape.
  */
-import type { ChatBranch, ChatId, CharacterId, Message, MessageVariant, ObjectiveState } from "@vibe-tavern/domain";
-import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { SceneTrackerConfigPatch, SceneTrackerRecord } from "@vibe-tavern/domain";
+import type { ChatBranch, Message, MessageVariant, PromptTraceRecordDto, SceneTrackerRecord } from "@vibe-tavern/domain";
 import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot } from "@vibe-tavern/domain";
 import type {
 	ExperienceActionDescriptor,
 	ExperienceContextMode,
-	ExperienceEffectRequest,
 	ExperienceEvent,
 	ExperienceParticipant,
 	ExperiencePublicReport,
-	ExperienceSessionStatus,
 } from "@vibe-tavern/domain";
-import type {
-	ExperienceChatConfigRow,
-	ExperienceEffectRow,
-	ExperienceVisualRow,
-} from "@vibe-tavern/db";
 import type { z } from "zod";
 import type { client } from "./client.js";
 import type { RpcData } from "./unwrap.js";
@@ -49,12 +40,10 @@ import type {
 	PersonaRecord,
 	ChatListItem,
 	ExperienceActionDto,
-	ExperienceDefinitionDto,
 	ExperienceFinishRequestDto,
 	ExperienceRestartRequestDto,
 	ExperienceSeatLegality,
 	ExperienceSeatLegalityMatrix,
-	ExperienceSessionResponseDto,
 	ExperienceRoundCommitRequestDto,
 	ExperienceRoundConfigResponseDto,
 	ExperienceRoundModelRequestDto,
@@ -65,6 +54,11 @@ import type {
 // exported schemas — the schema stays the single source of truth, nothing is
 // hand-written, and no runtime value enters the browser bundle.
 import type {
+	aiAssistantModeSchema,
+	aiAssistantRequestSchema,
+	diceRollRequestSchema,
+	insightsCompletionRefreshSchema,
+	updateInsightsConfigSchema,
 	experienceConfigUpdateSchema,
 	experienceContextCaptureRequestSchema,
 	experiencePlaygroundAdvanceRequestSchema,
@@ -100,40 +94,15 @@ export type {
 
 // ─── Chat ─────────────────────────────────────────────────────────────
 
-export interface AppMessage extends Message {
-  variants: MessageVariant[];
-  selectedVariantIndex: number | null;
-  modelId: string | null;
-  /** Active Scene record — mirrors the currently selected variant, swapped
-   *  locally on selection (no fetch). Null when the selected variant has none. */
-  sceneTracker: SceneTrackerRecord | null;
-  coauthorModuleId?: string | null;
-  coauthorSkillId?: string | null;
-  attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number; description?: string | null }[];
-  /** Message-owned Dice result snapshots bound to this user message (DICE-F9 /
-   *  DICE-F10). The backend `MessageDto` populates it for user messages that
-   *  have rolls; the domain `Message` base type doesn't declare it.
-   *  Absent/undefined on assistant/system messages and on user messages with
-   *  no rolls — readers coerce with `?? []`. Immutable historical snapshots. */
-  diceRolls?: DiceRollSnapshot[];
-}
+/** The full session snapshot as the server serializes it (bootstrap carries every field). */
+type WireSessionSnapshot = NonNullable<RpcData<Api["bootstrap"]["$get"]>["snapshot"]>;
+
+/** Message with variant data. `sceneTracker` mirrors the selected variant (swapped
+ *  locally on selection); `diceRolls` is present only on user messages with bound rolls. */
+export type AppMessage = WireSessionSnapshot["messages"][number];
 
 /** PATCH body for `updateInsightsConfig`: toggles + an optional partial tracker config (deep-merged server-side). */
-export interface InsightsConfigPatch {
-  objectiveEnabled?: boolean;
-  trackerEnabled?: boolean;
-  /** Dice toggle / mode (DICE B9) — optional partial patch; the canonical
-   *  `updateInsightsConfigSchema` already accepts both. */
-  diceEnabled?: boolean;
-  diceMode?: DiceMode;
-  /** Chat-local Dice script override patch (fix 1): absent preserves stored;
-   *  `null` returns to inherit; an array sets the explicit chat-local set. */
-  diceScriptIds?: string[] | null;
-  /** Chat-local actor-distribution patch (Rework R1): absent preserves stored;
-   *  `null` clears; a record sets the per-script binding. */
-  diceActorBindings?: Record<string, DiceActorType[]> | null;
-  tracker?: SceneTrackerConfigPatch;
-}
+export type InsightsConfigPatch = NonNullable<z.input<typeof updateInsightsConfigSchema>["insightsConfig"]>;
 
 export type {
   ObjectiveLongTermGoal,
@@ -144,59 +113,19 @@ export type {
   ObjectiveTaskStatus,
 } from "@vibe-tavern/domain";
 
-export interface InsightsCompletionTarget {
-  branchId: string;
-  messageId: string;
-  /** Immutable variant id. Present when Scene-aware — the refresh joins the
-   *  exact variant's Scene job concurrently with Objective and returns a scoped
-   *  message patch. Absent for the Objective-only refresh (no message patch). */
-  variantId?: string;
-}
+type ChatInsightsApi = Api["chats"][":chatId"]["insights"];
 
-export interface InsightsCompletionPatchResponse {
-  target: InsightsCompletionTarget & { chatId: string };
-  patch: {
-    objectiveState?: ObjectiveState;
-    message?: AppMessage;
-  };
-}
-
-/** Branch-scoped live context preview (lazy hydration target). The server echoes
- *  the immutable { chatId, branchId } so the client can reject a result that no
- *  longer matches the active branch before caching it. `preview` is null only
- *  when assembly itself fails. */
-export interface ContextPreviewResponse {
-  target: { chatId: string; branchId: string };
-  preview: AssemblePromptResponse | null;
-}
-
-/** Non-persisting Scene preview (SCN-11): the scene state a DRAFT config would
- *  produce for the target variant, generated but NOT committed. Drives the
- *  config editor's cancellable trial-run preview. */
-export interface ScenePreviewResponse {
-  target: InsightsCompletionTarget & { chatId: string };
-  /** Transient (never persisted to the variant record). */
-  sceneState: Record<string, unknown>;
-}
-
-/** Manual Scene mutation response (SCN-12): generate/update/edit/delete all
- *  return the target's refreshed message — the frontend applies the scoped
- *  message patch (never a whole snapshot). `message.sceneTracker` mirrors the
- *  currently selected variant, so a generate/edit that succeeds swaps the
- *  rendered record in place. */
-export interface SceneTargetResponse {
-  target: InsightsCompletionTarget & { chatId: string };
-  message: AppMessage;
-}
-
-/** Server-authoritative Scene status (SCN-12): `generating` reflects the target
- *  coordinator (drives the header loading state + edit lock on reload/multi-tab);
- *  `record` is the variant's current canonical record (null when absent). */
-export interface SceneStatusResponse {
-  target: InsightsCompletionTarget & { chatId: string };
-  generating: boolean;
-  record: SceneTrackerRecord | null;
-}
+/** Completion-refresh target; `variantId` present = Scene-aware refresh with a scoped message patch. */
+export type InsightsCompletionTarget = z.input<typeof insightsCompletionRefreshSchema>["target"];
+export type InsightsCompletionPatchResponse = RpcData<ChatInsightsApi["completion-refresh"]["$post"]>;
+/** Branch-scoped live context preview; echoes { chatId, branchId } so stale results can be rejected. */
+export type ContextPreviewResponse = RpcData<Api["chats"][":chatId"]["branches"][":branchId"]["context-preview"]["$post"]>;
+/** Non-persisting Scene preview: the scene state a DRAFT config would produce. */
+export type ScenePreviewResponse = RpcData<ChatInsightsApi["scene"]["preview"]["$post"]>;
+/** Manual Scene mutation (generate/edit/delete): the target's refreshed message. */
+export type SceneTargetResponse = RpcData<ChatInsightsApi["scene"]["generate"]["$post"]>;
+/** Server-authoritative Scene status: coordinator `generating` flag + the variant's record. */
+export type SceneStatusResponse = RpcData<ChatInsightsApi["scene"]["status"]["$post"]>;
 
 export type { SceneBackfillMode } from "@vibe-tavern/domain";
 export type { SceneBackfillStatus as SceneBackfillStatusResponse } from "@vibe-tavern/api-contracts";
@@ -218,41 +147,7 @@ export type ChatGenerationStatus =
 // consumer via AppSnapshot["…"]. The store holds these as `T | null`
 // (concrete value or null, never "absent"); absence exists only on the wire.
 
-export interface AppCharacter {
-  id: string;
-  name: string;
-  description: string;
-  scenario: string;
-  systemPrompt: string;
-  subtitle: string;
-  firstMessage: string | null;
-  mesExample: string | null;
-  mesExampleMode: string;
-  mesExampleDepth: number;
-  alternateGreetings: string[];
-  postHistoryInstructions: string | null;
-  creatorNotes: string | null;
-  depthPrompt: string | null;
-  depthPromptDepth: number | null;
-  depthPromptRole: string | null;
-  tags: string[];
-  avatarAssetId: string | null;
-  avatarFullAssetId: string | null;
-  avatarCropJson: string | null;
-  /** Folder-resident avatar extension (CFS migration). Null = legacy flat avatar or none. */
-  avatarExt: string | null;
-  /** Folder-resident FULL avatar extension. Null = no separate full (thumbnail is itself uncropped). */
-  avatarFullExt: string | null;
-  personalitySummary: string | null;
-  // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY). Mirrors
-  // the backend CharacterRecord — backend always sends these (required), so no
-  // normalize-default is needed (same as avatarExt).
-  includeGalleryInPrompt: boolean;
-  includeAvatarInPrompt: boolean;
-  avatarDescription: string | null;
-  /** bumped on every avatar upload; used as ?v= cache-buster (immutable cache). */
-  updatedAt: string;
-}
+export type AppCharacter = WireSessionSnapshot["character"];
 
 /**
  * Alias of `PersonaRecord` (defined in the Persona section below) — the
@@ -265,13 +160,7 @@ export type AppPersona = PersonaRecord;
 export type AppCharacterEntry = CharacterListEntry;
 
 /** A character version (VTF Phase 3 folder-snapshot branching). Meta only on the wire. */
-export interface AppCharacterVersion {
-  id: string;
-  characterId: string;
-  title: string;
-  isActive: boolean;
-  createdAt: string;
-}
+export type AppCharacterVersion = RpcData<Api["characters"][":characterId"]["versions"]["$get"]>[number];
 
 // ─── Snapshot ──────────────────────────────────────────────────────────
 
@@ -293,28 +182,7 @@ export interface AppCharacterVersion {
  * infers each response body from the Hono route, so a server field that does
  * not fit this type is a compile error at the API module that returns it.
  */
-export interface AppSnapshot {
-  /** Sidebar: ordered list of chats with metadata. Absent → preserve. */
-  chats?: ChatListItem[];
-  /** All known characters (sidebar, build mode). Absent → preserve. */
-  allCharacters?: AppCharacterEntry[];
-  /** Active chat metadata (title, settings, greetingIndex, etc). Absent → preserve. */
-  activeChat?: ChatDto;
-  /** Currently active branch. Absent → preserve. */
-  activeBranch?: ChatBranch;
-  /** All branches for the active chat. Absent → preserve. */
-  branches?: ChatBranch[];
-  /** Messages for the active branch, with variant data. Absent → preserve (chat switching clears via clearMessages()). */
-  messages?: AppMessage[];
-  /** Ranged summaries for the active branch. Absent → preserve. */
-  summaries?: Array<{ id: string; kind: string; summary: string }>;
-  /** Latest prompt trace for the active branch (null if no traces). Absent → preserve. */
-  promptTrace?: PromptTraceRecordDto | null;
-  /** Active character record. Absent → preserve. */
-  character?: AppCharacter;
-  /** Active persona record (null if no persona set). Absent → preserve. */
-  persona?: AppPersona | null;
-}
+export type AppSnapshot = Partial<WireSessionSnapshot>;
 
 // ─── Settings ──────────────────────────────────────────────────────────
 
@@ -362,43 +230,15 @@ export type RegexProfileLinkRecord = RpcData<Api["regex"]["profiles"][":id"]["li
 
 export type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot };
 
-/** One pending lane (GET /pending): the server's monotonic revision + its
- *  unbound rolls. Bound message-owned results are NOT part of the lane. */
-export interface DiceLaneState {
-  revision: number;
-  rolls: DiceRollSnapshot[];
-}
-
-/** GET /pending response — both lanes keyed by mode. */
-export interface DicePendingState {
-  normal: DiceLaneState;
-  immersive: DiceLaneState;
-}
-
-/** One script's resolvable checks (GET /definitions, grouped by script). */
-export interface DiceScriptDefinitions {
-  scriptId: string;
-  scriptLabel: string;
-  scriptRevision: number;
-  checks: DiceCheckDefinition[];
-}
-
-/** GET /definitions response. */
-export interface DiceDefinitionsResponse {
-  scripts: DiceScriptDefinitions[];
-}
-
-/** POST /roll body. The client is server-authoritative: it sends only ids,
- *  actor, mode, and a DB-unique `requestId` idempotency key — NEVER dice faces
- *  or totals (the server rolls). */
-export interface DiceRollRequest {
-  scriptId: string;
-  checkId: string;
-  actorType: DiceActorType;
-  actorId: string;
-  mode: DiceMode;
-  requestId: string;
-}
+/** GET /pending — both lanes keyed by mode (monotonic revision + unbound rolls). */
+export type DicePendingState = RpcData<Api["chats"][":chatId"]["dice"]["pending"]["$get"]>;
+export type DiceLaneState = DicePendingState["normal"];
+/** GET /definitions — enabled Dice scripts with their resolvable checks. */
+export type DiceDefinitionsResponse = RpcData<Api["chats"][":chatId"]["dice"]["definitions"]["$get"]>;
+export type DiceScriptDefinitions = DiceDefinitionsResponse["scripts"][number];
+/** POST /roll body. Server-authoritative: ids, actor, mode, and a `requestId`
+ *  idempotency key — never dice faces or totals. */
+export type DiceRollRequest = z.input<typeof diceRollRequestSchema>;
 
 /** Optional send commit intent threaded onto stream/non-stream send bodies
  *  (Wave F2). Both fields are present or both absent; omitted ⇒ no-Dice send. */
@@ -419,14 +259,9 @@ export interface ExperienceSendCommitIntent {
 
 // ─── Experience (interactive runtime) ───────────────────────────────────────
 //
-// Wire types for the experience API (INTERACTIVE_RUNTIME_FOUNDATION_PLAN,
-// Wave 7 / IR-71A). Canonical entity shapes come from `@vibe-tavern/domain`,
-// store row shapes from `@vibe-tavern/db`, and request/response DTOs from
-// `@vibe-tavern/api-contracts` (directly re-exported, or derived via `z.input`
-// of the exported schema when the contracts index does not re-export the DTO).
-// Response envelopes that exist only inside `services/api` (whose package
-// exports expose only `AppType` to the browser) are mirrored as local
-// interfaces, each documented with its backend authority.
+// Request bodies derive from the api-contracts schemas (`z.input`); responses
+// and row shapes are inferred from the Hono routes in
+// services/api/src/api/routes/experience.ts.
 
 export type {
   ExperienceActionDescriptor,
@@ -434,10 +269,6 @@ export type {
   ExperienceEvent,
   ExperienceParticipant,
   ExperiencePublicReport,
-  ExperienceChatConfigRow,
-  ExperienceEffectRow,
-  ExperienceVisualRow,
-  ExperienceSessionResponseDto,
 };
 
 // ── Request bodies (schema-derived; never hand-written) ─────────────────────
@@ -474,163 +305,31 @@ export type ExperienceContextCaptureRequest = z.input<typeof experienceContextCa
 /** PUT /prompt-overrides/{global|character} body (`{ content }`, strict). */
 export type ExperiencePromptOverrideContentRequest = z.input<typeof experiencePromptOverrideContentSchema>;
 
-// ── Responses ────────────────────────────────────────────────────────────────
+// ── Responses (route-inferred) ──────────────────────────────────────────────
 
-/** Session response (start / get / branch discovery). Extends the canonical
- * validated DTO with the additional public metadata serialized by the backend's
- * `ExperienceSessionView`; the DTO carries the pinned visual snapshot
- * (visualId/visualSource/visualSourceHash) so IR-73B renders the exact start-
- * pinned source rather than a mutable live re-fetch. The extension adds only
- * the rules revision/hash (the rules SOURCE stays private — only the revision
- * + hash are public, never `rulesSource`). Includes IR-70E participant
- * provider/model assignments through the canonical participant schema. */
-export interface ExperienceSessionResponse extends ExperienceSessionResponseDto {
-  rulesRevision: number;
-  rulesSourceHash: string;
-}
+type ExperienceSessionApi = Api["experience"]["sessions"][":sessionId"];
 
-/** Per-viewer projected view (GET /view, and the `view` member of every
- *  session response). Indexed off the canonical session DTO so it can never
- *  drift from the wire schema. */
-export type ExperienceProjection = ExperienceSessionResponseDto["view"];
-
-/** Whose turn the session awaits after an action round. Local literal union
- *  mirroring `TurnAwait` in services/api `experience-service.ts` (not exported
- *  across the package boundary); structurally aligned with the runtime
- *  contract. */
-export type ExperienceTurnAwait = "human" | "model" | "completed" | "idle";
-
-/** Action-round response (POST /actions, POST /undo): the session + projected
- *  view after the applied action AND any auto-resolved script seats, plus the
- *  emitted events and whose turn is next. Mirrors `ExperienceActionResponse`
- *  in services/api `api/contract/runtime-api.ts` (backend-only module). */
-export type ExperienceActionResponse = ExperienceSessionResponse & {
-  events: ExperienceEvent[];
-  await: ExperienceTurnAwait;
-};
-
-/** Privacy-safe queued-attachment view (IR-70A): the attachment row MINUS its
- *  hidden checkpoint. Mirrors `ExperienceQueuedAttachmentView` in services/api
- *  `experience-service.ts` (backend-only module); `publicReport` uses the
- *  canonical domain `ExperiencePublicReport`. */
-export interface ExperienceQueuedAttachmentView {
-  id: string;
-  chatId: string;
-  branchId: string;
-  sessionId: string;
-  sessionRevision: number;
-  queueRevision: number;
-  kind: string;
-  /** Parsed public report envelope; null when the stored JSON was malformed. */
-  publicReport: ExperiencePublicReport | null;
-  rulesSourceHash: string;
-  visualSourceHash: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** Queued-attachment read (GET /attachment, POST /end): null when the session
- *  has no current queued (unbound) attachment. */
-export type ExperienceQueuedAttachmentResponse = ExperienceQueuedAttachmentView | null;
-
-/** Server report status (GET /reports/status). Mirrors `ExperienceReportStatus`
- *  in services/api `experience-report-service.ts` (backend-only module). */
-export interface ExperienceReportStatus {
-  revision: number;
-  reportFrontier: number;
-  pendingPublicEventCount: number;
-  queuedAttachment: ExperienceQueuedAttachmentView | null;
-}
-
-/** One replay checkpoint (recalculation preview). Mirrors `ReplayCheckpoint`
- *  in services/api `experience-replay-service.ts` (backend-only module). */
-export interface ExperienceReplayCheckpoint {
-  revision: number;
-  state: unknown;
-  cursor: number;
-}
-
-/** Replay outcome discriminated union. Mirrors `ReplayOutcome` in services/api
- *  `experience-replay-service.ts` (backend-only module). */
-export type ExperienceReplayOutcome =
-  | { ok: true; finalState: unknown; cursor: number; checkpoints: ExperienceReplayCheckpoint[] }
-  | {
-      ok: false;
-      failedAtRevision: number;
-      reason: "create_failed" | "illegal_action" | "vm_error";
-      message: string;
-      partialState: unknown;
-    };
-
-/** Recalculation preview (POST /recalculate; safe, no commit). Mirrors
- *  `RecalculationPreview` in services/api `experience-replay-service.ts`
- *  (backend-only module). */
-export interface ExperienceRecalculationPreview {
-  originalRulesHash: string;
-  originalState: unknown;
-  originalRevision: number;
-  newManifestId: string;
-  newRulesHash: string;
-  outcome: ExperienceReplayOutcome;
-}
-
-/** Effect-run response (POST /effects/:effectId/run). Mirrors
- *  `ExperienceEffectRunResponse` in services/api `api/contract/runtime-api.ts`
- *  (backend-only module): the terminal effect row + whether its result was
- *  delivered into the reducer (false on stale completion), with the post-
- *  feed-back session when delivered. */
-export interface ExperienceEffectRunResponse {
-  effect: ExperienceEffectRow;
-  delivered: boolean;
-  /** Present when the host owns this effect's execution (timer effects are
-   *  host-scheduled; the route answered 202 and ran nothing). */
-  hostScheduled?: boolean;
-  /** Machine-readable failure reason when status is `failed`. */
-  error?: string;
-  session?: ExperienceSessionResponse;
-}
-
-/** Privacy-safe context-bundle status (IR-70D; GET /context/status — null when
- *  never captured — and POST /context/capture). Mirrors
- *  `ExperienceContextStatusDto` in services/api `api/contract/runtime-api.ts`
- *  (backend-only module): ONLY session-scoped metadata + provider/model ids,
- *  never payload fields. `branchFrontierRevision` is the IR-70D field. */
-export interface ExperienceContextStatusDto {
-  sessionId: string;
-  mode: ExperienceContextMode;
-  branchFrontierRevision: number | null;
-  messageFrontierPosition: number | null;
-  providerProfileId: string | null;
-  modelId: string | null;
-  /** Provenance of the captured RP-context source (report item 6 / Wave 3):
-   *  bare ids, never content. Null ⇔ captured from the ambient host chat
-   *  (sourcePersonaId adds the user-identity override provenance). */
-  sourceCharacterId: string | null;
-  sourceChatId: string | null;
-  sourcePersonaId: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** One prompt-override layer (IR-70D). A null layer means no override is
- *  persisted for that scope. Mirrors `ExperiencePromptOverrideDto` in
- *  services/api `api/contract/runtime-api.ts` (backend-only module). */
-export interface ExperiencePromptOverrideDto {
-  scope: "global" | "character";
-  content: string;
-  characterId: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** Both independent prompt-override layers (GET /prompt-overrides and both
- *  PUTs return the updated combined layers). Mirrors
- *  `ExperiencePromptOverridesResponse` in services/api
- *  `api/contract/runtime-api.ts` (backend-only module). */
-export interface ExperiencePromptOverridesResponse {
-  global: ExperiencePromptOverrideDto | null;
-  character: ExperiencePromptOverrideDto | null;
-}
+export type ExperienceChatConfigRow = RpcData<Api["chats"][":chatId"]["experience"]["config"]["$get"]>;
+export type ExperienceVisualRow = RpcData<Api["experience"]["visuals"]["$post"]>;
+export type ExperienceEffectRow = RpcData<Api["experience"]["effects"][":effectId"]["retry"]["$post"]>;
+/** Session metadata + the projected view for the requesting viewer. */
+export type ExperienceSessionResponse = RpcData<ExperienceSessionApi["$get"]>;
+/** Per-viewer projected view (GET /view, and `view` on every session response). */
+export type ExperienceProjection = RpcData<ExperienceSessionApi["view"]["$get"]>;
+/** Session after an action round (POST /actions, POST /undo) + emitted events and whose turn is next. */
+export type ExperienceActionResponse = RpcData<ExperienceSessionApi["actions"]["$post"]>;
+/** Queued attachment without its hidden checkpoint; null when none is queued. */
+export type ExperienceQueuedAttachmentResponse = RpcData<ExperienceSessionApi["attachment"]["$get"]>;
+export type ExperienceQueuedAttachmentView = RpcData<ExperienceSessionApi["reports"]["queue"]["$post"]>;
+export type ExperienceReportStatus = RpcData<ExperienceSessionApi["reports"]["status"]["$get"]>;
+/** Recalculation preview (safe, no commit). */
+export type ExperienceRecalculationPreview = RpcData<ExperienceSessionApi["recalculate"]["$post"]>;
+/** Terminal effect row + whether its result reached the reducer (202 + `hostScheduled` for timer effects). */
+export type ExperienceEffectRunResponse = RpcData<Api["experience"]["effects"][":effectId"]["run"]["$post"]>;
+/** Context-bundle metadata only (never payload fields); GET /context/status answers null when never captured. */
+export type ExperienceContextStatusDto = RpcData<ExperienceSessionApi["context"]["capture"]["$post"]>;
+/** Both independent prompt-override layers (global + current character). */
+export type ExperiencePromptOverridesResponse = RpcData<ExperienceSessionApi["prompt-overrides"]["$get"]>;
 
 // ── Stateless unsaved-source tester (Wave 8 / IR-81B backend, IR-81D client) ─
 
@@ -651,188 +350,26 @@ export type ExperiencePlaygroundAdvanceRequest = z.input<typeof experiencePlaygr
  *  request type is the contracts DTO verbatim. */
 export type ExperienceRoundModelRequest = ExperienceRoundModelRequestDto;
 
-/** One captured VM console line. Mirrors `ExperienceConsoleEntry` in
- *  services/api `domain/interactive/experience-sandbox.ts` (backend-only
- *  module). */
-export interface ExperienceTestConsoleEntry {
-  level: "log" | "warn" | "error";
-  args: string[];
-}
-
-/** The discovered definition over the wire: the schema-normalized DTO plus the
- *  kernel's method-presence flags. Mirrors `ExperienceDefinition` in
- *  services/api `domain/interactive/experience-kernel.ts` (backend-only). */
-export interface ExperienceTestDefinition extends ExperienceDefinitionDto {
-  hasChoose: boolean;
-  hasFlavor: boolean;
-  /** Realtime fixed-timestep tick method present (RM-2; absent on turn-based). */
-  hasUpdate: boolean;
-}
-
-/** One replayed action's outcome inside a test run / simulation trace. Mirrors
- *  `ExperienceTestStepTrace` in services/api
- *  `domain/interactive/experience-tester.ts` (backend-only). */
-export interface ExperienceTestStepTrace {
-  requestId: string;
-  actionType: string;
-  participantId?: string;
-  replayed: boolean;
-  revision: number;
-  status: ExperienceSessionStatus;
-  events: ExperienceEvent[];
-  effects: ExperienceEffectRequest[];
-  console: ExperienceTestConsoleEntry[];
-}
-
-/** `ExperienceSeatLegality` / `ExperienceSeatLegalityMatrix` (the per-seat
- *  legality matrix) are re-exported above from the shared wire contract
- *  `@vibe-tavern/api-contracts` — the frontend renders exactly the shape the
- *  backend produces, so drift is a compile error. */
-
-/** POST /experience/test/run success body. Mirrors `ExperienceTestRunData` in
- *  services/api `domain/interactive/experience-tester.ts` (backend-only). */
-export interface ExperienceTestRunData {
-  definition: ExperienceTestDefinition;
-  sourceHash: string;
-  initialState: unknown;
-  finalState: unknown;
-  revision: number;
-  status: ExperienceSessionStatus;
-  projection: { state: unknown; actions: ExperienceActionDescriptor[] };
-  events: ExperienceEvent[];
-  effects: ExperienceEffectRequest[];
-  console: ExperienceTestConsoleEntry[];
-  steps: ExperienceTestStepTrace[];
-  /** Per-seat legality matrix at the final state (one entry per roster
-   *  participant). OPTIONAL on the wire so older server builds (without the
-   *  matrix) stay consumable; consumers must tolerate its absence. */
-  seatLegality?: ExperienceSeatLegalityMatrix;
-}
-
-/** Why a bounded simulation stopped. Mirrors `ExperienceTestStopReason` in
- *  services/api `domain/interactive/experience-tester.ts` (backend-only). */
-export type ExperienceTestStopReason =
-  | "completed"
-  | "awaiting_human"
-  | "awaiting_model"
-  | "no_legal_action"
-  | "no_choose_method"
-  | "bounded_non_termination"
-  | "effects_bound";
-
-/** POST /experience/test/simulate success body. Mirrors
- *  `ExperienceTestSimulateData` in services/api
- *  `domain/interactive/experience-tester.ts` (backend-only). */
-export interface ExperienceTestSimulateData {
-  definition: ExperienceTestDefinition;
-  sourceHash: string;
-  initialState: unknown;
-  finalState: unknown;
-  revision: number;
-  status: ExperienceSessionStatus;
-  events: ExperienceEvent[];
-  effects: ExperienceEffectRequest[];
-  console: ExperienceTestConsoleEntry[];
-  steps: ExperienceTestStepTrace[];
-  stopReason: ExperienceTestStopReason;
-  iterations: number;
-  stopDetail?: { participantId?: string };
-}
+/** POST /experience/test/run success body. */
+export type ExperienceTestRunData = RpcData<Api["experience"]["test"]["run"]["$post"]>;
+/** POST /experience/test/simulate success body. */
+export type ExperienceTestSimulateData = RpcData<Api["experience"]["test"]["simulate"]["$post"]>;
+/** Discovered definition: schema-normalized DTO + the kernel's method-presence flags. */
+export type ExperienceTestDefinition = ExperienceTestRunData["definition"];
+export type ExperienceTestConsoleEntry = ExperienceTestRunData["console"][number];
 
 // ── Interactive playground session driver (Wave 8 / IR-84A backend, IR-84B client) ─
 
-/** The playground turn envelope: start returns the full envelope (including
- *  the validated definition); advance returns the same shape with `definition`
- *  OMITTED. Mirrors `ExperiencePlaygroundData` in services/api
- *  `domain/interactive/experience-playground.ts` (backend-only module),
- *  reusing the IR-81D tester wire mirrors where the shapes coincide. */
-export interface ExperiencePlaygroundData {
-  playgroundSessionId: string;
-  definition?: ExperienceTestDefinition;
-  initialState: unknown;
-  state: unknown;
-  projection: { state: unknown; actions: ExperienceActionDescriptor[] };
-  events: ExperienceEvent[];
-  effects: ExperienceEffectRequest[];
-  /** Unconsumed (never fed back) timer-effect slots at response time. > 0 on
-   *  an active session drives the client's timer beat loop — one
-   *  POST /playground/timer per response — the sandbox's real-time axis. */
-  pendingTimers: number;
-  console: ExperienceTestConsoleEntry[];
-  revision: number;
-  status: ExperienceSessionStatus;
-  stopReason: ExperienceTestStopReason;
-  /** The resolved numeric seed of the session's deterministic-random stream
-   *  (echoed by the server; the client cannot reconstruct it for a
-   *  server-defaulted seed). The realtime Try-it path hands it to the frame
-   *  loop config — the round's replay lifeline. */
-  seed: number;
-}
+/** Playground turn envelope; advance/timer responses omit `definition`. */
+export type ExperiencePlaygroundData = RpcData<Api["experience"]["playground"]["start"]["$post"]>;
 
 // ─── Import ────────────────────────────────────────────────────────────
 
-export interface ImportJsonResponse {
-  activeChatId: ChatId;
-  // Absent on the lean mass-import path (server skips the O(N²) getSnapshot).
-  // Single-card import always returns a snapshot.
-  snapshot?: AppSnapshot;
-  // Set on the lean path so the caller can resolve avatar uploads without
-  // the snapshot. Absent on the full path (read snapshot.character.id).
-  characterId?: CharacterId;
-  imported: {
-    kind: "character" | "lorebook" | "chat";
-    name: string;
-    fileName: string;
-    warningCount: number;
-    warnings: string[];
-    attachedToCharacterName?: string;
-  };
-}
+/** Import result. The lean mass-import path omits `snapshot` and sets `characterId`. */
+export type ImportJsonResponse = RpcData<Api["import"]["json"]["$post"]>;
 
 // ─── AI Assistant ──────────────────────────────────────────────────────
 
-export interface AiAssistantChunk {
-  type: "text" | "reasoning" | "partial_json" | "error" | "done";
-  text?: string;
-  json?: Record<string, unknown>;
-  error?: string;
-  /** Present only on the `done` chunk for message-editor completions (MAE-22
-   *  wire shape). The backend attaches these as merge provenance; the runner
-   *  hook captures them additively — existing modes emit a bare `{ type: "done" }`
-   *  and these fields stay `undefined`, so no behavior change for them. */
-  modelId?: string;
-  promptPresetId?: string | null;
-  finishReason?: string;
-}
-
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "message_tts_annotate" | "dice_script";
-
-export interface AiAssistantRequestBody {
-  mode: AiAssistantMode;
-  instruction: string;
-  existingContent?: string;
-  providerProfileId: string;
-  model?: string;
-  enabledLayers: string[];
-  characterIds?: string[];
-  personaIds?: string[];
-  loreEntryIds?: string[];
-  lorebookIds?: string[];
-  chatId?: string;
-  recentMessageCount?: number;
-  /** Message editor modes: canonical target message in the chat's active
-   *  branch (message_edit/message_merge). Mirrors the backend wire type. */
-  targetMessageId?: string;
-  /** Message editor modes: immutable canonical variant IDs selected as editor
-   *  sources (edit: the selected variant; merge: the starred set). */
-  sourceVariantIds?: string[];
-  existingKeys?: string[];
-  existingSecondaryKeys?: string[];
-  logic?: string;
-  keyTarget?: "primary" | "secondary" | "both";
-  maxOutputTokens?: number;
-  temperature?: number;
-  /** scene_schema: select the format-aware default prompt (json/xml) so the
-   *  generated schema obeys XML-safe key rules when needed. */
-  promptFormat?: "json" | "xml";
-}
+export type { AiAssistantStreamChunk as AiAssistantChunk, AiAssistantTokenCount } from "@vibe-tavern/api-contracts";
+export type AiAssistantMode = z.input<typeof aiAssistantModeSchema>;
+export type AiAssistantRequestBody = z.input<typeof aiAssistantRequestSchema>;

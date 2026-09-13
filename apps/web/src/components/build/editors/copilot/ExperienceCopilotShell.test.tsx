@@ -263,6 +263,7 @@ const TEST_RUN_DATA: Awaited<ReturnType<typeof import("../../../../api/experienc
   effects: [],
   console: [],
   steps: [],
+  seatLegality: { seats: [], turnOwners: [] },
 };
 const PLAYGROUND_DATA: Awaited<ReturnType<typeof import("../../../../api/experience-api.js").startExperiencePlayground>> = {
   playgroundSessionId: "pg-shell-1",

@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from "react";
-import { splitVoiceTranscript } from "@vibe-tavern/domain";
+import { splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
 import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
@@ -10,18 +10,6 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useT } from "../../i18n/context.js";
 import { toast } from "sonner";
-
-interface Attachment {
-  id?: string;
-  assetId: string;
-  type: string;
-  name?: string;
-  mimeType?: string;
-  sizeBytes?: number;
-  description?: string | null;
-  purpose?: "voice" | "music" | "ambient";
-  durationMs?: number;
-}
 
 /** Audio duration label ("0:07" / "1:23") for the voice bubble meta line. */
 function formatAudioDuration(ms: number): string {
@@ -177,15 +165,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     // and reflects in the thumbnail caption. localDescription is just an
     // optimistic overlay for the current lightbox session.
     const updateMessage = useSnapshotStore.getState().updateMessage;
-    const nextAttachments = attachments.map((a) => ({
-      id: a.id!,
-      assetId: a.assetId,
-      type: a.type,
-      name: a.name,
-      mimeType: a.mimeType,
-      sizeBytes: a.sizeBytes,
-      description: a.id === att.id ? description : a.description,
-    }));
+    const nextAttachments = attachments.map((a) => (a.id === att.id ? { ...a, description } : a));
     updateMessage(messageId, { attachments: nextAttachments });
     setLocalDescription((prev) => ({ ...prev, [index]: description }));
   }, [messageId, att?.id, attachments, index]);
@@ -237,17 +217,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     // there's no cross-message ref to preserve.
     const remaining = attachments.filter((a) => a.id !== att.id);
     const updateMessage = useSnapshotStore.getState().updateMessage;
-    updateMessage(messageId, {
-      attachments: remaining.map((a) => ({
-        id: a.id!,
-        assetId: a.assetId,
-        type: a.type,
-        name: a.name,
-        mimeType: a.mimeType,
-        sizeBytes: a.sizeBytes,
-        description: a.description,
-      })),
-    });
+    updateMessage(messageId, { attachments: remaining });
     // If we just removed the last one, close the lightbox (the grid hides itself).
     if (remaining.length === 0) { onClose(); return; }
     // Otherwise clamp the index if we deleted the tail item.

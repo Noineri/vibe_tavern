@@ -202,7 +202,6 @@ describe("useExperienceCopilotTurnStore", () => {
           id: "variant_result",
           variantIndex: 0,
           isSelected: true,
-          toolCalls: null,
           toolCallId: "call_edit",
         }],
         selectedVariantIndex: 0,
