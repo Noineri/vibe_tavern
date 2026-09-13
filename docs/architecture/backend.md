@@ -42,7 +42,7 @@ Both entry points delegate to `server-runtime.ts:startServerRuntime()`, which us
 
 ### Routes
 
-12 domain route modules under `api/routes/`, composed via `Hono.app.route()`, plus shared `api/routes/types.ts` (contracts) and `api/routes/helpers.ts` (utilities):
+12 domain route modules under `api/routes/`, composed via `Hono.app.route()`, plus shared `api/routes/types.ts` (contracts):
 
 | File | Domain | Endpoints |
 |------|--------|----------|
@@ -59,7 +59,6 @@ Both entry points delegate to `server-runtime.ts:startServerRuntime()`, which us
 | `api/routes/debug.ts` | Debug log, bootstrap, defaults | ~3 |
 | `api/routes/asset.ts` | Asset upload/serve | 2 |
 | `api/routes/types.ts` | `RuntimeApi` interface — contract between routes and adapters |
-| `api/routes/helpers.ts` | `readOptionalJson` — shared utility for routes with optional bodies |
 
 ### RuntimeApi Interface
 

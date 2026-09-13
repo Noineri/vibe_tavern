@@ -305,13 +305,12 @@ export {
   experienceDefinitionSchema,
   // Starters
   experienceStarterManifestSchema,
-  // Lifecycle request/response
+  // Lifecycle requests
   experienceStartRequestSchema,
   experienceActionRequestSchema,
   experienceFinishRequestSchema,
   experienceRestartRequestSchema,
   experienceReportQueueRequestSchema,
-  experienceSessionResponseSchema,
   // Runtime request/query envelopes (IR-32 routes)
   experienceVisualsQuerySchema,
   experienceViewerQuerySchema,
@@ -366,7 +365,6 @@ export {
   type ExperienceActionDto,
   type ExperienceFinishRequestDto,
   type ExperienceRestartRequestDto,
-  type ExperienceSessionResponseDto,
   type ExperienceManifestDto,
   type ExperienceDefinitionDto,
   type ExperienceStarterManifestDto,

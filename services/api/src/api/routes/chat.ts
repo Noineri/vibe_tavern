@@ -6,7 +6,6 @@ import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
-import { readOptionalJson } from "./helpers.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 
@@ -184,10 +183,10 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         throw err;
       }
     })
-    .post("/api/chats/:chatId/messages/:messageId/regenerate/stream", async (c) => {
+    .post("/api/chats/:chatId/messages/:messageId/regenerate/stream", zValidator("json", schemas.regenerateOverrideSchema), async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
-      const override = schemas.regenerateOverrideSchema.parse(await readOptionalJson(c.req.raw));
+      const override = c.req.valid("json");
       logSendDebug("api.route.regenerate-stream.start", { chatId, messageId });
       const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.regenerate-stream", { chatId, messageId });
       const gen = runtime.regenerateMessageStream(chatId, messageId, override, abortBridge.signal);

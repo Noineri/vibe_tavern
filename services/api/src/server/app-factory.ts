@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { serveStatic } from "hono/bun";
 import { resolve } from "node:path";
 import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
@@ -168,6 +169,11 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 		}
 		if (isDomainError(err)) {
 			return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 422 | 500 | 502);
+		}
+		if (err instanceof HTTPException) {
+			// Framework-raised client errors (e.g. the json validator's
+			// "Malformed JSON in request body") carry their own status.
+			return err.getResponse();
 		}
 		console.error("[unhandled]", err);
 		return c.json(
