@@ -511,7 +511,7 @@ export interface AssetRuntimeApi {
 // ─── AI Assistant ────────────────────────────────────────────────────
 
 export interface AiAssistantRuntimeApi {
-	streamAiAssistant: (body: AiAssistantStreamRequest) => AsyncIterable<AiAssistantStreamChunk>;
+	streamAiAssistant: (body: AiAssistantStreamRequest, signal?: AbortSignal) => AsyncIterable<AiAssistantStreamChunk>;
 	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<import("@vibe-tavern/api-contracts").AiAssistantTokenCount>;
 	regexAssist: (body: import("@vibe-tavern/api-contracts").RegexAssistRequest) => Promise<import("@vibe-tavern/api-contracts").RegexAssistResponse>;
 }

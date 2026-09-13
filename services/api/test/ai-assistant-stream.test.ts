@@ -15,8 +15,8 @@ async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
     getPersonaById: async () => null,
     getLoreEntryById: async () => null,
     resolveModel: () => ({}) as never,
-    getProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 }),
-    getEffectiveProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 }),
+    getProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000, proxyMode: "inherit", proxyId: null }),
+    getEffectiveProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000, proxyMode: "inherit", proxyId: null }),
     getPresetPromptData: async () => ({ aiAssistantPrompts: { chat_impersonate: "Impersonate the character.", md_import: "Import this markdown." }, scriptAiSystemPrompt: null }),
     getChatMessages: async () => [],
     getMessageEditorChat: async () => null,
@@ -83,6 +83,100 @@ async function createMessageEditorRuntime() {
   };
   return { runtime, stores, chat, profile, chatPreset, cleanup };
 }
+
+describe("AI assistant stream abort", () => {
+  beforeEach(() => setTokenCountFn((text) => text.length));
+  afterEach(() => setTokenCountFn(() => 0));
+
+  /** NDJSON body whose lines arrive one per `delayMs` — aborts must stop the
+   *  consumer mid-stream instead of draining all lines. Enqueueing into a
+   *  cancelled stream throws; that is the normal shutdown path, not an error. */
+  function slowNdjson(lines: string[], delayMs: number): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    let index = 0;
+    return new ReadableStream({
+      async pull(controller) {
+        if (index >= lines.length) {
+          controller.close();
+          return;
+        }
+        await Bun.sleep(delayMs);
+        try {
+          controller.enqueue(encoder.encode(lines[index++]));
+        } catch {
+          // Stream cancelled by the consumer — stop producing.
+        }
+      },
+    });
+  }
+
+  function contentLines(count: number): string[] {
+    const lines = Array.from({ length: count }, (_, i) => `${JSON.stringify({ message: { role: "assistant", content: `part-${i} ` }, done: false })}\n`);
+    lines.push(`${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop" })}\n`);
+    return lines;
+  }
+
+  async function stubFetchRecordingSignal(lines: string[], delayMs: number): Promise<{ signal: () => AbortSignal | null | undefined; restore: () => void }> {
+    let recorded: AbortSignal | null | undefined;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_input: unknown, init?: RequestInit) => {
+      recorded = init?.signal ?? null;
+      return new Response(slowNdjson(lines, delayMs), { headers: { "Content-Type": "application/x-ndjson" } });
+    };
+    return { signal: () => recorded, restore: () => { globalThis.fetch = originalFetch; } };
+  }
+
+  it("threads the caller's signal into the provider fetch and stops the md_import stream quietly on abort", async () => {
+    const LINES = 8;
+    const recorder = await stubFetchRecordingSignal(contentLines(LINES), 15);
+    const controller = new AbortController();
+    let textChunks = 0;
+    const chunks: string[] = [];
+    try {
+      const request = {
+        mode: "md_import" as const, instruction: "Import this card.", existingContent: "# Imported card", providerProfileId: "profile_1", enabledLayers: ["character_base"],
+      };
+      for await (const chunk of streamAiAssistant(request, await deps({ resolveModel: (_profile, model) => createOllamaModel({ baseURL: "http://ai-assistant.test", modelId: model }) }), controller.signal)) {
+        chunks.push(chunk.type);
+        if (chunk.type === "text") {
+          textChunks++;
+          if (textChunks === 1) controller.abort();
+        }
+      }
+    } finally {
+      recorder.restore();
+    }
+    expect(recorder.signal()).toBeDefined();
+    expect(recorder.signal()?.aborted).toBe(true);
+    expect(chunks).not.toContain("error");
+    expect(textChunks).toBeLessThan(LINES);
+  });
+
+  it("stops the normal streaming branch quietly on abort (no error chunk)", async () => {
+    const LINES = 8;
+    const recorder = await stubFetchRecordingSignal(contentLines(LINES), 15);
+    const controller = new AbortController();
+    let textChunks = 0;
+    const chunks: string[] = [];
+    try {
+      const request = {
+        mode: "chat_impersonate" as const, instruction: "Continue.", providerProfileId: "profile_1", enabledLayers: [], chatId: "chat_1",
+      };
+      for await (const chunk of streamAiAssistant(request, await deps({ resolveModel: (_profile, model) => createOllamaModel({ baseURL: "http://ai-assistant.test", modelId: model }) }), controller.signal)) {
+        chunks.push(chunk.type);
+        if (chunk.type === "text") {
+          textChunks++;
+          if (textChunks === 1) controller.abort();
+        }
+      }
+    } finally {
+      recorder.restore();
+    }
+    expect(recorder.signal()?.aborted).toBe(true);
+    expect(chunks).not.toContain("error");
+    expect(textChunks).toBeLessThan(LINES);
+  });
+});
 
 describe("AI assistant stream prompt preparation", () => {
   beforeEach(() => setTokenCountFn((text) => text.length));
