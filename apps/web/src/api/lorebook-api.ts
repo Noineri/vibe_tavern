@@ -1,17 +1,13 @@
 import type { LoreEntryRecord, LorebookRecord, LorebookLinkRecord } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
-import { appendTokenQuery } from "../lib/mobile-token.js";
 import { z } from "zod";
 import { importLorebookSchema } from "@vibe-tavern/api-contracts";
 
 // ─── Lorebook CRUD ──────────────────────────────────────────────────────
 
 export async function listAllLorebooks(): Promise<LorebookRecord[]> {
-  const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/lorebooks/all`));
-  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
-  return response.json() as Promise<LorebookRecord[]>;
+  return unwrapRpc(await client.api.lorebooks.all.$get());
 }
 
 export async function listLorebooks(scopeType: string, ownerId?: string): Promise<LorebookRecord[]> {

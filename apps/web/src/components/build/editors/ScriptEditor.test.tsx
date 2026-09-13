@@ -17,6 +17,7 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import type { ScriptRecord } from "../../../api/types.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
@@ -125,6 +126,7 @@ beforeAll(async () => {
 });
 
 const baseScript: ScriptRecord = {
+  ...wireScript(),
   id: "s1",
   name: "Test Script",
   description: "",

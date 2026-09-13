@@ -27,6 +27,7 @@
  * genuine code paths.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireLorebook, wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ReactNode } from "react";
 import { mocked } from "../../../../test/mock-utils.js";
@@ -203,6 +204,7 @@ const CHARACTER_ID = "char-1";
 
 function makeLorebook(over: Partial<LorebookRecord> = {}): LorebookRecord {
   return {
+    ...wireLorebook(),
     id: LB_ID,
     name: "Bestiary",
     description: "",
@@ -222,6 +224,7 @@ function makeLorebook(over: Partial<LorebookRecord> = {}): LorebookRecord {
 
 function makeEntry(over: Partial<LoreEntryRecord> = {}): LoreEntryRecord {
   return {
+    ...wireLoreEntry(),
     id: ENTRY_ID,
     lorebookId: LB_ID,
     title: "Goblin",

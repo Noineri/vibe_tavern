@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
@@ -182,6 +183,7 @@ describe("syncBootstrapSnapshotForActiveChat", () => {
 
 describe("patchUiSettingsAction", () => {
   const baseSettings = {
+    ...wireUiSettings(),
     id: "default",
     theme: "dark",
     chatFontSize: 15,

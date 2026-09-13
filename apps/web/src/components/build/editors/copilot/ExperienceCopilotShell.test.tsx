@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
@@ -990,6 +991,7 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
       allCharacters: [],
       promptPresets: [],
       uiSettings: {
+        ...wireUiSettings(),
         id: "default",
         theme: "coffee",
         chatFontSize: 15,

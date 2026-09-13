@@ -17,6 +17,7 @@
  * observable behavior, not implementation.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
@@ -113,6 +114,7 @@ beforeAll(async () => {
 
 function baseSettings(over: Partial<UiSettingsRecord> = {}): UiSettingsRecord {
   return {
+    ...wireUiSettings(),
     id: "default",
     theme: "dark",
     chatFontSize: 15,

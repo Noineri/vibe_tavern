@@ -36,13 +36,13 @@ export type View = "pick" | "list" | "editor";
 // ── Active-entry form values (react-hook-form) ─────────────────────────
 
 /**
- * The RHF form-values shape for the active-entry editor. It is the whole
- * `LoreEntryRecord`: non-editable fields (`id`, `lorebookId`, `sortOrder`)
- * are carried as defaultValues and simply never registered, so they never
- * become dirty. Keeping the full record lets `form.reset(activeEntry)` work
- * directly with no stripping/projection.
+ * The RHF form-values shape for the active-entry editor: the wire record minus
+ * `metadata`, whose recursive JSON type exceeds react-hook-form path inference
+ * (TS2589) and which the editor never edits. Non-editable fields (`id`,
+ * `lorebookId`, `sortOrder`) are carried as defaultValues and never registered,
+ * so they never become dirty; `form.reset(activeEntry)` takes the full record.
  */
-export type LoreEntryDraft = LoreEntryRecord;
+export type LoreEntryDraft = Omit<LoreEntryRecord, "metadata">;
 
 /**
  * Placeholder defaultValues before any entry is open (activeEntry is null).
@@ -86,6 +86,9 @@ const EMPTY_ENTRY_DRAFT: LoreEntryDraft = {
   characterFilterExclude: false,
   matchSources: [],
   sortOrder: 0,
+  automationId: "",
+  createdAt: "",
+  updatedAt: "",
 };
 
 // ── Sticky-tab persistence (sessionStorage) ────────────────────────────

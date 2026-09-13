@@ -36,6 +36,7 @@
  * mirrors ExperienceFrame.test.tsx (happy-dom must not navigate the iframe).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ChangeEvent, ReactNode } from "react";
 import type { ExperienceSetupFieldDto } from "@vibe-tavern/api-contracts";
 import type { RenderResult } from "@testing-library/react";
@@ -63,6 +64,7 @@ const SEAM_CODE = "context.experience.register({ apiVersion: 1, manifest: { id: 
 const VISUAL_SOURCE = "<div id=\"game\">hello</div>\n<script>document.getElementById('game').textContent='v';</script>";
 
 const seamScript: ScriptRecord = {
+  ...wireScript(),
   id: "srv_seam",
   name: "Seam Rules",
   description: "",

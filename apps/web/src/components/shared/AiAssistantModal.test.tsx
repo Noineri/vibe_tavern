@@ -14,6 +14,7 @@
  * extracted hook under `ai-assistant/use-ai-assistant-runner.test.tsx`.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { AiAssistantChunk, AiAssistantRequestBody, ProviderProfileRecord, UiSettingsRecord } from "../../api/types.js";
 
@@ -93,6 +94,7 @@ beforeAll(async () => {
 
 function baseSettings(over: Partial<UiSettingsRecord> = {}): UiSettingsRecord {
   return {
+    ...wireUiSettings(),
     id: "default",
     theme: "dark",
     chatFontSize: 15,

@@ -8,7 +8,7 @@
 import type { ChatBranch, ChatId, CharacterId, Message, MessageVariant, ObjectiveState } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { SceneTrackerConfigPatch, SceneTrackerRecord } from "@vibe-tavern/domain";
-import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot, ScriptKind } from "@vibe-tavern/domain";
+import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot } from "@vibe-tavern/domain";
 import type {
 	ExperienceActionDescriptor,
 	ExperienceContextMode,
@@ -24,6 +24,11 @@ import type {
 	ExperienceVisualRow,
 } from "@vibe-tavern/db";
 import type { z } from "zod";
+import type { client } from "./client.js";
+import type { RpcData } from "./unwrap.js";
+
+/** Route-inferred wire shapes: the Hono route is the only declaration of these records. */
+type Api = typeof client.api;
 
 // Wire-format output types shared with the backend (single source of truth in
 // @vibe-tavern/api-contracts). Two are imported under local aliases that the
@@ -313,192 +318,39 @@ export interface AppSnapshot {
 
 // ─── Settings ──────────────────────────────────────────────────────────
 
-export interface UiSettingsRecord {
-  id: string;
-  theme: string;
-  chatFontSize: number;
-  uiFontSize: number;
-  messageWidth: number;
-  language: string;
-  activePromptPresetId: string | null;
-  aiAssistantProviderId: string | null;
-  aiAssistantModelName: string | null;
-  /** Summary-generation binding (SUM-4/SUM-5). Optional for the same
-   *  bootstrap-snapshot compat reason as the STT pointers below. */
-  summaryProviderId?: string | null;
-  summaryModelName?: string | null;
-  /** Message AI editor binding (SUM-5) — stops sharing the ai-assistant
-   *  pair. Same optional-for-compat shape. */
-  messageEditorProviderId?: string | null;
-  messageEditorModelName?: string | null;
-  coauthorProviderId: string | null;
-  coauthorModelName: string | null;
-  /** Optional for compatibility with bootstrap snapshots predating token overrides. */
-  coauthorMaxTokens?: number | null;
-  coauthorContextBudget?: number | null;
-  /** Star-prompt state. Optional for the same reason as the coauthor token
-   * overrides above — a client can be newer than the server it talks to. */
-  githubStarred?: boolean;
-  userMessageCount?: number;
-  nextStarPromptAt?: number;
-  starPromptDeferrals?: number;
-  /** STT dictation pointer (ST-1 ui_settings column): the profile the chat
-   *  mic transcribes with. Optional for bootstrap-snapshot compat (a client
-   *  can be newer than its server). Null → fall back to the default profile. */
-  activeDictationProfileId?: string | null;
-  /** STT voice-message pointer (ST-1 ui_settings column): the profile that
-   *  transcribes attached voice notes at send time. Same optional-for-compat
-   *  shape as the dictation pointer; null → default profile. */
-  activeVoiceMessageProfileId?: string | null;
-  /** Optional for compatibility with bootstrap snapshots predating the
-   *  copilot binding. Null → the copilot shell defaults to the first profile. */
-  copilotProviderId?: string | null;
-  copilotModelName?: string | null;
-  updatedAt: string;
-}
+export type UiSettingsRecord = RpcData<Api["settings"]["ui"]["$patch"]>;
 
 // ─── Chat Summary ──────────────────────────────────────────────────────
 
-export interface ChatSummaryRecord {
-  id: string;
-  chatId: string;
-  branchId: string;
-  label: string;
-  content: string;
-  summarizedFrom: number;
-  summarizedTo: number;
-  includeInContext: boolean;
-  excludeSummarized: boolean;
-  source: "manual" | "auto";
-  sortOrder: number;
-  contentHash: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export type ChatSummaryRecord = RpcData<Api["chats"][":chatId"]["summaries"]["$get"]>[number];
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
-export interface ProviderModelOption {
-  id: string;
-  label: string;
-  contextLength?: number;
-  capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
-  pricing?: { input?: number; output?: number };
-  description?: string;
-}
+export type ProviderModelOption = RpcData<Api["providers"]["fetch-models"]["$post"]>["models"][number];
 
-export interface TestChatResponse {
-  success: boolean;
-  reply?: string;
-  error?: string;
-}
+export type TestChatResponse = RpcData<Api["providers"]["test-chat"]["$post"]>;
 
 // ─── Lorebook ──────────────────────────────────────────────────────────
 
-export interface LoreEntryRecord {
-  id: string;
-  lorebookId: string;
-  title: string;
-  content: string;
-  keys: string[];
-  secondaryKeys: string[];
-  logic: string;
-  position: string;
-  depth: number;
-  priority: number;
-  stickyWindow: number;
-  cooldownWindow: number;
-  delayWindow: number;
-  enabled: boolean;
-  constant: boolean;
-  probability: number;
-  ignoreBudget: boolean;
-  role: string;
-  groupName: string;
-  groupWeight: number;
-  prioritizeInclusion: boolean;
-  /** Tri-state (ST parity): null = inherit the book-level default, true/false = explicit. */
-  useGroupScoring: boolean | null;
-  excludeRecursion: boolean;
-  preventRecursion: boolean;
-  delayUntilRecursion: boolean;
-  recursionLevel: number;
-  scanDepthOverride: number | null;
-  caseSensitive: boolean;
-  matchWholeWords: boolean;
-  characterFilter: Array<{ id: string | null; name: string }>;
-  characterFilterExclude: boolean;
-  matchSources: string[];
-  sortOrder: number;
-}
+export type LoreEntryRecord = RpcData<Api["lorebooks"][":lorebookId"]["entries"]["$get"]>[number];
 
-export interface LorebookRecord {
-  id: string;
-  name: string;
-  description: string;
-  scopeType: string;
-  characterId: string | null;
-  personaId: string | null;
-  chatId: string | null;
-  scanDepth: number;
-  tokenBudget: number;
-  tokenBudgetPercent: number | null;
-  recursiveScanning: boolean;
-  /** Book-level default for entry.useGroupScoring (ST's global switch, scoped to the book). Effective flag: entry.useGroupScoring ?? book.useGroupScoring. */
-  useGroupScoring: boolean;
-  enabled: boolean;
-}
+export type LorebookRecord = RpcData<Api["lorebooks"]["all"]["$get"]>[number];
 
-export interface LorebookLinkRecord {
-  lorebookId: string;
-  targetType: "character" | "persona";
-  targetId: string;
-}
+export type LorebookLinkRecord = RpcData<Api["lorebooks"][":lorebookId"]["links"]["$get"]>[number];
 
 // ─── Scripts ───────────────────────────────────────────────────────────
 
-export interface ScriptRecord {
-  id: string;
-  name: string;
-  description: string;
-  code: string;
-  /** Runtime contract (DICE_SYSTEM Wave B1). Defaults to `prompt` on legacy rows. */
-  scriptKind: ScriptKind;
-  scopeType: string;
-  characterId: string | null;
-  personaId: string | null;
-  chatId: string | null;
-  enabled: boolean;
-  sortOrder: number;
-  /** Default visual paired with this experience (interactive scripts only).
-   *  Null for non-interactive and pre-existing rows. */
-  defaultVisualId: string | null;
-  /** Copilot profile assigned to this experience (interactive scripts only).
-   *  Soft link; null = use the built-in seed. */
-  copilotProfileId: string | null;
-}
+export type ScriptRecord = RpcData<Api["scripts"]["all"]["$get"]>[number];
 
-export interface ScriptLinkRecord {
-  scriptId: string;
-  targetType: "character" | "persona";
-  targetId: string;
-}
+export type ScriptLinkRecord = RpcData<Api["scripts"][":scriptId"]["links"]["$get"]>[number];
 
 // ─── Regex presets (REGEX_EXTENSION_PLAN, RX-11) ─────────────────────────────
 
 export type { RegexPreset as RegexPresetRecord, RegexProfile as RegexProfileRecord } from "@vibe-tavern/domain";
 
-export interface RegexLinkRecord {
-  regexPresetId: string;
-  targetType: "character" | "preset";
-  targetId: string;
-}
+export type RegexLinkRecord = RpcData<Api["regex"]["presets"][":id"]["links"]["$get"]>[number];
 
-export interface RegexProfileLinkRecord {
-  regexProfileId: string;
-  targetType: "character" | "preset";
-  targetId: string;
-}
+export type RegexProfileLinkRecord = RpcData<Api["regex"]["profiles"][":id"]["links"]["$get"]>[number];
 
 // ─── Dice ──────────────────────────────────────────────────────────────
 //

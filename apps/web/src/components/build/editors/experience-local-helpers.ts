@@ -63,6 +63,10 @@ export function pendingScriptRecord(id: string, values: InteractiveRulesDraftVal
     defaultVisualId: null,
     copilotProfileId: null,
     sortOrder: 0,
+    creationIntentId: null,
+    extensions: {},
+    createdAt: "",
+    updatedAt: "",
   };
 }
 

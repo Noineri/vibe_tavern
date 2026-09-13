@@ -13,6 +13,7 @@
  * Runner: bun:test with scoped happy-dom (per-file process).
  */
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { wireLorebook } from "../../../../test/wire-fixtures.js";
 import type { LorebookRecord } from "../../../api/types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
@@ -40,6 +41,7 @@ beforeEach(() => {
 });
 
 const EXISTING: LorebookRecord = {
+  ...wireLorebook(),
   id: "lb-existing",
   name: "Existing Book",
   description: "",
