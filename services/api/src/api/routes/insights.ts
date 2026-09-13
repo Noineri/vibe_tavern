@@ -82,7 +82,7 @@ export function createInsightsRoutes(runtime: InsightsRuntimeApi) {
       return c.json(await runtime.getSceneBackfillStatus(c.req.param("chatId"), c.req.param("runId")));
     })
     .post("/api/chats/:chatId/insights/scene/backfill/:runId/cancel", async (c) => {
-      return c.json(runtime.cancelSceneBackfill(c.req.param("chatId"), c.req.param("runId")));
+      return c.json(await runtime.cancelSceneBackfill(c.req.param("chatId"), c.req.param("runId")));
     })
     .post("/api/chats/:chatId/insights/scene/backfill/:runId/retry", async (c) => {
       return c.json(await runtime.retrySceneBackfill(c.req.param("chatId"), c.req.param("runId")));

@@ -1,16 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
-import type {
-  AppSnapshot,
-  AppMessage,
-  AppCharacter,
-  AppPersona,
-  AppCharacterEntry,
-  ChatListItem,
-  InsightsCompletionPatchResponse,
-  SceneTargetResponse,
-} from "../app-client.js";
+import type { AppSnapshot, AppMessage, AppCharacter, AppPersona, AppCharacterEntry, ChatListItem, InsightsCompletionPatchResponse, SceneTargetResponse } from "../api/types.js";
 import type { ChatBranch, PromptTraceRecordDto, PronounForms } from "@vibe-tavern/domain";
 
 // ── Macro context (derived from character + persona) ──────────────────

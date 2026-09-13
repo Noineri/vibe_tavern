@@ -19,15 +19,23 @@ useDomEnv();
 
 // Network stub: the detail editor mounts BoundResourcesField, which lists
 // available/bound lorebooks + scripts on mount. Stub those four reads at the
-// app-client boundary (gallery-store.test.ts idiom: capture reals, spread
+// api module boundary (gallery-store.test.ts idiom: capture reals, spread
 // first, override only the specific fns); everything else stays real.
-const realAppClient = await import("../../app-client.js");
-mock.module("../../app-client.js", () => ({
-	...realAppClient,
+const realLorebookApi = await import("../../api/lorebook-api.js");
+const realPersonaApi = await import("../../api/persona-api.js");
+const realScriptApi = await import("../../api/script-api.js");
+mock.module("../../api/lorebook-api.js", () => ({
+	...realLorebookApi,
 	listAllLorebooks: async () => [],
+}));
+mock.module("../../api/persona-api.js", () => ({
+	...realPersonaApi,
 	listPersonaLorebooks: async () => [],
-	listAllScripts: async () => [],
 	listPersonaScripts: async () => [],
+}));
+mock.module("../../api/script-api.js", () => ({
+	...realScriptApi,
+	listAllScripts: async () => [],
 }));
 
 const [

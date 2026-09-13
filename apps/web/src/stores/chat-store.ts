@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { ChatId, Attachment, DiceRollSnapshot } from "@vibe-tavern/domain";
-import type { ChatGenerationStatus } from "../app-client.js";
+import type { ChatGenerationStatus } from "../api/types.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useDiceStore } from "./dice-store.js";
 
@@ -71,7 +71,7 @@ function captureBindableDiceRolls(chatId: string): DiceRollSnapshot[] {
   const branchId = snap.activeBranch?.id ?? null;
   const insights = snap.activeChat?.insightsConfig;
   if (!insights?.diceEnabled || !branchId) return [];
-  const diceMode = insights.diceMode ?? "normal";
+  const diceMode = insights.diceMode;
   const lane = useDiceStore.getState().byScope[`${chatId}|${branchId}`]?.lanes?.[diceMode] ?? null;
   if (!lane) return [];
   return lane.rolls.filter((r) => r.included);

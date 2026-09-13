@@ -27,11 +27,8 @@ import { AiAssistantPanel } from "./ai-assistant/AiAssistantPanel.js";
 import { AiGenParamsRow } from "./ai-assistant/AiGenParamsRow.js";
 import { useAiAssistantRunner } from "./ai-assistant/use-ai-assistant-runner.js";
 import { useDebouncedTokenCount } from "./ai-assistant/use-debounced-token-count.js";
-import {
-  listAllLorebooks,
-  type AiAssistantRequestBody,
-  type LorebookRecord,
-} from "../../app-client.js";
+import { listAllLorebooks } from "../../api/lorebook-api.js";
+import type { AiAssistantRequestBody, LorebookRecord } from "../../api/types.js";
 
 export interface AiAssistantModalProps {
   mode: "full" | "quickpill";

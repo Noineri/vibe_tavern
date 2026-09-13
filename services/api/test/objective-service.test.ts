@@ -18,12 +18,11 @@
  */
 import { describe, it, expect } from "bun:test";
 import type { ObjectiveLongTermGoal, ObjectiveMode, ObjectiveState, ObjectiveTask } from "@vibe-tavern/domain";
-import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import { defaultObjectiveState, normalizeObjectiveState, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import {
   ObjectiveService,
-  defaultObjectiveState,
   parseTaskList,
   parseGoalsResult,
   parseCheckVerdict,
@@ -106,10 +105,11 @@ function makeMockStores(initial: Record<string, unknown> | null = null): { store
   let state: Record<string, unknown> = initial ?? {};
   const stores = {
     chats: {
-      getById: async () => ({ insightsObjectiveState: state }),
-      updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: Record<string, unknown> }) => {
-        if (input.insightsObjectiveState !== undefined) state = input.insightsObjectiveState;
-        return { insightsObjectiveState: state };
+      // Mirrors the ChatStore contract: the JSON column is normalized on read.
+      getById: async () => ({ insightsObjectiveState: normalizeObjectiveState(state) }),
+      updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+        if (input.insightsObjectiveState !== undefined) state = { ...input.insightsObjectiveState };
+        return { insightsObjectiveState: normalizeObjectiveState(state) };
       },
     },
   } as unknown as StoreContainer;
@@ -282,10 +282,10 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const firstSaveStarted = new Promise<void>((resolve) => { markFirstSaveStarted = resolve; });
     const stores = {
       chats: {
-        getById: async () => ({ insightsObjectiveState: state }),
-        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: Record<string, unknown> }) => {
+        getById: async () => ({ insightsObjectiveState: normalizeObjectiveState(state) }),
+        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
           updateCalls += 1;
-          const next = input.insightsObjectiveState as unknown as ObjectiveState;
+          const next = input.insightsObjectiveState;
           if (updateCalls === 1) {
             markFirstSaveStarted?.();
             await new Promise<void>((resolve) => { releaseFirstSave = resolve; });
@@ -638,9 +638,9 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     const contextBranchIds: string[] = [];
     const stores = {
       chats: {
-        getById: async () => ({ id: "chat_1", activeBranchId: "branch_1", insightsConfig: { objectiveEnabled }, insightsObjectiveState: state }),
-        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: Record<string, unknown> }) => {
-          if (input.insightsObjectiveState !== undefined) state = input.insightsObjectiveState;
+        getById: async () => ({ id: "chat_1", activeBranchId: "branch_1", insightsConfig: { objectiveEnabled }, insightsObjectiveState: normalizeObjectiveState(state) }),
+        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+          if (input.insightsObjectiveState !== undefined) state = { ...input.insightsObjectiveState };
           return { insightsObjectiveState: state };
         },
       },

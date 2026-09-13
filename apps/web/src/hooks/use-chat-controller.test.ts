@@ -8,7 +8,7 @@
  * regenerated message permanently busy (`MessageBlock.isBusy` /
  * `isBranching` both key off `messageActionId === messageId`).
  *
- * The test exercises the controller end-to-end (action layer → app-client →
+ * The test exercises the controller end-to-end (action layer → api/chat-api →
  * store cleanup) with `regenerateChatMessage` stubbed to settle on demand, so
  * the abort/error/success boundaries are observable without a server.
  */
@@ -21,7 +21,7 @@ import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
-// --- app-client stubs (only the two functions the non-stream path crosses) ---
+// --- chat-api stubs (the functions the non-stream path crosses) ---
 const regenerateChatMessage = mock();
 const sendChatMessageStream = mock();
 const fetchChat = mock();
@@ -29,11 +29,11 @@ const sendChatMessageAction = mock();
 // LS-4a: the non-stream continue entry handleContinueMessage calls.
 const continueMessageAction = mock();
 
-const realAppClient = await import("../app-client.js");
+const realChatApi = await import("../api/chat-api.js");
 const realChatActions = await import("../stores/api-actions/chat-actions.js");
 const realLocaleHelpers = await import("../i18n/locale-helpers.js");
-mock.module("../app-client.js", () => {
-	return { ...realAppClient, regenerateChatMessage, sendChatMessageStream, fetchChat };
+mock.module("../api/chat-api.js", () => {
+	return { ...realChatApi, regenerateChatMessage, sendChatMessageStream, fetchChat };
 });
 
 // sendChatMessageAction (chat-actions) is the non-stream send entry handleSend

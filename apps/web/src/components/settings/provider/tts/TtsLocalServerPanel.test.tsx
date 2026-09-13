@@ -9,7 +9,7 @@ import { __setTtsDiscoveryDepsForTests } from "./use-tts-discovery.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import type { DiscoveredServer, ProbeOutcome } from "@vibe-tavern/domain";
 
-const { render, act, cleanup, fireEvent, waitFor, within } = await import("@testing-library/react");
+const { render, act, cleanup, fireEvent, within } = await import("@testing-library/react");
 
 // Track setForm calls
 let lastFormPatch: Record<string, unknown> | null = null;
@@ -148,7 +148,14 @@ describe("TtsLocalServerPanel", () => {
     dockerStatusNext = { available: true, version: "27.3.1" };
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    const status = await waitFor(() => view.getByTestId("tts-docker-status"));
+    // The mount-effect probe settles AFTER render's act scope closes
+    // (fetcher promise resolves on a later microtask). Drain it inside
+    // act — otherwise its setState lands outside act (warning) and the
+    // status text below is read in the "probing" state (CI flake race).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const status = view.getByTestId("tts-docker-status");
     expect(status.textContent).toContain("tts_docker_status_ok");
     expect(status.textContent).toContain("27.3.1");
     cleanup();
@@ -158,18 +165,28 @@ describe("TtsLocalServerPanel", () => {
     dockerStatusNext = new Error("route unreachable");
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    const status = await waitFor(() => view.getByTestId("tts-docker-status"));
-    expect(status.textContent).toContain("tts_docker_status_unknown");
+    // Same settle-inside-act drain: the rejection microtask commits
+    // setError only after render returns; asserting before it lands
+    // observed "probing" under runner load (stress repro, suite run 3).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(view.getByTestId("tts-docker-status").textContent).toContain("tts_docker_status_unknown");
     expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
     cleanup();
     dockerStatusNext = { available: false, version: null };
   });
-
-  test("renders null for non-openai backend (kokoro)", () => {
+  test("renders null for non-openai backend (kokoro)", async () => {
     const tts = makeTtsHook({ form: { ...ttsHookBase.form, backend: TTS_BACKEND.Kokoro } });
     const panelProps = { tts, form: tts.form };
     const { container } = render(React.createElement(TtsLocalServerPanel, panelProps));
     expect(container.innerHTML).toBe("");
+    // The panel renders null but useDockerStatus still mounts its probe;
+    // without a settle drain its microtask setState lands on the mounted
+    // component outside act once the sync body ends (act warning).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
   });
 
   test("setup help accordion: closed by default, reference steps hidden", async () => {

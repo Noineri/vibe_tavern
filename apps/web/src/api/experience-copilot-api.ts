@@ -67,7 +67,7 @@ export async function getExperienceCopilotActive(
   const response = await client.api["experience-copilot"].script[":scriptId"].active.$get({
     param: { scriptId },
   });
-  return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+  return unwrapRpc(response);
 }
 
 /** All messages for a thread, oldest → newest. */
@@ -77,7 +77,7 @@ export async function listExperienceCopilotMessages(
   const response = await client.api["experience-copilot"][":threadId"].messages.$get({
     param: { threadId },
   });
-  return unwrapRpc<ExperienceCopilotMessageWire[]>(response);
+  return unwrapRpc(response);
 }
 
 /** Archive the current active thread (if any) and start a fresh one. */
@@ -89,7 +89,7 @@ export async function startExperienceCopilotSession(
     param: { scriptId },
     json: title ? { title } : {},
   });
-  return unwrapRpc<ExperienceCopilotThreadWire>(response);
+  return unwrapRpc(response);
 }
 
 /** All sessions (active + archived) for a script, newest first. */
@@ -99,7 +99,7 @@ export async function listExperienceCopilotSessions(
   const response = await client.api["experience-copilot"].script[":scriptId"].sessions.$get({
     param: { scriptId },
   });
-  return unwrapRpc<ExperienceCopilotThreadWire[]>(response);
+  return unwrapRpc(response);
 }
 
 /** Resume an archived session (archiving its active sibling, if any), or a
@@ -110,7 +110,7 @@ export async function activateExperienceCopilotSession(
   const response = await client.api["experience-copilot"][":threadId"].activate.$post({
     param: { threadId },
   });
-  return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+  return unwrapRpc(response);
 }
 
 /** Archive a single session (idempotent). Returns null when the thread does
@@ -121,7 +121,7 @@ export async function archiveExperienceCopilotSession(
   const response = await client.api["experience-copilot"][":threadId"].archive.$post({
     param: { threadId },
   });
-  return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+  return unwrapRpc(response);
 }
 
 /** Rename a session (trim server-side; an empty title clears back to the
@@ -134,7 +134,7 @@ export async function renameExperienceCopilotSession(
     param: { threadId },
     json: { title },
   });
-  return unwrapRpc<ExperienceCopilotThreadWire | null>(response);
+  return unwrapRpc(response);
 }
 
 // ─── Context meter + compaction (CM-4/CM-5) ─────────────────────────────────
@@ -157,7 +157,7 @@ export async function getExperienceCopilotContext(
   const response = await client.api["experience-copilot"][":threadId"].context.$get({
     param: { threadId },
   });
-  return unwrapRpc<ExperienceCopilotContextState>(response);
+  return unwrapRpc(response);
 }
 
 /** Toggle the thread's auto-compact flag. Returns the full context state. */
@@ -169,7 +169,7 @@ export async function patchExperienceCopilotContext(
     param: { threadId },
     json: body,
   });
-  return unwrapRpc<ExperienceCopilotContextState>(response);
+  return unwrapRpc(response);
 }
 
 /** Read a thread's pinned-context links (CX-1/CX-4). */
@@ -179,7 +179,7 @@ export async function getExperienceCopilotContextLinks(
   const response = await client.api["experience-copilot"][":threadId"]["context-links"].$get({
     param: { threadId },
   });
-  return unwrapRpc<ExperienceCopilotContextLink[]>(response);
+  return unwrapRpc(response);
 }
 
 /** Full-replace a thread's pinned-context links (max 64, schema-enforced). */
@@ -191,7 +191,7 @@ export async function setExperienceCopilotContextLinks(
     param: { threadId },
     json: { links },
   });
-  return unwrapRpc<ExperienceCopilotContextLink[]>(response);
+  return unwrapRpc(response);
 }
 
 /** Manually compact a thread (LLM summarize-and-replace). The digest message is
@@ -206,5 +206,5 @@ export async function compactExperienceCopilot(
     param: { threadId },
     json: body ?? {},
   });
-  return unwrapRpc<ExperienceCopilotCompactResult>(response);
+  return unwrapRpc(response);
 }

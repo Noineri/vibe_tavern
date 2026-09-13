@@ -1,5 +1,5 @@
 import type { VtfCharacterContent } from "@vibe-tavern/db/codecs";
-import type { AppCharacter } from "../app-client.js";
+import type { AppCharacter } from "../api/types.js";
 
 /**
  * Map an `AppCharacter` (frontend snapshot type) + the V3 export JSON to a

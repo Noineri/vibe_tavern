@@ -1,11 +1,11 @@
-import type { AiAssistantChunk, AiAssistantRequestBody } from "./types.js";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
+import type { AiAssistantChunk, AiAssistantRequestBody, AiAssistantTokenCount } from "./types.js";
+import { getGatewayBaseUrl } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 
 export async function countAiAssistantTokens(
   body: AiAssistantRequestBody,
   options?: { signal?: AbortSignal },
-): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }> {
+): Promise<AiAssistantTokenCount> {
   const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/ai-assistant/tokens`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -13,7 +13,7 @@ export async function countAiAssistantTokens(
     signal: options?.signal,
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  return response.json() as Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }>;
+  return response.json() as Promise<AiAssistantTokenCount>;
 }
 
 export async function* streamAiAssistant(
@@ -50,15 +50,16 @@ export async function* streamAiAssistant(
     buffer = lines.pop() ?? "";
 
     for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const chunk: AiAssistantChunk = JSON.parse(line.slice(6));
-          yield chunk;
-          if (chunk.type === "done" || chunk.type === "error") return;
-        } catch {
-          // Skip malformed lines
-        }
+      if (!line.startsWith("data: ")) continue;
+      let chunk: AiAssistantChunk;
+      try {
+        chunk = JSON.parse(line.slice(6));
+      } catch (error) {
+        console.warn("[ai-assistant] skipping malformed SSE line", error);
+        continue;
       }
+      yield chunk;
+      if (chunk.type === "done" || chunk.type === "error") return;
     }
   }
 }

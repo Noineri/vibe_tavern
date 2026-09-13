@@ -170,7 +170,7 @@ Why the original decision missed this: the options table weighs three ways to fi
 
 **Context:** Frontend needs to call backend API with compile-time safety.
 
-**Decision:** Shared Hono router definition used by both server and `app-client.ts` RPC client.
+**Decision:** Shared Hono router definition used by both server and the `apps/web/src/api/client.ts` RPC client; `unwrapRpc` infers every response body from the route, so web modules carry no hand-written response types.
 
 **Rationale:**
 - **Zero code generation** — the Hono client infers types from the router definition at compile time.
@@ -302,7 +302,7 @@ Why the original decision missed this: the options table weighs three ways to fi
 
 ## AD-016: Endpoint-Scoped Responses over Monolithic Snapshots
 
-**Status:** Proposed. The frontend prerequisite landed in Phase 3.4.1 (2026-06-13): `AppSnapshot` fields are now optional, `normalizeSnapshot()` preserves absence, and `ingestSnapshot()` uses presence guards (see `reports/tech-debt.md` TD-004, RESOLVED). The backend half — actually returning partial responses from mutating endpoints — is still pending; every mutating endpoint still returns a full `SessionSnapshot`. The original driving plan (`CODE_REVIEW_REFACTOR_PLAN.md`) has been archived in the planning repo.
+**Status:** Proposed. The frontend prerequisite landed in Phase 3.4.1 (2026-06-13): `AppSnapshot` fields are now optional and `ingestSnapshot()` uses presence guards (the `normalizeSnapshot()` layer was later deleted — server-inferred RPC types made it an identity function) (see `reports/tech-debt.md` TD-004, RESOLVED). The backend half — actually returning partial responses from mutating endpoints — is still pending; every mutating endpoint still returns a full `SessionSnapshot`. The original driving plan (`CODE_REVIEW_REFACTOR_PLAN.md`) has been archived in the planning repo.
 
 **Context:** The current architecture returns a full `SessionSnapshot` from every chat mutation. `getSnapshot(chatId)` recomputes *all* fields — chats list, all characters, messages, branches, summaries, prompt traces, context preview, character, persona — regardless of which field changed. Renaming a chat re-runs `assemblePrompt()` for the context preview and re-reads every character in the database.
 

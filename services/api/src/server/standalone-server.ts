@@ -14,7 +14,7 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { startServerRuntime } from "./server-runtime.js";
-import { embeddedWebFiles } from "./embedded-web-manifest.js";
+import { loadEmbeddedWebFiles } from "./embedded-web-assets.js";
 import {
 	cleanupOldInstall,
 	finalizeUpdatePending,
@@ -99,7 +99,7 @@ async function main() {
 		assetsDir: paths.assetsDir,
 		staticDir: paths.webDir,
 		staticEnabled: paths.webEnabled,
-		embeddedWebFiles,
+		embeddedWebFiles: loadEmbeddedWebFiles(),
 		host,
 		port: paths.port,
 		logsDir: paths.logsDir,

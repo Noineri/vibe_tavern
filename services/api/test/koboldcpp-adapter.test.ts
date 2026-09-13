@@ -1,5 +1,6 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from "bun:test";
 import { streamText } from "ai";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import {
   createKoboldCppModel,
   fetchKoboldModel,
@@ -40,6 +41,31 @@ function setupMockSSEStream(tokens: string[], doneText = "full text") {
     });
   });
   globalThis.fetch = mockFetch as typeof fetch;
+}
+
+// Byte-level control over the wire: SSE line reassembly and UTF-8 decoding are
+// the adapter's job, and neither runs when the body arrives as one chunk.
+function setupMockByteChunks(chunks: readonly (string | Uint8Array)[]) {
+  const encoder = new TextEncoder();
+  mockFetch = mock(async () => new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : chunk);
+        }
+        controller.close();
+      },
+    }),
+    { status: 200, headers: new Headers({ "Content-Type": "text/event-stream" }) },
+  ));
+  globalThis.fetch = mockFetch as typeof fetch;
+}
+
+// Splits text at a byte offset INSIDE a multi-byte character, so each half is
+// invalid UTF-8 alone and only the joined pair decodes.
+function splitBytes(text: string, at: number): [Uint8Array, Uint8Array] {
+  const bytes = new TextEncoder().encode(text);
+  return [bytes.slice(0, at), bytes.slice(at)];
 }
 
 beforeEach(() => {
@@ -240,6 +266,107 @@ describe("KoboldCPP adapter — doStream", () => {
     expect(parts[5]).toEqual({ type: "text-end", id: "0" });
     expect(parts[6]?.type).toBe("finish");
     expect((parts[6] as { finishReason: { unified: string } }).finishReason.unified).toBe("stop");
+  });
+
+  it("reassembles an SSE event split across two wire chunks", async () => {
+    // Given - TCP hands the adapter arbitrary byte runs, not whole SSE lines.
+    setupMockByteChunks([
+      'data: {"token":" wor',
+      'ld"}\n\ndata: {"text":" world","done":true}\n\n',
+    ]);
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+
+    // When
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    });
+    const parts: LanguageModelV3StreamPart[] = [];
+    for await (const part of result.stream) parts.push(part);
+
+    // Then - one delta, not two halves and not a dropped event.
+    expect(parts).toEqual([
+      { type: "stream-start", warnings: [] },
+      { type: "text-start", id: "0" },
+      { type: "text-delta", id: "0", delta: " world" },
+      { type: "text-end", id: "0" },
+      expect.objectContaining({ type: "finish" }),
+    ]);
+  });
+
+  it("joins a multi-byte character split across two wire chunks", async () => {
+    // Given - the emoji's 4 UTF-8 bytes are cut in half by the chunk boundary.
+    const line = 'data: {"token":"привет 😀"}\n\n';
+    const emojiTailOffset = new TextEncoder().encode(line).length - 10;
+    setupMockByteChunks([
+      ...splitBytes(line, emojiTailOffset),
+      'data: {"done":true}\n\n',
+    ]);
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+
+    // When
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    });
+    const parts: LanguageModelV3StreamPart[] = [];
+    for await (const part of result.stream) parts.push(part);
+
+    // Then - no U+FFFD and no parse failure that would swallow the token.
+    expect(parts[2]).toEqual({ type: "text-delta", id: "0", delta: "привет 😀" });
+  });
+
+  it("emits the last event when the body ends without a blank line", async () => {
+    // Given - a closed connection leaves the final event in the buffer with no
+    // terminator; dropping it would lose the last token of the reply.
+    setupMockByteChunks([
+      'data: {"token":"a"}\n\n',
+      'data: {"token":"b"}',
+    ]);
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+
+    // When
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    });
+    const parts: LanguageModelV3StreamPart[] = [];
+    for await (const part of result.stream) parts.push(part);
+
+    // Then
+    expect(parts).toEqual([
+      { type: "stream-start", warnings: [] },
+      { type: "text-start", id: "0" },
+      { type: "text-delta", id: "0", delta: "a" },
+      { type: "text-delta", id: "0", delta: "b" },
+      { type: "text-end", id: "0" },
+      expect.objectContaining({ type: "finish" }),
+    ]);
+  });
+
+  it("skips keep-alive comments and unparseable lines", async () => {
+    // Given - SSE comments (": ping") and proxy noise must not end the stream.
+    setupMockByteChunks([
+      ": ping\n\n",
+      'data: {"token":"a"}\n\n',
+      "data: <html>502</html>\n\n",
+      'data: {"token":"b"}\n\ndata: {"done":true}\n\n',
+    ]);
+    const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
+
+    // When
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    });
+    const parts: LanguageModelV3StreamPart[] = [];
+    for await (const part of result.stream) parts.push(part);
+
+    // Then
+    expect(parts).toEqual([
+      { type: "stream-start", warnings: [] },
+      { type: "text-start", id: "0" },
+      { type: "text-delta", id: "0", delta: "a" },
+      { type: "text-delta", id: "0", delta: "b" },
+      { type: "text-end", id: "0" },
+      expect.objectContaining({ type: "finish" }),
+    ]);
   });
 
   it("streams through the REAL streamText recorder without protocol errors (LS-6d)", async () => {

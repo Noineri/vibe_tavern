@@ -1,5 +1,5 @@
 import { useT } from "../../../i18n/context.js";
-import type { FavoriteProviderModelRecord } from "../../../app-client.js";
+import type { FavoriteProviderModelRecord } from "../../../api/types.js";
 import type { FormState } from "../../modals/ProviderModal.js";
 import { Icons } from "../../shared/icons.js";
 import { Toggle } from "../../shared/Toggle.js";

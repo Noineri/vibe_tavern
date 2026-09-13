@@ -1,4 +1,5 @@
 import { eq, and, or, asc, inArray } from 'drizzle-orm';
+import type { ScriptKind } from '@vibe-tavern/domain';
 import { scripts, scriptLinks, scriptVisuals } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -14,7 +15,7 @@ export interface CreateScriptData {
   enabled?: boolean;
   /** Runtime contract: 'prompt' (default) or 'dice'. Set at creation; the two
    *  runtimes are isolated by kind at the resolver boundary. */
-  scriptKind?: string;
+  scriptKind?: ScriptKind;
   /** Server-idempotent creation key. When set and an existing script already
    *  carries it, `create` returns that script instead of duplicating —
    *  process-safe against retries/two tabs/restart. NOT content: omitted from
@@ -47,7 +48,7 @@ export interface Script {
   description: string;
   code: string;
   enabled: boolean;
-  scriptKind: string;
+  scriptKind: ScriptKind;
   /** Server-idempotent creation key (nullable; unique when set). Read-only. */
   creationIntentId: string | null;
   scopeType: string;

@@ -1,24 +1,14 @@
 # Bun configuration — https://bun.sh/docs/runtime/bunfig
+#
+# There is deliberately no [install] section: hardlink backend, the global
+# package cache and installing optionalDependencies are all Bun defaults
+# (verified on 1.4.2 — `bun install --help` documents "hardlink" as the backend
+# default, and a bunfig-less install of a package with platform
+# optionalDependencies still resolves its native binding). Re-add a key here
+# only to depart from a default, never to restate one.
 
-[install]
-# Use hardlinks instead of copying packages into node_modules.
-# Faster installs, uses less disk space. Works on Linux, macOS, Windows (NTFS).
-backend = "hardlink"
-
-# Do install optionalDependencies.
-# Some dependencies ship their native bindings as platform-specific
-# optionalDependencies (standard napi-rs pattern). napi-rs deps carry os/cpu
-# filters, so bun still installs only the one binding matching the host
-# platform — the size saving from `optional = false` was marginal and no
-# longer worth the breakage.
-optional = true
-
-[install.cache]
-# Enable Bun's global package cache (default). Prevents re-downloading.
-disable = false
-
-# Bun HTML-import dev server plugin. Loaded lazily by Bun.serve when
-# routes are bundled (i.e. only when the dev server is running). The single
+# Plugins for Bun's HTML-import bundler. Loaded lazily by Bun.serve when routes
+# are bundled, i.e. only while the dev server runs.
 # See: apps/web/dev-server.ts
 [serve.static]
 plugins = ["bun-plugin-tailwind", "./apps/web/bun-plugin-data-component.ts", "./apps/web/bun-plugin-build-config.ts", "./apps/web/bun-plugin-web-assets.ts"]

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	BUDGETS,
+	collectTestFiles,
 	formatReport,
 	isTestFilePath,
 	runGuard,
@@ -8,6 +12,26 @@ import {
 } from "./test-hygiene.js";
 
 describe("test-hygiene guard (TH-4c, L2 layer)", () => {
+	test("collects this checkout's tests without traversing nested repositories or worktrees", () => {
+		const root = mkdtempSync(join(tmpdir(), "vt-hygiene-"));
+		try {
+			mkdirSync(join(root, ".git"));
+			writeFileSync(join(root, "root.test.ts"), "");
+			for (const [path, worktree] of [[".claude/worktrees/example", true], ["vendor/repo", false]] as const) {
+				const nested = join(root, path);
+				mkdirSync(nested, { recursive: true });
+				if (worktree) writeFileSync(join(nested, ".git"), "gitdir: placeholder");
+				else mkdirSync(join(nested, ".git"));
+				writeFileSync(join(nested, "nested.test.ts"), "");
+			}
+			mkdirSync(join(root, "apps/web"), { recursive: true });
+			writeFileSync(join(root, "apps/web/component.test.tsx"), "");
+			expect(collectTestFiles(root)).toEqual(["apps/web/component.test.tsx", "root.test.ts"]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("flags out-of-repo path literals, accepts derived and relative paths", () => {
 		const bad = [
 			`await loadFixture("N:/janitor_characters/vibe_tavern/fixture.json");`,

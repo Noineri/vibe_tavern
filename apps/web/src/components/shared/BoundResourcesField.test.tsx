@@ -19,7 +19,11 @@ const { render, screen } = await import("@testing-library/react");
 
 const realI18nContext = await import("../../i18n/context.js");
 const realTooltip = await import("./Tooltip.js");
-const realAppClient = await import("../../app-client.js");
+const realLorebookApi = await import("../../api/lorebook-api.js");
+const realCharacterApi = await import("../../api/character-api.js");
+const realPersonaApi = await import("../../api/persona-api.js");
+const realScriptApi = await import("../../api/script-api.js");
+const realRegexApi = await import("../../api/regex-api.js");
 
 const listAllRegexPresetsMock = mock(() => Promise.resolve([] as unknown[]));
 const getRegexLinksMock = mock((_id: string) => Promise.resolve([] as Array<{ regexPresetId: string; targetType: "character" | "preset"; targetId: string }>));
@@ -40,16 +44,28 @@ mock.module("./Tooltip.js", () => ({
   CustomTooltip: ({ children }: { content?: string; children: React.ReactNode }) => <>{children}</>,
 }));
 
-mock.module("../../app-client.js", () => ({
-  ...realAppClient,
-  listAllLorebooks: () => Promise.resolve([]),
-  listCharacterLorebooks: () => Promise.resolve([]),
-  listPersonaLorebooks: () => Promise.resolve([]),
-  listAllScripts: () => Promise.resolve([]),
-  listCharacterScripts: () => Promise.resolve([]),
-  listPersonaScripts: () => Promise.resolve([]),
-  listAllRegexPresets: listAllRegexPresetsMock,
-  getRegexLinks: getRegexLinksMock,
+mock.module("../../api/lorebook-api.js", () => ({
+	...realLorebookApi,
+	listAllLorebooks: () => Promise.resolve([]),
+}));
+mock.module("../../api/character-api.js", () => ({
+	...realCharacterApi,
+	listCharacterLorebooks: () => Promise.resolve([]),
+	listCharacterScripts: () => Promise.resolve([]),
+}));
+mock.module("../../api/persona-api.js", () => ({
+	...realPersonaApi,
+	listPersonaLorebooks: () => Promise.resolve([]),
+	listPersonaScripts: () => Promise.resolve([]),
+}));
+mock.module("../../api/script-api.js", () => ({
+	...realScriptApi,
+	listAllScripts: () => Promise.resolve([]),
+}));
+mock.module("../../api/regex-api.js", () => ({
+	...realRegexApi,
+	listAllRegexPresets: listAllRegexPresetsMock,
+	getRegexLinks: getRegexLinksMock,
 }));
 
 let BoundResourcesField: typeof import("./BoundResourcesField.js").BoundResourcesField;

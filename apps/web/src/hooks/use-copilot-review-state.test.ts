@@ -16,13 +16,15 @@ import { useCopilotReviewRoundStore } from "../stores/experience-copilot-review-
 useDomEnv();
 
 // RTL MUST be imported dynamically BELOW useDomEnv() (the dom-env contract):
-// bun does not evaluate static imports in source order, so a static
-// `import { renderHook }` can evaluate @testing-library/react before the
-// global happy-dom window registers. In the per-file runner that is harmless
-// (one file per process), but in a shared-process combined run it breaks the
-// NEXT file's fireEvent-driven updates (reproduced: this file + InputArea's
-// test in one process — InputArea's send-button tests fail). Mirrors the
-// load-bearing ordering inside dom-env.ts itself.
+// Bun evaluates CommonJS dependencies ahead of ESM ones, out of source order,
+// and @testing-library/dom ships CJS — so a static `import { renderHook }`
+// evaluates @testing-library/react before dom-env.js registers the global
+// happy-dom window, even when it is written below this file's dom-env import.
+// Under --isolate (what the web suite runs) that poisons only this file's
+// `screen`; in a shared-process combined run it also breaks the NEXT file's
+// fireEvent-driven updates (reproduced: this file + InputArea's test in one
+// process — InputArea's send-button tests fail). Mirrors the load-bearing
+// ordering inside dom-env.ts itself.
 const { act, renderHook } = await import("@testing-library/react");
 
 function baseArgs(over: Partial<UseCopilotReviewStateArgs> = {}): UseCopilotReviewStateArgs {

@@ -93,7 +93,7 @@ echo Logging to !LOG_FILE!
 echo.
 
 rem ── Run bun with live output + log to file ──
-powershell.exe -NoProfile -Command "& bun services/api/src/server/prod-server.ts 2>&1 | Tee-Object -FilePath '!LOG_FILE!' -Append; exit $LASTEXITCODE"
+powershell.exe -NoProfile -Command "& bun --no-env-file services/api/src/server/prod-server.ts 2>&1 | Tee-Object -FilePath '!LOG_FILE!' -Append; exit $LASTEXITCODE"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.

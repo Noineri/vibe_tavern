@@ -67,13 +67,13 @@ export interface TtsDraftVoicesResponse {
 
 export async function listAllTtsProfiles(): Promise<TtsProfileRecord[]> {
   const response = await client.api.tts.profiles.all.$get();
-  return unwrapRpc<TtsProfileRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function getTtsProfile(id: string): Promise<TtsProfileRecord | null> {
   const response = await client.api.tts.profiles[":id"].$get({ param: { id } });
   if (response.status === 404) return null;
-  return unwrapRpc<TtsProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function createTtsProfile(body: {
@@ -92,7 +92,7 @@ export async function createTtsProfile(body: {
   isDefault?: boolean;
 }): Promise<TtsProfileRecord> {
   const response = await client.api.tts.profiles.$post({ json: body as never });
-  return unwrapRpc<TtsProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function updateTtsProfile(
@@ -113,7 +113,7 @@ export async function updateTtsProfile(
   }>,
 ): Promise<TtsProfileRecord> {
   const response = await client.api.tts.profiles[":id"].$patch({ param: { id }, json: body as never });
-  return unwrapRpc<TtsProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function deleteTtsProfile(id: string): Promise<void> {
@@ -123,20 +123,20 @@ export async function deleteTtsProfile(id: string): Promise<void> {
 
 export async function setTtsDefault(id: string): Promise<TtsProfileRecord> {
   const response = await client.api.tts.profiles[":id"].default.$put({ param: { id } });
-  return unwrapRpc<TtsProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function getDefaultTtsProfile(): Promise<TtsProfileRecord | null> {
   const response = await client.api.tts.profiles.default.$get();
   if (response.status === 404) return null;
-  return unwrapRpc<TtsProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 // ─── Links (voice map) ───────────────────────────────────────────────────────
 
 export async function getTtsLinks(id: string): Promise<TtsLinkRecord[]> {
   const response = await client.api.tts.profiles[":id"].links.$get({ param: { id } });
-  return unwrapRpc<TtsLinkRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function setTtsLinks(
@@ -147,12 +147,12 @@ export async function setTtsLinks(
     param: { id },
     json: { links },
   });
-  return unwrapRpc<TtsLinkRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function listAllTtsLinks(): Promise<Array<TtsLinkRecord & { mode: "voice" | "disabled" }>> {
   const response = await client.api.tts.links.$get();
-  const raw = await unwrapRpc<TtsLinkRecord[]>(response);
+  const raw = await unwrapRpc(response);
   return raw.map((r) => ({ ...r, mode: r.mode ?? "voice" }));
 }
 

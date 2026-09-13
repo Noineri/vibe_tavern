@@ -11,7 +11,7 @@
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { ChatId, RegexPreset } from "@vibe-tavern/domain";
+import { normalizeInsightsConfig, normalizeObjectiveState, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
 
 function makePreset(id: string, overrides: Partial<RegexPreset> = {}): RegexPreset {
   return {
@@ -45,6 +45,8 @@ function createStores(regexStore: StoreContainer["regex"]): StoreContainer {
         personaId: "persona_1",
         promptPresetId: "preset_1",
         activeBranchId: "branch_1",
+        insightsConfig: normalizeInsightsConfig({}),
+        insightsObjectiveState: normalizeObjectiveState({}),
         title: "Test Chat",
         summary: null,
         createdAt: "2025-01-01T00:00:00Z",

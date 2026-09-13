@@ -27,18 +27,8 @@ import {
   useScriptDraftStore,
   type ScriptDraftValues,
 } from "../../../stores/script-draft-store.js";
-import {
-  listAllScripts,
-  listScripts,
-  createScript,
-  updateScript,
-  deleteScript,
-  importScript,
-  getScriptLinks,
-  setScriptLinks,
-  type ScriptRecord,
-  type ScriptLinkRecord,
-} from "../../../app-client.js";
+import { listAllScripts, listScripts, createScript, updateScript, deleteScript, importScript, getScriptLinks, setScriptLinks } from "../../../api/script-api.js";
+import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
 // ── Types ──────────────────────────────────────────────────────────────
 
 import { LoreEntryList } from "./LoreEntryList.js";

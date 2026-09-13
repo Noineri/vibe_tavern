@@ -7,11 +7,7 @@ import { computeHydration } from "./hydrate-provider.js";
 import { computeSavePatch, computeOverlayPatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
-import {
-  type FavoriteProviderModelRecord,
-  type ProviderProfileRecord,
-  type TestChatResponse,
-} from "../app-client.js";
+import type { FavoriteProviderModelRecord, ProviderProfileRecord, TestChatResponse } from "../api/types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import {

@@ -15,6 +15,7 @@ import type {
   ChatId,
   Message,
   MessageId,
+  ObjectiveState,
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
 import type { ChatStore, MessageStore, DiceRollStore, ExperienceStore, DbTransaction, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
@@ -29,19 +30,14 @@ import { conflict, notFound } from "../../shared/errors.js";
  * `selectActiveTask` injects into the prompt, applied here at the wire boundary).
  * See `ensureActiveObjectiveTarget` in @vibe-tavern/domain.
  */
-function withActiveObjectiveTarget<T extends { insightsObjectiveState: Record<string, unknown> }>(chat: T): T {
-  const raw = chat.insightsObjectiveState;
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return chat;
-  const obj = raw as Record<string, unknown>;
-  const tasks = Array.isArray(obj.tasks) ? ensureActiveObjectiveTarget(obj.tasks as { status: string }[]) : undefined;
-  const shortTermGoals = Array.isArray(obj.shortTermGoals) ? ensureActiveObjectiveTarget(obj.shortTermGoals as { status: string }[]) : undefined;
-  if (tasks === undefined && shortTermGoals === undefined) return chat;
+function withActiveObjectiveTarget<T extends { insightsObjectiveState: ObjectiveState }>(chat: T): T {
+  const state = chat.insightsObjectiveState;
   return {
     ...chat,
     insightsObjectiveState: {
-      ...obj,
-      ...(tasks !== undefined && { tasks }),
-      ...(shortTermGoals !== undefined && { shortTermGoals }),
+      ...state,
+      tasks: ensureActiveObjectiveTarget(state.tasks),
+      shortTermGoals: ensureActiveObjectiveTarget(state.shortTermGoals),
     },
   };
 }

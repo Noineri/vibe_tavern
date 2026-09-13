@@ -1,30 +1,13 @@
-import {
-  archiveCharacter,
-  createCharacter,
-  deleteCharacter,
-  duplicateCharacter,
-  exportCharacter,
-  exportChatJsonl,
-  exportPromptTrace,
-  importJson,
-  unarchiveCharacter,
-  updateCharacter,
-  uploadCharacterAvatar,
-  activateCharacterVersion,
-  createCharacterVersion,
-  deleteCharacterVersion,
-  listCharacterVersions,
-  renameCharacterVersion,
-  type AppCharacterVersion,
-  type AppSnapshot,
-  type ImportJsonResponse,
-} from "../../app-client.js";
+import { archiveCharacter, createCharacter, deleteCharacter, duplicateCharacter, exportCharacter, unarchiveCharacter, updateCharacter, uploadCharacterAvatar, activateCharacterVersion, createCharacterVersion, deleteCharacterVersion, listCharacterVersions, renameCharacterVersion } from "../../api/character-api.js";
+import { exportChatJsonl, exportPromptTrace } from "../../api/chat-api.js";
+import { importJson } from "../../api/import-api.js";
+import type { AppCharacterVersion, AppSnapshot, ImportJsonResponse } from "../../api/types.js";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useChatStore } from "../chat-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
-import { fetchChat } from "../../app-client.js";
+import { fetchChat } from "../../api/chat-api.js";
 
 // ---------------------------------------------------------------------------
 // Character Actions

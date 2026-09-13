@@ -39,7 +39,7 @@ import {
   type ExperienceCapability,
   type ExperienceContextMode,
 } from "@vibe-tavern/domain";
-import type { ExperienceDefinitionDto } from "@vibe-tavern/api-contracts";
+import type { DiscoveredExperienceDefinition } from "../../../api/script-api.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Toggle } from "../../shared/Toggle.js";
@@ -102,7 +102,7 @@ type ListLoad<T> =
 type DiscoveryState =
   | { status: "idle" }
   | { status: "loading"; scriptId: string }
-  | { status: "ok"; scriptId: string; definition: ExperienceDefinitionDto }
+  | { status: "ok"; scriptId: string; definition: DiscoveredExperienceDefinition }
   | { status: "error"; scriptId: string; titleKey: TKey; detail: string | null };
 
 export interface ExperienceAssignmentProps {

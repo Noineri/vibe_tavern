@@ -18,7 +18,7 @@ import type {
   RetrievedMemoryHit,
   ActiveLoreEntry,
   ActivatedLoreDetail,
-  ObjectiveTask,
+  InsightsConfig,
   ObjectiveState,
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -195,22 +195,18 @@ export interface AssemblePromptForChatResult {
  * depth/injectPrompt defaults are unit-testable without a DB.
  */
 export function resolveObjectiveTaskContext(input: {
-  insightsConfig: Record<string, unknown>;
-  insightsObjectiveState: Record<string, unknown>;
+  insightsConfig: InsightsConfig;
+  insightsObjectiveState: ObjectiveState;
 }): { description: string; injectPrompt: string; injectionDepth: number } | null {
-  if (!input.insightsConfig?.objectiveEnabled) return null;
-  const state = input.insightsObjectiveState as Partial<ObjectiveState>;
+  if (!input.insightsConfig.objectiveEnabled) return null;
+  const state = input.insightsObjectiveState;
   // Route mode → the active route task; goals mode → the selected (active) short-term goal.
-  const items = state?.mode === OBJECTIVE_MODE.goals
-    ? (Array.isArray(state?.shortTermGoals) ? (state.shortTermGoals as ObjectiveTask[]) : [])
-    : (Array.isArray(state?.tasks) ? (state.tasks as ObjectiveTask[]) : []);
+  const items = state.mode === OBJECTIVE_MODE.goals ? state.shortTermGoals : state.tasks;
   const active =
-    items.find((t) => t && t.status === OBJECTIVE_TASK_STATUS.active) ??
-    items.find((t) => t && t.status === OBJECTIVE_TASK_STATUS.pending);
-  if (!active || !String(active.description ?? "").trim()) return null;
-  const injectionDepth = typeof state?.injectionDepth === "number" ? state.injectionDepth : 1;
-  const injectPrompt = typeof state?.injectPrompt === "string" ? state.injectPrompt : "";
-  return { description: String(active.description), injectPrompt, injectionDepth };
+    items.find((t) => t.status === OBJECTIVE_TASK_STATUS.active) ??
+    items.find((t) => t.status === OBJECTIVE_TASK_STATUS.pending);
+  if (!active || !active.description.trim()) return null;
+  return { description: active.description, injectPrompt: state.injectPrompt, injectionDepth: state.injectionDepth };
 }
 
 /**
@@ -222,18 +218,16 @@ export function resolveObjectiveTaskContext(input: {
  * defaults are unit-testable without a DB.
  */
 export function resolveObjectiveLongTermContext(input: {
-  insightsConfig: Record<string, unknown>;
-  insightsObjectiveState: Record<string, unknown>;
+  insightsConfig: InsightsConfig;
+  insightsObjectiveState: ObjectiveState;
 }): { description: string; injectPrompt: string; injectionDepth: number } | null {
-  if (!input.insightsConfig?.objectiveEnabled) return null;
-  const state = input.insightsObjectiveState as Partial<ObjectiveState>;
-  if (state?.mode !== OBJECTIVE_MODE.goals) return null;
+  if (!input.insightsConfig.objectiveEnabled) return null;
+  const state = input.insightsObjectiveState;
+  if (state.mode !== OBJECTIVE_MODE.goals) return null;
   const goal = state.longTermGoal;
-  if (!goal || !String(goal.description ?? "").trim()) return null;
+  if (!goal || !goal.description.trim()) return null;
   if (goal.status === OBJECTIVE_TASK_STATUS.completed || goal.status === OBJECTIVE_TASK_STATUS.abandoned) return null;
-  const injectionDepth = typeof state?.injectionDepth === "number" ? state.injectionDepth : 1;
-  const injectPrompt = typeof state?.injectPrompt === "string" ? state.injectPrompt : "";
-  return { description: String(goal.description), injectPrompt, injectionDepth };
+  return { description: goal.description, injectPrompt: state.injectPrompt, injectionDepth: state.injectionDepth };
 }
 
 export interface BuiltPipelineContext {
@@ -378,10 +372,10 @@ export class PromptAssemblyService {
    * in window. Nonselected variants' records are never substituted.
    */
   private async resolveSceneInjection(
-    insightsConfig: Record<string, unknown>,
+    insightsConfig: InsightsConfig,
     branchId: string,
   ): Promise<NonNullable<PromptAssemblyContext["sceneState"]> | null> {
-    if (!insightsConfig?.trackerEnabled) return null;
+    if (!insightsConfig.trackerEnabled) return null;
     const config = normalizeSceneTrackerConfig(insightsConfig.tracker);
     if (config.injectLastN <= 0) return null;
     const scanLimit = Math.max(1, config.contextWindow);

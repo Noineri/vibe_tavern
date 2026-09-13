@@ -51,7 +51,7 @@ import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import type { ObjectiveLongTermGoal, ObjectiveMode, ObjectiveTask, ObjectiveTaskStatus } from "../../../api/types.js";
+import type { ObjectiveLongTermGoal, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "../../../api/types.js";
 
 const STATUS_ORDER: ObjectiveTaskStatus[] = ["pending", "active", "completed", "abandoned"];
 
@@ -62,24 +62,30 @@ function pickActiveTask(tasks: ObjectiveTask[]): ObjectiveTask | null {
   return tasks.find((t) => t.status === "active") ?? tasks.find((t) => t.status === "pending") ?? null;
 }
 
-function objectiveMode(mode: ObjectiveMode | undefined): ObjectiveMode {
-  return mode === "goals" ? "goals" : "route";
+/** The current mode's items: short-term goals in goals mode, else the route tasks. */
+function currentItems(state: ObjectiveState | undefined): ObjectiveTask[] {
+  if (!state) return EMPTY;
+  return state.mode === "goals" ? state.shortTermGoals : state.tasks;
 }
 
-function isOpenLongTerm(goal: ObjectiveLongTermGoal | null | undefined): goal is ObjectiveLongTermGoal {
-  return Boolean(goal?.description?.trim()) && goal?.status !== "completed" && goal?.status !== "abandoned";
+/** The long-term goal of a goals-mode state, or null. The server guarantees a
+ *  stored goal has a non-blank description. */
+function goalsModeLongTerm(state: ObjectiveState | undefined): ObjectiveLongTermGoal | null {
+  return state?.mode === "goals" ? state.longTermGoal : null;
+}
+
+function isOpenLongTerm(goal: ObjectiveLongTermGoal | null): goal is ObjectiveLongTermGoal {
+  return goal !== null && goal.status !== "completed" && goal.status !== "abandoned";
 }
 
 function getObjectiveVisibilitySnapshot(): string {
   const chat = useSnapshotStore.getState().activeChat;
-  const enabled = chat?.insightsConfig?.objectiveEnabled ?? false;
+  const enabled = chat?.insightsConfig.objectiveEnabled ?? false;
   const state = chat?.insightsObjectiveState;
-  const mode = objectiveMode(state?.mode);
-  const items = mode === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
-  const activeTaskId = enabled ? pickActiveTask(items)?.id ?? "" : "";
-  const longTerm = enabled && mode === "goals" && isOpenLongTerm(state?.longTermGoal)
-    ? `${state.longTermGoal.status}:${state.longTermGoal.description}`
-    : "";
+  const mode = state?.mode ?? "route";
+  const activeTaskId = enabled ? pickActiveTask(currentItems(state))?.id ?? "" : "";
+  const goal = goalsModeLongTerm(state);
+  const longTerm = enabled && isOpenLongTerm(goal) ? `${goal.status}:${goal.description}` : "";
   return `${enabled ? "1" : "0"}:${mode}:${activeTaskId}:${longTerm}`;
 }
 
@@ -92,36 +98,15 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
   const objectiveChatId = brandId<ChatId>(chatId);
 
   // ── Primitive selectors only (render-isolation — see file header). ──
-  const objectiveEnabled = useSnapshotStore((s) => s.activeChat?.insightsConfig?.objectiveEnabled ?? false);
-  const mode = useSnapshotStore((s) => objectiveMode(s.activeChat?.insightsObjectiveState?.mode));
-  const activeId = useSnapshotStore((s) => {
-    const state = s.activeChat?.insightsObjectiveState;
-    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
-    return pickActiveTask(items)?.id ?? null;
-  });
-  const activeStatus = useSnapshotStore((s) => {
-    const state = s.activeChat?.insightsObjectiveState;
-    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
-    return pickActiveTask(items)?.status ?? null;
-  });
-  const activeDesc = useSnapshotStore((s) => {
-    const state = s.activeChat?.insightsObjectiveState;
-    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
-    return pickActiveTask(items)?.description ?? null;
-  });
-  const longTermStatus = useSnapshotStore((s) => {
-    const state = s.activeChat?.insightsObjectiveState;
-    const goal = state?.longTermGoal;
-    return objectiveMode(state?.mode) === "goals" && goal?.description?.trim() ? goal.status : null;
-  });
-  const longTermDesc = useSnapshotStore((s) => {
-    const state = s.activeChat?.insightsObjectiveState;
-    const goal = state?.longTermGoal;
-    return objectiveMode(state?.mode) === "goals" && goal?.description?.trim() ? goal.description : null;
-  });
+  const objectiveEnabled = useSnapshotStore((s) => s.activeChat?.insightsConfig.objectiveEnabled ?? false);
+  const mode = useSnapshotStore((s) => s.activeChat?.insightsObjectiveState.mode ?? "route");
+  const activeId = useSnapshotStore((s) => pickActiveTask(currentItems(s.activeChat?.insightsObjectiveState))?.id ?? null);
+  const activeStatus = useSnapshotStore((s) => pickActiveTask(currentItems(s.activeChat?.insightsObjectiveState))?.status ?? null);
+  const activeDesc = useSnapshotStore((s) => pickActiveTask(currentItems(s.activeChat?.insightsObjectiveState))?.description ?? null);
+  const longTermStatus = useSnapshotStore((s) => goalsModeLongTerm(s.activeChat?.insightsObjectiveState)?.status ?? null);
+  const longTermDesc = useSnapshotStore((s) => goalsModeLongTerm(s.activeChat?.insightsObjectiveState)?.description ?? null);
   const progress = useSnapshotStore((s) => {
-    const state = s.activeChat?.insightsObjectiveState;
-    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+    const items = currentItems(s.activeChat?.insightsObjectiveState);
     return `${items.filter((x) => x.status === "completed").length}/${items.length}`;
   });
 
@@ -129,8 +114,7 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
   // activeChat mutations do not re-render every mounted assistant header. ──
   const routeBlob = useSnapshotStore((s) => {
     if (!open) return "";
-    const state = s.activeChat?.insightsObjectiveState;
-    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+    const items = currentItems(s.activeChat?.insightsObjectiveState);
     return items.length ? JSON.stringify(items.map((item) => [item.id, item.status, item.description] as const)) : "";
   });
   const tasks = useMemo<ObjectiveTask[]>(() => {
@@ -544,11 +528,9 @@ registerMessageSlot({
   visible: (ctx: MessageSlotContext) => {
     if (ctx.messageRole !== "assistant") return false;
     const chat = useSnapshotStore.getState().activeChat;
-    if (!chat?.insightsConfig?.objectiveEnabled) return false;
+    if (!chat?.insightsConfig.objectiveEnabled) return false;
     const state = chat.insightsObjectiveState;
-    const mode = objectiveMode(state?.mode);
-    const items = mode === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
-    return pickActiveTask(items) !== null || (mode === "goals" && isOpenLongTerm(state?.longTermGoal));
+    return pickActiveTask(currentItems(state)) !== null || isOpenLongTerm(goalsModeLongTerm(state));
   },
   render: (ctx) => <ObjectiveZone chatId={ctx.chatId} messageId={ctx.messageId} />,
 });

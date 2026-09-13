@@ -5,7 +5,7 @@ import { useCoauthorTurnStore, extractPersistedCoauthorActivities, type Coauthor
 import { coauthorSectionEditInputSchema, coauthorSectionWriteInputSchema, type ContextSearchResultItem } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore } from "../../stores/index.js";
-import type { AppMessage } from "../../app-client.js";
+import type { AppMessage } from "../../api/types.js";
 import { Icons } from "../shared/icons.js";
 import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 import { useT } from "../../i18n/context.js";

@@ -3,15 +3,8 @@ import { toast } from "sonner";
 import type { Attachment, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
-import {
-  generateReplyStream,
-  continueChatMessageStream,
-  regenerateChatMessageStream,
-  sendChatMessageStream,
-  type AppMessage,
-  type AppSnapshot,
-  type ChatGenerationStatus,
-} from "../app-client.js";
+import { generateReplyStream, continueChatMessageStream, regenerateChatMessageStream, sendChatMessageStream } from "../api/chat-api.js";
+import type { AppMessage, AppSnapshot, ChatGenerationStatus } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
@@ -147,7 +140,7 @@ function readDiceSendState(): { commitIntent: DiceSendCommitIntent | undefined; 
   const branchId = snapshot.activeBranch?.id ?? null;
   const insights = snapshot.activeChat?.insightsConfig;
   if (!insights?.diceEnabled || !chatId || !branchId) return { commitIntent: undefined, blockReason: null };
-  const diceMode = insights.diceMode ?? "normal";
+  const diceMode = insights.diceMode;
   const lane = useDiceStore.getState().byScope[`${chatId}|${branchId}`]?.lanes?.[diceMode] ?? null;
   const blockReason = diceSendBlockReason(lane, snapshot.persona?.id ?? null, snapshot.activeChat?.characterId ?? null);
   if (blockReason) return { commitIntent: undefined, blockReason };

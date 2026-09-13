@@ -25,9 +25,10 @@
  * an `http://` target fails closed before any DNS or network access, and
  * automatically followed redirects are disabled (`redirect: "manual"`) so a
  * provider's `Location: http://...` response cannot escape the HTTPS-only guard
- * (or, for a loopback HTTP target, the explicit proxy) inside Bun. The raw 3xx
- * response is returned to the caller as a failed provider response; no redirect
- * is replayed. Local HTTP providers remain usable with `direct`.
+ * inside Bun — a followed redirect would still traverse the bridge, but in
+ * plaintext, which is exactly what the guard forbids. The raw 3xx response is
+ * returned to the caller as a failed provider response; no redirect is
+ * replayed. Local HTTP providers remain usable with `direct`.
  *
  * Credential safety: the username/password are stored as SEPARATE columns and
  * combined here into the proxy URL only at request time. They are NEVER placed
@@ -247,14 +248,17 @@ export function createProxiedFetch(
 		}
 		// SOCKS5-backed requests never automatically follow redirects. Bun's
 		// default `redirect: "follow"` would silently pursue a
-		// `Location: http://...` inside Bun — bypassing the HTTPS-only guard above,
-		// and for a loopback HTTP Location, also bypassing the explicit proxy —
-		// violating the SOCKS5 HTTPS-only / fail-closed contract. `redirect:
-		// "manual"` is applied AFTER spreading the caller's init so the caller
-		// cannot override it; the raw 3xx response is returned normally and
+		// `Location: http://...` inside Bun, violating the SOCKS5 HTTPS-only /
+		// fail-closed contract: the followed request keeps the explicit proxy
+		// (measured on 1.4.2 — a 302 to a loopback HTTP URL crosses the proxy
+		// twice, once per hop), so it stays inside the tunnel but in plaintext,
+		// which is precisely what the guard above forbids. `redirect: "manual"`
+		// is applied AFTER spreading the caller's init so the caller cannot
+		// override it; the raw 3xx response is returned normally and
 		// provider/gateway callers treat it as a failed provider response.
 		// HTTP/HTTPS-proxy wrappers (socksBacked === false) preserve caller
-		// redirect behavior unchanged.
+		// redirect behavior unchanged — the pin for that lives in
+		// provider-proxy-traversal.test.ts.
 		if (socksBacked) {
 			return transportFetch(input, { ...init, proxy: proxyUrl, redirect: "manual" });
 		}

@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import { render, act } from "@testing-library/react";
 import { useDomEnv } from "../../../test/dom-env.js";
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
 useDomEnv();
@@ -79,7 +80,7 @@ function seed(messages: AppMessage[], isCoauthorMode: boolean): AppSnapshot {
   return {
     chats: [{ id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp" } as unknown as AppSnapshot["activeChat"],
+    activeChat: { id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp", insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
     branches: [],
     messages,

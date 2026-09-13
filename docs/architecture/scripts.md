@@ -236,7 +236,7 @@ Editor tabs (`listByScope`) also union FK ∪ junction for character/persona sco
 
 ### Templates (`script-templates/*.js`)
 
-Eight shipped templates, each a standalone `.js` file loaded as a raw string via `?raw` imports in `script-templates/index.ts` (resolved by the raw-string loader in `apps/web/bun-plugin-web-assets.ts`, typed by the `*?raw` ambient declaration in `apps/web/src/bun-env.d.ts`). Keys mirror the i18n keys `script_template_<key>` in `apps/web/src/i18n/locales/*.json`.
+Nine shipped templates, each a standalone `.js` file imported as text in `script-templates/index.ts` via Bun's native `with { type: "text" }` import attribute (typed as `string` by `bun-types`' attribute-conditioned ambient modules, which need TypeScript ≥ 7.1 — see the `typescript` pin in the root `package.json`). Keys mirror the i18n keys `script_template_<key>` in `apps/web/src/i18n/locales/*.json`. The byte-exactness of that path is pinned by `scripts/build-web-text-imports.test.ts`.
 
 | Key | Purpose |
 |------|---------|
@@ -248,6 +248,7 @@ Eight shipped templates, each a standalone `.js` file loaded as a raw string via
 | `hp` | Persistent HP with damage/heal; `state.get('hp', 100)` is the canonical use of the default-arg fix |
 | `dice` | `/roll dN[+M][ adv|dis]` parser; output via `injectMessage`; per-message cached for stable regen (the cache predates the seeded RNG — the seeded `context.random*` now provides determinism at the engine level, making the per-template cache unnecessary for new scripts) |
 | `random` | 5%-chance ambient event each turn |
+| `fate_die` | d20 check against fixed outcome bands (`scriptKind: "dice"`); persona or character rolls, result is binding |
 
 Every template is covered by `services/api/test/script-templates.test.ts`, which loads the bodies via `Bun.file()` and runs them through the real sandbox. This is the regression net for the engine invariants (the HP and dice tests are explicitly tagged REGRESSION).
 

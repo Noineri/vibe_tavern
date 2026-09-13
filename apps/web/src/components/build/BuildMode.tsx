@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import type { AssemblePromptResponse, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { AppCharacter } from "../../app-client.js";
+import type { AppCharacter } from "../../api/types.js";
 import { cn } from "../../lib/cn.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SearchInput } from "../shared/SearchInput.js";

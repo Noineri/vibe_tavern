@@ -13,6 +13,7 @@
  * sections).
  */
 import { describe, it, expect } from "bun:test";
+import { wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import {
 	buildReorderUpdates,
 	getSection,
@@ -21,11 +22,12 @@ import {
 	POSITION_SECTIONS,
 	type LoreReorderUpdate,
 } from "./lore-entry-reorder.js";
-import type { LoreEntryRecord } from "../../../app-client.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
 
 /** Minimal factory — only id/position matter for reorder logic. */
 function entry(id: string, position: string, sortOrder: number): LoreEntryRecord {
 	return {
+		...wireLoreEntry(),
 		id,
 		lorebookId: "lb_1",
 		title: id,
@@ -59,7 +61,7 @@ function entry(id: string, position: string, sortOrder: number): LoreEntryRecord
 		characterFilterExclude: false,
 		matchSources: [],
 		sortOrder,
-	} as LoreEntryRecord;
+	};
 }
 
 /** A flat list as the list renders it: sections in POSITION_SECTIONS order. */

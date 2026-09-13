@@ -34,7 +34,7 @@
  * becomes the implicit target.
  */
 import type { AssemblePromptResponse, ChatBranchId, ChatId, ObjectiveLongTermGoal, ObjectiveMode, ObjectiveShortTermGoal, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "@vibe-tavern/domain";
-import { brandId, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import { brandId, defaultObjectiveState, isObjectiveTaskStatus, OBJECTIVE_CONTEXT_WINDOW, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { z } from "zod";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
@@ -53,34 +53,6 @@ type Execute = typeof nonstreamingProviderExecute;
 type ResolvePrompt = typeof resolveInsightsPrompt;
 type ResolvedProfile = ProviderExecutionInput["profile"];
 
-/** Default recent-message window for the Objective model. */
-export const OBJECTIVE_CONTEXT_WINDOW = 5;
-
-function isObjectiveEnabled(insightsConfig: Record<string, unknown>): boolean {
-  return insightsConfig?.objectiveEnabled === true;
-}
-
-/** Default ObjectiveState for a chat that has none yet (or for addTask on an empty chat). */
-export function defaultObjectiveState(): ObjectiveState {
-  return {
-    mode: OBJECTIVE_MODE.route,
-    objectiveDescription: "",
-    tasks: [],
-    longTermGoal: null,
-    shortTermGoals: [],
-    autoCheckFrequency: 0,
-    autoCheckEventCount: 0,
-    contextWindow: OBJECTIVE_CONTEXT_WINDOW,
-    injectionDepth: 1,
-    generatePrompt: "",
-    checkPrompt: "",
-    injectPrompt: "",
-    useChatModel: true,
-    providerProfileId: null,
-    model: null,
-  };
-}
-
 const generatedTaskRouteSchema = z.object({
   tasks: z.array(z.object({ description: z.string().trim().min(1) }).strict()).min(1),
 }).strict();
@@ -91,17 +63,6 @@ const generatedGoalsSchema = z.object({
 }).strict();
 
 const completionVerdictSchema = z.object({ completed: z.boolean() }).strict();
-
-const OBJECTIVE_TASK_STATUSES: readonly ObjectiveTaskStatus[] = [
-  OBJECTIVE_TASK_STATUS.pending,
-  OBJECTIVE_TASK_STATUS.active,
-  OBJECTIVE_TASK_STATUS.completed,
-  OBJECTIVE_TASK_STATUS.abandoned,
-];
-
-function isObjectiveTaskStatus(value: unknown): value is ObjectiveTaskStatus {
-  return typeof value === "string" && OBJECTIVE_TASK_STATUSES.some((status) => status === value);
-}
 
 /** Parse the generation model's strict JSON route. All generated tasks start pending. */
 export function parseTaskList(text: string): ObjectiveTask[] {
@@ -215,81 +176,6 @@ function composeCheckGoalsInstruction(base: string, longTermDescription: string 
   return `${base}\n\n${longTermLine}Active short-term goal: ${shortTermDescription}\n\nRequired output: one JSON object shaped exactly as {"completed":true} or {"completed":false}.`;
 }
 
-/**
- * Normalize a raw stored array of `{id,description,status}` items — route tasks OR
- * goals-mode short-term goals — collapsing to at most one `active` (the rest that
- * claim `active` fall back to `pending`). Shared by both modes since the item
- * shape is identical; the caller assigns the result to the typed field.
- */
-function normalizeObjectiveItems(raw: unknown): { id: string; description: string; status: ObjectiveTaskStatus }[] {
-  const items: { id: string; description: string; status: ObjectiveTaskStatus }[] = [];
-  let activeSeen = false;
-  if (Array.isArray(raw)) {
-    for (const candidate of raw as unknown[]) {
-      if (typeof candidate !== "object" || candidate === null) continue;
-      const item = candidate as Partial<ObjectiveTask>;
-      const id = typeof item.id === "string" ? item.id.trim() : "";
-      const description = typeof item.description === "string" ? item.description.trim() : "";
-      if (!id || !description || !isObjectiveTaskStatus(item.status)) continue;
-      const status = item.status === OBJECTIVE_TASK_STATUS.active && activeSeen
-        ? OBJECTIVE_TASK_STATUS.pending
-        : item.status;
-      if (status === OBJECTIVE_TASK_STATUS.active) activeSeen = true;
-      items.push({ id, description, status });
-    }
-  }
-  return items;
-}
-
-/** Normalize a raw stored long-term goal. Returns null when malformed/absent. */
-function normalizeLongTermGoal(raw: unknown): ObjectiveLongTermGoal | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const goal = raw as Partial<ObjectiveLongTermGoal>;
-  const description = typeof goal.description === "string" ? goal.description.trim() : "";
-  if (!description || !isObjectiveTaskStatus(goal.status)) return null;
-  return { description, status: goal.status };
-}
-
-/**
- * Normalize a raw stored value into a complete ObjectiveState, filling any
- * missing field with its default. This is the backward-compat migration path:
- * chats created before the model-selection fields (useChatModel/
- * providerProfileId/model) — or stored as `{}` — load with `useChatModel: true`
- * (the chat's active provider + default model), so auto-check keeps working
- * without a DB migration. Mirrors {@link normalizeAutoSummaryConfig}.
- */
-function normalizeObjectiveState(raw: unknown): ObjectiveState {
-  const base = defaultObjectiveState();
-  if (typeof raw !== "object" || raw === null) return base;
-  const r = raw as Partial<ObjectiveState>;
-  const tasks = normalizeObjectiveItems(r.tasks);
-  return {
-    mode: r.mode === OBJECTIVE_MODE.goals ? OBJECTIVE_MODE.goals : OBJECTIVE_MODE.route,
-    objectiveDescription: typeof r.objectiveDescription === "string" ? r.objectiveDescription : base.objectiveDescription,
-    tasks,
-    longTermGoal: normalizeLongTermGoal(r.longTermGoal),
-    shortTermGoals: normalizeObjectiveItems(r.shortTermGoals),
-    autoCheckFrequency: typeof r.autoCheckFrequency === "number" && Number.isFinite(r.autoCheckFrequency)
-      ? Math.max(0, Math.floor(r.autoCheckFrequency))
-      : base.autoCheckFrequency,
-    autoCheckEventCount: typeof r.autoCheckEventCount === "number" && Number.isFinite(r.autoCheckEventCount)
-      ? Math.max(0, Math.floor(r.autoCheckEventCount))
-      : base.autoCheckEventCount,
-    contextWindow: typeof r.contextWindow === "number" && Number.isFinite(r.contextWindow)
-      ? Math.max(1, Math.floor(r.contextWindow))
-      : base.contextWindow,
-    injectionDepth: typeof r.injectionDepth === "number" && Number.isFinite(r.injectionDepth)
-      ? Math.max(1, Math.floor(r.injectionDepth))
-      : base.injectionDepth,
-    generatePrompt: typeof r.generatePrompt === "string" ? r.generatePrompt : base.generatePrompt,
-    checkPrompt: typeof r.checkPrompt === "string" ? r.checkPrompt : base.checkPrompt,
-    injectPrompt: typeof r.injectPrompt === "string" ? r.injectPrompt : base.injectPrompt,
-    useChatModel: typeof r.useChatModel === "boolean" ? r.useChatModel : base.useChatModel,
-    providerProfileId: typeof r.providerProfileId === "string" && r.providerProfileId.trim() ? r.providerProfileId : base.providerProfileId,
-    model: typeof r.model === "string" && r.model.trim() ? r.model : base.model,
-  };
-}
-
 export interface ObjectiveGenerateInput {
   chatId: ChatId;
   profile: ResolvedProfile;
@@ -368,8 +254,7 @@ export class ObjectiveService {
   /** Load the chat's objective state, or null when none has been generated. */
   async getState(chatId: ChatId): Promise<ObjectiveState> {
     const chat = await this.stores.chats.getById(chatId);
-    if (!chat) return defaultObjectiveState();
-    return normalizeObjectiveState(chat.insightsObjectiveState);
+    return chat ? chat.insightsObjectiveState : defaultObjectiveState();
   }
 
   /** The current mode's active target (route task or selected short-term goal), or null. */
@@ -806,7 +691,7 @@ export class ObjectiveService {
         const latest = this.latestAutoTrigger.get(lockKey);
         if (!latest) return;
         const chat = await this.stores.chats.getById(latest.chatId);
-        if (!chat || !isObjectiveEnabled(chat.insightsConfig)) {
+        if (!chat || !chat.insightsConfig.objectiveEnabled) {
           this.pendingAutoCheckEvents.delete(lockKey);
           return;
         }
@@ -914,7 +799,7 @@ export class ObjectiveService {
       if (!next) return current;
       signal?.throwIfAborted();
       await this.stores.chats.updateInsightsObjectiveState(chatId, {
-        insightsObjectiveState: next as unknown as Record<string, unknown>,
+        insightsObjectiveState: next,
       });
       return next;
     });

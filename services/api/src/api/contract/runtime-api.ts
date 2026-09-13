@@ -1,3 +1,4 @@
+import type { ScriptKind } from "@vibe-tavern/domain";
 import type { AiAssistantStreamChunk } from "../../domain/ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../../domain/ai-assistant/ai-assistant-stream.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
@@ -26,7 +27,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexProfile, RegexProfileLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { AutoSummaryConfig, InsightsConfig, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexProfile, RegexProfileLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
@@ -193,8 +194,8 @@ export interface ChatRuntimeApi {
 	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SummaryResponse }>;
 	reorderChatSummaries: (chatId: string, body: { orderedIds: string[] }) => Promise<ChatSummary[]>;
 	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean; temperature?: number; maxOutputTokens?: number; contextBudget?: number }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
-	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<ConfigPatchResponse>;
-	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
+	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> }) => Promise<ConfigPatchResponse>;
+	updateInsightsConfig: (chatId: string, body: { insightsConfig?: Partial<Omit<InsightsConfig, "tracker">> & { tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
 	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
 	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<SummarizeChatResult>;
 	updateDynamicPrompt: (chatId: string, body: { content: string }) => Promise<ConfigPatchResponse>;
@@ -342,12 +343,12 @@ export interface ScriptRuntimeApi {
 	listAllScripts: () => Promise<Script[]>;
 	listScripts: (scopeType: string, ownerId?: string) => Promise<Script[]>;
 	getScript: (scriptId: string) => Promise<Script | null>;
-	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
+	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }) => Promise<Script>;
 	setScriptScope: (scriptId: string, scopeType: 'global' | 'entity' | 'chat', ownerId: string | null) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
 	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
-	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
+	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
 	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
 	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
 	/** List the visuals bound to a script (its equal-peer "skin" set; BE-5 junction). */
@@ -511,7 +512,7 @@ export interface AssetRuntimeApi {
 
 export interface AiAssistantRuntimeApi {
 	streamAiAssistant: (body: AiAssistantStreamRequest) => AsyncIterable<AiAssistantStreamChunk>;
-	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }>;
+	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<import("@vibe-tavern/api-contracts").AiAssistantTokenCount>;
 	regexAssist: (body: import("@vibe-tavern/api-contracts").RegexAssistRequest) => Promise<import("@vibe-tavern/api-contracts").RegexAssistResponse>;
 }
 
@@ -600,7 +601,7 @@ export interface InsightsRuntimeApi {
 	// ─── Scene Tracker history backfill (SCENE_TRACKER_PLAN SCN-14) ───────────
 	startSceneBackfill: (chatId: string, mode: string) => Promise<SceneBackfillStatusResponse>;
 	getSceneBackfillStatus: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
-	cancelSceneBackfill: (chatId: string, runId: string) => { runId: string; cancelled: true };
+	cancelSceneBackfill: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
 	retrySceneBackfill: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
 }
 

@@ -16,14 +16,14 @@ import { unwrapRpc, unwrapError } from "./unwrap.js";
 /** `GET /api/copilot/skills` — merged metadata-only catalog (built-in + user). */
 export async function listCopilotSkills(): Promise<SkillCatalog> {
   const response = await client.api.copilot.skills.$get();
-  return unwrapRpc<SkillCatalog>(response);
+  return unwrapRpc(response);
 }
 
 /** `GET /api/copilot/skills/:id` — one catalog entry, or `null` if absent. */
 export async function readCopilotSkill(id: string): Promise<SkillCatalogEntryDto | null> {
   const response = await client.api.copilot.skills[":id"].$get({ param: { id } });
   if (response.status === 404) return null;
-  return unwrapRpc<SkillCatalogEntryDto>(response);
+  return unwrapRpc(response);
 }
 
 /**
@@ -33,7 +33,7 @@ export async function readCopilotSkill(id: string): Promise<SkillCatalogEntryDto
 export async function deleteCopilotSkill(id: string): Promise<{ id: string }> {
   const response = await client.api.copilot.skills[":id"].$delete({ param: { id } });
   if (!response.ok) throw await unwrapError(response);
-  return unwrapRpc<{ id: string }>(response);
+  return unwrapRpc(response);
 }
 
 /**

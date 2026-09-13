@@ -1,8 +1,9 @@
-import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
-import type { LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
+import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type PersonaId, type PromptPresetId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { ChatBranch, LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
-import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+import type { Chat as DbChat, ChatBranch as DbChatBranch, PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import type {
+	ChatDto,
 	ClientProviderProfileRecord,
 	CachedProviderModelsRecord,
 	FavoriteProviderModelRecord,
@@ -63,6 +64,43 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
     compactionSummary: trace.compactionSummary ?? null,
     sentConfig: trace.sentConfig ?? undefined,
     providerResponse: trace.providerResponse ?? undefined,
+  };
+}
+
+/** Store chat → wire chat. The store's server-internal JSON columns (lore activation, script state) stay on the server. */
+export function mapChatDto(chat: DbChat): ChatDto {
+  return {
+    id: brandId<ChatId>(chat.id),
+    characterId: brandId<CharacterId>(chat.characterId),
+    personaId: chat.personaId === null ? null : brandId<PersonaId>(chat.personaId),
+    title: chat.title,
+    summary: chat.summary,
+    messageHistoryLimit: chat.messageHistoryLimit,
+    autoSummaryConfig: chat.autoSummaryConfig,
+    insightsConfig: chat.insightsConfig,
+    insightsObjectiveState: chat.insightsObjectiveState,
+    status: chat.status,
+    mode: chat.mode,
+    selectedGreetingIndex: chat.selectedGreetingIndex,
+    activeBranchId: brandId<ChatBranchId>(chat.activeBranchId),
+    promptPresetId: chat.promptPresetId === null ? null : brandId<PromptPresetId>(chat.promptPresetId),
+    coauthorContextLinks: chat.coauthorContextLinks,
+    coauthorModuleId: chat.coauthorModuleId,
+    dynamicPrompt: chat.dynamicPrompt,
+    createdAt: chat.createdAt,
+    updatedAt: chat.updatedAt,
+  };
+}
+
+export function mapChatBranch(branch: DbChatBranch): ChatBranch {
+  return {
+    id: brandId<ChatBranchId>(branch.id),
+    chatId: brandId<ChatId>(branch.chatId),
+    parentBranchId: branch.parentBranchId === null ? null : brandId<ChatBranchId>(branch.parentBranchId),
+    forkedFromMessageId: branch.forkedFromMessageId === null ? null : brandId<MessageId>(branch.forkedFromMessageId),
+    label: branch.label,
+    createdAt: branch.createdAt,
+    ...(branch.messageCount === undefined ? {} : { messageCount: branch.messageCount }),
   };
 }
 

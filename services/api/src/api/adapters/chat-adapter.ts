@@ -479,7 +479,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		signal?: AbortSignal,
 	) => this.chatSummaryService.generateChatSummary({ chatId, ...body, signal });
 
-	updateMemorySettings = async (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => {
+	updateMemorySettings: ChatRuntimeApi["updateMemorySettings"] = async (chatId, body) => {
 		const chat = await this.stores.chats.getById(chatId);
 		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
 		const autoSummaryConfig = body.autoSummaryConfig
@@ -495,7 +495,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
 	};
 
-	updateInsightsConfig = async (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; diceScriptIds?: string[] | null; diceActorBindings?: Record<string, ("persona" | "character")[]> | null; tracker?: SceneTrackerConfigPatch } }) => {
+	updateInsightsConfig: ChatRuntimeApi["updateInsightsConfig"] = async (chatId, body) => {
 		const existing = await this.stores.chats.getById(chatId);
 		if (!existing) throw notFound("Chat", `Chat '${chatId}' was not found.`);
 		const patch = body.insightsConfig;

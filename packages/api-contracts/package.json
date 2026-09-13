@@ -5,15 +5,25 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./interactive": {
+      "types": "./src/schemas/interactive-schema.ts",
+      "default": "./src/schemas/interactive-schema.ts"
+    }
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
     "test": "bun test"
   },
   "dependencies": {
     "@vibe-tavern/domain": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.0"
+    "@types/bun": "catalog:"
   }
 }

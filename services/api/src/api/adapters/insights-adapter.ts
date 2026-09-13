@@ -307,10 +307,10 @@ export class InsightsAdapter {
 	};
 
 	/** Explicitly cancel a run: aborts the active item (nothing persists) and
-	 *  stops the loop before the next item. */
-	cancelSceneBackfill = (chatId: string, runId: string): { runId: string; cancelled: true } => {
-		this.trackerService.cancelBackfill(brandId<ChatId>(chatId), runId);
-		return { runId, cancelled: true };
+	 *  stops the loop before the next item. Returns the run status so the client
+	 *  keeps polling until the loop reports `cancelled`. */
+	cancelSceneBackfill = async (chatId: string, runId: string): Promise<SceneBackfillStatusResponse> => {
+		return this.trackerService.cancelBackfill(brandId<ChatId>(chatId), runId);
 	};
 
 	/** Retry/resume a terminal run's failed + unprocessed frozen-manifest items. */

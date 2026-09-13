@@ -90,46 +90,52 @@ export class NpmInstallError extends Error {
  * Output is captured rather than inherited so the failure reaches the UI —
  * a global install that fails on a permissions or disk-space problem says so
  * on stderr, and that text is the only useful diagnosis the user will get.
+ *
+ * SIGKILL, because Bun sends `killSignal` once and never escalates: a package
+ * manager ignoring SIGTERM would outlive the deadline.
  */
 export async function installPackageVersion(
 	version: string,
 	onOutput?: (line: string) => void,
+	timeoutMs: number = INSTALL_TIMEOUT_MS,
 ): Promise<void> {
 	const spec = packageSpec(version);
 	const command = [process.execPath, "add", "-g", spec];
 	console.log(`[npm-update] running: ${command.join(" ")}`);
 
-	const proc = Bun.spawn(command, { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+	const proc = Bun.spawn(command, {
+		stdout: "pipe",
+		stderr: "pipe",
+		stdin: "ignore",
+		// Bun.spawn defaults to the environment captured at process start; a
+		// registry or proxy override set while the server runs must reach bun.
+		env: { ...process.env },
+		timeout: timeoutMs,
+		killSignal: "SIGKILL",
+	});
 
-	let timedOut = false;
-	const timer = setTimeout(() => {
-		timedOut = true;
-		proc.kill();
-	}, INSTALL_TIMEOUT_MS);
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	const output = `${stdout}${stderr}`.trim();
+	if (output.length > 0) onOutput?.(output);
 
-	try {
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		]);
-		const output = `${stdout}${stderr}`.trim();
-		if (output.length > 0) onOutput?.(output);
-
-		if (timedOut) {
-			throw new NpmInstallError(
-				`Installing ${spec} timed out after ${Math.round(INSTALL_TIMEOUT_MS / 60_000)} minutes. The previous version is still installed.`,
-				output,
-			);
-		}
-		if (exitCode !== 0) {
-			throw new NpmInstallError(
-				`bun add -g ${spec} exited with code ${exitCode}. The previous version is still installed.`,
-				output,
-			);
-		}
-	} finally {
-		clearTimeout(timer);
+	// A signal means the deadline fired — nothing else signals this child. The
+	// exit code cannot carry that news: the timeout kill surfaces as
+	// `exitCode: 137`, indistinguishable from an install that failed with 137.
+	if (proc.signalCode !== null) {
+		throw new NpmInstallError(
+			`Installing ${spec} timed out after ${Math.round(timeoutMs / 60_000)} minutes. The previous version is still installed.`,
+			output,
+		);
+	}
+	if (exitCode !== 0) {
+		throw new NpmInstallError(
+			`bun add -g ${spec} exited with code ${exitCode}. The previous version is still installed.`,
+			output,
+		);
 	}
 }
 

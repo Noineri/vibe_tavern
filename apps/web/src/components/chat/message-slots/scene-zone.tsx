@@ -93,7 +93,7 @@ function isRecordFresh(record: { schemaHash: string; configRevision: number } | 
 
 function getSceneVisibilitySnapshot(ctx: MessageSlotContext): string {
   const s = useSnapshotStore.getState();
-  const enabled = s.activeChat?.insightsConfig?.trackerEnabled ?? false;
+  const enabled = s.activeChat?.insightsConfig.trackerEnabled ?? false;
   const variantId = selectedVariantIdOf(s, ctx.messageId);
   const isLatest = ctx.messageId === getLatestAssistantMessageId(s);
   // Visibility tracks record PRESENCE (a persisted fact), not schema freshness —
@@ -121,7 +121,7 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
     return r ? JSON.stringify(r) : "";
   });
   const configBlob = useSnapshotStore((s) => {
-    const c = s.activeChat?.insightsConfig?.tracker;
+    const c = s.activeChat?.insightsConfig.tracker;
     return c ? JSON.stringify([c.schema, c.schemaHash, c.revision]) : "";
   });
   const generating = useIsSceneGenerating(variantId);
@@ -472,7 +472,7 @@ registerMessageSlot({
   visible: (ctx: MessageSlotContext) => {
     if (ctx.messageRole !== "assistant") return false;
     const s = useSnapshotStore.getState();
-    if (!s.activeChat?.insightsConfig?.trackerEnabled) return false;
+    if (!s.activeChat?.insightsConfig.trackerEnabled) return false;
     const msg = s.messagesById[ctx.messageId];
     if (!msg) return false;
     const variantId = msg.variants?.[msg.selectedVariantIndex ?? -1]?.id;

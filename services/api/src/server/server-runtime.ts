@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
@@ -52,8 +53,10 @@ import { createApp } from "./app-factory.js";
 import { addRuntimeTeardown, runRuntimeTeardowns, setRuntimeShutdownHook } from "./runtime-shutdown.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
+import { serveErrorResponse } from "./serve-error.js";
 
 export { apiNotReadyResponse } from "./loading-placeholder.js";
+export { serveErrorResponse } from "./serve-error.js";
 import { runStartupFileChecks } from "./startup-checks.js";
 
 /**
@@ -73,10 +76,11 @@ export interface RuntimeAppConfig {
 	readonly staticDir?: string;
 	readonly logsDir?: string;
 	readonly extraDataDirs?: readonly string[];
-	/** Embedded frontend files baked into the standalone .exe. When non-empty,
-	 *  the SPA is served from the binary itself; no on-disk web/ folder is
-	 *  required. Sourced from embedded-web-manifest.ts. */
-	readonly embeddedWebFiles?: Record<string, string>;
+	/** Frontend files baked into the standalone binary, keyed by the URL
+	 *  pathname each answers. When non-empty, the SPA is served from the binary
+	 *  itself; no on-disk web/ folder is required. Sourced from
+	 *  embedded-web-assets.ts. */
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
 }
 
 export interface ServerRuntimeConfig {
@@ -93,7 +97,7 @@ export interface ServerRuntimeConfig {
 	readonly checkPortBeforeListen?: boolean;
 	readonly shutdownSignals?: readonly NodeJS.Signals[];
 	readonly missingFrontendMessage: string;
-	readonly embeddedWebFiles?: Record<string, string>;
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
 }
 
 export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> {
@@ -325,6 +329,61 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	return app;
 }
 
+/**
+ * Where this process gets the frontend from, and whether it has one at all.
+ *
+ * The single-file build serves the SPA out of the executable, so an absent
+ * web/ directory is not an API-only run there. Deciding on `staticEnabled`
+ * alone told the user of a freshly extracted .exe that their frontend was
+ * missing — and skipped the browser launch — while the binary was serving it.
+ */
+export function resolveFrontendSource(config: {
+	readonly staticEnabled: boolean;
+	readonly staticDir: string;
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
+}): { readonly available: boolean; readonly label: string } {
+	if (config.staticEnabled) return { available: true, label: config.staticDir };
+	const embeddedCount = config.embeddedWebFiles?.size ?? 0;
+	if (embeddedCount > 0) {
+		return { available: true, label: `(embedded in the executable — ${embeddedCount} file(s))` };
+	}
+	return { available: false, label: "(not built — API-only mode)" };
+}
+
+/**
+ * Bun `{dir}` routes for the built frontend's asset directories.
+ *
+ * These run before `fetch`, so /assets/* and /fonts/* never reach Hono — and
+ * that is the point: a `{dir}` route answers with an `ETag` + `Last-Modified`
+ * and turns a reload into a 304, while hono's serveStatic sends no validator
+ * at all (measured on the built bundle: 10.0 MB re-downloaded per page load).
+ * Bypassing the middleware chain is a no-op for these paths — the origin guard
+ * and mobile auth both explicitly skip everything outside /api.
+ *
+ * Two measured constraints shape this:
+ *  - a `{dir}` 404 does NOT fall through to `fetch`, so these routes must not
+ *    be registered when the binary also carries an embedded copy: a file that
+ *    exists only inside the executable would 404 instead of being served.
+ *  - `Bun.serve` THROWS at bind time when a `{dir}` path does not exist, so
+ *    each directory is checked first. A directory removed later is a clean 404.
+ */
+export function resolveStaticDirRoutes(config: {
+	readonly staticEnabled: boolean;
+	readonly staticDir: string;
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
+}): Record<string, { dir: string }> {
+	if (!config.staticEnabled) return {};
+	if ((config.embeddedWebFiles?.size ?? 0) > 0) return {};
+	const routes: Record<string, { dir: string }> = {};
+	for (const name of ["assets", "fonts"]) {
+		const dir = resolve(config.staticDir, name);
+		if (statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
+			routes[`/${name}/*`] = { dir };
+		}
+	}
+	return routes;
+}
+
 export async function startServerRuntime(config: ServerRuntimeConfig): Promise<void> {
 	const tag = `[${config.mode}]`;
 	const tlsConfig = resolveTlsConfig();
@@ -332,7 +391,8 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	console.log(`${tag} Starting Vibe Tavern...`);
 	if (config.rootDir) console.log(`${tag} Root: ${config.rootDir}`);
 	console.log(`${tag} Data: ${config.dataDir}`);
-	console.log(`${tag} Static: ${config.staticEnabled ? config.staticDir : "(not built — API-only mode)"}`);
+	const frontend = resolveFrontendSource(config);
+	console.log(`${tag} Static: ${frontend.label}`);
 	console.log(`${tag} Host: ${config.host}:${config.port}`);
 
 	// ─── Early bind ───────────────────────────────────────────────────
@@ -372,7 +432,9 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	) => Response | Promise<Response> = createLoadingHandler({ alegreyaFont });
 
 	const server = Bun.serve({
+		routes: resolveStaticDirRoutes(config),
 		fetch: (req, s) => fetchHandler(req, s),
+		error: (err) => serveErrorResponse(tag, err),
 		port: config.port,
 		hostname: config.host,
 		idleTimeout: 255,
@@ -390,7 +452,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 
 	openBrowserOrPrintMessage({
 		mode: config.mode,
-		staticEnabled: config.staticEnabled,
+		frontendAvailable: frontend.available,
 		port: config.port,
 		missingFrontendMessage: config.missingFrontendMessage,
 	});
@@ -596,12 +658,12 @@ const STARTUP_ERROR_HTML = `<!DOCTYPE html>
 
 function openBrowserOrPrintMessage(options: {
 	readonly mode: ServerRuntimeConfig["mode"];
-	readonly staticEnabled: boolean;
+	readonly frontendAvailable: boolean;
 	readonly port: number;
 	readonly missingFrontendMessage: string;
 }): void {
 	const tag = `[${options.mode}]`;
-	if (options.staticEnabled && process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
+	if (options.frontendAvailable && process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
 		const browserUrl = `http://127.0.0.1:${options.port}`;
 		console.log(`${tag} Opening browser at ${browserUrl}`);
 		const args =
@@ -609,7 +671,7 @@ function openBrowserOrPrintMessage(options: {
 			: process.platform === "darwin" ? ["open", browserUrl]
 			: ["xdg-open", browserUrl];
 		Bun.spawn(args, { stdout: "ignore", stderr: "ignore", stdin: "ignore", detached: true });
-	} else if (options.staticEnabled) {
+	} else if (options.frontendAvailable) {
 		console.log(`${tag} Open http://127.0.0.1:${options.port} in your browser.`);
 	} else {
 		console.log(`${tag} ${options.missingFrontendMessage}`);

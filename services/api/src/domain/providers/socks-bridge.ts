@@ -154,23 +154,18 @@ const proxyChainBridgeFactory: SocksBridgeServerFactory = {
 		return {
 			bridgeUrl,
 			close: async (force?: boolean) => {
-				// proxy-chain's close(true) destroys its OWN tracked sockets, but a
-				// CONNECT tunnel's source socket is detached from that tracking on
-				// upgrade, so closeConnections() misses it and the underlying
-				// http.Server.close() then waits for the lingering keep-alive socket
-				// — a real hang after any proxied HTTPS request. Forcibly closing ALL
-				// connections on the underlying server first makes the teardown
-				// terminate deterministically. (Under Bun this also stops the server,
-				// so the proxy-chain close is skipped when it would reject with
-				// ERR_SERVER_NOT_RUNNING; under Node the guarded close(true) resolves
-				// once the connections are gone.)
-				const underlying = server.server;
-				if (force && typeof underlying.closeAllConnections === "function") {
-					underlying.closeAllConnections();
-				}
-				if (underlying.listening) {
-					await server.close(force);
-				}
+				// proxy-chain's own forced close is sufficient. This used to reach
+				// into the private `server.server` and call closeAllConnections()
+				// first: a CONNECT tunnel's source socket detaches from
+				// proxy-chain's tracking on upgrade, and on Bun 1.3.14 the
+				// underlying http.Server.close() then hung on that lingering
+				// keep-alive socket. Re-measured on the pinned Bun 1.4.2 against a
+				// real SOCKS5 upstream and a real CONNECT tunnel (one request, and
+				// five keep-alive requests sharing a single tunnel): close(true)
+				// alone returns in under 2ms with the listener down, identically to
+				// the workaround. Restore the workaround only with a fresh
+				// measurement showing this hangs again.
+				await server.close(force);
 			},
 		};
 	},

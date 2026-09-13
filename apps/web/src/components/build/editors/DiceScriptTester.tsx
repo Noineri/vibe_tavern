@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { testScript } from "../../../app-client.js";
+import { testScript } from "../../../api/script-api.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { TextInput } from "../../shared/text-input.js";

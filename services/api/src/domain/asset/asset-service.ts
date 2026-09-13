@@ -103,30 +103,33 @@ export class AssetService {
     return { assetId, url: `/api/assets/${assetId}` };
   }
 
+  /**
+   * Serve a flat attachment (or a legacy flat avatar) by id. The URL carries no
+   * extension, so each known ext is stat'ed until one names a non-empty file.
+   *
+   * The body is the BunFile itself, which is what makes Range requests work:
+   * Bun answers `Range:` on a file body with 206 + content-range + accept-ranges
+   * and streams from the fd instead of holding the whole file in the heap for
+   * every request. If the file is deleted between the stat and the send (the
+   * delete→fetch race with {@link cleanup}), the send fails with ENOENT and the
+   * Bun.serve error hook turns it into a 404 — see server/serve-error.ts.
+   */
   async serve(assetId: string): Promise<Response | null> {
     // Prevent path traversal
     if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) {
       return null;
     }
     for (const ext of Object.keys(EXT_TO_MIME)) {
-      const filePath = resolve(this.assetsDir, `${assetId}.${ext}`);
-      try {
-        const bunFile = Bun.file(filePath);
-        // Eagerly read the file to avoid TOCTOU race with cleanup() unlink:
-        // new Response(Bun.file()) is lazy — the file is opened when the response
-        // is sent, which can race with a pending unlink() from a concurrent delete.
-        const buffer = new Uint8Array(await bunFile.arrayBuffer());
-        if (buffer.length > 0) {
-          return new Response(buffer, {
-            headers: {
-              "Content-Type": EXT_TO_MIME[ext],
-              "Cache-Control": "public, max-age=31536000",
-            },
-          });
-        }
-      } catch {
-        // try next extension
-      }
+      const file = Bun.file(resolve(this.assetsDir, `${assetId}.${ext}`));
+      // Missing or unreadable candidate — try the next extension.
+      const stat = await file.stat().catch(() => null);
+      if (!stat?.isFile() || stat.size === 0) continue;
+      return new Response(file, {
+        headers: {
+          "Content-Type": EXT_TO_MIME[ext],
+          "Cache-Control": "public, max-age=31536000",
+        },
+      });
     }
     return null;
   }
@@ -203,6 +206,8 @@ export class AssetService {
     return { ext, mimeType: mime };
   }
 
+  /** Serve a folder-resident image (avatar, gallery row) by its stored ext.
+   *  Same BunFile body as {@link serve}: Range-capable, streamed from the fd. */
   private async serveFolderImage(
     folder: StorageFolder,
     entityId: string,
@@ -211,15 +216,11 @@ export class AssetService {
   ): Promise<Response | null> {
     if (!this.contentStore) return null;
     const f = await this.resolveEntityId(folder, entityId);
-    const buf = await this.contentStore.readBinary(folder, f, `${leafBase}.${ext}`);
-    if (!buf) return null;
-    const mime = EXT_TO_MIME[ext] ?? "application/octet-stream";
-    // Copy Buffer bytes into a fresh ArrayBuffer-backed Uint8Array so the value
-    // satisfies Response's BodyInit (a Buffer/Buffer-backed view does not).
-    const body = new Uint8Array(buf);
-    return new Response(body, {
+    const file = Bun.file(this.contentStore.entityLeafPath(folder, f, `${leafBase}.${ext}`));
+    if (!(await file.exists())) return null;
+    return new Response(file, {
       headers: {
-        "Content-Type": mime,
+        "Content-Type": EXT_TO_MIME[ext] ?? "application/octet-stream",
         "Cache-Control": "public, max-age=31536000",
       },
     });

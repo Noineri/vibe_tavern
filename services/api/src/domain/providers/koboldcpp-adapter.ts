@@ -85,17 +85,6 @@ interface KoboldGenerateResponse {
   results: Array<{ text: string }>;
 }
 
-/** KoboldCPP SSE token event. */
-interface KoboldStreamTokenEvent {
-  token: string;
-}
-
-/** KoboldCPP SSE done event. */
-interface KoboldStreamDoneEvent {
-  text: string;
-  done: boolean;
-}
-
 export interface KoboldCppAdapterOptions {
   /** Base URL (e.g. http://localhost:5001). */
   baseURL: string;
@@ -241,8 +230,9 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
       // sequence — stream-start first, a text-start before the first delta,
       // and a matching text-end before finish ("text part 0 not found" was
       // the recorder rejecting bare deltas). Flags persist across pull calls.
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      // `textStream()` decodes UTF-8 and joins characters split across chunk
+      // boundaries, so only SSE line reassembly is left to do here.
+      const reader = response.textStream().getReader();
       let buffer = "";
       let streamStarted = false;
       let textOpened = false;
@@ -294,7 +284,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
                 return;
               }
 
-              buffer += decoder.decode(value, { stream: true });
+              buffer += value;
               const lines = buffer.split("\n");
               buffer = lines.pop() ?? "";
 

@@ -2,11 +2,10 @@ import type { ChatId, PronounForms } from "@vibe-tavern/domain";
 import type { AppSnapshot, PersonaRecord, LorebookRecord, ScriptRecord } from "./types.js";
 import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
-import { normalizeSnapshot } from "./normalize.js";
 
 export async function listPersonas(): Promise<PersonaRecord[]> {
   const response = await client.api.personas.$get();
-  return unwrapRpc<PersonaRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function createPersona(input: {
@@ -17,7 +16,7 @@ export async function createPersona(input: {
   defaultForNewChats?: boolean;
 }): Promise<PersonaRecord> {
   const response = await client.api.personas.$post({ json: input });
-  return unwrapRpc<PersonaRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function updatePersona(
@@ -37,9 +36,8 @@ export async function updatePersona(
   }>,
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
-  const data = await unwrapRpc<AppSnapshot>(response);
-  if (!data.character) return data;
-  return normalizeSnapshot(data);
+  const data = await unwrapRpc(response);
+  return "id" in data ? {} : data;
 }
 
 export async function deletePersona(personaId: string): Promise<void> {
@@ -49,7 +47,7 @@ export async function deletePersona(personaId: string): Promise<void> {
 
 export async function duplicatePersona(personaId: string): Promise<PersonaRecord> {
   const response = await client.api.personas[":personaId"].duplicate.$post({ param: { personaId } });
-  return unwrapRpc<PersonaRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function setDefaultPersona(personaId: string): Promise<void> {
@@ -141,12 +139,12 @@ export async function importPersonas(file: File): Promise<{ created: number; ski
 
 export async function listPersonaLorebooks(personaId: string): Promise<LorebookRecord[]> {
   const response = await client.api.personas[":personaId"].lorebooks.$get({ param: { personaId } });
-  return unwrapRpc<LorebookRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function listPersonaScripts(personaId: string): Promise<ScriptRecord[]> {
   const response = await client.api.personas[":personaId"].scripts.$get({ param: { personaId } });
-  return unwrapRpc<ScriptRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 function triggerDownload(text: string, filename: string): void {

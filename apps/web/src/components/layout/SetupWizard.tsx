@@ -25,7 +25,7 @@ import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { TextInput } from "../shared/text-input.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { lblCls } from "../../lib/field-tokens.js";
-import { updatePersona, createPersona, uploadPersonaAvatar } from "../../app-client.js";
+import { updatePersona, createPersona, uploadPersonaAvatar } from "../../api/persona-api.js";
 import { toast } from "sonner";
 import { readCardRaw } from "../modals/import/parse-import-file.js";
 

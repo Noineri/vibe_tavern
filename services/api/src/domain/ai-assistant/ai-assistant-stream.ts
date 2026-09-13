@@ -34,6 +34,7 @@ import {
   type AiAssistantStreamChunk,
 } from "./reasoning-split.js";
 import type { AppDb } from "@vibe-tavern/db";
+import type { AiAssistantRequest, AiAssistantTokenCount } from "@vibe-tavern/api-contracts";
 import type { BuiltPipelineContext } from "../prompt/prompt-assembly-service.js";
 import { notFound, validation } from "../../shared/errors.js";
 import {
@@ -44,63 +45,8 @@ import {
 
 // ─── Request / response types ────────────────────────────────────────────────
 
-export interface AiAssistantStreamRequest {
-  /** Which assistant mode to use. */
-  mode: AiAssistantMode;
-  /** User's instruction / prompt text. */
-  instruction: string;
-  /** Current field content being edited/refined. */
-  existingContent?: string;
-  /** Provider profile ID to use. */
-  providerProfileId: string;
-  /** Model name override (optional, uses profile default). */
-  model?: string;
-
-  // Context bindings (full mode)
-  /** Context layers the user toggled on. */
-  enabledLayers: string[];
-  /** Characters to attach as context. */
-  characterIds?: string[];
-  /** Personas to attach as context. */
-  personaIds?: string[];
-  /** Lore entries to attach as context. */
-  loreEntryIds?: string[];
-  /** Whole lorebooks to attach as context; backend expands enabled entries. */
-  lorebookIds?: string[];
-
-  // Chat impersonate mode extras
-  /** Active chat ID (for chat_impersonate to resolve chat history). */
-  chatId?: string;
-  /** How many recent messages to include (chat_impersonate). Default: 20. */
-  recentMessageCount?: number;
-
-  // Message editor mode extras
-  /** Canonical target message in the chat's active branch. */
-  targetMessageId?: string;
-  /** Immutable canonical variants selected as editor sources. */
-  sourceVariantIds?: string[];
-
-  // Lore keys mode extras
-  /** Existing primary keys on the entry (for de-duplication). */
-  existingKeys?: string[];
-  /** Existing secondary keys on the entry. */
-  existingSecondaryKeys?: string[];
-  /** Entry's activation logic mode. */
-  logic?: string;
-  /** Which key set to generate. Default `"both"`. */
-  keyTarget?: "primary" | "secondary" | "both";
-
-  // MD import extras
-  /** Max output tokens for structured generation (md_import). Default: 10000. */
-  maxOutputTokens?: number;
-  /** Override temperature for this request. Per-mode defaults used if omitted. */
-  temperature?: number;
-
-  // Scene schema extras
-  /** Selected Scene prompt format — selects the scene_schema default prompt file
-   *  (json/xml) so the generated schema obeys XML-safe key rules when needed. */
-  promptFormat?: "json" | "xml";
-}
+/** Request body, validated at the route by `aiAssistantRequestSchema`. */
+export type AiAssistantStreamRequest = AiAssistantRequest;
 
 interface AiAssistantProviderProfile {
   readonly id: string;
@@ -390,7 +336,7 @@ async function prepareAiAssistantRequest(
 export async function countAiAssistantTokens(
   request: AiAssistantStreamRequest,
   deps: StreamDeps,
-): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }> {
+): Promise<AiAssistantTokenCount> {
   const prepared = await prepareAiAssistantRequest(request, deps);
   if (prepared.assembly) {
     return {

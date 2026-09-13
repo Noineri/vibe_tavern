@@ -2,11 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { manifest } from "./build-npm-dist.js";
 
 /**
- * Pins the two manifest fields whose failure mode is a SILENT bad publish.
+ * Pins consumer- and publisher-visible manifest contracts.
  *
- * Both were found by publishing to a local registry, not by review: `npm pack`
- * and `npm publish --dry-run` do not fail on either — one warns, the other only
- * misbehaves outside CI — so nothing short of a real publish surfaces them.
+ * The bin and publishConfig failures were found by publishing to a local
+ * registry: `npm pack` and `npm publish --dry-run` do not fail on either —
+ * one warns, the other only misbehaves outside CI.
  */
 
 describe("npm manifest", () => {
@@ -37,6 +37,10 @@ describe("npm manifest", () => {
 
 	it("ships no dependencies — everything is bundled", () => {
 		expect("dependencies" in manifest("1.2.3")).toBe(false);
+	});
+
+	it("requires the Bun version used by the shipped runtime APIs", () => {
+		expect(manifest("1.2.3").engines).toEqual({ bun: ">=1.4.2" });
 	});
 
 	it("stamps the version it is given", () => {

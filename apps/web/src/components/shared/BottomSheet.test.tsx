@@ -286,6 +286,23 @@ describe("BottomSheet portal session (SHEET_PORTAL_SELF_TARGETING)", () => {
 });
 
 describe("modal-helpers resolver hardening (SHEET_PORTAL_SELF_TARGETING)", () => {
+	it("excludes the sheet's own anchor without unregistering it or losing its parent", () => {
+		const parent = document.createElement("div");
+		const own = document.createElement("div");
+		document.body.append(parent, own);
+		const unregisterParent = registerOverlayPortal(parent);
+		const unregisterOwn = registerOverlayPortal(own);
+		try {
+			expect(getModalPortal(own)).toBe(parent);
+			expect(getTopmostOverlayPortal()).toBe(own);
+		} finally {
+			unregisterOwn();
+			unregisterParent();
+			parent.remove();
+			own.remove();
+		}
+	});
+
 	// A teardown path that skips the ref cleanup (exactly the class of bug
 	// this hardening follows) can leave disconnected nodes in the overlay
 	// stack; the resolver must never return — or keep — a detached anchor.

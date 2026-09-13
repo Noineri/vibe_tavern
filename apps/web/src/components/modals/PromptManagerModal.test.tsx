@@ -17,7 +17,8 @@ import React from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { SERVICE_PROMPT_FIELD_KEYS, type ServicePromptFieldKey } from "@vibe-tavern/domain";
 import type { ServicePromptProfile } from "@vibe-tavern/api-contracts";
-import type { RegexPresetRecord } from "../../api/types.js";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
+import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import type { DraftData } from "./PromptManagerModal.js";
 import { useModalStore } from "../../stores/modal-store.js";
 
@@ -658,7 +659,7 @@ describe("importStandaloneRegexText (RX-16)", () => {
 describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
   function regexRecord(id: string, name: string): RegexPresetRecord {
     return {
-      id,
+      id: brandId<RegexPresetId>(id),
       name,
       findRegex: "/x+/g",
       replaceString: "",
@@ -674,8 +675,8 @@ describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
       isGlobal: false,
       sortOrder: 0,
       profileId: null,
-      createdAt: 0,
-      updatedAt: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     };
   }
 
@@ -713,7 +714,7 @@ describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
 describe("PromptManagerModal — regex copy & export (R-12)", () => {
   function fullRecord(id: string, name: string): RegexPresetRecord {
     return {
-      id,
+      id: brandId<RegexPresetId>(id),
       name,
       findRegex: "/alpha+/gi",
       replaceString: "$1 [{{match}}]",
@@ -729,8 +730,8 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
       isGlobal: false,
       sortOrder: 0,
       profileId: null,
-      createdAt: 0,
-      updatedAt: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     };
   }
 
@@ -757,7 +758,7 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
 
   test("copy clones the source fields, seeds disabled, and selects the duplicate", async () => {
     const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
-    createRegexPresetMock.mockResolvedValue({ ...fullRecord("rx_2", "copy"), id: "rx_2" });
+    createRegexPresetMock.mockResolvedValue({ ...fullRecord("rx_2", "copy"), id: brandId<RegexPresetId>("rx_2") });
 
     // Footer action on the SELECTED rule (auto-selected first) — desktop span.
     const copyBtn = within(view.baseElement).getByText("promptManager.regex.copy");
@@ -819,12 +820,12 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
 
 // ── R-13b: profiles in master list ─────────────────────────────────────
 describe("PromptManagerModal — regex profiles (R-13b)", () => {
-  function profileRecord(id: string, name: string, sortOrder = 0) {
-    return { id, name, disabled: false, isGlobal: true, sortOrder, createdAt: 0, updatedAt: 0 };
+  function profileRecord(id: string, name: string, sortOrder = 0): RegexProfileRecord {
+    return { id: brandId<RegexProfileId>(id), name, disabled: false, isGlobal: true, sortOrder, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
   }
   function regexRecord(id: string, name: string, profileId: string | null = null): RegexPresetRecord {
     return {
-      id, name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId, createdAt: 0, updatedAt: 0,
+      id: brandId<RegexPresetId>(id), name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId: profileId === null ? null : brandId<RegexProfileId>(profileId), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
     };
   }
   test("switching to regex tab fetches profiles", async () => {
@@ -886,7 +887,7 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
     // Enabled, non-global, zero profile links → applies in NO chat: the
     // profile row dot is red AND the member's dot must be red too (a green
     // member dot would claim the rule fires while the gate keeps it dead).
-    const unboundProfile = { id: "pu", name: "UnboundProf", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 };
+    const unboundProfile: RegexProfileRecord = { id: brandId<RegexProfileId>("pu"), name: "UnboundProf", disabled: false, isGlobal: false, sortOrder: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
     listAllRegexPresetsMock.mockResolvedValue([regexRecord("m1", "MemRule", "pu")]);
     listAllRegexProfilesMock.mockResolvedValue([unboundProfile]);
     getRegexProfileLinksMock.mockResolvedValue([]);
@@ -908,12 +909,12 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
 
 // ── R-13c: profile pane + member chip + profile export ────────────────────
 describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () => {
-  function profileRecord(id: string, name: string, overrides: Partial<Record<string, unknown>> = {}) {
-    return { id, name, disabled: false, isGlobal: true, sortOrder: 0, createdAt: 0, updatedAt: 0, ...overrides };
+  function profileRecord(id: string, name: string, overrides: Partial<RegexProfileRecord> = {}): RegexProfileRecord {
+    return { id: brandId<RegexProfileId>(id), name, disabled: false, isGlobal: true, sortOrder: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", ...overrides };
   }
   function regexRecord(id: string, name: string, profileId: string | null = null, overrides: Partial<Record<string, unknown>> = {}): RegexPresetRecord {
     return {
-      id, name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId, createdAt: 0, updatedAt: 0, ...overrides,
+      id: brandId<RegexPresetId>(id), name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId: profileId === null ? null : brandId<RegexProfileId>(profileId), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", ...overrides,
     };
   }
 

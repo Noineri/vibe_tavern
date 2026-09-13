@@ -7,11 +7,17 @@ export interface RpcErrorBody {
   error?: string | { message?: string; code?: string; details?: { category?: ProviderErrorCategory } };
 }
 
-export async function unwrapRpc<T>(response: RpcResponse): Promise<T> {
+/** Success body of a Hono RPC response: error-status variants are dropped. */
+export type RpcBody<R> = R extends { ok: false } ? never : R extends { json(): Promise<infer T> } ? T : never;
+
+/** Success body of an RPC endpoint method, e.g. `RpcData<typeof client.api.scripts.all.$get>`. */
+export type RpcData<F extends (...args: never[]) => Promise<RpcResponse>> = RpcBody<Awaited<ReturnType<F>>>;
+
+export async function unwrapRpc<R extends RpcResponse>(response: R): Promise<RpcBody<R>> {
   if (!response.ok) {
     throw await unwrapError(response);
   }
-  return response.json() as Promise<T>;
+  return response.json() as Promise<RpcBody<R>>;
 }
 
 /** Sentinel for a 422 vision_not_supported body (top-level `type` — the

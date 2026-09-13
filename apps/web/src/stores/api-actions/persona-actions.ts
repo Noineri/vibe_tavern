@@ -1,16 +1,10 @@
-import {
-  createPersona,
-  deletePersona,
-  duplicatePersona,
-  setDefaultPersona,
-  updatePersona,
-  type AppSnapshot,
-} from "../../app-client.js";
+import { createPersona, deletePersona, duplicatePersona, setDefaultPersona, updatePersona } from "../../api/persona-api.js";
+import type { AppSnapshot } from "../../api/types.js";
 import type { ChatId, PronounForms } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { fetchPersonasAction } from "./bootstrap-actions.js";
-import type { PersonaRecord } from "../../app-client.js";
+import type { PersonaRecord } from "../../api/types.js";
 
 export async function createPersonaAction(
   input: Parameters<typeof createPersona>[0]

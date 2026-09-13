@@ -86,8 +86,8 @@ describe("test suite orchestration", () => {
 	});
 
 	test("drops the platform-agnostic web suite from a bare run on Windows only", () => {
-		// 160 of web's 162 files are React components and stores; two touch the
-		// filesystem. On a runner where every syscall costs 2–4× Linux that is ~83s
+		// All but two of web's 336 files are React components and stores; two touch
+		// the filesystem. On a runner where every syscall costs 2–4× Linux that is ~83s
 		// for no platform coverage. Naming the suite still runs it there.
 		const suites = createTestSuites();
 		expect(suites.find((suite) => suite.name === "web")?.skipOnWindows).toBe(true);

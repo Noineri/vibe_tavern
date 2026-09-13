@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { ChatId } from "@vibe-tavern/domain";
+import { normalizeInsightsConfig, normalizeObjectiveState, type ChatId } from "@vibe-tavern/domain";
 
 /**
  * Characterization test for the per-request PRESET OVERRIDE path (Wave Q1b).
@@ -98,6 +98,8 @@ const mockStores = {
       personaId: "persona_1",
       promptPresetId: "preset_chat",
       activeBranchId: "branch_1",
+      insightsConfig: normalizeInsightsConfig({}),
+      insightsObjectiveState: normalizeObjectiveState({}),
       title: "Test",
       summary: null,
       createdAt: "0",

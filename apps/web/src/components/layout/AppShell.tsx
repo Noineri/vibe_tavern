@@ -43,8 +43,8 @@ import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
-import type { ProxyRecord } from "../../app-client.js";
-import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../app-client.js";
+import type { ProxyRecord } from "../../api/types.js";
+import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../api/proxy-api.js";
 
 interface AppShellProps {
   tweaksSettings: TweaksSettings;

@@ -82,6 +82,10 @@ jobs:
           # branch has drifted to since. On dispatch, use the selected ref.
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
       - name: Resolve version and dist-tag
         id: resolve
         env:
@@ -102,7 +106,7 @@ jobs:
             fi
             # The tagged commit's package.json must agree, or the published
             # version would silently differ from the release it claims to be.
-            PKG_VERSION=$(jq -r '.version' package.json)
+            PKG_VERSION=$(bun -p 'require("./package.json").version')
             if [ "$PKG_VERSION" != "$VERSION" ]; then
               echo "::error::Tag is v${VERSION} but package.json is v${PKG_VERSION}."
               exit 1
@@ -124,10 +128,6 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "dist_tag=${DIST_TAG}" >> "$GITHUB_OUTPUT"
           echo "::notice::Publishing vibe-tavern@${VERSION} under dist-tag '${DIST_TAG}'."
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.4.0"
 
       - uses: actions/setup-node@v4
         with:
@@ -155,7 +155,16 @@ jobs:
             echo "already=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - run: bun install --frozen-lockfile
+      - name: Restore Bun package cache
+        if: steps.published.outputs.already == 'false'
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+
+      - run: bun install --frozen-lockfile --prefer-offline
         if: steps.published.outputs.already == 'false'
 
       - name: Build npm distribution
@@ -172,7 +181,7 @@ jobs:
           VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          BUILT=$(jq -r '.version' out/npm-dist/package.json)
+          BUILT=$(bun --cwd=out/npm-dist -p 'require("./package.json").version')
           if [ "$BUILT" != "$VERSION" ]; then
             echo "::error::Built package.json says ${BUILT}, expected ${VERSION}."
             exit 1

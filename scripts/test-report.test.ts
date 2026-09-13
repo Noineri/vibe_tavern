@@ -563,4 +563,62 @@ describe("final test report", () => {
 		expect(report).toContain("2 errors");
 		expect(report).not.toContain("untrusted DCS");
 	});
+	test("lets no control byte through, whatever the sequence is doing", () => {
+		// Given: a corpus of every terminal-string form the report may face —
+		// well-formed, unterminated, C1-introduced, C1-terminated and nested.
+		// The exact printable text each shape swallows is a property of whichever
+		// scanner runs; what must NEVER vary is that no C0/C1 byte reaches the
+		// report, because an OSC 8 hyperlink or a title-set command is inert once
+		// its control bytes are gone.
+		const control = (code: number): string => String.fromCharCode(code);
+		const escape = control(0x1B);
+		const bell = control(0x07);
+		const stringTerminator = control(0x9C);
+		const corpus = [
+			`${escape}]8;;https://untrusted.example${bell}`,
+			`${escape}]8;;https://untrusted.example${escape}\\`,
+			`${escape}]8;;https://untrusted.example${stringTerminator}`,
+			`${escape}]8;;unterminated`,
+			`${escape}P untrusted DCS ${stringTerminator}`,
+			`${escape}X untrusted SOS ${stringTerminator}`,
+			`${escape}^ untrusted PM ${stringTerminator}`,
+			`${escape}_ untrusted APC ${stringTerminator}`,
+			`${control(0x90)}untrusted DCS${stringTerminator}`,
+			`${control(0x98)}untrusted SOS${stringTerminator}`,
+			`${control(0x9D)}https://untrusted.example${bell}`,
+			`${control(0x9E)}untrusted PM${stringTerminator}`,
+			`${control(0x9F)}untrusted APC${stringTerminator}`,
+			`${control(0x9B)}31mbare C1 CSI`,
+			`${escape}[31mSGR${escape}[39m`,
+			`${escape}[?25lcursor${escape}[?25h`,
+			`${escape}${escape}]8;;https://untrusted.example${bell}`,
+			`line${control(0x0D)}rewritten`,
+			`bell${bell}backspace${control(0x08)}delete${control(0x7F)}`,
+		].join(" ");
+		const controlLaden = [{
+			name: "api",
+			exitCode: 1,
+			durationMs: 20,
+			stdout: "",
+			stderr: [
+				"test/corpus.test.ts:",
+				`error: boom ${corpus}`,
+				"      at <anonymous> (/repo/services/api/test/corpus.test.ts:5:24)",
+				" 1 error",
+			].join("\n"),
+		}] satisfies readonly TestSuiteResult[];
+
+		// When
+		const report = formatTestReport(controlLaden);
+
+		// Then: the diagnostic survives and the report is control-free apart from
+		// the tab and newline that structure it.
+		expect(report).toContain("error: boom");
+		expect(report).toContain("1 error");
+		const surviving = [...report].filter((character) => {
+			const code = character.charCodeAt(0);
+			return code <= 0x08 || (code >= 0x0B && code <= 0x1F) || (code >= 0x7F && code <= 0x9F);
+		});
+		expect(surviving).toEqual([]);
+	});
 });

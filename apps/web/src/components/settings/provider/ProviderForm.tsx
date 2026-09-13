@@ -1,6 +1,6 @@
 import React from 'react';
 import { useT } from '../../../i18n/context.js';
-import type { ProviderProfileRecord } from '../../../app-client.js';
+import type { ProviderProfileRecord } from "../../../api/types.js";
 import { PROVIDER_PRESETS, getPresetGroup, getVisibleProviderPresets, getVisiblePresetGroups } from '../../../provider-presets.js';
 import type { FormState } from '../../modals/ProviderModal.js';
 import { Icons } from '../../shared/icons.js';

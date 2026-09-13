@@ -10,7 +10,9 @@ import { toast } from "sonner";
 import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
 import { useT } from "../../i18n/context.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { streamAiAssistant, updateUiSettings, type AiAssistantRequestBody } from "../../app-client.js";
+import { streamAiAssistant } from "../../api/ai-assistant-api.js";
+import { updateUiSettings } from "../../api/settings-api.js";
+import type { AiAssistantRequestBody } from "../../api/types.js";
 
 export function ChatImpersonateAiPill({
   activeChatId,

@@ -50,7 +50,7 @@ import { AiAssistantShell } from "../shared/ai-assistant/AiAssistantShell.js";
 import { AiAssistantPanel } from "../shared/ai-assistant/AiAssistantPanel.js";
 import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
-import { type AiAssistantRequestBody } from "../../app-client.js";
+import type { AiAssistantRequestBody } from "../../api/types.js";
 import { useAiAssistantRunner } from "../shared/ai-assistant/use-ai-assistant-runner.js";
 import { useDebouncedTokenCount } from "../shared/ai-assistant/use-debounced-token-count.js";
 import { Icons } from "../shared/icons.js";

@@ -3,7 +3,6 @@ import type { ImportJsonResponse } from "./types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
-import { normalizeSnapshot } from "./normalize.js";
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 
 export async function importJson(input: {
@@ -15,9 +14,7 @@ export async function importJson(input: {
   lean?: boolean;
 }): Promise<ImportJsonResponse> {
   const response = await client.api.import.json.$post({ json: input });
-  const data = await unwrapRpc<ImportJsonResponse>(response);
-  // Snapshot is absent on the lean mass-import path — only normalize when present.
-  return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
+  return unwrapRpc(response);
 }
 
 export interface BatchImportItemResult {
@@ -39,7 +36,7 @@ export async function importJsonBatch(input: {
   lean?: boolean;
 }): Promise<{ results: BatchImportItemResult[] }> {
   const response = await client.api.import.batch.$post({ json: input });
-  return unwrapRpc<{ results: BatchImportItemResult[] }>(response);
+  return unwrapRpc(response);
 }
 
 // ─── SillyTavern directory import (backend-driven; ST_NATIVE_DIALOG_IMPORT_PLAN) ──
@@ -168,13 +165,13 @@ export async function openNativeDialog(): Promise<NativeDialogResult> {
 /** Scan a SillyTavern directory on the backend (read-only preview). */
 export async function scanStDirectory(path: string): Promise<StScanResult> {
   const response = await client.api.import["st-scan"].$post({ json: { path } });
-  return unwrapRpc<StScanResult>(response);
+  return unwrapRpc(response);
 }
 
 /** Import a SillyTavern directory on the backend (writes all five surfaces). */
 export async function importStDirectory(path: string): Promise<StImportResult> {
   const response = await client.api.import["st-directory"].$post({ json: { path } });
-  return unwrapRpc<StImportResult>(response);
+  return unwrapRpc(response);
 }
 
 // ─── Streaming import (live progress bar) ─────────────────────────────────

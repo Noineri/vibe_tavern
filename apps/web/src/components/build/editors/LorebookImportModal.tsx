@@ -15,10 +15,8 @@ import { Ic } from "../../shared/icons.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { cn } from "../../../lib/cn.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
-import {
-  importLorebookEntries,
-  type LorebookRecord,
-} from "../../../app-client.js";
+import { importLorebookEntries } from "../../../api/lorebook-api.js";
+import type { LorebookRecord } from "../../../api/types.js";
 import type { Scope } from "./LorebookAccordion.js";
 
 // ── Types ──────────────────────────────────────────────────────────────

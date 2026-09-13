@@ -1584,8 +1584,7 @@ export interface Chat {
   status: ChatStatus;
   mode: ChatMode;
   activeBranchId: ChatBranchId;
-  promptPresetId: PromptPresetId;
-  toolProfileId: ToolProfileId;
+  promptPresetId: PromptPresetId | null;
   /** @deprecated Greeting selection is now stored as the selected variant on the first assistant message. */
   selectedGreetingIndex: number;
   /** Co-author mode only (CE-C1): entities the user explicitly pinned to
@@ -1630,13 +1629,32 @@ export interface ChatSummary {
   updatedAt: Timestamp;
 }
 
-export interface ChatAutoSummaryConfig {
+/** Per-chat auto-summary settings. Stored as JSON in chats.auto_summary_config_json; read through `normalizeAutoSummaryConfig`. */
+export interface AutoSummaryConfig {
   enabled: boolean;
   everyN: number;
   useChatModel: boolean;
   excludeSummarized: boolean;
+  /** Include preceding summaries as read-only continuity context. */
+  includePriorSummaries: boolean;
+  /** How many of the most recent preceding summaries to include. */
+  maxPriorSummaries: number;
   providerProfileId?: string;
   model?: string;
+}
+
+/** Per-chat Insights toggles and nested Scene Tracker config. Stored as JSON in chats.insights_config_json; read through `normalizeInsightsConfig`. */
+export interface InsightsConfig {
+  objectiveEnabled: boolean;
+  trackerEnabled: boolean;
+  diceEnabled: boolean;
+  diceMode: DiceMode;
+  /** `null` = inherit the resolver union; an array = exactly those script ids. */
+  diceScriptIds: string[] | null;
+  /** `null` = each check uses its declared actors; a record overrides per script. */
+  diceActorBindings: Record<string, DiceActorType[]> | null;
+  /** Absent until the Scene Tracker is first configured; readers apply defaults via `normalizeSceneTrackerConfig`. */
+  tracker?: SceneTrackerConfig;
 }
 
 export interface ToolCall {
@@ -1723,7 +1741,13 @@ export interface RetrievedMemoryHit {
 }
 
 /** JSON-safe value persisted in prompt traces and downloadable without custom serializers. */
-export type TraceJsonValue = string | number | boolean | null | TraceJsonValue[] | { [key: string]: TraceJsonValue };
+// Recursion goes through interfaces: a self-referencing type alias makes Hono's
+// `JSONParsed` instantiate without bound (TS2589) on every response that carries a trace.
+export type TraceJsonValue = string | number | boolean | null | TraceJsonArray | TraceJsonObject;
+export interface TraceJsonArray extends Array<TraceJsonValue> {}
+export interface TraceJsonObject {
+  [key: string]: TraceJsonValue;
+}
 
 /** One provider call inside a traced turn. Tool loops can produce multiple steps. */
 export interface ProviderResponseStep {
@@ -1867,8 +1891,8 @@ export interface ObjectiveShortTermGoal {
 
 /** The full objective state for a chat (INSIGHTS_PLAN). Stored as JSON in chats.insights_objective_state_json. */
 export interface ObjectiveState {
-  /** Tracker mode — `route` (original ordered task route) or `goals` (long-term + short-term goals, OGM). Absent on legacy data → `route`. */
-  mode?: ObjectiveMode;
+  /** Tracker mode — `route` (original ordered task route) or `goals` (long-term + short-term goals, OGM). */
+  mode: ObjectiveMode;
   /** User's high-level goal. */
   objectiveDescription: string;
   /** Flat ordered task list — the route (route mode). */

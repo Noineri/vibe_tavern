@@ -2,7 +2,7 @@ import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 import { messages, messageVariants, sceneBackfillRuns } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { extractThinkingTags, type SceneTrackerDsl, type ScenePromptFormat } from '@vibe-tavern/domain';
+import { extractThinkingTags, type SceneBackfillMode, type SceneBackfillRunStatus, type SceneTrackerDsl, type ScenePromptFormat } from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -109,8 +109,8 @@ export interface CurrentSceneTarget {
 export interface SceneBackfillRun {
   id: string;
   chatId: string;
-  mode: string;
-  status: string;
+  mode: SceneBackfillMode;
+  status: SceneBackfillRunStatus;
   manifestJson: string;
   totalItems: number;
   cursor: number;
@@ -953,7 +953,7 @@ export class MessageStore {
 
   async createSceneBackfillRun(input: {
     chatId: string;
-    mode?: string;
+    mode?: SceneBackfillMode;
     manifestJson: string;
     totalItems: number;
   }): Promise<SceneBackfillRun> {
@@ -1001,7 +1001,7 @@ export class MessageStore {
   }
 
   async updateSceneBackfillRun(id: string, patch: {
-    status?: string;
+    status?: SceneBackfillRunStatus;
     cursor?: number;
     errorsJson?: string;
     cancelRequested?: boolean;

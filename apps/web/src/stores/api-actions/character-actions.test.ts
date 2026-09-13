@@ -1,18 +1,18 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ChatId } from "@vibe-tavern/domain";
-import type { AppSnapshot } from "../../app-client.js";
+import type { AppSnapshot } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 
-// Mock only `createCharacter` (the RPC); every other app-client export stays
+// Mock only `createCharacter` (the RPC); every other character-api export stays
 // real (spread) so unrelated actions in this module are unaffected.
 const createCharacterMock = mock();
 const fetchBootstrapMock = mock(async () => undefined);
-const realAppClient = await import("../../app-client.js");
+const realCharacterApi = await import("../../api/character-api.js");
 const realBootstrapActions = await import("./bootstrap-actions.js");
 
-mock.module("../../app-client.js", () => ({
-	...realAppClient,
+mock.module("../../api/character-api.js", () => ({
+	...realCharacterApi,
 	createCharacter: createCharacterMock,
 }));
 // Stub the fire-and-forget bootstrap so it can't race the assertions.

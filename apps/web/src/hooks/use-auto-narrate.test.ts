@@ -4,7 +4,8 @@ import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
-import { brandId, type Chat, type ChatBranchId, type ChatId, type CharacterId, type MessageId, type MessageVariantId, type PromptPresetId, type ToolProfileId } from "@vibe-tavern/domain";
+import type { ChatDto } from "@vibe-tavern/api-contracts";
+import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalizeObjectiveState, type ChatBranchId, type ChatId, type CharacterId, type MessageId, type MessageVariantId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { AppMessage } from "../api/types.js";
 import type { TtsProfileRecord } from "../api/tts-api.js";
 import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
@@ -37,17 +38,21 @@ const NOW = "2026-01-01T00:00:00.000Z";
 
 // ─── typed fixtures (no casts) ──────────────────────────────────────────
 
-function makeActiveChat(overrides: Partial<Chat> = {}): Chat {
+function makeActiveChat(overrides: Partial<ChatDto> = {}): ChatDto {
   return {
     id: brandId<ChatId>("c1"),
     characterId: brandId<CharacterId>("char1"),
     personaId: null,
     title: "test chat",
+    summary: "",
+    messageHistoryLimit: 0,
+    autoSummaryConfig: normalizeAutoSummaryConfig({}),
+    insightsConfig: normalizeInsightsConfig({}),
+    insightsObjectiveState: normalizeObjectiveState({}),
     status: "active",
     mode: "rp",
     activeBranchId: brandId<ChatBranchId>("b1"),
     promptPresetId: brandId<PromptPresetId>("pp1"),
-    toolProfileId: brandId<ToolProfileId>("tp1"),
     selectedGreetingIndex: 0,
     coauthorContextLinks: [],
     coauthorModuleId: null,

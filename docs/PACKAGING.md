@@ -194,7 +194,7 @@ Edit `installer/vibe-tavern.iss` to change:
 |------|------------|-----------|----------|
 | Dev | `apps/web/dev-server.ts` (via `bun run dev`) — HMR frontend + API in-process | `data/` relative to project root | Bun dev server with HMR (:4173) |
 | Prod | `out/services/api/prod-server.js` | `data/` + env vars | `out/apps/web/` |
-| Standalone | `out/standalone/vibe-tavern.exe` | OS convention (`%LOCALAPPDATA%\VibeTavern`) | `web/` next to exe |
+| Standalone | `out/standalone/vibe-tavern.exe` | OS convention (`%LOCALAPPDATA%\VibeTavern`) | baked into the exe; a `web/` folder next to it overrides it file by file |
 
 All three modes share the same DI wiring, services, and app factory. The only difference is how directories are resolved at startup.
 
@@ -236,9 +236,10 @@ The checks are advisory — missing files produce warnings in the log. If a late
 
 ### Exe starts but frontend not found
 
-- Ensure `web/` directory exists next to `vibe-tavern.exe`
-- Check `VIBE_TAVERN_WEB_DIR` env var if overriding
-- The server prints `[startup-check] ⚠️ web bundle: missing` if `index.html` is not found
+The exe carries the whole frontend: `bun run build:standalone` hands `out/apps/web` to the compile step as an asset directory, and the server serves those files through `Bun.embeddedFiles` (`services/api/src/server/embedded-web-assets.ts`). A missing `web/` folder is therefore not a problem — the startup log says `Static: (embedded in the executable — N file(s))`.
+
+- A `web/` folder next to the exe (or `VIBE_TAVERN_WEB_DIR`) still wins per file, which is how a frontend can be hot-patched without recompiling. A stale folder there serves stale UI.
+- If the log says `(not built — API-only mode)` instead, the binary was compiled without the asset directory; rebuild with `bun run build:standalone`.
 
 ### Database not created
 

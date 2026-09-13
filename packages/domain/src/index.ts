@@ -7,6 +7,7 @@ export * from "./attachment.js";
 // `</script>` broke the frame document (first live render, 2026-08-21). Import
 // the builtins via the explicit subpath `@vibe-tavern/domain/builtins`.
 export * from "./character-asset.js";
+export * from "./chat-json-config.js";
 export * from "./chat-notification.js";
 export * from "./coauthor-transport-capabilities.js";
 export * from "./dice.js";

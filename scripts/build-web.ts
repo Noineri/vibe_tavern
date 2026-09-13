@@ -1,19 +1,13 @@
 import { cp, mkdir, rm } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import tailwindPlugin from "bun-plugin-tailwind";
-import rootPackage from "../package.json" with { type: "json" };
-import { buildConfigPlugin } from "../apps/web/bun-plugin-build-config.js";
+import { buildConfigPlugin, resolveWebBuildEnv } from "../apps/web/bun-plugin-build-config.js";
 import { webAssetsPlugin } from "../apps/web/bun-plugin-web-assets.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const WEB_DIR = join(ROOT, "apps", "web");
 const PUBLIC_DIR = join(WEB_DIR, "public");
 const OUT_DIR = join(ROOT, "out", "apps", "web");
-const APP_VERSION = process.env.VERSION ?? rootPackage.version ?? "0.0.0-dev";
-const UPDATE_API_BASE = (
-	process.env.VT_UPDATE_API_BASE ??
-	"https://api.github.com/repos/Noineri/vibe_tavern"
-).replace(/\/+$/, "");
 
 async function main(): Promise<void> {
 	console.log("📦 Building frontend with Bun.build...\n");
@@ -38,17 +32,7 @@ async function main(): Promise<void> {
 		},
 		plugins: [
 			tailwindPlugin,
-			buildConfigPlugin({
-				appVersion: APP_VERSION,
-				updateApiBase: UPDATE_API_BASE,
-				mode: "production",
-				apiUrl: process.env.VIBE_TAVERN_WEB_API_URL ?? "",
-				defaultProviderLabel:
-					process.env.VIBE_TAVERN_WEB_DEFAULT_PROVIDER_LABEL ?? "",
-				defaultBaseUrl: process.env.VIBE_TAVERN_WEB_DEFAULT_BASE_URL ?? "",
-				defaultModel: process.env.VIBE_TAVERN_WEB_DEFAULT_MODEL ?? "",
-				forceFirstRun: process.env.VIBE_TAVERN_WEB_FORCE_FIRST_RUN === "true",
-			}),
+			buildConfigPlugin(resolveWebBuildEnv("production")),
 			webAssetsPlugin(),
 		],
 		throw: false,

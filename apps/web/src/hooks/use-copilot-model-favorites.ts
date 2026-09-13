@@ -5,7 +5,7 @@ import {
   toggleFavoriteModelAction,
 } from "../stores/api-actions/provider-actions.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
-import type { FavoriteProviderModelRecord } from "../app-client.js";
+import type { FavoriteProviderModelRecord } from "../api/types.js";
 
 /**
  * Copilot-scoped model favorites for ONE provider profile (variant A: the

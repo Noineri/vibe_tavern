@@ -44,9 +44,66 @@ function installNodeInspector(): void {
   });
 }
 
+/** Network attempts recorded since the current test's `afterEach`. */
+interface BlockedRequest {
+  readonly method: string;
+  readonly url: string;
+}
+
+const blockedRequests: BlockedRequest[] = [];
+
+function describeRequest(input: RequestInfo | URL, init?: RequestInit): BlockedRequest {
+  if (typeof input === "string") return { method: init?.method ?? "GET", url: input };
+  if (input instanceof URL) return { method: init?.method ?? "GET", url: input.href };
+  return { method: init?.method ?? input.method, url: input.url };
+}
+
+/**
+ * Replace `fetch` with one that refuses to open a socket.
+ *
+ * happy-dom's `fetch` is a REAL one: a component that fires a request on mount
+ * reaches the host network from a unit test. `message-ai-editor-controls` did
+ * exactly that — 11 connects to 127.0.0.1:8787 per run, one per test — and the
+ * only symptom was a swallowed `ECONNREFUSED` warning, because the caller
+ * catches its own failures. On a developer box with the app running, those
+ * requests hit the live server and its real database instead.
+ *
+ * Measured across the suite: 336 files, ~50 of them mount a tree that fires at
+ * least one request the file never mocked (`/api/lorebooks/all`,
+ * `/api/personas`, `/api/coauthor/skills`, …). Every one of those degrades
+ * silently by design, so rejecting here is invisible to them — it only takes
+ * the socket away. A file that wants the stronger property ("this tree mounts
+ * without reaching for the network at all") passes `failOnNetwork` to
+ * `useDomEnv`, and every recorded attempt fails the test that made it.
+ *
+ * Files that install their own `fetch` double never reach this guard.
+ */
+function installNetworkGuard(): void {
+  const guard = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const request = describeRequest(input, init);
+    blockedRequests.push(request);
+    return Promise.reject(
+      new TypeError(`DOM test network access blocked: ${request.method} ${request.url}`),
+    );
+  };
+  globalThis.fetch = Object.assign(guard, { preconnect: () => {} });
+}
+
 function ensureDomEnvRegistration(): void {
   if (typeof globalThis.window === "undefined") {
     GlobalRegistrator.register();
+    // happy-dom 20.14.5 rejects finished on cancel but omits the spec's
+    // PromiseIsHandled step. Preserve the rejection for observers while
+    // preventing spurious unhandled AbortErrors when Motion cancels animations.
+    // https://drafts.csswg.org/web-animations-1/#canceling-an-animation-section
+    const cancel = Animation.prototype.cancel;
+    Animation.prototype.cancel = function cancelAnimation(): void {
+      void this.finished.catch((error: Error) => {
+        if (error.name !== "AbortError") throw error;
+      });
+      cancel.call(this);
+    };
+    installNetworkGuard();
   }
   installNodeInspector();
 }
@@ -61,9 +118,21 @@ ensureDomEnvRegistration();
  * own module evaluates. Evaluate it with no global `document` and every `screen`
  * query becomes a throwing stub — permanently, for the rest of the process, no
  * matter what registers a `window` afterwards. Only `await import(...)` placed
- * after `ensureDomEnvRegistration()` is ordered against that: Bun does NOT
- * evaluate a module's static imports in source order (a bare specifier can win
- * over a relative one), so a static import cannot be made safe by moving it up.
+ * after `ensureDomEnvRegistration()` is ordered against that, for two separate
+ * reasons:
+ *
+ *   1. IN THIS FILE, no placement of a static import can work. Per the ES spec
+ *      a module's static imports all evaluate before its own body, and
+ *      `ensureDomEnvRegistration()` IS this module's body. Moving the import up
+ *      or down changes nothing.
+ *   2. IN FILES THAT IMPORT THIS ONE, a static import below `dom-env.js` still
+ *      loses. Bun evaluates CommonJS dependencies ahead of ESM ones, out of
+ *      source order (reproduced on 1.4.2: a relative CJS file evaluated before
+ *      a top-level-await ESM module declared above it, while a bare ESM package
+ *      kept its source position — the discriminator is module format, not bare
+ *      vs relative). `@testing-library/dom`, where `screen` is defined and from
+ *      which `@testing-library/react` re-exports it, ships CJS, so it evaluates
+ *      before this module's registration call no matter where it is written.
  *
  * This bit for real: `@testing-library/jest-dom` 6.10 started importing
  * `@testing-library/dom` (for its new `toContainAnyBy*` / `toContainOneBy*`
@@ -125,11 +194,13 @@ async function flushSchedulerQueue(): Promise<void> {
  *   rely on `typeof window === "undefined"` so e.g. getGatewayBaseUrl()
  *   returns its SSR fallback. A global preload that registers happy-dom for
  *   EVERY file breaks those. Registering only when a DOM file imports this
- *   helper keeps pure-logic files windowless in the supported gate — the
- *   per-file process runner (`scripts/test-web.ts`) gives each file its own
- *   process, so a window registered by one file can never leak into another.
- *   (Hand-rolled combined runs that mix DOM files with DOM-averse files in one
- *   process are not supported: the window stays up once any DOM file ran.)
+ *   helper keeps pure-logic files windowless in the supported gate — the web
+ *   orchestrator (`scripts/test-web.ts`) runs `bun test --parallel=8`, and
+ *   `--parallel` implies `--isolate`, so every file gets a fresh global and a
+ *   fresh module registry and a window registered by one file can never leak
+ *   into another. (Hand-rolled combined runs that mix DOM files with DOM-averse
+ *   files in ONE process — e.g. `bun test a.test.ts b.test.ts` without
+ *   `--isolate` — are not supported: the window stays up once any DOM file ran.)
  *
  * jest-dom matchers are extended at module load (idempotent, global, harmless
  * to files that don't use them); the module is cached so this runs once even
@@ -137,11 +208,25 @@ async function flushSchedulerQueue(): Promise<void> {
  */
 expect.extend(matchers);
 
-export function useDomEnv(): void {
+export interface DomEnvOptions {
+  /** Fail any test that reached for the network (see `installNetworkGuard`). */
+  readonly failOnNetwork?: boolean;
+}
+
+export function useDomEnv(options: DomEnvOptions = {}): void {
   ensureDomEnvRegistration();
 
   afterEach(() => {
     cleanup();
+    const blocked = blockedRequests.splice(0);
+    if (options.failOnNetwork === true && blocked.length > 0) {
+      const targets = [...new Set(blocked.map((r) => `${r.method} ${r.url}`))].join(", ");
+      throw new Error(
+        `This test reached for the network ${blocked.length} time(s): ${targets}. ` +
+          "Mock the module that fetches (spread the real module, override the one function), " +
+          "or assign globalThis.fetch for the duration of the test.",
+      );
+    }
   });
 
   afterAll(async () => {

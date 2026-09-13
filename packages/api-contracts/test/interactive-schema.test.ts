@@ -40,7 +40,6 @@ import {
   experienceProjectedViewSchema,
   experienceReducerStatusSchema,
   experienceRestartRequestSchema,
-  experienceSessionResponseSchema,
   experienceSessionStatusSchema,
   experienceSetupDefinitionSchema,
   experienceSetupFieldSchema,
@@ -268,27 +267,9 @@ describe("experienceParticipantSchema (IR-70E model-seat assignment)", () => {
     ).toBe(true);
   });
 
-  it("keeps legacy model participants valid on persisted/response boundaries", () => {
+  it("keeps legacy model participants valid on the persisted participant boundary", () => {
     const legacy = { id: "legacy-ai", label: "Legacy AI", controller: "model" };
     expect(experienceParticipantResponseSchema.safeParse(legacy).success).toBe(true);
-    expect(experienceSessionResponseSchema.safeParse({
-      sessionId: "xs_1",
-      chatId: "c_1",
-      branchId: "b_1",
-      manifest: { id: "legacy", name: "Legacy" },
-      apiVersion: 1,
-      status: "active",
-      revision: 0,
-      reportFrontier: 0,
-      view: { state: {}, actions: [], revision: 0, status: "active" },
-      capabilityGrants: ["model"],
-      contextMode: "none",
-      participants: [legacy],
-      initialSettings: {},
-      visualId: null,
-      visualSource: null,
-      visualSourceHash: null,
-    }).success).toBe(true);
   });
 
   it("rejects a model participant missing the providerProfileId", () => {
@@ -584,131 +565,6 @@ describe("experienceRestartRequestSchema", () => {
     }));
     const parsed = experienceRestartRequestSchema.safeParse({ participants: roster });
     expect(parsed.success).toBe(false);
-  });
-});
-
-describe("experienceSessionResponseSchema", () => {
-  function validResponse() {
-    return {
-      sessionId: "s_1",
-      chatId: "c_1",
-      branchId: "br_1",
-      manifest: { id: "ttt", name: "Tic-Tac-Toe" },
-      apiVersion: 1,
-      status: "active",
-      revision: 0,
-      reportFrontier: 0,
-      view: { state: {}, actions: [], revision: 0, status: "active" },
-      capabilityGrants: [],
-      contextMode: "none",
-      participants: [],
-      initialSettings: {},
-      visualId: null,
-      visualSource: null,
-      visualSourceHash: null,
-    };
-  }
-
-  it("accepts a valid session response", () => {
-    expect(experienceSessionResponseSchema.safeParse(validResponse()).success).toBe(true);
-  });
-
-  it("carries the frozen initial-settings snapshot (lobby LB-5 restart prefill)", () => {
-    const withSettings = { ...validResponse(), initialSettings: { difficulty: "hard", seedCount: 3 } };
-    const parsed = experienceSessionResponseSchema.safeParse(withSettings);
-    expect(parsed.success).toBe(true);
-    // Bounded like the start settings input: an over-deep snapshot is rejected.
-    let deep: unknown = { v: 0 };
-    for (let i = 0; i < INTERACTIVE_SCHEMA_MAX_DEPTH + 2; i++) deep = { nested: deep };
-    expect(experienceSessionResponseSchema.safeParse({ ...validResponse(), initialSettings: deep }).success).toBe(false);
-    // Required: an absent snapshot is not a valid response.
-    const { initialSettings: _omit, ...withoutSnapshot } = validResponse();
-    expect(experienceSessionResponseSchema.safeParse(withoutSnapshot).success).toBe(false);
-  });
-
-  it("rejects a response missing the projected view", () => {
-    const { view: _omit, ...rest } = validResponse();
-    void _omit;
-    expectReject(experienceSessionResponseSchema.safeParse(rest));
-  });
-
-  it("rejects an unknown session status", () => {
-    expectReject(
-      experienceSessionResponseSchema.safeParse({ ...validResponse(), status: "paused" }),
-    );
-  });
-
-  // ── IR-70G: pinned visual source snapshot fields ───────────────────────
-
-  it("accepts the all-null no-visual triplet (visualId/source/hash)", () => {
-    const data = expectData(experienceSessionResponseSchema.safeParse(validResponse()));
-    expect((data as { visualId: string | null }).visualId).toBeNull();
-    expect((data as { visualSource: string | null }).visualSource).toBeNull();
-    expect((data as { visualSourceHash: string | null }).visualSourceHash).toBeNull();
-  });
-
-  it("accepts the all-non-null pinned-visual triplet", () => {
-    const pinned = {
-      ...validResponse(),
-      visualId: "vis_1",
-      visualSource: "<visual source/>",
-      visualSourceHash: "hash_abc",
-    };
-    const data = expectData(experienceSessionResponseSchema.safeParse(pinned));
-    expect((data as { visualId: string }).visualId).toBe("vis_1");
-    expect((data as { visualSource: string }).visualSource).toBe("<visual source/>");
-    expect((data as { visualSourceHash: string }).visualSourceHash).toBe("hash_abc");
-  });
-
-  it("rejects a mixed triplet: visualId non-null but source/hash null", () => {
-    expectReject(
-      experienceSessionResponseSchema.safeParse({
-        ...validResponse(),
-        visualId: "vis_1",
-        visualSource: null,
-        visualSourceHash: null,
-      }),
-    );
-  });
-
-  it("rejects a mixed triplet: visualId null but source non-null", () => {
-    expectReject(
-      experienceSessionResponseSchema.safeParse({
-        ...validResponse(),
-        visualId: null,
-        visualSource: "<visual/>",
-        visualSourceHash: null,
-      }),
-    );
-  });
-
-  it("rejects a mixed triplet: hash non-null but visualId/source null", () => {
-    expectReject(
-      experienceSessionResponseSchema.safeParse({
-        ...validResponse(),
-        visualId: null,
-        visualSource: null,
-        visualSourceHash: "orphan_hash",
-      }),
-    );
-  });
-
-  it("rejects a response missing visualSource (required nullable, not optional)", () => {
-    const { visualSource: _omit, ...rest } = validResponse();
-    void _omit;
-    expectReject(experienceSessionResponseSchema.safeParse(rest));
-  });
-
-  it("rejects a response missing visualSourceHash (required nullable, not optional)", () => {
-    const { visualSourceHash: _omit, ...rest } = validResponse();
-    void _omit;
-    expectReject(experienceSessionResponseSchema.safeParse(rest));
-  });
-
-  it("rejects a response missing visualId (required nullable, not optional)", () => {
-    const { visualId: _omit, ...rest } = validResponse();
-    void _omit;
-    expectReject(experienceSessionResponseSchema.safeParse(rest));
   });
 });
 

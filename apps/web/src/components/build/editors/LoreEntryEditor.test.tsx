@@ -13,9 +13,11 @@
  * binding, not the children's rendering.
  */
 import { describe, it, expect, beforeAll, mock } from "bun:test";
+import { wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import { useForm, FormProvider, type UseFormReturn } from "react-hook-form";
-import type { LoreEntryRecord } from "../../../app-client.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
+import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -77,6 +79,7 @@ beforeAll(async () => {
 
 function makeEntry(overrides: Partial<LoreEntryRecord> = {}): LoreEntryRecord {
   return {
+    ...wireLoreEntry(),
     id: "e1",
     lorebookId: "lb1",
     title: "Goblin",
@@ -118,11 +121,11 @@ function renderEditor(entry: LoreEntryRecord) {
   // useForm is a hook — it must run inside a component. The harness creates
   // the form, provides it, and captures it via a holder so the test can read
   // getValues / formState after render.
-  const formHolder: { current: UseFormReturn<LoreEntryRecord> | null } = {
+  const formHolder: { current: UseFormReturn<LoreEntryDraft> | null } = {
     current: null,
   };
   function Harness() {
-    const form = useForm<LoreEntryRecord>({ defaultValues: entry });
+    const form = useForm<LoreEntryDraft>({ defaultValues: entry });
     formHolder.current = form;
     // RHF's formState is a proxy that only tracks/updates properties accessed
     // during render. Read isDirty here so the post-change assertion sees the

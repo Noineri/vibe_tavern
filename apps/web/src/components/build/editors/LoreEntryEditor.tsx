@@ -21,6 +21,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { useFormContext, useController, type FieldPath, type UseControllerReturn } from "react-hook-form";
+import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
 
@@ -41,10 +42,7 @@ import { NumberInput } from "../../shared/NumberInput.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
-import {
-  deleteLoreEntry,
-  type LoreEntryRecord,
-} from "../../../app-client.js";
+import { deleteLoreEntry } from "../../../api/lorebook-api.js";
 import { LoreKeysAiPill } from "./lore-keys-ai-pill.js";
 import { ActivationTestPanel } from "./activation-test-panel.js";
 import { CharacterFilterPicker } from "./character-filter-picker.js";
@@ -73,15 +71,15 @@ interface LoreEntryEditorProps {
  * re-renders only on its own change (scoped subscription, not a whole-editor
  * re-render). Native text inputs keep using `register` directly.
  */
-function ControlledField<P extends FieldPath<LoreEntryRecord>>({
+function ControlledField<P extends FieldPath<LoreEntryDraft>>({
   name,
   children,
 }: {
   name: P;
-  children: (field: UseControllerReturn<LoreEntryRecord, P>["field"]) => ReactNode;
+  children: (field: UseControllerReturn<LoreEntryDraft, P>["field"]) => ReactNode;
 }) {
-  const { control } = useFormContext<LoreEntryRecord>();
-  const { field } = useController<LoreEntryRecord, P>({ control, name });
+  const { control } = useFormContext<LoreEntryDraft>();
+  const { field } = useController<LoreEntryDraft, P>({ control, name });
   return <>{children(field)}</>;
 }
 
@@ -101,7 +99,7 @@ export function LoreEntryEditor({
   // <FormProvider>). Every field binds to it directly (register /
   // ControlledField); the form→entries mirror in the hook keeps the master
   // list live and re-arms the debounced autosave on every change.
-  const form = useFormContext<LoreEntryRecord>();
+  const form = useFormContext<LoreEntryDraft>();
   // content is read in several places (the textareas via Controller below, plus
   // TokenCounter + AiAssistantModal) — watch it once so they stay live.
   const content = form.watch("content");

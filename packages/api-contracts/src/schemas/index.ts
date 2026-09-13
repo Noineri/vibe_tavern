@@ -305,13 +305,12 @@ export {
   experienceDefinitionSchema,
   // Starters
   experienceStarterManifestSchema,
-  // Lifecycle request/response
+  // Lifecycle requests
   experienceStartRequestSchema,
   experienceActionRequestSchema,
   experienceFinishRequestSchema,
   experienceRestartRequestSchema,
   experienceReportQueueRequestSchema,
-  experienceSessionResponseSchema,
   // Runtime request/query envelopes (IR-32 routes)
   experienceVisualsQuerySchema,
   experienceViewerQuerySchema,
@@ -366,7 +365,6 @@ export {
   type ExperienceActionDto,
   type ExperienceFinishRequestDto,
   type ExperienceRestartRequestDto,
-  type ExperienceSessionResponseDto,
   type ExperienceManifestDto,
   type ExperienceDefinitionDto,
   type ExperienceStarterManifestDto,
@@ -417,6 +415,9 @@ export {
   regexAssistResponseSchema,
 } from "./regex-assist-schema.js";
 export type { RegexAssistArchetype, RegexAssistRuleDraft, RegexAssistRequest, RegexAssistResponse } from "./regex-assist-schema.js";
+
+export { aiAssistantModeSchema, aiAssistantRequestSchema } from "./ai-assistant-schema.js";
+export type { AiAssistantRequest, AiAssistantStreamChunk, AiAssistantTokenCount } from "./ai-assistant-schema.js";
 
 export {
   canonicalUtcInstantSchema,

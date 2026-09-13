@@ -7,11 +7,12 @@ declare namespace NodeJS {
 	}
 }
 
-// `?raw` suffix imports the file content as a plain string at build time
-// (handled by the raw-string loader in apps/web/bun-plugin-web-assets.ts).
-declare module "*?raw" {
-	const content: string;
-	export default content;
-}
+// Text imports (`import css from "./x.css" with { type: "text" }`) are typed as
+// string by bun-types' attribute-conditioned ambient modules, which TypeScript
+// only resolves from 7.1 on - see the `typescript` pin in the root package.json.
+// An attributed import wins over the shorthand below (verified: the theme CSS
+// ThemeTuner imports types as `string`, not `any`).
 
+// Side-effect stylesheet imports (`import "./styles.css"` in main.tsx): the
+// bundler turns them into a <link>, there is nothing to type.
 declare module "*.css";

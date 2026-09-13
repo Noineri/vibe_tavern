@@ -36,7 +36,7 @@ import { cn } from "../../../lib/cn.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import type { LoreEntryRecord } from "../../../app-client.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import {
 	POSITION_SECTIONS,

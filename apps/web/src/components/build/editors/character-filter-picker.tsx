@@ -12,6 +12,7 @@
  */
 import { useState } from "react";
 import { useFormContext, useController } from "react-hook-form";
+import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import * as Popover from "@radix-ui/react-popover";
 
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
@@ -22,10 +23,9 @@ import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { getModalPortal } from "../../shared/modal-helpers.js";
 import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
-import type { LoreEntryRecord } from "../../../app-client.js";
 
 export function CharacterFilterPicker({ t }: { t: TFunc }) {
-  const form = useFormContext<LoreEntryRecord>();
+  const form = useFormContext<LoreEntryDraft>();
   // characterFilter drives the avatar-chip render (map/filter/some) — watch it
   // so the chips stay live as entries are added/removed.
   const characterFilter = form.watch("characterFilter");
