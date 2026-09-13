@@ -144,13 +144,17 @@ export function InsightsPanel() {
     ?? activeChat.insightsConfig.diceEnabled;
   const diceMode = pendingPatch?.diceMode
     ?? activeChat.insightsConfig.diceMode;
-  // null/absent = inherit (resolver union); an array = explicit chat-local override.
-  const diceScriptIds = pendingPatch?.diceScriptIds
-    ?? activeChat.insightsConfig.diceScriptIds;
-  // null/absent = each check uses its declared actors; a record = explicit
-  // per-script actor distribution (Rework R1). Only meaningful in override mode.
-  const diceActorBindings = pendingPatch?.diceActorBindings
-    ?? activeChat.insightsConfig.diceActorBindings;
+  // null = inherit (resolver union); an array = explicit chat-local override.
+  // A pending `null` is a real value (Reset to automatic), so only an absent
+  // patch field falls through to the stored config — `??` would skip it.
+  const diceScriptIds = pendingPatch?.diceScriptIds !== undefined
+    ? pendingPatch.diceScriptIds
+    : activeChat.insightsConfig.diceScriptIds;
+  // null = each check uses its declared actors; a record = explicit
+  // per-script actor distribution (Rework R1). Same pending-null rule.
+  const diceActorBindings = pendingPatch?.diceActorBindings !== undefined
+    ? pendingPatch.diceActorBindings
+    : activeChat.insightsConfig.diceActorBindings;
 
   // Experience config comes from the dedicated store (NOT insightsConfig). The
   // toggle overlays only a local pending Experience patch during a request; the
