@@ -325,7 +325,16 @@ describe("extractArchive — .zip", () => {
 		expect(await read("after.txt")).toBe("still here");
 	});
 
-	it("reads a .zip produced by the system zip tool", async () => {
+	// CI evidence (run 34752093986, test-windows): Compress-Archive's cold
+	// start — powershell.exe + .NET types load — ran past the suite's global
+	// 45s per-test budget on a throttled 2-core runner. The test's cost is
+	// bounded by that external process, not by our code; the backslash and
+	// traversal contracts it historically covered are pinned deterministically
+	// above, so this fixture only proves cross-tool interop and gets a
+	// Windows-only budget sized for the tool, not the suite.
+	it(
+		"reads a .zip produced by the system zip tool",
+		async () => {
 		const src = join(root, "zsrc");
 		await mkdir(join(src, "web"), { recursive: true });
 		await writeFile(join(src, "vibe-tavern.exe"), "MZ");
@@ -357,7 +366,10 @@ describe("extractArchive — .zip", () => {
 
 		expect(await read("vibe-tavern.exe")).toBe("MZ");
 		expect(await read("web/index.html")).toBe("<html/>");
-	});
+		},
+		// undefined → the suite's global --timeout (45s) applies on Linux,
+		// where `zip` is a native millisecond binary.
+		IS_WINDOWS ? 180_000 : undefined);
 });
 
 describe("extractArchive — dispatch", () => {

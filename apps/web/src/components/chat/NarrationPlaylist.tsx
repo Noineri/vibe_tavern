@@ -159,9 +159,15 @@ export function scrollPlaylistListToMessage(list: HTMLElement, messageId: string
   // must not shadow the MessageShell chat anchor (pinned by test).
   const escaped =
     typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(messageId) : messageId;
-  const card = list.querySelector(`[data-playlist-message-id="${escaped}"]`);
-  if (!(card instanceof HTMLElement)) return false;
+  const selector = `[data-playlist-message-id="${escaped}"]`;
+  if (!(list.querySelector(selector) instanceof HTMLElement)) return false;
   const run = (): void => {
+    // Re-resolve at paint time instead of holding the node across the
+    // frame boundary: a re-render between schedule and paint can replace
+    // the card element, and scrolling the stale detached node would be a
+    // silent visual no-op — the card the user actually sees never moves.
+    const card = list.querySelector(selector);
+    if (!(card instanceof HTMLElement)) return;
     try {
       card.scrollIntoView({ block: "nearest" });
     } catch {
