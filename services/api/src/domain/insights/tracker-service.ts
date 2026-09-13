@@ -83,11 +83,6 @@ export interface SceneAutoGenerateTrigger {
 	messageId: string;
 }
 
-/** The chat-level Insights config gates Scene auto-generation (mirrors Objective's gate). */
-function isTrackerEnabled(insightsConfig: Record<string, unknown>): boolean {
-	return insightsConfig?.trackerEnabled === true;
-}
-
 /** One prior valid selected-variant record fed to the model as continuity input. */
 export interface SceneContinuityRecord {
 	variantId: MessageVariantId;
@@ -625,7 +620,7 @@ export class SceneTrackerService {
 	async triggerAutoGenerate(trigger: SceneAutoGenerateTrigger): Promise<void> {
 		try {
 			const chat = await this.stores.chats.getById(trigger.chatId);
-			if (!chat || !isTrackerEnabled(chat.insightsConfig)) return;
+			if (!chat || !chat.insightsConfig.trackerEnabled) return;
 			const config = await this.getConfig(trigger.chatId as ChatId);
 			const selected = await this.stores.messages.getSelectedVariant(trigger.messageId);
 			if (!selected) return;
@@ -659,7 +654,7 @@ export class SceneTrackerService {
 	async waitForForwardState(chatId: ChatId, signal?: AbortSignal): Promise<void> {
 		signal?.throwIfAborted();
 		const chat = await this.stores.chats.getById(chatId);
-		if (!chat || !isTrackerEnabled(chat.insightsConfig)) return;
+		if (!chat || !chat.insightsConfig.trackerEnabled) return;
 
 		const latest = await this.stores.messages.getLatestSelectedVariant(chat.activeBranchId);
 		if (!latest) return; // no latest assistant selected variant → nothing to track
@@ -886,7 +881,7 @@ export class SceneTrackerService {
 	async startBackfill(chatId: ChatId, mode: SceneBackfillMode): Promise<SceneBackfillStatus> {
 		const chat = await this.stores.chats.getById(chatId);
 		if (!chat) throw new Error(`Chat '${chatId}' was not found.`);
-		if (!isTrackerEnabled(chat.insightsConfig)) {
+		if (!chat.insightsConfig.trackerEnabled) {
 			throw new Error("Scene Tracker is off — enable it in Build Mode → Insights before backfilling history.");
 		}
 		const config = await this.getConfig(chatId);

@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver, resolveObjectiveTaskContext, resolveObjectiveLongTermContext } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { ChatId, ChatBranchId, LoreEntry, MessageId, RetrievedMemoryHit } from "@vibe-tavern/domain";
-import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import { normalizeInsightsConfig, normalizeObjectiveState, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────
 
@@ -15,6 +15,8 @@ function createMockStores(overrides?: Partial<StoreContainer["chats"]>): StoreCo
         personaId: "persona_1",
         promptPresetId: "preset_1",
         activeBranchId: "branch_1",
+        insightsConfig: normalizeInsightsConfig({}),
+        insightsObjectiveState: normalizeObjectiveState({}),
         title: "Test Chat",
         summary: null,
         createdAt: "2025-01-01T00:00:00Z",
@@ -226,6 +228,8 @@ describe("PromptAssemblyService", () => {
         personaId: "persona_1",
         promptPresetId: "preset_1",
         activeBranchId: "branch_1",
+        insightsConfig: normalizeInsightsConfig({}),
+        insightsObjectiveState: normalizeObjectiveState({}),
         title: "Summarized Chat",
         summary: "The characters met at a tavern.",
         createdAt: "2025-01-01T00:00:00Z",
@@ -321,6 +325,8 @@ function makeFilterService(
         personaId: null,
         promptPresetId: null,
         activeBranchId: "branch_1",
+        insightsConfig: normalizeInsightsConfig({}),
+        insightsObjectiveState: normalizeObjectiveState({}),
         title: "T",
         summary: null,
         messageHistoryLimit: 0,
@@ -510,12 +516,12 @@ describe("PromptAssemblyService prefix-bound window (Scene backfill — SCENE_TR
 });
 
 describe("resolveObjectiveTaskContext + resolveObjectiveLongTermContext (OGM)", () => {
-  const enabled = { objectiveEnabled: true };
+  const enabled = normalizeInsightsConfig({ objectiveEnabled: true });
 
   it("route mode: resolves the active route task as objectiveTask (first 'active' wins); long-term is null", () => {
     const result = resolveObjectiveTaskContext({
       insightsConfig: enabled,
-      insightsObjectiveState: {
+      insightsObjectiveState: normalizeObjectiveState({
         mode: OBJECTIVE_MODE.route,
         tasks: [
           { id: "t1", description: "First", status: OBJECTIVE_TASK_STATUS.pending },
@@ -523,7 +529,7 @@ describe("resolveObjectiveTaskContext + resolveObjectiveLongTermContext (OGM)", 
         ],
         injectionDepth: 2,
         injectPrompt: "FRAME",
-      },
+      }),
     });
     expect(result?.description).toBe("Second");
     expect(result?.injectionDepth).toBe(2);
@@ -531,14 +537,14 @@ describe("resolveObjectiveTaskContext + resolveObjectiveLongTermContext (OGM)", 
     // route mode never injects a long-term goal
     expect(resolveObjectiveLongTermContext({
       insightsConfig: enabled,
-      insightsObjectiveState: { mode: OBJECTIVE_MODE.route },
+      insightsObjectiveState: normalizeObjectiveState({ mode: OBJECTIVE_MODE.route }),
     })).toBeNull();
   });
 
   it("goals mode: resolves the selected short-term as objectiveTask (NOT the route tasks)", () => {
     const result = resolveObjectiveTaskContext({
       insightsConfig: enabled,
-      insightsObjectiveState: {
+      insightsObjectiveState: normalizeObjectiveState({
         mode: OBJECTIVE_MODE.goals,
         tasks: [{ id: "t1", description: "Route task ignored in goals mode", status: OBJECTIVE_TASK_STATUS.active }],
         shortTermGoals: [
@@ -546,7 +552,7 @@ describe("resolveObjectiveTaskContext + resolveObjectiveLongTermContext (OGM)", 
           { id: "s2", description: "Short B", status: OBJECTIVE_TASK_STATUS.active },
         ],
         injectionDepth: 1,
-      },
+      }),
     });
     expect(result?.description).toBe("Short B");
   });
@@ -555,7 +561,7 @@ describe("resolveObjectiveTaskContext + resolveObjectiveLongTermContext (OGM)", 
     const resolve = (status: string) =>
       resolveObjectiveLongTermContext({
         insightsConfig: enabled,
-        insightsObjectiveState: { mode: OBJECTIVE_MODE.goals, longTermGoal: { description: "Free the city", status } },
+        insightsObjectiveState: normalizeObjectiveState({ mode: OBJECTIVE_MODE.goals, longTermGoal: { description: "Free the city", status } }),
       });
     expect(resolve(OBJECTIVE_TASK_STATUS.pending)?.description).toBe("Free the city");
     expect(resolve(OBJECTIVE_TASK_STATUS.active)?.description).toBe("Free the city");
@@ -564,12 +570,12 @@ describe("resolveObjectiveTaskContext + resolveObjectiveLongTermContext (OGM)", 
   });
 
   it("returns null when objective is disabled, no goal/list, or goals-mode has an empty short-term list", () => {
-    const disabled = { objectiveEnabled: false };
-    expect(resolveObjectiveTaskContext({ insightsConfig: disabled, insightsObjectiveState: { mode: OBJECTIVE_MODE.goals, shortTermGoals: [] } })).toBeNull();
-    expect(resolveObjectiveLongTermContext({ insightsConfig: disabled, insightsObjectiveState: { mode: OBJECTIVE_MODE.goals } })).toBeNull();
+    const disabled = normalizeInsightsConfig({ objectiveEnabled: false });
+    expect(resolveObjectiveTaskContext({ insightsConfig: disabled, insightsObjectiveState: normalizeObjectiveState({ mode: OBJECTIVE_MODE.goals, shortTermGoals: [] }) })).toBeNull();
+    expect(resolveObjectiveLongTermContext({ insightsConfig: disabled, insightsObjectiveState: normalizeObjectiveState({ mode: OBJECTIVE_MODE.goals }) })).toBeNull();
     // goals mode, no long-term set
-    expect(resolveObjectiveLongTermContext({ insightsConfig: enabled, insightsObjectiveState: { mode: OBJECTIVE_MODE.goals } })).toBeNull();
+    expect(resolveObjectiveLongTermContext({ insightsConfig: enabled, insightsObjectiveState: normalizeObjectiveState({ mode: OBJECTIVE_MODE.goals }) })).toBeNull();
     // goals mode, empty short-term list → no active task
-    expect(resolveObjectiveTaskContext({ insightsConfig: enabled, insightsObjectiveState: { mode: OBJECTIVE_MODE.goals, shortTermGoals: [] } })).toBeNull();
+    expect(resolveObjectiveTaskContext({ insightsConfig: enabled, insightsObjectiveState: normalizeObjectiveState({ mode: OBJECTIVE_MODE.goals, shortTermGoals: [] }) })).toBeNull();
   });
 });

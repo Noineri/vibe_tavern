@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import type { AssemblePromptResponse, ChatBranchId, ChatId } from "@vibe-tavern/domain";
+import { normalizeInsightsConfig, normalizeObjectiveState, type AssemblePromptResponse, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
@@ -18,6 +18,8 @@ let capturedAssembleRangedArgs: { contextBudget?: number | null } | null = null;
 const chat = {
   id: "chat_1",
   activeBranchId: "branch_1",
+  insightsConfig: normalizeInsightsConfig({}),
+  insightsObjectiveState: normalizeObjectiveState({}),
 };
 
 function assembled(prompt: AssemblePromptResponse = {
@@ -371,7 +373,7 @@ describe("PromptAssemblyService summary preparation", () => {
     let scriptCalled = false;
     const stores = {
       chats: {
-        getById: async () => ({ id: "chat_1", characterId: "char_1", personaId: "persona_1", promptPresetId: "preset_1", activeBranchId: "branch_1", messageHistoryLimit: 0 }),
+        getById: async () => ({ id: "chat_1", characterId: "char_1", personaId: "persona_1", promptPresetId: "preset_1", activeBranchId: "branch_1", messageHistoryLimit: 0, insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) }),
         getBranches: async () => [{ id: "branch_1" }],
       },
       messages: { getMessages: async () => messages },

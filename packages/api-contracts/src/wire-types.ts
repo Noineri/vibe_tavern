@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { Chat, DiceActorType, DiceMode, ObjectiveState, SceneBackfillErrorEntry, SceneBackfillMode, SceneBackfillRunStatus, SceneBackfillSummary, SceneTrackerConfig } from "@vibe-tavern/domain";
+import type { AutoSummaryConfig, Chat, InsightsConfig, ObjectiveState, SceneBackfillErrorEntry, SceneBackfillMode, SceneBackfillRunStatus, SceneBackfillSummary, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderGenerationFormat, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
@@ -332,46 +332,18 @@ export interface SceneBackfillStatus {
 	cancelRequested: boolean;
 }
 
-export interface AutoSummaryConfig {
-	enabled: boolean;
-	everyN: number;
-	useChatModel: boolean;
-	excludeSummarized: boolean;
-	/** Include preceding summaries as read-only continuity context. */
-	includePriorSummaries: boolean;
-	/** How many of the most recent preceding summaries to include. */
-	maxPriorSummaries: number;
-	providerProfileId?: string;
-	model?: string;
-}
-
-/** Per-chat Insights toggles and nested Scene Tracker config. */
-export interface InsightsConfig {
-	objectiveEnabled: boolean;
-	trackerEnabled: boolean;
-	/** Absent on chats stored before Dice existed; readers default to `false`. */
-	diceEnabled?: boolean;
-	/** Absent on chats stored before Dice existed; readers default to `"normal"`. */
-	diceMode?: DiceMode;
-	/** `null`/absent = inherit the resolver union; an array = exactly those script ids. */
-	diceScriptIds?: string[] | null;
-	/** `null`/absent = each check uses its declared actors; a record overrides per script. */
-	diceActorBindings?: Record<string, DiceActorType[]> | null;
-	/** Absent on chats stored before the Scene Tracker; readers normalize via `normalizeSceneTrackerConfig`. */
-	tracker?: SceneTrackerConfig;
-}
+export type { AutoSummaryConfig, InsightsConfig };
 
 /**
- * Active chat as sent to the client. The JSON-column fields are the stored
- * JSON verbatim: `{}` until first configured, and missing any field added
- * after the row was written. Readers apply their own defaults.
+ * Active chat as sent to the client. The JSON-column fields are normalized by
+ * the chat store on read, so every field is present with its default.
  */
 export interface ChatDto extends Chat {
 	summary: string;
 	messageHistoryLimit: number;
-	autoSummaryConfig: Partial<AutoSummaryConfig>;
-	insightsConfig: Partial<InsightsConfig>;
-	insightsObjectiveState: Partial<ObjectiveState>;
+	autoSummaryConfig: AutoSummaryConfig;
+	insightsConfig: InsightsConfig;
+	insightsObjectiveState: ObjectiveState;
 }
 
 // ─── Runtime / self-update ─────────────────────────────────────────────

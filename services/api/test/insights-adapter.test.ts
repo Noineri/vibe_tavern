@@ -3,7 +3,8 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import type { ObjectiveState } from "@vibe-tavern/domain";
 import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { InsightsAdapter } from "../src/api/adapters/insights-adapter.js";
-import { defaultObjectiveState, type ObjectiveService } from "../src/domain/insights/objective-service.js";
+import { defaultObjectiveState } from "@vibe-tavern/domain";
+import type { ObjectiveService } from "../src/domain/insights/objective-service.js";
 import type { SceneTrackerService, SceneTarget } from "../src/domain/insights/tracker-service.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 

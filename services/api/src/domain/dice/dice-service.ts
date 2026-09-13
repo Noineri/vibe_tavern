@@ -280,30 +280,9 @@ export class DiceService {
   > {
     const chat = await this.stores.chats.getById(chatId);
     if (!chat) return { ok: false, error: { status: 404, code: "chat_not_found", message: `Chat '${chatId}' not found` } };
-    // Normalize the chat-local Dice override from the freeform Insights JSON:
-    // an array is the explicit set; anything else (null / absent / legacy) is
-    // inherit. The column is raw JSON, so guard the type rather than trusting it.
-    const rawIds = chat.insightsConfig?.diceScriptIds;
-    const diceScriptIds: string[] | null = Array.isArray(rawIds)
-      ? rawIds.filter((id): id is string => typeof id === "string")
-      : null;
-    // Normalize the chat-local per-script actor distribution (Rework R1). The
-    // column is raw JSON, so guard shape + actor values. Empty/invalid entries
-    // are dropped (an empty binding ≡ absent ≡ fall back to declared actors).
-    const rawBindings = chat.insightsConfig?.diceActorBindings;
-    const validActors = new Set<string>(["persona", "character"]);
-    let diceActorBindings: Record<string, ("persona" | "character")[]> | null = null;
-    if (rawBindings && typeof rawBindings === "object" && !Array.isArray(rawBindings)) {
-      const out: Record<string, ("persona" | "character")[]> = {};
-      for (const [k, v] of Object.entries(rawBindings as Record<string, unknown>)) {
-        if (typeof k !== "string" || k.length === 0 || !Array.isArray(v)) continue;
-        const actors = v.filter(
-          (a): a is "persona" | "character" => typeof a === "string" && validActors.has(a),
-        );
-        if (actors.length > 0) out[k] = actors;
-      }
-      diceActorBindings = out;
-    }
+    // The store already normalized the chat-local script override and actor
+    // distribution (Rework R1) out of the Insights JSON.
+    const { diceScriptIds, diceActorBindings } = chat.insightsConfig;
     return {
       ok: true,
       data: {

@@ -1629,13 +1629,32 @@ export interface ChatSummary {
   updatedAt: Timestamp;
 }
 
-export interface ChatAutoSummaryConfig {
+/** Per-chat auto-summary settings. Stored as JSON in chats.auto_summary_config_json; read through `normalizeAutoSummaryConfig`. */
+export interface AutoSummaryConfig {
   enabled: boolean;
   everyN: number;
   useChatModel: boolean;
   excludeSummarized: boolean;
+  /** Include preceding summaries as read-only continuity context. */
+  includePriorSummaries: boolean;
+  /** How many of the most recent preceding summaries to include. */
+  maxPriorSummaries: number;
   providerProfileId?: string;
   model?: string;
+}
+
+/** Per-chat Insights toggles and nested Scene Tracker config. Stored as JSON in chats.insights_config_json; read through `normalizeInsightsConfig`. */
+export interface InsightsConfig {
+  objectiveEnabled: boolean;
+  trackerEnabled: boolean;
+  diceEnabled: boolean;
+  diceMode: DiceMode;
+  /** `null` = inherit the resolver union; an array = exactly those script ids. */
+  diceScriptIds: string[] | null;
+  /** `null` = each check uses its declared actors; a record overrides per script. */
+  diceActorBindings: Record<string, DiceActorType[]> | null;
+  /** Absent until the Scene Tracker is first configured; readers apply defaults via `normalizeSceneTrackerConfig`. */
+  tracker?: SceneTrackerConfig;
 }
 
 export interface ToolCall {

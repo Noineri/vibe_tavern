@@ -5,7 +5,7 @@ import { useDomEnv } from "../../test/dom-env.js";
 useDomEnv();
 
 import type { ChatDto } from "@vibe-tavern/api-contracts";
-import { brandId, type ChatBranchId, type ChatId, type CharacterId, type MessageId, type MessageVariantId, type PromptPresetId } from "@vibe-tavern/domain";
+import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalizeObjectiveState, type ChatBranchId, type ChatId, type CharacterId, type MessageId, type MessageVariantId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { AppMessage } from "../api/types.js";
 import type { TtsProfileRecord } from "../api/tts-api.js";
 import { useTtsPlaybackStore } from "../stores/tts-playback-store.js";
@@ -46,9 +46,9 @@ function makeActiveChat(overrides: Partial<ChatDto> = {}): ChatDto {
     title: "test chat",
     summary: "",
     messageHistoryLimit: 0,
-    autoSummaryConfig: {},
-    insightsConfig: {},
-    insightsObjectiveState: {},
+    autoSummaryConfig: normalizeAutoSummaryConfig({}),
+    insightsConfig: normalizeInsightsConfig({}),
+    insightsObjectiveState: normalizeObjectiveState({}),
     status: "active",
     mode: "rp",
     activeBranchId: brandId<ChatBranchId>("b1"),

@@ -76,10 +76,9 @@ export function mapChatDto(chat: DbChat): ChatDto {
     title: chat.title,
     summary: chat.summary,
     messageHistoryLimit: chat.messageHistoryLimit,
-    // Stored JSON written through the config PATCH schemas; not re-validated here.
-    autoSummaryConfig: chat.autoSummaryConfig as ChatDto["autoSummaryConfig"],
-    insightsConfig: chat.insightsConfig as ChatDto["insightsConfig"],
-    insightsObjectiveState: chat.insightsObjectiveState as ChatDto["insightsObjectiveState"],
+    autoSummaryConfig: chat.autoSummaryConfig,
+    insightsConfig: chat.insightsConfig,
+    insightsObjectiveState: chat.insightsObjectiveState,
     status: chat.status,
     mode: chat.mode,
     selectedGreetingIndex: chat.selectedGreetingIndex,

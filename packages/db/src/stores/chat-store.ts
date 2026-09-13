@@ -2,7 +2,20 @@ import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, rekeySceneRecordJson, type ChatMode, type SceneTrackerConfigPatch, type CoauthorContextLink } from '@vibe-tavern/domain';
+import {
+  normalizeSceneTrackerConfig,
+  applySceneTrackerConfigPatch,
+  rekeySceneRecordJson,
+  normalizeAutoSummaryConfig,
+  normalizeInsightsConfig,
+  normalizeObjectiveState,
+  type AutoSummaryConfig,
+  type ChatMode,
+  type InsightsConfig,
+  type ObjectiveState,
+  type SceneTrackerConfigPatch,
+  type CoauthorContextLink,
+} from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -18,11 +31,12 @@ export interface Chat {
   title: string;
   summary: string;
   messageHistoryLimit: number;
-  autoSummaryConfig: Record<string, unknown>;
+  /** The JSON columns below are normalized on read (see domain `chat-json-config.ts`): always complete, never raw. */
+  autoSummaryConfig: AutoSummaryConfig;
   /** Insights (INSIGHTS_PLAN): per-chat opt-in toggles + per-feature config for the Objective Tracker + Scene Tracker. Both off by default. */
-  insightsConfig: Record<string, unknown>;
-  /** Insights (INSIGHTS_PLAN): the Objective Tracker state — objective description, the task route, custom prompts. Empty object = not yet generated. */
-  insightsObjectiveState: Record<string, unknown>;
+  insightsConfig: InsightsConfig;
+  /** Insights (INSIGHTS_PLAN): the Objective Tracker state — objective description, the task route, custom prompts. Defaults until generated. */
+  insightsObjectiveState: ObjectiveState;
   status: 'active' | 'archived';
   mode: ChatMode;
   selectedGreetingIndex: number;
@@ -222,7 +236,7 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
-  async updateMemorySettings(id: string, input: { messageHistoryLimit?: number; autoSummaryConfig?: Record<string, unknown> }): Promise<Chat> {
+  async updateMemorySettings(id: string, input: { messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig }): Promise<Chat> {
     const now = this.clock.now();
     const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
     if (input.messageHistoryLimit !== undefined) values.messageHistoryLimit = Math.max(0, Math.floor(input.messageHistoryLimit));
@@ -236,7 +250,7 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
-  async updateInsightsConfig(id: string, input: { insightsConfig?: Record<string, unknown> }): Promise<Chat> {
+  async updateInsightsConfig(id: string, input: { insightsConfig?: InsightsConfig }): Promise<Chat> {
     const now = this.clock.now();
     const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
     if (input.insightsConfig !== undefined) values.insightsConfigJson = JSON.stringify(input.insightsConfig);
@@ -283,7 +297,7 @@ export class ChatStore {
   }
 
   /** Replace the chat's Objective Tracker state wholesale (INSIGHTS_PLAN). The service computes the full next state and writes it atomically. */
-  async updateInsightsObjectiveState(id: string, input: { insightsObjectiveState?: Record<string, unknown> }): Promise<Chat> {
+  async updateInsightsObjectiveState(id: string, input: { insightsObjectiveState?: ObjectiveState }): Promise<Chat> {
     const now = this.clock.now();
     const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
     if (input.insightsObjectiveState !== undefined) values.insightsObjectiveStateJson = JSON.stringify(input.insightsObjectiveState);
@@ -884,9 +898,9 @@ export class ChatStore {
       title: row.title,
       summary: row.summary,
       messageHistoryLimit: row.messageHistoryLimit,
-      autoSummaryConfig: safeParseJson(row.autoSummaryConfigJson),
-      insightsConfig: safeParseJson(row.insightsConfigJson),
-      insightsObjectiveState: safeParseJson(row.insightsObjectiveStateJson),
+      autoSummaryConfig: normalizeAutoSummaryConfig(safeParseJson(row.autoSummaryConfigJson)),
+      insightsConfig: normalizeInsightsConfig(safeParseJson(row.insightsConfigJson)),
+      insightsObjectiveState: normalizeObjectiveState(safeParseJson(row.insightsObjectiveStateJson)),
       status: row.status as Chat['status'],
       mode: row.mode as Chat['mode'],
       selectedGreetingIndex: row.selectedGreetingIndex,

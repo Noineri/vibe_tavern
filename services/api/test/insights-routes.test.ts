@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createInsightsRoutes } from "../src/api/routes/insights.js";
 import type { InsightsRuntimeApi } from "../src/api/contract/runtime-api.js";
-import { defaultObjectiveState } from "../src/domain/insights/objective-service.js";
+import { defaultObjectiveState } from "@vibe-tavern/domain";
 
 const SCENE_TARGET = { branchId: "branch_1", messageId: "msg_1", variantId: "var_1" };
 
