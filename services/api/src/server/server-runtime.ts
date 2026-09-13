@@ -52,8 +52,10 @@ import { createApp } from "./app-factory.js";
 import { addRuntimeTeardown, runRuntimeTeardowns, setRuntimeShutdownHook } from "./runtime-shutdown.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
+import { serveErrorResponse } from "./serve-error.js";
 
 export { apiNotReadyResponse } from "./loading-placeholder.js";
+export { serveErrorResponse } from "./serve-error.js";
 import { runStartupFileChecks } from "./startup-checks.js";
 
 /**
@@ -396,6 +398,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 
 	const server = Bun.serve({
 		fetch: (req, s) => fetchHandler(req, s),
+		error: (err) => serveErrorResponse(tag, err),
 		port: config.port,
 		hostname: config.host,
 		idleTimeout: 255,

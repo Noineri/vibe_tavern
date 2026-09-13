@@ -20,7 +20,7 @@
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import indexHtml from "./index.html";
-import { createRuntimeApp, apiNotReadyResponse } from "@vibe-tavern/api/server-runtime";
+import { createRuntimeApp, apiNotReadyResponse, serveErrorResponse } from "@vibe-tavern/api/server-runtime";
 
 const PUBLIC_DIR = join(import.meta.dir, "public");
 const ROOT = resolve(import.meta.dir, "..", "..");
@@ -124,10 +124,7 @@ const server = Bun.serve({
 	},
 
 	error(err) {
-		console.error("[dev-server] error:", err);
-		return new Response(`Internal Server Error: ${err.message}`, {
-			status: 500,
-		});
+		return serveErrorResponse("[dev-server]", err);
 	},
 });
 
