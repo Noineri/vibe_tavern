@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { pathExists } from "./_fs.js";
 import { copyPromptAssets } from "./_prompt-assets.js";
 import { VERSION } from "./_version.js";
+import { serverCompileBuildOptions } from "./_server-compile.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const OUT = join(ROOT, "out");
@@ -137,9 +138,7 @@ async function main() {
 
 		const result = await Bun.build({
 			entrypoints: [entrypoint],
-			target: "bun",
-			minify: true,
-			bytecode: true,
+			...serverCompileBuildOptions,
 			define: {
 				VIBE_TAVERN_VERSION: `"${VERSION}"`,
 			},
