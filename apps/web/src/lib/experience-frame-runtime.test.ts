@@ -7,21 +7,21 @@
  * 1. FRESHNESS — re-run the GENERATOR ITSELF as a subprocess in `--check`
  *    mode (build in memory, byte-compare, no write) and assert exit 0. The
  *    artifact must never drift from the source modules: its bytes ARE the
- *    frame-side kernel the RM-8 replay trusts. NOTE: this test FAILS BY
- *    DESIGN after any dependency change that touches bun.lock (bun add /
- *    bun install re-resolutions shift the minified bundle bytes even with
- *    zero source edits) and after Bun upgrades — that is not a bug to debug;
- *    regenerate the artifact with `bun run gen:experience-frame-runtime`
- *    from the repo root and commit it. Spawning the generator (rather
- *    than calling Bun.build in-test) is load-bearing twice over: (a) the
- *    freshness check can never drift from the generator's build options —
- *    there is exactly ONE copy of the bundle config; (b) the generator
- *    subprocess runs under the RUNTIME module resolver, which handles the
- *    workspace-symlink node_modules layout of fresh CI installs — the
- *    Bun.build bundler dereferences the symlink and resolves bare imports
- *    from the real package path, where it cannot find `zod`/
- *    `@vibe-tavern/domain` (oven-sh/bun#31957); that made the in-test variant
- *    fail deterministically on Linux CI while passing on Windows.
+ *    frame-side kernel the RM-8 replay trusts. This test fails by design
+ *    after a Bun upgrade (minified names shift) and after a version bump of
+ *    a package the entry pulls in — `zod` did exactly that once, tree-shaking
+ *    from a 347 674-byte artifact down to a 149 793-byte build — but NOT
+ *    after ordinary lockfile churn, which was measured to leave the bytes
+ *    identical. The `--check` failure prints both sizes and the first
+ *    diverging byte so the two cases are distinguishable; either way the fix
+ *    is `bun run gen:experience-frame-runtime` from the repo root, not a
+ *    debugging session. Spawning the generator (rather than calling Bun.build
+ *    in-test) guarantees the freshness check can never drift from the
+ *    generator's build options — there is exactly ONE copy of the bundle
+ *    config. It used to matter for a second reason, workspace-symlink
+ *    resolution in the bundler (oven-sh/bun#31957), which no longer
+ *    reproduces on 1.4.2: an in-process Bun.build on a clean isolated install
+ *    now yields the committed bytes.
  *
  * 2. SMOKE — eval the artifact the way the frame document does (plain script
  *    bytes, no modules) and boot a real round from a config override with
