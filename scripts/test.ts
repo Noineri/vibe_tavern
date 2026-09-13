@@ -41,7 +41,7 @@ const BUN = process.execPath;
  * all over a previous 15s budget while every actual test passed. That was
  * historically the only lever (the old numeric form `afterAll(fn, ms)` never
  * worked), but as of bun 1.3.13 the object form does: each preload hook now
- * carries its own explicit `{ timeout: 60_000 }` (covers direct `bun test`
+ * carries its own explicit `{ timeout: 180_000 }` (covers direct `bun test`
  * runs in a workspace, which don't pass --timeout and would otherwise burst
  * bun's 5s hook default with a phantom `(unnamed)` failure). This global
  * budget remains for the TESTS themselves under CI contention.

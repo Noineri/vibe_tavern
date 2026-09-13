@@ -511,11 +511,12 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
             see (local backends). Profile-level, consumed server-side via
             effectiveContextBudget. */}
         <div>
-          <CustomTooltip content={t("token_padding_hint")}>
-            <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-              {t("token_padding")}
-            </label>
-          </CustomTooltip>
+          <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+            <span>{t("token_padding")}</span>
+            <CustomTooltip content={t("token_padding_hint")} side="top" align="start">
+              <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+            </CustomTooltip>
+          </label>
           <InlineNumField
             value={form.tokenPadding}
             placeholder="0"

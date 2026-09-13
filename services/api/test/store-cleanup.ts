@@ -21,12 +21,16 @@ const startedAt = Date.now();
 
 // The explicit { timeout } is LOAD-BEARING for direct `bun test` runs (no
 // --timeout flag, so bun's 5s hook default applies): closing hundreds of
-// SQLite handles + sweeping their WAL temp dirs takes up to ~26s on Windows
-// under full-suite load, and when the 5s budget bursts bun reports a PHANTOM
-// `(unnamed) — a beforeEach/afterEach hook timed out` failure attributed to
-// whichever file ran LAST (observed pinned on vision-gate.test.ts; moves to
-// any other last file when that one is removed). The object-form options work
-// on bun >= 1.3.13 (oven-sh/bun#24039); the old numeric form `afterAll(fn, ms)`
-// never did — scripts/test.ts documents that older finding. 60s = >2x the
-// worst measured sweep, cleanup-only work, no downside when not needed.
-afterAll(() => closeAllDbs({ sweepSince: startedAt }), { timeout: 60_000 });
+// SQLite handles + sweeping their WAL temp dirs is cleanup work whose wall
+// time scales with suite size and machine contention. Measured worst cases:
+// ~26s (2026-09, suite ≈ 3.3k tests), 66.9s under full `bun run check` load
+// with 7 suites on the pool (2026-09-12, suite 3456 tests) — that run burst
+// the then-60s budget and bun reported a PHANTOM `(unnamed) — a
+// beforeEach/afterEach hook timed out` failure attributed to whichever file
+// ran LAST (observed pinned on vision-gate.test.ts, then lore-parity-diff.
+// test.ts; it moves with discovery order). The object-form options work on
+// bun >= 1.3.13 (oven-sh/bun#24039); the old numeric form `afterAll(fn, ms)`
+// never did — scripts/test.ts documents that older finding. 180s = >2.5x the
+// worst measured sweep; it bounds a real hang without costing anything in the
+// green path (a timeout only fires when exceeded — it never adds delay).
+afterAll(() => closeAllDbs({ sweepSince: startedAt }), { timeout: 180_000 });
