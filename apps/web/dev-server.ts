@@ -17,7 +17,8 @@
  *   VIBE_TAVERN_WEB_DEV_PORT   — listen port (default: 4173)
  *   VIBE_TAVERN_OPEN_BROWSER=0 — don't auto-open the browser
  */
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import indexHtml from "./index.html";
 import { createRuntimeApp, apiNotReadyResponse, serveErrorResponse } from "@vibe-tavern/api/server-runtime";
@@ -38,6 +39,20 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65_535) {
 }
 
 type ApiHandler = (req: Request, server: Bun.Server<undefined>) => Response | Promise<Response>;
+type PublicRoute = ReturnType<typeof Bun.file> | { readonly dir: string };
+
+function resolvePublicRoutes(publicDir: string): Readonly<Record<string, PublicRoute>> {
+	const routes: Record<string, PublicRoute> = {};
+	for (const entry of readdirSync(publicDir, { withFileTypes: true })) {
+		const path = join(publicDir, entry.name);
+		if (entry.isDirectory()) {
+			routes[`/${entry.name}/*`] = { dir: path };
+		} else if (entry.isFile()) {
+			routes[`/${entry.name}`] = Bun.file(path);
+		}
+	}
+	return routes;
+}
 
 let apiHandler: ApiHandler = () => apiNotReadyResponse();
 
@@ -63,19 +78,26 @@ if (apiEnabled) {
 	);
 }
 
-function isApiPath(pathname: string): boolean {
-	// /assets/* is deliberately NOT here. It is a path of the built frontend
-	// (hashed chunks, the worker entrypoints, anything copied out of public/),
-	// and the dev API has no static directory at all — routing it to Hono only
-	// ever produced the JSON 404 from the catch-all, even for files that do
-	// exist under apps/web/public/assets/ and are served in production.
-	// /fonts/* was always handled here, on the frontend side; assets now match.
-	return (
-		pathname === "/api" ||
-		pathname.startsWith("/api/") ||
-		pathname === "/health"
-	);
+function handleApiRequest(
+	req: Request,
+	server: Bun.Server<undefined>,
+): Response | Promise<Response> {
+	return apiHandler(req, server);
 }
+
+// /assets/* deliberately stays on the frontend side. The dev API has no
+// static directory, while public assets and HTML-bundle chunks belong here.
+const apiRoutes = apiEnabled
+	? {
+			"/api": handleApiRequest,
+			"/api/*": handleApiRequest,
+			"/health": handleApiRequest,
+		}
+	: {
+			"/api": indexHtml,
+			"/api/*": indexHtml,
+			"/health": indexHtml,
+		};
 
 const server = Bun.serve({
 	port: PORT,
@@ -87,7 +109,10 @@ const server = Bun.serve({
 	idleTimeout: 255,
 
 	routes: {
+		...resolvePublicRoutes(PUBLIC_DIR),
+		...apiRoutes,
 		"/": indexHtml,
+		"/*": indexHtml,
 	},
 
 	development: {
@@ -95,45 +120,21 @@ const server = Bun.serve({
 		console: true,
 	},
 
-	async fetch(req, serverInstance) {
-		const url = new URL(req.url);
-		const pathname = url.pathname;
-
-		if (apiEnabled && isApiPath(pathname)) {
-			return apiHandler(req, serverInstance);
-		}
-
-		const publicPath = join(PUBLIC_DIR, pathname);
-		const publicRelativePath = relative(PUBLIC_DIR, publicPath);
-		if (
-			!publicRelativePath.startsWith("..") &&
-			!isAbsolute(publicRelativePath)
-		) {
-			const publicFile = Bun.file(publicPath);
-			if (await publicFile.exists()) {
-				return new Response(publicFile);
-			}
-		}
-
-		const hasExtension = /\.[a-zA-Z0-9]+$/.test(pathname);
-		if (!hasExtension) {
-			return fetch(new URL("/", req.url));
-		}
-
-		return new Response("Not Found", { status: 404 });
-	},
-
 	error(err) {
 		return serveErrorResponse("[dev-server]", err);
 	},
 });
 
+const ansi = Bun.enableANSIColors
+	? { bold: "\x1b[1m", cyan: "\x1b[36m", yellow: "\x1b[33m", reset: "\x1b[0m" }
+	: { bold: "", cyan: "", yellow: "", reset: "" };
+
 console.log("");
-console.log("  \x1b[1mVibe Tavern — Dev Server\x1b[0m");
+console.log(`  ${ansi.bold}Vibe Tavern — Dev Server${ansi.reset}`);
 console.log("  ────────────────────────────────────────────");
-console.log(`  \x1b[36mLocal:\x1b[0m    http://localhost:${server.port}`);
-console.log(`  \x1b[36mAPI:\x1b[0m      ${apiEnabled ? "in-process (503 until ready)" : "\x1b[33mdisabled\x1b[0m (--no-api)"}`);
-console.log("  \x1b[36mHMR:\x1b[0m      enabled");
+console.log(`  ${ansi.cyan}Local:${ansi.reset}    http://localhost:${server.port}`);
+console.log(`  ${ansi.cyan}API:${ansi.reset}      ${apiEnabled ? "in-process (503 until ready)" : `${ansi.yellow}disabled${ansi.reset} (--no-api)`}`);
+console.log(`  ${ansi.cyan}HMR:${ansi.reset}      enabled`);
 console.log("");
 
 if (process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
