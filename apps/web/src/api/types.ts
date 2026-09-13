@@ -107,8 +107,7 @@ export interface AppMessage extends Message {
   attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number; description?: string | null }[];
   /** Message-owned Dice result snapshots bound to this user message (DICE-F9 /
    *  DICE-F10). The backend `MessageDto` populates it for user messages that
-   *  have rolls; `normalizeMessage` spreads the DTO, so the field survives at
-   *  runtime even though the domain `Message` base type doesn't declare it.
+   *  have rolls; the domain `Message` base type doesn't declare it.
    *  Absent/undefined on assistant/system messages and on user messages with
    *  no rolls — readers coerce with `?? []`. Immutable historical snapshots. */
   diceRolls?: DiceRollSnapshot[];
@@ -280,10 +279,9 @@ export interface AppCharacterVersion {
  * whatever the store already holds". An explicit `null` (where allowed) or
  * `[]` means "the server actively set this to empty".
  *
- * The absence pipeline (normalizeSnapshot → ingestSnapshot) distinguishes
- * absent (preserve) from present-empty (replace): normalizeSnapshot passes
- * absent fields through untouched, and ingestSnapshot guards each field with
- * a presence check ("x" in snapshot / Array.isArray) before writing.
+ * ingestSnapshot distinguishes absent (preserve) from present-empty (replace):
+ * it guards each field with a presence check ("x" in snapshot / Array.isArray)
+ * before writing. API modules hand the RPC body over unchanged.
  *
  * The backend's SessionSnapshot (services/api/src/api/contract/session-types.ts)
  * is the full shape; every per-endpoint response is a subset of it. `unwrapRpc`

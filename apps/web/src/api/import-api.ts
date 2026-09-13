@@ -3,7 +3,6 @@ import type { ImportJsonResponse } from "./types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
-import { normalizeSnapshot } from "./normalize.js";
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 
 export async function importJson(input: {
@@ -15,9 +14,7 @@ export async function importJson(input: {
   lean?: boolean;
 }): Promise<ImportJsonResponse> {
   const response = await client.api.import.json.$post({ json: input });
-  const data = await unwrapRpc(response);
-  // Snapshot is absent on the lean mass-import path — only normalize when present.
-  return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
+  return unwrapRpc(response);
 }
 
 export interface BatchImportItemResult {

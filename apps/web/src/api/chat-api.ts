@@ -1,10 +1,9 @@
 import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
+import type { AppSnapshot, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError, type RpcResponse } from "./unwrap.js";
 import { DiceApiError } from "./dice-api.js";
-import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
 import { sendStream, regenerateStream, generateReplyStream, continueStream, type StreamOpts } from "./stream.js";
 import type { attachmentSchema } from "@vibe-tavern/api-contracts";
 import type { z } from "zod";
@@ -26,14 +25,12 @@ export type CreateMessageVariantInput = {
 
 export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].$get({ param: { chatId } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function createChat(characterId: string, mode?: ChatMode): Promise<AppSnapshot> {
   const response = await client.api.chats.$post({ json: { characterId, mode } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 /** List a character's co-author chats (Co-Author mode entry screen). */
@@ -55,7 +52,7 @@ export async function applyCoauthorDraft(
   const response = await client.api.chats[":chatId"].coauthor.apply.$post({ param: { chatId }, json: body });
   const data = await unwrapRpc(response);
   const corrections = data.corrections ?? [];
-  return { snapshot: normalizeSnapshot(data), corrections };
+  return { snapshot: data, corrections };
 }
 
 export async function deleteChat(chatId: ChatId): Promise<AppSnapshot> {
@@ -63,30 +60,27 @@ export async function deleteChat(chatId: ChatId): Promise<AppSnapshot> {
   // The backend returns the refreshed chats list (ChatListResponse) so the
   // sidebar can drop the deleted chat deterministically instead of relying on
   // a racy fire-and-forget bootstrap (ghost-chat fix).
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function clearChat(chatId: ChatId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].clear.$post({ param: { chatId } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function renameChat(chatId: ChatId, title: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].title.$patch({ param: { chatId }, json: { title } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function setGreetingIndex(chatId: ChatId, greetingIndex: number): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["greeting-index"].$patch({ param: { chatId }, json: { greetingIndex } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function setCoauthorContextLinks(chatId: ChatId, links: Array<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }>): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["coauthor-context-links"].$patch({ param: { chatId }, json: { links } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function listCoauthorModules(): Promise<CoauthorModule[]> {
@@ -112,20 +106,17 @@ export async function deleteCoauthorModule(moduleId: string): Promise<void> {
 
 export async function setCoauthorModule(chatId: ChatId, moduleId: string | null): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["coauthor-module"].$patch({ param: { chatId }, json: { moduleId } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function setChatPersona(chatId: ChatId, personaId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["set-persona"].$post({ param: { chatId }, json: { personaId } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function setChatPromptPreset(chatId: ChatId, promptPresetId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["set-prompt-preset"].$post({ param: { chatId }, json: { promptPresetId } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 // ─── Messages (non-stream) ──────────────────────────────────────────────
@@ -142,8 +133,7 @@ export async function sendChatMessage(
   if (!response.ok) {
     throw await sendChatMessageError(response);
   }
-  const data = (await response.json()) as AppSnapshot;
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 /** Non-stream send error. A dice commit conflict arrives as HTTP 409 with a
@@ -175,8 +165,7 @@ export async function regenerateChatMessage(
     { param: { chatId, messageId }, json: options?.override },
     { init: { signal: options?.signal } },
   );
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function generateReply(
@@ -187,8 +176,7 @@ export async function generateReply(
     { param: { chatId } },
     { init: { signal: options?.signal } },
   );
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function continueChatMessage(
@@ -202,8 +190,7 @@ export async function continueChatMessage(
     { param: { chatId, messageId } },
     { init: { signal: options?.signal } },
   );
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function editChatMessage(
@@ -219,8 +206,7 @@ export async function editChatMessage(
       ...(expectedVariantId === undefined ? {} : { expectedVariantId }),
     },
   });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function createMessageVariant(
@@ -232,22 +218,19 @@ export async function createMessageVariant(
     param: { chatId, messageId },
     json: { ...input, sourceVariantIds: [...input.sourceVariantIds] },
   });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function deleteChatMessage(chatId: ChatId, messageId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].$delete({ param: { chatId, messageId } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function selectMessageVariant(chatId: ChatId, messageId: string, variantIndex: number): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].variants[":variantIndex"].select.$post({
     param: { chatId, messageId, variantIndex: String(variantIndex) },
   });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 /** TPE-1 (AN-1): set (or clear) a variant's TTS narration annotation —
@@ -262,16 +245,14 @@ export async function setVariantTtsAnnotation(
     param: { chatId, messageId, variantIndex: String(variantIndex) },
     json: { text },
   });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function deleteMessageVariant(chatId: ChatId, messageId: string, variantIndex: number): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].variants[":variantIndex"].$delete({
     param: { chatId, messageId, variantIndex: String(variantIndex) },
   });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function updateAttachmentDescription(
@@ -331,26 +312,22 @@ export type { StreamOpts };
 
 export async function forkBranch(chatId: ChatId, fromMessageId?: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].fork.$post({ param: { chatId }, json: { fromMessageId } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function activateBranch(chatId: ChatId, branchId: import("@vibe-tavern/domain").ChatBranchId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].branches[":branchId"].activate.$post({ param: { chatId, branchId } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function renameBranch(chatId: ChatId, branchId: import("@vibe-tavern/domain").ChatBranchId, label: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].branches[":branchId"].$patch({ param: { chatId, branchId }, json: { label } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function deleteBranch(chatId: ChatId, branchId: import("@vibe-tavern/domain").ChatBranchId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].branches[":branchId"].$delete({ param: { chatId, branchId } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 // ─── Summaries & Memory ─────────────────────────────────────────────────
@@ -364,14 +341,12 @@ export async function summarizeChat(
     { param: { chatId }, json: input },
     { init: { signal: options?.signal } },
   );
-  const data = await unwrapRpc(response);
-  return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
+  return unwrapRpc(response);
 }
 
 export async function saveChatSummary(chatId: ChatId, summary: string): Promise<{ summary: string; snapshot: AppSnapshot }> {
   const response = await client.api.chats[":chatId"].summary.$put({ param: { chatId }, json: { summary } });
-  const data = await unwrapRpc(response);
-  return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
+  return unwrapRpc(response);
 }
 
 export async function updateChatDynamicPrompt(chatId: ChatId, content: string): Promise<AppSnapshot> {
@@ -379,8 +354,7 @@ export async function updateChatDynamicPrompt(chatId: ChatId, content: string): 
   // services/api/src/api/routes/chat.ts; hc<AppType> infers it from the
   // hono route tree. The $patch verb is a Hono RPC convention.
   const response = await client.api.chats[":chatId"]["dynamic-prompt"].$patch({ param: { chatId }, json: { content } });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function listChatSummaries(chatId: ChatId): Promise<ChatSummaryRecord[]> {
@@ -408,8 +382,7 @@ export async function createChatSummary(
   },
 ): Promise<{ summary: ChatSummaryRecord; snapshot: AppSnapshot }> {
   const response = await client.api.chats[":chatId"].summaries.$post({ param: { chatId }, json: input });
-  const data = await unwrapRpc(response);
-  return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
+  return unwrapRpc(response);
 }
 
 export async function updateChatSummary(
@@ -418,14 +391,12 @@ export async function updateChatSummary(
   input: Partial<Pick<ChatSummaryRecord, "label" | "content" | "summarizedFrom" | "summarizedTo" | "includeInContext" | "excludeSummarized" | "sortOrder">>,
 ): Promise<{ summary: ChatSummaryRecord; snapshot: AppSnapshot }> {
   const response = await client.api.chats[":chatId"].summaries[":summaryId"].$patch({ param: { chatId, summaryId }, json: input });
-  const data = await unwrapRpc(response);
-  return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
+  return unwrapRpc(response);
 }
 
 export async function deleteChatSummary(chatId: ChatId, summaryId: string): Promise<{ ok: boolean; snapshot: AppSnapshot }> {
   const response = await client.api.chats[":chatId"].summaries[":summaryId"].$delete({ param: { chatId, summaryId } });
-  const data = await unwrapRpc(response);
-  return { ok: data.ok, snapshot: normalizeSnapshot(data.snapshot) };
+  return unwrapRpc(response);
 }
 
 export async function generateChatSummary(
@@ -456,8 +427,7 @@ export async function generateChatSummary(
     { param: { chatId }, json: input },
     { init: { signal: options?.signal } },
   );
-  const data = await unwrapRpc(response);
-  return { summary: data.summary, chatSummary: data.chatSummary, snapshot: normalizeSnapshot(data.snapshot) };
+  return unwrapRpc(response);
 }
 
 export async function updateMemorySettings(
@@ -465,8 +435,7 @@ export async function updateMemorySettings(
   input: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> },
 ): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["memory-settings"].$patch({ param: { chatId }, json: input });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function updateInsightsConfig(
@@ -474,8 +443,7 @@ export async function updateInsightsConfig(
   input: { insightsConfig?: InsightsConfigPatch },
 ): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["insights-config"].$patch({ param: { chatId }, json: input });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 // ─── Insights — Objective Tracker (INS-5) ────────────────────────────────
@@ -491,12 +459,7 @@ export async function refreshInsightsCompletion(
     { param: { chatId }, json: { target } },
     { init: { signal: options?.signal } },
   );
-  const data = await unwrapRpc(response);
-  if (!data.patch.message) return data;
-  return {
-    ...data,
-    patch: { ...data.patch, message: normalizeMessage(data.patch.message) },
-  };
+  return unwrapRpc(response);
 }
 
 /** Non-persisting Scene preview (SCN-11): trial-run the generate pipeline with a
@@ -527,8 +490,7 @@ export async function generateScene(
     { param: { chatId }, json: body },
     { init: { signal: options?.signal } },
   );
-  const raw = await unwrapRpc(response);
-  return { ...raw, message: normalizeMessage(raw.message) };
+  return unwrapRpc(response);
 }
 
 /** Manual structured edit of the target variant's scene state (no LLM)
@@ -541,8 +503,7 @@ export async function editScene(
   const response = await client.api.chats[":chatId"].insights.scene.edit.$post(
     { param: { chatId }, json: body },
   );
-  const raw = await unwrapRpc(response);
-  return { ...raw, message: normalizeMessage(raw.message) };
+  return unwrapRpc(response);
 }
 
 /** Delete the target variant's Scene record (SCN-12). Returns the refreshed
@@ -554,8 +515,7 @@ export async function deleteScene(
   const response = await client.api.chats[":chatId"].insights.scene.delete.$post(
     { param: { chatId }, json: body },
   );
-  const raw = await unwrapRpc(response);
-  return { ...raw, message: normalizeMessage(raw.message) };
+  return unwrapRpc(response);
 }
 
 /** Explicitly cancel the active Scene generation for the target variant
@@ -643,7 +603,7 @@ export async function generateObjectiveTasks(
     { param: { chatId }, json: input },
     { init: { signal: options?.signal } },
   );
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function checkObjectiveCompletion(
@@ -655,62 +615,62 @@ export async function checkObjectiveCompletion(
     { param: { chatId }, json: input },
     { init: { signal: options?.signal } },
   );
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function addObjectiveTask(chatId: ChatId, description: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.tasks.$post({ param: { chatId }, json: { description } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function updateObjectiveTask(chatId: ChatId, taskId: string, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.tasks[":taskId"].$patch({ param: { chatId, taskId }, json: input });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function reorderObjectiveTasks(chatId: ChatId, taskIds: string[]): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.tasks.reorder.$put({ param: { chatId }, json: { taskIds } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function deleteObjectiveTask(chatId: ChatId, taskId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.tasks[":taskId"].$delete({ param: { chatId, taskId } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function setObjectiveDescription(chatId: ChatId, objectiveDescription: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.description.$put({ param: { chatId }, json: { objectiveDescription } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function setObjectiveMode(chatId: ChatId, mode: ObjectiveMode): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.mode.$put({ param: { chatId }, json: { mode } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function updateObjectiveLongTermGoal(chatId: ChatId, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective["long-term"].$patch({ param: { chatId }, json: input });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function addObjectiveShortTermGoal(chatId: ChatId, description: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective["short-term"].$post({ param: { chatId }, json: { description } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function updateObjectiveShortTermGoal(chatId: ChatId, goalId: string, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective["short-term"][":goalId"].$patch({ param: { chatId, goalId }, json: input });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function deleteObjectiveShortTermGoal(chatId: ChatId, goalId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective["short-term"][":goalId"].$delete({ param: { chatId, goalId } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function selectObjectiveShortTermGoal(chatId: ChatId, goalId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective["short-term"].select.$put({ param: { chatId }, json: { goalId } });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 export async function updateObjectiveConfig(chatId: ChatId, input: {
@@ -725,7 +685,7 @@ export async function updateObjectiveConfig(chatId: ChatId, input: {
   model?: string | null;
 }): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.config.$put({ param: { chatId }, json: input });
-  return normalizeSnapshot(await unwrapRpc(response));
+  return unwrapRpc(response);
 }
 
 // ─── Export ─────────────────────────────────────────────────────────────

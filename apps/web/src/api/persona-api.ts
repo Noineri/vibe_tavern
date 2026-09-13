@@ -2,7 +2,6 @@ import type { ChatId, PronounForms } from "@vibe-tavern/domain";
 import type { AppSnapshot, PersonaRecord, LorebookRecord, ScriptRecord } from "./types.js";
 import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
-import { normalizeSnapshot } from "./normalize.js";
 
 export async function listPersonas(): Promise<PersonaRecord[]> {
   const response = await client.api.personas.$get();
@@ -38,7 +37,7 @@ export async function updatePersona(
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
   const data = await unwrapRpc(response);
-  return "id" in data ? {} : normalizeSnapshot(data);
+  return "id" in data ? {} : data;
 }
 
 export async function deletePersona(personaId: string): Promise<void> {

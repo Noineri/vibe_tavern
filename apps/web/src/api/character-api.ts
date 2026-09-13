@@ -2,7 +2,6 @@ import type { ChatId } from "@vibe-tavern/domain";
 import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse, LorebookRecord, ScriptRecord } from "./types.js";
 import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
-import { normalizeSnapshot } from "./normalize.js";
 
 export async function updateCharacter(
   characterId: string,
@@ -31,8 +30,7 @@ export async function updateCharacter(
   }>,
 ): Promise<AppSnapshot> {
   const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: input });
-  const data = await unwrapRpc(response);
-  return normalizeSnapshot(data);
+  return unwrapRpc(response);
 }
 
 export async function createCharacter(input: {
@@ -52,14 +50,12 @@ export async function createCharacter(input: {
   tags?: string[];
 }): Promise<ImportJsonResponse> {
   const response = await client.api.characters.$post({ json: input });
-  const data = await unwrapRpc(response);
-  return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
+  return unwrapRpc(response);
 }
 
 export async function duplicateCharacter(characterId: string): Promise<ImportJsonResponse> {
   const response = await client.api.characters[":characterId"].duplicate.$post({ param: { characterId } });
-  const data = await unwrapRpc(response);
-  return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
+  return unwrapRpc(response);
 }
 
 export async function archiveCharacter(characterId: string): Promise<{ characterId: string; status: "archived" }> {
