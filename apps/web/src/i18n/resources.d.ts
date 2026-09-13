@@ -2685,7 +2685,7 @@ export default interface Resources {
     "test_hi_btn": "Test \"Hi\"",
     "testing": "Testing...",
     "token_padding": "Token Padding",
-    "token_padding_hint": "Safety margin subtracted from the context size — compensates chat-template tokens the counter can't see.",
+    "token_padding_hint": "Safety margin subtracted from the context size — compensates chat-template tokens the counter can't see. Mostly needed on local servers with chat templates; a few hundred tokens is usually enough.",
     "tokens_label": "tokens",
     "topbar_autonarrate_off": "Auto-narrate: off",
     "topbar_autonarrate_on": "Auto-narrate: on — new AI replies are read aloud",
