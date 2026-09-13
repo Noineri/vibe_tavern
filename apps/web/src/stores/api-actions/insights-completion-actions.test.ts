@@ -31,6 +31,7 @@ const TARGET_A_VARIANT_A: InsightsCompletionTarget = { ...TARGET_A, variantId: V
 
 function objective(description: string): ObjectiveState {
   return {
+    mode: "route",
     objectiveDescription: description,
     tasks: [{ id: `task_${description}`, description, status: "active" }],
     longTermGoal: null,

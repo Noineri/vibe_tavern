@@ -72,7 +72,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   const renderVariant = useSceneRenderStore((s) => s.variant);
   const setRenderVariant = useSceneRenderStore((s) => s.setVariant);
 
-  const rawTracker = activeChat?.insightsConfig?.tracker;
+  const rawTracker = activeChat?.insightsConfig.tracker;
   const savedTracker = useMemo(() => normalizeSceneTrackerConfig(rawTracker), [JSON.stringify(rawTracker)]);
 
   const [draft, setDraft] = useState<SceneTrackerConfig>(savedTracker);

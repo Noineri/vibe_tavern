@@ -65,7 +65,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 
 	// ── Primitive selectors (render-isolation). assistantCount is a number so the
 	//    card only re-renders when the count actually changes, not on every edit. ──
-	const tracker = useSnapshotStore((s) => s.activeChat?.insightsConfig?.tracker ?? null);
+	const tracker = useSnapshotStore((s) => s.activeChat?.insightsConfig.tracker ?? null);
 	const assistantCount = useSnapshotStore((s) =>
 		s.messageOrder.reduce((n, id) => n + (s.messagesById[id]?.role === "assistant" ? 1 : 0), 0),
 	);

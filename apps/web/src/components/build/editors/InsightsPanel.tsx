@@ -137,26 +137,20 @@ export function InsightsPanel() {
       ? pending.patch
       : null;
   const objectiveEnabled = pendingPatch?.objectiveEnabled
-    ?? activeChat.insightsConfig?.objectiveEnabled
-    ?? false;
+    ?? activeChat.insightsConfig.objectiveEnabled;
   const trackerEnabled = pendingPatch?.trackerEnabled
-    ?? activeChat.insightsConfig?.trackerEnabled
-    ?? false;
+    ?? activeChat.insightsConfig.trackerEnabled;
   const diceEnabled = pendingPatch?.diceEnabled
-    ?? activeChat.insightsConfig?.diceEnabled
-    ?? false;
+    ?? activeChat.insightsConfig.diceEnabled;
   const diceMode = pendingPatch?.diceMode
-    ?? activeChat.insightsConfig?.diceMode
-    ?? "normal";
+    ?? activeChat.insightsConfig.diceMode;
   // null/absent = inherit (resolver union); an array = explicit chat-local override.
   const diceScriptIds = pendingPatch?.diceScriptIds
-    ?? activeChat.insightsConfig?.diceScriptIds
-    ?? null;
+    ?? activeChat.insightsConfig.diceScriptIds;
   // null/absent = each check uses its declared actors; a record = explicit
   // per-script actor distribution (Rework R1). Only meaningful in override mode.
   const diceActorBindings = pendingPatch?.diceActorBindings
-    ?? activeChat.insightsConfig?.diceActorBindings
-    ?? null;
+    ?? activeChat.insightsConfig.diceActorBindings;
 
   // Experience config comes from the dedicated store (NOT insightsConfig). The
   // toggle overlays only a local pending Experience patch during a request; the

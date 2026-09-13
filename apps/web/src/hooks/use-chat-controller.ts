@@ -140,7 +140,7 @@ function readDiceSendState(): { commitIntent: DiceSendCommitIntent | undefined; 
   const branchId = snapshot.activeBranch?.id ?? null;
   const insights = snapshot.activeChat?.insightsConfig;
   if (!insights?.diceEnabled || !chatId || !branchId) return { commitIntent: undefined, blockReason: null };
-  const diceMode = insights.diceMode ?? "normal";
+  const diceMode = insights.diceMode;
   const lane = useDiceStore.getState().byScope[`${chatId}|${branchId}`]?.lanes?.[diceMode] ?? null;
   const blockReason = diceSendBlockReason(lane, snapshot.persona?.id ?? null, snapshot.activeChat?.characterId ?? null);
   if (blockReason) return { commitIntent: undefined, blockReason };

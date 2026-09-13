@@ -22,6 +22,7 @@
  * gate and action-bar wiring are the code under test.
  */
 import { describe, test, expect, beforeAll, afterEach, beforeEach, mock } from "bun:test";
+import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import type { ReactNode } from "react";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore } from "../../stores/chat-store.js";
@@ -174,7 +175,7 @@ function seed(messages: AppMessage[], isCoauthorMode: boolean): AppSnapshot {
   return {
     chats: [{ id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp" } as unknown as AppSnapshot["activeChat"],
+    activeChat: { id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp", insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
     branches: [],
     messages,

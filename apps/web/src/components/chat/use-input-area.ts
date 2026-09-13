@@ -187,8 +187,8 @@ export function useInputArea() {
   // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
   // is nothing bindable, diceBlockReason is null and canSend is byte-identical
   // to before. Dice can only ever subtract from canSend, never add.
-  const diceEnabled = chatMeta?.activeChat?.insightsConfig?.diceEnabled ?? false;
-  const diceMode = chatMeta?.activeChat?.insightsConfig?.diceMode ?? "normal";
+  const diceEnabled = chatMeta?.activeChat?.insightsConfig.diceEnabled ?? false;
+  const diceMode = chatMeta?.activeChat?.insightsConfig.diceMode ?? "normal";
   const activeBranchId = chatMeta?.activeBranch?.id ?? null;
   const activeCharacterId = chatMeta?.activeChat?.characterId ?? null;
   // Establish the pending-lane scope for dice-enabled chats so the gate (and the

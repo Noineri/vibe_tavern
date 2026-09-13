@@ -1891,8 +1891,8 @@ export interface ObjectiveShortTermGoal {
 
 /** The full objective state for a chat (INSIGHTS_PLAN). Stored as JSON in chats.insights_objective_state_json. */
 export interface ObjectiveState {
-  /** Tracker mode — `route` (original ordered task route) or `goals` (long-term + short-term goals, OGM). Absent on legacy data → `route`. */
-  mode?: ObjectiveMode;
+  /** Tracker mode — `route` (original ordered task route) or `goals` (long-term + short-term goals, OGM). */
+  mode: ObjectiveMode;
   /** User's high-level goal. */
   objectiveDescription: string;
   /** Flat ordered task list — the route (route mode). */

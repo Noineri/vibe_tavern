@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 
@@ -164,7 +165,7 @@ function seed(messages: AppMessage[]): AppSnapshot {
   return {
     chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat 1", characterId: "c1" } as unknown as AppSnapshot["activeChat"],
+    activeChat: { id: "chat-1", title: "Chat 1", characterId: "c1", insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
     branches: [],
     messages,

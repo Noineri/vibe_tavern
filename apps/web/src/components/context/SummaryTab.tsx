@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type CSSProperties, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { ChatId } from "@vibe-tavern/domain";
+import { normalizeAutoSummaryConfig, type ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../api/types.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
@@ -99,14 +99,8 @@ const SortableSummaryRow = memo(function SortableSummaryRow({
   );
 });
 
-const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
-  enabled: false,
-  everyN: 20,
-  useChatModel: true,
-  excludeSummarized: true,
-  includePriorSummaries: true,
-  maxPriorSummaries: 10,
-};
+/** Shown while no chat is active; a chat's config always arrives complete. */
+const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = normalizeAutoSummaryConfig({});
 
 // SUM-2: sane defaults for the summary sampler, distinct from the RP profile.
 // Summaries are an analytical task — cool the sampler (0.3, mirroring
@@ -129,7 +123,7 @@ export interface ContextMemoryModalProps {
   currentSummary: string;
   messageCount: number;
   messageHistoryLimit?: number;
-  autoSummaryConfig?: Partial<AutoSummaryConfig>;
+  autoSummaryConfig?: AutoSummaryConfig;
   onSummarize: (input: { providerProfileId: string; model?: string; maxMessages: number }) => Promise<string>;
   onSaveSummary: (summary: string) => Promise<string>;
   onFetchModelsForProfile: (providerProfileId: string) => Promise<Array<{ id: string; label: string; contextLength?: number }>>;
@@ -218,7 +212,7 @@ export function useSummaryTab({
   // consumed as `limit || Infinity`), a positive number = manual cap. Touching
   // the slider/number releases the latch; the Auto toggle re-engages it.
   const [limitOverride, setLimitOverride] = useState<number | null>(messageHistoryLimit > 0 ? messageHistoryLimit : null);
-  const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
+  const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>(autoSummaryConfig ?? DEFAULT_AUTO_CONFIG);
   const abortRef = useRef<AbortController | null>(null);
   // Tracks the active chat+branch across renders so the range effect can
   // RESET the range (1..maxMessage) on any branch/chat switch instead of
@@ -404,7 +398,7 @@ export function useSummaryTab({
     // real count (fork shrink). The persisted value itself is left untouched —
     // lowering the branch's limit is the user's call, not ours.
     setLimitOverride(messageHistoryLimit > 0 ? messageHistoryLimit : null);
-    setAutoConfig({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
+    setAutoConfig(autoSummaryConfig ?? DEFAULT_AUTO_CONFIG);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rangeFrom/rangeTo are intentionally read for the diff check above
   }, [activeChatId, activeBranchId, autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
 
