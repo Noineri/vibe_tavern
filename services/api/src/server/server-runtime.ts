@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
@@ -349,6 +350,40 @@ export function resolveFrontendSource(config: {
 	return { available: false, label: "(not built — API-only mode)" };
 }
 
+/**
+ * Bun `{dir}` routes for the built frontend's asset directories.
+ *
+ * These run before `fetch`, so /assets/* and /fonts/* never reach Hono — and
+ * that is the point: a `{dir}` route answers with an `ETag` + `Last-Modified`
+ * and turns a reload into a 304, while hono's serveStatic sends no validator
+ * at all (measured on the built bundle: 10.0 MB re-downloaded per page load).
+ * Bypassing the middleware chain is a no-op for these paths — the origin guard
+ * and mobile auth both explicitly skip everything outside /api.
+ *
+ * Two measured constraints shape this:
+ *  - a `{dir}` 404 does NOT fall through to `fetch`, so these routes must not
+ *    be registered when the binary also carries an embedded copy: a file that
+ *    exists only inside the executable would 404 instead of being served.
+ *  - `Bun.serve` THROWS at bind time when a `{dir}` path does not exist, so
+ *    each directory is checked first. A directory removed later is a clean 404.
+ */
+export function resolveStaticDirRoutes(config: {
+	readonly staticEnabled: boolean;
+	readonly staticDir: string;
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
+}): Record<string, { dir: string }> {
+	if (!config.staticEnabled) return {};
+	if ((config.embeddedWebFiles?.size ?? 0) > 0) return {};
+	const routes: Record<string, { dir: string }> = {};
+	for (const name of ["assets", "fonts"]) {
+		const dir = resolve(config.staticDir, name);
+		if (statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
+			routes[`/${name}/*`] = { dir };
+		}
+	}
+	return routes;
+}
+
 export async function startServerRuntime(config: ServerRuntimeConfig): Promise<void> {
 	const tag = `[${config.mode}]`;
 	const tlsConfig = resolveTlsConfig();
@@ -397,6 +432,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	) => Response | Promise<Response> = createLoadingHandler({ alegreyaFont });
 
 	const server = Bun.serve({
+		routes: resolveStaticDirRoutes(config),
 		fetch: (req, s) => fetchHandler(req, s),
 		error: (err) => serveErrorResponse(tag, err),
 		port: config.port,

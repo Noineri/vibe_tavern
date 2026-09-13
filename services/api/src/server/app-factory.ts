@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { serveStatic } from "hono/bun";
 import { resolve } from "node:path";
 import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
@@ -22,6 +22,7 @@ import {
 	parseAllowedOrigins,
 	normalizeExternalHost,
 } from "./request-origin-guard.js";
+import { weakEtag, withStaticValidator } from "./static-conditional.js";
 
 export interface AppDeps {
 	runtime: RuntimeApi;
@@ -201,37 +202,66 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	// the embedded map fills in any misses, then SPA fallback. This lets the
 	// build ship a self-contained .exe while still allowing a hot-swappable
 	// web/ folder for rapid frontend patches without recompiling.
+	//
+	// /assets/* and /fonts/* from disk are served before Hono by Bun {dir}
+	// routes (server-runtime.ts), which validate with an ETag. What reaches
+	// here is the embedded copy and index.html — neither has a file on disk to
+	// validate, so both carry a weak ETag built from their own bytes.
 
 	const hasEmbedded = (deps.embeddedWebFiles?.size ?? 0) > 0;
 	const hasDiskStatic = !!deps.staticDir
 		&& await Bun.file(resolve(deps.staticDir, "index.html")).exists();
 
 	if (hasEmbedded || hasDiskStatic) {
+		const staticDir = deps.staticDir;
+		const embeddedIndex = deps.embeddedWebFiles?.get("/index.html") ?? null;
+		const embeddedIndexHtml = embeddedIndex === null ? null : await embeddedIndex.text();
+
+		/** The SPA document, for `/`, `/index.html` and every deep link.
+		 *  Re-read from disk per request so a patched web/index.html still takes
+		 *  effect without a restart (previously only `/` did — deep links were
+		 *  answered from a startup snapshot, so the two disagreed), then tagged
+		 *  with a validator built from those bytes so a reload costs a 304. */
+		const respondWithIndex = async (c: Context): Promise<Response> => {
+			let html = embeddedIndexHtml;
+			if (hasDiskStatic && staticDir) {
+				const file = Bun.file(resolve(staticDir, "index.html"));
+				if (await file.exists()) html = await file.text();
+			}
+			if (html === null) return c.notFound();
+			const body = html;
+			return withStaticValidator(c.req.raw, weakEtag(body), () => c.html(body));
+		};
+
+		// Before serveStatic: it would answer `/` from disk without a validator.
+		app.get("/", respondWithIndex);
+		app.get("/index.html", respondWithIndex);
+
 		if (hasDiskStatic) {
 			// Serve built assets from disk: /assets/*, /fonts/*, etc.
-			app.use("/*", serveStatic({ root: deps.staticDir }));
+			app.use("/*", serveStatic({ root: staticDir }));
 		}
 
-		// Resolve index.html once: prefer disk (hot-patchable), fall back to embedded.
-		let indexHtml: string | null = null;
-		if (hasDiskStatic && deps.staticDir) {
-			indexHtml = await Bun.file(resolve(deps.staticDir, "index.html")).text();
-		} else {
-			const embeddedIndex = deps.embeddedWebFiles?.get("/index.html");
-			if (embeddedIndex) indexHtml = await embeddedIndex.text();
-		}
+		// Embedded files are immutable for the life of the binary, so each
+		// validator is computed once on first request and kept.
+		const embeddedEtags = new Map<string, string>();
 
 		// SPA fallback + embedded-file lookup + clear 404 for missing assets.
-		app.get("*", (c) => {
+		app.get("*", async (c) => {
 			const { pathname } = new URL(c.req.url);
 			// Embedded lookup (serves files baked into the .exe). Wins only when
 			// serveStatic above didn't finalize — i.e. disk static is absent or
 			// the file isn't on disk.
 			const embedded = deps.embeddedWebFiles?.get(pathname);
 			if (embedded) {
+				let etag = embeddedEtags.get(pathname);
+				if (etag === undefined) {
+					etag = weakEtag(new Uint8Array(await embedded.arrayBuffer()));
+					embeddedEtags.set(pathname, etag);
+				}
 				// Content-Type comes from the blob: Bun records each embedded
 				// file's MIME at compile time from its extension.
-				return new Response(embedded);
+				return withStaticValidator(c.req.raw, etag, () => new Response(embedded));
 			}
 			// Don't serve index.html for missing static assets — that returns
 			// HTML with MIME text/html, which the browser rejects as a module
@@ -241,7 +271,7 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 			if (pathname.startsWith("/assets/") || pathname.startsWith("/fonts/")) {
 				return c.text(`Asset not found: ${pathname}`, 404);
 			}
-			return indexHtml !== null ? c.html(indexHtml) : c.notFound();
+			return respondWithIndex(c);
 		});
 	}
 
