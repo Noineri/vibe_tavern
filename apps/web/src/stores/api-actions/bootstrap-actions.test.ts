@@ -33,7 +33,6 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
       characterId: "char-1",
       personaId: "persona-1",
       promptPresetId: null,
-      toolProfileId: null,
       activeBranchId: "branch-1",
       selectedGreetingIndex: 0,
       status: "active",

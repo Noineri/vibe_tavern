@@ -18,14 +18,14 @@ import { updateScript } from "./script-api.js";
 /** `GET /api/copilot/profiles` — built-in seed first, then user profiles. */
 export async function listCopilotProfiles(): Promise<CopilotProfile[]> {
   const response = await client.api.copilot.profiles.$get();
-  const data = await unwrapRpc<{ profiles: CopilotProfile[] }>(response);
+  const data = await unwrapRpc(response);
   return data.profiles;
 }
 
 /** `POST /api/copilot/profiles` — create a user profile. */
 export async function createCopilotProfile(input: CopilotProfileCreate): Promise<CopilotProfile> {
   const response = await client.api.copilot.profiles.$post({ json: input });
-  return unwrapRpc<CopilotProfile>(response);
+  return unwrapRpc(response);
 }
 
 /** `PATCH /api/copilot/profiles/:profileId` — partial update (built-in id → 400). */
@@ -37,7 +37,7 @@ export async function updateCopilotProfile(
     param: { profileId },
     json: input,
   });
-  return unwrapRpc<CopilotProfile>(response);
+  return unwrapRpc(response);
 }
 
 /** `DELETE /api/copilot/profiles/:profileId` — delete a user profile (built-in id → 400). */

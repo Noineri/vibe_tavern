@@ -17,14 +17,14 @@ import { unwrapRpc, unwrapError } from "./unwrap.js";
 /** `GET /api/format-templates` — the library in store order. */
 export async function listFormatTemplates(): Promise<FormatTemplateList> {
 	const response = await client.api["format-templates"].$get();
-	return unwrapRpc<FormatTemplateList>(response);
+	return unwrapRpc(response);
 }
 
 /** `POST /api/format-templates` — create from the manual editor's current
  *  sequences (the «save-as-new» morph flow). */
 export async function createFormatTemplate(input: FormatTemplateCreate): Promise<FormatTemplate> {
 	const response = await client.api["format-templates"].$post({ json: input });
-	return unwrapRpc<FormatTemplate>(response);
+	return unwrapRpc(response);
 }
 
 /** `PATCH /api/format-templates/:id` — partial update: rename (the morph)
@@ -37,7 +37,7 @@ export async function updateFormatTemplate(
 		param: { templateId },
 		json: input,
 	});
-	return unwrapRpc<FormatTemplate>(response);
+	return unwrapRpc(response);
 }
 
 /** `DELETE /api/format-templates/:id` — delete a template (profiles whose

@@ -31,7 +31,7 @@ export async function updateCharacter(
   }>,
 ): Promise<AppSnapshot> {
   const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: input });
-  const data = await unwrapRpc<AppSnapshot>(response);
+  const data = await unwrapRpc(response);
   return normalizeSnapshot(data);
 }
 
@@ -52,24 +52,24 @@ export async function createCharacter(input: {
   tags?: string[];
 }): Promise<ImportJsonResponse> {
   const response = await client.api.characters.$post({ json: input });
-  const data = await unwrapRpc<ImportJsonResponse>(response);
+  const data = await unwrapRpc(response);
   return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
 }
 
 export async function duplicateCharacter(characterId: string): Promise<ImportJsonResponse> {
   const response = await client.api.characters[":characterId"].duplicate.$post({ param: { characterId } });
-  const data = await unwrapRpc<ImportJsonResponse>(response);
+  const data = await unwrapRpc(response);
   return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
 }
 
 export async function archiveCharacter(characterId: string): Promise<{ characterId: string; status: "archived" }> {
   const response = await client.api.characters[":characterId"].archive.$patch({ param: { characterId } });
-  return unwrapRpc<{ characterId: string; status: "archived" }>(response);
+  return unwrapRpc(response);
 }
 
 export async function unarchiveCharacter(characterId: string): Promise<{ characterId: string; status: "active" }> {
   const response = await client.api.characters[":characterId"].unarchive.$patch({ param: { characterId } });
-  return unwrapRpc<{ characterId: string; status: "active" }>(response);
+  return unwrapRpc(response);
 }
 
 export async function deleteCharacter(characterId: string): Promise<void> {
@@ -79,26 +79,26 @@ export async function deleteCharacter(characterId: string): Promise<void> {
 
 export async function exportCharacter(characterId: string): Promise<Record<string, unknown>> {
   const response = await client.api.characters[":characterId"].export.$get({ param: { characterId } });
-  return unwrapRpc<Record<string, unknown>>(response);
+  return unwrapRpc(response);
 }
 
 // ─── Character versions (VTF Phase 3 folder-snapshot branching) ─────────────
 
 export async function listCharacterVersions(characterId: string): Promise<AppCharacterVersion[]> {
   const response = await client.api.characters[":characterId"].versions.$get({ param: { characterId } });
-  return unwrapRpc<AppCharacterVersion[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function createCharacterVersion(characterId: string, title: string): Promise<AppCharacterVersion> {
   const response = await client.api.characters[":characterId"].versions.$post({ param: { characterId }, json: { title } });
-  return unwrapRpc<AppCharacterVersion>(response);
+  return unwrapRpc(response);
 }
 
 export async function activateCharacterVersion(characterId: string, versionId: string): Promise<AppCharacterVersion> {
   const response = await client.api.characters[":characterId"].versions[":versionId"].activate.$post({
     param: { characterId, versionId },
   });
-  return unwrapRpc<AppCharacterVersion>(response);
+  return unwrapRpc(response);
 }
 
 export async function renameCharacterVersion(characterId: string, versionId: string, title: string): Promise<AppCharacterVersion> {
@@ -106,7 +106,7 @@ export async function renameCharacterVersion(characterId: string, versionId: str
     param: { characterId, versionId },
     json: { title },
   });
-  return unwrapRpc<AppCharacterVersion>(response);
+  return unwrapRpc(response);
 }
 
 export async function deleteCharacterVersion(characterId: string, versionId: string): Promise<void> {
@@ -175,10 +175,10 @@ export async function setAvatarFromGallery(
 // listPersonaLorebooks / listPersonaScripts.
 export async function listCharacterLorebooks(characterId: string): Promise<LorebookRecord[]> {
   const response = await client.api.characters[":characterId"].lorebooks.$get({ param: { characterId } });
-  return unwrapRpc<LorebookRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function listCharacterScripts(characterId: string): Promise<ScriptRecord[]> {
   const response = await client.api.characters[":characterId"].scripts.$get({ param: { characterId } });
-  return unwrapRpc<ScriptRecord[]>(response);
+  return unwrapRpc(response);
 }

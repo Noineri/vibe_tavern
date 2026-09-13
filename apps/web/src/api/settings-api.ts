@@ -2,8 +2,6 @@ import type { UiSettingsRecord, AppSnapshot, AppCharacterEntry } from "./types.j
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
-import { appendTokenQuery } from "../lib/mobile-token.js";
 import { normalizeSnapshot } from "./normalize.js";
 
 export async function bootstrapApp(): Promise<{
@@ -15,54 +13,11 @@ export async function bootstrapApp(): Promise<{
   uiSettings: UiSettingsRecord;
   isArmServer: boolean;
 }> {
-  const baseUrl = getGatewayBaseUrl();
-  const token = getMobileToken();
-  const response = await fetch(appendTokenQuery(`${baseUrl}/api/bootstrap`), {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  const data = await unwrapRpc<{
-    initialChatId: ChatId | null;
-    snapshot: AppSnapshot | null;
-    isFirstRun?: boolean;
-    allCharacters?: Array<{ id: string; name: string; subtitle: string; tags?: string[]; avatarAssetId: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null; avatarExt?: string | null; avatarFullExt?: string | null; updatedAt?: string }>;
-    promptPresets?: PromptPresetDto[];
-    uiSettings?: UiSettingsRecord;
-    isArmServer?: boolean;
-  }>(response);
-
-  return {
-    initialChatId: data.initialChatId,
-    snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null,
-    isFirstRun: data.isFirstRun ?? false,
-    allCharacters: (data.allCharacters ?? []).map(c => ({ ...c, tags: c.tags ?? [], avatarFullAssetId: c.avatarFullAssetId ?? null, avatarCropJson: c.avatarCropJson ?? null, avatarExt: c.avatarExt ?? null, avatarFullExt: c.avatarFullExt ?? null, updatedAt: c.updatedAt ?? "" })),
-    promptPresets: data.promptPresets ?? [],
-    uiSettings: data.uiSettings ?? {
-      id: "default",
-      theme: "coffee",
-      chatFontSize: 15,
-      uiFontSize: 14,
-      messageWidth: 700,
-      language: "en",
-      activePromptPresetId: null,
-      aiAssistantProviderId: null,
-      aiAssistantModelName: null,
-      coauthorProviderId: null,
-      coauthorModelName: null,
-      coauthorMaxTokens: null,
-      coauthorContextBudget: null,
-      githubStarred: false,
-      userMessageCount: 0,
-      nextStarPromptAt: 10,
-      starPromptDeferrals: 0,
-      copilotProviderId: null,
-      copilotModelName: null,
-      updatedAt: "",
-    },
-    isArmServer: data.isArmServer ?? false,
-  };
+  const data = await unwrapRpc(await client.api.bootstrap.$get());
+  return { ...data, snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null };
 }
 
 export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "summaryProviderId" | "summaryModelName" | "messageEditorProviderId" | "messageEditorModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorMaxTokens" | "coauthorContextBudget" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals" | "activeDictationProfileId">>): Promise<UiSettingsRecord> {
   const response = await client.api.settings.ui.$patch({ json: input });
-  return unwrapRpc<UiSettingsRecord>(response);
+  return unwrapRpc(response);
 }

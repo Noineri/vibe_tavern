@@ -4,12 +4,12 @@ import { unwrapRpc, unwrapError } from "./unwrap.js";
 
 export async function listPromptPresets(): Promise<PromptPresetDto[]> {
   const response = await client.api["prompt-presets"].$get();
-  return unwrapRpc<PromptPresetDto[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function createPromptPreset(input: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">> & { name: string }): Promise<PromptPresetDto> {
   const response = await client.api["prompt-presets"].$post({ json: input });
-  return unwrapRpc<PromptPresetDto>(response);
+  return unwrapRpc(response);
 }
 
 export async function updatePromptPreset(
@@ -17,7 +17,7 @@ export async function updatePromptPreset(
   patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>,
 ): Promise<PromptPresetDto> {
   const response = await client.api["prompt-presets"][":presetId"].$patch({ param: { presetId }, json: patch });
-  return unwrapRpc<PromptPresetDto>(response);
+  return unwrapRpc(response);
 }
 
 export async function deletePromptPreset(presetId: string): Promise<void> {
@@ -27,5 +27,5 @@ export async function deletePromptPreset(presetId: string): Promise<void> {
 
 export async function reorderPromptPresets(updates: Array<{ id: string; sortOrder: number }>): Promise<PromptPresetDto[]> {
   const response = await client.api["prompt-presets"].reorder.$patch({ json: { updates } });
-  return unwrapRpc<PromptPresetDto[]>(response);
+  return unwrapRpc(response);
 }

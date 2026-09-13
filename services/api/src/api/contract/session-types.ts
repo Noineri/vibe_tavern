@@ -22,19 +22,18 @@
 import type {
 	AssemblePromptResponse,
 	CharacterId,
+	ChatBranch,
 	ChatId,
 	ObjectiveState,
 	PromptPresetDto,
 	PromptTraceRecordDto,
-	SceneBackfillErrorEntry,
-	SceneBackfillSummary,
 	SceneTrackerRecord,
 } from "@vibe-tavern/domain";
-import type { Chat, ChatBranch, UiSettings } from "@vibe-tavern/db";
+import type { UiSettings } from "@vibe-tavern/db";
 import type { MessageDto } from "../../runtime/session/session-runtime-dto.js";
 import type { CharacterRecord } from "../../domain/character/character-runtime.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
-import type { ChatListItem, CoauthorCorrection } from "@vibe-tavern/api-contracts";
+import type { CharacterListEntry, ChatDto, ChatListItem, CoauthorCorrection } from "@vibe-tavern/api-contracts";
 
 // ChatListItem lives in @vibe-tavern/api-contracts (shared with the frontend)
 // so drift becomes a compile error. Re-exported here so existing backend
@@ -45,9 +44,9 @@ export interface SessionSnapshot {
 	/** Sidebar: ordered list of chats with metadata. Absent when endpoint returns partial data. */
 	chats: ChatListItem[];
 	/** All known characters (sidebar, build mode). Absent when endpoint returns partial data. */
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>;
+	allCharacters: CharacterListEntry[];
 	/** Active chat metadata (title, settings, greetingIndex, etc). */
-	activeChat: Chat;
+	activeChat: ChatDto;
 	/** Currently active branch. */
 	activeBranch: ChatBranch;
 	/** All branches for the active chat. */
@@ -72,7 +71,7 @@ export interface BootstrapState {
 	initialChatId: ChatId | null;
 	snapshot: SessionSnapshot | null;
 	isFirstRun: boolean;
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>;
+	allCharacters: CharacterListEntry[];
 	promptPresets: PromptPresetDto[];
 	uiSettings: UiSettings;
 	isArmServer: boolean;
@@ -274,27 +273,7 @@ export interface ScenePreviewResponse {
 	sceneState: Record<string, unknown>;
 }
 
-/** Server-authoritative Scene history-backfill run status (SCN-14). Drives the
- *  client's progress polling, Cancel, retry/resume, and partial-success summary.
- *  `processed` is the durable cursor (next manifest index to process); `current`
- *  is the item being generated RIGHT NOW (in-memory only — null on reload before
- *  the run reattaches). The run row is JOB state only; Scene data still lives on
- *  message_variants.scene_tracker_json. The error/summary shapes are shared from
- *  `@vibe-tavern/domain` so the service + contract + client never drift. */
-export interface SceneBackfillStatusResponse {
-	runId: string;
-	chatId: string;
-	/** 'fill-missing' | 'rebuild'. */
-	mode: string;
-	/** 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'. */
-	status: string;
-	total: number;
-	processed: number;
-	current: { messageId: string; variantId: string } | null;
-	errors: SceneBackfillErrorEntry[];
-	summary: SceneBackfillSummary | null;
-	cancelRequested: boolean;
-}
+export type { SceneBackfillStatus as SceneBackfillStatusResponse } from "@vibe-tavern/api-contracts";
 
 /**
  * Co-Author Apply response (CA-7). Extends {@link ConfigPatchResponse} (the

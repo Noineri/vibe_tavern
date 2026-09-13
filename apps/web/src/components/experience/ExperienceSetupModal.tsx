@@ -41,7 +41,6 @@ import {
 import {
   INTERACTIVE_SCHEMA_MAX_LABEL,
   INTERACTIVE_SCHEMA_MAX_PARTICIPANTS,
-  type ExperienceDefinitionDto,
 } from "@vibe-tavern/api-contracts";
 import { Modal } from "../shared/Modal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
@@ -67,7 +66,7 @@ import {
   updateExperienceCharacterOverride,
   updateExperienceGlobalOverride,
 } from "../../api/experience-api.js";
-import { testScript } from "../../api/script-api.js";
+import { testScript, type DiscoveredExperienceDefinition } from "../../api/script-api.js";
 import {
   FieldError,
   SetupFieldRow,
@@ -258,7 +257,7 @@ export function ExperienceSetupModal({
   type DiscoveryState =
     | { status: "idle" }
     | { status: "loading" }
-    | { status: "ok"; definition: ExperienceDefinitionDto }
+    | { status: "ok"; definition: DiscoveredExperienceDefinition }
     | { status: "error"; message: string | null };
   const [discovery, setDiscovery] = useState<DiscoveryState>({ status: "idle" });
 

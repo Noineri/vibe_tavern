@@ -8,6 +8,9 @@ import type {
   ProviderQuotaKind,
   ProviderQuotaSnapshot,
   QuotaTransitionState,
+  SceneBackfillMode,
+  SceneBackfillRunStatus,
+  ScriptKind,
 } from '@vibe-tavern/domain';
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
@@ -364,7 +367,7 @@ export const scripts = sqliteTable('scripts', {
   // VM) or 'dice' (the dedicated Dice-script VM, Wave B2). Every legacy row and
   // import defaults to 'prompt' so existing prompt scripts are unchanged; the
   // two runtimes are isolated by kind at the store-resolver boundary.
-  scriptKind: text('script_kind').notNull().default('prompt'),
+  scriptKind: text('script_kind').$type<ScriptKind>().notNull().default('prompt'),
   // Server-idempotent template/custom creation key (nullable + unique): a create
   // carrying a creationIntentId that already exists returns the existing script
   // instead of duplicating — process-safe against retries/two tabs/restart. NOT
@@ -1192,9 +1195,9 @@ export const sceneBackfillRuns = sqliteTable('scene_backfill_runs', {
   id: text('id').primaryKey(),
   chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   // 'fill-missing' (default) | 'rebuild' (regenerate even existing records).
-  mode: text('mode').notNull().default('fill-missing'),
+  mode: text('mode').$type<SceneBackfillMode>().notNull().default('fill-missing'),
   // 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'.
-  status: text('status').notNull().default('pending'),
+  status: text('status').$type<SceneBackfillRunStatus>().notNull().default('pending'),
   // Frozen oldest-to-newest manifest of selected immutable variant ids captured
   // at run start, each with its then-current source/schema/config fingerprint so
   // resume/retry can revalidate before persisting. JSON array of manifest items.

@@ -5,9 +5,9 @@
  * receives and normalizes. DB/domain types live in @vibe-tavern/domain
  * and @vibe-tavern/db.
  */
-import type { Chat, ChatBranch, ChatId, CharacterId, Message, MessageVariant } from "@vibe-tavern/domain";
+import type { ChatBranch, ChatId, CharacterId, Message, MessageVariant, ObjectiveState } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { SceneTrackerConfig, SceneTrackerConfigPatch, SceneTrackerRecord, SceneBackfillErrorEntry, SceneBackfillSummary } from "@vibe-tavern/domain";
+import type { SceneTrackerConfigPatch, SceneTrackerRecord } from "@vibe-tavern/domain";
 import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot, ScriptKind } from "@vibe-tavern/domain";
 import type {
 	ExperienceActionDescriptor,
@@ -32,6 +32,10 @@ import type { z } from "zod";
 // CachedProviderModelsRecord). Defining these in a shared package makes drift
 // a compile error instead of a silent runtime bug (see wire-types.ts).
 import type {
+	AutoSummaryConfig,
+	CharacterListEntry,
+	ChatDto,
+	InsightsConfig,
 	ClientProviderProfileRecord as ProviderProfileRecord,
 	CachedProviderModelsRecord as CachedModelsRecord,
 	FavoriteProviderModelRecord,
@@ -72,6 +76,8 @@ import type {
 	experienceVisualsQuerySchema,
 } from "@vibe-tavern/api-contracts";
 export type {
+	AutoSummaryConfig,
+	InsightsConfig,
 	ProviderProfileRecord,
 	CachedModelsRecord,
 	FavoriteProviderModelRecord,
@@ -108,43 +114,6 @@ export interface AppMessage extends Message {
   diceRolls?: DiceRollSnapshot[];
 }
 
-export interface AutoSummaryConfig {
-  enabled: boolean;
-  everyN: number;
-  useChatModel: boolean;
-  excludeSummarized: boolean;
-  /** SUMMARY_PRIOR_CONTEXT_PLAN: include preceding summaries as read-only
-   *  continuity context so auto-generated summaries are continuation-aware. */
-  includePriorSummaries: boolean;
-  /** SUMMARY_PRIOR_CONTEXT_PLAN: how many of the most-recent preceding summaries
-   *  to include when `includePriorSummaries` is on (count-based user control). */
-  maxPriorSummaries: number;
-  providerProfileId?: string;
-  model?: string;
-}
-
-/** Per-chat Insights toggles + nested Scene Tracker config (INSIGHTS_PLAN / SCENE_TRACKER_PLAN). */
-export interface InsightsConfig {
-  objectiveEnabled: boolean;
-  trackerEnabled: boolean;
-  /** Dice feature toggle (DICE B9). OFF by default; old chats normalize to
-   *  `false` (the backend schema defaults it). When off, no dice UI/prompt. */
-  diceEnabled?: boolean;
-  /** Dice turn mode (DICE B9): selects the active pending lane. Default
-   *  `"normal"` on old chats (backend schema default). */
-  diceMode?: DiceMode;
-  /** Chat-local Dice script override (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT fix 1).
-   *  `null`/absent = inherit (resolver union); an array = use exactly those ids
-   *  for this chat. The backend filters disabled/deleted/non-dice ids. */
-  diceScriptIds?: string[] | null;
-  /** Chat-local per-script actor distribution (Rework R1). `null`/absent = each
-   *  check uses its declared actors; a record overrides per script with full
-   *  freedom (expand or narrow beyond the script's declared check.actors). */
-  diceActorBindings?: Record<string, DiceActorType[]> | null;
-  /** Scene Tracker per-chat config; absent on old chats (normalized to defaults at read). */
-  tracker?: SceneTrackerConfig;
-}
-
 /** PATCH body for `updateInsightsConfig`: toggles + an optional partial tracker config (deep-merged server-side). */
 export interface InsightsConfigPatch {
   objectiveEnabled?: boolean;
@@ -162,48 +131,14 @@ export interface InsightsConfigPatch {
   tracker?: SceneTrackerConfigPatch;
 }
 
-/** Objective Tracker mode (mirrors domain OBJECTIVE_MODE). Absent on legacy snapshots → route. */
-export type ObjectiveMode = "route" | "goals";
-
-/** Objective task/goal status (mirrors domain OBJECTIVE_TASK_STATUS). */
-export type ObjectiveTaskStatus = "pending" | "active" | "completed" | "abandoned";
-
-/** A single task in the objective route (flat ordered list). */
-export interface ObjectiveTask {
-  id: string;
-  description: string;
-  status: ObjectiveTaskStatus;
-}
-
-/** Goals mode: the singular enduring goal (no id — one per chat). */
-export interface ObjectiveLongTermGoal {
-  description: string;
-  status: ObjectiveTaskStatus;
-}
-
-/** Goals mode: a flat independent near-term goal; same item shape as a route task. */
-export type ObjectiveShortTermGoal = ObjectiveTask;
-
-/** The full objective state for a chat. Stored as JSON in chats.insights_objective_state_json; sent to the frontend as a freeform object on activeChat.insightsObjectiveState. Empty `{}` when unused. */
-export interface ObjectiveState {
-  /** Optional for legacy snapshots; readers normalize absent/unknown to `route`. */
-  mode?: ObjectiveMode;
-  objectiveDescription: string;
-  tasks: ObjectiveTask[];
-  longTermGoal?: ObjectiveLongTermGoal | null;
-  shortTermGoals?: ObjectiveShortTermGoal[];
-  autoCheckFrequency: number;
-  /** Internal persisted count of qualifying assistant events since the last completed auto-check. */
-  autoCheckEventCount: number;
-  contextWindow: number;
-  injectionDepth: number;
-  generatePrompt: string;
-  checkPrompt: string;
-  injectPrompt: string;
-  useChatModel: boolean;
-  providerProfileId: string | null;
-  model: string | null;
-}
+export type {
+  ObjectiveLongTermGoal,
+  ObjectiveMode,
+  ObjectiveShortTermGoal,
+  ObjectiveState,
+  ObjectiveTask,
+  ObjectiveTaskStatus,
+} from "@vibe-tavern/domain";
 
 export interface InsightsCompletionTarget {
   branchId: string;
@@ -259,27 +194,8 @@ export interface SceneStatusResponse {
   record: SceneTrackerRecord | null;
 }
 
-/** Scene history backfill mode (SCN-14/15). `fill-missing` skips variants that
- *  already carry a current record; `rebuild` regenerates all. Mirrors the domain
- *  `SceneBackfillMode` / `SCENE_BACKFILL_MODE` constants. */
-export type SceneBackfillMode = "fill-missing" | "rebuild";
-
-/** Server-authoritative backfill run status (SCN-14/15). The run row owns JOB
- *  state only (manifest/cursor/errors/cancel/summary); canonical Scene records
- *  remain the durable result on the variants. Polled by the client; a reload
- *  reattaches via the persisted runId. Mirrors `SceneBackfillStatusResponse`. */
-export interface SceneBackfillStatusResponse {
-  runId: string;
-  chatId: string;
-  mode: SceneBackfillMode;
-  status: "pending" | "running" | "completed" | "cancelled" | "failed";
-  total: number;
-  processed: number;
-  current: { messageId: string; variantId: string } | null;
-  errors: SceneBackfillErrorEntry[];
-  summary: SceneBackfillSummary | null;
-  cancelRequested: boolean;
-}
+export type { SceneBackfillMode } from "@vibe-tavern/domain";
+export type { SceneBackfillStatus as SceneBackfillStatusResponse } from "@vibe-tavern/api-contracts";
 
 export type ChatGenerationStatus =
   | "idle"
@@ -342,19 +258,7 @@ export interface AppCharacter {
  */
 export type AppPersona = PersonaRecord;
 
-export interface AppCharacterEntry {
-  id: string;
-  name: string;
-  subtitle: string;
-  tags: string[];
-  avatarAssetId: string | null;
-  avatarFullAssetId: string | null;
-  avatarCropJson: string | null;
-  avatarExt: string | null;
-  avatarFullExt: string | null;
-  /** bumped on every avatar upload; used as ?v= cache-buster (immutable cache). */
-  updatedAt: string;
-}
+export type AppCharacterEntry = CharacterListEntry;
 
 /** A character version (VTF Phase 3 folder-snapshot branching). Meta only on the wire. */
 export interface AppCharacterVersion {
@@ -381,14 +285,10 @@ export interface AppCharacterVersion {
  * absent fields through untouched, and ingestSnapshot guards each field with
  * a presence check ("x" in snapshot / Array.isArray) before writing.
  *
- * Today the backend still sends full snapshots from getSnapshot(), so every
- * bootstrap/mutation response populates all fields. The optional types exist
- * so tsc enforces presence-aware reads as endpoint-scoped responses land.
- *
- * NOTE: the backend's SessionSnapshot (services/api/src/session/session-
- * runtime.ts) is the parallel type with REQUIRED fields — it is truthful
- * there because getSnapshot() always returns full. The two are decoupled by
- * the explicit `unwrapRpc<AppSnapshot>` cast in apps/web/src/api/*.ts.
+ * The backend's SessionSnapshot (services/api/src/api/contract/session-types.ts)
+ * is the full shape; every per-endpoint response is a subset of it. `unwrapRpc`
+ * infers each response body from the Hono route, so a server field that does
+ * not fit this type is a compile error at the API module that returns it.
  */
 export interface AppSnapshot {
   /** Sidebar: ordered list of chats with metadata. Absent → preserve. */
@@ -396,7 +296,7 @@ export interface AppSnapshot {
   /** All known characters (sidebar, build mode). Absent → preserve. */
   allCharacters?: AppCharacterEntry[];
   /** Active chat metadata (title, settings, greetingIndex, etc). Absent → preserve. */
-  activeChat?: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig; insightsConfig?: InsightsConfig; insightsObjectiveState?: ObjectiveState };
+  activeChat?: ChatDto;
   /** Currently active branch. Absent → preserve. */
   activeBranch?: ChatBranch;
   /** All branches for the active chat. Absent → preserve. */
@@ -588,47 +488,12 @@ export interface ScriptLinkRecord {
 
 // ─── Regex presets (REGEX_EXTENSION_PLAN, RX-11) ─────────────────────────────
 
-export interface RegexPresetRecord {
-  id: string;
-  name: string;
-  /** Find pattern in ST's `/pattern/flags` notation. */
-  findRegex: string;
-  /** Replacement; supports `{{match}}`, `$1`.. capture groups and `$<name>`. */
-  replaceString: string;
-  /** ST "Trim Out" — substrings stripped from each match before replacement. */
-  trimStrings: string[];
-  /** Macro substitution mode into the find pattern: 0=NONE, 1=RAW, 2=ESCAPED. */
-  substituteRegex: number;
-  disabled: boolean;
-  markdownOnly: boolean;
-  promptOnly: boolean;
-  runOnEdit: boolean;
-  minDepth: number | null;
-  maxDepth: number | null;
-  /** Hooks this preset runs at (ST numeric codes: 1/2/5/6). */
-  placement: number[];
-  isGlobal: boolean;
-  sortOrder: number;
-  /** R-13: the profile this rule belongs to, or null for a standalone rule. */
-  profileId: string | null;
-  createdAt: number;
-  updatedAt: number;
-}
+export type { RegexPreset as RegexPresetRecord, RegexProfile as RegexProfileRecord } from "@vibe-tavern/domain";
 
 export interface RegexLinkRecord {
   regexPresetId: string;
   targetType: "character" | "preset";
   targetId: string;
-}
-
-export interface RegexProfileRecord {
-  id: string;
-  name: string;
-  disabled: boolean;
-  isGlobal: boolean;
-  sortOrder: number;
-  createdAt: number;
-  updatedAt: number;
 }
 
 export interface RegexProfileLinkRecord {

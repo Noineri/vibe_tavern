@@ -401,6 +401,8 @@ describe("MessageBlock — render isolation invariant", () => {
     const objectiveState: ObjectiveState = {
       objectiveDescription: "Escape the citadel",
       tasks: [{ id: "t1", description: "Reach the gate", status: "active" }],
+      longTermGoal: null,
+      shortTermGoals: [],
       autoCheckFrequency: 3,
       autoCheckEventCount: 0,
       contextWindow: 10,

@@ -48,6 +48,8 @@ import type {
 } from "@vibe-tavern/domain";
 import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, stripLabels, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
 import type { SceneBackfillMode } from "@vibe-tavern/domain";
+import type { SceneBackfillStatus } from "@vibe-tavern/api-contracts";
+import type { SceneBackfillRun } from "@vibe-tavern/db";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
@@ -108,21 +110,7 @@ export interface SceneBackfillManifestItem {
 	configRevision: number;
 }
 
-/** Service-level backfill run status (SCN-14). Structurally compatible with the
- *  contract {@link SceneBackfillStatusResponse}; the adapter returns it as-is.
- *  The error/summary shapes are shared from `@vibe-tavern/domain`. */
-export interface SceneBackfillStatus {
-	runId: string;
-	chatId: string;
-	mode: string;
-	status: string;
-	total: number;
-	processed: number;
-	current: { messageId: string; variantId: string } | null;
-	errors: SceneBackfillErrorEntry[];
-	summary: SceneBackfillSummary | null;
-	cancelRequested: boolean;
-}
+export type { SceneBackfillStatus };
 
 export interface SceneGenerateInput {
 	target: SceneTarget;
@@ -944,10 +932,14 @@ export class SceneTrackerService {
 	 *  the active item's generation — its result never persists (the commit lane
 	 *  checks the signal), and the loop stops before the next item. No-op when the
 	 *  run is terminal or not in memory. */
-	cancelBackfill(chatId: ChatId, runId: string): void {
-		void this.stores.messages.updateSceneBackfillRun(runId, { cancelRequested: true }).catch(() => undefined);
+	async cancelBackfill(chatId: ChatId, runId: string): Promise<SceneBackfillStatus> {
+		// Flag write and abort both start before the first await, so the active
+		// item is discarded even if the caller does not await.
+		const flagWrite = this.stores.messages.updateSceneBackfillRun(runId, { cancelRequested: true });
 		this.activeBackfills.get(runId)?.abort();
 		logSendDebug("insights.scene.backfill.cancel", { runId });
+		await flagWrite;
+		return this.runToStatus(await this.loadOwnedRun(chatId, runId));
 	}
 
 	/** Retry/resume a TERMINAL run's failed + unprocessed items (SCN-14). The
@@ -1163,7 +1155,7 @@ export class SceneTrackerService {
 
 	/** Map a run row to the service-level status DTO, reading the live `current`
 	 *  item from the in-memory map. */
-	private runToStatus(run: { id: string; chatId: string; mode: string; status: string; totalItems: number; cursor: number; errorsJson: string; summaryJson: string | null; cancelRequested: boolean }): SceneBackfillStatus {
+	private runToStatus(run: SceneBackfillRun): SceneBackfillStatus {
 		return {
 			runId: run.id,
 			chatId: run.chatId,

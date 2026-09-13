@@ -25,6 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
+import type { Chat, DiceActorType, DiceMode, ObjectiveState, SceneBackfillErrorEntry, SceneBackfillMode, SceneBackfillRunStatus, SceneBackfillSummary, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderGenerationFormat, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
@@ -296,6 +297,81 @@ export interface ChatListItem {
 	/** ISO timestamp of the most recent message in the active branch; falls back to `updatedAt` when the branch is empty. Drives the "recent" sort for chats and characters. */
 	lastMessageAt: string;
 	updatedAt: string;
+}
+
+/** Character entry in the sidebar / build-mode character list. */
+export interface CharacterListEntry {
+	id: string;
+	name: string;
+	subtitle: string;
+	tags: string[];
+	avatarAssetId: string | null;
+	avatarFullAssetId: string | null;
+	avatarCropJson: string | null;
+	avatarExt: string | null;
+	avatarFullExt: string | null;
+	/** Bumped on every avatar upload; used as the `?v=` cache-buster. */
+	updatedAt: string;
+}
+
+/**
+ * Scene history-backfill run status. `processed` is the durable cursor;
+ * `current` is the item generating right now (in-memory only, null after a
+ * restart until the run reattaches).
+ */
+export interface SceneBackfillStatus {
+	runId: string;
+	chatId: string;
+	mode: SceneBackfillMode;
+	status: SceneBackfillRunStatus;
+	total: number;
+	processed: number;
+	current: { messageId: string; variantId: string } | null;
+	errors: SceneBackfillErrorEntry[];
+	summary: SceneBackfillSummary | null;
+	cancelRequested: boolean;
+}
+
+export interface AutoSummaryConfig {
+	enabled: boolean;
+	everyN: number;
+	useChatModel: boolean;
+	excludeSummarized: boolean;
+	/** Include preceding summaries as read-only continuity context. */
+	includePriorSummaries: boolean;
+	/** How many of the most recent preceding summaries to include. */
+	maxPriorSummaries: number;
+	providerProfileId?: string;
+	model?: string;
+}
+
+/** Per-chat Insights toggles and nested Scene Tracker config. */
+export interface InsightsConfig {
+	objectiveEnabled: boolean;
+	trackerEnabled: boolean;
+	/** Absent on chats stored before Dice existed; readers default to `false`. */
+	diceEnabled?: boolean;
+	/** Absent on chats stored before Dice existed; readers default to `"normal"`. */
+	diceMode?: DiceMode;
+	/** `null`/absent = inherit the resolver union; an array = exactly those script ids. */
+	diceScriptIds?: string[] | null;
+	/** `null`/absent = each check uses its declared actors; a record overrides per script. */
+	diceActorBindings?: Record<string, DiceActorType[]> | null;
+	/** Absent on chats stored before the Scene Tracker; readers normalize via `normalizeSceneTrackerConfig`. */
+	tracker?: SceneTrackerConfig;
+}
+
+/**
+ * Active chat as sent to the client. The JSON-column fields are the stored
+ * JSON verbatim: `{}` until first configured, and missing any field added
+ * after the row was written. Readers apply their own defaults.
+ */
+export interface ChatDto extends Chat {
+	summary: string;
+	messageHistoryLimit: number;
+	autoSummaryConfig: Partial<AutoSummaryConfig>;
+	insightsConfig: Partial<InsightsConfig>;
+	insightsObjectiveState: Partial<ObjectiveState>;
 }
 
 // ─── Runtime / self-update ─────────────────────────────────────────────

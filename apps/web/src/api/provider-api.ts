@@ -5,12 +5,12 @@ import { unwrapRpc } from "./unwrap.js";
 
 export async function listProviderProfiles(): Promise<ProviderProfileRecord[]> {
   const response = await client.api.providers.$get();
-  return unwrapRpc<ProviderProfileRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function fetchProviderProfile(providerProfileId: string): Promise<ProviderProfileRecord> {
   const response = await client.api.providers[":providerId"].$get({ param: { providerId: providerProfileId } });
-  return unwrapRpc<ProviderProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function saveProviderProfile(input: {
@@ -66,7 +66,7 @@ export async function saveProviderProfile(input: {
   proxyId?: string | null;
 }): Promise<ProviderProfileRecord> {
   const response = await client.api.providers.$post({ json: input });
-  return unwrapRpc<ProviderProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function updateProviderProfile(
@@ -124,37 +124,37 @@ export async function updateProviderProfile(
   },
 ): Promise<ProviderProfileRecord> {
   const response = await client.api.providers[":providerId"].$patch({ param: { providerId: providerProfileId }, json: patch });
-  return unwrapRpc<ProviderProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function deleteProviderProfile(providerProfileId: string): Promise<{ ok: true }> {
   const response = await client.api.providers[":providerId"].$delete({ param: { providerId: providerProfileId } });
-  return unwrapRpc<{ ok: true }>(response);
+  return unwrapRpc(response);
 }
 
 export async function reorderProviderProfiles(updates: Array<{ id: string; sortOrder: number }>): Promise<ProviderProfileRecord[]> {
   const response = await client.api.providers.reorder.$patch({ json: { updates } });
-  return unwrapRpc<ProviderProfileRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function activateProviderProfile(providerProfileId: string): Promise<ProviderProfileRecord> {
   const response = await client.api.providers[":providerId"].activate.$post({ param: { providerId: providerProfileId } });
-  return unwrapRpc<ProviderProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function testProviderDraft(input: { endpoint: string; apiKey: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null; providerProfileId?: string }): Promise<ProviderProbeResponse> {
   const response = await client.api.providers.test.$post({ json: input });
-  return unwrapRpc<ProviderProbeResponse>(response);
+  return unwrapRpc(response);
 }
 
 export async function testProviderProfile(providerProfileId: string): Promise<ProviderProbeResponse> {
   const response = await client.api.providers[":providerId"].test.$post({ param: { providerId: providerProfileId } });
-  return unwrapRpc<ProviderProbeResponse>(response);
+  return unwrapRpc(response);
 }
 
 export async function fetchProviderProfileModels(providerProfileId: string): Promise<{ models: ProviderModelOption[] }> {
   const response = await client.api.providers[":providerId"].models.$post({ param: { providerId: providerProfileId } });
-  return unwrapRpc<{ models: ProviderModelOption[] }>(response);
+  return unwrapRpc(response);
 }
 
 export async function listFavoriteProviderModels(providerProfileId: string, scope: ModelFavoriteScope): Promise<FavoriteProviderModelRecord[]> {
@@ -162,7 +162,7 @@ export async function listFavoriteProviderModels(providerProfileId: string, scop
     param: { providerId: providerProfileId },
     query: { scope },
   });
-  return unwrapRpc<FavoriteProviderModelRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function addFavoriteProviderModel(
@@ -170,7 +170,7 @@ export async function addFavoriteProviderModel(
   model: { modelId: string; label?: string | null; contextLength?: number | null; scope: ModelFavoriteScope },
 ): Promise<FavoriteProviderModelRecord> {
   const response = await client.api.providers[":providerId"]["model-favorites"].$post({ param: { providerId: providerProfileId }, json: model });
-  return unwrapRpc<FavoriteProviderModelRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function removeFavoriteProviderModel(providerProfileId: string, modelId: string, scope: ModelFavoriteScope): Promise<{ ok: true }> {
@@ -178,37 +178,37 @@ export async function removeFavoriteProviderModel(providerProfileId: string, mod
     param: { providerId: providerProfileId },
     json: { modelId, scope },
   });
-  return unwrapRpc<{ ok: true }>(response);
+  return unwrapRpc(response);
 }
 
 // ── Per-model settings overlay (binding) ────────────────────────────────────
 
 export async function listProviderModelSettings(providerProfileId: string): Promise<ProviderModelSettingsRecord[]> {
   const response = await client.api.providers[":providerId"]["model-settings"].$get({ param: { providerId: providerProfileId } });
-  return unwrapRpc<ProviderModelSettingsRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function getProviderModelSettings(providerProfileId: string, modelId: string): Promise<ProviderModelSettingsRecord | null> {
   const response = await client.api.providers[":providerId"]["model-settings"][":modelId"].$get({ param: { providerId: providerProfileId, modelId } });
-  return unwrapRpc<ProviderModelSettingsRecord | null>(response);
+  return unwrapRpc(response);
 }
 
 export async function upsertProviderModelSettings(providerProfileId: string, modelId: string, settings: ModelSettingsOverlay): Promise<ProviderModelSettingsRecord> {
   const response = await client.api.providers[":providerId"]["model-settings"][":modelId"].$put({ param: { providerId: providerProfileId, modelId }, json: settings });
-  return unwrapRpc<ProviderModelSettingsRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function fetchModelsByEndpoint(baseUrl: string, apiKey?: string, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null): Promise<{ models: ProviderModelOption[] }> {
   const response = await client.api.providers["fetch-models"].$post({ json: { baseUrl, apiKey: apiKey ?? "", providerType, proxyMode, proxyId } });
-  return unwrapRpc<{ models: ProviderModelOption[] }>(response);
+  return unwrapRpc(response);
 }
 
 export async function testProviderChat(baseUrl: string, apiKey: string, model: string, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null): Promise<TestChatResponse> {
   const response = await client.api.providers["test-chat"].$post({ json: { baseUrl, apiKey, model, providerType, proxyMode, proxyId } });
-  return unwrapRpc<TestChatResponse>(response);
+  return unwrapRpc(response);
 }
 
 export async function testProfileChat(providerProfileId: string, model: string, transport?: CoauthorTransport): Promise<TestChatResponse> {
   const response = await client.api.providers[":providerId"]["test-chat"].$post({ param: { providerId: providerProfileId }, json: { model, transport } });
-  return unwrapRpc<TestChatResponse>(response);
+  return unwrapRpc(response);
 }

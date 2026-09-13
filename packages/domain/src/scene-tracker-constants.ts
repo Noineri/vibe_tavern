@@ -102,6 +102,17 @@ export const SCENE_BACKFILL_MODE = {
 
 export type SceneBackfillMode = (typeof SCENE_BACKFILL_MODE)[keyof typeof SCENE_BACKFILL_MODE];
 
+/** Lifecycle of a Scene history backfill run. */
+export const SCENE_BACKFILL_STATUS = {
+  pending: "pending",
+  running: "running",
+  completed: "completed",
+  cancelled: "cancelled",
+  failed: "failed",
+} as const;
+
+export type SceneBackfillRunStatus = (typeof SCENE_BACKFILL_STATUS)[keyof typeof SCENE_BACKFILL_STATUS];
+
 /**
  * How the validated `sceneState` block is serialized for main-model injection.
  *

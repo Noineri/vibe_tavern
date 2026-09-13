@@ -44,7 +44,6 @@ function makeChat(): Chat {
     mode: "rp",
     activeBranchId: "branch_1" as Chat["activeBranchId"],
     promptPresetId: "preset_1" as Chat["promptPresetId"],
-    toolProfileId: "tools_1" as Chat["toolProfileId"],
     selectedGreetingIndex: 0,
     coauthorContextLinks: [],
     coauthorModuleId: null,

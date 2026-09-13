@@ -55,7 +55,7 @@ export interface SummarizeChatResult {
 
 export interface GenerateChatSummaryResult {
   summary: string;
-  chatSummary: Awaited<ReturnType<StoreContainer['chatSummaries']['getById']>>;
+  chatSummary: Awaited<ReturnType<StoreContainer['chatSummaries']['create']>>;
   snapshot: SummaryResponse;
 }
 

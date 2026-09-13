@@ -273,9 +273,9 @@ describe("Insights Scene backfill routes (SCN-14)", () => {
         capture.push({ method: "getSceneBackfillStatus", chatId, arg: runId });
         return { ...status, runId };
       },
-      cancelSceneBackfill: (chatId: string, runId: string) => {
+      cancelSceneBackfill: async (chatId: string, runId: string) => {
         capture.push({ method: "cancelSceneBackfill", chatId, arg: runId });
-        return { runId, cancelled: true as const };
+        return { ...status, runId, cancelRequested: true };
       },
       retrySceneBackfill: async (chatId: string, runId: string) => {
         capture.push({ method: "retrySceneBackfill", chatId, arg: runId });

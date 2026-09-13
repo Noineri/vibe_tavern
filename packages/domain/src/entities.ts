@@ -1584,8 +1584,7 @@ export interface Chat {
   status: ChatStatus;
   mode: ChatMode;
   activeBranchId: ChatBranchId;
-  promptPresetId: PromptPresetId;
-  toolProfileId: ToolProfileId;
+  promptPresetId: PromptPresetId | null;
   /** @deprecated Greeting selection is now stored as the selected variant on the first assistant message. */
   selectedGreetingIndex: number;
   /** Co-author mode only (CE-C1): entities the user explicitly pinned to
@@ -1723,7 +1722,13 @@ export interface RetrievedMemoryHit {
 }
 
 /** JSON-safe value persisted in prompt traces and downloadable without custom serializers. */
-export type TraceJsonValue = string | number | boolean | null | TraceJsonValue[] | { [key: string]: TraceJsonValue };
+// Recursion goes through interfaces: a self-referencing type alias makes Hono's
+// `JSONParsed` instantiate without bound (TS2589) on every response that carries a trace.
+export type TraceJsonValue = string | number | boolean | null | TraceJsonArray | TraceJsonObject;
+export interface TraceJsonArray extends Array<TraceJsonValue> {}
+export interface TraceJsonObject {
+  [key: string]: TraceJsonValue;
+}
 
 /** One provider call inside a traced turn. Tool loops can produce multiple steps. */
 export interface ProviderResponseStep {

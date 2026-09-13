@@ -39,6 +39,8 @@ function objective(description: string): ObjectiveState {
   return {
     objectiveDescription: description,
     tasks: [{ id: `task_${description}`, description, status: "active" }],
+    longTermGoal: null,
+    shortTermGoals: [],
     autoCheckFrequency: 1,
     autoCheckEventCount: 0,
     contextWindow: 10,

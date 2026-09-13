@@ -163,15 +163,11 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.renameBranch(c.req.param("chatId"), c.req.param("branchId"), body.label));
     })
-    .post("/api/chats/:chatId/messages/:messageId/regenerate", async (c) => {
+    .post("/api/chats/:chatId/messages/:messageId/regenerate", zValidator("json", schemas.regenerateOverrideSchema), async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
-      // Validate the optional override body via the shared schema. readOptionalJson
-      // tolerates an empty/missing body (legacy single-flight regenerate sends
-      // no body), and regenerateOverrideSchema.parse shape-validates when present.
-      // zValidator("json", ...) is intentionally avoided here because it 400s on
-      // the empty body the hono RPC client sends for the non-stream regenerate.
-      const override = schemas.regenerateOverrideSchema.parse(await readOptionalJson(c.req.raw));
+      // A request without a JSON content type validates as `{}` (no override).
+      const override = c.req.valid("json");
       const regenStartMs = Date.now();
       logSendDebug("api.route.regenerate.start", { chatId, messageId });
       try {
