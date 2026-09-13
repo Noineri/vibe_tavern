@@ -39,14 +39,6 @@ function resolveRegistryBase(): string {
 	return process.env.VT_NPM_REGISTRY_BASE ?? DEFAULT_REGISTRY_BASE;
 }
 
-// TEST-ONLY OVERRIDE: shorten the install deadline. Without it the timeout
-// branch below is unreachable in a test — a hung package manager takes ten
-// minutes to reach it. Same per-call resolution as the registry base.
-function resolveInstallTimeoutMs(): number {
-	const raw = Number(process.env.VT_NPM_INSTALL_TIMEOUT_MS);
-	return Number.isFinite(raw) && raw > 0 ? raw : INSTALL_TIMEOUT_MS;
-}
-
 export function packageSpec(version: string): string {
 	return `${NPM_PACKAGE_NAME}@${version}`;
 }
@@ -99,19 +91,15 @@ export class NpmInstallError extends Error {
  * a global install that fails on a permissions or disk-space problem says so
  * on stderr, and that text is the only useful diagnosis the user will get.
  *
- * The deadline is `Bun.spawn`'s own `timeout`, not a hand-rolled
- * setTimeout/kill/flag race. `killSignal: "SIGKILL"` is required for the
- * deadline to mean anything: measured on Bun 1.4.2, the default SIGTERM is
- * delivered once and never escalated, so a package manager that ignored it
- * would keep running and `proc.exited` would never settle — exactly the
- * "UI spinning on Installing forever" case this timeout exists to prevent.
+ * SIGKILL, because Bun sends `killSignal` once and never escalates: a package
+ * manager ignoring SIGTERM would outlive the deadline.
  */
 export async function installPackageVersion(
 	version: string,
 	onOutput?: (line: string) => void,
+	timeoutMs: number = INSTALL_TIMEOUT_MS,
 ): Promise<void> {
 	const spec = packageSpec(version);
-	const timeoutMs = resolveInstallTimeoutMs();
 	const command = [process.execPath, "add", "-g", spec];
 	console.log(`[npm-update] running: ${command.join(" ")}`);
 
@@ -119,11 +107,8 @@ export async function installPackageVersion(
 		stdout: "pipe",
 		stderr: "pipe",
 		stdin: "ignore",
-		// Explicit, because Bun.spawn's default is the environment as it was at
-		// PROCESS START, not as it is now (measured on 1.4.2: a variable added
-		// to process.env after startup is invisible to the child). A registry
-		// or proxy override applied while the server runs must reach the
-		// package manager that performs the install.
+		// Bun.spawn defaults to the environment captured at process start; a
+		// registry or proxy override set while the server runs must reach bun.
 		env: { ...process.env },
 		timeout: timeoutMs,
 		killSignal: "SIGKILL",

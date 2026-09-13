@@ -22,7 +22,6 @@ afterEach(() => {
 	for (const server of servers.splice(0)) server.stop(true);
 	if (previousBase === undefined) delete process.env.VT_NPM_REGISTRY_BASE;
 	else process.env.VT_NPM_REGISTRY_BASE = previousBase;
-	delete process.env.VT_NPM_INSTALL_TIMEOUT_MS;
 	delete process.env.BUN_CONFIG_REGISTRY;
 });
 
@@ -89,10 +88,9 @@ describe("installPackageVersion", () => {
 		// check the user would read "exited with code 137" — 137 is what a
 		// SIGKILL looks like from the outside — instead of "timed out".
 		process.env.BUN_CONFIG_REGISTRY = startRegistry(() => new Promise<Response>(() => {}));
-		process.env.VT_NPM_INSTALL_TIMEOUT_MS = "1000";
 
 		const started = Bun.nanoseconds();
-		await expect(installPackageVersion("9.9.9-vt-hang-test")).rejects.toThrow(
+		await expect(installPackageVersion("9.9.9-vt-hang-test", undefined, 1000)).rejects.toThrow(
 			/timed out.*still installed/s,
 		);
 		expect((Bun.nanoseconds() - started) / 1e6).toBeLessThan(20_000);
