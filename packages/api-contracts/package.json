@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@vibe-tavern/domain": "workspace:*",
-    "zod": "^4.6.2"
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.2"
+    "@types/bun": "catalog:"
   }
 }

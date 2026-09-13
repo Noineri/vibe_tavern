@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cd ../.. && bun apps/web/dev-server.ts",
+    "dev": "bun --cwd=../.. apps/web/dev-server.ts",
     "build": "tsc -p tsconfig.typecheck.json --noEmit && bun ../../scripts/build-web.ts",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
     "test": "bun ../../scripts/test-web.ts"
@@ -41,10 +41,10 @@
     "diff": "^9.0.0",
     "eventsource-parser": "^4.1.0",
     "framer-motion": "^13.2.0",
-    "hono": "^4.13.7",
+    "hono": "catalog:",
     "i18next": "^26.4.2",
     "immer": "^11.1.18",
-    "js-tiktoken": "^1.0.21",
+    "js-tiktoken": "catalog:",
     "kokoro-js": "1.2.1",
     "lucide-react": "^1.45.0",
     "qrcode": "^1.5.4",
@@ -63,7 +63,7 @@
     "tw-animate-css": "^1.4.0",
     "use-debounce": "^10.1.1",
     "wasm-media-encoders": "^0.7.0",
-    "zod": "^4.6.2",
+    "zod": "catalog:",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -71,7 +71,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
-    "@types/bun": "^1.4.2",
+    "@types/bun": "catalog:",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

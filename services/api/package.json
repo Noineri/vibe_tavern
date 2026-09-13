@@ -10,7 +10,7 @@
     "./server-runtime": "./src/server/server-runtime.ts"
   },
   "scripts": {
-    "dev": "cd ../.. && bun services/api/src/server/prod-server.ts --api-only",
+    "dev": "bun --cwd=../.. services/api/src/server/prod-server.ts --api-only",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
     "test": "bun test"
   },
@@ -29,14 +29,14 @@
     "@vibe-tavern/prompt-pipeline": "workspace:*",
     "ai": "^7.0.99",
     "fflate": "^0.8.3",
-    "hono": "^4.13.7",
-    "js-tiktoken": "^1.0.21",
+    "hono": "catalog:",
+    "js-tiktoken": "catalog:",
     "proxy-chain": "^3.0.1",
     "tar-stream": "^3.2.1",
-    "zod": "^4.6.2"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@e9x/simple-socks": "^1.0.0",
-    "@types/bun": "^1.4.2"
+    "@types/bun": "catalog:"
   }
 }
