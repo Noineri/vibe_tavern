@@ -82,8 +82,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.2"
-      # Existing transitive findings stay explicit until BUN14-30 updates
-      # their owners. Every advisory outside this baseline remains fatal.
       - name: Restore Bun package cache
         uses: actions/cache@v4
         with:
@@ -93,12 +91,7 @@ jobs:
             bun-install-${{ runner.os }}-${{ runner.arch }}-
       - run: bun install --frozen-lockfile --prefer-offline
       - name: Audit dependencies
-        run: >-
-          bun audit
-          --ignore GHSA-xcpc-8h2w-3j85
-          --ignore GHSA-vwc7-r8mq-g2x9
-          --ignore GHSA-f88m-g3jw-g9cj
-          --ignore GHSA-rgj7-g3m4-5g8c
+        run: bun audit
       - run: bun dedupe --check
       # Inventory only: this reports the production license set but does not
       # decide compatibility with AGPL-3.0.
