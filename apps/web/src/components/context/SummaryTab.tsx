@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type CSSProperties, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
-import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
+import type { AutoSummaryConfig, ChatSummaryRecord } from "../../api/types.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { TextInput } from "../shared/text-input.js";

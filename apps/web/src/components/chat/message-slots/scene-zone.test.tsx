@@ -28,7 +28,7 @@ import { useSceneGenerationStore } from "../../../stores/scene-generation-store.
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
 import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 import { resolveMessageSlots, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
-import type { AppMessage, AppSnapshot } from "../../../app-client.js";
+import type { AppMessage, AppSnapshot } from "../../../api/types.js";
 import type { SceneTrackerRecord } from "@vibe-tavern/domain";
 
 const mocks = {

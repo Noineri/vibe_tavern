@@ -2,7 +2,7 @@
  * ScriptEditor — explicit-save integration tests.
  *
  * Pins the complete editor boundary with the REAL CodeMirror and ScriptTester:
- * local draft → explicit Save → app-client PATCH, and unsaved draft → test
+ * local draft → explicit Save → script-api PATCH, and unsaved draft → test
  * endpoint override. Network, stores unrelated to script drafts, i18n and
  * heavyweight children are mocked; the editor/controller path is real.
  *
@@ -18,9 +18,7 @@
  */
 import { afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import type { ReactNode } from "react";
-import {
-  type ScriptRecord,
-} from "../../../app-client.js";
+import type { ScriptRecord } from "../../../api/types.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -45,7 +43,7 @@ const testScript = mock(() => Promise.resolve({
 	shared: {},
 	errors: [],
 }));
-const realAppClient = await import("../../../app-client.js");
+const realScriptApi = await import("../../../api/script-api.js");
 const realI18nContext = await import("../../../i18n/context.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
@@ -54,17 +52,17 @@ const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
-mock.module("../../../app-client.js", () => ({
-	...realAppClient,
-  listScripts,
-  listAllScripts,
-  createScript,
-  updateScript,
-  deleteScript,
-  importScript,
-  getScriptLinks,
-  setScriptLinks,
-  testScript,
+mock.module("../../../api/script-api.js", () => ({
+	...realScriptApi,
+	listScripts,
+	listAllScripts,
+	createScript,
+	updateScript,
+	deleteScript,
+	importScript,
+	getScriptLinks,
+	setScriptLinks,
+	testScript,
 }));
 
 mock.module("../../../i18n/context.js", () => ({

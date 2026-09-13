@@ -12,17 +12,14 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import type { ReactNode } from "react";
-import {
-  type LoreEntryRecord,
-  type LorebookRecord,
-} from "../../../app-client.js";
+import type { LoreEntryRecord, LorebookRecord } from "../../../api/types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
 
 const listLoreEntries = mock((_lorebookId: string) => Promise.resolve<LoreEntryRecord[]>([]));
 const realI18nContext = await import("../../../i18n/context.js");
-const realAppClient = await import("../../../app-client.js");
+const realLorebookApi = await import("../../../api/lorebook-api.js");
 const realLoreEntryList = await import("./LoreEntryList.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
 const realTooltip = await import("../../shared/Tooltip.js");
@@ -40,11 +37,11 @@ mock.module("../../../i18n/context.js", () => ({
   }),
 }));
 
-// app-client — only listLoreEntries is called by the accordion; types are
+// lorebook-api — only listLoreEntries is called by the accordion; types are
 // erased at runtime.
-mock.module("../../../app-client.js", () => ({
-	...realAppClient,
-  listLoreEntries,
+mock.module("../../../api/lorebook-api.js", () => ({
+	...realLorebookApi,
+	listLoreEntries,
 }));
 
 // Stub LoreEntryList → flat row list exposing the filtered entries + the

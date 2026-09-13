@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { ChatId, ChatBranchId, MessageVariantId, SceneTrackerRecord, Timestamp } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
-import type { AppCharacter, AppMessage, AppSnapshot } from "../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot } from "../api/types.js";
 
 // Branded-id cast helpers (match the convention in bootstrap-actions.test.ts).
 const asChatId = (id: string): ChatId => id as ChatId;

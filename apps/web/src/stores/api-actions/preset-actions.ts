@@ -1,11 +1,5 @@
-import {
-  createPromptPreset,
-  deletePromptPreset,
-  listPromptPresets,
-  setChatPromptPreset,
-  updatePromptPreset,
-  reorderPromptPresets,
-} from "../../app-client.js";
+import { createPromptPreset, deletePromptPreset, listPromptPresets, updatePromptPreset, reorderPromptPresets } from "../../api/preset-api.js";
+import { setChatPromptPreset } from "../../api/chat-api.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useBootstrapStore } from "./bootstrap-actions.js";
 import { waitForPendingVariantSelections } from "./chat-actions.js";

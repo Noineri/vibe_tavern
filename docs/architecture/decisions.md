@@ -170,7 +170,7 @@ Why the original decision missed this: the options table weighs three ways to fi
 
 **Context:** Frontend needs to call backend API with compile-time safety.
 
-**Decision:** Shared Hono router definition used by both server and `app-client.ts` RPC client.
+**Decision:** Shared Hono router definition used by both server and the `apps/web/src/api/client.ts` RPC client; `unwrapRpc` infers every response body from the route, so web modules carry no hand-written response types.
 
 **Rationale:**
 - **Zero code generation** — the Hono client infers types from the router definition at compile time.

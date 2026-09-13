@@ -1,13 +1,13 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { MODEL_FAVORITE_SCOPE, type ModelFavoriteScope } from "@vibe-tavern/domain";
-import type { FavoriteProviderModelRecord } from "../../app-client.js";
+import type { FavoriteProviderModelRecord } from "../../api/types.js";
 import { useProviderDataStore } from "../provider-data-store.js";
 
 const listFavoriteProviderModelsMock = mock();
-const realAppClient = await import("../../app-client.js");
+const realProviderApi = await import("../../api/provider-api.js");
 
-mock.module("../../app-client.js", () => ({
-	...realAppClient,
+mock.module("../../api/provider-api.js", () => ({
+	...realProviderApi,
 	listFavoriteProviderModels: listFavoriteProviderModelsMock,
 }));
 

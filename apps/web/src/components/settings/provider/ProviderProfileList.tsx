@@ -2,7 +2,7 @@ import React, { type CSSProperties } from 'react';
 import { useT } from '../../../i18n/context.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
 import { useMasterDetail } from '../../shared/MasterDetailModal.js';
-import type { ProviderProfileRecord } from '../../../app-client.js';
+import type { ProviderProfileRecord } from "../../../api/types.js";
 import { PROVIDER_PRESETS, TYPE_LABELS } from '../../../provider-presets.js';
 import { SearchInput } from '../../shared/SearchInput.js';
 import { cn } from '../../../lib/cn.js';

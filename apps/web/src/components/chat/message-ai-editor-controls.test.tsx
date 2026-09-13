@@ -26,7 +26,7 @@ import type { ReactNode } from "react";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 

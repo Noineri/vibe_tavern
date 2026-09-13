@@ -5,14 +5,8 @@ import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
 import { appCharacterToVtfContent } from "../lib/vtf-content.js";
 import { downloadTextFile } from "../lib/download.js";
-import {
-  uploadCharacterAvatar,
-  type AppSnapshot,
-  type AppCharacter,
-  type AppPersona,
-  type AppMessage,
-  type ChatListItem,
-} from "../app-client.js";
+import { uploadCharacterAvatar } from "../api/character-api.js";
+import type { AppSnapshot, AppCharacter, AppPersona, AppMessage, ChatListItem } from "../api/types.js";
 import type { BuildCharacterDraft } from "../components/build/BuildMode.js";
 import { useCharacterImport } from "./use-character-import.js";
 import { useChatStore } from "../stores/chat-store.js";

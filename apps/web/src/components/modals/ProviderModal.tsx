@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { pickContextSourceModelId, shouldAutoFillContextBudget } from "../../lib/context-autofill.js";
-import type { FavoriteProviderModelRecord, ProviderProfileRecord, ProxyRecord } from "../../app-client.js";
+import type { FavoriteProviderModelRecord, ProviderProfileRecord, ProxyRecord } from "../../api/types.js";
 import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveAutoTemplateSource, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
 import type { ProviderGenerationFormat, ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";

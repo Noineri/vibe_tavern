@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { ChatId, CharacterId } from "@vibe-tavern/domain";
-import type { AppSnapshot } from "../../app-client.js";
+import type { AppSnapshot } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { syncBootstrapSnapshotForActiveChat, patchUiSettingsAction, useBootstrapStore } from "./bootstrap-actions.js";

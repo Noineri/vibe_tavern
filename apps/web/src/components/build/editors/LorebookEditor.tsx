@@ -24,17 +24,8 @@ import { AddButton } from "../../shared/add-button.js";
 import { cn } from "../../../lib/cn.js";
 import { toast } from "sonner";
 import { useT } from "../../../i18n/context.js";
-import {
-  createLorebook,
-  updateLorebookMeta,
-  deleteLorebook,
-  createLoreEntry,
-  updateLoreEntry,
-  reorderLoreEntries,
-  duplicateLorebook,
-  exportLorebookSt,
-  type LoreEntryRecord,
-} from "../../../app-client.js";
+import { createLorebook, updateLorebookMeta, deleteLorebook, createLoreEntry, updateLoreEntry, reorderLoreEntries, duplicateLorebook, exportLorebookSt } from "../../../api/lorebook-api.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
 
 import {
   useLorebookEditorState,

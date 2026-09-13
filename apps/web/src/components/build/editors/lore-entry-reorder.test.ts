@@ -21,7 +21,7 @@ import {
 	POSITION_SECTIONS,
 	type LoreReorderUpdate,
 } from "./lore-entry-reorder.js";
-import type { LoreEntryRecord } from "../../../app-client.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
 
 /** Minimal factory — only id/position matter for reorder logic. */
 function entry(id: string, position: string, sortOrder: number): LoreEntryRecord {

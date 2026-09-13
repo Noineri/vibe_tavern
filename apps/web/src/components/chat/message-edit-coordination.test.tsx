@@ -33,7 +33,7 @@ import { createElement, type ReactNode } from "react";
 
 useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
-import type { AppMessage, AppSnapshot, AppCharacter } from "../../app-client.js";
+import type { AppMessage, AppSnapshot, AppCharacter } from "../../api/types.js";
 import type { SceneTrackerRecord } from "@vibe-tavern/domain";
 
 // ── Hoisted spies ──────────────────────────────────────────────────────────

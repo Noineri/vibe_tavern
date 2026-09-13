@@ -41,10 +41,8 @@ import { NumberInput } from "../../shared/NumberInput.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
-import {
-  deleteLoreEntry,
-  type LoreEntryRecord,
-} from "../../../app-client.js";
+import { deleteLoreEntry } from "../../../api/lorebook-api.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
 import { LoreKeysAiPill } from "./lore-keys-ai-pill.js";
 import { ActivationTestPanel } from "./activation-test-panel.js";
 import { CharacterFilterPicker } from "./character-filter-picker.js";

@@ -30,7 +30,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ReactNode } from "react";
 import { mocked } from "../../../../test/mock-utils.js";
-import type { LoreEntryRecord, LorebookRecord } from "../../../app-client.js";
+import type { LoreEntryRecord, LorebookRecord } from "../../../api/types.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -47,17 +47,17 @@ const realLoreEntryEditor = await import("./LoreEntryEditor.js");
 const realLorebookAccordion = await import("./LorebookAccordion.js");
 const realSnapshotStore = await import("../../../stores/snapshot-store.js");
 const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
-const realAppClient = await import("../../../app-client.js");
+const realLorebookApi = await import("../../../api/lorebook-api.js");
 
 const toastSuccess = mock();
 const toastError = mock();
 const toastInfo = mock();
-const listAllLorebooks = mock(realAppClient.listAllLorebooks);
-const listLorebooks = mock(realAppClient.listLorebooks);
-const listLoreEntries = mock(realAppClient.listLoreEntries);
-const getLorebookLinks = mock(realAppClient.getLorebookLinks);
-const updateLoreEntry = mock(realAppClient.updateLoreEntry);
-const createLoreEntry = mock(realAppClient.createLoreEntry);
+const listAllLorebooks = mock(realLorebookApi.listAllLorebooks);
+const listLorebooks = mock(realLorebookApi.listLorebooks);
+const listLoreEntries = mock(realLorebookApi.listLoreEntries);
+const getLorebookLinks = mock(realLorebookApi.getLorebookLinks);
+const updateLoreEntry = mock(realLorebookApi.updateLoreEntry);
+const createLoreEntry = mock(realLorebookApi.createLoreEntry);
 
 // Identity i18n — assertion strings match the i18n keys verbatim.
 mock.module("../../../i18n/context.js", () => ({
@@ -177,17 +177,17 @@ mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
   useBootstrapStore: () => [],
 }));
 
-// app-client (barrel) — override the lorebook/entry functions the parent calls;
+// lorebook-api — override the lorebook/entry functions the parent calls;
 // spread the real module so every other re-export stays intact for any
 // transitive consumer. Tests bind the concrete native mocks directly.
-mock.module("../../../app-client.js", () => ({
-  ...realAppClient,
-  listAllLorebooks,
-  listLorebooks,
-  listLoreEntries,
-  getLorebookLinks,
-  updateLoreEntry,
-  createLoreEntry,
+mock.module("../../../api/lorebook-api.js", () => ({
+	...realLorebookApi,
+	listAllLorebooks,
+	listLorebooks,
+	listLoreEntries,
+	getLorebookLinks,
+	updateLoreEntry,
+	createLoreEntry,
 }));
 
 let LorebookEditor: typeof import("./LorebookEditor.js").LorebookEditor;

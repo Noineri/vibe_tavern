@@ -117,7 +117,7 @@ async function loadModules() {
 // Factories (mirror message-block-isolation.test.tsx conventions).
 // ---------------------------------------------------------------------------
 
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
 const asChatId = (id: string): ChatId => id as ChatId;

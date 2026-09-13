@@ -184,7 +184,7 @@ async function loadModules() {
 // invariant: what matters is the subscription graph, not message realism.
 // ---------------------------------------------------------------------------
 
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import type { ObjectiveState } from "../../api/types.js";
 import type { ChatId, ChatBranchId } from "@vibe-tavern/domain";
 

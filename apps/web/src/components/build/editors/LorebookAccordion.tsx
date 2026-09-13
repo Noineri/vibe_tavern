@@ -21,12 +21,8 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
-import {
-  listLoreEntries,
-  type LorebookRecord,
-  type LoreEntryRecord,
-  type LorebookLinkRecord,
-} from "../../../app-client.js";
+import { listLoreEntries } from "../../../api/lorebook-api.js";
+import type { LorebookRecord, LoreEntryRecord, LorebookLinkRecord } from "../../../api/types.js";
 import { LoreEntryList } from "./LoreEntryList.js";
 import { ListSearchPanel } from "../../shared/ListSearchPanel.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";

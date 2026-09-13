@@ -20,21 +20,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { LinkBindingPopover, type LinkTarget } from "./LinkBindingPopover.js";
 import { useT } from "../../i18n/context.js";
-import {
-  getLorebookLinks,
-  listAllLorebooks,
-  listCharacterLorebooks,
-  listPersonaLorebooks,
-  setLorebookLinks,
-  getScriptLinks,
-  setScriptLinks,
-  listAllScripts,
-  listCharacterScripts,
-  listPersonaScripts,
-  getRegexLinks,
-  setRegexLinks,
-  listAllRegexPresets,
-} from "../../app-client.js";
+import { getLorebookLinks, listAllLorebooks, setLorebookLinks } from "../../api/lorebook-api.js";
+import { listCharacterLorebooks, listCharacterScripts } from "../../api/character-api.js";
+import { listPersonaLorebooks, listPersonaScripts } from "../../api/persona-api.js";
+import { getScriptLinks, setScriptLinks, listAllScripts } from "../../api/script-api.js";
+import { getRegexLinks, setRegexLinks, listAllRegexPresets } from "../../api/regex-api.js";
 import type { LorebookRecord, RegexPresetRecord, ScriptRecord } from "../../api/types.js";
 import { CustomTooltip } from "./Tooltip.js";
 

@@ -28,25 +28,31 @@ const mockState = {
   /** Whether streamAiAssistant should throw on the next call. */
   shouldThrow: false as boolean,
 };
-const realAppClient = await import("../../app-client.js");
+const realAiAssistantApi = await import("../../api/ai-assistant-api.js");
+const realSettingsApi = await import("../../api/settings-api.js");
+const realLorebookApi = await import("../../api/lorebook-api.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
 const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 
-// Mock the app-client barrel: capture request bodies + control the stream.
-mock.module("../../app-client.js", () => {
-  return {
-    ...realAppClient,
-    streamAiAssistant: mock(async function* (body: AiAssistantRequestBody): AsyncGenerator<AiAssistantChunk> {
-      mockState.requests.push(body);
-      if (mockState.shouldThrow) throw new Error("network-down");
-      for (const chunk of mockState.chunks) yield chunk;
-    }),
-    updateUiSettings: mock(async (input: Partial<UiSettingsRecord>) => baseSettings(input)),
-    countAiAssistantTokens: mock(async () => ({ tokens: 42, model: "test-model", layerCount: 1, messageCount: 1 })),
-    listAllLorebooks: mock(async () => []),
-  };
-});
+// Capture request bodies + control the stream.
+mock.module("../../api/ai-assistant-api.js", () => ({
+  ...realAiAssistantApi,
+  streamAiAssistant: mock(async function* (body: AiAssistantRequestBody): AsyncGenerator<AiAssistantChunk> {
+    mockState.requests.push(body);
+    if (mockState.shouldThrow) throw new Error("network-down");
+    for (const chunk of mockState.chunks) yield chunk;
+  }),
+  countAiAssistantTokens: mock(async () => ({ tokens: 42, model: "test-model", layerCount: 1, messageCount: 1 })),
+}));
+mock.module("../../api/settings-api.js", () => ({
+  ...realSettingsApi,
+  updateUiSettings: mock(async (input: Partial<UiSettingsRecord>) => baseSettings(input)),
+}));
+mock.module("../../api/lorebook-api.js", () => ({
+  ...realLorebookApi,
+  listAllLorebooks: mock(async () => []),
+}));
 
 // fetchProviderModelsAction must not hit the network.
 mock.module("../../stores/api-actions/provider-actions.js", () => {
@@ -187,10 +193,9 @@ function setChunks(chunks: AiAssistantChunk[]) {
 }
 
 async function mocks() {
-  const m = await import("../../app-client.js");
   return {
-    streamAiAssistant: m.streamAiAssistant,
-    updateUiSettings: m.updateUiSettings,
+    streamAiAssistant: (await import("../../api/ai-assistant-api.js")).streamAiAssistant,
+    updateUiSettings: (await import("../../api/settings-api.js")).updateUiSettings,
     fetchProviderModels: (await import("../../stores/api-actions/provider-actions.js")).fetchProviderModelsAction,
   };
 }

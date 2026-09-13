@@ -37,7 +37,7 @@ const mocks = {
   toastError: mock(),
 };
 const realI18nContext = await import("../../../i18n/context.js");
-const realAppClient = await import("../../../app-client.js");
+const realChatApi = await import("../../../api/chat-api.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
@@ -48,9 +48,9 @@ mock.module("../../../i18n/context.js", () => ({
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-mock.module("../../../app-client.js", () => ({
-  ...realAppClient,
-  refreshInsightsCompletion: mocks.refreshInsightsCompletion,
+mock.module("../../../api/chat-api.js", () => ({
+	...realChatApi,
+	refreshInsightsCompletion: mocks.refreshInsightsCompletion,
 }));
 
 mock.module("../../../stores/api-actions/chat-actions.js", () => ({

@@ -26,7 +26,7 @@ import { useChatStore, useProviderStore, useIsSending } from "../../stores/index
 import { useDiceLanes, useDiceStore } from "../../stores/dice-store.js";
 import { useActiveTrace, useChatMeta, useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { uploadAsset } from "../../app-client.js";
+import { uploadAsset } from "../../api/asset-api.js";
 
 export function useInputArea() {
   const { t } = useT();

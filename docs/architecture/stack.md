@@ -27,7 +27,7 @@ HTTP framework. Replaces Express/Koa/Fastify.
 - **Type-safe routing** — `app.get('/api/chats/:id', handler)` infers param types.
 - **Built-in middleware** — CORS, validator, error handler. No need for `cors`, `helmet`, `body-parser` packages.
 - **Tiny** — 14KB gzipped. Express is 200KB+.
-- **Shared between client and server** — the `app-client.ts` Hono RPC client type-checks API calls against route definitions. Frontend gets compile-time safety without code generation.
+- **Shared between client and server** — the `apps/web/src/api/client.ts` Hono RPC client type-checks API calls against route definitions. Frontend gets compile-time safety without code generation.
 
 **Why not Express:** Unmaintained patterns, no native TypeScript, middleware ecosystem is aging, bloated for an API-only server.
 

@@ -24,17 +24,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { useDebouncedCallback } from "use-debounce";
-import {
-  listAllLorebooks,
-  listLorebooks,
-  listLoreEntries,
-  updateLoreEntry,
-  getLorebookLinks,
-  setLorebookLinks,
-  type LorebookRecord,
-  type LoreEntryRecord,
-  type LorebookLinkRecord,
-} from "../../../app-client.js";
+import { listAllLorebooks, listLorebooks, listLoreEntries, updateLoreEntry, getLorebookLinks, setLorebookLinks } from "../../../api/lorebook-api.js";
+import type { LorebookRecord, LoreEntryRecord, LorebookLinkRecord } from "../../../api/types.js";
 import type { Scope } from "./LorebookAccordion.js";
 
 // ── Types ──────────────────────────────────────────────────────────────

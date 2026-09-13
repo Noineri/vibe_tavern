@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { render, act } from "@testing-library/react";
 import { useDomEnv } from "../../../test/dom-env.js";
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
 useDomEnv();

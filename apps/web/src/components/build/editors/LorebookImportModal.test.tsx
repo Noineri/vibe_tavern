@@ -8,12 +8,12 @@
  * ignores it on merge, but the modal shouldn't emit what it doesn't mean).
  *
  * Drives the real 3-step wizard (file input → target pick → run) with the
- * app-client seam stubbed; assertions target the emitted request body.
+ * lorebook-api seam stubbed; assertions target the emitted request body.
  *
  * Runner: bun:test with scoped happy-dom (per-file process).
  */
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
-import type { LorebookRecord } from "../../../app-client.js";
+import type { LorebookRecord } from "../../../api/types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -21,10 +21,10 @@ useDomEnv();
 const importLorebookEntries = mock(
   async (_lorebookId: string, _body: unknown) => ({ imported: 1, skipped: 0, warnings: [] as string[] }),
 );
-const realAppClient = await import("../../../app-client.js");
-mock.module("../../../app-client.js", () => ({
-  ...realAppClient,
-  importLorebookEntries,
+const realLorebookApi = await import("../../../api/lorebook-api.js");
+mock.module("../../../api/lorebook-api.js", () => ({
+	...realLorebookApi,
+	importLorebookEntries,
 }));
 
 let LorebookImportModal: typeof import("./LorebookImportModal.js").LorebookImportModal;

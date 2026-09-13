@@ -23,7 +23,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { computeRangeAfterChange, resolveHistoryLimitState, upsertSummary } from "./SummaryTab.js";
-import type { ChatSummaryRecord } from "../../app-client.js";
+import type { ChatSummaryRecord } from "../../api/types.js";
 
 describe("upsertSummary — archive list ordering", () => {
 	const base = (over: Partial<ChatSummaryRecord> = {}): ChatSummaryRecord => ({

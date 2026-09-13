@@ -22,7 +22,7 @@ import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { getModalPortal } from "../../shared/modal-helpers.js";
 import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
-import type { LoreEntryRecord } from "../../../app-client.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
 
 export function CharacterFilterPicker({ t }: { t: TFunc }) {
   const form = useFormContext<LoreEntryRecord>();

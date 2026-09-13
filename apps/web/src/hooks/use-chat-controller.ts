@@ -3,15 +3,8 @@ import { toast } from "sonner";
 import type { Attachment, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
-import {
-  generateReplyStream,
-  continueChatMessageStream,
-  regenerateChatMessageStream,
-  sendChatMessageStream,
-  type AppMessage,
-  type AppSnapshot,
-  type ChatGenerationStatus,
-} from "../app-client.js";
+import { generateReplyStream, continueChatMessageStream, regenerateChatMessageStream, sendChatMessageStream } from "../api/chat-api.js";
+import type { AppMessage, AppSnapshot, ChatGenerationStatus } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";

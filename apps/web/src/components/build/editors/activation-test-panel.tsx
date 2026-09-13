@@ -14,7 +14,7 @@ import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { TextInput } from "../../shared/text-input.js";
 import type { TFunc } from "../../../i18n/context.js";
-import { testLoreActivation } from "../../../app-client.js";
+import { testLoreActivation } from "../../../api/lorebook-api.js";
 
 export function ActivationTestPanel({
   lorebookId,

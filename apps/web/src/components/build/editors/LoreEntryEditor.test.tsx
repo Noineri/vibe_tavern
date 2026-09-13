@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeAll, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useForm, FormProvider, type UseFormReturn } from "react-hook-form";
-import type { LoreEntryRecord } from "../../../app-client.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();

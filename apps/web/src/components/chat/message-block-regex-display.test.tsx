@@ -135,7 +135,7 @@ beforeEach(async () => {
   hook.invalidateActiveRegexPresets();
 });
 
-import type { AppCharacter, AppMessage, AppSnapshot } from "../../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
 const CHAT = "chat-1" as ChatId;

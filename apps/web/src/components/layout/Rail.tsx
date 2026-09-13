@@ -33,7 +33,7 @@ import { useCharacterController } from "../../hooks/use-character-controller.js"
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
 import { useLastNonNull } from "../../hooks/use-last-non-null.js";
-import type { ChatListItem } from "../../app-client.js";
+import type { ChatListItem } from "../../api/types.js";
 
 
 function RailRow({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick: () => void }) {

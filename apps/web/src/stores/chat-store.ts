@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { ChatId, Attachment, DiceRollSnapshot } from "@vibe-tavern/domain";
-import type { ChatGenerationStatus } from "../app-client.js";
+import type { ChatGenerationStatus } from "../api/types.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useDiceStore } from "./dice-store.js";
 

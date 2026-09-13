@@ -194,7 +194,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     if (!messageId || !att?.id) return;
     setSaving(true);
     try {
-      const { updateAttachmentDescription } = await import("../../app-client.js");
+      const { updateAttachmentDescription } = await import("../../api/chat-api.js");
       await updateAttachmentDescription("_", messageId, att.id, editText);
       persistDescription(editText);
       setEditing(false);
@@ -213,7 +213,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     abortRef.current = ac;
     setRegenerating(true);
     try {
-      const { regenerateAttachmentDescription } = await import("../../app-client.js");
+      const { regenerateAttachmentDescription } = await import("../../api/chat-api.js");
       const { description } = await regenerateAttachmentDescription("_", messageId, att.id, { signal: ac.signal });
       persistDescription(description);
     } catch (err) {
@@ -253,7 +253,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     // Otherwise clamp the index if we deleted the tail item.
     if (index > remaining.length - 1) setIndex(remaining.length - 1);
     try {
-      const { deleteAttachment } = await import("../../app-client.js");
+      const { deleteAttachment } = await import("../../api/chat-api.js");
       await deleteAttachment("_", messageId, att.id);
       toast.success(t("attachment_deleted"));
     } catch (err) {

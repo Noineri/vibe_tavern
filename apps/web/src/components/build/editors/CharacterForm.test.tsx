@@ -31,43 +31,41 @@ mock.module("../../shared/Tooltip.js", () => ({
 }));
 
 // CharacterForm renders BoundResourcesField / GalleryAccordion, which fetch
-// the lorebook / persona / script lists on mount; stub them empty so the
-// render never hits the network (mirrors CoauthorCharacterForm.test.tsx).
+// the lorebook / persona / script lists and bindings on mount; stub them empty
+// so the render never hits the network (mirrors CoauthorCharacterForm.test.tsx).
 const realLorebookApi = await import("../../../api/lorebook-api.js");
-mock.module("../../../api/lorebook-api.js", () => ({
-  ...realLorebookApi,
-  listAllLorebooks: () => Promise.resolve([]),
-}));
 const realPersonaApi = await import("../../../api/persona-api.js");
-mock.module("../../../api/persona-api.js", () => ({
-  ...realPersonaApi,
-  listPersonas: () => Promise.resolve([]),
-}));
 const realScriptApi = await import("../../../api/script-api.js");
-mock.module("../../../api/script-api.js", () => ({
-  ...realScriptApi,
-  listAllScripts: () => Promise.resolve([]),
+const realCharacterApi = await import("../../../api/character-api.js");
+const realRegexApi = await import("../../../api/regex-api.js");
+mock.module("../../../api/lorebook-api.js", () => ({
+	...realLorebookApi,
+	listAllLorebooks: () => Promise.resolve([]),
+	getLorebookLinks: () => Promise.resolve([]),
+	setLorebookLinks: () => Promise.resolve([]),
 }));
-
-// CE-C2/C3-style: the binding field reads/writes lorebook/script/regex
-// bindings through app-client — stub those to empty so the render stays
-// offline (mirrors CoauthorCharacterForm.test.tsx).
-const realAppClient = await import("../../../app-client.js");
-mock.module("../../../app-client.js", () => ({
-  ...realAppClient,
-  listAllLorebooks: () => Promise.resolve([]),
-  listCharacterLorebooks: () => Promise.resolve([]),
-  listPersonaLorebooks: () => Promise.resolve([]),
-  getLorebookLinks: () => Promise.resolve([]),
-  setLorebookLinks: () => Promise.resolve([]),
-  listAllScripts: () => Promise.resolve([]),
-  listCharacterScripts: () => Promise.resolve([]),
-  listPersonaScripts: () => Promise.resolve([]),
-  getScriptLinks: () => Promise.resolve([]),
-  setScriptLinks: () => Promise.resolve([]),
-  listAllRegexPresets: () => Promise.resolve([]),
-  getRegexLinks: () => Promise.resolve([]),
-  setRegexLinks: () => Promise.resolve([]),
+mock.module("../../../api/character-api.js", () => ({
+	...realCharacterApi,
+	listCharacterLorebooks: () => Promise.resolve([]),
+	listCharacterScripts: () => Promise.resolve([]),
+}));
+mock.module("../../../api/persona-api.js", () => ({
+	...realPersonaApi,
+	listPersonas: () => Promise.resolve([]),
+	listPersonaLorebooks: () => Promise.resolve([]),
+	listPersonaScripts: () => Promise.resolve([]),
+}));
+mock.module("../../../api/script-api.js", () => ({
+	...realScriptApi,
+	listAllScripts: () => Promise.resolve([]),
+	getScriptLinks: () => Promise.resolve([]),
+	setScriptLinks: () => Promise.resolve([]),
+}));
+mock.module("../../../api/regex-api.js", () => ({
+	...realRegexApi,
+	listAllRegexPresets: () => Promise.resolve([]),
+	getRegexLinks: () => Promise.resolve([]),
+	setRegexLinks: () => Promise.resolve([]),
 }));
 
 let CharacterForm: typeof import("./CharacterForm.js").CharacterForm;

@@ -16,12 +16,9 @@ import { toast } from "sonner";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { AiQuickPill, type AiQuickSettings } from "../../shared/AiQuickPill.js";
 import { useT } from "../../../i18n/context.js";
-import {
-  streamAiAssistant,
-  updateUiSettings,
-  type AiAssistantRequestBody,
-  type LoreEntryRecord,
-} from "../../../app-client.js";
+import { streamAiAssistant } from "../../../api/ai-assistant-api.js";
+import { updateUiSettings } from "../../../api/settings-api.js";
+import type { AiAssistantRequestBody, LoreEntryRecord } from "../../../api/types.js";
 
 export function LoreKeysAiPill() {
   const { t } = useT();

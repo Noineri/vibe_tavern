@@ -180,7 +180,7 @@ mock.module("../../shared/Tooltip.js", () => ({
 }));
 
 // TrackerConfig renders the shared AiAssistantModal (scene_schema generator).
-// Stub it so this panel-level test doesn't pull the modal's snapshot/app-client deps.
+// Stub it so this panel-level test doesn't pull the modal's snapshot/api deps.
 mock.module("../../shared/AiAssistantModal.js", () => ({
   ...realAiAssistantModal,
   AiAssistantModal: () => null,

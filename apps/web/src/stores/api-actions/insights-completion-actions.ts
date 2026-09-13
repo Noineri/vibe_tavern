@@ -1,9 +1,6 @@
 import type { ChatId } from "@vibe-tavern/domain";
-import {
-  refreshInsightsCompletion,
-  type AppSnapshot,
-  type InsightsCompletionTarget,
-} from "../../app-client.js";
+import { refreshInsightsCompletion } from "../../api/chat-api.js";
+import type { AppSnapshot, InsightsCompletionTarget } from "../../api/types.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 

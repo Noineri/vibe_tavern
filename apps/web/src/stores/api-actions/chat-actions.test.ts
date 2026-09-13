@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ChatId, CharacterId } from "@vibe-tavern/domain";
-import type { AppSnapshot, ChatListItem } from "../../app-client.js";
+import type { AppSnapshot, ChatListItem } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useNavigationStore } from "../navigation-store.js";
@@ -9,7 +9,7 @@ import { useContextPreviewStore } from "../context-preview-store.js";
 
 // Mocks for the deleteChatAction tests below. `deleteChat` returns the
 // backend's ChatListResponse ({ chats }); the fire-and-forget bootstrap is
-// stubbed so it can't race the assertion. Other app-client exports stay real
+// stubbed so it can't race the assertion. Other chat-api exports stay real
 // (spread), so the switchModeAction tests in this file are unaffected.
 const deleteChatMock = mock();
 const forkBranchMock = mock();
@@ -18,21 +18,12 @@ const generateReplyMock = mock();
 const sendChatMessageMock = mock();
 const startCompletionRefreshMock = mock();
 const fetchBootstrapMock = mock(async () => undefined);
-const realAppClient = await import("../../app-client.js");
 const realInsightsCompletionActions = await import("./insights-completion-actions.js");
 const realBootstrapActions = await import("./bootstrap-actions.js");
 const realChatApi = await import("../../api/chat-api.js");
 
 const updateChatDynamicPromptMock = mock();
 
-mock.module("../../app-client.js", () => ({
-  ...realAppClient,
-    deleteChat: deleteChatMock,
-    forkBranch: forkBranchMock,
-    generateObjectiveTasks: generateObjectiveTasksMock,
-    generateReply: generateReplyMock,
-    sendChatMessage: sendChatMessageMock,
-}));
 mock.module("./insights-completion-actions.js", () => ({
   ...realInsightsCompletionActions,
   startInsightsCompletionRefreshFromSnapshot: startCompletionRefreshMock,
@@ -43,6 +34,11 @@ mock.module("./bootstrap-actions.js", () => ({
 }));
 mock.module("../../api/chat-api.js", () => ({
   ...realChatApi,
+  deleteChat: deleteChatMock,
+  forkBranch: forkBranchMock,
+  generateObjectiveTasks: generateObjectiveTasksMock,
+  generateReply: generateReplyMock,
+  sendChatMessage: sendChatMessageMock,
   updateChatDynamicPrompt: updateChatDynamicPromptMock,
 }));
 
