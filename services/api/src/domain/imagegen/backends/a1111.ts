@@ -86,9 +86,7 @@ import type {
   ImageGenSamplerInfo,
 } from "../imagegen-backend.js";
 import { registerImageGenBackend } from "../imagegen-registry.js";
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -195,17 +193,6 @@ function sniffImageMime(bytes: Buffer): string | null {
     return "image/webp";
   }
   return null;
-}
-
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
 }
 
 /** Await a fetch call through the injected seam. Transport-level failures
@@ -398,7 +385,7 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new A1111ImageGenError(
           `A1111 image generation failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -438,7 +425,7 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
         "model list",
       );
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new A1111ImageGenError(
           `A1111 model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -460,7 +447,7 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
         "sampler list",
       );
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new A1111ImageGenError(
           `A1111 sampler list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -482,7 +469,7 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
         "progress",
       );
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new A1111ImageGenError(
           `A1111 progress failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -500,10 +487,10 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           signal,
         });
         if (!response.ok) {
-          const excerpt = await readErrorExcerpt(response);
+          const excerpt = await readProviderErrorBody(response);
           return {
             ok: false,
-            detail: `${response.status}${excerpt ? `: ${excerpt.slice(0, 120)}` : ""}`,
+            detail: `${response.status}${excerpt ? `: ${excerpt}` : ""}`,
             status: response.status,
           };
         }

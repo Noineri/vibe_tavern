@@ -47,14 +47,12 @@ import type {
   SttTranscribeResult,
 } from "../stt-backend.js";
 import { registerSttBackend } from "../stt-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const DEEPGRAM_BASE_URL = "https://api.deepgram.com";
 
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 5_000;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** HTTP / transport failure of a transcription or probe request. */
 export class DeepgramSttError extends Error {
@@ -110,33 +108,6 @@ function parseConfig(config: SttProfileConfig): DeepgramSttConfig {
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
 
-/** Read the failure body: Deepgram errors are `{err_code, err_msg,
- *  request_id}`, so the parsed pair is preferred over a raw excerpt. */
-async function readErrorExcerpt(response: Response): Promise<string> {
-  let text: string;
-  try {
-    text = await response.text();
-  } catch {
-    return "(unreadable error body)";
-  }
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed === "object" && parsed !== null) {
-      const record = parsed as Record<string, unknown>;
-      const errCode = record.err_code;
-      const errMsg = record.err_msg;
-      if (typeof errCode === "string" && typeof errMsg === "string") {
-        const requestId = typeof record.request_id === "string" ? ` (request ${record.request_id})` : "";
-        return `${errCode}: ${errMsg}${requestId}`;
-      }
-    }
-  } catch {
-    // Non-JSON body — fall through to the raw excerpt.
-  }
-  return text.length > ERROR_BODY_EXCERPT_LENGTH
-    ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-    : text;
-}
 
 /** Wrap a transport-level failure (DNS, refused connection, timeout) in the
  *  adapter's typed error so callers get one error surface. */
@@ -261,7 +232,7 @@ export const deepgramSttFactory: SttBackendFactory = (config) => {
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new DeepgramSttError(
           `Deepgram STT transcription failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -282,7 +253,7 @@ export const deepgramSttFactory: SttBackendFactory = (config) => {
         "model list",
       );
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new DeepgramSttError(
           `Deepgram STT model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -299,7 +270,7 @@ export const deepgramSttFactory: SttBackendFactory = (config) => {
           signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
         });
         if (!response.ok) {
-          const excerpt = await readErrorExcerpt(response);
+          const excerpt = await readProviderErrorBody(response);
           return { ok: false, detail: `${response.status}${excerpt ? `: ${excerpt.slice(0, 120)}` : ""}` };
         }
         const parsed: unknown = await response.json().catch(() => null);

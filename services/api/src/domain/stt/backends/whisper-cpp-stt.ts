@@ -55,12 +55,10 @@ import type {
   SttTranscribeResult,
 } from "../stt-backend.js";
 import { registerSttBackend } from "../stt-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 5_000;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** HTTP / transport failure of a transcription or probe request. */
 export class WhisperCppSttError extends Error {
@@ -105,29 +103,6 @@ function parseConfig(config: SttProfileConfig): WhisperCppSttConfig {
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-/** Read the failure body: whisper.cpp errors are `{"error": <message>}`,
- *  so the parsed field is preferred over a raw excerpt. */
-async function readErrorExcerpt(response: Response): Promise<string> {
-  let text: string;
-  try {
-    text = await response.text();
-  } catch {
-    return "(unreadable error body)";
-  }
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed === "object" && parsed !== null) {
-      const message = (parsed as Record<string, unknown>).error;
-      if (typeof message === "string") return message;
-    }
-  } catch {
-    // Non-JSON body — fall through to the raw excerpt.
-  }
-  return text.length > ERROR_BODY_EXCERPT_LENGTH
-    ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-    : text;
-}
 
 /** Wrap a transport-level failure (refused connection, timeout) in the
  *  adapter's typed error so callers get one error surface. */
@@ -203,7 +178,7 @@ export const whisperCppSttFactory: SttBackendFactory = (config) => {
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new WhisperCppSttError(
           `whisper.cpp STT transcription failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },

@@ -45,6 +45,7 @@ import type {
   SttTranscribeResult,
 } from "../stt-backend.js";
 import { registerSttBackend } from "../stt-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io";
 const TRANSCRIBE_URL = `${ELEVENLABS_BASE_URL}/v1/speech-to-text`;
@@ -52,9 +53,6 @@ const VOICES_URL = `${ELEVENLABS_BASE_URL}/v1/voices`;
 
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 5_000;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** HTTP / transport failure of a transcription or probe request. */
 export class ElevenLabsSttError extends Error {
@@ -109,39 +107,6 @@ function parseConfig(config: SttProfileConfig): ElevenLabsSttConfig {
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-/** Read the failure body: ElevenLabs errors are `{"detail": {"status",
- *  "message"}}` (or a bare string detail) — the parsed pair is preferred
- *  over a raw excerpt. */
-async function readErrorExcerpt(response: Response): Promise<string> {
-  let text: string;
-  try {
-    text = await response.text();
-  } catch {
-    return "(unreadable error body)";
-  }
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed === "object" && parsed !== null) {
-      const detail = (parsed as Record<string, unknown>).detail;
-      if (typeof detail === "object" && detail !== null) {
-        const status = (detail as Record<string, unknown>).status;
-        const message = (detail as Record<string, unknown>).message;
-        if (typeof status === "string" && typeof message === "string") {
-          return `${status}: ${message}`;
-        }
-      }
-      if (typeof detail === "string" && detail.trim() !== "") {
-        return detail.trim();
-      }
-    }
-  } catch {
-    // Non-JSON body — fall through to the raw excerpt.
-  }
-  return text.length > ERROR_BODY_EXCERPT_LENGTH
-    ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-    : text;
-}
 
 /** Wrap a transport-level failure (DNS, refused connection, timeout) in the
  *  adapter's typed error so callers get one error surface. */
@@ -239,7 +204,7 @@ export const elevenlabsSttFactory: SttBackendFactory = (config) => {
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new ElevenLabsSttError(
           `ElevenLabs STT transcription failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -259,7 +224,7 @@ export const elevenlabsSttFactory: SttBackendFactory = (config) => {
           signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
         });
         if (!response.ok) {
-          const excerpt = await readErrorExcerpt(response);
+          const excerpt = await readProviderErrorBody(response);
           return {
             ok: false,
             detail: `${response.status}${excerpt ? `: ${excerpt.slice(0, 120)}` : ""}`,

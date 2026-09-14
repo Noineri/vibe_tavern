@@ -47,6 +47,7 @@ import type {
   SttTranscribeResult,
 } from "../stt-backend.js";
 import { registerSttBackend } from "../stt-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com";
 const CHAT_COMPLETIONS_URL = `${NVIDIA_BASE_URL}/v1/chat/completions`;
@@ -54,9 +55,6 @@ const MODELS_URL = `${NVIDIA_BASE_URL}/v1/models`;
 
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 5_000;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** The reference example's instruction — kept verbatim (the model is
  *  instruction-tuned around this exact phrasing). */
@@ -115,37 +113,6 @@ function parseConfig(config: SttProfileConfig): NvidiaSttConfig {
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-/** Read the failure body: NIM errors are OpenAI-style `{"error": {"message"}}`
- *  (sometimes a bare `detail`) — the parsed message is preferred over a raw
- *  excerpt. */
-async function readErrorExcerpt(response: Response): Promise<string> {
-  let text: string;
-  try {
-    text = await response.text();
-  } catch {
-    return "(unreadable error body)";
-  }
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed === "object" && parsed !== null) {
-      const record = parsed as Record<string, unknown>;
-      const error = record.error;
-      if (typeof error === "object" && error !== null) {
-        const message = (error as Record<string, unknown>).message;
-        if (typeof message === "string" && message.trim() !== "") return message.trim();
-      }
-      if (typeof record.detail === "string" && record.detail.trim() !== "") {
-        return record.detail.trim();
-      }
-    }
-  } catch {
-    // Non-JSON body — fall through to the raw excerpt.
-  }
-  return text.length > ERROR_BODY_EXCERPT_LENGTH
-    ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-    : text;
-}
 
 /** Wrap a transport-level failure (DNS, refused connection, timeout) in the
  *  adapter's typed error so callers get one error surface. */
@@ -245,7 +212,7 @@ export const nvidiaSttFactory: SttBackendFactory = (config) => {
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new NvidiaSttError(
           `NVIDIA STT transcription failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -265,7 +232,7 @@ export const nvidiaSttFactory: SttBackendFactory = (config) => {
           signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
         });
         if (!response.ok) {
-          const excerpt = await readErrorExcerpt(response);
+          const excerpt = await readProviderErrorBody(response);
           return {
             ok: false,
             detail: `${response.status}${excerpt ? `: ${excerpt.slice(0, 120)}` : ""}`,

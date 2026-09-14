@@ -38,6 +38,7 @@ import {
   buildHeaders,
   normalizeOpenAiCompatibleBaseUrl,
 } from "../../providers/provider-transport.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 const MODEL_LIST_TIMEOUT_MS = 10_000;
@@ -45,9 +46,6 @@ const PROBE_TIMEOUT_MS = 5_000;
 
 const DEFAULT_MODEL = "whisper-1";
 const FALLBACK_EXT = "bin";
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** HTTP / transport failure of a transcription or model-list request. */
 export class OpenAiCompatSttError extends Error {
@@ -118,17 +116,6 @@ function fileExtension(mime: string): string {
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
 
 function httpErrorMessage(operation: string, response: Response, excerpt: string): string {
   return `OpenAI-compatible STT ${operation} failed with HTTP ${response.status}${
@@ -203,7 +190,7 @@ export const openAiCompatSttFactory: SttBackendFactory = (config) => {
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new OpenAiCompatSttError(
           httpErrorMessage("transcription", response, excerpt),
           { status: response.status },
@@ -240,7 +227,7 @@ export const openAiCompatSttFactory: SttBackendFactory = (config) => {
         "model list",
       );
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new OpenAiCompatSttError(httpErrorMessage("model list", response, excerpt), { status: response.status });
       }
       const parsed: unknown = await response.json().catch(() => null);

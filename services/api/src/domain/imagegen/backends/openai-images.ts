@@ -58,9 +58,7 @@ import {
   buildHeaders,
   normalizeOpenAiCompatibleBaseUrl,
 } from "../../providers/provider-transport.js";
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -196,17 +194,6 @@ function parseConfig(config: ImageGenAdapterConfig): OpenAiImagesConfig {
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
 
 /** Await a fetch call through the injected seam. Transport-level failures
  *  wrap into the adapter's typed error — EXCEPT the caller's own abort,
@@ -366,7 +353,7 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new OpenAiImagesError(
           `OpenAI Images generation failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -429,7 +416,7 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
         "model list",
       );
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new OpenAiImagesError(
           `OpenAI Images model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -447,10 +434,10 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
           signal,
         });
         if (!response.ok) {
-          const excerpt = await readErrorExcerpt(response);
+          const excerpt = await readProviderErrorBody(response);
           return {
             ok: false,
-            detail: `${response.status}${excerpt ? `: ${excerpt.slice(0, 120)}` : ""}`,
+            detail: `${response.status}${excerpt ? `: ${excerpt}` : ""}`,
             status: response.status,
           };
         }
