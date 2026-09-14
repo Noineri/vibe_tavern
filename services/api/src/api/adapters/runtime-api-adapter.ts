@@ -17,6 +17,7 @@ import { RegexAdapter } from "./regex-adapter.js";
 import { TtsAdapter } from "./tts-adapter.js";
 import { NarrationLibraryService } from "../../domain/tts/narration-library.js";
 import { SttAdapter } from "./stt-adapter.js";
+import { ImageGenAdapter } from "./image-gen-adapter.js";
 import { ProviderAdapter } from "./provider-adapter.js";
 import { ProxyAdapter } from "./proxy-adapter.js";
 import { PresetAdapter } from "./preset-adapter.js";
@@ -65,6 +66,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly regex: RegexAdapter;
 	readonly tts: TtsAdapter;
 	readonly stt: SttAdapter;
+	readonly imageGen: ImageGenAdapter;
 	readonly provider: ProviderAdapter;
 	readonly proxy: ProxyAdapter;
 	readonly preset: PresetAdapter;
@@ -111,6 +113,10 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		// stays acyclic (no cross-imports, constructor injection only).
 		const sttAdapter = new SttAdapter(stores);
 		this.stt = sttAdapter;
+		// IG-8: image-gen profiles + generation. The fetch seam stays unset in
+		// production — the backends' global-fetch default applies (the same
+		// seam can carry the proxy-aware provider fetch later, per-backend).
+		this.imageGen = new ImageGenAdapter(stores, assetService);
 		this.chat = new ChatAdapter(
 			stores, sessionRuntime, liveChatOrchestrator,
 			chatSummaryService, providerProfileService, assetService,

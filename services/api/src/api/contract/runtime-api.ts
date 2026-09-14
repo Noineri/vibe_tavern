@@ -1050,6 +1050,54 @@ export interface SttRuntimeApi {
 	draftListSttModels: (body: import("@vibe-tavern/api-contracts").DraftSttModelsInput) => Promise<import("@vibe-tavern/api-contracts").SttModelInfoValue[] | null>;
 }
 
+/** Image-gen profiles + generation routes (IMAGE_GENERATION_PLAN IG-8) —
+ *  the STT route twin plus the generate/gallery arms: profile CRUD with the
+ *  hasStoredApiKey projection, probe/models/samplers through the backend
+ *  registry (imported for their registration side effects in the adapter),
+ *  one-shot generation that persists bytes as flat attachments and appends
+ *  the image message slot, and the gallery-promotion mirror. */
+export interface ImageGenRuntimeApi {
+	listImageGenProfiles: () => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue[]>;
+	getImageGenProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
+	createImageGenProfile: (body: import("@vibe-tavern/api-contracts").CreateImageGenProfileInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue>;
+	updateImageGenProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateImageGenProfileInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
+	deleteImageGenProfile: (id: string) => Promise<void>;
+	/** Probe a saved profile's endpoint/credential. Null = unknown profile
+	 *  (route → 404); failures arrive as `{ok:false}` data, never thrown. */
+	probeImageGenProfile: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenProbeResultValue | null>;
+	/** Live model catalog for a saved profile (picker data source). Null =
+	 *  unknown profile (route → 404). */
+	listImageGenProfileModels: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[] | null>;
+	/** Samplers for a saved profile — capability-gated (A1111-compat only in
+	 *  v1). Null = unknown profile (route → 404); `[]`-with-ok-probe is NOT
+	 *  used here — a backend without the surface returns null too (route →
+	 *  400 "sampler listing not supported", the STT null contract). */
+	listImageGenProfileSamplers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValue[] | null>;
+	/** Shared fetch-by-endpoint model listing over the TRANSIENT draft config
+	 *  (the STT draft twin): the form's current config plus optional
+	 *  `profileId` for stored-key resolution (endpoint-guarded). Null = the
+	 *  backend exposes no model list (route → 400). */
+	draftListImageGenModels: (body: import("@vibe-tavern/api-contracts").DraftImageGenModelsInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[] | null>;
+	/** One-shot generation: resolve the profile + chat, merge the per-mode
+	 *  size presets and default params with the request overrides, generate
+	 *  through the backend adapter, persist the image bytes as flat
+	 *  attachments, and append the image message slot to the chat's active
+	 *  branch. Throws typed ImageGenNotFoundError (profile/chat) and
+	 *  ImageGenValidationError (unknown anchor) for the route ladder. */
+	generateImageGen: (
+		chatId: string,
+		body: import("@vibe-tavern/api-contracts").GenerateImageGenInput,
+		signal?: AbortSignal,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenGenerateResponseValue>;
+	/** Copy a flat attachment into the character's media gallery (server-side
+	 *  copy; the message's attachment stays immutable). Throws
+	 *  ImageGenNotFoundError for a missing asset/character (route → 404). */
+	promoteImageGenAttachmentToGallery: (
+		assetId: string,
+		characterId: string,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenGalleryPromoteResponseValue>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	servicePrompts: ServicePromptRuntimeApi;
@@ -1061,6 +1109,7 @@ export interface RuntimeApi {
 	regex: RegexRuntimeApi;
 	tts: TtsRuntimeApi;
 	stt: SttRuntimeApi;
+	imageGen: ImageGenRuntimeApi;
 	provider: ProviderRuntimeApi;
 	proxy: ProxyRuntimeApi;
 	preset: PresetRuntimeApi;

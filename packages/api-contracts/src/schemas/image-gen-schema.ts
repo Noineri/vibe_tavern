@@ -157,3 +157,135 @@ export const updateImageGenProfileSchema = z.object({
   sortOrder: z.number().optional(),
 });
 export type UpdateImageGenProfileInput = z.infer<typeof updateImageGenProfileSchema>;
+
+// ─── Probe / models / samplers (IG-8) ─────────────────────────────────────
+
+/** Probe outcome — the adapter interface's `ImageGenProbeResult` verbatim
+ *  (failures are data, never thrown across the boundary). */
+export const imageGenProbeResultSchema = z.object({
+  ok: z.boolean(),
+  detail: z.string().optional(),
+  status: z.number().optional(),
+});
+export type ImageGenProbeResultValue = z.infer<typeof imageGenProbeResultSchema>;
+
+/** One live-model-catalog entry — the adapter interface's
+ *  `ImageGenModelInfo` verbatim (aggregator enrichment optional). */
+export const imageGenModelInfoSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  isFree: z.boolean().optional(),
+  description: z.string().optional(),
+});
+export type ImageGenModelInfoValue = z.infer<typeof imageGenModelInfoSchema>;
+
+/** One sampler entry — the adapter interface's `ImageGenSamplerInfo`
+ *  verbatim (A1111-compat `GET /sdapi/v1/samplers` shape). */
+export const imageGenSamplerInfoSchema = z.object({
+  name: z.string(),
+  aliases: z.array(z.string()).optional(),
+});
+export type ImageGenSamplerInfoValue = z.infer<typeof imageGenSamplerInfoSchema>;
+
+/** Body of the shared fetch-by-endpoint model listing (`POST
+ *  /api/image-gen/draft/models`) — the image-gen twin of
+ *  `draftSttModelsSchema`: a TRANSIENT draft request over the CURRENT form
+ *  config (saved or not); `profileId` lets the server inject the stored
+ *  typed-column key when the form's own key is empty and the endpoint
+ *  matches (the same endpoint-guarded reuse rule as the STT draft). */
+export const draftImageGenModelsSchema = z.object({
+  backend: imageGenBackendSchema,
+  /** Loose record (the STT draft twin): the transient request feeds the
+   *  adapter factory's config directly, and the form's just-typed key rides
+   *  INSIDE it — a strict parse would strip the secret before the factory
+   *  ever sees it. */
+  config: z.record(z.string(), z.unknown()),
+  profileId: z.string().optional(),
+});
+export type DraftImageGenModelsInput = z.infer<typeof draftImageGenModelsSchema>;
+
+// ─── Generate (IG-8) ─────────────────────────────────────────────────────
+
+/** Per-request fine-tuning overrides — EVERY field optional (owner's
+ *  hardcoded-parameters ban): a field the caller did not set falls back to
+ *  the profile's per-mode size preset / default params, and the adapter
+ *  sends only what the protocol supports. */
+export const imageGenGenerateOverridesSchema = z.object({
+  /** Per-request model override (the fine-tuning chip); falls back to the
+   *  profile's selected model when absent. */
+  model: z.string().optional(),
+  negativePrompt: z.string().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  steps: z.number().optional(),
+  cfgScale: z.number().optional(),
+  sampler: z.string().optional(),
+  seed: z.number().optional(),
+  clipSkip: z.number().optional(),
+});
+export type ImageGenGenerateOverridesValue = z.infer<typeof imageGenGenerateOverridesSchema>;
+
+/** Body of `POST /api/chats/:chatId/image-gen/generate` — the locked design
+ *  contract: mode + anchor message + fine-tuning overrides. `prompt` is the
+ *  RESOLVED image prompt (IG-8 mechanics; the mode-recipe templates and
+ *  MacroEngine substitution land with the generation-core unit IG-14, which
+ *  reworks how the prompt is produced — the route shape stays). */
+export const generateImageGenSchema = z.object({
+  profileId: z.string(),
+  mode: imageGenerationModeSchema,
+  prompt: z.string().min(1),
+  /** The message the generation was requested from (provenance for the
+   *  slot position + IG-14's context-aware prompt building). */
+  anchorMessageId: z.string().optional(),
+  overrides: imageGenGenerateOverridesSchema.optional(),
+});
+export type GenerateImageGenInput = z.infer<typeof generateImageGenSchema>;
+
+/** One generated image persisted as a flat chat attachment — the slot's
+ *  `attachmentsJson` entry and the wire response item share this shape. */
+export const imageGenGeneratedAttachmentSchema = z.object({
+  id: z.string(),
+  assetId: z.string(),
+  name: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number(),
+});
+export type ImageGenGeneratedAttachmentValue = z.infer<typeof imageGenGeneratedAttachmentSchema>;
+
+/** Generate response — the appended image message slot + the generation
+ *  provenance (mode, profile, model, effective size, resolved seed). The
+ *  bytes never leave the server: images ride the flat asset store and the
+ *  message's attachment entry. */
+export const imageGenGenerateResponseSchema = z.object({
+  messageId: z.string(),
+  mode: imageGenerationModeSchema,
+  profileId: z.string(),
+  model: z.string().optional(),
+  seed: z.number().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  attachments: z.array(imageGenGeneratedAttachmentSchema),
+});
+export type ImageGenGenerateResponseValue = z.infer<typeof imageGenGenerateResponseSchema>;
+
+// ─── Gallery promotion (IG-8) ────────────────────────────────────────────
+
+/** Body of `POST /api/image-gen/attachments/:assetId/promote-to-gallery` —
+ *  the mirror of the character route's `promote-to-attachment` in the
+ *  reversed direction: a flat chat attachment (asset) is copied server-side
+ *  into the character's media gallery; the sent message's attachment stays
+ *  immutable. */
+export const promoteImageGenAttachmentSchema = z.object({
+  characterId: z.string(),
+});
+export type PromoteImageGenAttachmentInput = z.infer<typeof promoteImageGenAttachmentSchema>;
+
+/** Gallery promotion response — the created gallery row identity. */
+export const imageGenGalleryPromoteResponseSchema = z.object({
+  assetRowId: z.string(),
+  characterId: z.string(),
+  ext: z.string(),
+  mimeType: z.string(),
+  order: z.number(),
+});
+export type ImageGenGalleryPromoteResponseValue = z.infer<typeof imageGenGalleryPromoteResponseSchema>;

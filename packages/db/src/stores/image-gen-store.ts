@@ -22,8 +22,18 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 /** Creation input — the full domain shape minus store-generated columns. */
 export type CreateImageGenProfileData = Omit<ImageGenProfile, 'id' | 'createdAt' | 'updatedAt'>;
 
-/** Update patch — every field optional except immutable identity/timestamps. */
-export type UpdateImageGenProfileData = Partial<Omit<ImageGenProfile, 'id' | 'createdAt'>>;
+/** Update patch — every field optional except immutable identity/timestamps.
+ *  The four optional-pointer fields additionally accept `null` (the
+ *  wire's nullable-clear convention, IG-3: `presetId: null` clears the
+ *  pointer; the store body already maps `?? null` onto the column). */
+export type UpdateImageGenProfileData = Partial<
+  Omit<ImageGenProfile, 'id' | 'createdAt' | 'presetId' | 'modelId' | 'llmProviderProfileId' | 'llmModelId'>
+> & {
+  presetId?: string | null;
+  modelId?: string | null;
+  llmProviderProfileId?: string | null;
+  llmModelId?: string | null;
+};
 
 // ─── JSON round-trip helpers (imported-data hygiene) ──────────────────────────
 //
