@@ -1705,3 +1705,61 @@ export const builtinExperienceDismissals = sqliteTable('builtin_experience_dismi
   visualStableKey: text('visual_stable_key').notNull(),
   dismissedAt: text('dismissed_at').notNull(),
 });
+
+// ─── imageGenProfiles (IMAGE_GENERATION_PLAN IG-2) ─────────────────────
+//
+// Named image-generation profiles (design IMAGE_GENERATION_DESIGN) — the
+// Providers-modal "image" category. Standalone entity, same rule as
+// ttsProfiles/sttProfiles (NOT providerProfiles). Columns map 1:1 onto the
+// `ImageGenProfile` domain interface: `backend` is the IMAGE_GEN_BACKENDS
+// protocol slug (selects the server adapter; the frontend preset table maps
+// its presets onto these slugs), `preset_id` is the UI-side preset slug kept
+// for form round-tripping (nullable — Custom has none).
+//
+// IG-1 key rule (ST-1 applied): the API key lives in the typed `api_key`
+// column — never inside JSON blobs; writes strip defensively, the wire layer
+// reports `hasStoredApiKey`. The three JSON columns carry NO secret:
+// default_params_json (ImageGenDefaultParams — all fields optional, the
+// hardcoded-parameters ban means no code ships values), mode_size_presets_json
+// (per-mode width/height), capabilities_json (adapter capability snapshot).
+//
+// No `is_default` pointer: unlike TTS/STT there is no generation-pipeline
+// fallback here — the "active" image-gen profile is a chat-level consumer
+// concern (fine-tuning chip / generation flow), not a store invariant.
+export const imageGenProfiles = sqliteTable('image_gen_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  backend: text('backend').notNull(),  // IMAGE_GEN_BACKENDS slug
+  presetId: text('preset_id'),
+  endpoint: text('endpoint').notNull(),
+  apiKey: text('api_key'),
+  modelId: text('model_id'),
+  defaultParamsJson: text('default_params_json').notNull().default('{}'),
+  modeSizePresetsJson: text('mode_size_presets_json').notNull().default('{}'),
+  llmAssistEnabled: integer('llm_assist_enabled', { mode: 'boolean' }).notNull().default(false),
+  llmProviderProfileId: text('llm_provider_profile_id'),
+  llmModelId: text('llm_model_id'),
+  capabilitiesJson: text('capabilities_json').notNull().default('{}'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  backendIdx: index('idx_image_gen_profiles_backend').on(table.backend),
+}));
+
+// ─── imageGenLinks ────────────────────────────────────────────────────
+//
+// Character-scoped image-gen profile binding (design: a profile may be global
+// or tailored to specific characters) — junction instance of the TTS
+// voice-map pattern (composite PK per profile+target pair, FK cascade on
+// profile delete). No `mode` column: unlike the voice map there is no
+// disable-per-target semantics in the image-gen design.
+export const imageGenLinks = sqliteTable('image_gen_links', {
+  imageGenProfileId: text('image_gen_profile_id').notNull().references(() => imageGenProfiles.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // IMAGE_GEN_TARGET_TYPE slug
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.imageGenProfileId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_image_gen_links_target').on(table.targetType, table.targetId),
+  profileIdx: index('idx_image_gen_links_profile').on(table.imageGenProfileId),
+}));

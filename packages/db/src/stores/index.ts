@@ -82,6 +82,8 @@ export type { CreateTtsProfileData, UpdateTtsProfileData } from './tts-store.js'
 
 export { SttStore } from './stt-store.js';
 export type { CreateSttProfileData, UpdateSttProfileData } from './stt-store.js';
+export { ImageGenStore } from './image-gen-store.js';
+export type { CreateImageGenProfileData, UpdateImageGenProfileData } from './image-gen-store.js';
 
 export { CoauthorModuleStore } from './coauthor-module-store.js';
 export type {

@@ -1153,6 +1153,23 @@ export interface ImageGenProfile {
   updatedAt: Timestamp;
 }
 
+/** Link-target vocabulary for the image-gen profile junction (design: a
+ *  profile may be global or tailored to specific characters). The targetType
+ *  column keeps the TTS voice-map junction shape so widening later (e.g.
+ *  personas) is additive. */
+export const IMAGE_GEN_TARGET_TYPE = {
+  Character: "character",
+} as const;
+export type ImageGenTargetType = (typeof IMAGE_GEN_TARGET_TYPE)[keyof typeof IMAGE_GEN_TARGET_TYPE];
+
+/** Character-scoped image-gen profile binding (`image_gen_links` junction —
+ *  the TTS voice-map pattern). */
+export interface ImageGenProfileLink {
+  imageGenProfileId: ImageGenProfileId;
+  targetType: ImageGenTargetType;
+  targetId: string;
+}
+
 // ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────
 //
 // The pure notation/rolling/arith-validators live in `dice.ts`; these are the

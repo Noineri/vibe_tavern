@@ -512,6 +512,13 @@
       "when": 1789008926804,
       "tag": "0072_light_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1789357278128,
+      "tag": "0073_strange_masked_marvel",
+      "breakpoints": true
     }
   ]
 }
