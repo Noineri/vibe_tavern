@@ -113,10 +113,11 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		// stays acyclic (no cross-imports, constructor injection only).
 		const sttAdapter = new SttAdapter(stores);
 		this.stt = sttAdapter;
-		// IG-8: image-gen profiles + generation. The fetch seam stays unset in
-		// production — the backends' global-fetch default applies (the same
-		// seam can carry the proxy-aware provider fetch later, per-backend).
-		this.imageGen = new ImageGenAdapter(stores, assetService);
+		// IG-8 + IG-15: image-gen profiles + generation, with the LLM-assist
+		// quiet-call seam wired to the provider profile service. The fetch seam
+		// stays unset in production — the backends' global-fetch default applies
+		// (the same seam can carry the proxy-aware provider fetch later, per-backend).
+		this.imageGen = new ImageGenAdapter(stores, assetService, undefined, { providerProfiles: providerProfileService });
 		this.chat = new ChatAdapter(
 			stores, sessionRuntime, liveChatOrchestrator,
 			chatSummaryService, providerProfileService, assetService,

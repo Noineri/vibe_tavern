@@ -85,6 +85,7 @@ const FIELD_LABEL_KEYS: Partial<Record<ServicePromptFieldKey, string>> = {
 	image_scene_illustration: "promptManager.servicePrompts.field.image_scene_illustration",
 	image_free: "promptManager.servicePrompts.field.image_free",
 	image_negative: "promptManager.servicePrompts.field.image_negative",
+	image_assist: "promptManager.servicePrompts.field.image_assist",
 };
 
 function truncateForPlaceholder(value: string): string {

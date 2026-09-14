@@ -57,6 +57,7 @@ import type { AssetService } from "../../domain/asset/asset-service.js";
 import {
   buildImageGenPrompts,
   ImageGenModeValidationError,
+  type ImageGenAssistRunner,
 } from "../../domain/chat/imagegen-modes.js";
 import type {
   ImageGenAdapterConfig,
@@ -65,6 +66,13 @@ import type {
 import { IMAGE_GENERATION_CLOUD_TIMEOUT_MS, withImageGenTimeoutMs } from "../../domain/imagegen/imagegen-backend.js";
 import { TEST_CHAT_TIMEOUT_MS } from "../../domain/providers/provider-transport.js";
 import { createImageGenBackend } from "../../domain/imagegen/imagegen-registry.js";
+import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
+import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
+import {
+  providerRequiresApiKey,
+  resolveEffectiveSummaryProfile,
+} from "../../domain/chat/summary-generation-seam.js";
+import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
 
 // Import backend modules for their side-effect registrations (the
@@ -94,6 +102,26 @@ export class ImageGenValidationError extends Error {
     super(message);
     this.name = "ImageGenValidationError";
   }
+}
+
+// ─── IG-15 LLM-assist quiet-call seam ───────────────────────────────────────
+
+/** The provider surface the assist runner needs — the narrow slice of
+ *  ProviderProfileService (duck-typed so tests inject a stub, tier T1). */
+export interface ImageGenAssistProviderLookup {
+  getProviderProfile(id: string): Promise<StoredProviderProfileRecord | null>;
+  getProviderModelSettings(
+    providerProfileId: string,
+    modelId: string,
+  ): Promise<{ settings: Record<string, unknown> | null } | null>;
+}
+
+/** Quiet-call dependencies (constructor DI seam): the provider lookup + the
+ *  executor (defaulting to the real nonstreamingProviderExecute — the
+ *  chat-summary constructor pattern). */
+export interface ImageGenAssistDeps {
+  providerProfiles: ImageGenAssistProviderLookup;
+  execute?: (input: ProviderExecutionInput) => ReturnType<typeof nonstreamingProviderExecute>;
 }
 
 // ─── Wire projections ────────────────────────────────────────────────────────
@@ -169,6 +197,10 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
      *  image download inside the adapters) goes through it; production passes
      *  nothing and the adapters' global-fetch default applies. */
     private readonly fetchOverride?: typeof fetch,
+    /** IG-15 quiet-call seam (tier T1): the LLM profile lookup + executor the
+     *  assist pre-pass uses. Absent = assist never fires (the generate path
+     *  treats an enabled assist with no deps as a configuration error). */
+    private readonly assistDeps?: ImageGenAssistDeps,
   ) {}
 
   // ── Profile CRUD ────────────────────────────────────────────────────────
@@ -345,6 +377,21 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const seed = overrides.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? defaults.clipSkip;
 
+    // IG-15 assist runner: built when the profile's assist is ENABLED and
+    // BOTH picks exist (absent picks = assist inert — bit-identical legacy
+    // behavior, zero extra calls). Resolution is LAZY inside the runner so a
+    // free-mode or chip-edit generation (assist exempt by design) never
+    // touches the LLM profile.
+    let assist: ImageGenAssistRunner | undefined;
+    const assistProfileId = profile.llmProviderProfileId ?? "";
+    const assistModelId = profile.llmModelId ?? "";
+    if (profile.llmAssistEnabled && assistProfileId !== "" && assistModelId !== "") {
+      if (this.assistDeps === undefined) {
+        throw new ImageGenValidationError("LLM assist is enabled but the assistant seam is unavailable");
+      }
+      assist = this.makeAssistRunner(this.assistDeps, assistProfileId, assistModelId, signal);
+    }
+
     // IG-14 mode assembly: the prompt the design's generation flow builds —
     // Images-tab template + chat-context macros (free mode wraps the caller
     // text; a caller prompt on non-free modes is the chip's verbatim edit).
@@ -353,7 +400,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // when present (trimmed-empty = the user cleared it — send nothing).
     let prompts: { prompt: string; negativePrompt: string };
     try {
-      prompts = await buildImageGenPrompts(this.stores, chat, body.mode, body.prompt);
+      prompts = await buildImageGenPrompts(this.stores, chat, body.mode, body.prompt, assist);
     } catch (error) {
       if (error instanceof ImageGenModeValidationError) {
         throw new ImageGenValidationError(error.message);
@@ -458,6 +505,38 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     };
   };
 
+  /** IG-15: the quiet single-shot runner for one generation. Mirrors the
+   *  chat-summary resolution ladder (profile → API-key check → effective
+   *  profile with the bound-model overlay merge → execute with the route
+   *  signal); failures PROPAGATE — the generation fails with the normalized
+   *  provider error rather than silently skipping the assist. */
+  private makeAssistRunner(
+    deps: ImageGenAssistDeps,
+    providerProfileId: string,
+    model: string,
+    signal: AbortSignal | undefined,
+  ): ImageGenAssistRunner {
+    const providerProfiles = deps.providerProfiles;
+    const execute = deps.execute ?? nonstreamingProviderExecute;
+    return async (system, user) => {
+      const profile = await providerProfiles.getProviderProfile(providerProfileId);
+      if (!profile) {
+        throw new ImageGenNotFoundError(`LLM provider profile '${providerProfileId}' not found`);
+      }
+      if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
+        throw new ImageGenValidationError("The LLM assist provider has no saved API key.");
+      }
+      const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, providerProfiles);
+      const result = await execute({
+        profile: effectiveProfile,
+        model,
+        prompt: assistPromptPayload(system, user),
+        ...(signal !== undefined ? { signal } : {}),
+      });
+      return result.text;
+    };
+  }
+
   // ── Gallery promotion (attachment → character gallery) ──────────────────
 
   promoteImageGenAttachmentToGallery = async (
@@ -551,7 +630,28 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   };
 }
 
-// ─── MIME recovery for asset → gallery copy ──────────────────────────────────
+/** Minimal executor prompt for the IG-15 quiet call: a system+user pair in
+ *  the AssemblePromptResponse shape `nonstreamingProviderExecute` consumes
+ *  (toSdkMessages reads finalPayload.messages). All the pipeline-only
+ *  fields carry their empty shapes — this is a single-shot prompt-writing
+ *  call, not a chat turn. */
+function assistPromptPayload(system: string, user: string): AssemblePromptResponse {
+  return {
+    layers: [],
+    tokenAccounting: {},
+    activatedLoreEntries: [],
+    scriptInjections: [],
+    retrievedMemories: [],
+    finalPayload: {
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    },
+  };
+}
+
+// ─── MIME recovery for asset → gallery copy ──────────────────────────────
 
 /** `AssetService.loadBuffer` returns raw bytes with no MIME memory; the flat
  *  asset file carries its type only in the filename extension the loader

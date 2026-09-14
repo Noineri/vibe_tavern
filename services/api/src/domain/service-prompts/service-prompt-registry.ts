@@ -38,12 +38,13 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   copilot_user_flow: "experience-copilot/user-flow.md",
   interactive_rules: "interactive-rules.md",
   interactive_visual: "interactive-visual.md",
-  // images (7) — per-mode base templates + the shared negative default
-  // (IG-13). Plain prompt prose, no markdown headers: unlike the LLM system
-  // prompts above, these files are prompt PAYLOADS for image models — a
-  // header line would be sent verbatim and waste prompt budget. The negative
-  // default is a bare tag list for the same reason (it is passed as the
-  // negative-prompt string when the backend supports negatives).
+  // images (8) — per-mode base templates + the shared negative default
+  // (IG-13) + the LLM-assist quiet pre-pass instruction (IG-15). Plain
+  // prompt prose, no markdown headers: unlike the LLM system prompts
+  // above, the mode files are prompt PAYLOADS for image models — a header
+  // line would be sent verbatim and waste prompt budget; the negative
+  // default is a bare tag list for the same reason. image_assist is an LLM
+  // system instruction but keeps the same convention (short prose).
   image_scene_background: "image-scene-background.md",
   image_portrait: "image-portrait.md",
   image_character: "image-character.md",
@@ -51,6 +52,7 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   image_scene_illustration: "image-scene-illustration.md",
   image_free: "image-free.md",
   image_negative: "image-negative.md",
+  image_assist: "image-assist.md",
 } as const satisfies Record<ServicePromptFieldKey, string>;
 
 export function getServicePromptAssetFile(key: ServicePromptFieldKey): string {

@@ -93,6 +93,22 @@ mock.module("../../../../api/image-gen-api.js", () => ({
   listImageGenSamplers: listSamplersApi,
 }));
 
+// IG-15: the LLM-assist pickers fetch the LLM provider list + model catalog
+// through provider-api — mocked with the `...real` spread (leak-safe; only
+// the two functions the assist section consumes are overridden). Partial
+// records (id/name/defaultModel) — the section maps exactly those fields
+// (the ExperienceSetupModal.test.tsx double pattern).
+const realProviderApi = await import("../../../../api/provider-api.js");
+const listLlmProfilesApi = mock(async (): Promise<Array<{ id: string; name: string; defaultModel: string | null }>> => []);
+const fetchLlmModelsApi = mock(
+  async (_profileId: string): Promise<{ models: Array<{ id: string; label?: string }> }> => ({ models: [] }),
+);
+mock.module("../../../../api/provider-api.js", () => ({
+  ...realProviderApi,
+  listProviderProfiles: listLlmProfilesApi,
+  fetchProviderProfileModels: fetchLlmModelsApi,
+}));
+
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { ImageGenPane } = await import("./ImageGenPane.js");
 const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
@@ -240,6 +256,8 @@ afterEach(async () => {
     addFavoriteApi,
     removeFavoriteApi,
     listSamplersApi,
+    listLlmProfilesApi,
+    fetchLlmModelsApi,
   ]) {
     m.mockClear();
   }
@@ -534,7 +552,9 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
   it("the bind toggle renders ONLY when a model is selected", async () => {
     const view = render(<ImageGenPane imageGen={makeImageGen({ form: makeForm({ modelId: null }) })} />);
     await waitFor(() => expect(view.getByTestId("image-gen-params-section")).toBeTruthy());
-    expect(view.queryByRole("switch")).toBeNull();
+    // The BIND toggle's section must hold no switch without a model (the
+    // assist toggle lives in its own section and is always present — IG-15).
+    expect(view.getByTestId("image-gen-params-section").querySelector('[role="switch"]')).toBeNull();
   });
 });
 
@@ -705,5 +725,100 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
     await waitFor(() => expect(removeFavoriteApi).toHaveBeenCalledTimes(1));
     expect((removeFavoriteApi.mock.calls[0] as unknown[])).toEqual(["p1", "sd_xl"]);
     await waitFor(() => expect(view.getByTestId("image-gen-star-model")).toBeTruthy());
+  });
+});
+
+describe("ImageGenPane — LLM assist (IG-15)", () => {
+  function Harness({ hookRef }: { hookRef: { current: ImageGenHook | null } }) {
+    const hook = useImageProfiles();
+    hookRef.current = hook;
+    return <ImageGenPane imageGen={hook} />;
+  }
+
+  it("disabled by default: the section renders, no pickers, no provider fetch", async () => {
+    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-assist-section")).toBeTruthy());
+    expect(view.getByRole("switch", { name: "image_gen_assist_title" }).getAttribute("aria-checked")).toBe("false");
+    expect(view.queryByTestId("image-gen-assist-provider")).toBeNull();
+    expect(view.queryByTestId("image-gen-assist-model")).toBeNull();
+    expect(listLlmProfilesApi).not.toHaveBeenCalled();
+  });
+
+  it("toggling on patches the form with llmAssistEnabled", async () => {
+    const setForm = mock(() => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-assist-section")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(view.getByRole("switch", { name: "image_gen_assist_title" }));
+    });
+    expect(setForm).toHaveBeenCalledWith({ llmAssistEnabled: true });
+  });
+
+  it("enabled: picking a provider RESETS the model pick (a model from another provider is meaningless)", async () => {
+    listLlmProfilesApi.mockResolvedValue([
+      { id: "llm-p1", name: "Writer", defaultModel: "w-default" },
+      { id: "llm-p2", name: "Poet", defaultModel: null },
+    ]);
+    const setForm = mock(() => {});
+    const view = render(
+      <ImageGenPane imageGen={makeImageGen({ form: makeForm({ llmAssistEnabled: true }), setForm })} />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-assist-provider")).toBeTruthy());
+    await waitFor(() => expect(listLlmProfilesApi).toHaveBeenCalled());
+    await pickOption(view, "image-gen-assist-provider", "Writer");
+    expect(setForm).toHaveBeenCalledWith({ llmProviderProfileId: "llm-p1", llmModelId: null });
+  });
+
+  it("enabled with a provider picked: its model catalog loads and a pick patches llmModelId", async () => {
+    listLlmProfilesApi.mockResolvedValue([{ id: "llm-p1", name: "Writer", defaultModel: "w-default" }]);
+    fetchLlmModelsApi.mockResolvedValue({ models: [{ id: "w-default", label: "Writer Default" }, { id: "w-2", label: "Writer Two" }] });
+    const setForm = mock(() => {});
+    const view = render(
+      <ImageGenPane
+        imageGen={
+          makeImageGen({
+            form: makeForm({ llmAssistEnabled: true, llmProviderProfileId: "llm-p1" }),
+            setForm,
+          })
+        }
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-assist-model")).toBeTruthy());
+    await waitFor(() => expect(fetchLlmModelsApi).toHaveBeenCalledWith("llm-p1"));
+    await pickOption(view, "image-gen-assist-model", "Writer Two");
+    expect(setForm).toHaveBeenCalledWith({ llmModelId: "w-2" });
+  });
+
+  it("round-trip (real hook): toggle + picks ride the profile PATCH on Save", async () => {
+    apiStore = [makeRecord({ id: "p1" })];
+    listLlmProfilesApi.mockResolvedValue([{ id: "llm-p1", name: "Writer", defaultModel: null }]);
+    fetchLlmModelsApi.mockResolvedValue({ models: [{ id: "w-2", label: "Writer Two" }] });
+    const hookRef: { current: ImageGenHook | null } = { current: null };
+    const view = render(<Harness hookRef={hookRef} />);
+    await waitFor(() => expect(hookRef.current!.profiles.length).toBe(1));
+    await act(async () => {
+      hookRef.current!.select("p1");
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-pane")).toBeTruthy());
+
+    // Toggle on, pick the provider (form state — the REAL hook now), then a model.
+    await act(async () => {
+      fireEvent.click(view.getByRole("switch", { name: "image_gen_assist_title" }));
+    });
+    await waitFor(() => expect(listLlmProfilesApi).toHaveBeenCalled());
+    await pickOption(view, "image-gen-assist-provider", "Writer");
+    await waitFor(() => expect(view.getByTestId("image-gen-assist-provider").textContent).toContain("Writer"));
+    await waitFor(() => expect(fetchLlmModelsApi).toHaveBeenCalledWith("llm-p1"));
+    await pickOption(view, "image-gen-assist-model", "Writer Two");
+
+    await act(async () => {
+      await hookRef.current!.save();
+    });
+    expect(updateProfileApi).toHaveBeenCalledTimes(1);
+    const patch = (updateProfileApi.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+    expect(patch.llmAssistEnabled).toBe(true);
+    expect(patch.llmProviderProfileId).toBe("llm-p1");
+    expect(patch.llmModelId).toBe("w-2");
+    expect(hookRef.current!.error).toBeNull();
   });
 });

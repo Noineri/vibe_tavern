@@ -28,7 +28,10 @@ import { createStoreContainer, ServicePromptProfileStore, UiSettingsStore, type 
 import { IMAGE_GEN_BACKENDS, type ChatId } from "@vibe-tavern/domain";
 
 import { AssetService } from "../src/domain/asset/asset-service.js";
-import { ImageGenAdapter } from "../src/api/adapters/image-gen-adapter.js";
+import { ImageGenAdapter, type ImageGenAssistDeps } from "../src/api/adapters/image-gen-adapter.js";
+import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { createImageGenRoutes } from "../src/api/routes/image-gen.js";
 import { openRouterImageGenFactory } from "../src/domain/imagegen/backends/openrouter.js";
 import { openAiImagesFactory } from "../src/domain/imagegen/backends/openai-images.js";
@@ -74,14 +77,18 @@ interface AppFixture {
   dataRoot: string;
 }
 
-/** Build the real stack (disk DB + assets) around an optional fetch double. */
-async function makeApp(transport?: (input: FetchArgs[0], init?: FetchArgs[1]) => Promise<Response>): Promise<AppFixture> {
+/** Build the real stack (disk DB + assets) around an optional fetch double
+ *  and optional IG-15 assist deps (the quiet-call DI seam). */
+async function makeApp(
+  transport?: (input: FetchArgs[0], init?: FetchArgs[1]) => Promise<Response>,
+  assistDeps?: ImageGenAssistDeps,
+): Promise<AppFixture> {
   const dataRoot = await mkdtemp(join(tmpdir(), "vt-imagegen-routes-"));
   const assetsDir = join(dataRoot, "assets");
   await mkdir(assetsDir, { recursive: true });
   const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
   const assetService = new AssetService(assetsDir, stores.content);
-  const adapter = new ImageGenAdapter(stores, assetService, transport);
+  const adapter = new ImageGenAdapter(stores, assetService, transport, assistDeps);
   const app = createImageGenRoutes(adapter);
   return { app, stores, assetService, dataRoot };
 }
@@ -104,6 +111,9 @@ interface ProfileSeed {
   modelId?: string;
   defaultParams?: Record<string, number | string>;
   modeSizePresets?: Record<string, { width?: number; height?: number }>;
+  llmAssistEnabled?: boolean;
+  llmProviderProfileId?: string;
+  llmModelId?: string;
 }
 
 /** Create a profile through the route (exercises the create schema too). */
@@ -119,6 +129,9 @@ async function seedProfile(app: ReturnType<typeof createImageGenRoutes>, seed: P
       ...(seed.modelId !== undefined ? { modelId: seed.modelId } : {}),
       defaultParams: seed.defaultParams ?? {},
       modeSizePresets: seed.modeSizePresets ?? {},
+      ...(seed.llmAssistEnabled !== undefined ? { llmAssistEnabled: seed.llmAssistEnabled } : {}),
+      ...(seed.llmProviderProfileId !== undefined ? { llmProviderProfileId: seed.llmProviderProfileId } : {}),
+      ...(seed.llmModelId !== undefined ? { llmModelId: seed.llmModelId } : {}),
       // The registry's static snapshot — exactly what the Providers editor
       // persists (the create schema requires the flags object).
       capabilities: IMAGE_GEN_BACKEND_CAPABILITIES[(seed.backend ?? IMAGE_GEN_BACKENDS.OpenRouter) as keyof typeof IMAGE_GEN_BACKEND_CAPABILITIES],
@@ -583,6 +596,24 @@ describe("image-gen routes — generate (image message slot)", () => {
   });
 });
 
+/** Capture every wire prompt a generation sends (one entry per call). */
+function promptCapturingTransport(sent: string[]): (input: FetchArgs[0], init?: FetchArgs[1]) => Promise<Response> {
+  return async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/chat/completions")) {
+      const wire = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
+      sent.push(wire.messages[0]!.content);
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x31)}` } }] } }],
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response(PNG_BYTES(0x31), { status: 200, headers: { "Content-Type": "image/png" } });
+  };
+}
+
 describe("image-gen routes — mode assembly (IG-14)", () => {
   // The design's six recipes built through the REAL stack — only the
   // transport is a double (the file's T1 seam): the request travels the
@@ -622,24 +653,6 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
       content: LAST_MSG,
     });
     return { app: base.app, stores: base.stores, chatId: chat.id, charId: char.id };
-  }
-
-  /** Capture every wire prompt a generation sends (one entry per call). */
-  function promptCapturingTransport(sent: string[]): (input: FetchArgs[0], init?: FetchArgs[1]) => Promise<Response> {
-    return async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/chat/completions")) {
-        const wire = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
-        sent.push(wire.messages[0]!.content);
-        return new Response(
-          JSON.stringify({
-            choices: [{ message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x31)}` } }] } }],
-          }),
-          { status: 200 },
-        );
-      }
-      return new Response(PNG_BYTES(0x31), { status: 200, headers: { "Content-Type": "image/png" } });
-    };
   }
 
   test("six modes build mode-correct prompts on the wire; no unresolved macros survive", async () => {
@@ -1062,5 +1075,324 @@ describe("image-gen routes — model favorites + per-model settings (IG-12b)", (
       body: JSON.stringify({ modeSizePresets: { "not-a-mode": { width: 512 } } }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("image-gen routes — generate LLM assist (IG-15)", () => {
+  // The quiet pre-pass: assist deps injected through the constructor DI
+  // seam (the adapter's ImageGenAssistDeps), the image backend still behind
+  // the transport double — the executor double captures the (system, user,
+  // model, profileId, signal) the runner assembles and returns a canned
+  // refinement; the wire prompt then proves the refinement fed the macro
+  // pass. Everything else (route → adapter → mode module → resolver →
+  // MacroEngine → backend) is the REAL stack.
+
+  /** Full StoredProviderProfileRecord — the runner reads providerPreset /
+   *  apiKey / defaultModel / bindPerModel; the rest satisfy the type. */
+  function makeLlmProfile(over: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
+    return {
+      id: "llm1",
+      name: "Writer LLM",
+      providerPreset: "openaiCompat",
+      coauthorTransport: "chat_completions",
+      generationMode: "chat",
+      endpoint: "http://localhost:9000/v1",
+      apiKey: "sk-llm",
+      defaultModel: "writer-default",
+      contextBudget: null,
+      pinContextBudget: false,
+      tokenPadding: 0,
+      bindPerModel: false,
+      modelFreeOnly: false,
+      modelGroupByOwner: false,
+      maxTokens: 2048,
+      temperature: 1,
+      topP: 1,
+      topK: 0,
+      minP: 0,
+      topA: 0,
+      typicalP: 1,
+      tfsZ: 1,
+      adaptiveTarget: -1,
+      adaptiveDecay: 0,
+      dynatempRange: 0,
+      dynatempExponent: 1,
+      topNSigma: 0,
+      smoothingFactor: 0,
+      repeatLastN: 0,
+      mirostat: 0,
+      mirostatTau: 5,
+      mirostatEta: 0.1,
+      dryMultiplier: 0,
+      dryBase: 1.75,
+      dryAllowedLength: 2,
+      drySequenceBreakers: [],
+      dryPenaltyLastN: 0,
+      bannedStrings: [],
+      xtcThreshold: 0.1,
+      xtcProbability: 0,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      repetitionPenalty: 1,
+      stopSequences: [],
+      logitBias: [],
+      seed: null,
+      reasoningEffort: "auto",
+      showReasoning: false,
+      streamResponse: true,
+      customSamplers: false,
+      proxyMode: "inherit",
+      proxyId: null,
+      isActive: false,
+      visionModel: null,
+      samplerSetId: null,
+      generationFormat: null,
+      createdAt: "0",
+      updatedAt: "0",
+      ...over,
+    };
+  }
+
+  /** Every quiet-call input the runner assembled, in call order. */
+  interface CapturedExecuteCall {
+    system: string;
+    user: string;
+    model: string;
+    profileId: string;
+    signal: AbortSignal | undefined;
+  }
+
+  interface AssistFixture {
+    calls: CapturedExecuteCall[];
+    deps: ImageGenAssistDeps;
+    /** Reconfigure what the next execute call returns / throws. */
+    setExecuteBehavior: (behavior: { text?: string; error?: Error }) => void;
+  }
+
+  function makeAssistDeps(profiles: Record<string, StoredProviderProfileRecord>): AssistFixture {
+    const calls: CapturedExecuteCall[] = [];
+    let behavior: { text?: string; error?: Error } = { text: "refined" };
+    const deps: ImageGenAssistDeps = {
+      providerProfiles: {
+        getProviderProfile: async (id: string) => profiles[id] ?? null,
+        getProviderModelSettings: async () => null,
+      },
+      execute: async (input: ProviderExecutionInput) => {
+        const messages = (input.prompt.finalPayload as { messages: Array<{ role: string; content: string }> }).messages;
+        calls.push({
+          system: messages[0]!.content,
+          user: messages[1]!.content,
+          model: input.model,
+          profileId: input.profile.id,
+          signal: input.signal,
+        });
+        if (behavior.error !== undefined) throw behavior.error;
+        return {
+          text: behavior.text ?? "",
+          providerResponse: { mode: "nonstream" as const, steps: [] },
+        };
+      },
+    };
+    return { calls, deps, setExecuteBehavior: (next) => { behavior = next; } };
+  }
+
+  /** The assist scene: character + persona + last message (the digest
+   *  sources) over the prompt-capturing transport — returns the app plus a
+   *  `sent` array the tests read the final wire prompt from. */
+  async function makeAssistScene(
+    assist: AssistFixture,
+  ): Promise<{ app: ReturnType<typeof createImageGenRoutes>; chatId: string; sent: string[] }> {
+    const sent: string[] = [];
+    const base = await makeApp(promptCapturingTransport(sent), assist.deps);
+    const char = await base.stores.characters.create({ name: "Seraphine", description: "silver-haired tavern keeper" });
+    const persona = await base.stores.personas.create({ name: "Alex", description: "wandering bard" });
+    const chat = await base.stores.chats.createChat({ characterId: char.id, personaId: persona.id, title: "assist", promptPresetId: null });
+    await base.stores.messages.addMessage({
+      chatId: chat.id,
+      branchId: chat.activeBranchId as string,
+      role: "user",
+      authorType: "user",
+      content: "The tavern door creaks open.",
+    });
+    return { app: base.app, chatId: chat.id, sent };
+  }
+
+  const generate = (app: ReturnType<typeof createImageGenRoutes>, chatId: string, body: Record<string, unknown>) =>
+    app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("disabled by default: no quiet call, the wire prompt is the built template", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "or-model" });
+    const res = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(res.status).toBe(200);
+    expect(assist.calls).toHaveLength(0);
+    expect(scene.sent[0]).toContain("Seraphine");
+  });
+
+  test("toggle on + picks set: the quiet call writes the prompt; residual macros in its output still resolve", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    // The refinement deliberately leaves a {{char}} placeholder — the design
+    // order is "the model writes the image prompt, THEN macros substitute".
+    assist.setExecuteBehavior({ text: "A windswept portrait of {{char}}, rain on silver hair." });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const res = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(res.status).toBe(200);
+    expect(assist.calls).toHaveLength(1);
+    const call = assist.calls[0]!;
+    // The quiet call rode the profile's saved LLM picks.
+    expect(call.profileId).toBe("llm1");
+    expect(call.model).toBe("writer-model");
+    // System = the image_assist built-in instruction; user = digest + RAW
+    // template (placeholders intact — the model resolves them against the
+    // digest).
+    expect(call.system).toContain("image-generation model");
+    expect(call.user).toContain("Seraphine");
+    expect(call.user).toContain("silver-haired tavern keeper");
+    expect(call.user).toContain("The tavern door creaks open.");
+    expect(call.user).toContain("{{char}}");
+    // The refinement is the wire prompt, with its residual macro resolved.
+    expect(scene.sent[0]).toContain("A windswept portrait of Seraphine, rain on silver hair.");
+    expect(scene.sent[0]).not.toContain("{{");
+  });
+
+  test("toggle on but picks unset: assist inert — bit-identical legacy behavior, zero calls", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "or-model", llmAssistEnabled: true });
+    const res = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(res.status).toBe(200);
+    expect(assist.calls).toHaveLength(0);
+  });
+
+  test("verbatim contracts exempt: free payload and chip edit never hit the quiet call", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const free = await generate(scene.app, scene.chatId, { profileId: id, mode: "free", prompt: "raw caller direction" });
+    expect(free.status).toBe(200);
+    const chip = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait", prompt: "chip's built edit" });
+    expect(chip.status).toBe(200);
+    expect(assist.calls).toHaveLength(0);
+    expect(scene.sent[0]).toContain("raw caller direction");
+    expect(scene.sent[1]).toBe("chip's built edit");
+  });
+
+  test("quiet-call failure FAILS the generation with the normalized error (no silent fallthrough)", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteBehavior({
+      error: new ProviderExecutionError("upstream 500: boom", "upstream", "openaiCompat", { statusCode: 500 }),
+    });
+    let imageTransportCalled = false;
+    const base = await makeApp(
+      async () => {
+        imageTransportCalled = true;
+        throw new TypeError("image backend must not be called");
+      },
+      assist.deps,
+    );
+    const char = await base.stores.characters.create({ name: "Seraphine", description: "silver" });
+    const chat = await base.stores.chats.createChat({ characterId: char.id, personaId: null, title: "x", promptPresetId: null });
+    const id = await seedProfile(base.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const res = await base.app.request(`/api/chats/${chat.id}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("LLM assist failed");
+    expect(body.error).toContain("upstream 500: boom");
+    expect(imageTransportCalled).toBe(false);
+  });
+
+  test("empty assist output → 400 (honest failure, not an empty image prompt)", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteBehavior({ text: "   " });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const res = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("empty");
+  });
+
+  test("dangling LLM profile id → 404; keyless key-required provider → 400", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const dangling = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "gone",
+      llmModelId: "writer-model",
+    });
+    const gone = await generate(scene.app, scene.chatId, { profileId: dangling, mode: "portrait" });
+    expect(gone.status).toBe(404);
+    expect(((await gone.json()) as { error: string }).error).toContain("LLM provider profile");
+
+    const keyless = makeAssistDeps({ llm1: makeLlmProfile({ apiKey: "" }) });
+    const scene2 = await makeAssistScene(keyless);
+    const id2 = await seedProfile(scene2.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const noKey = await generate(scene2.app, scene2.chatId, { profileId: id2, mode: "portrait" });
+    expect(noKey.status).toBe(400);
+    expect(((await noKey.json()) as { error: string }).error).toContain("API key");
+  });
+
+  test("the route's abort signal threads into the quiet call", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const controller = new AbortController();
+    const res = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+      signal: controller.signal,
+    });
+    expect(res.status).toBe(200);
+    expect(assist.calls).toHaveLength(1);
+    expect(assist.calls[0]!.signal).toBe(controller.signal);
   });
 });

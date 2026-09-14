@@ -33,6 +33,7 @@ import * as schemas from "@vibe-tavern/api-contracts";
 
 import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
 import { ImageGenNotFoundError, ImageGenTimeoutError, ImageGenValidationError } from "../adapters/image-gen-adapter.js";
+import { ProviderExecutionError } from "../../infrastructure/ai/provider-execution-types.js";
 import { ImageGenBackendNotRegisteredError, ImageGenUnknownBackendError } from "../../domain/imagegen/imagegen-registry.js";
 import {
   OpenRouterImageGenConfigError,
@@ -183,6 +184,13 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
           }
           if (error instanceof ImageGenTimeoutError) {
             return c.json({ error: error.message }, 504);
+          }
+          // IG-15: the LLM-assist quiet call failed upstream — the executor
+          // already normalized the message at its boundary; surface it with
+          // the route's `{error: string}` shape (same status the app-level
+          // handler uses for ProviderExecutionError).
+          if (error instanceof ProviderExecutionError) {
+            return c.json({ error: `LLM assist failed: ${error.message}` }, 502);
           }
           const mapped = backendErrorResponse(error);
           if (mapped) return c.json(mapped.body, mapped.status);

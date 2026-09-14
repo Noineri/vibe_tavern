@@ -36,6 +36,7 @@ export const servicePromptOverridesSchema = z
     image_scene_illustration: z.string().optional(),
     image_free: z.string().optional(),
     image_negative: z.string().optional(),
+    image_assist: z.string().optional(),
   })
   .strict();
 export type ServicePromptOverrides = z.infer<typeof servicePromptOverridesSchema>;

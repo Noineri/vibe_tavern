@@ -46,8 +46,10 @@ export const SERVICE_PROMPT_FIELDS = {
   copilot_user_flow: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_rules: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_visual: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
-  // images (7) — one template per v1 generation mode + the shared negative
-  // default (IMAGE_GENERATION_PLAN IG-13; mode intent mirrors the design doc)
+  // images (8) — one template per v1 generation mode + the shared negative
+  // default + the LLM-assist instruction (IMAGE_GENERATION_PLAN IG-13/IG-15;
+  // mode intent mirrors the design doc). image_assist is the quiet pre-pass
+  // SYSTEM prompt (an LLM instruction, unlike the mode payloads below).
   image_scene_background: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
   image_portrait: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
   image_character: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
@@ -55,6 +57,7 @@ export const SERVICE_PROMPT_FIELDS = {
   image_scene_illustration: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
   image_free: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
   image_negative: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
+  image_assist: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
 } as const;
 
 export type ServicePromptFieldKey = keyof typeof SERVICE_PROMPT_FIELDS;
@@ -90,4 +93,5 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "image_scene_illustration",
   "image_free",
   "image_negative",
+  "image_assist",
 ] as const satisfies readonly ServicePromptFieldKey[];
