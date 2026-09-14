@@ -186,6 +186,8 @@ export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfi
 export type { TtsBackendValue, TtsTargetTypeValue, TtsProfileValue, CreateTtsProfileInput, UpdateTtsProfileInput, SetTtsLinksInput, GenerateTtsInput, DraftTtsVoicesInput, DraftTtsPreviewInput, DraftTtsModelsInput, LocalDockerStatus, RevealNarrationInput } from "./tts-schema.js";
 export { sttBackendSchema, sttProfileConfigSchema, sttProfileSchema, createSttProfileSchema, updateSttProfileSchema, sttModelInfoSchema, draftSttModelsSchema } from "./stt-schema.js";
 export type { SttBackendValue, SttProfileConfigValue, SttProfileValue, CreateSttProfileInput, UpdateSttProfileInput, SttModelInfoValue, DraftSttModelsInput } from "./stt-schema.js";
+export { imageGenBackendSchema, imageGenerationModeSchema, imageGenSizeSupportSchema, imageGenCapabilityFlagsSchema, imageGenDefaultParamsSchema, imageGenModeSizePresetSchema, imageGenModeSizePresetsSchema, imageGenProfileSchema, createImageGenProfileSchema, updateImageGenProfileSchema } from "./image-gen-schema.js";
+export type { ImageGenBackendValue, ImageGenerationModeValue, ImageGenSizeSupportValue, ImageGenCapabilityFlagsValue, ImageGenDefaultParamsValue, ImageGenModeSizePresetValue, ImageGenModeSizePresetsValue, ImageGenProfileValue, CreateImageGenProfileInput, UpdateImageGenProfileInput } from "./image-gen-schema.js";
 
 export {
   coauthorModuleSchema,
