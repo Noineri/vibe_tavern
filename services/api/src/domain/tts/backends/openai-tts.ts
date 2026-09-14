@@ -40,6 +40,7 @@ import {
   buildHeaders,
   normalizeOpenAiCompatibleBaseUrl,
 } from "../../providers/provider-transport.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const TTS_VOICE_LIST_TIMEOUT_MS = 10_000;
 const TTS_CLONE_TIMEOUT_MS = 60_000;
@@ -180,9 +181,6 @@ function parseSiliconflowCustomVoices(parsed: unknown): TtsVoiceInfo[] {
 
 /** Reference-audio extension for a SiliconFlow upload from the sample mime
 
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
-
 /** HTTP / transport failure of a speech or voices request. */
 export class OpenAiCompatTtsError extends Error {
   /** Upstream HTTP status when the failure came from a non-2xx response
@@ -243,17 +241,6 @@ function clampSpeed(value: number): number {
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
 
 function httpErrorMessage(operation: string, response: Response, excerpt: string): string {
   return `OpenAI-compatible TTS ${operation} failed with HTTP ${response.status}${
@@ -415,7 +402,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new OpenAiCompatTtsError(httpErrorMessage("generate", response, excerpt), { status: response.status });
       }
       const audio = Buffer.from(await response.arrayBuffer());
@@ -441,7 +428,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
         "model list",
       );
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new OpenAiCompatTtsError(httpErrorMessage("model list", response, excerpt), { status: response.status });
       }
       const parsed: unknown = await response.json().catch(() => null);
@@ -699,7 +686,7 @@ export const openAiCompatTtsFactory: TtsBackendFactory = (config) => {
           );
         }
         if (!response.ok) {
-          const excerpt = await readErrorExcerpt(response);
+          const excerpt = await readProviderErrorBody(response);
           throw new OpenAiCompatTtsError(
             `SiliconFlow voice upload failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
             { status: response.status },

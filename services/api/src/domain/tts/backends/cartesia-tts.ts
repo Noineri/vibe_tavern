@@ -51,6 +51,7 @@ import type {
   TtsProbeResult,
 } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const CARTESIA_BASE_URL = "https://api.cartesia.ai";
 /** The only value documented on every endpoint reference page today
@@ -82,9 +83,6 @@ const MAX_SPEED = 1.5;
  *  client-side validation in the clone section). */
 const CLONE_FORMATS = ["flac", "mp3", "wav", "ogg", "webm"];
 const CLONE_MAX_SIZE_MB = 10;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** Pagination: page size + hard page cap (1000 voices) so a pathological
  *  has_more loop can never hang the editor. */
@@ -153,20 +151,9 @@ function authHeaders(apiKey: string): Record<string, string> {
   };
 }
 
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
-
 async function expectOk(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const excerpt = await readErrorExcerpt(response);
+  const excerpt = await readProviderErrorBody(response);
   throw new CartesiaTtsError(
     `Cartesia ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
     { status: response.status },
@@ -261,7 +248,7 @@ export class CartesiaTtsBackend implements TtsBackend {
       url.searchParams.set("limit", "1");
       const response = await fetch(url, { headers: authHeaders(this.cfg.apiKey) });
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         return { ok: false, detail: `${response.status} ${excerpt || "(empty body)"}`.trim() };
       }
       return { ok: true, detail: "voices endpoint reachable" };

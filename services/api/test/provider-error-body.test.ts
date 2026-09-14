@@ -49,6 +49,12 @@ describe("extractProviderErrorBodyText", () => {
 		expect(extractProviderErrorBodyText({ message: "Model overloaded" })).toBe("Model overloaded");
 	});
 
+	it("composes OAuth {error, error_description} shape", () => {
+		expect(
+			extractProviderErrorBodyText({ error: "invalid_grant", error_description: "Invalid JWT Signature" }),
+		).toBe("invalid_grant: Invalid JWT Signature");
+	});
+
 	it("joins string arrays (FastAPI validation {detail:[...]} shape)", () => {
 		expect(
 			extractProviderErrorBodyText({ detail: ["Field required: prompt", "Not a valid integer"] }),

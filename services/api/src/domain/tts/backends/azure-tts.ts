@@ -51,6 +51,7 @@ import type {
   TtsProbeResult,
 } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const SYNTHESIS_PATH = "/cognitiveservices/v1";
 const VOICES_PATH = "/cognitiveservices/voices/list";
@@ -62,9 +63,6 @@ const USER_AGENT = "VibeTavern";
 /** Fixed house output format (mp3 family) — see file header. */
 const OUTPUT_FORMAT = "audio-24khz-96kbitrate-mono-mp3";
 const OUTPUT_MIME = "audio/mpeg";
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** prosody rate — relative percentage, documented relative form
  *  (e.g. "+30%"); beyond −50 % the speech degrades to unintelligibility. */
@@ -132,20 +130,9 @@ function endpointUrl(region: string, path: string): string {
   return `https://${region}.tts.speech.microsoft.com${path}`;
 }
 
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
-
 async function expectOk(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const excerpt = await readErrorExcerpt(response);
+  const excerpt = await readProviderErrorBody(response);
   throw new AzureTtsError(
     `Azure ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
     { status: response.status },
@@ -249,7 +236,7 @@ export class AzureTtsBackend implements TtsBackend {
         headers: authHeaders(this.cfg.apiKey),
       });
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         return { ok: false, detail: `${response.status} ${excerpt || "(empty body)"}`.trim() };
       }
       return { ok: true, detail: "voice list reachable" };

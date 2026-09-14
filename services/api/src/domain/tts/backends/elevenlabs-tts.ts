@@ -21,6 +21,7 @@ import type { TtsProfileConfig } from "@vibe-tavern/domain";
 
 import type { TtsBackend, TtsAudioResult, TtsBackendCapabilities, TtsBackendFactory, TtsGenerateRequest, TtsProbeResult, TtsVoiceInfo } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io";
 const DEFAULT_OUTPUT_FORMAT = "mp3_44100_128";
@@ -30,9 +31,6 @@ const MIN_SPEED = 0.7;
 const MAX_SPEED = 1.2;
 const MIN_SLIDER = 0;
 const MAX_SLIDER = 1;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** Identity guard for parsed JSON voice entries (unknown at the fetch edge). */
 interface ParsedVoiceEntry {
@@ -111,20 +109,9 @@ function parseConfig(config: TtsProfileConfig): ElevenLabsTtsConfig {
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
 
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
-
 async function expectOk(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const excerpt = await readErrorExcerpt(response);
+  const excerpt = await readProviderErrorBody(response);
   throw new ElevenLabsTtsError(
     `ElevenLabs ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
     { status: response.status },
@@ -209,7 +196,7 @@ export class ElevenLabsTtsBackend implements TtsBackend {
         headers: { "xi-api-key": apiKey },
       });
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         return { ok: false, detail: `${response.status} ${excerpt || "(empty body)"}`.trim() };
       }
       const parsed: unknown = await response.json();

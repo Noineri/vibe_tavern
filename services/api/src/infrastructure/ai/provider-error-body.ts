@@ -75,6 +75,13 @@ export function extractProviderErrorBodyText(parsed: unknown): string | null {
 			}
 		}
 	}
+	// OAuth vendor shape: `{error: "code", error_description: "text"}` (JSON or
+	// form-encoded bodies) — compose both so the description is not lost.
+	const oauthError = readStringOrList(root["error"]);
+	const oauthDescription = readStringOrList(root["error_description"]);
+	if (oauthError !== null && oauthDescription !== null) {
+		return `${oauthError}: ${oauthDescription}`;
+	}
 	const nestedError = readStringOrList(root["error"]);
 	if (nestedError !== null && nestedError.trim().length > 0) {
 		return nestedError;

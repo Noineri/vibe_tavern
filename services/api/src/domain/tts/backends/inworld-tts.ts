@@ -49,6 +49,7 @@ import type {
   TtsProbeResult,
 } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const INWORLD_BASE_URL = "https://api.inworld.ai";
 
@@ -73,9 +74,6 @@ const MAX_SPEAKING_RATE = 1.5;
  *  results with a 10–15 s clip. */
 const CLONE_FORMATS = ["wav", "mp3"];
 const CLONE_MAX_SIZE_MB = 10;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** Voices pagination: page size + hard page cap (1000 voices) so a
  *  pathological nextPageToken loop can never hang the editor. */
@@ -166,20 +164,9 @@ function authHeaders(apiKey: string): Record<string, string> {
   return { Authorization: `Basic ${apiKey}` };
 }
 
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
-
 async function expectOk(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const excerpt = await readErrorExcerpt(response);
+  const excerpt = await readProviderErrorBody(response);
   throw new InworldTtsError(
     `Inworld ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
     { status: response.status },
@@ -277,7 +264,7 @@ export class InworldTtsBackend implements TtsBackend {
       headers: authHeaders(apiKey),
     });
     if (!response.ok) {
-      const excerpt = await readErrorExcerpt(response);
+      const excerpt = await readProviderErrorBody(response);
       throw new InworldTtsError(
         `Inworld model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
       );
@@ -311,7 +298,7 @@ export class InworldTtsBackend implements TtsBackend {
       url.searchParams.set("pageSize", "1");
       const response = await fetch(url, { headers: authHeaders(this.cfg.apiKey) });
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         return { ok: false, detail: `${response.status} ${excerpt || "(empty body)"}`.trim() };
       }
       return { ok: true, detail: "voices endpoint reachable" };

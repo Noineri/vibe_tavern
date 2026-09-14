@@ -53,6 +53,7 @@ import type {
   TtsProbeResult,
 } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const VOLC_BASE_URL = "https://openspeech.bytedance.com";
 
@@ -78,9 +79,6 @@ const CODE_SUCCESS_FINAL = 20000000;
  *  m4a/aac (pcm 24k mono exists too — not offered in the picker), ≤10 MB. */
 const CLONE_FORMATS = ["wav", "mp3", "ogg", "m4a", "aac"];
 const CLONE_MAX_SIZE_MB = 10;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** Auth-failure signatures in non-200 bodies (documented messages from
  *  the common-errors section — "authenticate request: load grant:",
@@ -162,20 +160,9 @@ function authHeaders(cfg: VolcengineTtsConfig): Record<string, string> {
   };
 }
 
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
-
 async function expectOk(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const excerpt = await readErrorExcerpt(response);
+  const excerpt = await readProviderErrorBody(response);
   throw new VolcengineTtsError(
     `Volcengine ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
     { status: response.status },
@@ -265,9 +252,9 @@ export class VolcengineTtsBackend implements TtsBackend {
         },
         body: JSON.stringify({ speaker_id: "vt-probe-nonexistent" }),
       });
-      const text = await response.text();
+      const text = await readProviderErrorBody(response);
       if (!response.ok && AUTH_FAILURE_MARKERS.some((m) => text.toLowerCase().includes(m))) {
-        return { ok: false, detail: `${response.status} ${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}`.trim() };
+        return { ok: false, detail: `${response.status} ${text}`.trim() };
       }
       return { ok: true, detail: "service reachable (voice query answered)" };
     } catch (error) {

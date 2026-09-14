@@ -56,6 +56,7 @@ import type {
   TtsProbeResult,
 } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const SYNTHESIS_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const VOICES_URL = "https://texttospeech.googleapis.com/v1/voices";
@@ -71,8 +72,6 @@ const JWT_LIFETIME_SECONDS = 3600;
  *  decodes to an MP3 stream. */
 const OUTPUT_ENCODING = "MP3";
 const OUTPUT_MIME = "audio/mpeg";
-
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** speakingRate — documented [0.25, 2.0] multiplier (NOT the OpenAI
  *  0.25–4 range; re-verified 2026-09-03). */
@@ -213,7 +212,7 @@ async function exchangeToken(serviceAccount: ServiceAccountKey): Promise<TokenEx
     body: new URLSearchParams({ grant_type: JWT_BEARER_GRANT, assertion }).toString(),
   });
   if (!response.ok) {
-    const excerpt = await readErrorExcerpt(response);
+    const excerpt = await readProviderErrorBody(response);
     throw new GoogleCloudTtsError(
       `Google OAuth token exchange failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
       { status: response.status },
@@ -276,20 +275,9 @@ function parseConfig(config: TtsProfileConfig): GoogleCloudTtsConfig {
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
 
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
-
 async function expectOk(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const excerpt = await readErrorExcerpt(response);
+  const excerpt = await readProviderErrorBody(response);
   throw new GoogleCloudTtsError(
     `Google Cloud TTS ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
     { status: response.status },

@@ -40,6 +40,7 @@ import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput, CompletionFormatHandoff } from "./protocol-types.js";
 import { serializeCompletionPrompt, DEFAULT_COMPLETION_TEMPLATE, templateStopMarkers, unionStopSequences, type CompletionFormatTemplate } from "./completion-prompt.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
+import { readProviderErrorBody } from "../../infrastructure/ai/provider-error-body.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -448,8 +449,8 @@ export async function tokenizeKoboldCpp(input: TokenizeInput): Promise<number> {
       signal: controller.signal,
     });
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(`KoboldCPP tokencount failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+      const errorText = await readProviderErrorBody(response);
+      throw new Error(`KoboldCPP tokencount failed (${response.status})${errorText ? `: ${errorText}` : ""}`);
     }
     const payload = (await response.json()) as KoboldTokenCountResponse;
     const ids = Array.isArray(payload.ids) ? (payload.ids as unknown[]).length : null;
@@ -525,10 +526,10 @@ export async function testKoboldCppChat(input: ProviderConnectionInput): Promise
     clearTimeout(timer);
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
+      const errorText = await readProviderErrorBody(response);
       return {
         success: false,
-        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
       };
     }
 
