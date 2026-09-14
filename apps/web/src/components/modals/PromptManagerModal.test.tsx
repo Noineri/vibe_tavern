@@ -1049,7 +1049,7 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     return map;
   }
 
-  test("three tab labels render", async () => {
+  test("four tab labels render", async () => {
     useModalStore.setState({ isPromptManagerOpen: true });
     const view = render(
       <PromptManagerModal
@@ -1065,6 +1065,7 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     expect(within(view.baseElement).getByText("promptManager.tabPresets")).toBeTruthy();
     expect(within(view.baseElement).getByText("promptManager.regex.tabLabel")).toBeTruthy();
     expect(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel")).toBeTruthy();
+    expect(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabelImages")).toBeTruthy();
   });
 
   test("service tab stays lazy: no service fetch until switched", async () => {
@@ -1155,6 +1156,79 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
       const tas = view.baseElement.querySelectorAll("textarea");
       expect(tas.length).toBeGreaterThan(0);
     });
+  });
+
+  test("images tab stays lazy until switched, then renders the 7 mode fields without accordions", async () => {
+    const def = makeServiceProfile();
+    const p2 = { ...makeServiceProfile(), id: "p2", name: "ImgProf", isDefault: false };
+    listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+    getServiceDetailMock.mockImplementation(async (id: string) => {
+      if (id === "default") return { profile: def, resolved: makeResolved() };
+      return { profile: p2, resolved: makeResolved() };
+    });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    // Presets tab: the images pane (inactive) fetches nothing.
+    expect(listServiceProfilesMock).not.toHaveBeenCalled();
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabelImages"));
+    await waitFor(() => expect(listServiceProfilesMock).toHaveBeenCalled());
+    await waitFor(() => expect(within(view.baseElement).getByText("ImgProf")).toBeTruthy());
+    await act(async () => { fireEvent.click(within(view.baseElement).getByText("ImgProf")); });
+    await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+    await waitFor(() => {
+      // Single-family surface: no family section headers, exactly the 7 image
+      // mode fields as textareas, and no non-image field labels.
+      expect(view.baseElement.textContent).not.toContain("promptManager.servicePrompts.family.");
+      expect(view.baseElement.textContent).toContain("promptManager.servicePrompts.field.image_portrait");
+      expect(view.baseElement.textContent).not.toContain("promptManager.servicePrompts.field.summary");
+      const tas = view.baseElement.querySelectorAll("textarea");
+      expect(tas.length).toBe(7);
+    });
+  });
+
+  test("images tab dirty guard: editing a template marks the modal dirty (close confirm)", async () => {
+    const def = makeServiceProfile();
+    const p2 = { ...makeServiceProfile(), id: "p2", name: "ImgProf", isDefault: false };
+    listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+    getServiceDetailMock.mockImplementation(async (id: string) => {
+      if (id === "default") return { profile: def, resolved: makeResolved() };
+      return { profile: p2, resolved: makeResolved() };
+    });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabelImages"));
+    await waitFor(() => expect(within(view.baseElement).getByText("ImgProf")).toBeTruthy());
+    await act(async () => { fireEvent.click(within(view.baseElement).getByText("ImgProf")); });
+    await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+    await waitFor(() => expect(view.baseElement.querySelectorAll("textarea").length).toBe(7));
+    const ta = view.baseElement.querySelector("textarea") as HTMLTextAreaElement;
+    await act(async () => { fireEvent.change(ta, { target: { value: "edited" } }); });
+    // Closing with a dirty images draft must open the discard guard.
+    // The pane footer's Close button (labeled "close") routes through
+    // handleClose — the images dirty guard must intercept it.
+    const closeBtn = within(view.baseElement).getAllByText("close")[0];
+    await act(async () => { fireEvent.click(closeBtn); });
+    await waitFor(() => expect(within(view.baseElement).getByText("unsaved_changes_title")).toBeTruthy());
   });
 });
 

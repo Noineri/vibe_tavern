@@ -12,6 +12,7 @@ export const SERVICE_PROMPT_FIELD_FAMILIES = {
   summary: "summary",
   insights: "insights",
   bases: "bases",
+  images: "images",
 } as const;
 export type ServicePromptFieldFamily =
   (typeof SERVICE_PROMPT_FIELD_FAMILIES)[keyof typeof SERVICE_PROMPT_FIELD_FAMILIES];
@@ -45,6 +46,15 @@ export const SERVICE_PROMPT_FIELDS = {
   copilot_user_flow: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_rules: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_visual: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  // images (7) — one template per v1 generation mode + the shared negative
+  // default (IMAGE_GENERATION_PLAN IG-13; mode intent mirrors the design doc)
+  image_scene_background: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
+  image_portrait: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
+  image_character: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
+  image_user_persona: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
+  image_scene_illustration: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
+  image_free: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
+  image_negative: { family: SERVICE_PROMPT_FIELD_FAMILIES.images },
 } as const;
 
 export type ServicePromptFieldKey = keyof typeof SERVICE_PROMPT_FIELDS;
@@ -73,4 +83,11 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "copilot_user_flow",
   "interactive_rules",
   "interactive_visual",
+  "image_scene_background",
+  "image_portrait",
+  "image_character",
+  "image_user_persona",
+  "image_scene_illustration",
+  "image_free",
+  "image_negative",
 ] as const satisfies readonly ServicePromptFieldKey[];

@@ -108,6 +108,50 @@ describe("service-prompt resolver", () => {
     expect(preview).not.toBe("OVERRIDE SUMMARY");
   });
 
+  test("images family: no profile -> default asset text for image_portrait", async () => {
+    const { db } = await setup();
+    const result = await resolveServicePrompt(db, "image_portrait");
+    const expected = await loadPromptAsset(getServicePromptAssetFile("image_portrait"));
+    expect(result.source).toBe("default");
+    expect(result.text).toBe(expected);
+    expect(result.text.length).toBeGreaterThan(0);
+  });
+
+  test("images family: active profile override wins only for the overridden mode", async () => {
+    const { db, profileStore, uiSettings } = await setup();
+    const profile = await profileStore.createServicePromptProfile({
+      name: "ImageCustom",
+      overrides: { image_portrait: "OVERRIDE PORTRAIT TEMPLATE" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+
+    const overridden = await resolveServicePrompt(db, "image_portrait");
+    expect(overridden.source).toBe("override");
+    expect(overridden.text).toBe("OVERRIDE PORTRAIT TEMPLATE");
+
+    // Other image modes still fall back to their built-in assets.
+    const fallback = await resolveServicePrompt(db, "image_scene_background");
+    expect(fallback.source).toBe("default");
+    expect(fallback.text).toBe(await loadPromptAsset(getServicePromptAssetFile("image_scene_background")));
+
+    // Non-image families are untouched by the image override.
+    const text = await resolveServicePrompt(db, "script");
+    expect(text.source).toBe("default");
+  });
+
+  test("images family: whitespace-only override falls back to the default template", async () => {
+    const { db, profileStore, uiSettings } = await setup();
+    const profile = await profileStore.createServicePromptProfile({
+      name: "EmptyImageOverride",
+      overrides: { image_negative: "   " },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+
+    const result = await resolveServicePrompt(db, "image_negative");
+    expect(result.source).toBe("default");
+    expect(result.text).toBe(await loadPromptAsset(getServicePromptAssetFile("image_negative")));
+  });
+
   test("registry: keys === SERVICE_PROMPT_FIELD_KEYS and every mapped file exists on disk", async () => {
     const registryKeys = Object.keys(SERVICE_PROMPT_ASSET_FILES).sort();
     const domainKeys = [...SERVICE_PROMPT_FIELD_KEYS].sort();

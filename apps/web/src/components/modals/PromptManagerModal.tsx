@@ -13,6 +13,7 @@ import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.
 import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
+import { SERVICE_PROMPT_FIELD_FAMILIES } from "@vibe-tavern/domain";
 import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import {
@@ -86,7 +87,7 @@ export async function importStandaloneRegexText(
   return created;
 }
 
-type PromptManagerTab = "presets" | "regex" | "service";
+type PromptManagerTab = "presets" | "regex" | "service" | "images";
 
 export type DraftData = {
   name: string;
@@ -364,6 +365,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   // first Regex-tab activation.
   const [activeTab, setActiveTab] = useState<PromptManagerTab>("presets");
   const [serviceDirty, setServiceDirty] = useState(false);
+  // IG-13: the Images tab is a second ServicePromptsPane surface scoped to
+  // the `images` family — same engine, same profiles, its own dirty guard.
+  const [imagesDirty, setImagesDirty] = useState(false);
   const [regexPresets, setRegexPresets] = useState<RegexPresetRecord[]>([]);
   const [regexLoadState, setRegexLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [activeRegexPresetId, setActiveRegexPresetId] = useState<string | null>(null);
@@ -882,7 +886,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   if (!isOpen) return null;
 
   const handleClose = () => {
-    if (dirty || regexDirty || serviceDirty) {
+    if (dirty || regexDirty || serviceDirty || imagesDirty) {
       setConfirmCloseOpen(true);
     } else {
       onClose();
@@ -1119,6 +1123,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             setDirty(false);
             setRegexDirty(false);
             setServiceDirty(false);
+            setImagesDirty(false);
             setSaveState("idle");
             setRegexSaveState("idle");
             setConfirmCloseOpen(false);
@@ -1183,6 +1188,12 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
 
       <ServicePromptsPane
         active={activeTab === "service"}
+        families={[
+          SERVICE_PROMPT_FIELD_FAMILIES.assistant,
+          SERVICE_PROMPT_FIELD_FAMILIES.summary,
+          SERVICE_PROMPT_FIELD_FAMILIES.insights,
+          SERVICE_PROMPT_FIELD_FAMILIES.bases,
+        ]}
         renderRowDrillDown={(id, selectRow) => (
           <MasterDetailMobileDrillDown onSelect={selectRow} className="py-1" />
         )}
@@ -1190,13 +1201,39 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         onClose={handleClose}
       >
         {(slots) => (
-          <MasterDetailModal
+          <ServicePromptsPane
+            active={activeTab === "images"}
+            families={[SERVICE_PROMPT_FIELD_FAMILIES.images]}
+            renderRowDrillDown={(id, selectRow) => (
+              <MasterDetailMobileDrillDown onSelect={selectRow} className="py-1" />
+            )}
+            onDirtyChange={setImagesDirty}
+            onClose={handleClose}
+          >
+            {(imageSlots) => (
+              <MasterDetailModal
             isOpen={true}
         onClose={handleClose}
         title={t("prompt_manager_title")}
         subtitle={t("prompt_manager_sub")}
-        detailTitle={activeTab === "presets" ? t("prompt_manager_title") : activeTab === "regex" ? t("promptManager.regex.tabLabel") : t("promptManager.servicePrompts.tabLabel")}
-        dirty={activeTab === "service" ? slots.dirty : activeTab === "regex" ? regexDirty : dirty}
+        detailTitle={
+          activeTab === "presets"
+            ? t("prompt_manager_title")
+            : activeTab === "regex"
+              ? t("promptManager.regex.tabLabel")
+              : activeTab === "images"
+                ? t("promptManager.servicePrompts.tabLabelImages")
+                : t("promptManager.servicePrompts.tabLabel")
+        }
+        dirty={
+          activeTab === "service"
+            ? slots.dirty
+            : activeTab === "images"
+              ? imageSlots.dirty
+              : activeTab === "regex"
+                ? regexDirty
+                : dirty
+        }
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
         detailClassName="p-3 sm:p-5"
         mobileDetailClassName="p-3 scrollbar-hide"
@@ -1206,12 +1243,15 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             { value: "presets", label: t("promptManager.tabPresets") },
             { value: "regex", label: t("promptManager.regex.tabLabel") },
             { value: "service", label: t("promptManager.servicePrompts.tabLabel") },
+            { value: "images", label: t("promptManager.servicePrompts.tabLabelImages") },
           ],
           active: activeTab,
           onChange: (v) => setActiveTab(v),
         }}
         masterContent={
-          activeTab === "service"
+          activeTab === "images"
+            ? imageSlots.master
+            : activeTab === "service"
             ? slots.master
             : activeTab === "regex"
             ? () => (
@@ -1282,7 +1322,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               )
         }
         detailContent={
-          activeTab === "service"
+          activeTab === "images"
+            ? imageSlots.detail
+            : activeTab === "service"
             ? slots.detail
             : activeTab === "regex"
               ? (
@@ -1387,7 +1429,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           )
         }
         footer={
-          activeTab === "service"
+          activeTab === "images"
+            ? imageSlots.footer
+            : activeTab === "service"
             ? slots.footer
             : activeTab === "regex"
               ? (
@@ -1438,7 +1482,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             />
           )
         }
-          />
+              />
+            )}
+          </ServicePromptsPane>
         )}
       </ServicePromptsPane>
     </>

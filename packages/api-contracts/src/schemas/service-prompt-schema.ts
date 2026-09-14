@@ -29,6 +29,13 @@ export const servicePromptOverridesSchema = z
     copilot_user_flow: z.string().optional(),
     interactive_rules: z.string().optional(),
     interactive_visual: z.string().optional(),
+    image_scene_background: z.string().optional(),
+    image_portrait: z.string().optional(),
+    image_character: z.string().optional(),
+    image_user_persona: z.string().optional(),
+    image_scene_illustration: z.string().optional(),
+    image_free: z.string().optional(),
+    image_negative: z.string().optional(),
   })
   .strict();
 export type ServicePromptOverrides = z.infer<typeof servicePromptOverridesSchema>;

@@ -147,7 +147,7 @@ describe("ServicePromptsPane", () => {
 		expect(getByText("promptManager.servicePrompts.liveBadge")).toBeTruthy();
 	});
 
-	test("detail of non-Default renders all 22 fields grouped (accordions)", async () => {
+	test("detail of non-Default renders all fields grouped (accordions)", async () => {
 		const def = makeDefaultProfile();
 		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1, overrides: { summary: "hello" } });
 		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
@@ -426,6 +426,129 @@ describe("ServicePromptsPane", () => {
 	// against memoized rows holding a stale onSelect closure captured before the
 	// edit made the pane dirty; a custom comparator that skips function props
 	// breaks exactly here (silent switch, no confirm).
+	test("families=[4 text families] renders no images section or image fields", async () => {
+		const def = makeDefaultProfile();
+		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1 });
+		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+		getDetailMock.mockImplementation(async (id: string) => {
+			if (id === "default") return { profile: def, resolved: makeResolved() };
+			return { profile: p2, resolved: makeResolved() };
+		});
+
+		const { getByTestId } = render(
+			<ServicePromptsPane
+				active={true}
+				families={["assistant", "summary", "insights", "bases"]}
+			>
+				{({ master, detail, footer }) => (
+					<div>
+						<div data-testid="master">{master}</div>
+						<div data-testid="detail">{detail}</div>
+						<div data-testid="footer">{footer}</div>
+					</div>
+				)}
+			</ServicePromptsPane>,
+		);
+		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
+		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+		const detail = getByTestId("detail");
+		expect(detail.textContent).not.toContain("promptManager.servicePrompts.family.images");
+		expect(detail.textContent).not.toContain("promptManager.servicePrompts.field.image_portrait");
+		await openAllFamilies(detail);
+		const textareas = detail.querySelectorAll("textarea");
+		const nonImageKeys = SERVICE_PROMPT_FIELD_KEYS.filter((k) => !k.startsWith("image_"));
+		expect(textareas.length).toBe(nonImageKeys.length);
+	});
+
+	test("families=[images] renders the 7 mode fields directly (no accordion)", async () => {
+		const def = makeDefaultProfile();
+		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1, overrides: { image_portrait: "custom portrait" } });
+		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+		getDetailMock.mockImplementation(async (id: string) => {
+			if (id === "default") return { profile: def, resolved: makeResolved() };
+			return { profile: p2, resolved: makeResolved({ image_portrait: "custom portrait" }) };
+		});
+
+		const { getByTestId } = render(
+			<ServicePromptsPane active={true} families={["images"]}>
+				{({ master, detail, footer }) => (
+					<div>
+						<div data-testid="master">{master}</div>
+						<div data-testid="detail">{detail}</div>
+						<div data-testid="footer">{footer}</div>
+					</div>
+				)}
+			</ServicePromptsPane>,
+		);
+		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
+		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+		const detail = getByTestId("detail");
+
+		// Single-family surface: fields render immediately, no family section header.
+		const imageKeys = SERVICE_PROMPT_FIELD_KEYS.filter((k) => k.startsWith("image_"));
+		expect(detail.textContent).not.toContain("promptManager.servicePrompts.family.");
+		for (const k of imageKeys) {
+			expect(detail.textContent).toContain(`promptManager.servicePrompts.field.${k}`);
+		}
+		const textareas = detail.querySelectorAll("textarea");
+		expect(textareas.length).toBe(imageKeys.length);
+
+		// Non-image families' fields are absent from this surface.
+		expect(detail.textContent).not.toContain("promptManager.servicePrompts.field.summary");
+
+		// The saved override loads into its textarea; reset clears it.
+		const portrait = Array.from(textareas).find(
+			(ta) => (ta as HTMLTextAreaElement).value === "custom portrait",
+		) as HTMLTextAreaElement;
+		expect(portrait).toBeTruthy();
+		const resetBtn = Array.from(detail.querySelectorAll("button")).find((b) =>
+			b.textContent?.includes("promptManager.servicePrompts.reset"),
+		) as HTMLButtonElement;
+		expect(resetBtn).toBeTruthy();
+		await act(async () => { fireEvent.click(resetBtn); });
+		await waitFor(() => expect(portrait.value).toBe(""));
+	});
+
+	test("families=[images]: save persists edited image override via update", async () => {
+		const def = makeDefaultProfile();
+		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1 });
+		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+		getDetailMock.mockImplementation(async (id: string) => {
+			if (id === "default") return { profile: def, resolved: makeResolved() };
+			return { profile: p2, resolved: makeResolved() };
+		});
+
+		const { getByTestId } = render(
+			<ServicePromptsPane active={true} families={["images"]}>
+				{({ master, detail, footer }) => (
+					<div>
+						<div data-testid="master">{master}</div>
+						<div data-testid="detail">{detail}</div>
+						<div data-testid="footer">{footer}</div>
+					</div>
+				)}
+			</ServicePromptsPane>,
+		);
+		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
+		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+		const detail = getByTestId("detail");
+		const first = detail.querySelector("textarea") as HTMLTextAreaElement;
+		await act(async () => { fireEvent.change(first, { target: { value: "edited image template" } }); });
+		const footer = getByTestId("footer");
+		const save = Array.from(footer.querySelectorAll("button")).find(
+			(b) => b.textContent?.includes("save_btn") || b.getAttribute("aria-label")?.includes("save_btn"),
+		) as HTMLButtonElement;
+		expect(save).toBeTruthy();
+		expect(save.disabled).toBe(false);
+		await act(async () => { fireEvent.click(save); });
+		await waitFor(() => expect(updateMock).toHaveBeenCalled());
+		const sent = updateMock.mock.calls[0][1] as { overrides?: Record<string, string> };
+		expect(Object.values(sent.overrides ?? {})).toContain("edited image template");
+	});
+
 	test("switching memoized rows while dirty opens discard confirm, confirm activates target", async () => {
 		const def = makeDefaultProfile();
 		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1, overrides: {} });

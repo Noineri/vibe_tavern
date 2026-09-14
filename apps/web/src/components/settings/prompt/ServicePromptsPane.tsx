@@ -44,13 +44,14 @@ export interface ServicePromptsPaneSlots {
 
 type FieldOverrides = Partial<Record<ServicePromptFieldKey, string>>;
 
-const FAMILY_ORDER: readonly ServicePromptFieldFamily[] = Object.values(SERVICE_PROMPT_FIELD_FAMILIES);
+const ALL_FAMILIES: readonly ServicePromptFieldFamily[] = Object.values(SERVICE_PROMPT_FIELD_FAMILIES);
 
 const FAMILY_LABEL_KEYS: Record<ServicePromptFieldFamily, string> = {
 	[SERVICE_PROMPT_FIELD_FAMILIES.assistant]: "promptManager.servicePrompts.family.assistant",
 	[SERVICE_PROMPT_FIELD_FAMILIES.summary]: "promptManager.servicePrompts.family.summary",
 	[SERVICE_PROMPT_FIELD_FAMILIES.insights]: "promptManager.servicePrompts.family.insights",
 	[SERVICE_PROMPT_FIELD_FAMILIES.bases]: "promptManager.servicePrompts.family.bases",
+	[SERVICE_PROMPT_FIELD_FAMILIES.images]: "promptManager.servicePrompts.family.images",
 };
 
 const FIELD_LABEL_KEYS: Partial<Record<ServicePromptFieldKey, string>> = {
@@ -77,6 +78,13 @@ const FIELD_LABEL_KEYS: Partial<Record<ServicePromptFieldKey, string>> = {
 	copilot_user_flow: "promptManager.servicePrompts.field.copilot_user_flow",
 	interactive_rules: "promptManager.servicePrompts.field.interactive_rules",
 	interactive_visual: "promptManager.servicePrompts.field.interactive_visual",
+	image_scene_background: "promptManager.servicePrompts.field.image_scene_background",
+	image_portrait: "promptManager.servicePrompts.field.image_portrait",
+	image_character: "promptManager.servicePrompts.field.image_character",
+	image_user_persona: "promptManager.servicePrompts.field.image_user_persona",
+	image_scene_illustration: "promptManager.servicePrompts.field.image_scene_illustration",
+	image_free: "promptManager.servicePrompts.field.image_free",
+	image_negative: "promptManager.servicePrompts.field.image_negative",
 };
 
 function truncateForPlaceholder(value: string): string {
@@ -186,12 +194,17 @@ const SortableServiceRow = React.memo(
 
 export function ServicePromptsPane({
 	active,
+	families,
 	children,
 	renderRowDrillDown,
 	onDirtyChange,
 	onClose,
 }: {
 	active: boolean;
+	/** Subset of families this pane surface shows. Defaults to all. The
+	 *  Prompt Manager renders one pane per tab: the Service tab gets the four
+	 *  text families, the Images tab (IG-13) gets the `images` family only. */
+	families?: readonly ServicePromptFieldFamily[];
 	children: (slots: ServicePromptsPaneSlots) => ReactNode;
 	renderRowDrillDown?: (profileId: string, selectRow: () => void) => ReactNode;
 	onDirtyChange?: (dirty: boolean) => void;
@@ -216,9 +229,10 @@ export function ServicePromptsPane({
 	const [pendingSelectId, setPendingSelectId] = useState<string | null>(null);
 	const [isCreating, setIsCreating] = useState(false);
 	const [newName, setNewName] = useState("");
+	const shownFamilies = families ?? ALL_FAMILIES;
 	const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>(() => {
 		const init: Record<string, boolean> = {};
-		for (const f of FAMILY_ORDER) init[f] = false;
+		for (const f of shownFamilies) init[f] = false;
 		return init;
 	});
 	const renameInputRef = useRef<HTMLInputElement>(null);
@@ -704,6 +718,50 @@ export function ServicePromptsPane({
 		</div>
 	);
 
+	const renderFieldRow = (field: ServicePromptFieldKey): ReactNode => {
+		const labelKey = FIELD_LABEL_KEYS[field] ?? `promptManager.servicePrompts.field.${field}`;
+		const resolved = detail?.resolved[field];
+		const overrideValue = draftOverrides[field] ?? "";
+		const hasOverride = overrideValue.trim().length > 0;
+		const defaultText = resolved?.default ?? "";
+		const placeholder = truncateForPlaceholder(defaultText);
+		if (isDefaultSelected) {
+			return (
+				<div key={field} className="flex flex-col">
+					<label className={lblCls}>{tDynamic(labelKey)}</label>
+					<div className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{defaultText}</div>
+				</div>
+			);
+		}
+		return (
+			<div key={field} className="flex flex-col gap-1.5">
+				<div className="flex items-center justify-between">
+					<label className={lblCls + " !mb-0"}>{tDynamic(labelKey)}</label>
+					<div className="flex items-center gap-2">
+						<span className="font-ui text-[11px] text-t4">
+							{tDynamic("promptManager.servicePrompts.charCount", { count: overrideValue.length })}
+						</span>
+						{hasOverride && (
+							<button
+								type="button"
+								onClick={() => handleResetField(field)}
+								className="rounded border border-border bg-transparent px-2 py-0.5 font-ui text-[11px] text-t3 hover:bg-s2 hover:text-t1"
+							>
+								{tDynamic("promptManager.servicePrompts.reset")}
+							</button>
+						)}
+					</div>
+				</div>
+				<AutoTextarea
+					mono
+					value={overrideValue}
+					onChange={(e) => handleFieldChange(field, e.target.value)}
+					placeholder={placeholder}
+					minRows={2}
+				/>
+			</div>
+		);
+	};
 	const detailNode = (
 		<div className="flex flex-col gap-6">
 			{detailState === "loading" && <div className="font-ui text-[13px] text-t3">{t("loading")}</div>}
@@ -738,75 +796,39 @@ export function ServicePromptsPane({
 							<span className="ml-2 text-t3">{t("promptManager.servicePrompts.defaultReadOnlyHint")}</span>
 						</div>
 					)}
-					{FAMILY_ORDER.map((family) => {
-						const keys = SERVICE_PROMPT_FIELD_KEYS.filter((k) => SERVICE_PROMPT_FIELDS[k].family === family);
-						if (keys.length === 0) return null;
-						const isOpen = expandedFamilies[family] ?? false;
-						return (
-							<section key={family} className="flex flex-col rounded-md border border-border">
-								<button
-									type="button"
-									onClick={() => toggleFamily(family)}
-									className="flex w-full items-center justify-between px-3 py-2.5 text-left"
-								>
-									<span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">
-										{tDynamic(FAMILY_LABEL_KEYS[family])}
-									</span>
-									<span className="ml-2 flex shrink-0 text-t4">
-										<Icons.Caret direction={isOpen ? "u" : "d"} />
-									</span>
-								</button>
-								<AnimatedDisclosure open={isOpen}>
-									<div className="flex flex-col gap-4 px-3 pb-3">
-										{keys.map((field) => {
-											const labelKey = FIELD_LABEL_KEYS[field] ?? `promptManager.servicePrompts.field.${field}`;
-											const resolved = detail.resolved[field];
-											const overrideValue = draftOverrides[field] ?? "";
-											const hasOverride = overrideValue.trim().length > 0;
-											const defaultText = resolved.default;
-											const placeholder = truncateForPlaceholder(defaultText);
-											if (isDefaultSelected) {
-												return (
-													<div key={field} className="flex flex-col">
-														<label className={lblCls}>{tDynamic(labelKey)}</label>
-														<div className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{defaultText}</div>
-													</div>
-												);
-											}
-											return (
-												<div key={field} className="flex flex-col gap-1.5">
-													<div className="flex items-center justify-between">
-														<label className={lblCls + " !mb-0"}>{tDynamic(labelKey)}</label>
-														<div className="flex items-center gap-2">
-															<span className="font-ui text-[11px] text-t4">
-																{tDynamic("promptManager.servicePrompts.charCount", { count: overrideValue.length })}
-															</span>
-															{hasOverride && (
-																<button
-																	type="button"
-																	onClick={() => handleResetField(field)}
-																	className="rounded border border-border bg-transparent px-2 py-0.5 font-ui text-[11px] text-t3 hover:bg-s2 hover:text-t1"
-																>
-																	{tDynamic("promptManager.servicePrompts.reset")}
-																</button>
-															)}
-														</div>
-													</div>
-													<AutoTextarea
-														mono
-														value={overrideValue}
-														onChange={(e) => handleFieldChange(field, e.target.value)}
-														placeholder={placeholder}
-														minRows={2}
-													/>
-												</div>
-											);
-										})}
-									</div>
-								</AnimatedDisclosure>
-							</section>
-						);
-					})}
+					{shownFamilies.length === 1 && (
+						// Single-family surface (Images tab): the fields render directly.
+						// A lone collapsible section titled the same as its own tab would
+						// be a wasted nesting level; the field chrome is identical.
+						<div className="flex flex-col gap-4">
+							{SERVICE_PROMPT_FIELD_KEYS.filter((k) => SERVICE_PROMPT_FIELDS[k].family === shownFamilies[0]).map(renderFieldRow)}
+						</div>
+					)}
+					{shownFamilies.length > 1 &&
+						shownFamilies.map((family) => {
+							const keys = SERVICE_PROMPT_FIELD_KEYS.filter((k) => SERVICE_PROMPT_FIELDS[k].family === family);
+							if (keys.length === 0) return null;
+							const isOpen = expandedFamilies[family] ?? false;
+							return (
+								<section key={family} className="flex flex-col rounded-md border border-border">
+									<button
+										type="button"
+										onClick={() => toggleFamily(family)}
+										className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+									>
+										<span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">
+											{tDynamic(FAMILY_LABEL_KEYS[family])}
+										</span>
+										<span className="ml-2 flex shrink-0 text-t4">
+											<Icons.Caret direction={isOpen ? "u" : "d"} />
+										</span>
+									</button>
+									<AnimatedDisclosure open={isOpen}>
+										<div className="flex flex-col gap-4 px-3 pb-3">{keys.map(renderFieldRow)}</div>
+									</AnimatedDisclosure>
+								</section>
+							);
+						})}
 				</>
 			)}
 		</div>
