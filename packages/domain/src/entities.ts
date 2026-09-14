@@ -23,6 +23,7 @@ import type {
   RetrievedMemoryHitId,
   ScriptId,
   SttProfileId,
+  ImageGenProfileId,
   SummaryMemorySnapshotId,
   ToolProfileId,
   TtsProfileId,
@@ -1025,7 +1026,134 @@ export interface SttProfile {
   updatedAt: Timestamp;
 }
 
-// ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────────
+// ─── Image generation entities (IMAGE_GENERATION_PLAN IG-1) ─────────────
+//
+// Standalone image-gen profiles — the Providers-modal "image" category
+// (design IMAGE_GENERATION_DESIGN). Same standalone-entity rule as
+// ttsProfiles/sttProfiles: NOT providerProfiles (LLM-specific). The
+// `backend` discriminator selects the server-side adapter protocol from the
+// IMAGE_GEN_BACKENDS roster (the frontend preset table maps its presets onto
+// these slugs); `presetId` is the UI-side preset slug kept for round-tripping
+// the editor form (absent for Custom).
+
+/** v1 image-gen adapter protocol roster (owner-locked scope): OpenRouter
+ *  (chat-completions transport), the OpenAI-images protocol (serves Custom
+ *  cloud endpoints), and the A1111-compatible local dialect (owner's
+ *  Forge-Neo). Further providers arrive in later owner-approved batches. */
+export const IMAGE_GEN_BACKENDS = {
+  OpenRouter: "openrouter",
+  OpenAiImages: "openai-images",
+  A1111: "a1111",
+} as const;
+export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
+
+/** The v1 generation-mode recipes (design taxonomy adapted from ST's):
+ *  each mode binds a Prompt-Manager Images-tab template + a per-mode size
+ *  preset. Modes are recipes only — no special delivery mechanism. */
+export const IMAGE_GENERATION_MODES = {
+  SceneBackground: "scene-background",
+  Portrait: "portrait",
+  Character: "character",
+  UserPersona: "user-persona",
+  SceneIllustration: "scene-illustration",
+  Free: "free",
+} as const;
+export type ImageGenerationMode = (typeof IMAGE_GENERATION_MODES)[keyof typeof IMAGE_GENERATION_MODES];
+
+/** How a backend constrains output sizes: a closed vendor-set (cloud vendors
+ *  with fixed size enums — values are `"WxH"` strings) or free width/height
+ *  (local backends). Decides the editor's size UI shape. */
+export type ImageGenSizeSupport =
+  | { kind: "vendor-set"; sizes: string[] }
+  | { kind: "free" };
+
+/** Adapter capability mirror, snapshotted onto the profile so the editor UI
+ *  renders provider-gated controls without a live registry round-trip.
+ *  `supportsImg2img`/`supportsInpaint` are RESERVED schema fields (design:
+ *  img2img is deferred beyond v1) — adapters stamp false, no UI reads them. */
+export interface ImageGenCapabilityFlags {
+  supportsNegativePrompt: boolean;
+  supportsSamplers: boolean;
+  supportsSeed: boolean;
+  sizeSupport: ImageGenSizeSupport;
+  /** Preset flag: the backend needs no API key (free/keyless cloud). */
+  noApiKey: boolean;
+  /** Local live-progress streaming (GET /progress on A1111-compat). */
+  supportsLiveProgress: boolean;
+  /** Reserved for later batches — unused in v1. */
+  supportsImg2img: boolean;
+  /** Reserved for later batches — unused in v1. */
+  supportsInpaint: boolean;
+}
+
+/** Profile-level default generation params. EVERY field optional by design
+ *  (owner's hardcoded-parameters ban, 2026-09-07): no value ships as code —
+ *  empty means "send nothing, use the vendor default". */
+export interface ImageGenDefaultParams {
+  /** Sampling steps (local backends). */
+  steps?: number;
+  /** CFG scale (local backends). */
+  cfgScale?: number;
+  /** Sampler name (samplers-capable backends only). */
+  sampler?: string;
+  /** Fixed seed; absent = vendor-random. */
+  seed?: number;
+  /** CLIP skip (A1111-compat dialect). */
+  clipSkip?: number;
+}
+
+/** Per-mode width/height preset on the profile. Optional members — an unset
+ *  mode simply sends no size (vendor default) or, for Free mode, whatever the
+ *  request overrides carry. */
+export interface ImageGenModeSizePreset {
+  width?: number;
+  height?: number;
+}
+
+/** Size presets keyed by generation mode — only modes the user configured
+ *  carry entries. */
+export type ImageGenModeSizePresets = Partial<Record<ImageGenerationMode, ImageGenModeSizePreset>>;
+
+/** One named image-gen profile (backend protocol + config + defaults +
+ *  per-mode sizes + LLM-assist choice). */
+export interface ImageGenProfile {
+  id: ImageGenProfileId;
+  /** Human-readable profile name ("Forge — local"). */
+  name: string;
+  /** Adapter protocol discriminator (see {@link IMAGE_GEN_BACKENDS}). */
+  backend: ImageGenBackendType;
+  /** UI preset slug from the frontend preset table (round-trips the editor
+   *  form); absent for Custom profiles. */
+  presetId?: string;
+  /** Base URL the adapter talks to (preset baseUrl on preset picks; bare
+   *  endpoint for Custom/local). */
+  endpoint: string;
+  /** Write-only API key (ST-1 typed-column rule): never serialized to the
+   *  client (the wire record reports `hasStoredApiKey` instead). Absent for
+   *  keyless backends (noApiKey). */
+  apiKey?: string;
+  /** Selected model (level-2 outer setting; a fresh connection may save
+   *  without one — the STT P8 pattern). */
+  modelId?: string;
+  /** Default generation params — all optional, no code defaults. */
+  defaultParams: ImageGenDefaultParams;
+  /** Per-mode size presets (width/height). */
+  modeSizePresets: ImageGenModeSizePresets;
+  /** LLM-assisted image-prompt writing (owner decision 7.3): explicit
+   *  per-profile toggle; when on, the quiet pre-pass writes the image prompt
+   *  using this LLM provider profile + model (saved on the profile). */
+  llmAssistEnabled: boolean;
+  llmProviderProfileId?: string;
+  llmModelId?: string;
+  /** Capability snapshot mirrored from the adapter at save time. */
+  capabilities: ImageGenCapabilityFlags;
+  /** Stable list ordering in the editor. */
+  sortOrder: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────
 //
 // The pure notation/rolling/arith-validators live in `dice.ts`; these are the
 // immutable, message-bindable entity shapes the API/DB layers use. A completed

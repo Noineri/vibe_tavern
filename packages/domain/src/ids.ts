@@ -35,6 +35,8 @@ export type DicePendingLaneId = Brand<"DicePendingLaneId">;
 export type TtsProfileId = Brand<"TtsProfileId">;
 // STT (speech-to-text) profiles (STT_PLAN ST-1).
 export type SttProfileId = Brand<"SttProfileId">;
+// Image generation profiles (IMAGE_GENERATION_PLAN IG-1).
+export type ImageGenProfileId = Brand<"ImageGenProfileId">;
 
 // ─── Interactive Runtime (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 1) ─────────
 export type ExperienceVisualId = Brand<"ExperienceVisualId">;
