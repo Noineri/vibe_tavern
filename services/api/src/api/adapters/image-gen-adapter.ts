@@ -19,13 +19,15 @@
  *
  * GENERATE (the image message slot, design-locked semantics): resolve the
  * chat + profile, merge the profile's per-mode size presets and default
- * params with the request's fine-tuning overrides, call the backend with the
- * route's AbortSignal (NO timeout constants — the owner's ban), persist each
- * returned image as a FLAT asset (the bytes never leave the server; the
- * cloud-URL-expiry rule), and append one message carrying the attachment
+ * params with the request's fine-tuning overrides, build the prompt via the
+ * IG-14 mode module (Images-tab template → MacroEngine → chat context; free
+ * wraps the caller text), call the backend with the route's AbortSignal (NO
+ * timeout constants — the owner's ban), persist each returned image as a
+ * FLAT asset (the bytes never leave the server; the cloud-URL-expiry rule),
+ * and append one message carrying the attachment + slot provenance
  * (role/authorType `assistant`, empty content — the slot renders from its
- * attachment; the prompt-pipeline interplay is the generation-core unit's
- * contract, IG-14).
+ * attachment and never enters the RP prompt; context participation is the
+ * IG-18 include-in-prompt opt-in only).
  */
 
 import type {
@@ -49,9 +51,13 @@ import type {
   StoreContainer,
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
-import type { Attachment, ImageGenModelSettings, ImageGenProfile } from "@vibe-tavern/domain";
+import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
+import {
+  buildImageGenPrompts,
+  ImageGenModeValidationError,
+} from "../../domain/chat/imagegen-modes.js";
 import type {
   ImageGenAdapterConfig,
   ImageGenGenerateRequest,
@@ -145,7 +151,7 @@ function configFromProfile(
 
 type ImageGenAdapterStores = Pick<
   StoreContainer,
-  "imageGen" | "chats" | "messages" | "characterAssets"
+  "imageGen" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas"
 >;
 
 export class ImageGenAdapter implements ImageGenRuntimeApi {
@@ -324,9 +330,30 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const sampler = overrides.sampler ?? defaults.sampler;
     const seed = overrides.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? defaults.clipSkip;
+
+    // IG-14 mode assembly: the prompt the design's generation flow builds —
+    // Images-tab template + chat-context macros (free mode wraps the caller
+    // text; a caller prompt on non-free modes is the chip's verbatim edit).
+    // The shared negative default resolves alongside; the capability gate
+    // decides whether it is SENT at all, and the chip's negative edit wins
+    // when present (trimmed-empty = the user cleared it — send nothing).
+    let prompts: { prompt: string; negativePrompt: string };
+    try {
+      prompts = await buildImageGenPrompts(this.stores, chat, body.mode, body.prompt);
+    } catch (error) {
+      if (error instanceof ImageGenModeValidationError) {
+        throw new ImageGenValidationError(error.message);
+      }
+      throw error;
+    }
+    const chipNegative = overrides.negativePrompt?.trim() ?? "";
+    const negativePrompt = profile.capabilities.supportsNegativePrompt
+      ? chipNegative !== "" ? chipNegative : prompts.negativePrompt
+      : undefined;
+
     const request: ImageGenGenerateRequest = {
-      prompt: body.prompt,
-      ...(overrides.negativePrompt !== undefined ? { negativePrompt: overrides.negativePrompt } : {}),
+      prompt: prompts.prompt,
+      ...(negativePrompt !== undefined && negativePrompt !== "" ? { negativePrompt } : {}),
       ...(model !== undefined && model !== "" ? { model } : {}),
       ...(width !== undefined ? { width } : {}),
       ...(height !== undefined ? { height } : {}),
@@ -343,7 +370,25 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
 
     // Persist every image as a FLAT asset (bytes server-side, immutable) and
     // build the slot's attachment entries — the same shape a client upload
-    // produces, so rendering/vision-describe/promote all work unchanged.
+    // produces, so rendering/vision-describe/promote all work unchanged —
+    // plus the design's slot provenance (mode, profileId, model, effective
+    // params, backend-reported seed) stamped on every entry (IG-14; the
+    // regeneration path in IG-18 rebuilds its request from it).
+    const provenance: ImageGenSlotProvenance = {
+      mode: body.mode,
+      profileId: profile.id,
+      ...(model !== undefined && model !== "" ? { model } : {}),
+      params: {
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+        ...(steps !== undefined ? { steps } : {}),
+        ...(cfgScale !== undefined ? { cfgScale } : {}),
+        ...(sampler !== undefined ? { sampler } : {}),
+        ...(seed !== undefined ? { seed } : {}),
+        ...(clipSkip !== undefined ? { clipSkip } : {}),
+      },
+      ...(result.seed !== undefined ? { seed: result.seed } : {}),
+    };
     const attachments: Attachment[] = [];
     for (const image of result.images) {
       const file = new File([new Uint8Array(image.data)], "imagegen", { type: image.mimeType });
@@ -355,6 +400,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         name: `imagegen-${assetId}`,
         mimeType: image.mimeType,
         sizeBytes: image.data.length,
+        imageGen: provenance,
       });
     }
 

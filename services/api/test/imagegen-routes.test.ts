@@ -14,7 +14,9 @@
  * happy path (effective-parameter merge: overrides > mode preset > profile
  * defaults > vendor default), the image message slot + flat-asset
  * persistence, the error ladder (config/size → 400, upstream 4xx → 400,
- * 5xx/transport → 502), and gallery promotion.
+ * 5xx/transport → 502), gallery promotion, and the IG-14 mode assembly
+ * (six server-built prompts, override-beats-builtin, the negative
+ * capability gate, slot provenance, RP-prompt separation).
  */
 
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -22,8 +24,8 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
-import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import { createStoreContainer, ServicePromptProfileStore, UiSettingsStore, type StoreContainer } from "@vibe-tavern/db";
+import { IMAGE_GEN_BACKENDS, type ChatId } from "@vibe-tavern/domain";
 
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { ImageGenAdapter } from "../src/api/adapters/image-gen-adapter.js";
@@ -38,6 +40,7 @@ import {
   __snapshotImageGenRegistryForTests,
   registerImageGenBackend,
 } from "../src/domain/imagegen/imagegen-registry.js";
+import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 
 // THE REGISTRY IS PROCESS-GLOBAL (mock.module gotcha applies to bun:test):
 // imagegen-registry.test.ts runs `__resetImageGenRegistryForTests()` in the
@@ -577,6 +580,319 @@ describe("image-gen routes — generate (image message slot)", () => {
       body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
     });
     expect(res.status).toBe(502);
+  });
+});
+
+describe("image-gen routes — mode assembly (IG-14)", () => {
+  // The design's six recipes built through the REAL stack — only the
+  // transport is a double (the file's T1 seam): the request travels the
+  // route → adapter → mode module → service-prompt resolver (real assets on
+  // disk) → MacroEngine → real backend code → the captured wire body.
+
+  const CHAR_NAME = "Seraphine";
+  const CHAR_DESC = "silver-haired tavern keeper with a scar over one eye";
+  const PERSONA_NAME = "Alex";
+  const PERSONA_DESC = "wandering bard in a patched travelling cloak";
+  const LAST_MSG = "The tavern door creaks open and cold rain follows a stranger inside.";
+
+  interface SceneFixture {
+    app: ReturnType<typeof createImageGenRoutes>;
+    stores: StoreContainer;
+    chatId: string;
+    charId: string;
+  }
+
+  /** Character + bound persona + chat + one user message (the mode
+   *  templates' substitution sources). */
+  async function makeScene(transport: (input: FetchArgs[0], init?: FetchArgs[1]) => Promise<Response>): Promise<SceneFixture> {
+    const base = await makeApp(transport);
+    const char = await base.stores.characters.create({ name: CHAR_NAME, description: CHAR_DESC });
+    const persona = await base.stores.personas.create({ name: PERSONA_NAME, description: PERSONA_DESC });
+    const chat = await base.stores.chats.createChat({
+      characterId: char.id,
+      personaId: persona.id,
+      title: "scene",
+      promptPresetId: null,
+    });
+    await base.stores.messages.addMessage({
+      chatId: chat.id,
+      branchId: chat.activeBranchId as string,
+      role: "user",
+      authorType: "user",
+      content: LAST_MSG,
+    });
+    return { app: base.app, stores: base.stores, chatId: chat.id, charId: char.id };
+  }
+
+  /** Capture every wire prompt a generation sends (one entry per call). */
+  function promptCapturingTransport(sent: string[]): (input: FetchArgs[0], init?: FetchArgs[1]) => Promise<Response> {
+    return async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/chat/completions")) {
+        const wire = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
+        sent.push(wire.messages[0]!.content);
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x31)}` } }] } }],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(PNG_BYTES(0x31), { status: 200, headers: { "Content-Type": "image/png" } });
+    };
+  }
+
+  test("six modes build mode-correct prompts on the wire; no unresolved macros survive", async () => {
+    const sent: string[] = [];
+    const scene = await makeScene(promptCapturingTransport(sent));
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    const expectances: Record<string, string[]> = {
+      portrait: [CHAR_NAME, CHAR_DESC],
+      character: [CHAR_NAME, CHAR_DESC],
+      "user-persona": [PERSONA_NAME, PERSONA_DESC],
+      "scene-background": [LAST_MSG],
+      "scene-illustration": [LAST_MSG],
+      free: ["raw caller direction"],
+    };
+    for (const [mode, fragments] of Object.entries(expectances)) {
+      const res = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileId: id,
+          mode,
+          // free mode's payload; the template modes exercise the SERVER build
+          ...(mode === "free" ? { prompt: "raw caller direction" } : {}),
+        }),
+      });
+      expect(res.status, `mode ${mode}`).toBe(200);
+    }
+    expect(sent).toHaveLength(6);
+    for (const [mode, fragments] of Object.entries(expectances)) {
+      const prompt = sent[Object.keys(expectances).indexOf(mode)]!;
+      for (const fragment of fragments) {
+        expect(prompt, `mode ${mode}`).toContain(fragment);
+      }
+      expect(prompt, `mode ${mode}`).not.toContain("{{");
+    }
+    // The free template is a wrapper: the raw prompt rides WITH template
+    // prose, not alone.
+    expect(sent[5]).not.toBe("raw caller direction");
+  });
+
+  test("active-profile override beats the built-in template; macros still substitute inside it", async () => {
+    const sent: string[] = [];
+    const scene = await makeScene(promptCapturingTransport(sent));
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    // An images-family override carrying a marker macro — resolves through
+    // the SAME active-profile path the other families ride.
+    const profileStore = new ServicePromptProfileStore(scene.stores.db);
+    const profileRow = await profileStore.createServicePromptProfile({
+      name: "image overrides",
+      overrides: { image_portrait: "MARKER-{{char}}-OVERRIDE" },
+    });
+    await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: profileRow.id });
+
+    const res = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toBe(`MARKER-${CHAR_NAME}-OVERRIDE`);
+
+    // Reset the pointer so later suites in this process start clean.
+    await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: null });
+  });
+
+  test("free mode without a caller prompt → 400 (the raw prompt IS the payload)", async () => {
+    const scene = await makeScene(async () => {
+      throw new TypeError("must not be called");
+    });
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+    const res = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "free" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("free");
+  });
+
+  test("negative template rides only negative-capable backends; the chip's edit wins when it does", async () => {
+    // A1111 (supportsNegativePrompt) — the resolved image_negative default
+    // lands in the txt2img body as negative_prompt.
+    const a1111Sent: Array<Record<string, unknown>> = [];
+    const a1111Scene = await makeScene(async (_input, init) => {
+      a1111Sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ images: [Buffer.from(PNG_BYTES(0x41)).toString("base64")] }), { status: 200 });
+    });
+    const a1111Id = await seedProfile(a1111Scene.app, { backend: "a1111", endpoint: "http://127.0.0.1:7860" });
+    const a1111Res = await a1111Scene.app.request(`/api/chats/${a1111Scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: a1111Id, mode: "portrait" }),
+    });
+    expect(a1111Res.status).toBe(200);
+    expect(a1111Sent[0]!.negative_prompt).toContain("watermark");
+
+    // The chip's negative edit replaces the template verbatim.
+    const chipRes = await a1111Scene.app.request(`/api/chats/${a1111Scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: a1111Id,
+        mode: "portrait",
+        overrides: { negativePrompt: "chip-no-capes" },
+      }),
+    });
+    expect(chipRes.status).toBe(200);
+    expect(a1111Sent[1]!.negative_prompt).toBe("chip-no-capes");
+
+    // OpenRouter (no negative support) — the negative NEVER rides the wire,
+    // not even a chip edit (the capability gate is the design's consumption
+    // rule): the chip's text must not leak anywhere in the request body.
+    const orBodies: string[] = [];
+    const orScene = await makeScene(async (input, init) => {
+      // Only bodied calls (the completions POST); the server-side image
+      // download is a bodiless GET — excluded by design.
+      if (init?.body !== undefined) orBodies.push(String(init.body));
+      void input;
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x42)}` } }] } }],
+        }),
+        { status: 200 },
+      );
+    });
+    const orId = await seedProfile(orScene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+    const orRes = await orScene.app.request(`/api/chats/${orScene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: orId, mode: "portrait", overrides: { negativePrompt: "chip-no-capes" } }),
+    });
+    expect(orRes.status).toBe(200);
+    expect(orBodies).toHaveLength(1);
+    expect(orBodies[0]).not.toContain("chip-no-capes");
+    expect(orBodies[0]).not.toContain("watermark");
+  });
+
+  test("slot provenance: mode + profileId + model + effective params + backend-reported seed stamped on the attachment", async () => {
+    const sent: string[] = [];
+    const scene = await makeScene(promptCapturingTransport(sent));
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "gpt-image-2",
+      modeSizePresets: { portrait: { width: 832, height: 1248 } },
+      defaultParams: { steps: 30 },
+    });
+
+    const res = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: id,
+        mode: "portrait",
+        overrides: { model: "chip-model" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { messageId: string };
+    const message = await scene.stores.messages.getMessageById(body.messageId);
+    const attachments = JSON.parse(message!.attachmentsJson ?? "[]") as Array<{
+      imageGen?: {
+        mode: string;
+        profileId: string;
+        model?: string;
+        params: Record<string, unknown>;
+        seed?: number;
+      };
+    }>;
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]!.imageGen).toEqual({
+      mode: "portrait",
+      profileId: id,
+      model: "chip-model",
+      params: { width: 832, height: 1248, steps: 30 },
+      // The openrouter transport double reports no seed — the field stays
+      // absent, never invented.
+    });
+  });
+
+  test("RP-prompt separation: the image prompt never enters the roleplay assembly", async () => {
+    const sent: string[] = [];
+    const scene = await makeScene(promptCapturingTransport(sent));
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    const profileStore = new ServicePromptProfileStore(scene.stores.db);
+    const profileRow = await profileStore.createServicePromptProfile({
+      name: "separation override",
+      overrides: { image_portrait: "MARKER-{{description}}-OVERRIDE" },
+    });
+    await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: profileRow.id });
+
+    // Generate the image slot INTO the chat (the feature is fully engaged).
+    const genRes = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(genRes.status).toBe(200);
+    expect(sent[0]).toBe(`MARKER-${CHAR_DESC}-OVERRIDE`);
+
+    // The roleplay assembly for the SAME chat (image slot now in its message
+    // list): real stores + real assembly, only the resolver is the existing
+    // sibling seam. The assembled prompt must contain the ordinary chat
+    // content and NONE of the image prompt (design: "The image prompt never
+    // enters the RP prompt").
+    const character = await scene.stores.characters.getById(scene.charId);
+    const resolver: PromptAssemblyResolver = {
+      getCharacter: async () => ({
+        id: character!.id,
+        name: character!.name,
+        description: character!.description,
+        scenario: character!.defaultScenario,
+        systemPrompt: null,
+        personality: character!.personalitySummary,
+        mesExample: null,
+        postHistoryInstructions: null,
+      }),
+      getPersona: async () => null,
+      getPromptPreset: async () => null,
+      listActiveLoreEntries: async () => [],
+      listRetrievedMemories: async () => [],
+      executeScripts: async () => ({
+        character: { personality: "", scenario: "" },
+        injectedMessages: [],
+        updatedScriptState: {},
+        errors: [],
+        scriptRuns: [],
+      }),
+      getToolInstructions: () => null,
+    };
+    const fileStore = {
+      dataRoot: "/mock",
+      resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
+      readJson: async <T>() => null as T,
+      writeJson: async () => {},
+      asyncWriteJson: async () => {},
+    };
+    const assemblyService = new PromptAssemblyService(scene.stores, resolver, fileStore);
+    const assembled = await assemblyService.assembleForChat({
+      chatId: scene.chatId as ChatId,
+      model: "test-model",
+    });
+
+    const serialized = JSON.stringify(assembled.prompt);
+    expect(serialized).toContain(LAST_MSG); // sanity: the RP prompt DID assemble the chat
+    expect(serialized).not.toContain("MARKER"); // the image prompt stayed out
+    expect(serialized).not.toContain("OVERRIDE");
+
+    await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: null });
   });
 });
 

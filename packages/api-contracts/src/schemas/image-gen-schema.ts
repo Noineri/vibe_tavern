@@ -233,9 +233,16 @@ export type ImageGenGenerateOverridesValue = z.infer<typeof imageGenGenerateOver
 export const generateImageGenSchema = z.object({
   profileId: z.string(),
   mode: imageGenerationModeSchema,
-  prompt: z.string().min(1),
+  /** IG-14 prompt contract. Absent → the server builds the prompt from the
+   *  mode's Images-tab template + chat-context macros (the design's
+   *  generation flow). Present → used verbatim for non-free modes (the
+   *  fine-tuning chip's edited positive prompt — already built/substituted
+   *  client-side, never re-substituted here); for `free` it is the raw
+   *  payload the free template wraps ("the accompanying prompt") and is
+   *  REQUIRED — a prompt-less free request is a client inconsistency. */
+  prompt: z.string().min(1).optional(),
   /** The message the generation was requested from (provenance for the
-   *  slot position + IG-14's context-aware prompt building). */
+   *  slot position + context-aware prompt building). */
   anchorMessageId: z.string().optional(),
   overrides: imageGenGenerateOverridesSchema.optional(),
 });

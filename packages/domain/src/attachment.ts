@@ -5,6 +5,7 @@
 // `mimeType` is the actual content type used for provider-specific formatting.
 
 import { log } from "./logger.js";
+import type { ImageGenerationMode } from "./entities.js";
 
 /** Determines how the prompt pipeline processes this attachment. */
 export type AttachmentType = "image" | "file" | "video" | "audio";
@@ -41,6 +42,40 @@ export interface Attachment {
   purpose?: AudioPurpose;
   /** Audio-only: clip length in milliseconds (voice-message bubble UI). */
   durationMs?: number;
+  /** Image-gen-only: slot provenance (IMAGE_GENERATION_PLAN IG-14, design:
+   *  "a message carrying a single image attachment + provenance metadata:
+   *  mode, profileId, model, effective params, seed") — exactly the design
+   *  fields, no more. Rides the attachment entry the same way audio carries
+   *  `purpose`/`durationMs`; regeneration (IG-18) reads it to rebuild a
+   *  request. Absent on ordinary uploads. */
+  imageGen?: ImageGenSlotProvenance;
+}
+
+/** Provenance stamped on every attachment of an image-gen slot message
+ *  (IG-14). `params` = the effective values actually SENT to the backend
+ *  (request overrides > per-mode size preset > profile default params; only
+ *  fields the request carried — no invented values, the owner's constants
+ *  ban); `seed` = the seed the backend REPORTED using (actuals differ from
+ *  the requested `params.seed` when the vendor resolves its own). */
+export interface ImageGenSlotProvenance {
+  /** The generation-mode recipe the slot was built from. */
+  mode: ImageGenerationMode;
+  /** The image-gen profile used (regeneration target). */
+  profileId: string;
+  /** Effective model id (override > profile; absent = vendor default). */
+  model?: string;
+  /** Effective generation params sent with the request. */
+  params: {
+    width?: number;
+    height?: number;
+    steps?: number;
+    cfgScale?: number;
+    sampler?: string;
+    seed?: number;
+    clipSkip?: number;
+  };
+  /** Backend-reported actual seed (A1111 resolves -1; cloud vendors omit). */
+  seed?: number;
 }
 
 // ─── Voice transcript + tone line (STT_PLAN ST-7) ─────────────────────────────
