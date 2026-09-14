@@ -28,6 +28,13 @@ export interface ImageGenAdapterConfig {
   apiKey?: string;
   /** Selected model id (level-2 picker); optional per the STT P8 pattern. */
   model?: string;
+  /** Transport injection seam — the fetch function every HTTP call goes
+   *  through (generation POST, model list, server-side byte download of
+   *  returned images). Defaults to the global fetch. Tests inject a double
+   *  through this field (tier T1 — no globalThis patching), and the route
+   *  layer can hand adapters the proxy-aware provider fetch — the same
+   *  seam the LLM providers use. */
+  fetch?: typeof fetch;
 }
 
 /** One generation request — a union over the v1 protocols' parameter
